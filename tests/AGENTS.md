@@ -51,6 +51,9 @@ Four patterns, one per file, that you can copy:
   stands in for passport (`req.isAuthenticated()`), so you can assert the real
   `ensureApiAuthenticated()` guard returns 401 signed-out and passes through
   signed-in — while mocking the service layer.
+- **Role authorization** (`roles.test.ts`): the same supertest + fake-passport
+  pattern applied to the `ensureRole()` guard (401 / 403 / pass), plus pure tests
+  of the role helpers (`rolesOf`, `buildRoleArea`).
 
 Notes:
 - Tests are **TypeScript**, compiled by ts-jest using `tests/tsconfig.json`.

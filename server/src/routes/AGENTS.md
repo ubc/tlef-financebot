@@ -19,6 +19,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   /api/members/overview`, **auth-gated**, returns a members-only summary of the
   signed-in user via `members.service.ts`. Keep or adapt as the template for a
   protected feature.
+- `roles.routes.ts` — EXAMPLE (role-based authorization). `GET
+  /api/roles/{faculty,student,staff}`, each **role-gated** with `ensureRole(...)`
+  (`403` for the wrong role), via `roles.service.ts`. The template for
+  role-specific features.
 - `auth.routes.ts` — SAML login flow: `GET /auth/ubcshib`,
   `POST /auth/ubcshib/callback`, `GET /auth/logout`, and `GET /api/auth/me`.
   All **public** (they establish/report the session). The `/auth/*` paths are

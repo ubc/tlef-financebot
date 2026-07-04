@@ -10,6 +10,7 @@ import { registerShibbolethStrategy, type AppUser } from './strategies/shibbolet
 //     the client calls with fetch (see guards.ts).
 export { ensureAuthenticated, conditionalAuth } from 'passport-ubcshib';
 export { ensureApiAuthenticated } from './guards';
+export { ensureRole, rolesOf, hasRole } from './roles';
 export { verifyIdpCertificatePresent } from './strategies/shibboleth';
 export type { AppUser } from './strategies/shibboleth';
 

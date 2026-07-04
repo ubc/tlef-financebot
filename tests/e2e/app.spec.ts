@@ -31,4 +31,20 @@ test.describe('app shell (logged in)', () => {
     // The nameID readout confirms this came from the gated endpoint.
     await expect(page.getByText(/subject \(nameid\)/i)).toBeVisible();
   });
+
+  // global-setup logs in as `faculty`, so only the Faculty area should appear,
+  // and the server must refuse another role's area (403 -> friendly state).
+  test('shows only the matching role area and enforces the others', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('link', { name: /faculty area/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /student area/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /staff area/i })).toHaveCount(0);
+
+    await page.goto('/#/faculty');
+    await expect(page.getByText(/tools for instructors/i)).toBeVisible();
+
+    // Deep-linking another role's area is refused by the server (403).
+    await page.goto('/#/student');
+    await expect(page.getByText(/only available to student users/i)).toBeVisible();
+  });
 });

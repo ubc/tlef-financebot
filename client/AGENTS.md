@@ -53,6 +53,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/notes.ts` | EXAMPLE (mongodb demo). Safe to delete. |
 | `views/rag.ts` | EXAMPLE (genai + qdrant demo). Safe to delete. |
 | `views/members.ts` | The gated members-only area (auth-gating reference). |
+| `views/role.ts` | Role-gated area (Faculty/Student/Staff), one factory per role. |
 
 ## Adding a page
 
@@ -69,6 +70,12 @@ handler (`setUnauthorizedHandler`, wired in `main.ts`) that re-bootstraps back t
 the landing screen — so an expired session mid-use fails gracefully. Remember the
 UI gate is only UX; the real enforcement is the server's `ensureApiAuthenticated()`
 (see `server/src/components/auth/AGENTS.md`).
+
+**Role-based menus:** a NAV item can set `roles: ['faculty']` in `config.ts`; the
+sidebar shows it only when the session's `roles` (from `GET /api/auth/me`, itself
+derived from `eduPersonAffiliation`) include a match. The role views load a
+role-gated endpoint, so a deep-link to another role's page returns `403` and shows
+a friendly state (a `403` is left in-app; only `401` drops to the landing screen).
 
 ## Re-skinning
 

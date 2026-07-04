@@ -951,6 +951,39 @@ a {
   overflow-wrap: anywhere;
 }
 
+/* ---- Role area ----------------------------------------------------------- */
+
+.role__blurb {
+  margin: 0 0 1rem;
+  font-size: 1.02rem;
+}
+
+.caps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.caps__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.caps__mark {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.role__foot {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 /* ---- Responsive ---------------------------------------------------------- */
 
 @media (max-width: 860px) {

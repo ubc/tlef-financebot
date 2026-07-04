@@ -33,7 +33,10 @@ commonly need:
   (`/api/notes`, `/api/rag/*`) and a members-only reference area
   (`/api/members/overview`) are protected per-route with the component's
   `ensureApiAuthenticated()` guard (401 JSON when signed out). `/api/health` and
-  `/api/auth/me` stay public.
+  `/api/auth/me` stay public. Authorization is also demonstrated: role-based areas
+  (`/api/roles/{faculty,student,staff}`) are gated with `ensureRole(...)` (403 for
+  the wrong role, derived from `eduPersonAffiliation`), and the client shows each
+  user only their own role menu.
 - Qdrant (`server/src/components/qdrant`) is implemented: a configured client,
   idempotent `ensureCollection`, and `upsertPoints` / `search` helpers. `GET
   /api/health` reports its reachability.

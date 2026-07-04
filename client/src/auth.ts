@@ -7,14 +7,14 @@ import { getAuthState, type AuthState, type AuthUser } from './api.js';
 
 export type Session = AuthState;
 
-let current: Session = { authenticated: false, user: null };
+let current: Session = { authenticated: false, user: null, roles: [] };
 
 /** Fetch the session from the server and cache it. Never throws. */
 export async function loadSession(): Promise<Session> {
   try {
     current = await getAuthState();
   } catch {
-    current = { authenticated: false, user: null };
+    current = { authenticated: false, user: null, roles: [] };
   }
   return current;
 }

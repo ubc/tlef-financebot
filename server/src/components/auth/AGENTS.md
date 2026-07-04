@@ -38,10 +38,15 @@ Two one-time local setup steps are required (documented in the root README):
   browser to the IdP), it responds `401 { error }` so a `fetch()` caller gets a
   machine-readable answer instead of the IdP's HTML login page. See "Protecting
   routes" below.
+- `roles.ts` — authorization helpers keyed on `eduPersonAffiliation`:
+  `rolesOf(user)` (lower-cased role array), `hasRole(user, ...roles)`, and the
+  `ensureRole(...roles)` guard (`401` signed out, `403` wrong role). See
+  "Role-based authorization" below.
 - `index.ts` — `configureAuth()`: registers the strategy + serialize/deserialize
   and returns `{ passport, sessionMiddleware }` for `app.ts` to install. Also
   re-exports the guards (`ensureAuthenticated` / `conditionalAuth` from
   `passport-ubcshib`, `ensureApiAuthenticated` from `guards.ts`),
+  `ensureRole` / `rolesOf` / `hasRole` from `roles.ts`,
   `verifyIdpCertificatePresent`, and the `AppUser` type — so app code imports
   auth helpers from this component, not the underlying package.
 - `../../types/passport-ubcshib.d.ts` — local type declarations (the package
@@ -174,6 +179,29 @@ non-shared prefix, e.g. `app.use('/api/admin', adminRouter)`.)
 Reflect the gate in the UI: the client already calls `GET /api/auth/me`, so
 hide/disable gated controls when `authenticated` is false and handle the `401`
 if a gated call is made while logged out.
+
+## Role-based authorization
+
+Authentication answers "who are you?"; **authorization** answers "what may you
+do?". `roles.ts` derives roles from the SAML `eduPersonAffiliation` attribute
+(the local IdP issues `faculty` / `student` / `staff`) and provides an
+`ensureRole(...roles)` guard: `401` when signed out, `403` when signed in without
+one of the required roles.
+
+```ts
+import { ensureRole } from '../components/auth';
+
+// Only users whose eduPersonAffiliation includes "faculty" reach the handler.
+router.get('/faculty/thing', ensureRole('faculty'), (req, res) => { ... });
+```
+
+Working reference: `services/roles.service.ts` + `routes/roles.routes.ts` expose
+`GET /api/roles/{faculty,student,staff}`, one gated per role. `GET /api/auth/me`
+also returns server-derived `roles`, so the client filters its role menus from a
+single source of truth (nav item visible only for a matching role) while the
+server does the real enforcement — the same "hide in UI, enforce on the server"
+split as `ensureApiAuthenticated`. Note `eduPersonAffiliation` is multi-valued, so
+`rolesOf` returns an array and `ensureRole`/`hasRole` match on intersection.
 
 ## Moving to STAGING / PRODUCTION
 

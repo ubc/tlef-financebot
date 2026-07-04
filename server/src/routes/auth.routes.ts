@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
+import { rolesOf } from '../components/auth';
 import { env } from '../config/env';
 
 export const authRouter = Router();
@@ -33,10 +34,13 @@ authRouter.get('/auth/logout', (req, res, next) => {
   });
 });
 
-// Current auth state, for the client to render login/logout UI.
+// Current auth state, for the client to render login/logout UI. `roles` is
+// server-derived from eduPersonAffiliation so the client filters role menus from
+// a single source of truth (see components/auth/roles.ts).
 authRouter.get('/api/auth/me', (req, res) => {
   res.json({
     authenticated: req.isAuthenticated(),
     user: req.user ?? null,
+    roles: req.user ? rolesOf(req.user) : [],
   });
 });

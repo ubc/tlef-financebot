@@ -14,23 +14,35 @@ import { renderHome } from './views/home.js';
 import { renderNotes } from './views/notes.js';
 import { renderRag } from './views/rag.js';
 import { renderMembers } from './views/members.js';
+import { renderRole } from './views/role.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 const ROUTES: Route[] = [
   { path: '/', render: renderHome },
+  { path: '/faculty', render: renderRole('faculty') },
+  { path: '/student', render: renderRole('student') },
+  { path: '/staff', render: renderRole('staff') },
   { path: '/notes', render: renderNotes },
   { path: '/rag', render: renderRag },
   { path: '/members', render: renderMembers },
 ];
 
-const GROUP_ORDER: NavGroup[] = ['main', 'examples', 'account'];
+const GROUP_ORDER: NavGroup[] = ['main', 'role', 'examples', 'account'];
 
-function buildSidebar(shell: HTMLElement): { aside: HTMLElement; links: Map<string, HTMLElement> } {
+/** An item shows if it isn't role-gated, or the user holds one of its roles. */
+function isVisible(item: (typeof NAV)[number], roles: string[]): boolean {
+  return !item.roles || item.roles.some((role) => roles.includes(role));
+}
+
+function buildSidebar(
+  shell: HTMLElement,
+  roles: string[],
+): { aside: HTMLElement; links: Map<string, HTMLElement> } {
   const links = new Map<string, HTMLElement>();
   const nav = el('nav', { class: 'nav', 'aria-label': 'Primary' });
 
   for (const group of GROUP_ORDER) {
-    const items = NAV.filter((item) => item.group === group);
+    const items = NAV.filter((item) => item.group === group && isVisible(item, roles));
     if (!items.length) continue;
     if (NAV_GROUPS[group]) nav.append(el('p', { class: 'nav__group', text: NAV_GROUPS[group] }));
     for (const item of items) {
@@ -63,7 +75,7 @@ function buildSidebar(shell: HTMLElement): { aside: HTMLElement; links: Map<stri
 
 function buildShell(root: HTMLElement, session: Session): void {
   const shell = el('div', { class: 'app-shell' });
-  const { aside, links } = buildSidebar(shell);
+  const { aside, links } = buildSidebar(shell, session.roles);
 
   const title = el('h1', { class: 'topbar__title' });
   const user = session.user;

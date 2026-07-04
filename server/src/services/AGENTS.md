@@ -25,6 +25,10 @@ objects directly.
   plain response object. It is called only from the gated
   `routes/members.routes.ts`, so it demonstrates a service backing a
   members-only feature. Keep or adapt for your own protected area.
+- `roles.service.ts` — EXAMPLE (role-based authorization). `buildRoleArea(role,
+  user)` returns a role-specific payload; `ROLE_AREAS` lists the roles that have
+  an area. Called only from the role-gated `routes/roles.routes.ts`. Keep or adapt
+  for role-specific features.
 
 Other services will appear as more components are built up.
 

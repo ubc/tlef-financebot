@@ -20,7 +20,7 @@ export const APP = {
 } as const;
 
 /** Which sidebar group a nav item belongs to. */
-export type NavGroup = 'main' | 'examples' | 'account';
+export type NavGroup = 'main' | 'role' | 'examples' | 'account';
 
 export interface NavItem {
   /** Hash-router path, e.g. '/' or '/notes'. */
@@ -32,11 +32,17 @@ export interface NavItem {
   group: NavGroup;
   /** Marks a deletable EXAMPLE feature (shows a "DEMO" badge). */
   demo?: boolean;
+  /**
+   * Role-gate this item: it appears only when the signed-in user has one of
+   * these roles (from eduPersonAffiliation; see main.ts). Omit to always show.
+   */
+  roles?: string[];
 }
 
 /** Human labels for the sidebar group headings. */
 export const NAV_GROUPS: Record<NavGroup, string> = {
   main: '',
+  role: 'Your area',
   examples: 'Examples · safe to delete',
   account: 'Account',
 };
@@ -47,6 +53,10 @@ export const NAV_GROUPS: Record<NavGroup, string> = {
  */
 export const NAV: NavItem[] = [
   { path: '/', label: 'Overview', glyph: '◈', group: 'main' },
+  // Role-gated EXAMPLE areas: each shows only for its eduPersonAffiliation.
+  { path: '/faculty', label: 'Faculty area', glyph: '▧', group: 'role', roles: ['faculty'] },
+  { path: '/student', label: 'Student area', glyph: '▨', group: 'role', roles: ['student'] },
+  { path: '/staff', label: 'Staff area', glyph: '▩', group: 'role', roles: ['staff'] },
   { path: '/notes', label: 'Notes', glyph: '▤', group: 'examples', demo: true },
   { path: '/rag', label: 'RAG search', glyph: '❋', group: 'examples', demo: true },
   { path: '/members', label: 'Members area', glyph: '⬡', group: 'account' },

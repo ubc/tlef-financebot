@@ -64,10 +64,28 @@ export interface AuthUser {
 export interface AuthState {
   authenticated: boolean;
   user: AuthUser | null;
+  /** Server-derived roles (from eduPersonAffiliation), e.g. ['faculty']. */
+  roles: string[];
 }
 
 export function getAuthState(): Promise<AuthState> {
   return request<AuthState>('/api/auth/me');
+}
+
+// --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
+
+export interface RoleArea {
+  role: string;
+  title: string;
+  blurb: string;
+  capabilities: string[];
+  yourRoles: string[];
+  serverTime: string;
+}
+
+/** Load a role area. Throws ApiError with status 403 if it isn't your role. */
+export function getRoleArea(role: string): Promise<RoleArea> {
+  return request<RoleArea>(`/api/roles/${role}`);
 }
 
 // --- Members area (auth-gated) ----------------------------------------------
