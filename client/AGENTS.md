@@ -49,6 +49,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `dom.ts` | `el()` / `mount()` / `byId()` — minimal DOM helpers. |
 | `views/landing.ts` | Pre-login screen. |
 | `views/home.ts` | Overview (dashboard): welcome, system status, component map. |
+| `views/academic.ts` | Auth-gated "Academic record": the signed-in user's person + courses from the Academic API (by CWL PUID). |
 | `views/health.ts` | Reusable "System status" card (used by landing + home). |
 | `views/notes.ts` | EXAMPLE (mongodb demo). Safe to delete. |
 | `views/rag.ts` | EXAMPLE (genai + qdrant demo). Safe to delete. |

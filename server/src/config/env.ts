@@ -62,7 +62,14 @@ export const env = {
   // openai / anthropic / ubc-llm-sandbox. Defaults target a local Ollama.
   llmProvider: optional('LLM_PROVIDER', 'ollama'),
   llmDefaultModel: optional('LLM_DEFAULT_MODEL', 'ministral-3:latest'),
-  llmEndpoint: optional('LLM_ENDPOINT', 'http://localhost:11434'),
+  // Only Ollama gets the local-endpoint default. For hosted providers (openai /
+  // anthropic) an unset LLM_ENDPOINT must stay empty so it resolves to undefined
+  // downstream and the SDK uses its own base URL — otherwise every request would
+  // be misrouted to the Ollama port. OpenAI-compatible gateways set it explicitly.
+  llmEndpoint: optional(
+    'LLM_ENDPOINT',
+    optional('LLM_PROVIDER', 'ollama') === 'ollama' ? 'http://localhost:11434' : '',
+  ),
   llmApiKey: optional('LLM_API_KEY', ''),
 
   // GenAI embeddings (see server/src/components/genai/embeddings). Provider is
@@ -72,6 +79,16 @@ export const env = {
   // derives it at runtime so they can never drift.
   embeddingsProvider: optional('EMBEDDINGS_PROVIDER', 'ollama'),
   embeddingsModel: optional('EMBEDDINGS_MODEL', 'nomic-embed-text'),
+
+  // Academic API (see server/src/components/academic-api). A read-only lookup of
+  // the signed-in user's person + course records, keyed on their CWL PUID. All
+  // optional: they default to the local FakeAcademicAPI (academic_api_fake, on
+  // :3689) with its mock Basic-auth credentials, so the feature works out of the
+  // box in dev and points at the real Academic API by overriding these. Auth is
+  // HTTP Basic (clientId:secret). Leave the base URL blank to disable the feature.
+  academicApiBaseUrl: optional('ACADEMIC_API_BASE_URL', 'http://localhost:3689'),
+  academicApiClientId: optional('ACADEMIC_API_CLIENT_ID', 'mock-client'),
+  academicApiClientSecret: optional('ACADEMIC_API_CLIENT_SECRET', 'mock-secret'),
 
   // When true, the genai toolkit modules log their full (verbose) debug/info
   // output. Off by default so only warnings/errors from the toolkit surface,

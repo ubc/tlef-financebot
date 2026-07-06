@@ -14,6 +14,7 @@ import { renderHome } from './views/home.js';
 import { renderNotes } from './views/notes.js';
 import { renderRag } from './views/rag.js';
 import { renderMembers } from './views/members.js';
+import { renderAcademic } from './views/academic.js';
 import { renderRole } from './views/role.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
@@ -22,6 +23,7 @@ const ROUTES: Route[] = [
   { path: '/faculty', render: renderRole('faculty') },
   { path: '/student', render: renderRole('student') },
   { path: '/staff', render: renderRole('staff') },
+  { path: '/academic', render: renderAcademic },
   { path: '/notes', render: renderNotes },
   { path: '/rag', render: renderRag },
   { path: '/members', render: renderMembers },

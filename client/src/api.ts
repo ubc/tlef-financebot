@@ -102,6 +102,35 @@ export function getMembersOverview(): Promise<MembersOverview> {
   return request<MembersOverview>('/api/members/overview');
 }
 
+// --- Academic record (Academic API lookup, auth-gated) -----------------------
+
+export interface AcademicCourse {
+  courseSectionId: string;
+  subject: string;
+  courseNumber: string;
+  sectionNumber: string;
+  title: string;
+  period: string;
+  status: string;
+  instructors: string[];
+}
+
+export interface AcademicProfile {
+  found: boolean;
+  note?: string;
+  puid: string;
+  displayName: string;
+  identifiers: { type: string; value: string }[];
+  emails: { type: string; address: string }[];
+  teaching: AcademicCourse[];
+  enrolled: AcademicCourse[];
+  serverTime: string;
+}
+
+export function getAcademicProfile(): Promise<AcademicProfile> {
+  return request<AcademicProfile>('/api/academic/me');
+}
+
 // --- EXAMPLE: notes (mongodb demo, auth-gated). Safe to remove. --------------
 
 export interface Note {

@@ -53,6 +53,7 @@ export const NAV_GROUPS: Record<NavGroup, string> = {
  */
 export const NAV: NavItem[] = [
   { path: '/', label: 'Overview', glyph: '◈', group: 'main' },
+  { path: '/academic', label: 'Academic record', glyph: '◉', group: 'main' },
   // Role-gated EXAMPLE areas: each shows only for its eduPersonAffiliation.
   { path: '/faculty', label: 'Faculty area', glyph: '▧', group: 'role', roles: ['faculty'] },
   { path: '/student', label: 'Student area', glyph: '▨', group: 'role', roles: ['student'] },

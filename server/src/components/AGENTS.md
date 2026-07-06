@@ -31,6 +31,7 @@ Rules:
 | `qdrant/` | Vector database (RAG) | `@qdrant/js-client-rest` |
 | `auth/` | Sessions + SAML/Shibboleth auth | `express-session`, `connect-mongo`, `passport`, `passport-ubcshib`, `passport-saml` |
 | `genai/` | UBC GenAI toolkit modules | `ubc-genai-toolkit-*` |
+| `academic-api/` | UBC Academic API lookup (person + courses by PUID) | `fetch` (no SDK) |
 
 `passport-local` is also installed (a dependency) for optional local-dev logins,
 but no local strategy is wired up today — only the SAML/Shibboleth flow is.
@@ -42,5 +43,8 @@ but no local strategy is wired up today — only the SAML/Shibboleth flow is.
 - `qdrant/` — implemented (client + collection/upsert/search helpers).
 - `genai/{llm,embeddings,chunking,document-parsing}/` — implemented (each wraps
   its `ubc-genai-toolkit-*` package).
+- `academic-api/` — implemented. Read-only client for UBC's Academic API (points
+  at the local `academic_api_fake` in dev); resolves the signed-in user's person
+  + courses by CWL PUID. Backs the auth-gated `/academic` "Academic record" page.
 
 Build any further components one at a time following each folder's `AGENTS.md`.

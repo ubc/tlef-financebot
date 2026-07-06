@@ -6,9 +6,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
 ## Present
 
 - `health.routes.ts` — `GET /api/health` returns `{ status, timestamp, services,
-  genai }`, where `services` reports reachability (`mongodb`, `qdrant`) and
-  `genai` echoes the configured LLM/embeddings providers + models. **Public** —
-  the pre-login landing screen uses it before there is a session.
+  genai }`, where `services` reports reachability (`mongodb`, `qdrant`, and
+  `academicApi` when configured) and `genai` echoes the configured LLM/embeddings
+  providers + models. **Public** — the pre-login landing screen uses it before
+  there is a session.
 - `notes.routes.ts` — EXAMPLE. `GET/POST /api/notes`, demonstrating the mongodb
   component via `notes.service.ts`. **Auth-gated** (per route). Safe to delete.
 - `rag.routes.ts` — EXAMPLE. `POST /api/rag/ingest` (text), `POST
@@ -23,6 +24,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   /api/roles/{faculty,student,staff}`, each **role-gated** with `ensureRole(...)`
   (`403` for the wrong role), via `roles.service.ts`. The template for
   role-specific features.
+- `academic.routes.ts` — `GET /api/academic/me`, **auth-gated**, returns the
+  signed-in user's academic record (person + courses) looked up from the Academic
+  API by their CWL PUID, via `academic.service.ts`. See
+  `components/academic-api/AGENTS.md`.
 - `auth.routes.ts` — SAML login flow: `GET /auth/ubcshib`,
   `POST /auth/ubcshib/callback`, `GET /auth/logout`, and `GET /api/auth/me`.
   All **public** (they establish/report the session). The `/auth/*` paths are
