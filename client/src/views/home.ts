@@ -18,6 +18,7 @@ const COMPONENTS: ComponentInfo[] = [
   { glyph: '❋', name: 'Qdrant', desc: 'Vector search for RAG', path: 'components/qdrant' },
   { glyph: '⬡', name: 'SAML / CWL auth', desc: 'Sessions + Shibboleth login', path: 'components/auth' },
   { glyph: '◈', name: 'GenAI toolkit', desc: 'LLM · embeddings · chunking · parsing', path: 'components/genai' },
+  { glyph: '◉', name: 'Academic API', desc: 'Person + courses by CWL PUID (fake in dev)', path: 'components/academic-api' },
 ];
 
 function componentCard(info: ComponentInfo): HTMLElement {

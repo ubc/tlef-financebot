@@ -10,6 +10,7 @@ A runnable client/server app with:
 - SAML/Shibboleth authentication (CWL login) via `passport-ubcshib`, with sessions stored in MongoDB. Most of the app is behind login: a public landing screen (health check + "Log in with CWL"), and after login a sidebar app with the demos and a **gated Members area** — showing how to protect routes with the auth component's `ensureApiAuthenticated()` guard.
 - A Qdrant vector-DB client (collection + upsert + search) and the four GenAI toolkit modules (LLM, embeddings, chunking, document parsing).
 - A small **RAG example** tying them together: ingest text or a file (parse → chunk → embed → upsert), then ask a question (embed → search → LLM). It is clearly labeled "EXAMPLE (safe to delete)", like the notes demo.
+- An **Academic API** integration: an auth-gated **Academic record** page that looks up the signed-in user's person + course records by their CWL PUID. In development it points at the local [FakeAcademicAPI](https://github.com/ubc/academic_api_fake) stand-in, so it works without real API access or student data.
 
 Each integration is isolated under `server/src/components/` with its own `AGENTS.md`.
 
@@ -31,6 +32,7 @@ Every meaningful folder contains an `AGENTS.md` aimed at LLM coding agents (and 
   - MongoDB — [tlef-mongodb-docker](https://github.com/ubc/tlef-mongodb-docker)
   - SAML IdP — [docker-simple-saml](https://github.com/ubc/docker-simple-saml)
   - Qdrant — the vector database (see "Vector search & RAG" below)
+  - Academic API — [academic_api_fake](https://github.com/ubc/academic_api_fake), optional (see "Academic API" below)
 - For the GenAI defaults: a local [Ollama](https://ollama.com) with a chat model and an embedding model pulled (see "Vector search & RAG"). OpenAI / Anthropic / the UBC LLM Sandbox are drop-in alternatives via env vars.
 
 ## Getting started
@@ -54,7 +56,7 @@ npm run saml:fetch-cert     # fetch the IdP signing certificate (see Authenticat
 npm run dev
 ```
 
-Then open http://localhost:6118 (or your `PORT`). You land on a public screen that runs the health check (MongoDB + Qdrant status and the configured GenAI providers) and offers "Log in with CWL". After logging in, the app opens with an Overview, the Notes (MongoDB) and RAG (GenAI + Qdrant) demos, and a gated Members area. Only `/api/health` and `/api/auth/me` are public; the demo endpoints and the members area require a session.
+Then open http://localhost:6118 (or your `PORT`). You land on a public screen that runs the health check (MongoDB + Qdrant status and the configured GenAI providers) and offers "Log in with CWL". After logging in, the app opens with an Overview, an **Academic record** page (person + courses from the Academic API), the Notes (MongoDB) and RAG (GenAI + Qdrant) demos, and a gated Members area. Only `/api/health` and `/api/auth/me` are public; the Academic record, the demo endpoints, and the members area all require a session.
 
 The server connects to MongoDB on startup and exits if it cannot — make sure that container is running first. It also reads the IdP certificate on startup and exits with an actionable message if it is missing. Qdrant is checked too, but only a warning is logged if it is down (it backs the deletable RAG example, not the app itself).
 
@@ -184,6 +186,39 @@ curl -X POST http://localhost:6118/api/rag/query \
 ```
 
 To remove the example, delete `services/rag.service.ts`, `routes/rag.routes.ts`, their client counterparts, and the `ragRouter` line in `server/src/app.ts`.
+
+## Academic API (person + courses)
+
+The **Academic record** page (auth-gated, in the sidebar after login) shows the signed-in user's person record and the course sections they teach and/or are enrolled in. The server resolves it from UBC's Academic API by the user's CWL **PUID** (`ubcEduCwlPuid`), orchestrated in `server/src/services/academic.service.ts` and exposed at `GET /api/academic/me`. The `academic-api` component is a thin, read-only HTTP client (HTTP Basic auth, no SDK); see its [`AGENTS.md`](server/src/components/academic-api/AGENTS.md).
+
+### 1. Start the fake Academic API
+
+In development it points at the local [FakeAcademicAPI](https://github.com/ubc/academic_api_fake) — a Dockerized service that returns invented data in the real API's exact response shapes. In that checkout:
+
+```bash
+docker compose up --build     # serves http://localhost:3689
+```
+
+Its seeded people share PUIDs and student/employee numbers with the `docker-simple-saml` accounts, so a user who logs in via the local IdP is found in the API by the same identifiers (see that project's `USERS.md` for the test accounts, e.g. `faculty`, `student`, `bio_prof2`).
+
+### 2. Configure it
+
+All **optional** — the defaults target the local fake, so it works out of the box:
+
+| Vars | Default |
+| --- | --- |
+| `ACADEMIC_API_BASE_URL` (blank disables the feature) | `http://localhost:3689` |
+| `ACADEMIC_API_CLIENT_ID` / `ACADEMIC_API_CLIENT_SECRET` | `mock-client` / `mock-secret` |
+
+Point these at the real Academic API in staging/production. When configured, `GET /api/health` also reports its reachability as `services.academicApi`.
+
+### 3. Try it
+
+Log in as a seeded user (e.g. `faculty`) and open **Academic record**. A user whose PUID isn't in the API (or a login without a PUID) gets a friendly "no record" note rather than an error. For a quick API check, the fake accepts Basic auth directly:
+
+```bash
+curl -u mock-client:mock-secret 'http://localhost:3689/person/v2/persons?puid=12345678'
+```
 
 ## Scripts
 

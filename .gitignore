@@ -26,6 +26,8 @@ server/certs/
 *.log
 npm-debug.log*
 
+package-lock.json
+
 # OS / editor
 .DS_Store
 *.tsbuildinfo

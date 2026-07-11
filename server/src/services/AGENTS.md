@@ -29,6 +29,11 @@ objects directly.
   user)` returns a role-specific payload; `ROLE_AREAS` lists the roles that have
   an area. Called only from the role-gated `routes/roles.routes.ts`. Keep or adapt
   for role-specific features.
+- `academic.service.ts` — composes the `academic-api` component. `buildAcademicProfile(user)`
+  reads the signed-in user's CWL PUID, resolves their person record, and returns a
+  clean `AcademicProfile` DTO (identity + `teaching` / `enrolled` course summaries).
+  Called only from the auth-gated `routes/academic.routes.ts`. `found: false` (with
+  a `note`) covers "API not configured", "login had no PUID", and "PUID not found".
 
 Other services will appear as more components are built up.
 
