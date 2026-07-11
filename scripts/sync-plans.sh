@@ -53,8 +53,10 @@ done < <(find "$PLANS" -type d -name "$ME")
 pushed_to_main=0
 (
   cd "$WT"
-  if [ "$found_mine" -eq 1 ] && ! git diff --quiet -- "$PLANS"; then
-    git add "$PLANS"
+  # Stage first, then check the index: `git diff --quiet` alone misses brand-new
+  # (untracked) plan files, which are the common case when publishing a plan.
+  [ "$found_mine" -eq 1 ] && git add -A -- "$PLANS"
+  if [ "$found_mine" -eq 1 ] && ! git diff --cached --quiet -- "$PLANS"; then
     git -c user.name="$ME" -c user.email="$EMAIL" commit -q -m "docs(plans): publish $ME's plans"
     if git push --quiet origin HEAD:main 2>/dev/null; then
       echo "==> Published $ME's plans to main."
