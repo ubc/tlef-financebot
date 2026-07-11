@@ -123,8 +123,8 @@ and `git log`. An agent never sees the other developer's uncommitted work.
    owned by the other developer without flagging it to your human first.
 
 Name ↔ arc binding (fill in once, then keep updated):
-- **Saurav** = Dev ___ (arc: ____________________)
-- **Stephen** = Dev ___ (arc: ____________________)
+- **Saurav** = Dev B (arc: data/contracts → instructor/AI — Phase 0: domain types, collections, render utility, API contract, toolkit spike; Phase 1: jobs, courses, question bank, materials/RAG, generation pipeline, instructor views)
+- **Stephen** = Dev A (arc: platform/auth → student-facing — Phase 0: deps, docker, config, hardening, identity, home stub, CI; Phase 1: enrollment, mastery Layer 1, selection, attempts, Review Book, student views)
 
 **Pause-and-sync rule:** when a task is marked as a **Sync point**, the agent
 must stop after preparing the work and tell its developer that the other
