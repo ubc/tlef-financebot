@@ -93,6 +93,42 @@ integrations in `components/`.
 - Every new variable a component needs must be added to `.env.example` with a
   comment.
 
+## Two-developer convention (FinanceBot build)
+
+Two developers (each with their own agent sessions) build this project in
+parallel from the phase plans in `docs/superpowers/plans/`. Before doing ANY
+work on a phase-plan task, an agent MUST:
+
+1. **Ask which developer it is working for: Dev A or Dev B.** Do not assume.
+   (Record here once decided: Dev A = ______, Dev B = ______.)
+2. **Read the current phase plan and `git log --oneline -20`** to see which
+   tasks are checked off / merged. The plan checkboxes plus git history are the
+   shared state between the two sessions — an agent never sees the other
+   developer's uncommitted work.
+3. **Only pick up tasks owned by its developer.** Every task in the Phase 0/1
+   plans carries an `**Owner:**` line. Never start, edit, or "helpfully fix" a
+   task owned by the other developer without flagging it to your human first.
+
+**Pause-and-sync rule:** when a task is marked as a **Sync point**, the agent
+must stop after preparing the work and tell its developer that the other
+developer's review/participation is required before merging or proceeding.
+Sync points are listed at the top of each phase plan.
+
+**Shared-file conventions (conflict avoidance):**
+- `package.json` dependency changes: Phase 0 Task 1 merges first; afterwards
+  additions are single lines, rebased frequently.
+- `server/src/app.ts` (route mounts), `server/src/server.ts` (startup calls),
+  `.env.example`, `server/src/components/mongodb/collections.ts` (accessors +
+  index specs), client `router.ts`/`main.ts` (route tables): **append-only,
+  one line/block per addition** — never reorder or reformat surrounding lines.
+- Rebase on `main` before starting each task; one short-lived branch per task,
+  merged the day it's done.
+- If implementation forces a change to a task's `**Interfaces:**` block or to
+  `docs/api-contract.md`, update the plan/contract **in the same PR** as the
+  code. The other developer's agent trusts those documents.
+- Keep the checkboxes in the phase plan and the `AGENTS.md` "Current state"
+  section updated as tasks merge.
+
 ## Commands
 
 ```bash
