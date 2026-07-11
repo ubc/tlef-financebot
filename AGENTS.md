@@ -95,19 +95,36 @@ integrations in `components/`.
 
 ## Two-developer convention (FinanceBot build)
 
-Two developers (each with their own agent sessions) build this project in
-parallel from the phase plans in `docs/superpowers/plans/`. Before doing ANY
-work on a phase-plan task, an agent MUST:
+Two developers — **Saurav** and **Stephen** — build this project in parallel,
+each running their own agent sessions. The shared state between the two sessions
+is the phase plans in `docs/superpowers/plans/`, the checkboxes in those plans,
+and `git log`. An agent never sees the other developer's uncommitted work.
 
-1. **Ask which developer it is working for: Dev A or Dev B.** Do not assume.
-   (Record here once decided: Dev A = ______, Dev B = ______.)
-2. **Read the current phase plan and `git log --oneline -20`** to see which
-   tasks are checked off / merged. The plan checkboxes plus git history are the
-   shared state between the two sessions — an agent never sees the other
-   developer's uncommitted work.
-3. **Only pick up tasks owned by its developer.** Every task in the Phase 0/1
-   plans carries an `**Owner:**` line. Never start, edit, or "helpfully fix" a
-   task owned by the other developer without flagging it to your human first.
+**Before doing ANY phase-plan work, an agent MUST:**
+
+1. **Ask which developer it is working for: Saurav or Stephen.** Never assume.
+   (A `.claude` SessionStart hook reminds you each session; `CLAUDE.md` states
+   the rule.)
+2. **Write its own plan first.** Before starting a phase, use the superpowers
+   `writing-plans` skill to turn the core phase document (e.g.
+   `docs/superpowers/plans/phase-0/2026-07-11-phase-0-foundations.md`) into a
+   personal task-by-task plan, saved under your name:
+   `docs/superpowers/plans/<phase>/<YourName>/`. This is how the other developer
+   (and their agent) sees what you are working on.
+3. **Sync before and after working:** run `npm run sync-plans -- <YourName>`.
+   This publishes your `<YourName>/` plan folder to `main` and pulls the other
+   developer's latest plans into your working tree, so both sides stay current
+   without waiting for feature branches to merge. If `main` is protected, your
+   plans are pushed to a `plans-sync-<YourName>` branch and you open a PR.
+4. **Read the current phase plan and `git log --oneline -20`** to see which
+   tasks are checked off / merged.
+5. **Only pick up tasks owned by its developer.** Every task in the phase plans
+   carries an `**Owner:**` line. Never start, edit, or "helpfully fix" a task
+   owned by the other developer without flagging it to your human first.
+
+Name ↔ arc binding (fill in once, then keep updated):
+- **Saurav** = Dev ___ (arc: ____________________)
+- **Stephen** = Dev ___ (arc: ____________________)
 
 **Pause-and-sync rule:** when a task is marked as a **Sync point**, the agent
 must stop after preparing the work and tell its developer that the other

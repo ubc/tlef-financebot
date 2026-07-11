@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"FinanceBot two-developer workflow. Before doing ANY phase-plan work, ASK the human which developer you are working for: Saurav or Stephen. Do not assume. Then read the root AGENTS.md section Two-developer convention and CLAUDE.md. Only pick up plan tasks whose Owner matches your developer. To share plans, run: npm run sync-plans -- YourName (publishes your plan folder to main and pulls the other developer plans).\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}

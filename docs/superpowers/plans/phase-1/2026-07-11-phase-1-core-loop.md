@@ -1,6 +1,8 @@
 # Phase 1 — Core Loop Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Progress tracking (do this, it is not automatic):** the superpowers execution skills track progress in an ephemeral todo list and a git-ignored local ledger — neither of which is visible to the other developer. This plan file is the shared source of truth. So, **the moment a task's review comes back clean and its commit is made, edit this file to change that task's `- [ ]` to `- [x]`, then commit the checkbox change** (e.g. `git commit -am "docs(plan): mark <phase> task N done"`) and push. Keep the checkboxes honest against `git log` — the other developer's agent trusts them to know what is already done. Run `npm run sync-plans -- <YourName>` after so the update propagates.
 
 **Goal:** The product's irreducible core end to end: a student can enroll, practice by Theme/LO with adaptive feedback, and revisit mistakes in the Review Book; an instructor can set up a course, upload materials, generate questions with the three-agent pipeline, and approve them.
 
