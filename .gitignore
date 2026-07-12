@@ -8,6 +8,7 @@ node_modules/
 # Build output
 server/dist/
 client/public/js/
+client/public/vendor/
 
 # Test output + reports
 coverage-reports/
