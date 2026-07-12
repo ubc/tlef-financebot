@@ -3,15 +3,14 @@
 _Last updated: 2026-07-12_
 
 **Where the code lives:** branch `stephen/phase-0` (PR #3, open, CI green — not
-yet merged to `main`). Branch now includes `origin/main` (Saurav's Task 4 domain
-types merged in). Pull `origin/stephen/phase-0` to see the code. Full suite: 32
-tests green.
+yet merged to `main`). Branch includes `origin/main` (your Tasks 4 + 5 + 9
+merged in). Pull `origin/stephen/phase-0` to see the code. Full suite: **39
+tests green** (lint + typecheck clean).
 
-**Blocking me right now:** Saurav's **Task 5 (collections.ts / `usersCol()`)**.
-Task 4 (types) is merged — thank you — but Task 7 (PUID identity) imports the
-collection accessors from Task 5, so it stays blocked until Task 5 lands.
+**Nothing of yours is blocking me now** — thanks for landing Tasks 4 + 5. All my
+Phase 0 code tasks are done. The only things left are Docker-gated (see below).
 
-## Done (verified: lint + typecheck + `npm test` 27/27 green)
+## Done (verified: lint + typecheck + `npm test` 39/39 green)
 
 | Task | What | Commit |
 |---|---|---|
@@ -19,20 +18,24 @@ collection accessors from Task 5, so it stays blocked until Task 5 lands.
 | 3 | Per-step LLM model config, admin allowlist, worker limits, `assertConfig()` prod safety | `1d2be2a` |
 | 6 | `validate()` zod middleware + helmet + `/api` rate limiting | `f2e803a` |
 | 12 | eslint flat config + GitHub Actions CI (lint/typecheck/jest) | `49e86d0` |
+| 7 | PUID-keyed user identity upserted on CWL login; session stores PUID only | `65a806f` |
+| 8 | `/api/auth/me` identity contract + role-appropriate home stub; client auth layer migrated to the new shape | `8916a8b` |
 
-## Partial
+## Partial / pending (Docker-gated — not blocked on you)
 
 | Task | State |
 |---|---|
-| 2 | `docker-compose.yml` + `docker/saml/authsources.php` + README written and `docker compose config` valid (`4a2a9f3`). **Live verify pending** — `docker compose up` + mock-CWL login not yet run (Docker wasn't available on my machine this session). |
+| 2 | Files written and `docker compose config` valid (`4a2a9f3`). **Live verify pending** — `docker compose up` + mock-CWL login not yet run (Docker unavailable on my machine). |
+| 7/8 | Code + unit tests green. Manual session-restore + role-heading verification needs the running stack (Docker). |
+| 13 (walking skeleton e2e) | **Joint sync point.** Needs Docker + the Playwright stack. Tasks 7/8 (its prerequisites) are done — ready to run together once Docker is up. |
 
-## Blocked — waiting on Saurav
+## Note: I touched the client auth layer
 
-| Task | Needs |
-|---|---|
-| 7 (PUID identity) | Your **Task 5** (`server/src/components/mongodb/collections.ts` → `usersCol()`), which needs your **Task 4** (`server/src/types/domain.ts`). Neither is on `main` yet. |
-| 8 (role home stub) | Task 7. |
-| 13 (walking skeleton e2e) | Joint; needs Docker + Tasks 7/8. |
+Task 8 migrated `client/src/{api,auth,main}.ts` + the members demo view from the
+old `{ nameId, attributes }` SAML shape to the new PUID-keyed `{ puid, uid,
+displayName, isAdmin, affiliations, courseRoles }` identity. Client roles are now
+derived from `affiliations`. Heads-up in case your instructor views (Task 15,
+Phase 1) touch the same files.
 
 ## Heads-up: two files we both edited (merge conflict incoming)
 
@@ -45,6 +48,6 @@ resolution is trivial (keep either version):
 
 ## What I need from you (Saurav)
 
-1. Land **Task 4 (domain types)** and **Task 5 (collections)** — that unblocks my Task 7 → 8 → 13.
-2. Task 4 is a **sync point**: ping me to review the PR before merge (shared vocabulary).
-3. Agree on merge order: my **Task 1 (pinned deps)** should hit `main` first per the plan, before other branching.
+1. **Review + merge my PR #3** so `main` gets the pinned deps + config + hardening + identity.
+2. When we're both around with Docker up, let's run **Task 13 (walking skeleton e2e)** together — it's the joint Phase 0 exit gate.
+3. Confirm you're OK with the client auth-layer migration noted above (affects shared client files).
