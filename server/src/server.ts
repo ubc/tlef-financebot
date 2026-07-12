@@ -1,10 +1,14 @@
 import { createApp } from './app';
-import { env } from './config/env';
+import { env, assertConfig } from './config/env';
 import { connectMongo, closeMongo } from './components/mongodb';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
 
 async function main(): Promise<void> {
+  // Refuse to boot with insecure/incomplete production configuration. No-op in
+  // development. Do this before anything else so misconfig fails immediately.
+  assertConfig();
+
   // Fail fast (with guidance) if the SAML IdP certificate is missing; log it
   // when present. This is a local file check, so do it before anything else.
   verifyIdpCertificatePresent();
