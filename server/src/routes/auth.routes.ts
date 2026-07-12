@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { rolesOf } from '../components/auth';
 import { env } from '../config/env';
 
 export const authRouter = Router();
@@ -34,13 +33,15 @@ authRouter.get('/auth/logout', (req, res, next) => {
   });
 });
 
-// Current auth state, for the client to render login/logout UI. `roles` is
-// server-derived from eduPersonAffiliation so the client filters role menus from
-// a single source of truth (see components/auth/roles.ts).
+// Current auth state, for the client to render login/logout UI and route to a
+// role-appropriate home. Returns the identity summary the client needs (never
+// the raw SAML profile); the client derives the primary role from isAdmin +
+// affiliations (see client/src/views/home.ts).
 authRouter.get('/api/auth/me', (req, res) => {
-  res.json({
-    authenticated: req.isAuthenticated(),
-    user: req.user ?? null,
-    roles: req.user ? rolesOf(req.user) : [],
-  });
+  if (!req.isAuthenticated() || !req.user) {
+    res.json({ authenticated: false });
+    return;
+  }
+  const { puid, uid, displayName, isAdmin, affiliations, courseRoles } = req.user;
+  res.json({ authenticated: true, user: { puid, uid, displayName, isAdmin, affiliations, courseRoles } });
 });

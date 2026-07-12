@@ -24,15 +24,7 @@ export function getSession(): Session {
   return current;
 }
 
-/** First value of a SAML attribute (they arrive as string | string[]). */
-export function firstAttr(value: unknown): string {
-  if (Array.isArray(value)) return value.length ? String(value[0]) : '';
-  return value == null ? '' : String(value);
-}
-
-/** A friendly name from the CWL/SAML attributes, falling back to the nameID. */
+/** A friendly name for the signed-in user (server-computed), with fallbacks. */
 export function displayName(user: AuthUser): string {
-  const attrs = user.attributes;
-  const name = [firstAttr(attrs.givenName), firstAttr(attrs.sn)].filter(Boolean).join(' ');
-  return name || firstAttr(attrs.mail) || user.nameId;
+  return user.displayName || user.uid || user.puid;
 }

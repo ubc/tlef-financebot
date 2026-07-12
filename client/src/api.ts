@@ -57,19 +57,26 @@ export function checkHealth(): Promise<HealthResponse> {
 // --- Authentication (public) -------------------------------------------------
 
 export interface AuthUser {
-  nameId: string;
-  attributes: Record<string, unknown>;
+  puid: string;
+  uid: string;
+  displayName: string;
+  isAdmin: boolean;
+  affiliations: string[];
+  courseRoles: Array<{ courseId: string; role: string }>;
 }
 
 export interface AuthState {
   authenticated: boolean;
   user: AuthUser | null;
-  /** Server-derived roles (from eduPersonAffiliation), e.g. ['faculty']. */
+  /** Roles derived client-side from the user's affiliations, e.g. ['faculty']. */
   roles: string[];
 }
 
-export function getAuthState(): Promise<AuthState> {
-  return request<AuthState>('/api/auth/me');
+/** GET /api/auth/me returns { authenticated, user? }; roles are derived here. */
+export async function getAuthState(): Promise<AuthState> {
+  const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
+  const user = res.user ?? null;
+  return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
 }
 
 // --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
@@ -93,8 +100,8 @@ export function getRoleArea(role: string): Promise<RoleArea> {
 export interface MembersOverview {
   message: string;
   displayName: string;
-  nameId: string;
-  attributes: Record<string, unknown>;
+  puid: string;
+  affiliations: string[];
   serverTime: string;
 }
 
