@@ -33,21 +33,25 @@ Every meaningful folder contains an `AGENTS.md` aimed at LLM coding agents (and 
   - Qdrant — the vector database (see "Vector search & RAG" below)
 - For the GenAI defaults: a local [Ollama](https://ollama.com) with a chat model and an embedding model pulled (see "Vector search & RAG"). OpenAI / Anthropic / the UBC LLM Sandbox are drop-in alternatives via env vars.
 
+## Local development services
+
+All backing services run from the one compose file in this repo — no more
+cloning tlef-mongodb-docker / docker-simple-saml / tlef-qdrant separately:
+
+    docker compose up -d        # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
+    npm run saml:fetch-cert     # writes server/certs/idp.pem from IdP metadata
+
+Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
+
 ## Getting started
 
 ```bash
-# 1. Start MongoDB (in the tlef-mongodb-docker checkout)
+# 1. Start all backing services (MongoDB, Qdrant, mock SAML IdP)
 docker compose up -d
 
-# 2. Start the SAML IdP (in the docker-simple-saml checkout)
-docker compose up -d
+# 2. Make sure Ollama is running with the models pulled
 
-# 3. Start Qdrant (in the tlef-qdrant checkout)
-docker compose up -d
-
-# 4. Make sure Ollama is running with the models pulled
-
-# 5. Then, in this repo
+# 3. Then, in this repo
 npm install
 cp .env.example .env        # defaults match the docker containers + local Ollama
 npm run saml:fetch-cert     # fetch the IdP signing certificate (see Authentication)
