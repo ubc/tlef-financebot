@@ -5,7 +5,6 @@ const ORIGINAL_ENV = process.env;
 function loadEnv(overrides: Record<string, string>) {
   jest.resetModules();
   process.env = { ...ORIGINAL_ENV, ...overrides };
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require('../../server/src/config/env') as typeof import('../../server/src/config/env');
 }
 

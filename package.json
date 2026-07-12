@@ -24,6 +24,7 @@
     "start": "node server/dist/server.js",
     "saml:fetch-cert": "node scripts/fetch-idp-cert.mjs",
     "sync-plans": "bash scripts/sync-plans.sh",
+    "lint": "eslint .",
     "typecheck": "npm-run-all typecheck:server typecheck:client",
     "typecheck:server": "tsc -p server/tsconfig.json --noEmit",
     "typecheck:client": "tsc -p client/tsconfig.json --noEmit",

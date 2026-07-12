@@ -53,7 +53,7 @@ function missingCertMessage(certPath: string): string {
  */
 export function verifyIdpCertificatePresent(): void {
   const certPath = resolveIdpCertPath();
-  let ok = false;
+  let ok: boolean;
   try {
     ok = fs.statSync(certPath).size > 0;
   } catch {
