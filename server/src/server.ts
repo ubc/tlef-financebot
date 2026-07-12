@@ -1,6 +1,7 @@
 import { createApp } from './app';
 import { env, assertConfig } from './config/env';
 import { connectMongo, closeMongo } from './components/mongodb';
+import { ensureIndexes } from './components/mongodb/collections';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
 
@@ -17,6 +18,9 @@ async function main(): Promise<void> {
   // database fails fast at startup rather than on the first request.
   await connectMongo();
   console.log('[server] connected to MongoDB');
+
+  await ensureIndexes();
+  console.log('[server] MongoDB indexes ensured');
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.
