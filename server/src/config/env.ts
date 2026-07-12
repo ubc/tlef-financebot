@@ -10,6 +10,20 @@ function optional(key: string, fallback: string): string {
   return value === undefined || value === '' ? fallback : value;
 }
 
+const llmDefaultModel = optional('LLM_DEFAULT_MODEL', 'ministral-3:latest');
+
+/** A per-pipeline-step model override that falls back to LLM_DEFAULT_MODEL. */
+function stepModel(key: string): string {
+  return optional(key, llmDefaultModel);
+}
+
+function csvList(key: string): string[] {
+  return optional(key, '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 /**
  * Typed view over the environment variables this skeleton actually reads.
  *
@@ -61,9 +75,24 @@ export const env = {
   // and ubc-llm-sandbox (and OpenAI-compatible gateways); `apiKey` by
   // openai / anthropic / ubc-llm-sandbox. Defaults target a local Ollama.
   llmProvider: optional('LLM_PROVIDER', 'ollama'),
-  llmDefaultModel: optional('LLM_DEFAULT_MODEL', 'ministral-3:latest'),
+  llmDefaultModel,
   llmEndpoint: optional('LLM_ENDPOINT', 'http://localhost:11434'),
   llmApiKey: optional('LLM_API_KEY', ''),
+
+  // Per-pipeline-step model selection (PRD §2 / AD-07): generator, structure
+  // validator, reviewer, and mastery evaluator are independently assignable.
+  // Each falls back to LLM_DEFAULT_MODEL when unset.
+  llmModelGenerator: stepModel('LLM_MODEL_GENERATOR'),
+  llmModelValidator: stepModel('LLM_MODEL_VALIDATOR'),
+  llmModelReviewer: stepModel('LLM_MODEL_REVIEWER'),
+  llmModelMasteryEvaluator: stepModel('LLM_MODEL_MASTERY_EVALUATOR'),
+
+  // CWL PUIDs granted the platform Admin role (PRD §3, §8). Comma-separated.
+  adminCwlAllowlist: csvList('ADMIN_CWL_ALLOWLIST'),
+
+  // Resource limits for parameterized-question worker_threads (PRD §2).
+  paramWorkerTimeoutMs: Number(optional('PARAM_WORKER_TIMEOUT_MS', '2000')),
+  paramWorkerMemoryMb: Number(optional('PARAM_WORKER_MEMORY_MB', '64')),
 
   // GenAI embeddings (see server/src/components/genai/embeddings). Provider is
   // `fastembed` (local, self-contained) or an LLM provider name (ollama |
@@ -80,3 +109,21 @@ export const env = {
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';
+
+/**
+ * Fail fast on insecure/incomplete production configuration. Called from
+ * server.ts before listening. Development is never blocked.
+ */
+export function assertConfig(): void {
+  if (!isProduction) return;
+  const problems: string[] = [];
+  if (env.sessionSecret === 'dev-insecure-secret-change-me') {
+    problems.push('SESSION_SECRET must be set to a real secret in production.');
+  }
+  if (Number.isNaN(env.paramWorkerTimeoutMs) || Number.isNaN(env.paramWorkerMemoryMb)) {
+    problems.push('PARAM_WORKER_TIMEOUT_MS / PARAM_WORKER_MEMORY_MB must be numbers.');
+  }
+  if (problems.length > 0) {
+    throw new Error(`Invalid production configuration:\n- ${problems.join('\n- ')}`);
+  }
+}

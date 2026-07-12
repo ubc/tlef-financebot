@@ -1,0 +1,38 @@
+# Local backing services for tlef-financebot. Mirrors staging/production shape
+# (PRD §2 Infrastructure): MongoDB (app data + sessions), Qdrant (vectors),
+# and a mock SAML IdP standing in for UBC CWL Shibboleth.
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongoadmin
+      MONGO_INITDB_ROOT_PASSWORD: secret
+    volumes:
+      - mongo-data:/data/db
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  saml-idp:
+    image: kristophjunge/test-saml-idp:1.15
+    ports:
+      # env.ts defaults expect the IdP at localhost:6122 (SimpleSAMLphp paths).
+      - "6122:8080"
+    environment:
+      SIMPLESAMLPHP_SP_ENTITY_ID: http://localhost:3000
+      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: http://localhost:3000/auth/ubcshib/callback
+      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: http://localhost:3000/auth/logout/callback
+    volumes:
+      # Custom test users carrying the UBC attributes the app reads
+      # (ubcEduCwlPuid, eduPersonAffiliation, mail, uid, givenName, sn).
+      - ./docker/saml/authsources.php:/var/www/simplesamlphp/config/authsources.php
+
+volumes:
+  mongo-data:
+  qdrant-data:

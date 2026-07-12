@@ -1,6 +1,9 @@
 import path from 'node:path';
 import express, { type Express } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { isProduction } from './config/env';
 import { healthRouter } from './routes/health.routes';
 import { notesRouter } from './routes/notes.routes';
 import { ragRouter } from './routes/rag.routes';
@@ -19,6 +22,19 @@ const CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../client/public');
  */
 export function createApp(): Express {
   const app = express();
+
+  app.use(
+    helmet({
+      // The client is plain static files served same-origin; keep CSP simple.
+      contentSecurityPolicy: isProduction ? undefined : false,
+    }),
+  );
+  // Generous global API limit — protects against runaways, not normal use
+  // (concurrency target is 250 active sessions, PRD §2).
+  app.use(
+    '/api',
+    rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false }),
+  );
 
   app.use(cors());
   app.use(express.json());
