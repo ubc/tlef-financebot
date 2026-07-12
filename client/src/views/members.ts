@@ -5,26 +5,11 @@
 // back to the landing screen via the api.ts unauthorized handler).
 import { getMembersOverview, type MembersOverview } from '../api.js';
 import { el } from '../dom.js';
-import { firstAttr } from '../auth.js';
 import { eyebrow, badge, loadingState, errorState } from '../ui.js';
-
-function attributesTable(attributes: Record<string, unknown>): HTMLElement {
-  const rows = Object.entries(attributes);
-  if (!rows.length) {
-    return el('p', { class: 'state__text', text: 'The IdP returned no attributes for this user.' });
-  }
-  return el(
-    'dl',
-    { class: 'attrs' },
-    ...rows.flatMap(([key, value]) => [
-      el('dt', { class: 'attrs__key mono', text: key }),
-      el('dd', { class: 'attrs__val', text: firstAttr(value) || '—' }),
-    ]),
-  );
-}
 
 function renderOverview(data: MembersOverview): HTMLElement {
   const signedInAt = new Date(data.serverTime).toLocaleString();
+  const affiliations = data.affiliations.length ? data.affiliations.join(', ') : '—';
   return el(
     'div',
     {},
@@ -33,12 +18,10 @@ function renderOverview(data: MembersOverview): HTMLElement {
       'div',
       { class: 'kv-list' },
       el('div', { class: 'kv' }, el('span', { class: 'kv__key', text: 'Name' }), el('span', { text: data.displayName })),
-      el('div', { class: 'kv' }, el('span', { class: 'kv__key', text: 'Subject (nameID)' }), el('span', { class: 'mono', text: data.nameId })),
+      el('div', { class: 'kv' }, el('span', { class: 'kv__key', text: 'CWL PUID' }), el('span', { class: 'mono', text: data.puid })),
+      el('div', { class: 'kv' }, el('span', { class: 'kv__key', text: 'Affiliations' }), el('span', { class: 'mono', text: affiliations })),
       el('div', { class: 'kv' }, el('span', { class: 'kv__key', text: 'Server time' }), el('span', { class: 'mono', text: signedInAt })),
     ),
-    el('div', { class: 'divider' }),
-    el('p', { class: 'members__attrs-label', text: 'SAML attributes' }),
-    attributesTable(data.attributes),
   );
 }
 

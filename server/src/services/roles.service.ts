@@ -1,4 +1,5 @@
-import { rolesOf, type AppUser } from '../components/auth';
+import { rolesOf } from '../components/auth';
+import type { User } from '../types/domain';
 
 // EXAMPLE (role-based authorization reference). Turns the signed-in user into a
 // role-specific "area" payload. Pair it with the ensureRole() guard on its route
@@ -40,7 +41,7 @@ const AREAS: Record<string, { title: string; blurb: string; capabilities: string
 export const ROLE_AREAS = Object.keys(AREAS);
 
 /** Build the area payload for `role` from the signed-in user. */
-export function buildRoleArea(role: string, user: AppUser): RoleArea {
+export function buildRoleArea(role: string, user: User): RoleArea {
   const info = AREAS[role];
   if (!info) {
     throw Object.assign(new Error(`Unknown role area: ${role}`), { status: 404 });

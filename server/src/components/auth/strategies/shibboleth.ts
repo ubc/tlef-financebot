@@ -3,6 +3,7 @@ import path from 'node:path';
 import passport from 'passport';
 import { Strategy as UBCShibStrategy } from 'passport-ubcshib';
 import { env } from '../../../config/env';
+import { upsertUserFromSaml } from '../../../services/users.service';
 
 /**
  * The authenticated user we store in the session. In this boilerplate we keep
@@ -12,6 +13,7 @@ import { env } from '../../../config/env';
  */
 export interface AppUser {
   nameId: string;
+  puid: string;
   attributes: Record<string, unknown>;
 }
 
@@ -100,11 +102,10 @@ export function registerShibbolethStrategy(): void {
       validateInResponseTo: false,
     },
     (profile, done) => {
-      const user: AppUser = {
-        nameId: profile.nameID,
-        attributes: profile.attributes ?? {},
-      };
-      done(null, user);
+      // ST-E01: PUID -> FinanceBot identity on every login; no profile step.
+      upsertUserFromSaml(profile.attributes ?? {})
+        .then((user) => done(null, { nameId: profile.nameID, puid: user.puid, attributes: profile.attributes ?? {} }))
+        .catch((err) => done(err as Error));
     },
   );
 

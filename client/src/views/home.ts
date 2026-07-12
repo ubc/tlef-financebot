@@ -4,7 +4,23 @@
 import { el } from '../dom.js';
 import { eyebrow } from '../ui.js';
 import { getSession, displayName } from '../auth.js';
+import type { AuthUser } from '../api.js';
 import { healthCard } from './health.js';
+
+/** The user's primary role, used to route to a role-appropriate home (ST-E01).
+ * Admin wins, then instructor (faculty affiliation), else student. Phase 1
+ * replaces the stub sections below with real views; this split stays. */
+export function primaryRole(user: AuthUser): 'admin' | 'instructor' | 'student' {
+  if (user.isAdmin) return 'admin';
+  if (user.affiliations.includes('faculty')) return 'instructor';
+  return 'student';
+}
+
+const ROLE_HEADINGS: Record<ReturnType<typeof primaryRole>, string> = {
+  admin: 'Admin console',
+  instructor: 'Instructor dashboard',
+  student: 'My courses',
+};
 
 interface ComponentInfo {
   glyph: string;
@@ -34,6 +50,7 @@ function componentCard(info: ComponentInfo): HTMLElement {
 export function renderHome(outlet: HTMLElement): void {
   const user = getSession().user;
   const greeting = user ? `Welcome, ${displayName(user)}` : 'Welcome';
+  const role = user ? primaryRole(user) : undefined;
 
   outlet.append(
     el(
@@ -44,12 +61,14 @@ export function renderHome(outlet: HTMLElement): void {
         { class: 'view__intro' },
         eyebrow('Overview'),
         el('h1', { class: 'view__title', text: greeting }),
-        el('p', {
-          class: 'view__lead',
-          text:
-            'You are signed in. Everything below the fold is a wired-up integration ' +
-            'you can build on — or delete the example pages and keep the shell.',
-        }),
+        role
+          ? el('p', { class: 'view__lead', text: `${ROLE_HEADINGS[role]} — Phase 1 builds this view out. (Signed in as ${role}.)` })
+          : el('p', {
+              class: 'view__lead',
+              text:
+                'You are signed in. Everything below the fold is a wired-up integration ' +
+                'you can build on — or delete the example pages and keep the shell.',
+            }),
       ),
       healthCard(),
       el(

@@ -96,7 +96,7 @@ function buildShell(root: HTMLElement, session: Session): void {
     el(
       'div',
       { class: 'topbar__right' },
-      user ? el('span', { class: 'user mono', title: user.nameId, text: displayName(user) }) : false,
+      user ? el('span', { class: 'user mono', title: user.puid, text: displayName(user) }) : false,
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
