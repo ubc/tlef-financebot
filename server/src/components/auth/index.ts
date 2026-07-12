@@ -1,6 +1,7 @@
 import passport from 'passport';
 import { createSessionMiddleware } from './session';
-import { registerShibbolethStrategy, type AppUser } from './strategies/shibboleth';
+import { registerShibbolethStrategy } from './strategies/shibboleth';
+import { findUserByPuid } from '../../services/users.service';
 
 // Re-export the route guards from passport-ubcshib so app code imports auth
 // helpers from this component rather than the package directly.
@@ -31,10 +32,14 @@ export function configureAuth(): {
   if (!configured) {
     registerShibbolethStrategy();
 
-    // We keep the whole profile in the session (see AppUser). A real app would
-    // serialize only a user id and re-load the user in deserializeUser.
-    passport.serializeUser<AppUser>((user, done) => done(null, user));
-    passport.deserializeUser<AppUser>((user, done) => done(null, user));
+    // Session stores only the CWL PUID; deserialize reloads the domain User from
+    // MongoDB so req.user is the full identity (isAdmin, courseRoles). (ST-E01)
+    passport.serializeUser((user, done) => done(null, (user as { puid: string }).puid));
+    passport.deserializeUser((puid: string, done) => {
+      findUserByPuid(puid)
+        .then((user) => done(null, user ?? false))
+        .catch((err) => done(err as Error));
+    });
 
     configured = true;
   }

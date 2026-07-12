@@ -1,34 +1,36 @@
 // Unit test — a PURE function. buildMembersOverview() has no external
-// dependencies, so it needs no mocks: give it an AppUser, assert the shape.
+// dependencies, so it needs no mocks: give it a domain User, assert the shape.
 import { buildMembersOverview } from '../../server/src/services/members.service';
-import type { AppUser } from '../../server/src/components/auth';
+import type { User } from '../../server/src/types/domain';
+
+/** A minimal domain User fixture; the demo only reads identity fields. */
+function user(over: Partial<User>): User {
+  return {
+    puid: 'PUID-0001',
+    uid: 'ada',
+    displayName: 'Ada Lovelace',
+    email: 'ada@ubc.ca',
+    affiliations: ['faculty'],
+    isAdmin: false,
+    courseRoles: [],
+    createdAt: new Date(),
+    lastLoginAt: new Date(),
+    ...over,
+  };
+}
 
 describe('buildMembersOverview', () => {
-  it('builds a friendly display name from givenName + sn', () => {
-    const user: AppUser = {
-      nameId: '_abc123',
-      attributes: { givenName: 'Ada', sn: 'Lovelace', mail: 'ada@ubc.ca' },
-    };
-    const overview = buildMembersOverview(user);
+  it('exposes the display name and identity from the domain User', () => {
+    const overview = buildMembersOverview(user({ displayName: 'Ada Lovelace', puid: 'PUID-ABC' }));
     expect(overview.displayName).toBe('Ada Lovelace');
-    expect(overview.nameId).toBe('_abc123');
+    expect(overview.puid).toBe('PUID-ABC');
     expect(overview.message).toContain('Ada Lovelace');
-    expect(overview.attributes).toEqual(user.attributes);
+    expect(overview.affiliations).toEqual(['faculty']);
     expect(typeof overview.serverTime).toBe('string');
   });
 
-  it('takes the first value of an array-valued SAML attribute', () => {
-    const overview = buildMembersOverview({
-      nameId: 'x',
-      attributes: { givenName: ['Grace'], sn: ['Hopper'] },
-    });
-    expect(overview.displayName).toBe('Grace Hopper');
-  });
-
-  it('falls back to mail, then nameId, when no name attributes are present', () => {
-    expect(buildMembersOverview({ nameId: 'x', attributes: { mail: 'a@b.ca' } }).displayName).toBe(
-      'a@b.ca',
-    );
-    expect(buildMembersOverview({ nameId: 'only-id', attributes: {} }).displayName).toBe('only-id');
+  it('falls back to email, then uid, when displayName is empty', () => {
+    expect(buildMembersOverview(user({ displayName: '', email: 'a@b.ca' })).displayName).toBe('a@b.ca');
+    expect(buildMembersOverview(user({ displayName: '', email: '', uid: 'only-uid' })).displayName).toBe('only-uid');
   });
 });

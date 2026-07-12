@@ -1,27 +1,21 @@
 import type { RequestHandler } from 'express';
-import type { AppUser } from './strategies/shibboleth';
 
-// Authorization helpers, keyed on the SAML `eduPersonAffiliation` attribute.
-// This is the layer on top of authentication: authentication answers "who are
-// you?" (see guards.ts / ensureApiAuthenticated); this answers "what may you
-// do?". See components/auth/AGENTS.md.
-
-/** The SAML attribute that carries the user's role(s) (friendly name). */
-const AFFILIATION_ATTR = 'eduPersonAffiliation';
+// Authorization helpers, keyed on the user's CWL affiliations. This is the layer
+// on top of authentication: authentication answers "who are you?" (see guards.ts
+// / ensureApiAuthenticated); this answers "what may you do?". The domain User
+// stores affiliations (lower-cased eduPersonAffiliation values) directly (ST-E01).
+// See components/auth/AGENTS.md.
 
 /**
- * The user's role(s), derived from `eduPersonAffiliation`. That attribute is
- * multi-valued in SAML, so this returns a lower-cased array (e.g. `['faculty']`
- * or `['staff', 'faculty']`). Empty when the attribute is absent.
+ * The user's role(s), read from the domain User's `affiliations` (already
+ * lower-cased, e.g. `['faculty']` or `['staff', 'faculty']`). Empty when absent.
  */
-export function rolesOf(user: AppUser | undefined): string[] {
-  const raw = user?.attributes?.[AFFILIATION_ATTR];
-  const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return values.map((value) => String(value).toLowerCase());
+export function rolesOf(user: { affiliations?: string[] } | undefined): string[] {
+  return user?.affiliations ?? [];
 }
 
 /** True if the user holds at least one of `allowed`. */
-export function hasRole(user: AppUser | undefined, ...allowed: string[]): boolean {
+export function hasRole(user: { affiliations?: string[] } | undefined, ...allowed: string[]): boolean {
   const roles = rolesOf(user);
   return allowed.some((role) => roles.includes(role.toLowerCase()));
 }

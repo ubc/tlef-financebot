@@ -1,10 +1,10 @@
-import type { AppUser } from '../components/auth/strategies/shibboleth';
+import type { User as DomainUser } from './domain';
 
-// Make req.user the shape we store in the session (see passport serialize/
-// deserialize in components/auth/index.ts).
+// req.user is the domain User (see passport deserializeUser in
+// components/auth/index.ts, which reloads it from MongoDB by PUID).
 declare global {
   namespace Express {
-    interface User extends AppUser {}
+    interface User extends DomainUser {}
   }
 }
 
