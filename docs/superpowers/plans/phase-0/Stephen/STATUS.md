@@ -1,10 +1,15 @@
 # Stephen — Phase 0 progress
 
-_Last updated: 2026-07-11_
+_Last updated: 2026-07-12_
 
-**Where the code lives:** branch `stephen/phase-0` (not yet merged to `main`).
-The plan folders sync to `main`, but the implementation commits below do **not**
-until this branch is PR'd/merged. Pull `origin/stephen/phase-0` to see the code.
+**Where the code lives:** branch `stephen/phase-0` (PR #3, open, CI green — not
+yet merged to `main`). Branch now includes `origin/main` (Saurav's Task 4 domain
+types merged in). Pull `origin/stephen/phase-0` to see the code. Full suite: 32
+tests green.
+
+**Blocking me right now:** Saurav's **Task 5 (collections.ts / `usersCol()`)**.
+Task 4 (types) is merged — thank you — but Task 7 (PUID identity) imports the
+collection accessors from Task 5, so it stays blocked until Task 5 lands.
 
 ## Done (verified: lint + typecheck + `npm test` 27/27 green)
 
