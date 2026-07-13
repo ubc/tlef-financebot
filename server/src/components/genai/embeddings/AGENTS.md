@@ -81,3 +81,13 @@ can never drift apart.
 - `EmbeddingsModule.create` is async — do not `new` it. `index.ts` caches the
   creation promise so the provider initializes only once.
 - `fastembed` downloads its model on first use (needs network + local disk).
+- **Shim (discovered by the Task 11 ingestion spike):** with the `fastembed`
+  provider, the underlying `EmbeddingsModule.embed()` returns `Float32Array`
+  instances per vector at runtime — not plain `number[]` — despite its
+  declared `number[][]` type. `JSON.stringify(new Float32Array(...))`
+  serializes as `{"0":..,"1":..}` instead of `[..]`, which silently breaks
+  any consumer that sends the vector over JSON (e.g. Qdrant's `upsert`,
+  which then 400s with `"data did not match any variant of untagged enum
+  VectorStruct"`). `index.ts`'s `embed()` now normalizes every vector with
+  `Array.from(vector)` before returning, so the function actually satisfies
+  its declared `number[][]` contract for every provider.

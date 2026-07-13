@@ -30,3 +30,7 @@ npm-debug.log*
 # OS / editor
 .DS_Store
 *.tsbuildinfo
+
+# fastembed local model cache (downloaded on first use by
+# components/genai/embeddings; see scripts/ingest-spike.ts)
+local_cache/
