@@ -51,7 +51,15 @@ export async function getEmbeddings(): Promise<EmbeddingsModule> {
 /** Embed a batch of strings into vectors (one vector per input). */
 export async function embed(texts: string[]): Promise<number[][]> {
   const module = await getEmbeddings();
-  return module.embed(texts);
+  const vectors = await module.embed(texts);
+  // Shim: the fastembed provider path returns Float32Array instances per
+  // vector at runtime (despite the toolkit's number[][] type), which
+  // JSON.stringify serializes as {"0":..,"1":..} instead of an array —
+  // silently breaking any consumer that sends the vector over JSON (e.g.
+  // Qdrant's upsert, which then rejects it with "did not match any variant
+  // of untagged enum VectorStruct"). Normalize to plain arrays so embed()
+  // actually satisfies its declared return type for every provider.
+  return vectors.map((vector) => Array.from(vector));
 }
 
 /** Embed a single string into one vector. */

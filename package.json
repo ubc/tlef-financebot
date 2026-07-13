@@ -39,7 +39,8 @@
     "test:e2e:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
     "test:a11y": "playwright test -c playwright.a11y.config.ts",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "spike:ingest": "tsx scripts/ingest-spike.ts"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.18.0",
