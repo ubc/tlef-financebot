@@ -16,11 +16,13 @@ export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:6118';
-  // Test users live in docker/saml/authsources.php (docker-compose IdP).
-  // instructor1 carries eduPersonAffiliation=faculty, so the role-gated demo
+  // Test users live in the shared docker-simple-saml IdP
+  // (services/docker-simple-saml/config/simplesamlphp/authsources.php).
+  // `faculty` carries eduPersonAffiliation=faculty, so the role-gated demo
   // (faculty area) and the instructor home both exercise real role logic.
-  const username = process.env.E2E_USERNAME ?? 'instructor1';
-  const password = process.env.E2E_PASSWORD ?? 'instructor1pass';
+  // Password equals the username for every user in that IdP.
+  const username = process.env.E2E_USERNAME ?? 'faculty';
+  const password = process.env.E2E_PASSWORD ?? 'faculty';
 
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
 

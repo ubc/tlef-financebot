@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pingMongo } from '../components/mongodb';
 import { pingQdrant } from '../components/qdrant';
+import { pingAcademicApi } from '../components/academic-api';
 import { env } from '../config/env';
 
 export const healthRouter = Router();
@@ -15,13 +16,18 @@ export const healthRouter = Router();
  * components are built up.
  */
 healthRouter.get('/health', async (_req, res) => {
-  const [mongoUp, qdrantUp] = await Promise.all([pingMongo(), pingQdrant()]);
+  const [mongoUp, qdrantUp, academicApiUp] = await Promise.all([
+    pingMongo(),
+    pingQdrant(),
+    pingAcademicApi(),
+  ]);
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     services: {
       mongodb: mongoUp ? 'up' : 'down',
       qdrant: qdrantUp ? 'up' : 'down',
+      academicApi: academicApiUp ? 'up' : 'down',
     },
     genai: {
       llmProvider: env.llmProvider,

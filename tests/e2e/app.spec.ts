@@ -32,7 +32,7 @@ test.describe('app shell (logged in)', () => {
     await expect(page.getByText(/cwl puid/i)).toBeVisible();
   });
 
-  // global-setup logs in as `instructor1` (eduPersonAffiliation=faculty), so only
+  // global-setup logs in as `faculty` (eduPersonAffiliation=faculty), so only
   // the Faculty area should appear,
   // and the server must refuse another role's area (403 -> friendly state).
   test('shows only the matching role area and enforces the others', async ({ page }) => {

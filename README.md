@@ -10,6 +10,7 @@ A runnable client/server app with:
 - SAML/Shibboleth authentication (CWL login) via `passport-ubcshib`, with sessions stored in MongoDB. Most of the app is behind login: a public landing screen (health check + "Log in with CWL"), and after login a sidebar app with the demos and a **gated Members area** — showing how to protect routes with the auth component's `ensureApiAuthenticated()` guard.
 - A Qdrant vector-DB client (collection + upsert + search) and the four GenAI toolkit modules (LLM, embeddings, chunking, document parsing).
 - A small **RAG example** tying them together: ingest text or a file (parse → chunk → embed → upsert), then ask a question (embed → search → LLM). It is clearly labeled "EXAMPLE (safe to delete)", like the notes demo.
+- An **Academic API "Classes" example** (also EXAMPLE, safe to delete): a typed client over the local [FakeAcademicAPI](https://github.com/ubc/FakeAcademicAPI), a role-gated `/api/classes` feature (instructors see the classes they teach and each roster; students see their enrolments), and a Classes view. See "Academic API (classes example)" below.
 
 Each integration is isolated under `server/src/components/` with its own `AGENTS.md`.
 
@@ -31,30 +32,45 @@ Every meaningful folder contains an `AGENTS.md` aimed at LLM coding agents (and 
   - MongoDB — [tlef-mongodb-docker](https://github.com/ubc/tlef-mongodb-docker)
   - SAML IdP — [docker-simple-saml](https://github.com/ubc/docker-simple-saml)
   - Qdrant — the vector database (see "Vector search & RAG" below)
+  - Academic API — [FakeAcademicAPI](https://github.com/ubc/FakeAcademicAPI) (backs the Classes example)
 - For the GenAI defaults: a local [Ollama](https://ollama.com) with a chat model and an embedding model pulled (see "Vector search & RAG"). OpenAI / Anthropic / the UBC LLM Sandbox are drop-in alternatives via env vars.
 
 ## Local development services
 
-All backing services run from the one compose file in this repo — no more
-cloning tlef-mongodb-docker / docker-simple-saml / tlef-qdrant separately:
+The backing services are **not** run from this repo. Each lives in its own
+shared repo (linked in Prerequisites above) so every TLEF project talks to the
+exact same containers. Clone the three next to this one and start each:
 
-    npm run services:up      # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
-    npm run saml:fetch-cert  # writes server/certs/idp.pem from IdP metadata
-    npm run services:down    # stop them again (data is preserved)
+    # MongoDB — root user is mongoadmin / secret; copy the env first, then start
+    cd ../tlef-mongodb-docker && cp .env.example .env && docker compose up -d
 
-Use `npm run services:up`, **not** a bare `docker compose up`. The wrapper first
-frees any of those host ports that a *different* project is holding (by
-`docker stop`-ping the foreign container — data preserved, nothing removed), so
-start order between projects never matters. A bare `docker compose up` fails with
-"port is already allocated" when another project's Mongo/Qdrant is running.
+    # SAML IdP — mock UBC CWL Shibboleth
+    cd ../docker-simple-saml && docker compose up -d
 
-Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
+    # Qdrant — vector database (API key: super-secret-dev-key)
+    cd ../tlef-qdrant && docker compose up -d
+
+    # Academic API — backs the Classes example (client mock-client / mock-secret)
+    cd ../services/FakeAcademicAPI && docker compose up -d
+
+    # Back in this repo: write server/certs/idp.pem from the IdP metadata
+    cd ../tlef-financebot && npm run saml:fetch-cert
+
+This gives MongoDB on :27017, the SAML IdP on :6122, Qdrant on :6333, and the
+Academic API on :3689 — the hosts/ports `.env.example` already expects. Because
+every project shares these containers, start them once and leave them up; there
+is no per-project compose to conflict on ports anymore.
+
+Test users live in the shared IdP
+(`docker-simple-saml/config/simplesamlphp/authsources.php`); the **password
+equals the username**. The e2e suite uses `faculty` (affiliation=faculty) and
+`student`; that file lists many more (`bio_prof`, `cpsc_student`, …).
 
 ## Getting started
 
 ```bash
-# 1. Start all backing services (MongoDB, Qdrant, mock SAML IdP)
-npm run services:up
+# 1. Start the shared backing services (see "Local development services" above):
+#    MongoDB (tlef-mongodb-docker), SAML IdP (docker-simple-saml), Qdrant (tlef-qdrant)
 
 # 2. Make sure Ollama is running with the models pulled
 
@@ -195,6 +211,42 @@ curl -X POST http://localhost:6118/api/rag/query \
 ```
 
 To remove the example, delete `services/rag.service.ts`, `routes/rag.routes.ts`, their client counterparts, and the `ragRouter` line in `server/src/app.ts`.
+
+## Academic API (classes example)
+
+An EXAMPLE (safe to delete) feature showing how to integrate the UBC Academic
+API. Locally it targets [FakeAcademicAPI](https://github.com/ubc/FakeAcademicAPI),
+which mirrors the real API's request/response shapes.
+
+Start it (one of the shared backing services):
+
+```bash
+cd ../services/FakeAcademicAPI && docker compose up -d   # http://localhost:3689
+```
+
+Config (`.env.example` defaults, overridable for the real API on staging/prod):
+
+```bash
+ACADEMIC_API_URL=http://localhost:3689
+ACADEMIC_API_CLIENT_ID=mock-client
+ACADEMIC_API_CLIENT_SECRET=mock-secret
+```
+
+Log in and open **Classes** (visible to faculty and students). Instructors see
+the classes they teach and can open each roster; students see their enrolments
+only. The seed users demonstrate the paths (see `FakeAcademicAPI/USERS.md`):
+`faculty` (teaches CPSC 110), `student` (enrolled in it), `ta_student` (dual
+role), `empty_prof` / `empty_student` (no classes), `cancel_prof` (canceled
+section), `waitlist_prof`, `mega_prof` (500+ roster, exercises pagination),
+`legal_student` (no preferred name), `noemail_student` (no email). Their PUIDs
+are kept identical to the docker-simple-saml IdP users, so a real CWL login
+resolves to the matching Academic API person.
+
+To remove the example, delete `server/src/components/academic-api/`,
+`server/src/services/classes.service.ts`, `server/src/routes/classes.routes.ts`,
+`client/src/views/classes.ts`, the `classesRouter` line in `server/src/app.ts`,
+the `/classes` NAV entry in `client/src/config.ts` and route in
+`client/src/main.ts`, and the Academic API bits of `health.routes.ts` / `env.ts`.
 
 ## Scripts
 

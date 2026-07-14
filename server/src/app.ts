@@ -9,6 +9,7 @@ import { notesRouter } from './routes/notes.routes';
 import { ragRouter } from './routes/rag.routes';
 import { membersRouter } from './routes/members.routes';
 import { rolesRouter } from './routes/roles.routes';
+import { classesRouter } from './routes/classes.routes';
 import { authRouter } from './routes/auth.routes';
 import { configureAuth } from './components/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
@@ -53,6 +54,7 @@ export function createApp(): Express {
   app.use('/api', ragRouter); // EXAMPLE (genai + qdrant RAG demo) — auth-gated; safe to remove.
   app.use('/api', membersRouter); // EXAMPLE (auth-gating reference) — gated members area.
   app.use('/api', rolesRouter); // EXAMPLE (role-based authorization) — per-role areas.
+  app.use('/api', classesRouter); // EXAMPLE (Academic API classes demo) — role-gated; safe to remove.
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
 
   // Serve the compiled client. Any non-API request falls through to here.

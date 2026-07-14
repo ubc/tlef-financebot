@@ -59,5 +59,6 @@ export const NAV: NavItem[] = [
   { path: '/staff', label: 'Staff area', glyph: '▩', group: 'role', roles: ['staff'] },
   { path: '/notes', label: 'Notes', glyph: '▤', group: 'examples', demo: true },
   { path: '/rag', label: 'RAG search', glyph: '❋', group: 'examples', demo: true },
+  { path: '/classes', label: 'Classes', glyph: '▦', group: 'examples', demo: true, roles: ['faculty', 'student'] },
   { path: '/members', label: 'Members area', glyph: '⬡', group: 'account' },
 ];

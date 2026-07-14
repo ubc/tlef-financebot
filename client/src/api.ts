@@ -169,3 +169,53 @@ export function queryRag(question: string): Promise<RagAnswer> {
     body: JSON.stringify({ question }),
   });
 }
+
+// EXAMPLE (Academic API demo): the Classes feature. Mirrors the server's
+// classes.service return shapes. Safe to delete with the classes view.
+
+export interface ClassSummary {
+  sectionId: string;
+  courseCode: string;
+  title: string;
+  sectionStatus: string;
+  schedule: string;
+  registrationStatus?: string;
+}
+
+export interface PeriodGroup {
+  periodId: string;
+  periodName: string;
+  classes: ClassSummary[];
+}
+
+export interface MyClasses {
+  personFound: boolean;
+  teaching: PeriodGroup[];
+  enrolled: PeriodGroup[];
+}
+
+export interface RosterStudent {
+  studentId: string;
+  name: string;
+  email: string;
+  registrationStatus: string;
+  /** The raw Academic API records, passed through for the expandable view. */
+  person: Record<string, unknown> | null;
+  registration: Record<string, unknown>;
+}
+
+export interface ClassList {
+  sectionId: string;
+  courseCode: string;
+  title: string;
+  periodName: string;
+  students: RosterStudent[];
+}
+
+export function fetchMyClasses(): Promise<MyClasses> {
+  return request<MyClasses>('/api/classes');
+}
+
+export function fetchClassList(sectionId: string): Promise<ClassList> {
+  return request<ClassList>(`/api/classes/${encodeURIComponent(sectionId)}/students`);
+}

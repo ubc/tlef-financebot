@@ -38,4 +38,19 @@ test.describe('signed in', () => {
 
     expect(results.violations).toEqual([]);
   });
+
+  // EXAMPLE (Academic API demo). global-setup signs in as `faculty`, who teaches
+  // CPSC 110 — scan both the classes list and a roster drill-down.
+  test('classes page and roster have no WCAG A/AA violations', async ({ page }) => {
+    await page.goto('/#/classes');
+    const cpsc110 = page.getByRole('button', { name: /CPSC 110 101/ });
+    await cpsc110.waitFor();
+    await freezeAnimations(page);
+    expect((await new AxeBuilder({ page }).withTags(WCAG_AA).analyze()).violations).toEqual([]);
+
+    await cpsc110.click();
+    await page.getByRole('heading', { name: /CPSC 110 101/ }).waitFor();
+    await freezeAnimations(page);
+    expect((await new AxeBuilder({ page }).withTags(WCAG_AA).analyze()).violations).toEqual([]);
+  });
 });

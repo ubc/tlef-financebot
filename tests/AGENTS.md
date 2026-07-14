@@ -32,9 +32,11 @@ Reports land in (all git-ignored): `coverage-reports/unit-monocart/index.html`
   Ollama / network is required.
 - **e2e + a11y:** the app must be able to boot, so **MongoDB + the SAML IdP** must
   be running and the **IdP certificate** present (`npm run saml:fetch-cert`). The
-  Playwright `webServer` builds and starts the app automatically (or reuses a
-  running `npm run dev`). Qdrant/Ollama are **not** needed — RAG is covered by the
-  unit layer with mocked components. Install browsers once: `npx playwright install chromium`.
+  **classes** e2e/a11y specs also need **FakeAcademicAPI** on :3689
+  (`cd ../services/FakeAcademicAPI && docker compose up -d`). The Playwright
+  `webServer` builds and starts the app automatically (or reuses a running
+  `npm run dev`). Qdrant/Ollama are **not** needed — RAG is covered by the unit
+  layer with mocked components. Install browsers once: `npx playwright install chromium`.
 
 ## Writing unit / integration tests (`tests/unit/*.test.ts`)
 
