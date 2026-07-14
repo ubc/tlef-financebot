@@ -7,12 +7,20 @@ done, merged to `main` except Task 13 which is in **PR #10** (open). Latest work
 lives on branch `stephen/phase-0`. Full suite green: **39 unit + 8 e2e**, lint +
 typecheck clean.
 
+> **Update (post–Phase 0):** the per-project `docker-compose.yml` +
+> `docker/saml/authsources.php` + `npm run services:up` wrapper described below
+> have since been **removed**. Backing services now run from the shared repos
+> under `../services/` (`tlef-mongodb-docker`, `docker-simple-saml`,
+> `tlef-qdrant`), and the test users are the shared IdP's `faculty` / `student` /
+> `staff` (password = username) — not `student1`/`instructor1`. The historical
+> notes below are kept for context but reflect the old approach.
+
 ## Done — my tasks (Dev A)
 
 | Task | What | Status |
 |---|---|---|
 | 1 | Pin toolkit exact; add helmet, rate-limit, zod, katex/marked/dompurify, eslint | merged (`d073ea7`) |
-| 2 | `docker-compose.yml` (Mongo, Qdrant, mock SAML IdP) + role-differentiated test users | merged (`4a2a9f3`) |
+| 2 | Backing services (Mongo, Qdrant, SAML IdP) — originally a per-project `docker-compose.yml` (`4a2a9f3`), **since replaced by the shared `../services/` repos** | merged, later superseded |
 | 3 | Per-step LLM model config, admin allowlist, worker limits, `assertConfig()` | merged (`1d2be2a`) |
 | 6 | `validate()` zod middleware + helmet + `/api` rate limiting | merged (`f2e803a`) |
 | 7 | PUID-keyed identity upserted on CWL login; session stores PUID only | merged (`65a806f`) |
@@ -20,32 +28,43 @@ typecheck clean.
 | 12 | eslint flat config + GitHub Actions CI (lint/typecheck/jest) | merged (`49e86d0`) |
 | 13 | **walking-skeleton e2e** + fixes to make the mock-CWL workflow run | **PR #10 (open)** (`63c4378`) |
 
-## Verified live (Docker up)
+## Verified live (services up)
 
-Ran the full Phase 0 exit path on my machine: `docker compose` IdP + Mongo +
+Ran the full Phase 0 exit path on my machine: the shared IdP + Mongo (+ Qdrant) +
 `saml:fetch-cert` + `npm run build && npm start` → `npx playwright test`.
 **8/8 e2e pass**, including both walking-skeleton specs (mock CWL login →
 session persists across reload → role-appropriate home → PUID identity).
+(Verified originally against the per-project compose stack; the same path now
+runs against the shared `../services/` containers.)
 
 ## Task 13 fixes worth knowing (in PR #10)
 
 - **docker-compose SP port `3000` → `6118`**: Task 2 registered the SAML SP on
   env.ts's stale `:3000` default, but the app runs on `:6118` — the IdP was
   rejecting every login. Fixed.
-- **e2e global-setup**: log in as `instructor1`/`instructor1pass` (our compose
-  IdP users), and match the SimpleSAMLphp login button by role (it's a bare
-  `<button>`, no `type=submit`).
+- **e2e global-setup**: log in as `faculty`/`faculty` (shared IdP user; password =
+  username), and match the SimpleSAMLphp login button by role (it's a bare
+  `<button>`, no `type=submit`). _(Originally logged in as `instructor1` against
+  the per-project compose IdP.)_
 - **app.spec / config.test**: updated for the Task 8 PUID shape and made the
   SESSION_SECRET case hermetic against a local `.env`.
 
-## New: `npm run services:up` (commit `83ae779`, in PR #10)
+## Backing services (current approach)
 
-A bare `docker compose up` fails with "port is already allocated" when another
-project holds 27017/6333/6122. **Use `npm run services:up`** instead — a wrapper
-(`scripts/services-up.sh`) that `docker stop`s only the *foreign* container on
-each port (data preserved; never rm/`down -v`; never our own containers), then
-runs compose. Start order between projects no longer matters. `services:down`
-stops our stack. Documented in `AGENTS.md` + `README.md`.
+> The `npm run services:up` wrapper (`scripts/services-up.sh`, commit `83ae779`)
+> that once lived here has been **removed**. It only existed because the
+> per-project compose fought other projects for host ports 27017/6333/6122.
+
+Services now run from their own shared repos under `../services/`, so there is no
+per-project compose to conflict — start each once and leave it up:
+
+```bash
+cd ../services/tlef-mongodb-docker && cp .env.example .env && docker compose up -d
+cd ../services/docker-simple-saml && docker compose up -d
+cd ../services/tlef-qdrant && docker compose up -d
+```
+
+Documented in `AGENTS.md` + `README.md`.
 
 ## Note: I touched the client auth layer
 
@@ -66,4 +85,4 @@ same files.
 
 1. **Review + merge PR #10** — it's the joint Phase 0 exit gate.
 2. Optionally re-run the walking-skeleton e2e on your machine from a fresh clone
-   (`npm run services:up && npm run saml:fetch-cert && npm run build && npx playwright test`).
+   (start the shared `../services/` containers, then `npm run saml:fetch-cert && npm run build && npx playwright test`).
