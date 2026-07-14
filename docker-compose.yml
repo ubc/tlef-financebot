@@ -25,9 +25,12 @@ services:
       # env.ts defaults expect the IdP at localhost:6122 (SimpleSAMLphp paths).
       - "6122:8080"
     environment:
-      SIMPLESAMLPHP_SP_ENTITY_ID: http://localhost:3000
-      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: http://localhost:3000/auth/ubcshib/callback
-      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: http://localhost:3000/auth/logout/callback
+      # Must match the app's runtime port + SAML_ISSUER (.env.example → 6118),
+      # not env.ts's stale 3000 default. The app is the SAML SP; the IdP only
+      # accepts requests from an SP entity/ACS it has registered.
+      SIMPLESAMLPHP_SP_ENTITY_ID: http://localhost:6118
+      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: http://localhost:6118/auth/ubcshib/callback
+      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: http://localhost:6118/auth/logout/callback
     volumes:
       # Custom test users carrying the UBC attributes the app reads
       # (ubcEduCwlPuid, eduPersonAffiliation, mail, uid, givenName, sn).

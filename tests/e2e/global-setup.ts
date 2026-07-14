@@ -16,8 +16,11 @@ export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:6118';
-  const username = process.env.E2E_USERNAME ?? 'faculty';
-  const password = process.env.E2E_PASSWORD ?? 'faculty';
+  // Test users live in docker/saml/authsources.php (docker-compose IdP).
+  // instructor1 carries eduPersonAffiliation=faculty, so the role-gated demo
+  // (faculty area) and the instructor home both exercise real role logic.
+  const username = process.env.E2E_USERNAME ?? 'instructor1';
+  const password = process.env.E2E_PASSWORD ?? 'instructor1pass';
 
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
 
@@ -28,7 +31,9 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await page.goto(`${baseURL}/auth/ubcshib`);
     await page.fill('input[name="username"]', username);
     await page.fill('input[name="password"]', password);
-    await page.click('button[type="submit"], input[type="submit"]');
+    // The SimpleSAMLphp login button is a bare <button>Login</button> (no
+    // type attribute), so match by role/name rather than [type=submit].
+    await page.getByRole('button', { name: /login|log in|sign in|yes/i }).first().click();
     // The IdP posts the signed assertion back to our ACS; we land on the app.
     await page.waitForURL(`${baseURL}/**`, { timeout: 30_000 });
 
