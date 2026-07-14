@@ -15,6 +15,7 @@ import { renderNotes } from './views/notes.js';
 import { renderRag } from './views/rag.js';
 import { renderMembers } from './views/members.js';
 import { renderRole } from './views/role.js';
+import { renderClasses } from './views/classes.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 const ROUTES: Route[] = [
@@ -24,6 +25,7 @@ const ROUTES: Route[] = [
   { path: '/staff', render: renderRole('staff') },
   { path: '/notes', render: renderNotes },
   { path: '/rag', render: renderRag },
+  { path: '/classes', render: renderClasses },
   { path: '/members', render: renderMembers },
 ];
 
