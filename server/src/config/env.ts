@@ -70,6 +70,13 @@ export const env = {
   qdrantApiKey: optional('QDRANT_API_KEY', ''),
   qdrantCollection: optional('QDRANT_COLLECTION', 'financebot'),
 
+  // UBC Academic API (see server/src/components/academic-api). Defaults match
+  // the local FakeAcademicAPI container, which mirrors the real API's shapes.
+  // On staging/production, point these at the real Academic API + credentials.
+  academicApiUrl: optional('ACADEMIC_API_URL', 'http://localhost:3689'),
+  academicApiClientId: optional('ACADEMIC_API_CLIENT_ID', 'mock-client'),
+  academicApiClientSecret: optional('ACADEMIC_API_CLIENT_SECRET', 'mock-secret'),
+
   // GenAI LLM (see server/src/components/genai/llm). Provider is one of
   // ollama | openai | anthropic | ubc-llm-sandbox. `endpoint` is used by ollama
   // and ubc-llm-sandbox (and OpenAI-compatible gateways); `apiKey` by

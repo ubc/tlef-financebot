@@ -44,6 +44,30 @@ describe('config: admin allowlist and worker limits', () => {
   });
 });
 
+describe('config: Academic API', () => {
+  it('defaults to the local FakeAcademicAPI container', () => {
+    const { env } = loadEnv({
+      ACADEMIC_API_URL: '',
+      ACADEMIC_API_CLIENT_ID: '',
+      ACADEMIC_API_CLIENT_SECRET: '',
+    });
+    expect(env.academicApiUrl).toBe('http://localhost:3689');
+    expect(env.academicApiClientId).toBe('mock-client');
+    expect(env.academicApiClientSecret).toBe('mock-secret');
+  });
+
+  it('uses overrides when set (real API on staging/production)', () => {
+    const { env } = loadEnv({
+      ACADEMIC_API_URL: 'https://api.example.ubc.ca',
+      ACADEMIC_API_CLIENT_ID: 'real-id',
+      ACADEMIC_API_CLIENT_SECRET: 'real-secret',
+    });
+    expect(env.academicApiUrl).toBe('https://api.example.ubc.ca');
+    expect(env.academicApiClientId).toBe('real-id');
+    expect(env.academicApiClientSecret).toBe('real-secret');
+  });
+});
+
 describe('assertConfig (production safety)', () => {
   it('throws in production when SESSION_SECRET is the dev default', () => {
     // Set the dev-default value explicitly so the case is hermetic even when a
