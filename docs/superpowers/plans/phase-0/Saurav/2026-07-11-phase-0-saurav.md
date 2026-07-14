@@ -47,7 +47,7 @@ stack on `main`) → Task 13 (joint, with Stephen).
 | Dependency | Direction | Effect |
 |---|---|---|
 | Stephen's Task 1 (pin deps) | Stephen → everyone | Nothing branches until Task 1 is on `main`. Task 9's katex/marked/dompurify and Task 5's typecheck rely on it. |
-| Stephen's Task 2 (docker stack) | Stephen → Task 11 | The ingestion spike needs Qdrant from the compose stack. If blocked, do Tasks 9/10 first. |
+| Stephen's Task 2 (shared services) | Stephen → Task 11 | The ingestion spike needs the shared Qdrant up. If blocked, do Tasks 9/10 first. |
 | Task 4 (domain types) | Saurav → Stephen's Task 7 | `User` type + `usersCol()` (Task 5) must exist before Stephen's users service. **Merge Tasks 4/5 early — Stephen is blocked on them.** |
 | Task 5 (collections) | Saurav → Stephen's Task 7 | Same as above. |
 
@@ -191,7 +191,7 @@ git commit -m "docs: Phase-1 REST API contract (coordination artifact)"
 
 ### Task 11: Toolkit ingestion spike — parse → chunk → embed → Qdrant
 
-Requires Stephen's Tasks 1 (pinned versions) and 2 (docker stack) merged.
+Requires Stephen's Tasks 1 (pinned versions) and 2 (shared services up) merged.
 
 **Files:**
 - Create: `scripts/ingest-spike.ts`
@@ -204,7 +204,7 @@ Requires Stephen's Tasks 1 (pinned versions) and 2 (docker stack) merged.
 
 - [ ] **Step 1: Create the fixture** — `tests/fixtures/sample-material.md`, the time-value-of-money content from the core document, Task 11 Step 1 (PV formula, annuities, perpetuities sections).
 - [ ] **Step 2: Write `scripts/ingest-spike.ts`** — the complete script from the core document, Task 11 Step 2: parse fixture → chunk → embed → `ensureCollection`/`upsertPoints` on a `spike-course` collection → embed a perpetuity query → search top 3 → assert the top hit mentions perpetuities → exit non-zero on failure. Check the actual exported names in each `components/genai/*/index.ts` and `components/qdrant/index.ts` before running; adjust imports, not the flow.
-- [ ] **Step 3: Add the script and run it** — `"spike:ingest": "tsx scripts/ingest-spike.ts"`; then `docker compose up -d && npm run spike:ingest` → the four `[spike]` progress lines and final `OK`. If a toolkit API mismatch surfaces (pre-1.0 churn), fix it inside the affected `components/genai/<module>/index.ts` wrapper (that is the shim point) and record the shim in that module's `AGENTS.md`.
+- [ ] **Step 3: Add the script and run it** — `"spike:ingest": "tsx scripts/ingest-spike.ts"`; then `(cd ../services/tlef-qdrant && docker compose up -d) && npm run spike:ingest` → the four `[spike]` progress lines and final `OK`. If a toolkit API mismatch surfaces (pre-1.0 churn), fix it inside the affected `components/genai/<module>/index.ts` wrapper (that is the shim point) and record the shim in that module's `AGENTS.md`.
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -222,7 +222,7 @@ Saurav's share of the sync point:
 - [ ] **Step 1: Fresh-clone verification on Saurav's machine**
 
 ```bash
-docker compose up -d && npm ci && npm run saml:fetch-cert && npm run build
+(cd ../services/tlef-mongodb-docker && docker compose up -d) && (cd ../services/docker-simple-saml && docker compose up -d) && (cd ../services/tlef-qdrant && docker compose up -d) && npm ci && npm run saml:fetch-cert && npm run build
 npm run test:e2e -- tests/e2e/walking-skeleton.spec.ts
 ```
 Expected: PASS. Fix anything it surfaces in Dev B files (types, collections, vendor script); anything in Dev A files goes to Stephen, not fixed silently.

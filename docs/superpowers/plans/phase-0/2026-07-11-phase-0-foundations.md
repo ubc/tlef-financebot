@@ -104,155 +104,98 @@ git commit -m "chore: pin ubc-genai-toolkit versions exactly; add helmet, rate-l
 
 ---
 
-### Task 2: docker-compose for MongoDB, Qdrant, and the mock SAML IdP
+### Task 2: Start the shared backing services (MongoDB, Qdrant, SAML IdP)
 
 **Owner:** Dev A
 
+The backing services are **not** run from this repo. Each lives in its own shared
+repo under `../services/` so every TLEF project talks to the exact same
+containers (see the root README "Local development services"). This task is
+wiring the app to those shared services and documenting the startup, not writing
+a per-project `docker-compose.yml`.
+
 **Files:**
-- Create: `docker-compose.yml`
-- Create: `docker/saml/authsources.php`
 - Modify: `README.md` (local setup section)
 
 **Interfaces:**
 - Consumes: the env defaults in `server/src/config/env.ts` (Mongo on `mongodb://mongoadmin:secret@localhost:27017/?authSource=admin`, Qdrant on `http://localhost:6333`, IdP on `http://localhost:6122/simplesaml/...`).
-- Produces: `docker compose up -d` brings up all three backing services on the exact hosts/ports the existing config defaults expect.
+- Produces: the three shared containers running on the exact hosts/ports the existing config defaults expect.
 
-- [ ] **Step 1: Write `docker-compose.yml`**
+- [ ] **Step 1: Clone (once) and start the shared services**
 
-```yaml
-# Local backing services for tlef-financebot. Mirrors staging/production shape
-# (PRD §2 Infrastructure): MongoDB (app data + sessions), Qdrant (vectors),
-# and a mock SAML IdP standing in for UBC CWL Shibboleth.
-services:
-  mongodb:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: mongoadmin
-      MONGO_INITDB_ROOT_PASSWORD: secret
-    volumes:
-      - mongo-data:/data/db
+Each service is its own repo next to this one. Clone the three if you don't have
+them, then start each with its own compose file:
 
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant-data:/qdrant/storage
+```bash
+# MongoDB — root user mongoadmin/secret; copy the env once before first start
+cd ../services/tlef-mongodb-docker && cp .env.example .env && docker compose up -d
 
-  saml-idp:
-    image: kristophjunge/test-saml-idp:1.15
-    ports:
-      # env.ts defaults expect the IdP at localhost:6122 (SimpleSAMLphp paths).
-      - "6122:8080"
-    environment:
-      SIMPLESAMLPHP_SP_ENTITY_ID: http://localhost:3000
-      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: http://localhost:3000/auth/ubcshib/callback
-      SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE: http://localhost:3000/auth/logout/callback
-    volumes:
-      # Custom test users carrying the UBC attributes the app reads
-      # (ubcEduCwlPuid, eduPersonAffiliation, mail, uid, givenName, sn).
-      - ./docker/saml/authsources.php:/var/www/simplesamlphp/config/authsources.php
+# SAML IdP — mock UBC CWL Shibboleth (SimpleSAMLphp on :6122)
+cd ../services/docker-simple-saml && docker compose up -d
 
-volumes:
-  mongo-data:
-  qdrant-data:
+# Qdrant — vector DB on :6333 (API key super-secret-dev-key)
+cd ../services/tlef-qdrant && docker compose up -d
 ```
 
-- [ ] **Step 2: Write `docker/saml/authsources.php` with role-differentiated test users**
+Start them once and leave them up; because every project shares these
+containers, there is no per-project compose to conflict on host ports.
 
-```php
-<?php
-// Test users for local development. Each carries the SAML attributes
-// passport-ubcshib is configured to request (see
-// server/src/components/auth/strategies/shibboleth.ts):
-//   uid, ubcEduCwlPuid, mail, eduPersonAffiliation, givenName, sn,
-//   eduPersonPrincipalName.
-// eduPersonAffiliation drives the role-appropriate home stub:
-//   faculty -> instructor, student -> student, staff -> staff.
-$config = [
-    'admin' => ['core:AdminPassword'],
-    'example-userpass' => [
-        'exampleauth:UserPass',
-        'student1:student1pass' => [
-            'uid' => ['student1'],
-            'ubcEduCwlPuid' => ['PUID-STUDENT-0001'],
-            'mail' => ['student1@example.ubc.ca'],
-            'eduPersonAffiliation' => ['student'],
-            'givenName' => ['Sam'],
-            'sn' => ['Student'],
-            'eduPersonPrincipalName' => ['student1@ubc.ca'],
-        ],
-        'instructor1:instructor1pass' => [
-            'uid' => ['instructor1'],
-            'ubcEduCwlPuid' => ['PUID-INSTRUCTOR-0001'],
-            'mail' => ['instructor1@example.ubc.ca'],
-            'eduPersonAffiliation' => ['faculty'],
-            'givenName' => ['Ida'],
-            'sn' => ['Instructor'],
-            'eduPersonPrincipalName' => ['instructor1@ubc.ca'],
-        ],
-        'ta1:ta1pass' => [
-            'uid' => ['ta1'],
-            'ubcEduCwlPuid' => ['PUID-TA-0001'],
-            'mail' => ['ta1@example.ubc.ca'],
-            'eduPersonAffiliation' => ['student', 'staff'],
-            'givenName' => ['Tao'],
-            'sn' => ['Assistant'],
-            'eduPersonPrincipalName' => ['ta1@ubc.ca'],
-        ],
-        'admin1:admin1pass' => [
-            'uid' => ['admin1'],
-            'ubcEduCwlPuid' => ['PUID-ADMIN-0001'],
-            'mail' => ['admin1@example.ubc.ca'],
-            'eduPersonAffiliation' => ['staff'],
-            'givenName' => ['Ada'],
-            'sn' => ['Admin'],
-            'eduPersonPrincipalName' => ['admin1@ubc.ca'],
-        ],
-    ],
-];
-```
+- [ ] **Step 2: Confirm this app's SP is registered in the shared IdP**
 
-- [ ] **Step 3: Bring the stack up and fetch the IdP certificate**
+The shared `docker-simple-saml` already registers this app as a Service Provider
+(`http://localhost:6118` → ACS `/auth/ubcshib/callback`) in
+`config/simplesamlphp/saml20-sp-remote.php`, and ships role-differentiated test
+users in `config/simplesamlphp/authsources.php`. The **password equals the
+username**; the ones this app uses are `faculty` (eduPersonAffiliation=faculty),
+`student`, and `staff`. No per-project IdP config is needed — if a new SP port is
+ever required, add it to that shared repo, not here.
+
+- [ ] **Step 3: Fetch the IdP certificate**
 
 Run:
 ```bash
-docker compose up -d
 sleep 5
 curl -sf http://localhost:6333/readyz && echo QDRANT_OK
 curl -sf http://localhost:6122/simplesaml/saml2/idp/metadata.php | head -c 200 && echo IDP_OK
 npm run saml:fetch-cert
 ```
-Expected: `QDRANT_OK`, XML metadata output then `IDP_OK`, and the cert script writes `server/certs/idp.pem`. If `saml:fetch-cert` cannot parse this IdP's metadata, extract the `X509Certificate` element from the metadata XML manually into `server/certs/idp.pem` (PEM header/footer + 64-char lines) and note the manual step in the README.
+Expected: `QDRANT_OK`, XML metadata output then `IDP_OK`, and the cert script writes `server/certs/idp.pem` from the shared IdP's metadata.
 
-- [ ] **Step 4: Verify login works end-to-end against the compose IdP**
+- [ ] **Step 4: Verify login works end-to-end against the shared IdP**
 
-Run: `npm run dev` then open `http://localhost:3000`, click "Log in with CWL", sign in as `instructor1` / `instructor1pass`.
-Expected: redirected back to the app, logged in; `GET /api/auth/me` returns the profile with `ubcEduCwlPuid: PUID-INSTRUCTOR-0001`.
+Run: `npm run dev` then open `http://localhost:6118`, click "Log in with CWL", sign in as `faculty` / `faculty`.
+Expected: redirected back to the app, logged in; `GET /api/auth/me` returns the profile with the CWL PUID (`ubcEduCwlPuid` `12345678` for `faculty`).
 
 - [ ] **Step 5: Update `README.md`**
 
-Replace the previous manual-IdP setup instructions with:
+Point the local-setup section at the shared services (not a per-project compose):
 
 ```markdown
 ## Local development services
 
-All backing services run from one compose file:
+The backing services run from their own shared repos under ../services/:
 
-    docker compose up -d        # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
-    npm run saml:fetch-cert     # writes server/certs/idp.pem from IdP metadata
+    cd ../services/tlef-mongodb-docker && cp .env.example .env && docker compose up -d
+    cd ../services/docker-simple-saml && docker compose up -d
+    cd ../services/tlef-qdrant && docker compose up -d
+    cd ../tlef-financebot && npm run saml:fetch-cert   # writes server/certs/idp.pem
 
-Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
+Test users live in the shared IdP; password = username (e.g. faculty, student, staff).
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add docker-compose.yml docker/saml/authsources.php README.md
-git commit -m "feat: docker-compose dev stack (MongoDB, Qdrant, mock SAML IdP with role-differentiated test users)"
+git add README.md
+git commit -m "docs: wire local dev to the shared backing services (Mongo, Qdrant, SAML IdP)"
 ```
+
+> **Note (history):** Phase 0 originally shipped a per-project `docker-compose.yml`
+> + `docker/saml/authsources.php` with `student1`/`instructor1`/`ta1`/`admin1`
+> users, plus an `npm run services:up` wrapper. That was later removed in favour
+> of the shared `../services/` repos above; the test users are now the shared
+> IdP's `faculty`/`student`/`staff` (password = username). This task has been
+> rewritten to the current approach.
 
 ---
 
@@ -1146,10 +1089,10 @@ beforeEach(() => {
 });
 
 const samlAttrs = (over: Record<string, unknown> = {}) => ({
-  ubcEduCwlPuid: 'PUID-STUDENT-0001',
-  uid: 'student1',
-  mail: 'student1@example.ubc.ca',
-  givenName: 'Sam',
+  ubcEduCwlPuid: '87654321',
+  uid: 'student-user',
+  mail: 'student@ubc.ca',
+  givenName: 'Jane',
   sn: 'Student',
   eduPersonAffiliation: ['student'],
   ...over,
@@ -1157,14 +1100,14 @@ const samlAttrs = (over: Record<string, unknown> = {}) => ({
 
 describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
   it('upserts keyed on PUID, setting identity fields and setOnInsert defaults', async () => {
-    findOneAndUpdate.mockResolvedValue({ puid: 'PUID-STUDENT-0001' });
+    findOneAndUpdate.mockResolvedValue({ puid: '87654321' });
     await upsertUserFromSaml(samlAttrs());
     const [filter, update, options] = findOneAndUpdate.mock.calls[0];
-    expect(filter).toEqual({ puid: 'PUID-STUDENT-0001' });
+    expect(filter).toEqual({ puid: '87654321' });
     expect(update.$set).toMatchObject({
-      uid: 'student1',
-      email: 'student1@example.ubc.ca',
-      displayName: 'Sam Student',
+      uid: 'student-user',
+      email: 'student@ubc.ca',
+      displayName: 'Jane Student',
       affiliations: ['student'],
       isAdmin: false,
     });
@@ -1314,7 +1257,7 @@ Expected: PASS (existing roles tests may need their fixture users updated from `
 
 - [ ] **Step 6: Manual verify (session restore, ST-E01)**
 
-With docker + `npm run dev`: log in as `student1`, confirm `/api/auth/me` shows the user; check the `users` collection has one document keyed by `PUID-STUDENT-0001`; reload the page — still signed in; log in again — still exactly one user document.
+With the shared services + `npm run dev`: log in as `student`, confirm `/api/auth/me` shows the user; check the `users` collection has one document keyed by PUID `87654321`; reload the page — still signed in; log in again — still exactly one user document.
 
 - [ ] **Step 7: Commit**
 
@@ -1439,7 +1382,7 @@ outlet.append(el('p', { class: 'muted' }, `Signed in as ${user.displayName} (${r
 - [ ] **Step 5: Run tests and verify visually**
 
 Run: `npx jest tests/unit/auth.me.route.test.ts && npm run typecheck`
-Expected: PASS. Then with the stack running, log in as `student1` and `instructor1` and confirm the differing headings.
+Expected: PASS. Then with the shared services running, log in as `student` and `faculty` and confirm the differing headings.
 
 - [ ] **Step 6: Commit**
 
@@ -1705,7 +1648,7 @@ for $r > g$.
 // Phase-0 integration spike (PRD §11 dependency risk): prove one document
 // parses -> chunks -> embeds -> lands in Qdrant -> is retrievable, using the
 // exact pinned ubc-genai-toolkit versions. Run: npm run spike:ingest
-// Requires: docker compose up (Qdrant) + a reachable embeddings provider.
+// Requires: the shared Qdrant up (../services/tlef-qdrant) + a reachable embeddings provider.
 import path from 'node:path';
 import { parseDocument } from '../server/src/components/genai/document-parsing';
 import { chunkText } from '../server/src/components/genai/chunking';
@@ -1752,7 +1695,7 @@ main().catch((err) => {
 
 `package.json`: `"spike:ingest": "tsx scripts/ingest-spike.ts"`.
 
-Run: `docker compose up -d && npm run spike:ingest`
+Run: `(cd ../services/tlef-qdrant && docker compose up -d) && npm run spike:ingest`
 Expected: the four `[spike]` progress lines and final `OK`. If a toolkit API mismatch surfaces (pre-1.0 churn), fix it by adjusting the wrapper in `server/src/components/genai/<module>/index.ts` (that is the shim point) and re-run until green. Record any shim in that module's `AGENTS.md`.
 
 - [ ] **Step 4: Commit**
@@ -1850,7 +1793,7 @@ git commit -m "ci: eslint config and GitHub Actions running lint, typecheck, jes
 - Modify (if needed): `tests/e2e/global-setup.ts` (test-user credentials)
 
 **Interfaces:**
-- Consumes: the compose stack (Task 2), role home stub (Task 8), existing Playwright global-setup SAML login flow.
+- Consumes: the shared services (Task 2), role home stub (Task 8), existing Playwright global-setup SAML login flow.
 - Produces: the Phase-0 exit test — log in via mock CWL → session persists → role-appropriate course home renders.
 
 - [ ] **Step 1: Write the spec**
@@ -1862,7 +1805,7 @@ import { test, expect } from '@playwright/test';
 
 // Phase 0 exit test (phase-0-foundations.md, Joint): login via mock CWL ->
 // session persists -> role-appropriate home renders. Relies on the SAML
-// session established by tests/e2e/global-setup.ts (student1 by default).
+// session established by tests/e2e/global-setup.ts (faculty by default).
 
 test('logged-in student sees the student home and survives a reload', async ({ page }) => {
   await page.goto('/');
@@ -1882,13 +1825,13 @@ test('identity endpoint reflects the session', async ({ page }) => {
 });
 ```
 
-If `global-setup.ts` still uses docker-simple-saml credentials, update it to log in as `student1` / `student1pass` against the compose IdP.
+`global-setup.ts` logs in against the shared docker-simple-saml IdP as `faculty` / `faculty` (password = username); override with `E2E_USERNAME` / `E2E_PASSWORD` if a different role is needed.
 
 - [ ] **Step 2: Run it fresh-clone style (both developers)**
 
 Run:
 ```bash
-docker compose up -d && npm ci && npm run saml:fetch-cert && npm run build
+(cd ../services/tlef-mongodb-docker && docker compose up -d) && (cd ../services/docker-simple-saml && docker compose up -d) && (cd ../services/tlef-qdrant && docker compose up -d) && npm ci && npm run saml:fetch-cert && npm run build
 npm run test:e2e -- tests/e2e/walking-skeleton.spec.ts
 ```
 Expected: PASS on both developers' machines. This is the phase exit gate.
