@@ -46,7 +46,9 @@ describe('config: admin allowlist and worker limits', () => {
 
 describe('assertConfig (production safety)', () => {
   it('throws in production when SESSION_SECRET is the dev default', () => {
-    const { assertConfig } = loadEnv({ NODE_ENV: 'production' });
+    // Set the dev-default value explicitly so the case is hermetic even when a
+    // developer has a local .env (dotenv would otherwise inject a real secret).
+    const { assertConfig } = loadEnv({ NODE_ENV: 'production', SESSION_SECRET: 'dev-insecure-secret-change-me' });
     expect(() => assertConfig()).toThrow(/SESSION_SECRET/);
   });
 

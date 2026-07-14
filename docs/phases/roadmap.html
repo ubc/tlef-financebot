@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinanceBot — Build Roadmap (Jul 13 – Sep 1, 2026)</title>
+</head>
+<body>
+<style>
+  :root {
+    /* Neutrals — cool, blue-biased slate (chosen, not defaulted) */
+    --bg: #f5f7fb;
+    --surface: #ffffff;
+    --surface-2: #eef2f9;
+    --ink: #10192b;
+    --ink-soft: #45536b;
+    --ink-faint: #6b7890;
+    --line: #dde4ef;
+    --line-strong: #c6d0e0;
+
+    --accent: #2554d8;
+    --accent-soft: #e5ebfb;
+
+    /* Phase ramp: cools → warms toward the deadline (encodes rising pressure) */
+    --p0: #5b6ef0; --p0-ink: #ffffff;
+    --p1: #2f7fd0; --p1-ink: #ffffff;
+    --p2: #12a3a3; --p2-ink: #04201f;
+    --p3: #e59029; --p3-ink: #2a1c05;
+    --p4: #dd5140; --p4-ink: #ffffff;
+    --launch: #1f9d63; --launch-ink: #ffffff;
+
+    --milestone: #c8721a;
+    --freeze: #c23b2c;
+
+    --radius: 7px;
+    --radius-sm: 4px;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(16, 25, 43, .04), 0 8px 24px -12px rgba(16, 25, 43, .18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1120;
+      --surface: #121a2b;
+      --surface-2: #0e1626;
+      --ink: #eaf0fb;
+      --ink-soft: #a9b6cd;
+      --ink-faint: #7987a0;
+      --line: #223049;
+      --line-strong: #2e3f5c;
+      --accent: #6b90f5;
+      --accent-soft: #17223c;
+      --p0: #7c8cf5; --p0-ink: #0a1024;
+      --p1: #5fa0e6; --p1-ink: #06152a;
+      --p2: #2bc0bf; --p2-ink: #042020;
+      --p3: #f0a544; --p3-ink: #2a1c05;
+      --p4: #ee6b5b; --p4-ink: #230a07;
+      --launch: #3bc084; --launch-ink: #05200f;
+      --milestone: #eaa552;
+      --freeze: #ee6b5b;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef2f9;
+    --ink: #10192b; --ink-soft: #45536b; --ink-faint: #6b7890;
+    --line: #dde4ef; --line-strong: #c6d0e0; --accent: #2554d8; --accent-soft: #e5ebfb;
+    --p0: #5b6ef0; --p0-ink:#fff; --p1:#2f7fd0; --p1-ink:#fff; --p2:#12a3a3; --p2-ink:#04201f;
+    --p3:#e59029; --p3-ink:#2a1c05; --p4:#dd5140; --p4-ink:#fff; --launch:#1f9d63; --launch-ink:#fff;
+    --milestone:#c8721a; --freeze:#c23b2c;
+    --shadow: 0 1px 2px rgba(16,25,43,.04), 0 8px 24px -12px rgba(16,25,43,.18);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0b1120; --surface:#121a2b; --surface-2:#0e1626;
+    --ink:#eaf0fb; --ink-soft:#a9b6cd; --ink-faint:#7987a0; --line:#223049; --line-strong:#2e3f5c;
+    --accent:#6b90f5; --accent-soft:#17223c;
+    --p0:#7c8cf5; --p0-ink:#0a1024; --p1:#5fa0e6; --p1-ink:#06152a; --p2:#2bc0bf; --p2-ink:#042020;
+    --p3:#f0a544; --p3-ink:#2a1c05; --p4:#ee6b5b; --p4-ink:#230a07; --launch:#3bc084; --launch-ink:#05200f;
+    --milestone:#eaa552; --freeze:#ee6b5b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  .rm { background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55;
+    -webkit-font-smoothing: antialiased; padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 40px) 72px; }
+  .rm__wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* ---- Masthead ---- */
+  .mast { border-bottom: 1px solid var(--line); padding-bottom: 26px; margin-bottom: 30px; }
+  .mast__eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 14px; }
+  .mast__title { font-size: clamp(28px, 5vw, 46px); line-height: 1.05; letter-spacing: -.02em; font-weight: 800;
+    margin: 0 0 14px; text-wrap: balance; }
+  .mast__title span { color: var(--accent); }
+  .mast__lead { font-size: clamp(15px, 1.6vw, 18px); color: var(--ink-soft); max-width: 62ch; margin: 0 0 22px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 10px; }
+  .fact { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 10px 14px; box-shadow: var(--shadow); }
+  .fact__n { font-family: var(--mono); font-size: 19px; font-weight: 700; letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums; }
+  .fact__l { font-size: 11.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .06em; }
+  .fact--deadline .fact__n { color: var(--freeze); }
+
+  /* ---- Section head ---- */
+  .sec { margin-top: 44px; }
+  .sec__head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 6px; }
+  .sec__title { font-size: 13px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em;
+    color: var(--ink-faint); font-weight: 600; margin: 0; }
+  .sec__rule { flex: 1; height: 1px; background: var(--line); }
+
+  /* ---- Gantt ---- */
+  .gantt-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); box-shadow: var(--shadow); padding: 18px 18px 14px; }
+  .gantt { min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px 6px; }
+  .gcol { grid-row: 1; text-align: left; padding: 2px 4px 10px; border-bottom: 1px solid var(--line); }
+  .gcol { padding: 2px 3px 8px; }
+  .gcol__wk { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); font-weight: 600;
+    letter-spacing: .04em; }
+  .gcol__date { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .bar { border-radius: var(--radius-sm); padding: 7px 9px; font-size: 12px; font-weight: 700;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+    min-height: 38px; letter-spacing: -.01em; overflow: hidden; }
+  .bar small { font-family: var(--mono); font-weight: 600; font-size: 9px; opacity: .82;
+    text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+  .bar--p0 { background: var(--p0); color: var(--p0-ink); grid-row: 2; grid-column: 1 / 2; }
+  .bar--p1 { background: var(--p1); color: var(--p1-ink); grid-row: 3; grid-column: 2 / 3; }
+  .bar--p2 { background: var(--p2); color: var(--p2-ink); grid-row: 4; grid-column: 3 / 5; }
+  .bar--p3 { background: var(--p3); color: var(--p3-ink); grid-row: 5; grid-column: 5 / 7; }
+  .bar--p4 { background: var(--p4); color: var(--p4-ink); grid-row: 6; grid-column: 7 / 8; }
+  .mrow { grid-row: 7; margin-top: 4px; display: flex; align-items: flex-start; }
+  .flag { font-family: var(--mono); font-size: 9px; font-weight: 700; line-height: 1.2;
+    padding: 4px 6px; border-radius: var(--radius-sm); border: 1px dashed var(--milestone);
+    color: var(--milestone); background: transparent; white-space: nowrap; }
+  .flag--m3 { grid-row: 7; grid-column: 2 / 3; }
+  .flag--m7 { grid-row: 7; grid-column: 7 / 8; border-color: var(--freeze); color: var(--freeze); }
+  .flag--launch { grid-row: 7; grid-column: 7 / 8; justify-self: end; align-self: center; border-style: solid;
+    border-color: var(--launch); color: var(--launch); }
+  .glegend { display: flex; flex-wrap: wrap; gap: 14px 18px; margin-top: 16px; padding-top: 14px;
+    border-top: 1px solid var(--line); }
+  .gl { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-soft); }
+  .gl__sw { width: 13px; height: 13px; border-radius: 3px; flex: none; }
+
+  /* ---- Week cards ---- */
+  .weeks { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+  .wk { display: grid; grid-template-columns: 118px 1fr; gap: 0; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .wk__rail { padding: 18px 16px; border-right: 1px solid var(--line); position: relative;
+    background: var(--surface-2); }
+  .wk__rail::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--pc); }
+  .wk__num { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    color: var(--ink-faint); text-transform: uppercase; }
+  .wk__dates { font-family: var(--mono); font-size: 15px; font-weight: 700; margin-top: 3px;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .wk__phase { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 11.5px;
+    font-weight: 700; color: var(--pc); }
+  .wk__phase::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--pc); }
+  .wk__body { padding: 18px 20px; min-width: 0; }
+  .wk__headline { font-size: 16.5px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 8px;
+    text-wrap: balance; }
+  .wk__ship { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0 0; }
+  .chip { font-size: 12px; font-weight: 600; color: var(--ink-soft); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 40px; padding: 4px 11px; }
+  .chip--pc { color: var(--pc); border-color: color-mix(in srgb, var(--pc) 40%, var(--line)); }
+  .mile { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 8px 12px;
+    border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; }
+  .mile--check { background: color-mix(in srgb, var(--milestone) 14%, var(--surface)); color: var(--milestone);
+    border: 1px solid color-mix(in srgb, var(--milestone) 35%, transparent); }
+  .mile--freeze { background: color-mix(in srgb, var(--freeze) 14%, var(--surface)); color: var(--freeze);
+    border: 1px solid color-mix(in srgb, var(--freeze) 35%, transparent); }
+  .mile--launch { background: color-mix(in srgb, var(--launch) 16%, var(--surface)); color: var(--launch);
+    border: 1px solid color-mix(in srgb, var(--launch) 40%, transparent); }
+  .mile b { font-family: var(--mono); font-weight: 700; }
+
+  details.dev { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 10px; }
+  details.dev > summary { cursor: pointer; font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+    letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); list-style: none;
+    display: inline-flex; align-items: center; gap: 7px; }
+  details.dev > summary::-webkit-details-marker { display: none; }
+  details.dev > summary::before { content: "▸"; color: var(--accent); transition: transform .15s ease; }
+  details.dev[open] > summary::before { transform: rotate(90deg); }
+  details.dev > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  .dev__body { margin-top: 12px; display: grid; gap: 10px; }
+  .ws { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
+  .ws__tag { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--pc);
+    background: color-mix(in srgb, var(--pc) 12%, transparent); border-radius: var(--radius-sm);
+    padding: 3px 7px; white-space: nowrap; margin-top: 1px; }
+  .ws__txt { font-size: 13.5px; color: var(--ink-soft); }
+  .ws__txt b { color: var(--ink); font-weight: 600; }
+  .dep { font-size: 12.5px; color: var(--ink-faint); font-style: italic; }
+
+  /* ---- Safety valve aside ---- */
+  .aside { margin-top: 44px; border: 1px solid var(--line); border-left: 3px solid var(--milestone);
+    border-radius: var(--radius); background: var(--surface); padding: 20px 22px; box-shadow: var(--shadow); }
+  .aside h3 { margin: 0 0 6px; font-size: 15px; }
+  .aside p { margin: 0 0 12px; color: var(--ink-soft); font-size: 14px; max-width: 70ch; }
+  .slip { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; list-style: none; }
+  .slip li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 13.5px; align-items: baseline; }
+  .slip__i { font-family: var(--mono); font-weight: 700; color: var(--milestone); font-size: 12px; }
+  .arcs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .arc { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--surface-2); }
+  .arc__h { font-size: 12px; font-weight: 700; margin: 0 0 4px; display: flex; align-items: center; gap: 7px; }
+  .arc__h span { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .arc p { font-size: 12.5px; margin: 0; color: var(--ink-faint); }
+
+  .foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12.5px;
+    color: var(--ink-faint); font-family: var(--mono); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+  @media (max-width: 640px) {
+    .wk { grid-template-columns: 1fr; }
+    .wk__rail { border-right: none; border-bottom: 1px solid var(--line); display: flex; align-items: baseline;
+      gap: 12px; padding: 12px 16px; }
+    .wk__rail::before { width: 100%; height: 4px; bottom: auto; }
+    .wk__phase { margin-top: 0; margin-left: auto; }
+    .arcs { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  @media print {
+    .rm { padding: 0; background: #fff; }
+    .gantt-wrap, .wk, .aside, .fact { box-shadow: none; }
+    details.dev > *:not(summary) { display: revert !important; }
+    details.dev > summary::before { content: "•"; }
+    .wk, .aside { break-inside: avoid; }
+    .sec { break-inside: avoid; }
+  }
+</style>
+
+<div class="rm">
+  <div class="rm__wrap">
+
+    <header class="mast">
+      <p class="mast__eyebrow">FinanceBot · Build roadmap</p>
+      <h1 class="mast__title">Seven weeks to the <span>Sep&nbsp;1</span> pilot launch</h1>
+      <p class="mast__lead">An AI-driven adaptive-practice platform for UBC business courses, built by two
+        part-time developers. Each week below ships a concrete slice of the product — from an empty repo to a
+        live pilot for COMM&nbsp;298. The timeline is the plan;</p>
+      <div class="facts">
+        <div class="fact"><span class="fact__n">7 weeks</span><span class="fact__l">Jul 13 → Sep 1</span></div>
+        <div class="fact"><span class="fact__n">2 devs</span><span class="fact__l">~20 h/week each</span></div>
+        <div class="fact"><span class="fact__n">~280 h</span><span class="fact__l">combined budget</span></div>
+        <div class="fact fact--deadline"><span class="fact__n">Sep 1</span><span class="fact__l">hard deadline · ~180 students</span></div>
+      </div>
+    </header>
+
+    <!-- ============ GANTT ============ -->
+    <section class="sec" aria-label="Timeline overview">
+      <div class="sec__head"><h2 class="sec__title">Timeline at a glance</h2><span class="sec__rule"></span></div>
+      <div class="gantt-wrap">
+        <div class="gantt" role="img" aria-label="Gantt chart: Phase 0 spans weeks 1-2, Phase 1 weeks 3-4, Phase 2 week 5, Phase 3 week 6, Phase 4 week 7, launch Sep 1.">
+          <div class="gcol" style="grid-column:1"><div class="gcol__wk">W1</div><div class="gcol__date">Jul 13</div></div>
+          <div class="gcol" style="grid-column:2"><div class="gcol__wk">W2</div><div class="gcol__date">Jul 20</div></div>
+          <div class="gcol" style="grid-column:3"><div class="gcol__wk">W3</div><div class="gcol__date">Jul 27</div></div>
+          <div class="gcol" style="grid-column:4"><div class="gcol__wk">W4</div><div class="gcol__date">Aug 3</div></div>
+          <div class="gcol" style="grid-column:5"><div class="gcol__wk">W5</div><div class="gcol__date">Aug 10</div></div>
+          <div class="gcol" style="grid-column:6"><div class="gcol__wk">W6</div><div class="gcol__date">Aug 17</div></div>
+          <div class="gcol" style="grid-column:7"><div class="gcol__wk">W7</div><div class="gcol__date">Aug 24</div></div>
+
+          <div class="bar bar--p0">Phase 0 <small>Foundations</small></div>
+          <div class="bar bar--p1">Phase 1 <small>Core loop</small></div>
+          <div class="bar bar--p2">Phase 2 <small>Pilot-ready</small></div>
+          <div class="bar bar--p3">Phase 3 <small>Full surface</small></div>
+          <div class="bar bar--p4">Phase 4 <small>Test &amp; harden</small></div>
+
+          <div class="flag flag--m3">⚑ Jul 26<br>Core loop</div>
+          <div class="flag flag--launch"> Sep 1<br>Launch</div>
+        </div>
+
+        <div class="glegend">
+          <span class="gl"><span class="gl__sw" style="background:var(--p0)"></span>Foundations</span>
+          <span class="gl"><span class="gl__sw" style="background:var(--p1)"></span>Core loop</span>
+          <span class="gl"><span class="gl__sw" style="background:var(--p2)"></span>Pilot readiness</span>
+          <span class="gl"><span class="gl__sw" style="background:var(--p3)"></span>Full surface</span>
+          <span class="gl"><span class="gl__sw" style="background:var(--p4)"></span>Test &amp; harden</span>
+          <span class="gl"><span class="gl__sw" style="background:var(--launch)"></span>Launch</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ WEEK BY WEEK ============ -->
+    <section class="sec" aria-label="Week by week">
+      <div class="sec__head"><h2 class="sec__title">What ships each week</h2><span class="sec__rule"></span></div>
+      <div class="weeks">
+
+        <!-- WEEK 1 — PHASE 0 -->
+        <article class="wk" style="--pc:var(--p0)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 1</div>
+            <div class="wk__dates">Jul 13–19</div>
+            <div class="wk__phase">Phase 0 · Foundations</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">Foundations in one week: dev environment, data model, identity — the skeleton walks.</h3>
+            <p class="ws__txt">No user-facing features yet, but by Friday you can log in with CWL, the session
+              persists, and a role-appropriate home renders. The scaffold everything else stands on.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Docker dev stack</span>
+              <span class="chip chip--pc">Pinned deps + typed config</span>
+              <span class="chip chip--pc">Shared domain types</span>
+              <span class="chip chip--pc">Collections + indexes</span>
+              <span class="chip chip--pc">PUID identity + login</span>
+              <span class="chip chip--pc">API contract + CI</span>
+            </div>
+            <div class="mile mile--check">🏁 <span>Phase 0 exit — <b>walking skeleton</b> runs on both machines from a fresh clone.</span></div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-1</span><span class="ws__txt"><b>Platform &amp; auth</b> — docker-compose (MongoDB, Qdrant, mock SAML IdP), pin <code>ubc-genai-toolkit-*</code> exact, typed <code>env.ts</code> + <code>assertConfig()</code>, helmet + rate-limit + zod, PUID-keyed login (session stores PUID only), role-appropriate home stub, lint + GitHub Actions CI.</span></div>
+                <div class="ws"><span class="ws__tag">WS-2</span><span class="ws__txt"><b>Data &amp; contracts</b> — <code>domain.ts</code> shared types + publication state machine, typed Mongo collection accessors + startup indexes, the REST API contract (two-dev sign-off), client render utility, toolkit ingestion spike.</span></div>
+                <p class="dep">Coordination-heavy: domain types &amp; API contract are two-developer PR reviews. <em>Compressed from the 2-week original — feasible because Phase 0 is nearly done.</em></p>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 2 — PHASE 1 -->
+        <article class="wk" style="--pc:var(--p1)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 2</div>
+            <div class="wk__dates">Jul 20–26</div>
+            <div class="wk__phase">Phase 1 · Core loop</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">The whole loop, end to end: students practice with adaptive feedback; instructors generate &amp; approve.</h3>
+            <p class="ws__txt">The irreducible core the pilot depends on — everything after it is additive. Students
+              enroll, practice by Theme/LO, get adaptive feedback, and revisit misses in the Review Book;
+              instructors set up a course, upload materials, and generate questions with the 3-agent AI pipeline.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Enrollment + course home</span>
+              <span class="chip chip--pc">Materials upload + RAG</span>
+              <span class="chip chip--pc">3-agent generation</span>
+              <span class="chip chip--pc">Adaptive feedback + selection</span>
+              <span class="chip chip--pc">Review Book</span>
+              <span class="chip chip--pc">Mastery engine (L1 + L2)</span>
+            </div>
+            <div class="mile mile--check">⚑ <span>Core loop live — one AI-generated, approved question served to a student end-to-end, with adaptive feedback and Review-Book capture.</span></div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-3/4</span><span class="ws__txt"><b>Student</b> — enrollment + roster cross-check, course home with coverage gating, question view, Strategy A/B/Adaptive feedback, selection ladder over Approved questions, Review Book (auto-collect + bookmark + re-practice), session summaries.</span></div>
+                <div class="ws"><span class="ws__tag">WS-5/6</span><span class="ws__txt"><b>Instructor / AI</b> — material ingestion, LLM classification, generator → structure-validator → reviewer pipeline (Draft output), course + Theme/LO CRUD, registration codes, review queue.</span></div>
+                <div class="ws"><span class="ws__tag">WS-7</span><span class="ws__txt"><b>Mastery</b> — Layer-1 rolling window + tier progression; Layer-2 LLM evaluator. <em>Fallback:</em> ship Layer-1-only if L2 isn’t stable.</span></div>
+                <p class="dep"><em>Compressed from 2 weeks — the most aggressive week; the Layer-2 evaluator and stretch items are the first to slip.</em></p>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 3 — PHASE 2 pt1 -->
+        <article class="wk" style="--pc:var(--p2)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 3</div>
+            <div class="wk__dates">Jul 27 – Aug 2</div>
+            <div class="wk__phase">Phase 2 · Pilot readiness</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">Make it safe: students flag bad questions, instructors get reported on dashboard inside the web app and resolve.</h3>
+            <p class="ws__txt">The safety net before real students arrive — bad questions can be reported, triaged,
+              and pulled automatically.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Student flag control</span>
+              <span class="chip chip--pc">Tiered notifications</span>
+              <span class="chip chip--pc">Instructor resolution queue</span>
+              <span class="chip chip--pc">Auto-pause</span>
+            </div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-8</span><span class="ws__txt"><b>Flag loop &amp; notifications</b> — student flag control, tiered in-app notifications, instructor resolution queue, auto-pause of suspect questions (spans student + instructor surfaces).</span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 4 — PHASE 2 pt2 -->
+        <article class="wk" style="--pc:var(--p2)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 4</div>
+            <div class="wk__dates">Aug 3–9</div>
+            <div class="wk__phase">Phase 2 · Pilot readiness</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">Fill the bank: bulk-load existing content and add parameterized questions.</h3>
+            <p class="ws__txt">Hit the pre-seeding target fast by importing existing material and turning static
+              questions into randomized, parameterized ones.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Import (CSV / JSON / QTI)</span>
+              <span class="chip chip--pc">Import preview + partial success</span>
+              <span class="chip chip--pc">Parameterized questions</span>
+              <span class="chip chip--pc">Serve-time randomization</span>
+            </div>
+            <div class="mile mile--check">🏁 <span>Phase 2 exit — the platform is safe and content-rich enough to put in front of students.</span></div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-9</span><span class="ws__txt"><b>Import &amp; parameterization</b> — bulk import with preview + partial success; parameterized questions execute in a sandbox with serve-time randomization (pairs with the RAG/generation work).</span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 5 — PHASE 3 pt1 -->
+        <article class="wk" style="--pc:var(--p3)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 5</div>
+            <div class="wk__dates">Aug 10–16</div>
+            <div class="wk__phase">Phase 3 · Full surface</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">Exam Prep for students: templates, single-sitting exams, results &amp; history.</h3>
+            <p class="ws__txt">The headline Phase 3 feature — a full exam experience that reuses the practice serving
+              UI. Must land before the COMM 298 midterm (~mid-October) even if the rest slips.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Exam templates</span>
+              <span class="chip chip--pc">Single-sitting exams</span>
+              <span class="chip chip--pc">Results + per-LO breakdown</span>
+              <span class="chip chip--pc">Attempt history</span>
+            </div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-10</span><span class="ws__txt"><b>Exam Prep</b> — templates, single-sitting timed exams, results with per-LO breakdown, attempt history (reuses the question-serving UI; pairs with WS-3/4).</span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 6 — PHASE 3 pt2 -->
+        <article class="wk" style="--pc:var(--p3)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 6</div>
+            <div class="wk__dates">Aug 17–23</div>
+            <div class="wk__phase">Phase 3 · Full surface</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">Complete the team-side surface: analytics, TA workflows, admin.</h3>
+            <p class="ws__txt">The last feature work before the freeze. <b>Schedule tripwire:</b> if earlier phases are
+              unfinished on Aug 17, finish those first — the test week starts Aug 24 regardless.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Instructor analytics</span>
+              <span class="chip chip--pc">TA review / triage</span>
+              <span class="chip chip--pc">Admin + capability model</span>
+              <span class="chip chip--pc">User directory + settings</span>
+            </div>
+            <div class="mile mile--freeze">⚑ <span><b>Aug 23 EOD</b> — feature-complete for Sep 1 scope. Freeze is the next morning.</span></div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">WS-11</span><span class="ws__txt"><b>Analytics</b> — instructor dashboards over AttemptRecord + mastery data.</span></div>
+                <div class="ws"><span class="ws__tag">WS-12</span><span class="ws__txt"><b>TA &amp; admin</b> — TA review/triage workflows, capability model, user directory + platform settings.</span></div>
+                <p class="dep">Runs as two parallel bundles; analytics pairs with the mastery data from Week 2.</p>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- WEEK 7 -->
+        <article class="wk" style="--pc:var(--p4)">
+          <div class="wk__rail">
+            <div class="wk__num">Week 7</div>
+            <div class="wk__dates">Aug 24–31</div>
+            <div class="wk__phase">Phase 4 · Test &amp; harden</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline">No new features — prove it’s ready.</h3>
+            <p class="ws__txt">End-to-end tests, accessibility, load, and a content-quality pass on the question bank.
+              This week is protected: features that miss the freeze ship after Sep 1.</p>
+            <div class="wk__ship">
+              <span class="chip chip--pc">Critical-path E2E</span>
+              <span class="chip chip--pc">WCAG 2.1 AA scan</span>
+              <span class="chip chip--pc">250-session load smoke</span>
+              <span class="chip chip--pc">Instructor bank QA</span>
+              <span class="chip chip--pc">Bug fixes only</span>
+            </div>
+            <div class="mile mile--freeze"> <span><b>Aug 24</b> — hard feature freeze. Bug fixes and content work only.</span></div>
+            <div class="mile mile--launch"> <span><b>Aug 31</b> — go / no-go. CWL PIA/DAR clearance is a launch blocker — escalate early, not on the 31st.</span></div>
+            <details class="dev">
+              <summary>Dev detail</summary>
+              <div class="dev__body">
+                <div class="ws"><span class="ws__tag">QA</span><span class="ws__txt"><b>Bank QA pass</b> (starts Aug 24, hard date) — instructor terminology/notation consistency review of the pre-seeded bank; systematic fixes via prompt/context, not per-question edits.</span></div>
+                <div class="ws"><span class="ws__tag">Ops</span><span class="ws__txt"><b>Launch readiness</b> — confirm CWL PIA/DAR status with UBC IAM; go/no-go decision Aug 31.</span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- LAUNCH -->
+        <article class="wk" style="--pc:var(--launch)">
+          <div class="wk__rail">
+            <div class="wk__num">Deadline</div>
+            <div class="wk__dates">Sep 1</div>
+            <div class="wk__phase">Pilot launch</div>
+          </div>
+          <div class="wk__body">
+            <h3 class="wk__headline"> Pilot launches for COMM 298 — ~180 students.</h3>
+            <p class="ws__txt">Sep–Dec is pilot support; a December interim evaluation feeds Jan–Mar refinement and
+              the WT2 expansion to COMM 370/371.</p>
+            <div class="mile mile--launch"> <span><b>Sep 1</b> — hard deadline. The core loop, safety features, and exam prep are live.</span></div>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ SAFETY VALVE ============ -->
+    <section class="sec" aria-label="Scope safety valve">
+      <div class="aside">
+        <h3>The safety valve — how we protect the deadline</h3>
+        <p>Full MVP by Sep 1 is aggressive for ~280 part-time hours, so <b>phase order is the release valve</b>:
+          earlier phases are load-bearing, later ones are the first to slip. Phase 4’s test week is never traded
+          for feature work.</p>
+        <ul class="slip">
+          <li><span class="slip__i">1st</span><span>Layer-2 mastery evaluator → ship Layer-1-only progression first.</span></li>
+          <li><span class="slip__i">2nd</span><span>Phase 3 extras (analytics depth, TA/admin polish) move past Sep 1.</span></li>
+        </ul>
+        <div class="arcs">
+          <div class="arc">
+            <p class="arc__h"><span style="background:var(--p1)"></span>Student-facing arc</p>
+            <p>Practice loop, Review Book, exam prep, flag control — WS-3, 4, 8, 10.</p>
+          </div>
+          <div class="arc">
+            <p class="arc__h"><span style="background:var(--p3)"></span>AI / instructor arc</p>
+            <p>Data model, RAG + generation, mastery engine, analytics — WS-2, 5, 6, 7, 9, 11.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>FinanceBot roadmap</span><span>·</span><span>Jul 13 – Sep 1, 2026</span><span>·</span>
+      <span>Source: docs/phases/PHASING.md</span><span>·</span><span>Print or ⌘P → Save as PDF</span>
+    </footer>
+
+  </div>
+</div>
+</body>
+</html>

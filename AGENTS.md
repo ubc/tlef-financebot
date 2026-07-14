@@ -148,15 +148,45 @@ Sync points are listed at the top of each phase plan.
 
 ## Commands
 
+**First-time setup (once per clone):**
+
 ```bash
-npm install          # install dependencies
-cp .env.example .env # create local env file
-npm run dev          # server (watch) + client (tsc --watch) in parallel
+npm install            # install dependencies
+cp .env.example .env   # create local env file (app runs on PORT, default 6118)
+npm run services:up    # start Docker backing services (Mongo, Qdrant, mock SAML IdP)
+npm run saml:fetch-cert # write server/certs/idp.pem from the running IdP
+```
+
+**Everyday development:**
+
+```bash
+npm run services:up  # ensure Docker services are up (no-op if already running)
+npm run dev          # server (watch) + client (tsc --watch) in parallel -> http://localhost:6118
+npm run services:down # stop the Docker services when done (data is preserved)
+```
+
+Log in with the mock-IdP test users `student1` / `instructor1` / `ta1` / `admin1`
+(password = username + `pass`, e.g. `instructor1pass`).
+
+**Backing services (Docker).** All three services live in `docker-compose.yml`
+(MongoDB, Qdrant, mock SAML IdP). Start them with **`npm run services:up`**, not a
+bare `docker compose up`: the wrapper (`scripts/services-up.sh`) first frees any
+host port (27017 / 6333 / 6122) that a *different* project is holding by
+`docker stop`-ping the foreign container — data is preserved (restore it later
+with `docker start <name>`), it never removes containers/volumes, and it never
+touches our own. This makes start order between projects irrelevant. A bare
+`docker compose up` fails with "port is already allocated" when another project's
+Mongo/Qdrant is running.
+
+**Other commands:**
+
+```bash
 npm run build        # compile server -> server/dist, client -> client/public/js
-npm start            # run the compiled server
+npm start            # run the compiled server (production-style)
 npm run typecheck    # type-check both projects, no emit
+npm run lint         # eslint
 npm test             # unit + integration tests (Jest; no services needed)
-npm run test:e2e     # Playwright browser tests (needs MongoDB + IdP running)
+npm run test:e2e     # Playwright browser tests (needs services:up + saml:fetch-cert)
 npm run test:a11y    # axe accessibility scans
 ```
 

@@ -28,11 +28,12 @@ test.describe('app shell (logged in)', () => {
   test('loads gated data in the Members area', async ({ page }) => {
     await page.goto('/#/members');
     await expect(page.getByText(/members-only area/i)).toBeVisible();
-    // The nameID readout confirms this came from the gated endpoint.
-    await expect(page.getByText(/subject \(nameid\)/i)).toBeVisible();
+    // The CWL PUID readout confirms this came from the gated endpoint (ST-E01).
+    await expect(page.getByText(/cwl puid/i)).toBeVisible();
   });
 
-  // global-setup logs in as `faculty`, so only the Faculty area should appear,
+  // global-setup logs in as `instructor1` (eduPersonAffiliation=faculty), so only
+  // the Faculty area should appear,
   // and the server must refuse another role's area (403 -> friendly state).
   test('shows only the matching role area and enforces the others', async ({ page }) => {
     await page.goto('/');
