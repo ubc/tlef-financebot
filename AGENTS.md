@@ -153,30 +153,30 @@ Sync points are listed at the top of each phase plan.
 ```bash
 npm install            # install dependencies
 cp .env.example .env   # create local env file (app runs on PORT, default 6118)
-npm run services:up    # start Docker backing services (Mongo, Qdrant, mock SAML IdP)
+# start the shared backing services (see "Backing services" below)
 npm run saml:fetch-cert # write server/certs/idp.pem from the running IdP
 ```
 
 **Everyday development:**
 
 ```bash
-npm run services:up  # ensure Docker services are up (no-op if already running)
+# ensure the shared Docker services are up (Mongo, Qdrant, SAML IdP)
 npm run dev          # server (watch) + client (tsc --watch) in parallel -> http://localhost:6118
-npm run services:down # stop the Docker services when done (data is preserved)
 ```
 
-Log in with the mock-IdP test users `student1` / `instructor1` / `ta1` / `admin1`
-(password = username + `pass`, e.g. `instructor1pass`).
+Log in with the shared-IdP test users; the **password equals the username**. The
+e2e suite uses `faculty` (affiliation=faculty) and `student`. The full roster is
+in `docker-simple-saml/config/simplesamlphp/authsources.php`.
 
-**Backing services (Docker).** All three services live in `docker-compose.yml`
-(MongoDB, Qdrant, mock SAML IdP). Start them with **`npm run services:up`**, not a
-bare `docker compose up`: the wrapper (`scripts/services-up.sh`) first frees any
-host port (27017 / 6333 / 6122) that a *different* project is holding by
-`docker stop`-ping the foreign container — data is preserved (restore it later
-with `docker start <name>`), it never removes containers/volumes, and it never
-touches our own. This makes start order between projects irrelevant. A bare
-`docker compose up` fails with "port is already allocated" when another project's
-Mongo/Qdrant is running.
+**Backing services (Docker).** The three services are **not** run from this repo.
+Each lives in its own shared repo so every TLEF project uses the same containers:
+[tlef-mongodb-docker](https://github.com/ubc/tlef-mongodb-docker) (Mongo :27017,
+root `mongoadmin`/`secret` — `cp .env.example .env` before first `docker compose up -d`),
+[docker-simple-saml](https://github.com/ubc/docker-simple-saml) (SAML IdP :6122),
+and [tlef-qdrant](https://github.com/ubc/tlef-qdrant) (Qdrant :6333, API key
+`super-secret-dev-key`). Clone them next to this repo and `docker compose up -d`
+in each. Start them once and leave them up — there is no per-project compose to
+conflict on ports.
 
 **Other commands:**
 
@@ -186,7 +186,7 @@ npm start            # run the compiled server (production-style)
 npm run typecheck    # type-check both projects, no emit
 npm run lint         # eslint
 npm test             # unit + integration tests (Jest; no services needed)
-npm run test:e2e     # Playwright browser tests (needs services:up + saml:fetch-cert)
+npm run test:e2e     # Playwright browser tests (needs the shared services up + saml:fetch-cert)
 npm run test:a11y    # axe accessibility scans
 ```
 

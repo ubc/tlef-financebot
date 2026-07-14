@@ -35,26 +35,37 @@ Every meaningful folder contains an `AGENTS.md` aimed at LLM coding agents (and 
 
 ## Local development services
 
-All backing services run from the one compose file in this repo — no more
-cloning tlef-mongodb-docker / docker-simple-saml / tlef-qdrant separately:
+The backing services are **not** run from this repo. Each lives in its own
+shared repo (linked in Prerequisites above) so every TLEF project talks to the
+exact same containers. Clone the three next to this one and start each:
 
-    npm run services:up      # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
-    npm run saml:fetch-cert  # writes server/certs/idp.pem from IdP metadata
-    npm run services:down    # stop them again (data is preserved)
+    # MongoDB — root user is mongoadmin / secret; copy the env first, then start
+    cd ../tlef-mongodb-docker && cp .env.example .env && docker compose up -d
 
-Use `npm run services:up`, **not** a bare `docker compose up`. The wrapper first
-frees any of those host ports that a *different* project is holding (by
-`docker stop`-ping the foreign container — data preserved, nothing removed), so
-start order between projects never matters. A bare `docker compose up` fails with
-"port is already allocated" when another project's Mongo/Qdrant is running.
+    # SAML IdP — mock UBC CWL Shibboleth
+    cd ../docker-simple-saml && docker compose up -d
 
-Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
+    # Qdrant — vector database (API key: super-secret-dev-key)
+    cd ../tlef-qdrant && docker compose up -d
+
+    # Back in this repo: write server/certs/idp.pem from the IdP metadata
+    cd ../tlef-financebot && npm run saml:fetch-cert
+
+This gives MongoDB on :27017, the SAML IdP on :6122, and Qdrant on :6333 — the
+hosts/ports `.env.example` already expects. Because every project shares these
+containers, start them once and leave them up; there is no per-project compose
+to conflict on ports anymore.
+
+Test users live in the shared IdP
+(`docker-simple-saml/config/simplesamlphp/authsources.php`); the **password
+equals the username**. The e2e suite uses `faculty` (affiliation=faculty) and
+`student`; that file lists many more (`bio_prof`, `cpsc_student`, …).
 
 ## Getting started
 
 ```bash
-# 1. Start all backing services (MongoDB, Qdrant, mock SAML IdP)
-npm run services:up
+# 1. Start the shared backing services (see "Local development services" above):
+#    MongoDB (tlef-mongodb-docker), SAML IdP (docker-simple-saml), Qdrant (tlef-qdrant)
 
 # 2. Make sure Ollama is running with the models pulled
 

@@ -5,7 +5,7 @@ import { AUTH_FILE } from './global-setup';
 // IdP -> session persists across a reload -> a role-appropriate home renders,
 // and the identity endpoint reflects the PUID-keyed session (ST-E01).
 //
-// global-setup logs in as instructor1 (faculty affiliation), so the home shows
+// global-setup logs in as `faculty` (faculty affiliation), so the home shows
 // the instructor heading. This reuses that saved session.
 test.use({ storageState: AUTH_FILE });
 
@@ -28,6 +28,8 @@ test.describe('walking skeleton (Phase 0 exit)', () => {
     expect(res.ok()).toBeTruthy();
     const body = (await res.json()) as { authenticated: boolean; user?: { puid: string } };
     expect(body.authenticated).toBe(true);
-    expect(body.user?.puid).toMatch(/^PUID-/);
+    // The shared docker-simple-saml IdP issues numeric CWL PUIDs
+    // (e.g. `faculty` → ubcEduCwlPuid 12345678).
+    expect(body.user?.puid).toMatch(/^\d+$/);
   });
 });
