@@ -6,10 +6,12 @@ import request from 'supertest';
 
 jest.mock('../../server/src/components/mongodb', () => ({ pingMongo: jest.fn() }));
 jest.mock('../../server/src/components/qdrant', () => ({ pingQdrant: jest.fn() }));
+jest.mock('../../server/src/components/academic-api', () => ({ pingAcademicApi: jest.fn() }));
 
 import { healthRouter } from '../../server/src/routes/health.routes';
 import { pingMongo } from '../../server/src/components/mongodb';
 import { pingQdrant } from '../../server/src/components/qdrant';
+import { pingAcademicApi } from '../../server/src/components/academic-api';
 
 function makeApp(): Express {
   const app = express();
@@ -21,12 +23,13 @@ describe('GET /api/health', () => {
   it('reports services up and echoes the configured GenAI providers', async () => {
     jest.mocked(pingMongo).mockResolvedValue(true);
     jest.mocked(pingQdrant).mockResolvedValue(true);
+    jest.mocked(pingAcademicApi).mockResolvedValue(true);
 
     const res = await request(makeApp()).get('/api/health');
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
-    expect(res.body.services).toEqual({ mongodb: 'up', qdrant: 'up' });
+    expect(res.body.services).toEqual({ mongodb: 'up', qdrant: 'up', academicApi: 'up' });
     expect(res.body.genai).toHaveProperty('llmProvider');
     expect(res.body.genai).toHaveProperty('embeddingsModel');
   });
@@ -34,10 +37,11 @@ describe('GET /api/health', () => {
   it('reports down services when the probes fail', async () => {
     jest.mocked(pingMongo).mockResolvedValue(false);
     jest.mocked(pingQdrant).mockResolvedValue(false);
+    jest.mocked(pingAcademicApi).mockResolvedValue(false);
 
     const res = await request(makeApp()).get('/api/health');
 
     expect(res.status).toBe(200);
-    expect(res.body.services).toEqual({ mongodb: 'down', qdrant: 'down' });
+    expect(res.body.services).toEqual({ mongodb: 'down', qdrant: 'down', academicApi: 'down' });
   });
 });
