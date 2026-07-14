@@ -23,6 +23,8 @@
     "build:client": "tsc -p client/tsconfig.json",
     "start": "node server/dist/server.js",
     "saml:fetch-cert": "node scripts/fetch-idp-cert.mjs",
+    "services:up": "bash scripts/services-up.sh",
+    "services:down": "docker compose down",
     "sync-plans": "bash scripts/sync-plans.sh",
     "vendor": "node scripts/vendor-client-libs.mjs",
     "postinstall": "node scripts/vendor-client-libs.mjs",

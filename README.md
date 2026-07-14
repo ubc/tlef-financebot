@@ -38,8 +38,15 @@ Every meaningful folder contains an `AGENTS.md` aimed at LLM coding agents (and 
 All backing services run from the one compose file in this repo — no more
 cloning tlef-mongodb-docker / docker-simple-saml / tlef-qdrant separately:
 
-    docker compose up -d        # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
-    npm run saml:fetch-cert     # writes server/certs/idp.pem from IdP metadata
+    npm run services:up      # MongoDB :27017, Qdrant :6333, mock SAML IdP :6122
+    npm run saml:fetch-cert  # writes server/certs/idp.pem from IdP metadata
+    npm run services:down    # stop them again (data is preserved)
+
+Use `npm run services:up`, **not** a bare `docker compose up`. The wrapper first
+frees any of those host ports that a *different* project is holding (by
+`docker stop`-ping the foreign container — data preserved, nothing removed), so
+start order between projects never matters. A bare `docker compose up` fails with
+"port is already allocated" when another project's Mongo/Qdrant is running.
 
 Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
 
@@ -47,7 +54,7 @@ Test users (password = username + "pass"): student1, instructor1, ta1, admin1.
 
 ```bash
 # 1. Start all backing services (MongoDB, Qdrant, mock SAML IdP)
-docker compose up -d
+npm run services:up
 
 # 2. Make sure Ollama is running with the models pulled
 
