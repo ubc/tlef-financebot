@@ -47,6 +47,10 @@ commonly need:
   embed → upsert; query: embed → search → llm). It lives in
   `services/rag.service.ts` + `routes/rag.routes.ts` + a client page, is clearly
   labeled "EXAMPLE (safe to delete)", and mirrors the mongodb `notes` example.
+- The Academic API (`server/src/components/academic-api`) is implemented: a typed
+  Basic-auth client over the local FakeAcademicAPI. It backs the EXAMPLE "Classes"
+  feature (`services/classes.service.ts` + `routes/classes.routes.ts` + a client
+  page), role-gated to faculty/students, and is reported by `/api/health`.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage
@@ -186,7 +190,7 @@ npm start            # run the compiled server (production-style)
 npm run typecheck    # type-check both projects, no emit
 npm run lint         # eslint
 npm test             # unit + integration tests (Jest; no services needed)
-npm run test:e2e     # Playwright browser tests (needs the shared services up + saml:fetch-cert)
+npm run test:e2e     # Playwright browser tests (needs the shared services incl. FakeAcademicAPI up + saml:fetch-cert)
 npm run test:a11y    # axe accessibility scans
 ```
 
