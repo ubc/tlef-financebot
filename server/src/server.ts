@@ -4,6 +4,7 @@ import { connectMongo, closeMongo } from './components/mongodb';
 import { ensureIndexes } from './components/mongodb/collections';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
+import { startJobs } from './components/jobs';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -21,6 +22,8 @@ async function main(): Promise<void> {
 
   await ensureIndexes();
   console.log('[server] MongoDB indexes ensured');
+
+  await startJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.
