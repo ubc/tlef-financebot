@@ -3,9 +3,9 @@
 _Last updated: 2026-07-16_
 
 **Tasks 1 and 2 are done and reviewed.** Task 1 is merged to `main` (PR #13).
-Task 2 is code-complete on branch `saurav/task-2-courses-service` (`843c154`),
-review **Approved**, **awaiting push + PR**. Full suite green: **87 unit**,
-typecheck + eslint clean. Next up is **Task 4** (question service) — the plan
+Task 2 is code-complete on branch `saurav/task-2-courses-service`, review
+**Approved**, and open in **PR #14** awaiting Saurav's merge. Full suite green:
+**87 unit**, typecheck + eslint clean. Next up is **Task 4** (question service) — the plan
 flags it as front-load work because Stephen's Tasks 10/11/14 need Approved
 questions to exist.
 
@@ -20,7 +20,7 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | Task | What | Status |
 |---|---|---|
 | 1 | Agenda-backed jobs component (`defineJob`/`enqueueJob`/`scheduleRecurring`/`stopJobs`) | merged, PR #13 (`3a8c649`) |
-| 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | reviewed, **awaiting PR** (`843c154`) |
+| 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | reviewed, **PR #14 (open)** (`843c154`) |
 
 ## Deviations from the plan
 
