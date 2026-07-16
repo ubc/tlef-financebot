@@ -18,7 +18,7 @@ from `env` (`env.mongodbUri`, `env.mongodbDbName`); no `process.env` access here
 | Export | Purpose |
 | --- | --- |
 | `startJobs(): Promise<void>` | Create and start the Agenda instance. Idempotent. Call once at startup. |
-| `stopJobs(): Promise<void>` | Stop Agenda and clear cached state (shutdown / tests). |
+| `stopJobs(): Promise<void>` | Stop Agenda, **close its private mongodb connection** (`stop()` + `close()`), and clear cached state (shutdown / tests). |
 | `defineJob<T>(name, handler)` | Register a named job handler. Throws if `startJobs()` has not run. |
 | `enqueueJob<T>(name, data)` | Run a job now. Throws if `startJobs()` has not run. |
 | `scheduleRecurring(name, interval)` | Schedule a defined job on a recurring interval (e.g. `'1 day'`). |

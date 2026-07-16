@@ -24,6 +24,7 @@ async function main(): Promise<void> {
   console.log('[server] MongoDB indexes ensured');
 
   await startJobs();
+  console.log('[server] job queue started');
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

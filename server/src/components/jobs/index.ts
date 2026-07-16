@@ -13,6 +13,10 @@ let agenda: Agenda | undefined;
 // So we do NOT share our MongoClient here; instead we hand agenda a connection
 // string and let it use its OWN bundled mongodb@4 driver. The URI/db name still
 // come only from `env`.
+//
+// Parses a single-host connection URI. Comma-separated multi-host /
+// replica-set connection strings are not supported here (they make `new URL()`
+// throw); the repo targets single-host docker Mongo (see components/mongodb).
 function agendaAddress(uri: string, dbName: string): string {
   const url = new URL(uri);
   url.pathname = `/${dbName}`;
@@ -40,7 +44,7 @@ export function defineJob<T>(name: string, handler: (data: T) => Promise<void>):
 }
 
 export async function enqueueJob<T>(name: string, data: T): Promise<void> {
-  await requireAgenda().now(name, data as never);
+  await requireAgenda().now(name, data);
 }
 
 export async function scheduleRecurring(name: string, interval: string): Promise<void> {
@@ -48,6 +52,8 @@ export async function scheduleRecurring(name: string, interval: string): Promise
 }
 
 export async function stopJobs(): Promise<void> {
-  await agenda?.stop();
+  if (!agenda) return;
+  await agenda.stop(); // unlock jobs + clear processing interval
+  await agenda.close(); // close the private mongodb connection this component owns
   agenda = undefined;
 }
