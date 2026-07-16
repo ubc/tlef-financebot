@@ -1,0 +1,300 @@
+# Phase 1 — Core Loop — Saurav (Dev B) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Progress tracking (do this, it is not automatic):** the moment a task's review comes back clean and its commit is made, edit this file to change that task's `- [ ]` to `- [x]`, then commit the checkbox change and push. Also mirror the checkbox into the core document [`../2026-07-11-phase-1-core-loop.md`](../2026-07-11-phase-1-core-loop.md) so Stephen's agent sees it. Run `npm run sync-plans -- Saurav` after.
+
+This is **Saurav's** personal plan: the Dev B (instructor / AI arc, WS-5/6 +
+pipeline) slice of the core phase document
+[`../2026-07-11-phase-1-core-loop.md`](../2026-07-11-phase-1-core-loop.md).
+Task numbers match the core document. Tasks 3, 9, 10, 11, 12, 14 belong to
+**Stephen (Dev A)** and are not in this plan — never start or edit them; see
+"Coordination with Stephen" for where they block or need Saurav's work. Every
+task step here references the core document for the full code/tests rather than
+duplicating it — the core doc is the normative source; this plan is the Dev B
+execution order and coordination layer.
+
+**Goal:** Saurav's half of the core loop: the job queue, the full instructor
+authoring surface (courses + hierarchy + roster + publish), question versioning
+and the review queue, material upload with async RAG ingestion, LLM
+classification, the three-agent generation pipeline, and the instructor client
+views — such that an instructor can set up a course, upload materials, generate
+questions with the three-agent pipeline, and approve them.
+
+**Architecture:** All server work follows the boilerplate's routes → services →
+components pattern, consuming the Phase-0 domain types
+(`server/src/types/domain.ts`), collection accessors
+(`components/mongodb/collections.ts`), `validate()` middleware, and the API
+contract (`docs/api-contract.md`). Generation and ingestion run as Agenda
+background jobs. Instructor client views are plain-TS hash-routed views using
+`renderRichText` for question content. Serving reads **only** `state: 'approved'`
+questions (proven by Dev A's Task 16 tests).
+
+**Tech Stack:** as Phase 0, plus `agenda` (MongoDB-backed job queue), `nanoid@3`
+(registration codes, CommonJS-compatible), `multer` (uploads), and the
+`ubc-genai-toolkit-*` document-parsing / chunking / embeddings / llm components.
+
+## Global Constraints
+
+- Everything in the Phase 0 plan's Global Constraints section still applies (TypeScript `strict`; env only in `env.ts` + `.env.example`; components own external integrations; toolkit versions pinned exact; no email; CWL-only auth; client vendored libs, no bundler; follow the nearest `AGENTS.md`).
+- Only Approved questions are ever served to students; Themes/LOs with zero Approved questions are hidden from students (PRD §9.1). No fallback to unreviewed content, ever. The generation pipeline **never** publishes — output always enters as Draft.
+- Every question edit creates a new `QuestionVersion`; prior versions are never mutated or deleted (PRD §2).
+- Publication-state changes must be immediately visible to serving (no caching of question state).
+- All new endpoints match `docs/api-contract.md`; contract changes go through two-developer PR review first.
+- New env vars go in `env.ts` + `.env.example` only.
+- Shared-file convention (root `AGENTS.md`): `package.json`, `server/src/server.ts`, `server/src/app.ts`, `.env.example`, `client/public/index.html` are **append-only, one line/block per addition** — never reorder or reformat surrounding lines.
+- Mid-phase checkpoint (~Aug 2): one instructor-generated, approved question served to a student end-to-end (Task 8 Step 5).
+
+## Saurav's task order (Dev B)
+
+Recommended sequence, with the parallel-safe pairs marked:
+
+1. **Task 1** (jobs component) — foundational; unblocks Tasks 6 and 8. No cross-dependency, do first.
+2. **Task 2** (courses service/routes) **and Task 4** (questions service) — parallel-safe, and **both are front-loaded because Dev A is blocked on them** (see the dependency table). Get them reviewed and merged early.
+3. **Task 5** (bank routes) — needs Task 4.
+4. **Task 6** (materials + ingestion) — needs Task 1.
+5. **Task 7** (LLM classification) — needs Task 6 (modifies its routes).
+6. **Task 8** (three-agent generation pipeline) — needs Tasks 1, 4, 6. **Step 5 is the ~Aug 2 mid-phase checkpoint (joint).**
+7. **Task 15** (instructor client views) — needs Tasks 2, 5, 6, 7, 8.
+8. **Task 13** (Layer-2 mastery evaluator) — *"either" owner; pick up only if ahead of Stephen and after coordinating (it modifies his `attempts.service.ts`).* Slip candidate — Layer-1 statuses stand alone.
+9. **Task 16** (joint exit) — Saurav's share of the phase exit demo + Approved-only proof.
+
+## Coordination with Stephen (Dev A)
+
+**Cross-developer dependencies:**
+
+| Dependency | Direction | Effect |
+|---|---|---|
+| **Task 2 (courses)** | Saurav → Stephen's Task 3 | Enrollment (ST-E02) needs a published course with a registration code and roster. Stephen can seed via direct Mongo inserts, but **merge Task 2 early** so he codes against the real service. |
+| **Task 4 (questions service)** | Saurav → Stephen's Tasks 10/11/14 | Selection, attempts, and student views all need **Approved questions** that do not exist until Dev B's UI does. Provide seeding via `createQuestion` + `transitionQuestion` (draft → … → approved) — merge Task 4 early and give Stephen a short seed snippet/script so he never waits on Task 15. |
+| **Task 9 (mastery, Dev A)** | Stephen → nobody in Dev B | Task 8 does **not** consume mastery. No blocking, but review the Task 9 `Produces` block at the week-1 sync point (shared vocabulary). |
+| **`docs/api-contract.md`** | either → both | Any change is a two-developer PR review, never ad hoc. Both arcs code against it. |
+
+**Test-data note (from the core doc):** Dev A's tasks need Approved questions
+before Saurav's instructor UI (Task 15) exists — so make seeding easy from Task 4
+onward; don't make Stephen wait for Task 15.
+
+**Sync points (pause and involve Stephen):**
+1. **Week 1** — confirm the selection↔mastery interface (`getMasteryTier`, `recordAttemptInMastery`, Task 9 Produces block) across the arcs before Stephen's Tasks 10/11 begin. Saurav reviews; Stephen owns.
+2. **~Aug 2 mid-phase checkpoint (Task 8 Step 5)** — one instructor-generated, approved question served to a student end-to-end; **both developers verify.** Saurav drives the generation side.
+3. **Any change to `docs/api-contract.md`** — two-developer PR review.
+4. **Task 16 (exit demo)** — joint; both developers participate.
+
+**Workflow:** run `npm run sync-plans -- Saurav` before and after each work
+session; keep the checkboxes in this file (and mirrored in the core doc) honest
+against `git log`.
+
+---
+
+### Task 1: Job queue component (Agenda)
+
+**Files:**
+- Create: `server/src/components/jobs/index.ts`, `server/src/components/jobs/AGENTS.md`
+- Modify: `server/src/server.ts` (append `await startJobs();` after `ensureIndexes()`)
+- Modify: `package.json` (add `agenda`, `nanoid@3` — v3 is CommonJS-compatible)
+- Test: `tests/unit/jobs.component.test.ts`
+
+**Interfaces:**
+- Consumes: `env` (`mongodbUri`, `mongodbDbName`). **Note (post-implementation):** agenda@4 needs mongodb@4 result shapes its job-locking relies on (`findOneAndUpdate(...).value`), which the repo's top-level mongodb@7 driver no longer returns — so the component opens its OWN connection via agenda's bundled mongodb@4 driver (`db: { address }`) rather than sharing `getMongoClient()`. See `server/src/components/jobs/AGENTS.md`.
+- Produces: `startJobs()`, `stopJobs()`, `defineJob<T>(name, handler)`, `enqueueJob<T>(name, data)`, `scheduleRecurring(name, interval)`. Used by ingestion (Task 6), generation (Task 8), the Layer-2 evaluator (Task 13), and later phases.
+
+- [ ] **Step 1: Install** — `npm install agenda nanoid@3` → exit 0.
+- [ ] **Step 2: Write the failing test** — `tests/unit/jobs.component.test.ts` exactly as in the core document, Task 1 Step 2 (mock `agenda` + mongodb; assert register/enqueue delegate without throwing, and that `enqueueJob` before `startJobs` rejects with a `/startJobs/` message).
+- [ ] **Step 3: Run test to verify it fails** — `npx jest tests/unit/jobs.component.test.ts` → FAIL (module not found).
+- [ ] **Step 4: Implement** `server/src/components/jobs/index.ts` — the complete file from the core document, Task 1 Step 4 (one Agenda instance per process, `requireAgenda()` guard, `defineJob`/`enqueueJob`/`scheduleRecurring`/`stopJobs`). Append `await startJobs();` after `ensureIndexes()` in `server.ts`. Write the 3–6 line `AGENTS.md` (job handlers live next to the service that owns them).
+- [ ] **Step 5: Run tests** — `npx jest tests/unit/jobs.component.test.ts && npm run typecheck` → PASS.
+- [ ] **Step 6: Commit** — `git commit -m "feat: agenda-backed jobs component"`
+
+---
+
+### Task 2: Courses service — creation, hierarchy CRUD, term dates, registration code, publish (IN-S01, IN-S02, IN-S03, IN-L06)
+
+**Front-load this — Stephen's Task 3 (enrollment) depends on it.**
+
+**Files:**
+- Create: `server/src/services/courses.service.ts`, `server/src/routes/courses.routes.ts`, `server/src/components/auth/course-guards.ts`
+- Modify: `server/src/app.ts` (mount router — append-only)
+- Test: `tests/unit/courses.service.test.ts`, `tests/unit/courses.routes.test.ts`
+
+**Interfaces:**
+- Consumes: `coursesCol()`, `themesCol()`, `losCol()`, `questionsCol()`, `rosterCol()`, `usersCol()`; `nanoid`; domain types.
+- Produces (service): `createCourse`, `updateCourse` (rejects `termEnd <= termStart` with `Error('term-end-before-start')`), `regenerateRegistrationCode`, `addTheme`/`updateTheme`/`archiveTheme` + the LO trio, `getCourseTree`, `duplicateNameWarning`, `publishChecklist`, `setPublished` (publish allowed with warnings — IN-L06), `putRoster`/`getRoster`. Full signatures and the `createCourse`/`publishChecklist` excerpts are in the core document, Task 2 Interfaces + Step 3.
+- Produces (guards): `ensureCourseInstructor()`, `ensureCourseStudent()`, `ensureCourseTa()` — the complete `course-guards.ts` is in the core document, Task 2 Step 4 (401 unauthenticated; 403 unless a matching `courseRoles` entry or `isAdmin`; resolves `courseId` from route param or `res.locals.courseId`).
+- Produces (routes): every Courses/Hierarchy/Roster endpoint exactly as in `docs/api-contract.md`.
+
+- [ ] **Step 1: Write the failing service tests** — `tests/unit/courses.service.test.ts`, the five `it()` blocks specified in the core document, Task 2 Step 1 (createCourse defaults + owner `$addToSet`; updateCourse term-order rejection; addTheme `order = max+1`; publishChecklist thin-LO `ok:false` but publish still allowed; putRoster lower-case/dedupe). Mock `collections` like `users.service.test.ts`.
+- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/courses.service.test.ts` → FAIL.
+- [ ] **Step 3: Implement the service** — `courses.service.ts`, full file per the core document, Task 2 Step 3.
+- [ ] **Step 4: Implement the guards** — `course-guards.ts`, full file per the core document, Task 2 Step 4.
+- [ ] **Step 5: Implement the routes** — `courses.routes.ts` with `validate()` zod schemas (ObjectId params `z.string().regex(/^[0-9a-f]{24}$/)`); instructor endpoints use `ensureCourseInstructor()`; `POST /api/courses` uses `ensureApiAuthenticated()`. Mount `app.use('/api', coursesRouter);` in `app.ts` (append-only).
+- [ ] **Step 6: Write the failing route tests, then make them pass** — `tests/unit/courses.routes.test.ts` per the core document, Task 2 Step 6 (401 signed out; 403 non-instructor PATCH; 201 create; 400 invalid body; publish returns `{ published, checklist }`). Run: `npx jest tests/unit/courses.routes.test.ts tests/unit/courses.service.test.ts && npm run typecheck` → PASS.
+- [ ] **Step 7: Commit** — `git commit -m "feat: courses service and routes — hierarchy CRUD, term dates, registration code, publish checklist (IN-S01/S02/S03, IN-L06)"`
+
+> **After merge:** ping Stephen — his Task 3 can now code against the real course/roster/registration-code shapes.
+
+---
+
+### Task 4: Question service — versioning, publication transitions, tagging (IN-Q03, IN-Q04, IN-Q07, IN-Q13)
+
+**Front-load this — Stephen's Tasks 10/11/14 need Approved questions to exist.**
+
+**Files:**
+- Create: `server/src/services/questions.service.ts`
+- Test: `tests/unit/questions.service.test.ts`
+
+**Interfaces:**
+- Consumes: `questionsCol()`, `questionVersionsCol()`, `auditCol()`; `canTransition`, domain types.
+- Produces: `createQuestion` (inserts Question `state:'draft'` + QuestionVersion v1), `editQuestion` (copies current version, applies patch, inserts `version: n+1`, updates head, records `editedFields`, adds `manually-edited` label), `transitionQuestion` (validates with `canTransition`, throws `Error('invalid-transition:<from>-><to>')`, writes an AuditLog `question.transition`), `bulkTransition` (skips invalid, returns updated count). MCQ invariants (exactly 4 options / 2 for true-false; exactly one `correct`; T/F distractor coerced to `common-misconception`) throw `Error('invalid-options:<reason>')`. Full signatures + the `assertOptionInvariants`/`transitionQuestion` excerpts and the `editQuestion` recipe are in the core document, Task 4 Interfaces + Step 3.
+
+- [ ] **Step 1: Write the failing tests** — `tests/unit/questions.service.test.ts`, the four cases in the core document, Task 4 Step 1 (createQuestion draft+v1 and option-invariant throws + T/F coercion; editQuestion v2 with `editedFields:['stem']` + single `manually-edited`; transition allows `pending-review → approved`, rejects `draft → approved` with no write + audit on success; bulkTransition valid-count).
+- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/questions.service.test.ts` → FAIL.
+- [ ] **Step 3: Implement** `questions.service.ts` — full file per the core document, Task 4 Step 3.
+- [ ] **Step 4: Run tests** — `npx jest tests/unit/questions.service.test.ts && npm run typecheck` → PASS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: question versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07)"`
+
+> **After merge:** give Stephen a one-off seed snippet — `createQuestion(...)` then `transitionQuestion(id, 'pending-review'/'reviewed'/'approved', puid)` — so his selection/attempts/views work has Approved questions immediately.
+
+---
+
+### Task 5: Bank routes — browse/filter, review queue, editing, transitions (IN-Q02, IN-Q05, IN-Q08)
+
+Requires Task 4 merged.
+
+**Files:**
+- Create: `server/src/services/bank.service.ts`, `server/src/routes/questions.routes.ts`
+- Modify: `server/src/app.ts` (mount — append-only)
+- Test: `tests/unit/bank.service.test.ts`, `tests/unit/questions.routes.test.ts`
+
+**Interfaces:**
+- Consumes: Task 4's service; `questionsCol()`, `questionVersionsCol()`, `flagsCol()`, `attemptsCol()`.
+- Produces (service): `browseBank` (archived excluded unless `state:'archived'`/`includeArchived`; joins current versions via `$in` on `currentVersionId`) and `reviewQueue` (non-archived non-approved, ordered: student-flagged → `reviewed` → under-coverage, de-duped). Full signatures in the core document, Task 5 Interfaces.
+- Produces (routes): `GET /api/courses/:courseId/questions`, `GET /api/questions/:questionId`, `PATCH /api/questions/:questionId`, `POST /api/questions/:questionId/transition`, `POST /api/questions/bulk-transition`, `GET /api/courses/:courseId/review-queue` — instructor-guarded; child-resource routes load the question first and stash `res.locals.courseId` **before** the guard (mount guard after a small loader middleware).
+
+- [ ] **Step 1: Write failing tests** — per the core document, Task 5 Step 1 (`bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter, archived hidden by default, review-queue ordering flagged→reviewed→new; `questions.routes.test.ts`: 403 student on instructor routes, `transition` route 409 with the service's `invalid-transition` message, PATCH validates options shape via zod).
+- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+- [ ] **Step 3: Implement** service + routes per the Interfaces; mount in `app.ts`.
+- [ ] **Step 4: Run tests** — same command `&& npm run typecheck` → PASS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: question bank browse/filter and prioritized review queue (IN-Q02/Q05/Q08)"`
+
+---
+
+### Task 6: Material upload + RAG ingestion (IN-S04)
+
+Requires Task 1 (jobs) merged.
+
+**Files:**
+- Create: `server/src/services/materials.service.ts`, `server/src/routes/materials.routes.ts`
+- Modify: `server/src/app.ts` (mount — append-only); `server/src/components/qdrant/index.ts` (if `ensureCollection`/`upsertPoints`/`search` don't take a collection-name arg, add it); `.gitignore` (`uploads/`)
+- Test: `tests/unit/materials.service.test.ts`
+
+**Interfaces:**
+- Consumes: `multer` (disk storage under `uploads/`), genai `document-parsing`/`chunking`/`embeddings` components, qdrant component, jobs component (Task 1), `materialsCol()`.
+- Produces: `createMaterials`/`createUrlMaterial` (insert `status:'processing'`, then `enqueueJob('material.ingest', { materialId })` each — independent, one failure never blocks others), the `material.ingest` job (parse → chunk → embed → upsert into `course-<courseId>` with payload `{ materialId, chunk }` → `status:'ready'`; on error `status:'failed', error`), `retryMaterial`, `assignMaterial` (IN-S05), and the exported `courseCollection(courseId): string` returning `course-<hex>` (used by Tasks 7 and 8). Supported formats `pdf docx pptx txt md url`; anything else → route 400 naming the format. Routes: `POST /api/courses/:courseId/materials` (multipart `files[]` or JSON `{ url }`, `fileSize` 50 MB), `GET .../materials`, `POST /api/materials/:materialId/retry`, `PUT /api/materials/:materialId/assignments` — instructor-guarded.
+
+- [ ] **Step 1: Write failing tests** — per the core document, Task 6 Step 1 (unsupported extension named in the 400; three files → three `processing` docs + three enqueues; ingest success calls parse→chunk→embed→upsert with collection `course-<id>` and sets `ready`; ingest failure sets `failed` with the message and does **not** throw; URL material stores `sourceUrl`). Mock collections + jobs + genai/qdrant.
+- [ ] **Step 2: Run to verify FAIL.**
+- [ ] **Step 3: Implement** service, `defineJob('material.ingest', …)` registration (import the service from `server.ts` after `startJobs()`), routes; add `uploads/` to `.gitignore`. Manual check: `curl -F "files=@tests/fixtures/sample-material.md" -b <session>` and watch status go `processing → ready`.
+- [ ] **Step 4: Run tests + typecheck** → PASS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: material upload and async RAG ingestion into per-course Qdrant collections (IN-S04/S05)"`
+
+---
+
+### Task 7: LLM auto-classification + AI-suggested hierarchy (IN-S06, IN-S01 tail)
+
+Requires Task 6 merged (modifies its routes).
+
+**Files:**
+- Create: `server/src/services/classification.service.ts`
+- Modify: `server/src/routes/materials.routes.ts` (classification accept/reject; suggest-hierarchy endpoint)
+- Test: `tests/unit/classification.service.test.ts`
+
+**Interfaces:**
+- Consumes: genai `llm` component (`completeJson<T>(prompt, { model })` — if the component exposes only text completion, add a `completeJson` helper there that parses/retries JSON once), `env.llmDefaultModel`; materials + hierarchy collections.
+- Produces: `classifyMaterial(materialId)` (prompt = course Theme/LO names + material's first ~2000 chars; expects `{ themeName, loName?, confidence }`; resolves names → ids; `confidence < 0.5` leaves it unset → "Unclassified" client-side; called at the end of a successful `material.ingest`) and `suggestHierarchy(courseId)` (from all `ready` materials' first chunks; acceptance calls existing `addTheme`/`addLo` from Task 2). **`suggestHierarchy` is slip candidate #3 — if the phase is tight, cut this function and its endpoint only; keep `classifyMaterial`.**
+
+- [ ] **Step 1: Failing tests** — per the core document, Task 7 Step 1 (classification stores a suggestion with resolved ObjectIds; low confidence stores nothing; `suggestHierarchy` shapes the LLM JSON into the return type and never writes the DB directly). Mock the llm component.
+- [ ] **Step 2: Verify FAIL.**
+- [ ] **Step 3: Implement** — prompts inline in the service, one-shot few-shot, temperature 0. Wire `classifyMaterial` into the tail of the `material.ingest` job.
+- [ ] **Step 4: Run tests + typecheck** → PASS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: LLM material classification and hierarchy suggestion (IN-S06)"`
+
+---
+
+### Task 8: Three-agent generation pipeline + thin-LO generation + pre-seeding indicator (PRD §9.1, IN-Q10)
+
+Requires Tasks 1, 4, 6 merged. **Step 5 is the ~Aug 2 mid-phase checkpoint (joint sync point).**
+
+**Files:**
+- Create: `server/src/services/generation.service.ts`, `server/src/routes/generation.routes.ts`
+- Modify: `server/src/app.ts` (mount — append-only)
+- Test: `tests/unit/generation.service.test.ts`
+
+**Interfaces:**
+- Consumes: llm component (`completeJson`), qdrant `search` + `courseCollection` (Task 6), embeddings component, `createQuestion` (Task 4), jobs component, per-step models `env.llmModelGenerator/Validator/Reviewer`.
+- Produces: `runGenerationPipeline(input)` — per question: **retrieve** (embed LO name + optional prompt, search course collection, top 6 chunks) → **generator** (`env.llmModelGenerator`) → **structure validator** (`env.llmModelValidator`, per-role assessment) → **reviewer** (`env.llmModelReviewer`, the five IN-Q05 criteria → `{ decision: 'pass'|'flag'|'reject', reasoning }`) → insert via `createQuestion` with `agentDecision` + `sourceRefs`. Output always enters as **Draft**; the pipeline never publishes. Plus the `generation.run` job, `POST /api/courses/:courseId/generate` (validate, enqueue, `202 { jobId }`), `preseedingProgress(courseId)`, and `GET /api/courses/:courseId/preseeding`. Prompts live as exported constants `GENERATOR_PROMPT`/`VALIDATOR_PROMPT`/`REVIEWER_PROMPT` (template functions) so Phase 4 content QA can tune them.
+
+- [ ] **Step 1: Failing tests** — per the core document, Task 8 Step 1 (pipeline calls the three steps with the three distinct configured models — assert model arg per call; reviewer `reject` still inserts a Draft with `agentDecision.decision:'reject'`; generator output failing option invariants is retried once then skipped with a logged warning; `preseedingProgress` counts approved/reviewed per LO). Mock llm/qdrant/questions.service.
+- [ ] **Step 2: Verify FAIL.**
+- [ ] **Step 3: Implement** with full, grounded prompt texts (generator: 4 options, exactly one correct + roles from the taxonomy + JSON schema; validator: per-option role assessment; reviewer: the five IN-Q05 criteria). Wire the job + routes; mount in `app.ts`.
+- [ ] **Step 4: Tests + typecheck** → PASS.
+- [ ] **Step 5: Manual checkpoint (JOINT, ~Aug 2)** — with docker + a reachable LLM (`LLM_PROVIDER=ollama` or sandbox): create a course + theme + LO, upload the fixture material, run generation, confirm Draft questions with agent decisions appear; **then approve one and have Stephen serve it to a student end-to-end.** This is the mid-phase checkpoint — both developers verify.
+- [ ] **Step 6: Commit** — `git commit -m "feat: three-agent generation pipeline with per-step models; thin-LO generation and pre-seeding progress (§9.1, IN-Q10)"`
+
+---
+
+### Task 15: Instructor client views (IN-S01–S06, IN-Q02–Q05, IN-Q08, IN-Q10, IN-L06)
+
+Requires Tasks 2, 5, 6, 7, 8 merged (their endpoints).
+
+**Files:**
+- Create: `client/src/views/instructor/course-setup.ts`, `materials.ts`, `bank.ts`, `review-queue.ts`, `preseeding.ts`
+- Modify: `client/src/router.ts`/`main.ts` (instructor routes), `client/src/views/home.ts` (instructor branch), `client/public/styles/main.css`
+
+**Interfaces:**
+- Consumes: courses/materials/questions/generation endpoints (contract); `renderRichText` for stems/explanations; existing `api.ts` fetch helper; router.
+- Produces: hash routes `#/instructor/course/:id/{setup,materials,bank,queue,preseeding}`. Uses the param-matching router — **coordinate with Stephen**, who extends `startRouter`'s `resolve` with a param-pattern matcher in his Task 14; if his Task 14 hasn't landed, extract the pure `matchRoute(pattern, path)` helper yourself and share it.
+
+Key behaviours (small, concrete DOM code in the existing views' style; see the core document, Task 15): duplicate-name inline warning (non-blocking) on theme/LO create; edited-field highlighting in the editor (`.edited` class vs the loaded version); approve moves state immediately and updates the row without reload; bulk approve `confirm()` with the count; publish shows the checklist with warnings but allows publishing; upload form accepts multiple files + a URL field and polls `GET /materials` every 3s while any material is `processing`.
+
+- [ ] **Step 1: Build views route by route against the live API** — keep each view file focused; shared bits (option buttons, status badge) go in `client/src/ui.ts` (coordinate with Stephen's Task 14, which also touches `ui.ts`).
+- [ ] **Step 2: Typecheck + lint** — `npm run typecheck && npm run lint` → PASS.
+- [ ] **Step 3: Playwright spec** `tests/e2e/instructor-pipeline.spec.ts` — create course → add theme/LO → upload fixture material → generate for the LO (guard `test.skip(!process.env.LLM_AVAILABLE)`) → approve a question → publish course.
+- [ ] **Step 4: Commit** — `git commit -m "feat: instructor course setup, materials, bank, review queue, and pre-seeding views"`
+
+---
+
+### Task 13: Layer-2 LLM mastery evaluator (PRD §9.2) — *"either" owner; slip candidate*
+
+**Only pick this up if you are ahead of Stephen, and coordinate first** — it
+modifies **Stephen's** `attempts.service.ts` (Task 11). Layer-1 statuses from his
+Task 9 stand alone, so this is pre-approved to slip if not stable by Aug 9. Full
+task (job `mastery.evaluate`, cadence trigger at `attemptsSinceEvaluation >= 5`,
+disengaged fast-track, safe-failure on invalid JSON) is in the core document,
+Task 13. Do not start without a heads-up to Stephen.
+
+---
+
+### Task 16: Phase exit — end-to-end demo test and Approved-only serving proof — Saurav's share
+
+**Joint sync point** — both developers participate; the demo is the phase exit
+gate. Stephen typically drives the student-serving assertions; Saurav's share:
+
+- [ ] Provide the instructor half of `tests/e2e/core-loop-demo.spec.ts` — create course → upload material → generate (or seed via the Task 4 service when `!LLM_AVAILABLE`) → approve → publish.
+- [ ] Verify the Approved-only proof (`tests/unit/approved-only-serving.test.ts`) holds against the real question/bank services (Tasks 4/5) — only `approved` questions are ever selected; a non-approved head throws `question-not-servable`.
+- [ ] Run the full gate together: `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
+- [ ] Commit (joint) — `git commit -m "test: phase-1 exit — core-loop demo e2e and approved-only serving proof"`
+
+---
+
+## Saurav's exit checklist (Dev B slice of the phase exit criteria)
+
+- [ ] Task 8 mid-phase checkpoint hit (~Aug 2): an instructor-generated, approved question served to a student end-to-end.
+- [ ] Publication-state transitions covered by jest (Task 4); auth-gated instructor endpoints covered (Tasks 2, 5).
+- [ ] Generation pipeline never publishes — output always Draft (Task 8 tests).
+- [ ] Approved-only serving proof passes against the real bank services (Task 16).
+- [ ] Instructor pipeline e2e green (Task 15) and joint core-loop demo green (Task 16).
+
+## Slip order (Saurav-relevant, lowest first)
+
+1. Layer-2 mastery evaluator (Task 13) — only if picked up; Layer-1 stands alone.
+2. AI-suggested hierarchy (Task 7's `suggestHierarchy` only) — keep `classifyMaterial`.

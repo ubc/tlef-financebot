@@ -65,7 +65,7 @@ exists — seed via the Task 4 service or direct Mongo inserts; don't wait.
 - Modify: `package.json` (add `agenda`, `nanoid@3` — v3 is CommonJS-compatible)
 
 **Interfaces:**
-- Consumes: `getMongoClient()` from the mongodb component; `env`.
+- Consumes: `env` (`mongodbUri`, `mongodbDbName`). **Note (post-implementation):** agenda@4's job-locking reads `findOneAndUpdate(...).value`, a mongodb@4 result shape the repo's top-level mongodb@7 driver no longer returns — so the component opens its OWN connection via agenda's bundled mongodb@4 driver (`db: { address }`, address derived from `env`) instead of sharing `getMongoClient()`. See `server/src/components/jobs/AGENTS.md`.
 - Produces: `startJobs(): Promise<void>`, `stopJobs(): Promise<void>`, `defineJob<T>(name: string, handler: (data: T) => Promise<void>): void`, `enqueueJob<T>(name: string, data: T): Promise<void>`, `scheduleRecurring(name: string, interval: string): Promise<void>`. Used by ingestion (Task 6), generation (Task 8), mastery evaluation (Task 13), and later phases (term-expiry sweep, daily summaries).
 
 - [ ] **Step 1: Install**
