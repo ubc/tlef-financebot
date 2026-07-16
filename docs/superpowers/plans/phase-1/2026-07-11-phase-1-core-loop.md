@@ -68,12 +68,12 @@ exists — seed via the Task 4 service or direct Mongo inserts; don't wait.
 - Consumes: `env` (`mongodbUri`, `mongodbDbName`). **Note (post-implementation):** agenda@4's job-locking reads `findOneAndUpdate(...).value`, a mongodb@4 result shape the repo's top-level mongodb@7 driver no longer returns — so the component opens its OWN connection via agenda's bundled mongodb@4 driver (`db: { address }`, address derived from `env`) instead of sharing `getMongoClient()`. See `server/src/components/jobs/AGENTS.md`.
 - Produces: `startJobs(): Promise<void>`, `stopJobs(): Promise<void>`, `defineJob<T>(name: string, handler: (data: T) => Promise<void>): void`, `enqueueJob<T>(name: string, data: T): Promise<void>`, `scheduleRecurring(name: string, interval: string): Promise<void>`. Used by ingestion (Task 6), generation (Task 8), mastery evaluation (Task 13), and later phases (term-expiry sweep, daily summaries).
 
-- [ ] **Step 1: Install**
+- [x] **Step 1: Install**
 
 Run: `npm install agenda nanoid@3`
 Expected: exit 0.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `tests/unit/jobs.component.test.ts`:
 
@@ -110,12 +110,12 @@ describe('jobs component', () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `npx jest tests/unit/jobs.component.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement `server/src/components/jobs/index.ts`**
+- [x] **Step 4: Implement `server/src/components/jobs/index.ts`**
 
 ```ts
 import { Agenda, type Job } from 'agenda';
@@ -164,12 +164,12 @@ export async function stopJobs(): Promise<void> {
 
 In `server/src/server.ts`, after `ensureIndexes()`: `await startJobs();`. Write `server/src/components/jobs/AGENTS.md` (3–6 lines describing the component and that job handlers live next to the service that owns them).
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `npx jest tests/unit/jobs.component.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/src/components/jobs package.json tests/unit/jobs.component.test.ts server/src/server.ts
@@ -206,7 +206,7 @@ git commit -m "feat: agenda-backed jobs component"
   - `ensureCourseStudent()`: same for `role: 'student'`.
 - Produces (routes): the Courses/Hierarchy/Roster endpoints exactly as in `docs/api-contract.md`.
 
-- [ ] **Step 1: Write the failing service tests**
+- [x] **Step 1: Write the failing service tests**
 
 `tests/unit/courses.service.test.ts` (mock `collections` like `tests/unit/users.service.test.ts` does — one `jest.fn()` per accessor returning an object of collection-method mocks). Cover, with concrete assertions:
 
@@ -225,12 +225,12 @@ git commit -m "feat: agenda-backed jobs component"
 
 Write these five as real `it()` blocks with the mock wiring — follow the `users.service.test.ts` mocking pattern exactly (mock `../../server/src/components/mongodb/collections`, reset in `beforeEach`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/courses.service.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the service**
+- [x] **Step 3: Implement the service**
 
 `server/src/services/courses.service.ts` — implement every function listed in **Interfaces** above. Key excerpts (write the full file; these are the load-bearing parts):
 
@@ -277,7 +277,7 @@ export async function publishChecklist(courseId: ObjectId) {
 }
 ```
 
-- [ ] **Step 4: Implement the guards**
+- [x] **Step 4: Implement the guards**
 
 `server/src/components/auth/course-guards.ts`:
 
@@ -316,18 +316,18 @@ export const ensureCourseStudent = (): RequestHandler => ensureCourseRole('stude
 export const ensureCourseTa = (): RequestHandler => ensureCourseRole('ta');
 ```
 
-- [ ] **Step 5: Implement the routes**
+- [x] **Step 5: Implement the routes**
 
 `server/src/routes/courses.routes.ts` — implement every Courses/Hierarchy/Roster endpoint from the contract, each with `validate()` schemas (e.g. `z.object({ name: z.string().min(1), courseCode: z.string().min(1), term: z.string().min(1) })` for course creation; ObjectId params validated with `z.string().regex(/^[0-9a-f]{24}$/)`). Instructor endpoints use `ensureCourseInstructor()`; `POST /api/courses` uses `ensureApiAuthenticated()` (any authenticated user may create a course in the pilot; tighten later via the Phase-3 capability model). Mount in `app.ts`: `app.use('/api', coursesRouter);`.
 
-- [ ] **Step 6: Write the failing route tests, then make them pass**
+- [x] **Step 6: Write the failing route tests, then make them pass**
 
 `tests/unit/courses.routes.test.ts` — supertest with the passport stand-in middleware (copy the `makeApp` pattern from `tests/unit/notes.route.test.ts`, but set `req.user` to a domain-User fixture with `courseRoles`). Mock `courses.service`. Cover: 401 signed out; 403 non-instructor PATCHing a course; 201 create; 400 invalid body; publish returns `{ published, checklist }`.
 
 Run: `npx jest tests/unit/courses.routes.test.ts tests/unit/courses.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/src/services/courses.service.ts server/src/routes/courses.routes.ts server/src/components/auth/course-guards.ts server/src/app.ts tests/unit/courses.service.test.ts tests/unit/courses.routes.test.ts
