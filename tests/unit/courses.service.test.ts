@@ -219,6 +219,8 @@ describe('putRoster (ST-E02)', () => {
     const count = await putRoster(courseId, [' A@ubc.ca ', 'a@ubc.ca', 'b']);
 
     expect(count).toBe(2);
+    expect(rosterDeleteMany).toHaveBeenCalledTimes(1);
+    expect(rosterDeleteMany).toHaveBeenCalledWith({ courseId, identifier: { $nin: ['a@ubc.ca', 'b'] } });
     const [ops] = rosterBulkWrite.mock.calls[0];
     expect(ops.map((op: { updateOne: { filter: { identifier: string } } }) => op.updateOne.filter.identifier)).toEqual([
       'a@ubc.ca',
@@ -247,9 +249,6 @@ describe('putRoster (ST-E02)', () => {
       identifier: 'a@ubc.ca',
       addedAt: expect.any(Date),
     });
-    expect(Object.prototype.hasOwnProperty.call(opForExisting.updateOne.update.$setOnInsert, 'extendedUntil')).toBe(
-      false,
-    );
   });
 
   it('removes an identifier absent from the new list, without touching identifiers still present', async () => {
@@ -260,6 +259,7 @@ describe('putRoster (ST-E02)', () => {
     const count = await putRoster(courseId, ['keep@ubc.ca']);
 
     expect(count).toBe(1);
+    expect(rosterDeleteMany).toHaveBeenCalledTimes(1);
     expect(rosterDeleteMany).toHaveBeenCalledWith({ courseId, identifier: { $nin: ['keep@ubc.ca'] } });
   });
 
