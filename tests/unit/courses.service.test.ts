@@ -21,6 +21,7 @@ import {
   createCourse,
   updateCourse,
   addTheme,
+  archiveTheme,
   publishChecklist,
   setPublished,
   putRoster,
@@ -37,8 +38,10 @@ const themesSort = jest.fn();
 const themesLimit = jest.fn();
 const themesToArray = jest.fn();
 const themesInsertOne = jest.fn();
+const themesFindOneAndUpdate = jest.fn();
 const losFind = jest.fn();
 const losToArray = jest.fn();
+const losUpdateMany = jest.fn();
 const questionsCountDocuments = jest.fn();
 const rosterDeleteMany = jest.fn();
 const rosterInsertMany = jest.fn();
@@ -53,8 +56,10 @@ beforeEach(() => {
   themesLimit.mockReset();
   themesToArray.mockReset();
   themesInsertOne.mockReset();
+  themesFindOneAndUpdate.mockReset();
   losFind.mockReset();
   losToArray.mockReset();
+  losUpdateMany.mockReset();
   questionsCountDocuments.mockReset();
   rosterDeleteMany.mockReset();
   rosterInsertMany.mockReset();
@@ -70,8 +75,12 @@ beforeEach(() => {
     updateOne: coursesUpdateOne,
   } as never);
   jest.mocked(usersCol).mockReturnValue({ updateOne: usersUpdateOne } as never);
-  jest.mocked(themesCol).mockReturnValue({ find: themesFind, insertOne: themesInsertOne } as never);
-  jest.mocked(losCol).mockReturnValue({ find: losFind } as never);
+  jest.mocked(themesCol).mockReturnValue({
+    find: themesFind,
+    insertOne: themesInsertOne,
+    findOneAndUpdate: themesFindOneAndUpdate,
+  } as never);
+  jest.mocked(losCol).mockReturnValue({ find: losFind, updateMany: losUpdateMany } as never);
   jest.mocked(questionsCol).mockReturnValue({ countDocuments: questionsCountDocuments } as never);
   jest.mocked(rosterCol).mockReturnValue({ deleteMany: rosterDeleteMany, insertMany: rosterInsertMany } as never);
 });
@@ -140,6 +149,28 @@ describe('addTheme (hierarchy CRUD)', () => {
     expect(doc.order).toBe(3);
     expect(doc.courseId).toEqual(courseId);
     expect(doc.name).toBe('Time Value of Money');
+  });
+});
+
+describe('archiveTheme (cascade to Learning Objectives)', () => {
+  it('stamps archivedAt on the theme and on its live LOs with the same timestamp, leaving already-archived LOs untouched', async () => {
+    const themeId = new ObjectId();
+    themesFindOneAndUpdate.mockImplementation((_filter, update) =>
+      Promise.resolve({ _id: themeId, name: 'Theme 1', archivedAt: update.$set.archivedAt }),
+    );
+    losUpdateMany.mockResolvedValue({ modifiedCount: 2 });
+
+    const theme = await archiveTheme(themeId);
+
+    expect(theme.archivedAt).toBeInstanceOf(Date);
+
+    // The cascade must use the exact same Date instance/value stamped on the
+    // theme — not a second `new Date()` call that could drift by a tick —
+    // and must only touch LOs of this theme that are not already archived.
+    const [loFilter, loUpdate] = losUpdateMany.mock.calls[0];
+    expect(loFilter).toEqual({ themeId, archivedAt: { $exists: false } });
+    expect(loUpdate.$set.archivedAt).toEqual(theme.archivedAt);
+    expect(losUpdateMany).toHaveBeenCalledTimes(1);
   });
 });
 

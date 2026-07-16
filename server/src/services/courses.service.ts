@@ -102,13 +102,31 @@ export async function updateTheme(
   return theme;
 }
 
+/**
+ * Archive a Theme and cascade the same `archivedAt` to its still-live LOs.
+ *
+ * Deliberate deviation from the brief (human-approved): the brief's
+ * `archiveTheme` touches only the Theme. Left that way, `getCourseTree` (which
+ * joins LOs to non-archived Themes only) hides the theme's LOs from the UI
+ * while `publishChecklist` (which queries LOs by `courseId` regardless of
+ * their theme's archive state) keeps counting them — an instructor could never
+ * clear the publish checklist for a course with an archived theme. Cascading
+ * the archive stamp at write time keeps `publishChecklist`'s brief-specified
+ * query correct without special-casing it for archived themes.
+ *
+ * Already-archived LOs keep their original `archivedAt` — only LOs still
+ * missing the field are touched, and with the theme's own timestamp so both
+ * carry one consistent archive time.
+ */
 export async function archiveTheme(themeId: ObjectId): Promise<WithId<Theme>> {
+  const archivedAt = new Date();
   const theme = await themesCol().findOneAndUpdate(
     { _id: themeId },
-    { $set: { archivedAt: new Date() } },
+    { $set: { archivedAt } },
     { returnDocument: 'after' },
   );
   if (!theme) throw new Error('theme-not-found');
+  await losCol().updateMany({ themeId, archivedAt: { $exists: false } }, { $set: { archivedAt } });
   return theme;
 }
 

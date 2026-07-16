@@ -79,9 +79,12 @@ const updateLoBody = z.object({
 /**
  * Resolve `res.locals.courseId` from a child resource (theme/LO) before the
  * course-instructor guard runs — see course-guards.ts's `requestCourseId`.
- * 404s (as `theme-not-found` / `lo-not-found`) before authorization even
- * matters, matching the "404 not found" priority in the API contract's error
- * table.
+ * 404s (as `theme-not-found` / `lo-not-found`) before the instructor-role
+ * check even matters, matching the "404 not found" priority in the API
+ * contract's error table. `ensureApiAuthenticated()` runs before this
+ * middleware on every route that uses it (see below), so an unauthenticated
+ * caller gets 401 without this DB lookup running at all, and can't use the
+ * lookup's 404-vs-401 branching to probe whether an id exists.
  */
 function stashCourseIdFromTheme(paramName: 'themeId'): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -236,6 +239,7 @@ coursesRouter.post(
 coursesRouter.patch(
   '/themes/:themeId',
   validate({ params: themeIdParams }),
+  ensureApiAuthenticated(),
   stashCourseIdFromTheme('themeId'),
   ensureCourseInstructor(),
   validate({ body: updateThemeBody }),
@@ -248,6 +252,7 @@ coursesRouter.patch(
 coursesRouter.post(
   '/themes/:themeId/archive',
   validate({ params: themeIdParams }),
+  ensureApiAuthenticated(),
   stashCourseIdFromTheme('themeId'),
   ensureCourseInstructor(),
   async (req, res) => {
@@ -259,6 +264,7 @@ coursesRouter.post(
 coursesRouter.post(
   '/themes/:themeId/los',
   validate({ params: themeIdParams }),
+  ensureApiAuthenticated(),
   stashCourseIdFromTheme('themeId'),
   ensureCourseInstructor(),
   validate({ body: loBody }),
@@ -273,6 +279,7 @@ coursesRouter.post(
 coursesRouter.patch(
   '/los/:loId',
   validate({ params: loIdParams }),
+  ensureApiAuthenticated(),
   stashCourseIdFromLo('loId'),
   ensureCourseInstructor(),
   validate({ body: updateLoBody }),
@@ -285,6 +292,7 @@ coursesRouter.patch(
 coursesRouter.post(
   '/los/:loId/archive',
   validate({ params: loIdParams }),
+  ensureApiAuthenticated(),
   stashCourseIdFromLo('loId'),
   ensureCourseInstructor(),
   async (req, res) => {

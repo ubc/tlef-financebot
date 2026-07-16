@@ -29,7 +29,13 @@ jest.mock('../../server/src/services/courses.service', () => ({
 }));
 
 import { coursesRouter } from '../../server/src/routes/courses.routes';
-import { createCourse, setPublished, publishChecklist } from '../../server/src/services/courses.service';
+import {
+  createCourse,
+  setPublished,
+  publishChecklist,
+  getThemeCourseId,
+  getLoCourseId,
+} from '../../server/src/services/courses.service';
 
 const courseId = new ObjectId();
 
@@ -131,5 +137,49 @@ describe('courses routes (auth + course-instructor gating)', () => {
       ],
     });
     expect(setPublished).toHaveBeenCalledWith(expect.any(ObjectId), true);
+  });
+});
+
+describe('Theme/LO routes authenticate before the stash DB lookup', () => {
+  const themeId = new ObjectId();
+  const loId = new ObjectId();
+
+  beforeEach(() => {
+    jest.mocked(getThemeCourseId).mockReset();
+    jest.mocked(getLoCourseId).mockReset();
+  });
+
+  it('401s a signed-out PATCH /themes/:themeId without calling getThemeCourseId', async () => {
+    const res = await request(makeApp(undefined))
+      .patch(`/api/themes/${themeId.toHexString()}`)
+      .send({ name: 'New name' });
+    expect(res.status).toBe(401);
+    expect(getThemeCourseId).not.toHaveBeenCalled();
+  });
+
+  it('401s a signed-out POST /themes/:themeId/archive without calling getThemeCourseId', async () => {
+    const res = await request(makeApp(undefined)).post(`/api/themes/${themeId.toHexString()}/archive`);
+    expect(res.status).toBe(401);
+    expect(getThemeCourseId).not.toHaveBeenCalled();
+  });
+
+  it('401s a signed-out POST /themes/:themeId/los without calling getThemeCourseId', async () => {
+    const res = await request(makeApp(undefined))
+      .post(`/api/themes/${themeId.toHexString()}/los`)
+      .send({ name: 'New LO' });
+    expect(res.status).toBe(401);
+    expect(getThemeCourseId).not.toHaveBeenCalled();
+  });
+
+  it('401s a signed-out PATCH /los/:loId without calling getLoCourseId', async () => {
+    const res = await request(makeApp(undefined)).patch(`/api/los/${loId.toHexString()}`).send({ name: 'x' });
+    expect(res.status).toBe(401);
+    expect(getLoCourseId).not.toHaveBeenCalled();
+  });
+
+  it('401s a signed-out POST /los/:loId/archive without calling getLoCourseId', async () => {
+    const res = await request(makeApp(undefined)).post(`/api/los/${loId.toHexString()}/archive`);
+    expect(res.status).toBe(401);
+    expect(getLoCourseId).not.toHaveBeenCalled();
   });
 });
