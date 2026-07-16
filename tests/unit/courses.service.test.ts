@@ -44,7 +44,7 @@ const losToArray = jest.fn();
 const losUpdateMany = jest.fn();
 const questionsCountDocuments = jest.fn();
 const rosterDeleteMany = jest.fn();
-const rosterInsertMany = jest.fn();
+const rosterBulkWrite = jest.fn();
 
 beforeEach(() => {
   coursesInsertOne.mockReset();
@@ -62,7 +62,7 @@ beforeEach(() => {
   losUpdateMany.mockReset();
   questionsCountDocuments.mockReset();
   rosterDeleteMany.mockReset();
-  rosterInsertMany.mockReset();
+  rosterBulkWrite.mockReset();
 
   themesSort.mockReturnValue({ limit: themesLimit });
   themesLimit.mockReturnValue({ toArray: themesToArray });
@@ -82,7 +82,7 @@ beforeEach(() => {
   } as never);
   jest.mocked(losCol).mockReturnValue({ find: losFind, updateMany: losUpdateMany } as never);
   jest.mocked(questionsCol).mockReturnValue({ countDocuments: questionsCountDocuments } as never);
-  jest.mocked(rosterCol).mockReturnValue({ deleteMany: rosterDeleteMany, insertMany: rosterInsertMany } as never);
+  jest.mocked(rosterCol).mockReturnValue({ deleteMany: rosterDeleteMany, bulkWrite: rosterBulkWrite } as never);
 });
 
 describe('createCourse (IN-S01)', () => {
@@ -211,17 +211,66 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
 });
 
 describe('putRoster (ST-E02)', () => {
-  it('lower-cases and dedupes identifiers, replacing the roster', async () => {
+  it('lower-cases and dedupes identifiers, reconciling the roster instead of wiping it', async () => {
     rosterDeleteMany.mockResolvedValue({ deletedCount: 0 });
-    rosterInsertMany.mockResolvedValue({ insertedCount: 2 });
+    rosterBulkWrite.mockResolvedValue({ ok: 1 });
     const courseId = new ObjectId();
 
     const count = await putRoster(courseId, [' A@ubc.ca ', 'a@ubc.ca', 'b']);
 
     expect(count).toBe(2);
+    const [ops] = rosterBulkWrite.mock.calls[0];
+    expect(ops.map((op: { updateOne: { filter: { identifier: string } } }) => op.updateOne.filter.identifier)).toEqual([
+      'a@ubc.ca',
+      'b',
+    ]);
+  });
+
+  it('preserves an existing entry\'s extendedUntil and addedAt on re-upload instead of overwriting them', async () => {
+    rosterDeleteMany.mockResolvedValue({ deletedCount: 0 });
+    rosterBulkWrite.mockResolvedValue({ ok: 1 });
+    const courseId = new ObjectId();
+
+    await putRoster(courseId, ['a@ubc.ca', 'newstudent@ubc.ca']);
+
+    // The upsert for an already-present identifier must never carry a $set
+    // that would clobber extendedUntil/addedAt on the existing document —
+    // only $setOnInsert (a no-op when the doc already exists) is allowed.
+    const [ops] = rosterBulkWrite.mock.calls[0];
+    const opForExisting = ops.find(
+      (op: { updateOne: { filter: { identifier: string } } }) => op.updateOne.filter.identifier === 'a@ubc.ca',
+    );
+    expect(opForExisting.updateOne.upsert).toBe(true);
+    expect(opForExisting.updateOne.update.$set).toBeUndefined();
+    expect(opForExisting.updateOne.update.$setOnInsert).toEqual({
+      courseId,
+      identifier: 'a@ubc.ca',
+      addedAt: expect.any(Date),
+    });
+    expect(Object.prototype.hasOwnProperty.call(opForExisting.updateOne.update.$setOnInsert, 'extendedUntil')).toBe(
+      false,
+    );
+  });
+
+  it('removes an identifier absent from the new list, without touching identifiers still present', async () => {
+    rosterDeleteMany.mockResolvedValue({ deletedCount: 1 });
+    rosterBulkWrite.mockResolvedValue({ ok: 1 });
+    const courseId = new ObjectId();
+
+    const count = await putRoster(courseId, ['keep@ubc.ca']);
+
+    expect(count).toBe(1);
+    expect(rosterDeleteMany).toHaveBeenCalledWith({ courseId, identifier: { $nin: ['keep@ubc.ca'] } });
+  });
+
+  it('clears the whole roster and returns 0 for an empty/all-blank identifier list', async () => {
+    rosterDeleteMany.mockResolvedValue({ deletedCount: 3 });
+    const courseId = new ObjectId();
+
+    const count = await putRoster(courseId, ['   ', '']);
+
+    expect(count).toBe(0);
     expect(rosterDeleteMany).toHaveBeenCalledWith({ courseId });
-    const [entries] = rosterInsertMany.mock.calls[0];
-    expect(entries.map((e: { identifier: string }) => e.identifier)).toEqual(['a@ubc.ca', 'b']);
-    expect(entries.every((e: { addedAt: unknown }) => e.addedAt instanceof Date)).toBe(true);
+    expect(rosterBulkWrite).not.toHaveBeenCalled();
   });
 });

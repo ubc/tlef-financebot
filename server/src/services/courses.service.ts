@@ -258,14 +258,43 @@ export async function setPublished(courseId: ObjectId, published: boolean): Prom
 
 // --- Roster (ST-E02) -----------------------------------------------------------
 
-/** Replace the roster with the given identifiers: lower-cased, trimmed, deduped. */
+/**
+ * Reconcile the roster to the given identifiers: lower-cased, trimmed,
+ * deduped. This is deliberately NOT a delete-then-insert (the brief's literal
+ * "replaces" wording) — human-approved deviation, data-integrity motivated.
+ *
+ * `RosterEntry.extendedUntil` (IN-S02) is an instructor-granted per-student
+ * access extension. A wipe-and-rewrite on every re-upload would silently
+ * destroy every extension in the course the next time an instructor added
+ * one name to the roster. Instead:
+ *  - identifiers no longer in the list are removed;
+ *  - identifiers still in the list are left untouched (their `extendedUntil`
+ *    and original `addedAt` survive) via `$setOnInsert`, which only takes
+ *    effect on the documents the upsert actually creates;
+ *  - new identifiers are inserted with `addedAt` = now.
+ * An empty/all-blank list still clears the whole roster (there is nothing to
+ * preserve), returning 0.
+ */
 export async function putRoster(courseId: ObjectId, identifiers: string[]): Promise<number> {
   const unique = Array.from(new Set(identifiers.map((id) => id.trim().toLowerCase()).filter(Boolean)));
-  await rosterCol().deleteMany({ courseId });
-  if (unique.length === 0) return 0;
+  if (unique.length === 0) {
+    await rosterCol().deleteMany({ courseId });
+    return 0;
+  }
+  // Safe only because `unique` is non-empty here — `{ $nin: [] }` matches
+  // every document, which would wipe the roster in the empty-list case
+  // (handled separately above).
+  await rosterCol().deleteMany({ courseId, identifier: { $nin: unique } });
   const now = new Date();
-  const entries: RosterEntry[] = unique.map((identifier) => ({ courseId, identifier, addedAt: now }));
-  await rosterCol().insertMany(entries);
+  await rosterCol().bulkWrite(
+    unique.map((identifier) => ({
+      updateOne: {
+        filter: { courseId, identifier },
+        update: { $setOnInsert: { courseId, identifier, addedAt: now } satisfies RosterEntry },
+        upsert: true,
+      },
+    })),
+  );
   return unique.length;
 }
 
