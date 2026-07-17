@@ -89,12 +89,11 @@ export async function createQuestion(input: {
     ...(input.agentDecision !== undefined ? { agentDecision: input.agentDecision } : {}),
   };
 
-  // Version first, then head — an orphan version (insert failed on the head)
-  // is invisible to every query path, but an orphan head (insert failed on
-  // the version) would point at a nonexistent currentVersionId and be
-  // discoverable/repairable. No transactions/sessions here — no service in
-  // this repo uses them, and both _ids are pre-generated so there's no
-  // read-after-write dependency between the two inserts.
+  // Version first, then head: an orphan version (head insert fails) is
+  // invisible to every query path, whereas an orphan head (version insert
+  // fails) is discoverable and points to a nonexistent currentVersionId — the
+  // worse failure mode. No transactions/sessions here; both _ids are
+  // pre-generated so neither has a read-after-write dependency.
   await questionVersionsCol().insertOne({ _id: versionId, ...version });
   await questionsCol().insertOne({ _id: questionId, ...question });
 
@@ -158,6 +157,10 @@ export async function editQuestion(
   // Tagging-only (or empty) patch: no content changed, so no new version and
   // no 'manually-edited' label — just the head's tags, if any were given.
   if (editedFields.length === 0) {
+    // Skip head update entirely if no head patch and no content change.
+    if (Object.keys(headPatch).length === 0) {
+      return current;
+    }
     await questionsCol().updateOne({ _id: questionId }, { $set: { updatedAt: new Date(), ...headPatch } });
     return current;
   }
@@ -165,13 +168,14 @@ export async function editQuestion(
   // Drop _id — this is a new version document, not an update of `current`.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _id, ...currentContent } = current;
+  const now = new Date();
   const next: QuestionVersion = {
     ...currentContent,
     ...contentPatch,
     version: current.version + 1,
     editedFields,
     createdBy: byPuid,
-    createdAt: new Date(),
+    createdAt: now,
   };
 
   const { insertedId } = await questionVersionsCol().insertOne(next);
@@ -179,7 +183,7 @@ export async function editQuestion(
   await questionsCol().updateOne(
     { _id: questionId },
     {
-      $set: { currentVersionId: insertedId, currentVersion: next.version, updatedAt: new Date(), ...headPatch },
+      $set: { currentVersionId: insertedId, currentVersion: next.version, updatedAt: now, ...headPatch },
       $addToSet: { labels: 'manually-edited' },
     },
   );

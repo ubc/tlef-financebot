@@ -197,7 +197,7 @@ describe('editQuestion (IN-Q03)', () => {
     const insertedVersionId = new ObjectId();
     versionsInsertOne.mockResolvedValue({ acknowledged: true, insertedId: insertedVersionId });
 
-    await editQuestion(questionId, { stem: 'Updated stem' }, 'PUID-INSTR-0002');
+    const result = await editQuestion(questionId, { stem: 'Updated stem' }, 'PUID-INSTR-0002');
 
     expect(questionsUpdateOne).toHaveBeenCalledTimes(1);
     const [filter, update] = questionsUpdateOne.mock.calls[0];
@@ -206,6 +206,8 @@ describe('editQuestion (IN-Q03)', () => {
     expect(update.$set.currentVersion).toBe(2);
     expect(update.$set.updatedAt).toBeInstanceOf(Date);
     expect(update.$addToSet).toEqual({ labels: 'manually-edited' });
+    // The version's createdAt and the head's updatedAt must be the same value.
+    expect(result.createdAt).toEqual(update.$set.updatedAt);
   });
 
   it('validates patched options against the version\'s existing (unpatchable) type', async () => {
@@ -263,15 +265,13 @@ describe('editQuestion (IN-Q03)', () => {
       expect(update.$addToSet).toBeUndefined();
     });
 
-    it('an empty patch inserts no version and adds no label', async () => {
+    it('an empty patch inserts no version, adds no label, and issues no head write', async () => {
       const result = await editQuestion(questionId, {}, 'PUID-INSTR-0002');
 
       expect(versionsInsertOne).not.toHaveBeenCalled();
       expect(result).toEqual(currentVersion);
 
-      expect(questionsUpdateOne).toHaveBeenCalledTimes(1);
-      const [, update] = questionsUpdateOne.mock.calls[0];
-      expect(update.$addToSet).toBeUndefined();
+      expect(questionsUpdateOne).not.toHaveBeenCalled();
     });
 
     it('a content+tags patch still versions and labels (unchanged from today)', async () => {
