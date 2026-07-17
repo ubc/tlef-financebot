@@ -1,19 +1,25 @@
 # Saurav — Phase 1 progress
 
-_Last updated: 2026-07-16_
+_Last updated: 2026-07-17_
 
-**Tasks 1, 2, 4, 5, and 6 are done and reviewed.** Tasks 1, 2, 4, and 5 are
-**merged to `main`** (PRs #13, #14, #15, #16 — `main` is now `99d0d72`). Task 6
-is code-complete on branch `saurav/task-6-materials-ingestion`, review
-**Spec ✅ / Quality Approved**, and **awaiting Saurav's push + PR**. Full suite
-green: **209 unit** (151 from Tasks 1–5 + 58 new), typecheck + eslint + build
-clean, and the server's boot verified.
+**Tasks 1, 2, 4, 5, and 6 are merged to `main`** (PRs #13, #14, #15, #16, #17;
+`main` is now `8558317`, which also carries Stephen's Phase-1 core loop, PR #18).
+**Task 7 is code-complete on branch `saurav/task-7-classification`** (`c86067f`),
+**awaiting Saurav's push + PR**. Full suite green: **319 unit** (typecheck + build
+clean; own files lint-clean — see the pre-existing `main` lint note below).
 
 **Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
 exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
-(see "What I need from you" below). Next up is **Task 7** (LLM
-auto-classification + AI-suggested hierarchy), which needs Task 6 merged — it
-modifies Task 6's routes and consumes its `courseCollection()`.
+(see "What I need from you" below). Next up is **Task 8** (three-agent generation
+pipeline; needs Tasks 1+4+6, all merged) — **Step 5 is the ~Aug 2 joint
+mid-phase checkpoint.**
+
+> **⚠️ Pre-existing lint error on `main` (Stephen's file, NOT introduced by
+> Task 7):** `server/src/services/review-book.service.ts:1` trips
+> `@typescript-eslint/consistent-type-imports` (`import` → `import type`).
+> Confirmed present on `8558317` by stashing Task 7 and linting. Left untouched
+> per the two-developer convention (don't "helpfully fix" the other developer's
+> file) — **flag to Stephen**; it is a one-line `--fix`.
 
 > **🚨 If you are about to register an Agenda job (Tasks 7, 8, 13): do NOT call
 > `defineJob()` at module level.** Task 6's brief said to, and it made the server
@@ -35,13 +41,54 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | merged, PR #14 (`2060254`) |
 | 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | merged, PR #15 (`33b2eb1`) |
 | 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | merged, PR #16 (`99d0d72`) |
-| 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | reviewed, **awaiting push + PR** (`078703a`) |
+| 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | merged, PR #17 |
+| 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | code-complete, **awaiting push + PR** (`c86067f`) |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 7 — decided/forced during implementation (2026-07-17)
+
+1. **`suggestHierarchy` + its endpoint were BUILT, not slipped (human decision).**
+   The plan flags `suggestHierarchy` as slip candidate #3 and its endpoint is
+   **not in `docs/api-contract.md`**. Saurav chose the full build, so
+   `GET /api/courses/:courseId/suggest-hierarchy` was **added to the contract**
+   (marked `<!-- ADDED in Task 7; pending two-developer review -->`).
+   → **This is a contract change — Stephen must sign off at PR time** (the one
+   coordination-artifact edit in this task).
+
+2. **A persisted `excerpt` field was added to `Material` (domain.ts) and written
+   at ingest.** The plan says `suggestHierarchy` reads "all ready materials'
+   first chunks" and `classifyMaterial` "material's first ~2000 chars" — but the
+   qdrant component exposes no scroll/get and stored payloads carry no
+   `chunkIndex`, so "first chunk" is unrecoverable from Qdrant. Persisting the
+   first ~2000 chars of the ingested text on the Material (one field, set in the
+   same `ready` update) is the faithful, cheaper equivalent: it also lets
+   `classifyMaterial(materialId)` keep the plan's exact single-arg signature with
+   **no file re-parse and no URL re-fetch**. Additive; nothing else consumed
+   `Material` outside my own code.
+
+3. **Classification is wired as a best-effort call in the ingest tail, NOT a new
+   job (no `defineJob`).** Per the STATUS boot-crash warning, nothing was
+   registered at module level. `classifyMaterial` runs inside `ingestMaterial`
+   *after* the material is marked `ready`, in its **own** `try/catch`, so a
+   classifier/LLM failure can never flip a successfully-ingested material to
+   `failed`. `app.smoke.test.ts` (boot guard) stays green.
+
+4. **`completeJson<T>` added to `components/genai/llm`** (the plan's stated
+   fallback: the component only had `sendMessage`). Portable route — `responseFormat:
+   'json'`, `temperature: 0`, tolerant parse (strips ```json fences / prose),
+   **one** corrective retry, then throws `llm-json-parse-failed`. The toolkit's
+   Zod `sendStructuredConversation` was avoided: it needs a structured-output
+   model the local Ollama default (`ministral-3`) doesn't provide. Covered by
+   `tests/unit/llm-complete-json.test.ts` (5 cases, toolkit `LLMModule` mocked).
+
+5. **Live end-to-end never run** (same as Task 6): classification needs Mongo +
+   Qdrant + a real LLM. Unit + boot-smoke coverage only. Fold into the Task 8
+   ~Aug 2 checkpoint / Task 16 phase-exit run.
 
 ### Task 6 — decided by Saurav during review (2026-07-17)
 
@@ -468,14 +515,14 @@ not an oversight:
 
 ## What's left
 
-- **Task 7** — LLM auto-classification + AI-suggested hierarchy (IN-S06). Needs
-  Task 6 merged: it modifies Task 6's routes (adding the contract's
-  `POST /api/materials/:materialId/classification`, deliberately not built in
-  Task 6) and wires `classifyMaterial` into the tail of the `material.ingest`
-  job. **Read Task 6 deviation 1 before registering anything with `defineJob`.**
-- Then Tasks 8 (three-agent generation pipeline, needs 1+4+6 — **Step 5 is the
-  ~Aug 2 joint mid-phase checkpoint**) and 15 (instructor client views, needs
-  2+5+6+7+8).
+- **Task 8** — three-agent generation pipeline (needs Tasks 1+4+6, all merged).
+  **Step 5 is the ~Aug 2 joint mid-phase checkpoint.** Consumes
+  `courseCollection()` + `completeJson()` (both now shipped). **Read Task 6
+  deviation 1 before registering `generation.run` with `defineJob` — use a
+  `registerXJobs()` called from `server.ts` after `startJobs()`.**
+- Then Task 15 (instructor client views, needs 2+5+6+7+8) — it renders Task 7's
+  `classificationSuggestion` ("Unclassified" when absent) and can call
+  `GET .../suggest-hierarchy`.
 - **Task 8 carry-forward:** `courseCollection(courseId)` → `course-<hex>` is
   exported from `materials.service.ts` for you. Retrieval will see orphan tail
   points from any shrinking re-ingest (see Task 6's deferred items).
