@@ -777,7 +777,9 @@ export interface AttemptResult {
   Behaviour: writes the AttemptRecord (pinning version, LO context, mode, applied strategy, difficulty from the version, paramValues, isRetry) → updates mastery (retry attempts are independent full-weight attempts) → on any miss, upserts the ReviewBookEntry **immediately regardless of retry outcome** (one entry per question; repeat miss updates `triggeringAttemptId`/`updatedAt`) → Strategy A miss additionally calls `selectRetryQuestion`; no retry available ⇒ degrade to full reveal (`strategy` stays `'a'`, `revealed` becomes all options — the §5.1 degradation) → `recommendation: 'advance-lo'` when this attempt flipped the LO to covered; `'advance-theme'` when the theme is now covered (ST-P05 backend).
   - Routes (`practice.routes.ts`, student-guarded): `POST /api/courses/:courseId/practice/next` (serves via `selectNextQuestion`; response **never** contains roles, explanations, or correctness — only `{ key, text }` options + `watermark: user.uid`), `POST /api/attempts`, `POST /api/courses/:courseId/los/:loId/skip`, `GET /api/courses/:courseId/home` (via `studentCourseHome`), `GET /api/courses/:courseId/session-summary` (last session's attempts grouped by LO + deferred summary — see Task 12's session model).
 
-- [ ] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
+**Note (post-implementation, Stephen 2026-07-17):** `AttemptRecord.themeId`/`ReviewBookEntry.themeId` must be derived from the theme owning the served `loId` (a `losCol()` lookup), **not** `question.themeIds[0]` — a question's `loIds`/`themeIds` are independently-populated many-to-many tag lists, so an arbitrary array index can silently pin the wrong theme for a question tagged across multiple themes, corrupting the `themeCoverage()` check behind `recommendation: 'advance-theme'`. `losCol()` is therefore a required Consumes entry this section omitted. `recommendation`'s precedence when one attempt both completes an LO and its theme: `'advance-theme'` supersedes `'advance-lo'` (a documented interpretation, not stated explicitly above). ⚠️ Cross-task, pre-existing, not fixed here: `editQuestion` (Task 4) doesn't reset `state` to `draft` on a post-approval edit, so `submitAttempt`'s `state === 'approved'` gate alone doesn't catch a student holding a stale `questionVersionId` from before the edit — raise at the Task 16 exit review.
+
+- [x] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
 
 ```
 1. decideStrategy truth table (6 cases: 3 course settings × CM/other roles)
@@ -797,8 +799,8 @@ export interface AttemptResult {
 
 `practice.routes.test.ts`: `/practice/next` response contains no `role`/`explanation` keys anywhere (walk the JSON); 403 non-enrolled; skip endpoint 204.
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
 
 ---
 
