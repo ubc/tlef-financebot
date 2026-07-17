@@ -876,11 +876,11 @@ Key behaviours to implement (each is small, concrete DOM code following the exis
 - **Review Book:** collapsed theme groups with counts; expanding lists entries (auto vs bookmark badges); sort dropdown; "Re-practice" serves the stored question and submits with `mode: 'review-book'`; remove button per entry; empty state (ST-R05).
 - **Session summary:** counts, accuracy per LO, missed list with links; "Defer to next session" PUTs the deferred summary (ST-P10/R06).
 
-- [ ] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
-- [ ] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
-- [ ] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
+- [x] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
+- [x] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
+- [x] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
+- [x] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
 
 ---
 
