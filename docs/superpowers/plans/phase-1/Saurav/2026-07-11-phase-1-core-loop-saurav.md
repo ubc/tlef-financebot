@@ -182,12 +182,18 @@ Requires Task 4 merged.
 - Consumes: Task 4's service; `questionsCol()`, `questionVersionsCol()`, `flagsCol()`, `attemptsCol()`.
 - Produces (service): `browseBank` (archived excluded unless `state:'archived'`/`includeArchived`; joins current versions via `$in` on `currentVersionId`) and `reviewQueue` (non-archived non-approved, ordered: student-flagged → `reviewed` → under-coverage, de-duped). Full signatures in the core document, Task 5 Interfaces.
 - Produces (routes): `GET /api/courses/:courseId/questions`, `GET /api/questions/:questionId`, `PATCH /api/questions/:questionId`, `POST /api/questions/:questionId/transition`, `POST /api/questions/bulk-transition`, `GET /api/courses/:courseId/review-queue` — instructor-guarded; child-resource routes load the question first and stash `res.locals.courseId` **before** the guard (mount guard after a small loader middleware).
+  **Note (post-implementation) — four deviations; `STATUS.md` in this folder has the full rationale:**
+  1. **`POST /api/questions/bulk-transition` needs its own authorization rule — the stash-then-guard recipe above does not cover it.** That route has no `:courseId` and takes an **array** of ids that may span courses, while `ensureCourseInstructor()` resolves exactly ONE course (`course-guards.ts` `requestCourseId()`). Stashing "the question's courseId" (singular) would let an instructor of course A transition course B's questions by including their ids. Implemented: load the questions, collect the distinct `courseId`s of those found, and if that is **not exactly one → 403**; otherwise stash it and guard normally. 403 rather than 400 so the endpoint isn't an existence oracle.
+  2. **The span-check 403 returns the guard's own body**, via a frozen `NO_COURSE_ACCESS_BODY` exported from `course-guards.ts`, so it is indistinguishable from `ensureCourseInstructor()`'s 403 in status, body, headers, and timing. (Otherwise a one-id request revealed whether that id existed, undercutting the point of 403.)
+  3. **`includeArchived` is a service parameter only, not a query param.** `docs/api-contract.md:47` lists only `state/loId/themeId/type/difficulty/label`, and the contract governs the HTTP surface. Nothing is lost — `state=archived` still reaches archived questions. `browseBank`'s signature keeps it for Task 15.
+  4. **`flagsCol()`/`attemptsCol()` are NOT consumed** despite the Consumes line above. The review-queue ordering as specified (student-flagged label → `reviewed` state → under-coverage by approved count) needs neither. They were not imported.
+  Also: the route maps the head's `_id` → **`id`** per the contract, while an embedded `current: QuestionVersion` serializes raw with its own `_id`. **That split is deliberate** — Question heads are `id`, QuestionVersions are raw — which is why `PATCH` returning a raw `QuestionVersion` is correct and should not be "fixed".
 
-- [ ] **Step 1: Write failing tests** — per the core document, Task 5 Step 1 (`bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter, archived hidden by default, review-queue ordering flagged→reviewed→new; `questions.routes.test.ts`: 403 student on instructor routes, `transition` route 409 with the service's `invalid-transition` message, PATCH validates options shape via zod).
-- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
-- [ ] **Step 3: Implement** service + routes per the Interfaces; mount in `app.ts`.
-- [ ] **Step 4: Run tests** — same command `&& npm run typecheck` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: question bank browse/filter and prioritized review queue (IN-Q02/Q05/Q08)"`
+- [x] **Step 1: Write failing tests** — per the core document, Task 5 Step 1 (`bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter, archived hidden by default, review-queue ordering flagged→reviewed→new; `questions.routes.test.ts`: 403 student on instructor routes, `transition` route 409 with the service's `invalid-transition` message, PATCH validates options shape via zod).
+- [x] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+- [x] **Step 3: Implement** service + routes per the Interfaces; mount in `app.ts`.
+- [x] **Step 4: Run tests** — same command `&& npm run typecheck` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: question bank browse/filter and prioritized review queue (IN-Q02/Q05/Q08)"`
 
 ---
 

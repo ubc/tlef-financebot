@@ -196,7 +196,7 @@ export async function transitionQuestion(
   questionId: ObjectId,
   to: PublicationState,
   byPuid: string,
-): Promise<Question> {
+): Promise<WithId<Question>> {
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
   if (!canTransition(question.state, to)) throw new Error(`invalid-transition:${question.state}->${to}`);

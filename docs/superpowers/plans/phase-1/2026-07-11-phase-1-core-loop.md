@@ -557,15 +557,24 @@ git commit -m "feat: question versioning, option invariants, publication transit
   - `reviewQueue(courseId): Promise<Array<Question & { _id: ObjectId; current: QuestionVersion; priority: number }>>` — non-archived, non-approved questions ordered: (1) `labels` contains `student-flagged`, (2) `state === 'reviewed'`, (3) rest by under-coverage (fewest approved questions on their first LO) — computed with three queries and concatenated, de-duplicated by id (IN-Q02 ordering).
 - Produces (routes): `GET /api/courses/:courseId/questions`, `GET /api/questions/:questionId` (head + current + `agentDecision` + `internalNotes` + version list metadata), `PATCH /api/questions/:questionId`, `POST /api/questions/:questionId/transition`, `POST /api/questions/bulk-transition`, `GET /api/courses/:courseId/review-queue` — instructor-guarded; child-resource routes look up the question first and stash `res.locals.courseId` before the guard runs (mount guard after a small loader middleware).
 
-- [ ] **Step 1: Write failing tests** — `bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter (assert a query containing `labels`), archived hidden by default, review-queue ordering (flagged fixture sorts before reviewed before new). `questions.routes.test.ts`: 403 for a student hitting instructor routes; `transition` route returns 409 with the service's `invalid-transition` message; PATCH validates options shape via zod (`options: z.array(z.object({ key: z.string(), text: z.string(), role: z.enum([...]), explanation: z.string() })).length(4).optional()` — use a refinement allowing 2 for true-false based on the loaded question type, or validate count in the service and let zod check element shape only).
+**Note (post-implementation, Saurav 2026-07-17) — four deviations.** Full rationale in `phase-1/Saurav/STATUS.md`; the short version for anyone coding against this surface:
 
-- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+1. **The stash-then-guard recipe above does NOT cover `POST /api/questions/bulk-transition`** — that route has no `:courseId` and takes an **array** of ids that may span courses, while `ensureCourseInstructor()` resolves exactly one course. Stashing a single question's courseId would have let an instructor of course A transition course B's questions. Implemented: distinct `courseId`s of the found questions must be **exactly one**, else **403**; then stash + guard. 403 (not 400) so it isn't an existence oracle. **Anyone adding another array-taking route under `/api/questions` must apply the same rule** — the singular recipe is a trap there.
+2. **The span-check 403 reuses the guard's body** via a frozen `NO_COURSE_ACCESS_BODY` exported from `components/auth/course-guards.ts`, so the two 403s are indistinguishable. Import that constant rather than re-typing the string.
+3. **`includeArchived` is service-only, not a query param** — `docs/api-contract.md:47` doesn't list it and the contract governs the HTTP surface. `state=archived` still reaches archived questions.
+4. **`flagsCol()`/`attemptsCol()` are not consumed** — the review-queue ordering as specified needs neither.
 
-- [ ] **Step 3: Implement** service + routes per the interfaces; mount in `app.ts`.
+**Serialization rule (deliberate):** Question heads serialize as **`id`** per the contract; an embedded `current: QuestionVersion` serializes **raw with its own `_id`**. `PATCH` therefore returns a raw `QuestionVersion` — that is correct, not an oversight.
 
-- [ ] **Step 4: Run tests** — same command + `npm run typecheck` → PASS.
+- [x] **Step 1: Write failing tests** — `bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter (assert a query containing `labels`), archived hidden by default, review-queue ordering (flagged fixture sorts before reviewed before new). `questions.routes.test.ts`: 403 for a student hitting instructor routes; `transition` route returns 409 with the service's `invalid-transition` message; PATCH validates options shape via zod (`options: z.array(z.object({ key: z.string(), text: z.string(), role: z.enum([...]), explanation: z.string() })).length(4).optional()` — use a refinement allowing 2 for true-false based on the loaded question type, or validate count in the service and let zod check element shape only).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+
+- [x] **Step 3: Implement** service + routes per the interfaces; mount in `app.ts`.
+
+- [x] **Step 4: Run tests** — same command + `npm run typecheck` → PASS.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/bank.service.ts server/src/routes/questions.routes.ts server/src/app.ts tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts
