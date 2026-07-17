@@ -17,8 +17,13 @@ function requestCourseId(req: Parameters<RequestHandler>[0], res: Parameters<Req
  * indistinguishable 403 without routing through `ensureCourseRole()` itself
  * (e.g. questions.routes.ts's bulk-transition span-check, which 403s before
  * a course is even resolved) return byte-identical JSON — otherwise a caller
- * could tell the two 403 reasons apart by response body alone. */
-export const NO_COURSE_ACCESS_BODY = { error: 'You do not have access to this course.' } as const;
+ * could tell the two 403 reasons apart by response body alone. `Object.freeze`
+ * makes that invariant structural (a mutation on one caller's reference would
+ * throw in strict mode, or silently corrupt the other caller's response in
+ * non-strict mode, instead of just being a lint-invisible type-level promise)
+ * rather than resting on `as const`, which only prevents reassignment at the
+ * type level and does nothing at runtime. */
+export const NO_COURSE_ACCESS_BODY = Object.freeze({ error: 'You do not have access to this course.' } as const);
 
 function ensureCourseRole(role: CourseRole): RequestHandler {
   return (req, res, next) => {

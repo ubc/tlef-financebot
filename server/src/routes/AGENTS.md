@@ -28,6 +28,19 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   All **public** (they establish/report the session). The `/auth/*` paths are
   intentionally NOT under `/api` (their URLs must match the ACS/SLO registered in
   the IdP). See `components/auth/AGENTS.md`.
+- `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, publish
+  checklist and publish toggle, Theme and LO CRUD/archive, and roster
+  put/get. `POST /api/courses` is open to any authenticated user; every other
+  route is **instructor-gated** for the course it targets via
+  `ensureCourseInstructor()`, with Theme/LO routes stashing `res.locals.courseId`
+  from the child resource first. See `components/auth/course-guards.ts`.
+- `questions.routes.ts` — Question bank: browse/filter, prioritized review
+  queue, single-question detail, editing, and publication-state transitions
+  (including a courses-spanning bulk transition). All routes are
+  **instructor-gated** the same way as `courses.routes.ts`, stashing
+  `res.locals.courseId` from the target question (or, for bulk transition,
+  from the single course the batch resolves to) before
+  `ensureCourseInstructor()` runs.
 
 ## Auth-gating a route
 

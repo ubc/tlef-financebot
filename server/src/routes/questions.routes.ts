@@ -29,10 +29,23 @@ const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const questionIdParams = z.object({ questionId: objectIdParam });
 
-// `satisfies readonly <Union>[]` checks these local lists against
-// domain.ts's unions at compile time — a typo or stale entry here fails the
-// build immediately, rather than as a silent runtime 400 discovered only
-// when a new domain value gets rejected by an out-of-date list here.
+// `satisfies readonly <Union>[]` checks these local lists against domain.ts's
+// unions at compile time, but only in one direction: it catches an entry here
+// that ISN'T a valid union member (typo, stale value after a domain rename).
+// It does NOT catch an omission — a new member added to the domain union
+// (e.g. a 7th PublicationState) that never gets added here would compile
+// fine and just silently 400 at runtime. `assertExhaustive<...>()` below each
+// list closes that gap: its type parameter is constrained to `never`, so
+// passing the set of union members missing from the list (via `Exclude`)
+// fails to satisfy that constraint — and fails the build — unless the list
+// covers every member.
+/** Type-only assertion: fails to compile unless `T` is `never`. Call with an
+ * explicit `Exclude<Union, ListMembers>` type argument and no runtime args. */
+function assertExhaustive<T extends never>(_marker?: T): void {
+  // No runtime behavior — the type parameter's `extends never` constraint is
+  // the entire check, enforced at each call site below.
+}
+
 const PUBLICATION_STATES = [
   'draft',
   'pending-review',
@@ -41,8 +54,14 @@ const PUBLICATION_STATES = [
   'paused',
   'archived',
 ] as const satisfies readonly PublicationState[];
+assertExhaustive<Exclude<PublicationState, (typeof PUBLICATION_STATES)[number]>>();
+
 const QUESTION_TYPES = ['mcq', 'true-false'] as const satisfies readonly QuestionType[];
+assertExhaustive<Exclude<QuestionType, (typeof QUESTION_TYPES)[number]>>();
+
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const satisfies readonly Difficulty[];
+assertExhaustive<Exclude<Difficulty, (typeof DIFFICULTIES)[number]>>();
+
 const QUESTION_LABELS = [
   'source-changed',
   'student-flagged',
@@ -50,12 +69,15 @@ const QUESTION_LABELS = [
   'auto-converted',
   'manually-edited',
 ] as const satisfies readonly QuestionLabel[];
+assertExhaustive<Exclude<QuestionLabel, (typeof QUESTION_LABELS)[number]>>();
+
 const OPTION_ROLES = [
   'correct',
   'common-misconception',
   'partially-correct',
   'clearly-wrong',
 ] as const satisfies readonly OptionRole[];
+assertExhaustive<Exclude<OptionRole, (typeof OPTION_ROLES)[number]>>();
 
 // `includeArchived` is deliberately NOT part of this schema — the contract
 // (docs/api-contract.md line 47) lists only state/loId/themeId/type/
@@ -103,6 +125,15 @@ const bulkTransitionBody = z.object({
  * Resolve `res.locals.courseId` from the question a child route targets,
  * before the course-instructor guard runs — see course-guards.ts's
  * `requestCourseId` and courses.routes.ts's `stashCourseIdFromTheme`.
+ *
+ * Known, deliberate convention (not a bug to "fix" here): because this 404
+ * runs before `ensureCourseInstructor()`, an authenticated non-instructor can
+ * distinguish an existing question id (403) from a nonexistent one (404) —
+ * a 404-before-guard existence oracle. This mirrors `courses.routes.ts`'s
+ * Theme/LO loaders (see `stashCourseIdFromTheme` there) and is already
+ * shipped for themes/LOs on main. Whether this should hold app-wide is a
+ * Phase-1 whole-branch review decision, not a per-task one — do not change
+ * this ordering piecemeal.
  */
 function stashCourseIdFromQuestion(): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {

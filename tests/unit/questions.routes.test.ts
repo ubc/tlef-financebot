@@ -22,6 +22,7 @@ jest.mock('../../server/src/services/questions.service', () => ({
 }));
 
 import { questionsRouter } from '../../server/src/routes/questions.routes';
+import { errorHandler } from '../../server/src/middleware/error-handler';
 import {
   browseBank,
   reviewQueue,
@@ -61,6 +62,11 @@ function makeApp(user?: User): Express {
     next();
   });
   app.use('/api', questionsRouter);
+  // Mounts the real central error handler (not just questionsRouter's
+  // router-scoped normalizer) so the 500-propagation test below exercises
+  // the actual production path a non-domain error takes, rather than
+  // Express's default fallback handler.
+  app.use(errorHandler);
   return app;
 }
 
@@ -118,11 +124,18 @@ describe('GET /api/courses/:courseId/questions (browse, IN-Q08)', () => {
   });
 });
 
-// Review finding 2: questions.routes.ts:166 is the first use of
-// `validate({ query })` in this repo, depending on validate.ts's
-// Object.defineProperty shadowing of Express 5's req.query getter. Nothing
-// previously asserted a filter actually reaches browseBank — a regression
-// that silently passed `{}` through would have passed all prior tests.
+// Review finding 2: questions.routes.ts's browse route is the first use of
+// `validate({ query })` in this repo. These tests prove each filter is
+// parsed and reaches `browseBank` with the correctly typed value (state as a
+// string, loId/themeId coerced to ObjectId, etc.) — the regression the
+// finding actually asked about. They do NOT exercise validate.ts's
+// Object.defineProperty shadowing of Express 5's req.query getter: every
+// field here is a string passthrough, so if that shadowing silently no-op'd
+// and left the raw, unparsed `req.query` in place, `?state=approved` would
+// still produce `{ state: 'approved' }` and these assertions would still
+// pass. Nothing previously asserted a filter actually reaches browseBank at
+// all — a regression that silently passed `{}` through would have passed all
+// prior tests.
 describe('GET /api/courses/:courseId/questions — filter surface (IN-Q08, finding 2)', () => {
   beforeEach(() => {
     jest.mocked(browseBank).mockResolvedValue({ total: 0, questions: [] } as never);
@@ -387,6 +400,33 @@ describe('POST /api/questions/bulk-transition (privilege-escalation guard, Saura
     expect(res.status).toBe(403);
   });
 
+  // Pins the indistinguishable-403 ruling (stashCourseIdFromBulk's doc
+  // comment): the span-check 403 and ensureCourseInstructor()'s ordinary
+  // guard 403 must be byte-identical, so a caller can't tell "ids span
+  // courses" apart from "no access to the resolved course" by response body.
+  // Compares the two actual bodies to each other (not to a hardcoded
+  // literal) so this still catches a regression if NO_COURSE_ACCESS_BODY's
+  // wording changes on one call site but not the other.
+  it('returns the same status and body for the span-check 403 as for the ordinary instructor guard 403', async () => {
+    // Span-check 403: the ids resolve to more than one course.
+    jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([courseId, otherCourseId]);
+    const spanRes = await request(makeApp(instructor))
+      .post('/api/questions/bulk-transition')
+      .send({ questionIds: [questionId.toHexString(), new ObjectId().toHexString()], to: 'approved' });
+
+    // Guard 403: the ids resolve to a single course the instructor has no
+    // role in — reaches ensureCourseInstructor() normally via stashCourseIdFromBulk.
+    jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([otherCourseId]);
+    const guardRes = await request(makeApp(instructor))
+      .post('/api/questions/bulk-transition')
+      .send({ questionIds: [questionId.toHexString()], to: 'approved' });
+
+    expect(spanRes.status).toBe(403);
+    expect(guardRes.status).toBe(403);
+    expect(spanRes.status).toBe(guardRes.status);
+    expect(spanRes.body).toEqual(guardRes.body);
+  });
+
   it('stashes the single resolved courseId and lets ensureCourseInstructor guard normally', async () => {
     jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([courseId]);
     jest.mocked(bulkTransition).mockResolvedValue(2);
@@ -418,6 +458,11 @@ describe('POST /api/questions/bulk-transition (privilege-escalation guard, Saura
       .post('/api/questions/bulk-transition')
       .send({ questionIds: [questionId.toHexString()], to: 'approved' });
 
+    // questionsRouter's normalizer doesn't recognize this message, so it
+    // falls through (via next(err)) to the real errorHandler mounted in
+    // makeApp — proving the error isn't swallowed as a false success, and
+    // that the response matches the contract's error format.
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'connection timed out' });
   });
 });
