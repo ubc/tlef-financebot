@@ -2,11 +2,12 @@
 
 _Last updated: 2026-07-17_
 
-**Tasks 1, 2, 4, 5, and 6 are merged to `main`** (PRs #13, #14, #15, #16, #17;
-`main` is now `8558317`, which also carries Stephen's Phase-1 core loop, PR #18).
-**Task 7 is code-complete on branch `saurav/task-7-classification`** (`c86067f`),
-**awaiting Saurav's push + PR**. Full suite green: **319 unit** (typecheck + build
-clean; own files lint-clean — see the pre-existing `main` lint note below).
+**Tasks 1, 2, 4, 5, and 6 are merged to `main`** (PRs #13–#17; `main` is now
+`8558317`, which also carries Stephen's Phase-1 core loop, PR #18). **Task 7 is
+in review** (PR #19, `3b4896b` — includes a one-line lint fix to Stephen's
+review-book file, see below). **Task 8 is code-complete on
+`saurav/task-8-generation`** (`7f604df`), **stacked on Task 7**, awaiting push +
+PR. Full suite green: **332 unit**, typecheck + build + lint all clean.
 
 **Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
 exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
@@ -42,13 +43,57 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | merged, PR #15 (`33b2eb1`) |
 | 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | merged, PR #16 (`99d0d72`) |
 | 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | merged, PR #17 |
-| 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | code-complete, **awaiting push + PR** (`c86067f`) |
+| 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | in review, PR #19 (`3b4896b`) |
+| 8 | Generation service + routes — three-agent pipeline (generator/validator/reviewer, per-step models), pre-seeding progress (§9.1, IN-Q10) | code-complete on `saurav/task-8-generation` (stacked on Task 7), **awaiting push + PR** (`7f604df`) |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 8 — decided/forced during implementation (2026-07-17)
+
+1. **Branch is STACKED on Task 7** (`saurav/task-8-generation` off
+   `saurav/task-7-classification`), because Task 8 consumes Task 7's
+   `completeJson()` and Task 7 (PR #19) isn't merged yet. After #19 merges,
+   rebase Task 8 onto `main` so its PR shows only Task 8's diff.
+
+2. **Generator runs warm (`temperature: 0.7`); validator + reviewer stay
+   deterministic (temperature 0).** `completeJson` defaults to temperature 0 —
+   correct for Task 7, but for generation it would make every question in a
+   `count > 1` batch **identical**. Only the generator gets the warm
+   temperature; grading/review stay deterministic.
+
+3. **Retrieval is hoisted out of the per-question loop.** Every question in one
+   `runGenerationPipeline` call targets the same LO/prompt, so the grounding
+   query is identical — retrieve once, reuse the chunks for the whole batch
+   (variety comes from the warm generator, not re-retrieval). Saves `count-1`
+   embed+search round-trips.
+
+4. **Cross-course LO guard added.** The route guards `courseId` (path) but
+   `loId` comes from the body, so `runGenerationPipeline` rejects
+   `lo-not-in-course` (403) if the LO belongs to another course — otherwise it
+   would tag this course's Draft questions with a foreign `loId`/`themeId`.
+
+5. **Structural option pre-check (`optionShapeValid`) before spending
+   validator/reviewer calls.** The generator is retried once on invalid options,
+   then the question is skipped with a logged warning; the returned id count
+   reflects only real insertions. `createQuestion` remains the authoritative
+   invariant guard (defense in depth) — a divergence there is also caught and
+   skipped, never fails the batch.
+
+6. **`preseeding` response gained `loName`** (per the core-doc signature) — the
+   contract line listed `{ loId, approved, reviewed, target }`; updated to
+   include `loName`. Additive superset, benign — Stephen's dashboard consumes it.
+
+7. **No `defineJob` at module level** (Task 6 lesson) — `registerGenerationJobs()`
+   is exported and called from `server.ts` after `startJobs()`. `app.smoke.test.ts`
+   (boot guard) stays green.
+
+8. **Live end-to-end / the ~Aug 2 JOINT checkpoint (Step 5) NOT run** — needs
+   docker + a reachable LLM. This is the mid-phase checkpoint both developers
+   verify together; unit + boot-smoke coverage only until then.
 
 ### Task 7 — decided/forced during implementation (2026-07-17)
 
@@ -515,14 +560,18 @@ not an oversight:
 
 ## What's left
 
-- **Task 8** — three-agent generation pipeline (needs Tasks 1+4+6, all merged).
-  **Step 5 is the ~Aug 2 joint mid-phase checkpoint.** Consumes
-  `courseCollection()` + `completeJson()` (both now shipped). **Read Task 6
-  deviation 1 before registering `generation.run` with `defineJob` — use a
-  `registerXJobs()` called from `server.ts` after `startJobs()`.**
-- Then Task 15 (instructor client views, needs 2+5+6+7+8) — it renders Task 7's
-  `classificationSuggestion` ("Unclassified" when absent) and can call
-  `GET .../suggest-hierarchy`.
+- **~Aug 2 JOINT mid-phase checkpoint (Task 8 Step 5)** — with docker + a
+  reachable LLM: create course + theme + LO, upload the fixture material, run
+  generation, confirm Draft questions with agent decisions appear; **then
+  approve one and have Stephen serve it to a student end-to-end.** Both
+  developers verify. This is the one remaining Task 8 step.
+- **Task 15** — instructor client views (needs 2+5+6+7+8, all now code-complete).
+  Renders Task 7's `classificationSuggestion` ("Unclassified" when absent), the
+  `GET .../suggest-hierarchy` outline, and Task 8's pre-seeding progress +
+  generated Drafts with their agent decisions.
+- **Task 13** — Layer-2 LLM mastery evaluator ("either" owner; slip candidate).
+- **Merge sequencing:** Task 7 (PR #19) merges first; then rebase Task 8 onto
+  `main` and open its PR.
 - **Task 8 carry-forward:** `courseCollection(courseId)` → `course-<hex>` is
   exported from `materials.service.ts` for you. Retrieval will see orphan tail
   points from any shrinking re-ingest (see Task 6's deferred items).
