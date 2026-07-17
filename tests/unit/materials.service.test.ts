@@ -20,6 +20,9 @@ jest.mock('../../server/src/components/qdrant', () => ({
   ensureCollection: jest.fn(),
   upsertPoints: jest.fn(),
 }));
+// IN-S06 (Task 7) wires best-effort classifyMaterial into the ingest tail;
+// mock it here so these IN-S04/S05 tests stay isolated from the classifier.
+jest.mock('../../server/src/services/classification.service', () => ({ classifyMaterial: jest.fn() }));
 
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +45,7 @@ import { chunkText } from '../../server/src/components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../../server/src/components/genai/embeddings';
 import { parseFile } from '../../server/src/components/genai/document-parsing';
 import { ensureCollection, upsertPoints } from '../../server/src/components/qdrant';
+import { classifyMaterial } from '../../server/src/services/classification.service';
 
 const insertOne = jest.fn();
 const findOne = jest.fn();
@@ -198,6 +202,10 @@ describe('ingestMaterial — success path (IN-S04)', () => {
     const [filter, update] = updateOne.mock.calls[0];
     expect(filter).toEqual({ _id: materialId });
     expect(update.$set.status).toBe('ready');
+    // IN-S06: the first ~2000 chars are persisted as `excerpt`, and the
+    // material is handed to the best-effort classifier after being marked ready.
+    expect(update.$set.excerpt).toBe('parsed text');
+    expect(classifyMaterial).toHaveBeenCalledWith(materialId);
   });
 });
 

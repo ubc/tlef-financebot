@@ -238,11 +238,11 @@ Requires Task 6 merged (modifies its routes).
 - Consumes: genai `llm` component (`completeJson<T>(prompt, { model })` — if the component exposes only text completion, add a `completeJson` helper there that parses/retries JSON once), `env.llmDefaultModel`; materials + hierarchy collections.
 - Produces: `classifyMaterial(materialId)` (prompt = course Theme/LO names + material's first ~2000 chars; expects `{ themeName, loName?, confidence }`; resolves names → ids; `confidence < 0.5` leaves it unset → "Unclassified" client-side; called at the end of a successful `material.ingest`) and `suggestHierarchy(courseId)` (from all `ready` materials' first chunks; acceptance calls existing `addTheme`/`addLo` from Task 2). **`suggestHierarchy` is slip candidate #3 — if the phase is tight, cut this function and its endpoint only; keep `classifyMaterial`.**
 
-- [ ] **Step 1: Failing tests** — per the core document, Task 7 Step 1 (classification stores a suggestion with resolved ObjectIds; low confidence stores nothing; `suggestHierarchy` shapes the LLM JSON into the return type and never writes the DB directly). Mock the llm component.
-- [ ] **Step 2: Verify FAIL.**
-- [ ] **Step 3: Implement** — prompts inline in the service, one-shot few-shot, temperature 0. Wire `classifyMaterial` into the tail of the `material.ingest` job.
-- [ ] **Step 4: Run tests + typecheck** → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: LLM material classification and hierarchy suggestion (IN-S06)"`
+- [x] **Step 1: Failing tests** — classification.service.test.ts (13) + llm-complete-json.test.ts (5). llm component (`completeJson`) mocked in the service tests; the toolkit `LLMModule` mocked in the helper test.
+- [x] **Step 2: Verify FAIL** — true per-assertion RED via stubs (13 failed / 5 passed), not a compile-only RED.
+- [x] **Step 3: Implement** — prompts inline, one-shot, temperature 0. `classifyMaterial` wired into the `material.ingest` tail (best-effort, cannot flip `ready`→`failed`). Full `suggestHierarchy` fn **and** its endpoint built (human decision — see STATUS deviations).
+- [x] **Step 4: Run tests + typecheck** → 319 unit pass, typecheck + build clean, own files lint-clean.
+- [x] **Step 5: Commit** — `feat: LLM material classification and hierarchy suggestion (IN-S06)` (`c86067f`).
 
 ---
 
