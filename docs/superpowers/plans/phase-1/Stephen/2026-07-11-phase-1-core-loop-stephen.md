@@ -174,11 +174,13 @@ await transitionQuestion(questionId, 'approved', 'seed'); // pending-review -> a
 
 Exactly 4 options for `mcq` (2 for `true-false`) and exactly one `correct`, or it throws `invalid-options:*`.
 
-- [ ] **Step 1: Write the failing tests** — `tests/unit/serving.service.test.ts`, the nine cases in the core document, Task 10 Step 1, against fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])` (approved-only filter; sessionServedIds exclusion; tier targeting; three-rung degradation ladder; zero-approved → null; retry never repeats the excluded id; `studentCourseHome` hides a not-yet-available theme and a zero-approved LO).
-- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/serving.service.test.ts` → FAIL.
-- [ ] **Step 3: Implement** — pure selection over an in-memory candidate list fetched once per call; inject `Math.random` as an optional argument (default `Math.random`) so tests can pin randomness.
-- [ ] **Step 4: Run tests** — `npx jest tests/unit/serving.service.test.ts && npm run typecheck` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
+- [x] **Step 1: Write the failing tests** — `tests/unit/serving.service.test.ts`, the nine cases in the core document, Task 10 Step 1, against fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])` (approved-only filter; sessionServedIds exclusion; tier targeting; three-rung degradation ladder; zero-approved → null; retry never repeats the excluded id; `studentCourseHome` hides a not-yet-available theme and a zero-approved LO).
+- [x] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/serving.service.test.ts` → FAIL.
+- [x] **Step 3: Implement** — pure selection over an in-memory candidate list fetched once per call; inject `Math.random` as an optional argument (default `Math.random`) so tests can pin randomness.
+- [x] **Step 4: Run tests** — `npx jest tests/unit/serving.service.test.ts && npm run typecheck` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
+
+**Post-implementation review note (2026-07-17):** Approved after one fix round. `studentCourseHome` originally issued one `countDocuments` per LO (N+1 queries against real Mongo, invisible under the test fake); fixed to a single `find({courseId, state:'approved'})` + in-memory tally by `loIds`, preserving many-to-many LO-tagging semantics. Two deferred Minors: the `available` field on returned entries is always `true` (a not-yet-available theme is hidden entirely rather than flagged — matches the core doc's literal spec; confirm with Task 14 whether a "locked but visible" state is ever wanted); the zero-approved-LOs-in-a-theme gating path has no dedicated test. Full detail in the gitignored `.superpowers/sdd/progress.md` / `task-10-report.md`.
 
 ---
 

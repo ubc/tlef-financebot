@@ -722,7 +722,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `selectRetryQuestion(input: { puid; courseId; loId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] }): Promise<same | null>` — a **new** question testing the same concept (same LO, different questionId); `null` → caller degrades to Strategy B (§5.1).
   - `studentCourseHome(puid, courseId): Promise<Array<{ theme: Theme; available: boolean; los: Array<{ lo: LearningObjective; status: MasteryStatus; approvedCount: number }> }>>` — only themes/LOs with ≥1 approved question, `availableFrom` respected, archived hidden (ST-P01/P02).
 
-- [ ] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
+**Note (post-implementation, Stephen 2026-07-17):** `approvedCount` is tallied with a single course-wide `find({courseId, state:'approved'})` plus an in-memory `Map` keyed by `loId` (not one `countDocuments` per LO — that N+1 shape was caught in review since it's invisible under a test fake but real against Mongo). `available` on a returned entry is always `true` in practice — a not-yet-available theme is hidden entirely rather than included with `available:false`; flag before Task 14 if the client view ever needs to distinguish "locked but visible" from "absent."
+
+- [x] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
 
 ```
 1. picks only 'approved' — a bank of drafts/pending/paused returns null
@@ -736,8 +738,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 9. studentCourseHome hides a theme whose availableFrom is tomorrow and an LO with 0 approved
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
 
 ---
 
