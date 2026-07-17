@@ -472,7 +472,15 @@ git commit -m "feat: enrollment by registration code with roster cross-check and
   - `bulkTransition(questionIds: ObjectId[], to: PublicationState, byPuid: string): Promise<number>` — applies to each; skips invalid ones; returns updated count.
 - MCQ invariants enforced in `createQuestion`/`editQuestion`: exactly 4 options for `mcq` / 2 for `true-false`; exactly one option with `role: 'correct'`; a `true-false` incorrect option's role is forced to `'common-misconception'` (PRD §9.1). Violations throw `Error('invalid-options:<reason>')`.
 
-- [ ] **Step 1: Write the failing tests**
+**Note (post-implementation, Saurav 2026-07-16) — the shipped service deviates from the above in five places.** Full rationale in `phase-1/Saurav/STATUS.md`; the short version for anyone coding against this service:
+
+1. **`editQuestion` does not version or label a tagging-only patch.** If the patch has no content key (`stem`/`options`/`difficulty`/`paramSlots`), it updates the head's `loIds`/`themeIds` only, inserts **no** version, adds **no** `manually-edited`, and returns the current version. The recipe below was unconditional, which stamped an IN-Q13 retag as manually-edited and piled up content-identical versions. Content-bearing edits behave exactly as written here.
+2. **`editedFields` is per-edit** (patched content keys of *that* edit). `domain.ts:128`'s docstring was reworded to match — the cumulative divergence-from-original set is the union of `editedFields` across the version chain.
+3. **`transitionQuestion` hoists one `const now`** so the returned `updatedAt` matches what was written; the excerpt below returns a stale one. **If you echo this return to a client, you now get the real timestamp.**
+4. **`bulkTransition` only skips `question-not-found` and `invalid-transition:*`; every other error propagates.** A bare `catch {}` turned a Mongo outage into a silent `0`. **Callers (Task 5) must handle a rejected `bulkTransition`.**
+5. **`createQuestion` inserts the version before the head**; `editQuestion` throws `question-not-found` / `version-not-found` on the paths this doc left silent.
+
+- [x] **Step 1: Write the failing tests**
 
 `tests/unit/questions.service.test.ts` — collections mocked. Cases (write in full):
 
@@ -481,12 +489,12 @@ git commit -m "feat: enrollment by registration code with roster cross-check and
 3. `transitionQuestion` allows `pending-review → approved` and rejects `draft → approved` (assert the thrown message and that no write happened); audit log written on success.
 4. `bulkTransition` returns the count of questions whose transition was valid.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/questions.service.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `questions.service.ts`**
+- [x] **Step 3: Implement `questions.service.ts`**
 
 Core excerpt (write the full file):
 
@@ -518,12 +526,12 @@ export async function transitionQuestion(questionId: ObjectId, to: PublicationSt
 
 `editQuestion` reads the current version, builds `next = { ...current, ...patch, version: current.version + 1, editedFields, createdBy: byPuid, createdAt: new Date() }` (dropping `_id`), validates options if patched, inserts it, and updates the head with `$set: { currentVersionId, currentVersion, updatedAt }`, `$addToSet: { labels: 'manually-edited' }` plus `loIds`/`themeIds` if provided.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx jest tests/unit/questions.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/questions.service.ts tests/unit/questions.service.test.ts
