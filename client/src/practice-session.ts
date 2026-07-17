@@ -15,6 +15,10 @@ export interface TranscriptEntry {
   question: PracticeQuestion;
   selectedKey: string;
   result: AttemptResult;
+  /** The LO this entry was served/attempted under — feeds the transcript's
+   * "practice this LO more" link (ST-P08), which starts a fresh practice
+   * round on that specific LO regardless of which LO is currently active. */
+  loId: string;
 }
 
 export class PracticeSession {

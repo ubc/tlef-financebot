@@ -4,6 +4,7 @@
 import { deferSessionSummary, getSessionSummary, type SessionEndSummary } from '../../api.js';
 import { el } from '../../dom.js';
 import { emptyState, errorState, eyebrow, loadingState } from '../../ui.js';
+import { currentQuery } from '../../router.js';
 import type { RouteParams } from '../../router.js';
 
 function accuracyRow(row: SessionEndSummary['accuracyByLo'][number]): HTMLElement {
@@ -46,6 +47,14 @@ function summaryBody(courseId: string, summary: SessionEndSummary): HTMLElement 
 export async function renderSessionSummary(outlet: HTMLElement, params: RouteParams): Promise<void> {
   const courseId = params.id;
   const sessionStart = new Date();
+  // "End session" (practice.ts) navigates here with `?since=<ISO timestamp>`
+  // — the practice view's own session start. In that case this is the
+  // CURRENT session ending, not a start-of-next-session greeting: reuse the
+  // same sessionEndSummary plumbing as "Defer to next session" below
+  // (deferSessionSummary computes it live AND stores it) instead of a new
+  // fetch/recompute path.
+  const sinceParam = currentQuery().get('since');
+  const endingSession = sinceParam !== null;
 
   const root = el(
     'div',
@@ -60,33 +69,41 @@ export async function renderSessionSummary(outlet: HTMLElement, params: RoutePar
   const cardBody = body.firstElementChild as HTMLElement;
 
   try {
-    const state = await getSessionSummary(courseId);
+    const state = endingSession
+      ? { welcome: false, deferred: await deferSessionSummary(courseId, new Date(sinceParam as string)) }
+      : await getSessionSummary(courseId);
     if (state.welcome || !state.deferred) {
       cardBody.replaceChildren(emptyState("You don't have a stored summary yet — practice a few questions first."));
     } else {
       cardBody.replaceChildren(summaryBody(courseId, state.deferred));
     }
 
-    actions.append(
-      el(
-        'button',
-        {
-          class: 'btn btn--primary',
-          type: 'button',
-          onclick: async () => {
-            const deferBtn = actions.firstElementChild as HTMLButtonElement;
-            deferBtn.disabled = true;
-            try {
-              await deferSessionSummary(courseId, sessionStart);
-              actions.replaceChildren(el('p', { class: 'state__text', text: 'Saved — this will greet you next time.' }));
-            } catch (error) {
-              actions.replaceChildren(errorState((error as Error).message));
-            }
+    if (endingSession) {
+      // Ending the session already called deferSessionSummary above (same
+      // plumbing the button below uses) — it's saved, nothing left to defer.
+      actions.append(el('p', { class: 'state__text', text: 'Session ended — this will greet you next time.' }));
+    } else {
+      actions.append(
+        el(
+          'button',
+          {
+            class: 'btn btn--primary',
+            type: 'button',
+            onclick: async () => {
+              const deferBtn = actions.firstElementChild as HTMLButtonElement;
+              deferBtn.disabled = true;
+              try {
+                await deferSessionSummary(courseId, sessionStart);
+                actions.replaceChildren(el('p', { class: 'state__text', text: 'Saved — this will greet you next time.' }));
+              } catch (error) {
+                actions.replaceChildren(errorState((error as Error).message));
+              }
+            },
           },
-        },
-        'Defer to next session',
-      ),
-    );
+          'Defer to next session',
+        ),
+      );
+    }
   } catch (error) {
     cardBody.replaceChildren(errorState((error as Error).message, () => void renderSessionSummary(outlet, params)));
   }

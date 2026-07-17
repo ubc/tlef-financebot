@@ -15,11 +15,17 @@ import { currentLo, makeQuestionCard, type PracticeCtx } from './practice-card.j
 
 function runPracticeLoop(root: HTMLElement, ctx: PracticeCtx, session: PracticeSession): void {
   const backHref = `#/course/${encodeURIComponent(ctx.courseId)}/theme/${encodeURIComponent(ctx.theme._id)}`;
+  const endSessionHref = `#/course/${encodeURIComponent(ctx.courseId)}/summary?since=${encodeURIComponent(session.startedAt.toISOString())}`;
   const title = el('h1', { class: 'view__title', text: currentLo(ctx).lo.name });
   const header = el(
     'div',
     { class: 'view__intro' },
-    el('a', { class: 'btn btn--ghost btn--sm', href: backHref }, '← Back'),
+    el(
+      'div',
+      { class: 'row' },
+      el('a', { class: 'btn btn--ghost btn--sm', href: backHref }, '← Back'),
+      el('a', { class: 'btn btn--ghost btn--sm', href: endSessionHref }, 'End session'),
+    ),
     eyebrow(ctx.theme.name),
     title,
   );
@@ -35,6 +41,14 @@ function runPracticeLoop(root: HTMLElement, ctx: PracticeCtx, session: PracticeS
           { class: `transcript__entry transcript__entry--${entry.result.correct ? 'correct' : 'incorrect'}` },
           el('span', { class: 'transcript__stem', text: entry.question.stem.replace(/[#*`$]/g, '').slice(0, 90) }),
           el('span', { class: 'mono', text: entry.result.correct ? 'Correct' : 'Missed' }),
+          el(
+            'a',
+            {
+              class: 'btn btn--ghost btn--sm',
+              href: `#/course/${encodeURIComponent(ctx.courseId)}/practice/${encodeURIComponent(entry.loId)}`,
+            },
+            'Practice this LO more',
+          ),
         ),
       ),
     );

@@ -59,11 +59,11 @@ export function makeQuestionCard(
         sessionServedIds: session.sessionServedIds,
         ...(isRetry ? { isRetry: true } : {}),
       });
-      session.recordAttempt({ question, selectedKey, result });
+      session.recordAttempt({ question, selectedKey, result, loId: currentLo(ctx).lo._id });
       callbacks.onTranscriptChange();
     } catch (error) {
-      card.replaceChildren(errorState((error as Error).message));
       submitting = false;
+      card.replaceChildren(errorState((error as Error).message, () => void submit()));
       return;
     }
     submitting = false;
