@@ -26,6 +26,12 @@ async function main(): Promise<void> {
   await startJobs();
   console.log('[server] job queue started');
 
+  // Registers the material.ingest job handler — its module-level defineJob()
+  // call requires startJobs() to have already run, so this import must happen
+  // here (dynamic, not a static top-of-file import) rather than at module
+  // load time. See services/materials.service.ts and components/jobs/AGENTS.md.
+  await import('./services/materials.service.js');
+
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.
   if (await pingQdrant()) {
