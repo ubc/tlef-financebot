@@ -2,16 +2,16 @@
 
 _Last updated: 2026-07-16_
 
-**Tasks 1, 2, and 4 are done and reviewed.** Tasks 1 and 2 are **merged to
-`main`** (PR #13, PR #14 — `main` is now `2060254`). Task 4 is code-complete on
-branch `saurav/task-4-questions-service`, review **Spec ✅ / Quality Approved**,
-rebased onto post-#14 `main` and **awaiting Saurav's push + PR**. Full suite
-green: **104 unit** (87 from Tasks 1–2 + 17 new), typecheck + eslint clean.
+**Tasks 1, 2, 4, and 5 are done and reviewed.** Tasks 1, 2, and 4 are **merged
+to `main`** (PRs #13, #14, #15 — `main` is now `33b2eb1`). Task 5 is
+code-complete on branch `saurav/task-5-bank-routes`, review **Spec ✅ / Quality
+Approved**, and **awaiting Saurav's push + PR**. Full suite green: **151 unit**
+(104 from Tasks 1–4 + 47 new), typecheck + eslint clean.
 
 **Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
 exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
-(see "What I need from you" below). Next up is **Task 5** (bank routes), which
-needs Task 4 merged.
+(see "What I need from you" below). Next up is **Task 6** (material upload + RAG
+ingestion), which needs Task 1's jobs component — already on `main`.
 
 Executed with the superpowers `subagent-driven-development` skill; the running
 ledger (commit ranges, per-task review verdicts, deferred Minor findings) is in
@@ -25,13 +25,85 @@ record of where the code diverged from the plan** — the ledger is scratch and
 |---|---|---|
 | 1 | Agenda-backed jobs component (`defineJob`/`enqueueJob`/`scheduleRecurring`/`stopJobs`) | merged, PR #13 (`3a8c649`) |
 | 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | merged, PR #14 (`2060254`) |
-| 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | reviewed, **branch pushed? no — awaiting PR** (`7259f4e`) |
+| 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | merged, PR #15 (`33b2eb1`) |
+| 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | reviewed, **awaiting push + PR** (`aa6cc0f`) |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 5 — decided by Saurav during review (2026-07-17)
+
+1. **`POST /api/questions/bulk-transition` authorization — the plan's guard
+   recipe had a hole.** The plan says child-resource routes "look up the question
+   first and stash `res.locals.courseId` before the guard runs" — **singular**.
+   But bulk-transition has no `:courseId` and takes an **array** of ids that may
+   span courses, while `ensureCourseInstructor()` resolves exactly one course
+   (`course-guards.ts` `requestCourseId()`). Stashing the first question's course
+   would have let an instructor of course A transition course B's questions by
+   including their ids — a privilege escalation directly into the publication
+   state machine that decides what students get served. **Implemented:** load the
+   questions, collect the distinct `courseId`s of those found; if that is not
+   exactly one → **403**; otherwise stash it and guard normally. **403 rather
+   than 400** so the endpoint isn't an existence oracle. Review confirmed it
+   holds for empty / missing / duplicate / malformed / spanning ids, and that
+   admins are subject to the span check too.
+   → **The plan's Task 5 route line is stale: the singular recipe is a trap for
+   any array-taking route under `/api/questions`.**
+
+2. **The span-check 403 returns the guard's own body.** It first returned
+   `{ error: 'questions-span-multiple-courses' }` while the guard returned
+   `You do not have access to this course.` — so a **one-id** request revealed
+   whether that id existed, undercutting the reason we chose 403 over 400.
+   Now both come from a frozen `NO_COURSE_ACCESS_BODY` exported from
+   `course-guards.ts`, making them identical in status, body, headers, and
+   timing. Pinned by a test that compares the two bodies **to each other**, not
+   to a literal, so it survives a future wording change. (The extraction touches
+   Task 2's shared guard; review verified `ensureCourseRole`'s behaviour is
+   byte-identical.)
+
+3. **`includeArchived` is a service parameter only, never a query param.**
+   `docs/api-contract.md:47` lists only `state/loId/themeId/type/difficulty/label`
+   and the contract governs the HTTP surface. Nothing is lost — `state=archived`
+   still reaches archived questions per the plan's own rule. `browseBank` keeps
+   the parameter for Task 15.
+
+### Task 5 — found in review, fixed without a ruling (in-spec)
+
+4. **The review-queue coverage count was not course-scoped.** It ran
+   `countDocuments({ loIds: firstLoId, state: 'approved' })` with no `courseId`,
+   while every other query in the service carries one. Since `PATCH` exposes
+   `loIds` with no ownership check, an instructor of course A could tag their
+   question with course B's LO id — and that question would then count toward
+   B's approved coverage and **demote B's LOs in B's review queue**. A
+   cross-course write influence, closed by adding `courseId` to the filter. The
+   test pins it with exact-object equality, so dropping the scope fails loudly.
+
+5. **`transitionQuestion`'s declared return type was wrong** (Task 4's file).
+   Declared `Promise<Question>` (no `_id`) while actually returning the spread of
+   a `findOne`, so this route had to cast to `WithId<Question>` to read `_id` —
+   the cast being the only thing between the declared type and a TypeError → 500.
+   Widened at the source to `Promise<WithId<Question>>`; type-declaration change
+   only, no behaviour change.
+
+6. **`satisfies` alone did not do what its comment claimed.** The local
+   `as const` enum lists in `questions.routes.ts` duplicate `domain.ts`'s unions.
+   `satisfies readonly PublicationState[]` catches *invalid* members but **not
+   omissions** — so a 7th `PublicationState` added to `domain.ts` would have been
+   silently 400'd by a stale list, which is the exact failure the comment claimed
+   it prevented. Reverse exhaustiveness checks added on all five lists and
+   verified live (dropping a state produces TS2344).
+
+7. **`flagsCol()`/`attemptsCol()` are not consumed**, despite the plan's
+   "Consumes" line. The review-queue ordering as specified needs neither, so
+   they were not imported.
+
+8. **RED was real this time** — 13 per-assertion failures, because the modules
+   were stubbed first. (Task 4's RED was a `TS2307` compile error, which proves
+   nothing.) Caveat: the 18 *route* tests still passed at RED, so only
+   `bank.service.test.ts` satisfied a true Step 2.
 
 ### Task 4 — decided by Saurav during review (2026-07-16)
 
@@ -236,6 +308,29 @@ The two worth a second look:
 Also: `ensureCourseStudent` / `ensureCourseTa` ship unused — brief-mandated,
 intended for the student-facing tasks. Not a defect.
 
+**Task 5's deferred items** — the first is a **deliberate deferral by Saurav**,
+not an oversight:
+
+- **404-before-guard is an app-wide existence oracle — decide it once, here.**
+  `GET`/`PATCH`/`transition` on `/api/questions/:questionId` return 404 for a
+  nonexistent id **before** `ensureCourseInstructor()` runs, so any authenticated
+  user — including a student with no role in the course — can distinguish "this
+  question exists" (403) from "it doesn't" (404) for arbitrary ids. That is the
+  same oracle Task 5's bulk-transition route was deliberately hardened against,
+  one route over. **Left as-is on purpose:** it is Task 2's documented convention
+  (`courses.routes.ts:78-87`, citing the contract's 404 code), already merged to
+  `main` for themes/LOs, and Task 5 mirrors the template faithfully. Changing it
+  is a cross-cutting call over questions **and** themes **and** LOs, not a Task 5
+  fix. A comment near `stashCourseIdFromQuestion` flags it so nobody closes it
+  piecemeal. **Either accept the oracle app-wide or close it app-wide — the one
+  thing to avoid is the current split, where one route is hardened and its
+  siblings aren't.**
+- `bank.service.ts` — `reviewQueue`'s under-coverage ranking issues one memoized
+  `countDocuments` per distinct first-LO, sequentially awaited in a loop
+  (latency-additive, not parallel). Fine at Phase-1 scale. One aggregation
+  (`$match courseId + approved` → `$unwind loIds` → `$sortByCount`) collapses it
+  into a single query if it ever matters.
+
 **Task 4's Minors** (both test-only; production code is clean):
 
 - `tests/unit/questions.service.test.ts` — the "content+tags patch still
@@ -248,10 +343,15 @@ intended for the student-facing tasks. Not a defect.
 
 ## What's left
 
-- **Task 5** — bank routes (browse/filter, review queue, editing, transitions).
-  Needs Task 4 merged. **Note: `bulkTransition` now rejects on non-domain
-  errors, so its route must handle a rejected promise** (see Task 4 deviation 4).
-- Then Tasks 6, 7, 8, 15.
+- **Task 6** — material upload + async RAG ingestion (IN-S04/S05). Needs Task 1's
+  jobs component, already on `main`.
+- Then Tasks 7 (LLM classification, needs 6), 8 (three-agent generation pipeline,
+  needs 1+4+6 — **Step 5 is the ~Aug 2 joint mid-phase checkpoint**), and 15
+  (instructor client views, needs 2+5+6+7+8).
+- **Task 15 carry-forward:** the question-bank surface it renders is Task 5's.
+  Question heads come back as `id`, embedded `current` versions as raw `_id`
+  (see the serialization rule above), and `browseBank`'s `includeArchived` is
+  reachable only from the service — over HTTP, use `state=archived`.
 
 ## What I need from you (Stephen)
 
@@ -292,3 +392,13 @@ Nothing blocking — but three heads-ups:
 3. **`editQuestion` will not version or label a tagging-only patch** (see
    deviation 1). If you retag a question's `loIds`/`themeIds`, its
    `currentVersion` deliberately does not move.
+4. **Task 5 adds `app.use('/api', questionsRouter)`** to `app.ts` (one appended
+   line, per the shared-file convention) and exports a frozen
+   `NO_COURSE_ACCESS_BODY` from `components/auth/course-guards.ts`. If you ever
+   need to return a course-access 403 **outside** `ensureCourseRole()` — e.g. a
+   loader that rejects before a course is resolved — import that constant rather
+   than re-typing the string, so the two 403s stay indistinguishable.
+5. **Any route you add that takes an *array* of ids under `/api/questions`
+   cannot use the plan's stash-then-guard recipe** — it is singular, and
+   `ensureCourseInstructor()` only ever checks one course. See Task 5 deviation 1
+   for the rule (distinct courses must be exactly one, else 403).
