@@ -5,6 +5,7 @@ import { ensureIndexes } from './components/mongodb/collections';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
 import { startJobs } from './components/jobs';
+import { registerMaterialJobs } from './services/materials.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -25,6 +26,16 @@ async function main(): Promise<void> {
 
   await startJobs();
   console.log('[server] job queue started');
+
+  // Registers the material.ingest job handler. Must run after startJobs()
+  // (defineJob() requires an already-started Agenda instance) — this can no
+  // longer be a plain module-level call in materials.service.ts, because
+  // materials.routes.ts (mounted by createApp() below) imports that service
+  // too, and the compiled CommonJS import graph pulls it in via a hoisted
+  // synchronous require() that runs before main() even starts. So the
+  // registration is an explicit function, called here, after startJobs().
+  // See services/materials.service.ts and components/jobs/AGENTS.md.
+  registerMaterialJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.
