@@ -70,6 +70,15 @@ function materialFixture(id: ObjectId, courseId: ObjectId, name: string, overrid
 const findOneAndUpdate = jest.fn();
 const sortToArray = jest.fn();
 const find = jest.fn(() => ({ sort: jest.fn(() => ({ toArray: sortToArray })) }));
+// IN-S05: assignMaterial must REPLACE assignments via $set and never delete
+// the material. Giving the mocked collection explicit delete methods (rather
+// than omitting them, which would make a stray call fail as "not a
+// function") lets the IN-S05 test below assert they were never called and
+// actually pin the guarantee, instead of accidentally passing for the wrong
+// reason.
+const deleteOne = jest.fn();
+const deleteMany = jest.fn();
+const findOneAndDelete = jest.fn();
 
 beforeEach(() => {
   insertOne.mockReset();
@@ -78,7 +87,19 @@ beforeEach(() => {
   findOneAndUpdate.mockReset();
   sortToArray.mockReset();
   find.mockClear();
-  jest.mocked(materialsCol).mockReturnValue({ insertOne, findOne, updateOne, findOneAndUpdate, find } as never);
+  deleteOne.mockReset();
+  deleteMany.mockReset();
+  findOneAndDelete.mockReset();
+  jest.mocked(materialsCol).mockReturnValue({
+    insertOne,
+    findOne,
+    updateOne,
+    findOneAndUpdate,
+    find,
+    deleteOne,
+    deleteMany,
+    findOneAndDelete,
+  } as never);
   insertOne.mockImplementation(async () => ({ insertedId: new ObjectId() }));
   jest.mocked(getEmbeddingDimension).mockResolvedValue(3);
 });
@@ -467,6 +488,192 @@ describe('ingestMaterial — URL SSRF guard (I3)', () => {
 });
 
 // -----------------------------------------------------------------------------
+// isBlockedHost table (re-review findings): IPv4-mapped IPv6 literal-form
+// SSRF bypass (both dotted and hex forms), and the fc*/fd* prefix check
+// wrongly matching ordinary DNS hostnames (fdic.gov, fcbarcelona.com) instead
+// of only IPv6 unique-local literals. isBlockedHost() isn't exported, so this
+// drives it the same way every other SSRF case in this file does: through
+// ingestMaterial with a mocked global.fetch, asserting on whether fetch was
+// ever called and on the final material status.
+// -----------------------------------------------------------------------------
+
+describe('ingestMaterial — URL host allow/block table (re-review: IPv4-mapped IPv6, fc*/fd* prefix)', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  async function runWithUrl(url: string): Promise<{ fetchMock: jest.Mock; status: string; error?: string }> {
+    const materialId = new ObjectId();
+    findOne.mockResolvedValueOnce({
+      _id: materialId,
+      courseId: new ObjectId(),
+      name: url,
+      format: 'url',
+      status: 'processing',
+      sourceUrl: url,
+      assignments: [],
+      uploadedAt: new Date(),
+    });
+    const fetchMock = jest.fn().mockResolvedValue(
+      new Response('<html><body>hi</body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+    updateOne.mockClear();
+    // Only exercised by the "allowed" cases (the "blocked" cases never reach
+    // fetch/parse/chunk at all), but harmless to set unconditionally.
+    jest.mocked(parseFile).mockResolvedValue('hi');
+    jest.mocked(chunkText).mockResolvedValue([{ text: 'hi', metadata: {} }] as never);
+    jest.mocked(embed).mockResolvedValue([[1, 2, 3]]);
+
+    await ingestMaterial(materialId.toString());
+
+    const [, update] = updateOne.mock.calls[0]!;
+    return { fetchMock, status: update.$set.status, error: update.$set.error };
+  }
+
+  const blockedHosts = [
+    '[::ffff:169.254.169.254]', // IPv4-mapped IPv6, dotted form -> cloud metadata
+    '[::ffff:127.0.0.1]', // IPv4-mapped IPv6, dotted form -> loopback
+    '[::1]',
+    '[fe80::1]',
+    '[fd00::1]',
+    '169.254.169.254',
+    '127.0.0.1',
+    '10.0.0.1',
+    '192.168.1.1',
+  ];
+
+  it.each(blockedHosts)('blocks http://%s/ without ever fetching', async (host) => {
+    const { fetchMock, status, error } = await runWithUrl(`http://${host}/`);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(status).toBe('failed');
+    expect(error).toMatch(/^blocked-url:/);
+  });
+
+  // The WHATWG URL parser normalizes a literal IPv6 address's dotted-decimal
+  // IPv4-mapped suffix to hex (`[::ffff:169.254.169.254]` -> hostname
+  // `::ffff:a9fe:a9fe`), so that's the form isBlockedHost() actually sees in
+  // practice via any real fetch call. Assert the hex form directly too,
+  // rather than relying on the dotted-form test above to exercise it only
+  // indirectly through URL normalization.
+  it('blocks the hex form of an IPv4-mapped IPv6 metadata address (::ffff:a9fe:a9fe)', async () => {
+    const { fetchMock, status, error } = await runWithUrl('http://[::ffff:a9fe:a9fe]/');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(status).toBe('failed');
+    expect(error).toMatch(/^blocked-url:/);
+  });
+
+  const allowedHosts = ['fdic.gov', 'fcbarcelona.com'];
+
+  it.each(allowedHosts)('allows https://%s/ (must not be blocked as an fc*/fd* IPv6 literal)', async (host) => {
+    const { fetchMock, status } = await runWithUrl(`https://${host}/`);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(status).toBe('ready');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// I3 test coverage gap (re-review): response-size cap and redirect
+// re-validation had no tests, though the code paths existed and "enforced
+// across redirects" was the specific thing the original ruling called out.
+// -----------------------------------------------------------------------------
+
+describe('ingestMaterial — URL response byte cap (I3)', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('fails the material cleanly, without throwing, when the response exceeds the byte cap', async () => {
+    const materialId = new ObjectId();
+    findOne.mockResolvedValue({
+      _id: materialId,
+      courseId: new ObjectId(),
+      name: 'https://example.com/huge',
+      format: 'url',
+      status: 'processing',
+      sourceUrl: 'https://example.com/huge',
+      assignments: [],
+      uploadedAt: new Date(),
+    });
+
+    // A single chunk bigger than URL_MAX_RESPONSE_BYTES (10 MiB) — a plain
+    // zero-filled typed array, not a real 11 MiB string, so this stays cheap
+    // to allocate in a unit test while still tripping the cap on the first
+    // `reader.read()`.
+    let delivered = false;
+    const fakeReader = {
+      read: async () => {
+        if (!delivered) {
+          delivered = true;
+          return { done: false, value: new Uint8Array(11 * 1024 * 1024) };
+        }
+        return { done: true, value: undefined };
+      },
+      cancel: jest.fn().mockResolvedValue(undefined),
+    };
+    const fakeResponse = {
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? 'text/html' : null) },
+      body: { getReader: () => fakeReader },
+    } as unknown as Response;
+    const fetchMock = jest.fn().mockResolvedValue(fakeResponse);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(ingestMaterial(materialId.toString())).resolves.toBeUndefined();
+
+    expect(fakeReader.cancel).toHaveBeenCalled();
+    const [, update] = updateOne.mock.calls[0]!;
+    expect(update.$set.status).toBe('failed');
+    expect(update.$set.error).toMatch(/^url-response-too-large:/);
+    expect(parseFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('ingestMaterial — redirect re-validation (I3)', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('rejects a redirect whose Location targets a blocked host, and never follows it', async () => {
+    const materialId = new ObjectId();
+    findOne.mockResolvedValue({
+      _id: materialId,
+      courseId: new ObjectId(),
+      name: 'https://example.com/redirect-to-metadata',
+      format: 'url',
+      status: 'processing',
+      sourceUrl: 'https://example.com/redirect-to-metadata',
+      assignments: [],
+      uploadedAt: new Date(),
+    });
+    const fetchMock = jest.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data' },
+      }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(ingestMaterial(materialId.toString())).resolves.toBeUndefined();
+
+    // Exactly one fetch: the initial (public, allowed) URL. The redirect
+    // target is checked and rejected BEFORE a second fetch would ever be
+    // issued to it.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, update] = updateOne.mock.calls[0]!;
+    expect(update.$set.status).toBe('failed');
+    expect(update.$set.error).toMatch(/^blocked-url:/);
+  });
+});
+
+// -----------------------------------------------------------------------------
 // Other uncovered ingest branches (review's "Test coverage" item 4).
 // -----------------------------------------------------------------------------
 
@@ -575,12 +782,18 @@ describe('assignMaterial (IN-S05)', () => {
     expect(filter).toEqual({ _id: materialId });
     expect(update).toEqual({ $set: { assignments: [{ themeId, loId }] } });
     expect(options).toEqual({ returnDocument: 'after' });
+    expect(deleteOne).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+    expect(findOneAndDelete).not.toHaveBeenCalled();
   });
 
   it('throws material-not-found when the material does not exist, without touching any delete API', async () => {
     findOneAndUpdate.mockResolvedValue(null);
 
     await expect(assignMaterial(new ObjectId(), [])).rejects.toThrow('material-not-found');
+    expect(deleteOne).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+    expect(findOneAndDelete).not.toHaveBeenCalled();
   });
 });
 

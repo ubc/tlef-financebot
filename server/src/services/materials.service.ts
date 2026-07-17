@@ -74,7 +74,11 @@ function isCollectionAlreadyExistsError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const status = (err as { status?: unknown }).status;
   if (status === 409) return true;
-  return /already exists/i.test(err.message);
+  // Fallback for a client that doesn't surface `.status` (or maps it
+  // elsewhere): narrowed to Qdrant's actual wording ("Collection `x` already
+  // exists!") rather than a bare `/already exists/i`, which could swallow an
+  // unrelated error that happens to contain that phrase.
+  return /collection[\s\S]*already exists/i.test(err.message);
 }
 
 async function ensureMaterialsCollection(name: string): Promise<void> {
@@ -230,6 +234,28 @@ function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
 
+  // IPv4-mapped IPv6 (RFC 4291 §2.5.5.2): `::ffff:a.b.c.d` (dotted) or
+  // `::ffff:xxxx:xxxx` (hex — the form the WHATWG URL parser normalizes a
+  // literal IPv6 address to, e.g. `[::ffff:169.254.169.254]` becomes
+  // hostname `::ffff:a9fe:a9fe`). Without this, either form reaches the
+  // IPv6 branch below, isn't `::1`/`fe80:`/`fc..`/`fd..`, and slips through
+  // as "allowed" while `fetch` connects to the mapped IPv4 address anyway —
+  // a literal-form SSRF bypass distinct from the DNS-rebinding limitation
+  // noted below. Unwrap either form to plain IPv4 and re-run the IPv4 checks.
+  const v4MappedDotted = host.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (v4MappedDotted) return isBlockedHost(v4MappedDotted[1]!);
+  const v4MappedHex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (v4MappedHex) {
+    const hi = Number.parseInt(v4MappedHex[1]!, 16);
+    const lo = Number.parseInt(v4MappedHex[2]!, 16);
+    const mapped = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isBlockedHost(mapped);
+  }
+
+  // Decimal/octal IPv4 (e.g. `http://2130706433/`, `http://017700000001/`)
+  // never reaches this regex as such — the WHATWG URL parser normalizes
+  // those forms to dotted-decimal (`127.0.0.1`) before `.hostname` is read,
+  // so the check below already covers them.
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
     const a = Number(ipv4[1]);
@@ -242,9 +268,16 @@ function isBlockedHost(hostname: string): boolean {
     return false;
   }
 
-  // IPv6 loopback, unique-local, and link-local literals.
+  // IPv6 loopback, unique-local, and link-local literals. These prefixes
+  // must be shaped like an IPv6 literal (hex groups separated by `:`), not
+  // just a string prefix — `fe80:` already implies this (a `:` cannot occur
+  // in a DNS hostname, so no ordinary domain can match it), but a bare
+  // `startsWith('fc')`/`startsWith('fd')` previously matched real hostnames
+  // too (`fdic.gov`, `fcbarcelona.com` were wrongly blocked). `fc00::/7`
+  // unique-local literals always have a 4-hex-digit first group followed by
+  // `:`, so require that shape explicitly.
   if (host === '::1' || host === '::') return true;
-  if (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return true;
+  if (host.startsWith('fe80:') || /^f[cd][0-9a-f]{2}:/.test(host)) return true;
 
   return false;
 }
@@ -382,11 +415,19 @@ function materialPointId(materialId: string, chunkIndex: number): string {
  * retry-storms, or crashes its siblings (IN-S04).
  */
 export async function ingestMaterial(materialId: string): Promise<void> {
-  // materialId always comes from our own insertedId.toString() calls (see
-  // createMaterials/createUrlMaterial/retryMaterial), so this construction
-  // itself cannot fail in practice.
-  const id = new ObjectId(materialId);
+  // Declared outside the try so the catch block can still address the right
+  // document — but constructed INSIDE the try (below), since this function
+  // must never throw (IN-S04) regardless of why, including a malformed
+  // materialId. Left `undefined` if construction itself fails; the catch
+  // block below guards on that rather than risk an `updateOne({ _id:
+  // undefined }, ...)`, which the MongoDB driver would serialize as `{}` and
+  // could silently update an unrelated document.
+  let id: ObjectId | undefined;
   try {
+    // materialId always comes from our own insertedId.toString() calls (see
+    // createMaterials/createUrlMaterial/retryMaterial), so this construction
+    // cannot fail in practice.
+    id = new ObjectId(materialId);
     const material = await materialsCol().findOne({ _id: id });
     if (!material) return; // material vanished (e.g. deleted); nothing to do.
 
@@ -396,16 +437,30 @@ export async function ingestMaterial(materialId: string): Promise<void> {
       const vectors = await embed(chunks.map((chunk) => chunk.text));
       const collectionName = courseCollection(material.courseId);
       await ensureMaterialsCollection(collectionName);
+      // Captured as a plain string const so the closure below doesn't need
+      // to re-narrow the outer `let id: ObjectId | undefined` (TypeScript
+      // doesn't carry narrowing into closures for a mutable outer binding).
+      const materialIdStr = id.toString();
       const points = chunks.map((chunk, i) => ({
-        id: materialPointId(id.toString(), i),
+        id: materialPointId(materialIdStr, i),
         vector: vectors[i],
-        payload: { materialId: id.toString(), chunk: chunk.text },
+        payload: { materialId: materialIdStr, chunk: chunk.text },
       }));
+      // I2 residual (deliberately deferred, not fixed here): deterministic
+      // point ids make upsert overwrite rather than duplicate for a re-ingest
+      // that produces the SAME OR MORE chunks, but a re-ingest that produces
+      // FEWER chunks than a previous run leaves the old tail points
+      // (`materialPointId(materialId, n..)` for chunk indices beyond the new
+      // count) orphaned in the collection forever — upsert never deletes.
+      // Closing this needs a delete-by-filter (on `payload.materialId`)
+      // before this upsert, which the qdrant component doesn't expose yet.
+      // Out of Task 6's scope; Task 8 should not inherit this silently.
       await upsertPoints(collectionName, points);
     }
 
     await materialsCol().updateOne({ _id: id }, { $set: { status: 'ready' }, $unset: { error: '' } });
   } catch (err) {
+    if (!id) return; // materialId itself was malformed; nothing to mark failed.
     const message = err instanceof Error ? err.message : String(err);
     try {
       await materialsCol().updateOne({ _id: id }, { $set: { status: 'failed', error: message } });
