@@ -6,6 +6,7 @@ import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
 import { startJobs } from './components/jobs';
 import { registerMaterialJobs } from './services/materials.service';
+import { registerGenerationJobs } from './services/generation.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -36,6 +37,12 @@ async function main(): Promise<void> {
   // registration is an explicit function, called here, after startJobs().
   // See services/materials.service.ts and components/jobs/AGENTS.md.
   registerMaterialJobs();
+
+  // Same rule for the generation.run job (§9.1): registered explicitly here,
+  // after startJobs(), never at module load — generation.routes.ts imports the
+  // service and app.ts mounts that router, so a module-level defineJob() would
+  // run before startJobs() and crash boot (the Task 6 lesson).
+  registerGenerationJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

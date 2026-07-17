@@ -259,12 +259,12 @@ Requires Tasks 1, 4, 6 merged. **Step 5 is the ~Aug 2 mid-phase checkpoint (join
 - Consumes: llm component (`completeJson`), qdrant `search` + `courseCollection` (Task 6), embeddings component, `createQuestion` (Task 4), jobs component, per-step models `env.llmModelGenerator/Validator/Reviewer`.
 - Produces: `runGenerationPipeline(input)` — per question: **retrieve** (embed LO name + optional prompt, search course collection, top 6 chunks) → **generator** (`env.llmModelGenerator`) → **structure validator** (`env.llmModelValidator`, per-role assessment) → **reviewer** (`env.llmModelReviewer`, the five IN-Q05 criteria → `{ decision: 'pass'|'flag'|'reject', reasoning }`) → insert via `createQuestion` with `agentDecision` + `sourceRefs`. Output always enters as **Draft**; the pipeline never publishes. Plus the `generation.run` job, `POST /api/courses/:courseId/generate` (validate, enqueue, `202 { jobId }`), `preseedingProgress(courseId)`, and `GET /api/courses/:courseId/preseeding`. Prompts live as exported constants `GENERATOR_PROMPT`/`VALIDATOR_PROMPT`/`REVIEWER_PROMPT` (template functions) so Phase 4 content QA can tune them.
 
-- [ ] **Step 1: Failing tests** — per the core document, Task 8 Step 1 (pipeline calls the three steps with the three distinct configured models — assert model arg per call; reviewer `reject` still inserts a Draft with `agentDecision.decision:'reject'`; generator output failing option invariants is retried once then skipped with a logged warning; `preseedingProgress` counts approved/reviewed per LO). Mock llm/qdrant/questions.service.
-- [ ] **Step 2: Verify FAIL.**
-- [ ] **Step 3: Implement** with full, grounded prompt texts (generator: 4 options, exactly one correct + roles from the taxonomy + JSON schema; validator: per-option role assessment; reviewer: the five IN-Q05 criteria). Wire the job + routes; mount in `app.ts`.
-- [ ] **Step 4: Tests + typecheck** → PASS.
-- [ ] **Step 5: Manual checkpoint (JOINT, ~Aug 2)** — with docker + a reachable LLM (`LLM_PROVIDER=ollama` or sandbox): create a course + theme + LO, upload the fixture material, run generation, confirm Draft questions with agent decisions appear; **then approve one and have Stephen serve it to a student end-to-end.** This is the mid-phase checkpoint — both developers verify.
-- [ ] **Step 6: Commit** — `git commit -m "feat: three-agent generation pipeline with per-step models; thin-LO generation and pre-seeding progress (§9.1, IN-Q10)"`
+- [x] **Step 1: Failing tests** — generation.service.test.ts (6) + generation.routes.test.ts (7). llm/qdrant/embeddings/questions.service/collections/materials mocked; `config/env` mocked to give three distinct step models.
+- [x] **Step 2: Verify FAIL** — true per-assertion RED via stubs (6 failed).
+- [x] **Step 3: Implement** — full grounded prompt templates (`GENERATOR_PROMPT`/`VALIDATOR_PROMPT`/`REVIEWER_PROMPT` exported). Job (`registerGenerationJobs()`, NOT module-level) + routes mounted in `app.ts`, registered in `server.ts` after `startJobs()`.
+- [x] **Step 4: Tests + typecheck** → 332 unit pass, typecheck + build + lint clean.
+- [ ] **Step 5: Manual checkpoint (JOINT, ~Aug 2)** — NOT yet run (needs docker + reachable LLM). Deferred to the joint checkpoint, same as Task 6/7 live e2e.
+- [x] **Step 6: Commit** — `feat: three-agent generation pipeline …` (`7f604df`).
 
 ---
 
