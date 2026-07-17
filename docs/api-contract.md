@@ -58,7 +58,7 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?, prompt? }` →
   202 `{ jobId }` — pipeline runs async; results land as Draft questions (IN-Q10/Q11)
-- `GET /api/courses/:courseId/preseeding` → `[{ loId, approved, reviewed, target: 5 }]`
+- `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
 
 ## Practice (student)
 - `GET /api/courses/:courseId/home` → themes visible to the student (≥1 approved question,
