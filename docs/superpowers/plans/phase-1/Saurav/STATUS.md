@@ -2,16 +2,24 @@
 
 _Last updated: 2026-07-16_
 
-**Tasks 1, 2, 4, and 5 are done and reviewed.** Tasks 1, 2, and 4 are **merged
-to `main`** (PRs #13, #14, #15 — `main` is now `33b2eb1`). Task 5 is
-code-complete on branch `saurav/task-5-bank-routes`, review **Spec ✅ / Quality
-Approved**, and **awaiting Saurav's push + PR**. Full suite green: **151 unit**
-(104 from Tasks 1–4 + 47 new), typecheck + eslint clean.
+**Tasks 1, 2, 4, 5, and 6 are done and reviewed.** Tasks 1, 2, 4, and 5 are
+**merged to `main`** (PRs #13, #14, #15, #16 — `main` is now `99d0d72`). Task 6
+is code-complete on branch `saurav/task-6-materials-ingestion`, review
+**Spec ✅ / Quality Approved**, and **awaiting Saurav's push + PR**. Full suite
+green: **209 unit** (151 from Tasks 1–5 + 58 new), typecheck + eslint + build
+clean, and the server's boot verified.
 
 **Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
 exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
-(see "What I need from you" below). Next up is **Task 6** (material upload + RAG
-ingestion), which needs Task 1's jobs component — already on `main`.
+(see "What I need from you" below). Next up is **Task 7** (LLM
+auto-classification + AI-suggested hierarchy), which needs Task 6 merged — it
+modifies Task 6's routes and consumes its `courseCollection()`.
+
+> **🚨 If you are about to register an Agenda job (Tasks 7, 8, 13): do NOT call
+> `defineJob()` at module level.** Task 6's brief said to, and it made the server
+> fail to boot — while all 156 tests passed, because no test imported `app.ts`.
+> Export a `registerXJobs()` and call it from `server.ts` after `startJobs()`.
+> See Task 6 deviation 1 below and `components/jobs/AGENTS.md`.
 
 Executed with the superpowers `subagent-driven-development` skill; the running
 ledger (commit ranges, per-task review verdicts, deferred Minor findings) is in
@@ -26,13 +34,105 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | 1 | Agenda-backed jobs component (`defineJob`/`enqueueJob`/`scheduleRecurring`/`stopJobs`) | merged, PR #13 (`3a8c649`) |
 | 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | merged, PR #14 (`2060254`) |
 | 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | merged, PR #15 (`33b2eb1`) |
-| 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | reviewed, **awaiting push + PR** (`aa6cc0f`) |
+| 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | merged, PR #16 (`99d0d72`) |
+| 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | reviewed, **awaiting push + PR** (`078703a`) |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 6 — decided by Saurav during review (2026-07-17)
+
+1. **🚨 The plan's job-registration instruction made the server fail to boot.**
+   The brief said "Register with `defineJob` in this service; import the service
+   from `server.ts` after `startJobs()` so registration runs." The compiled
+   output is **CommonJS**, so `server.ts` → `app.ts` → `materials.routes.ts` →
+   `materials.service.ts` pulls the service in via a **hoisted synchronous
+   `require` that runs before `main()`** — before `startJobs()` — and
+   `requireAgenda()` throws `Jobs not started`. The dynamic
+   `await import(...)` in `server.ts` was unreachable dead code. The plan assumed
+   nothing else imports the service; the routes must.
+   **Ruling:** export `registerMaterialJobs()`, call it from `server.ts` after
+   `startJobs()`. `components/jobs/AGENTS.md` was rewritten, because its old
+   wording is what produced this and **Tasks 7/8 would have re-introduced it**.
+   **The scariest part: all 156 tests passed while the server could not start** —
+   no test imported `app.ts`. `tests/unit/app.smoke.test.ts` now guards it, with
+   `components/jobs` deliberately left unmocked so a module-level `defineJob`
+   fails it at import (verified by reverting the fix and watching it fail).
+   → **The plan's Task 6 Step 3 / Interfaces text is stale on this point.**
+
+2. **`'md'` added to `Material['format']`** (`domain.ts`). The brief lists `md` as
+   supported and its own Step 3 verifies with `sample-material.md`, but the union
+   was `'pdf'|'docx'|'pptx'|'txt'|'url'`. Additive — nothing else consumed
+   `Material` yet, so Stephen's code can't break.
+
+3. **`.txt` is read directly (`fs.readFile`), bypassing `parseFile()`.** The
+   brief and `domain.ts` both promise `txt`, but the document-parsing component
+   supports `.pdf .docx .pptx .html/.htm .md` — **not `.txt`** — so the brief's
+   own format list would have failed at runtime. A .txt file is already text.
+
+4. **Batch rejection kept** — `createMaterials` rejects the whole upload if any
+   file has an unsupported extension. It is contract-conformant and **not** an
+   IN-S04 violation (IN-S04 governs background *processing*, not upload
+   validation), and it gives the caller one unambiguous answer. Now pinned by a
+   test so it is deliberate rather than undocumented.
+   **Open UX question for the whole-branch review:** an instructor drag-dropping
+   12 files where one is a `.zip` loses all 11 good ones, which is against the
+   *spirit* of "one failure never blocks others". Partial success
+   (`201 { created, rejected }`) would honour both — but it is a contract change
+   requiring two-developer review.
+
+5. **The URL path is hardened beyond the brief** (ruled): fetch timeout, response
+   byte cap, HTML content-type allowlist, and SSRF blocking across redirects.
+   Each closes something real — an unbounded `response.text()` could OOM the
+   process and kill every concurrently-ingesting sibling (IN-S04 by another
+   door), and a URL serving a PDF was `.text()`'d into mojibake, embedded, and
+   marked **`ready`** (silent RAG corruption, worse than `failed`).
+
+### Task 6 — found in review, fixed without a ruling (in-spec)
+
+6. **`ensureCollection` raced on the feature's most common path.** The
+   `Set<string>` per-collection cache correctly avoided `rag.service.ts`'s
+   single-boolean trap (which would have skipped collection creation for every
+   course after the first), but had no **in-flight** dedup, and `ensureCollection`
+   is non-atomic check-then-create. Agenda's default concurrency is 5, so three
+   files uploaded to a **new** course → three concurrent jobs → three
+   `createCollection` calls → two 409s → **two materials spuriously `failed`** —
+   exactly the sibling contamination IN-S04 forbids. Now a
+   `Map<string, Promise<void>>` in-flight cache + 409 tolerance.
+
+7. **Ingest was not idempotent.** Point ids were `randomUUID()` per run with no
+   delete of prior points, while `retryMaterial` re-enqueues regardless of
+   status — so retrying a `ready` material **silently doubled every vector** in
+   `course-<id>`, permanently skewing Task 7 classification and Task 8
+   retrieval. Now deterministic UUIDv5 over `materialId:chunkIndex`, so
+   re-ingest overwrites.
+
+8. **SSRF: `isBlockedHost` blocked `fdic.gov` and `fcbarcelona.com`.**
+   `startsWith('fc')`/`startsWith('fd')` was intended for IPv6 unique-local
+   literals but ran in the branch ordinary DNS names reach. On a finance
+   product, the FDIC being unfetchable is a live bug. Now `/^f[cd][0-9a-f]{2}:/`.
+
+9. **SSRF bypass via IPv4-mapped IPv6.** `http://[::ffff:169.254.169.254]/`
+   normalizes to hostname `::ffff:a9fe:a9fe` — not `::1`, not `fe80:`, not
+   matched by the IPv4 regex → **allowed**, while `fetch` still reached the cloud
+   metadata endpoint. Both mapped forms (dotted and hex) now unwrap to IPv4 and
+   re-run the IPv4 checks.
+
+10. **Upload cleanup deleted files for already-persisted materials** (the
+    catch-all assumed `createMaterials` was atomic; it isn't once `insertOne`
+    starts) — now scoped to the `unsupported-format:` case. And **`MulterError`
+    surfaced as a 500** ("File too large" on a >50MB upload) because it carries
+    `code`, not `status` — now 413 / 400 via the router's normalizer.
+
+11. **Test coverage was found inadequate and expanded 5 → 44.** The brief listed
+    only 5 service cases and **no route test file**, so `materials.routes.ts`
+    (203 lines, the auth surface) had zero tests. Nothing pinned the
+    per-collection cache either — a revert to the boolean would have passed all
+    5 original tests. Added route tests, the cache regression test, IN-S05
+    coverage, and the mixed valid+invalid batch case.
 
 ### Task 5 — decided by Saurav during review (2026-07-17)
 
@@ -308,6 +408,31 @@ The two worth a second look:
 Also: `ensureCourseStudent` / `ensureCourseTa` ship unused — brief-mandated,
 intended for the student-facing tasks. Not a defect.
 
+**Task 6's deferred items:**
+
+- **A live end-to-end upload has never been run.** The brief's Step 3 (`curl` a
+  file through the route and watch `processing → ready`) needs Mongo + Qdrant +
+  a real embedding model + a session cookie, so it was skipped — **and the boot
+  crash is exactly what it would have caught.** The smoke test covers boot now,
+  but the actual ingest pipeline has only ever run against mocks. **Worth doing
+  live before the phase exit** (Task 16), and it overlaps with Task 8 Step 5's
+  ~Aug 2 checkpoint.
+- **Orphan points on shrink.** Deterministic ids fixed re-ingest *duplication*,
+  but a re-ingest producing **fewer** chunks (a URL whose content shrank, a retry
+  after re-upload) leaves tail points `materialId:n..` in the collection forever
+  — still carrying `payload.materialId`, still retrievable, so they will surface
+  in Task 8's generation context. Closing it needs a **delete-by-filter API the
+  qdrant component doesn't have**, which is beyond Task 6's scope. Commented at
+  the upsert site.
+- **DNS-rebinding SSRF** — the host is resolved twice (once for the check, once
+  by `fetch`). A known limitation of literal-host blocking; commented near
+  `isBlockedHost`.
+- **No timeout test** — `AbortSignal.timeout()` is backed by Node's internal
+  timer, so Jest fake timers don't intercept it reliably. Nothing was written
+  rather than a flaky test. The size cap and redirect re-validation *are* tested.
+- **The batch-rejection UX question** (see Task 6 deviation 4) — a contract-level
+  call, not resolvable inside a task.
+
 **Task 5's deferred items** — the first is a **deliberate deferral by Saurav**,
 not an oversight:
 
@@ -343,11 +468,17 @@ not an oversight:
 
 ## What's left
 
-- **Task 6** — material upload + async RAG ingestion (IN-S04/S05). Needs Task 1's
-  jobs component, already on `main`.
-- Then Tasks 7 (LLM classification, needs 6), 8 (three-agent generation pipeline,
-  needs 1+4+6 — **Step 5 is the ~Aug 2 joint mid-phase checkpoint**), and 15
-  (instructor client views, needs 2+5+6+7+8).
+- **Task 7** — LLM auto-classification + AI-suggested hierarchy (IN-S06). Needs
+  Task 6 merged: it modifies Task 6's routes (adding the contract's
+  `POST /api/materials/:materialId/classification`, deliberately not built in
+  Task 6) and wires `classifyMaterial` into the tail of the `material.ingest`
+  job. **Read Task 6 deviation 1 before registering anything with `defineJob`.**
+- Then Tasks 8 (three-agent generation pipeline, needs 1+4+6 — **Step 5 is the
+  ~Aug 2 joint mid-phase checkpoint**) and 15 (instructor client views, needs
+  2+5+6+7+8).
+- **Task 8 carry-forward:** `courseCollection(courseId)` → `course-<hex>` is
+  exported from `materials.service.ts` for you. Retrieval will see orphan tail
+  points from any shrinking re-ingest (see Task 6's deferred items).
 - **Task 15 carry-forward:** the question-bank surface it renders is Task 5's.
   Question heads come back as `id`, embedded `current` versions as raw `_id`
   (see the serialization rule above), and `browseBank`'s `includeArchived` is
