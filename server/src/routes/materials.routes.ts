@@ -50,18 +50,33 @@ const assignmentsBody = z.object({
 // name with no extension would make every pdf/docx/pptx/md ingest fail at job
 // time. This mirrors routes/rag.routes.ts's own upload config, for the same
 // documented reason.
+//
+// Resolved relative to this file (not process.cwd()) so uploads always land
+// in the same place — repoRoot/uploads/ — regardless of the directory the
+// process happens to be started from. `server/dist/routes` and
+// `server/src/routes` are both exactly 3 levels below the repo root, so this
+// path is correct for both the compiled output and ts-jest's direct
+// compilation of the source.
+const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
+
 // multer's diskStorage does not create `destination` itself — on a fresh
-// clone/CI, `uploads/` is gitignored and won't exist yet, so the first upload
+// clone/CI, uploads/ is gitignored and won't exist yet, so the first upload
 // would 500 with ENOENT without this. One-time, synchronous, cheap enough to
 // do at module load.
-mkdirSync('uploads', { recursive: true });
+mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Per-request cap on the number of files a single multipart upload may
+// contain (I5) — multer has no default, so an unbounded `files[]` field is a
+// resource-exhaustion vector (disk + one enqueued job per file) with no limit
+// today.
+const MAX_FILES_PER_UPLOAD = 20;
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: 'uploads/',
+    destination: UPLOAD_DIR,
     filename: (_req, file, cb) => cb(null, `${randomUUID()}${path.extname(file.originalname)}`),
   }),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024, files: MAX_FILES_PER_UPLOAD },
 });
 
 /**
@@ -112,10 +127,18 @@ materialsRouter.post(
         const materials = await createMaterials(courseId, files);
         res.status(201).json(materials);
       } catch (err) {
-        // The batch is rejected inline (400, IN-S04's route-level contract) —
-        // clean up every uploaded file so none is orphaned on disk for a
-        // material that was never persisted.
-        await Promise.all(files.map((file) => fs.rm(file.path, { force: true })));
+        // Only clean up when NO material could have been persisted (I4).
+        // createMaterials validates every file's format BEFORE writing
+        // anything, so an `unsupported-format:` rejection is the one error
+        // that is still fully atomic — no material exists yet, so every
+        // uploaded file here is orphaned and safe to delete. Any OTHER
+        // failure (e.g. insertOne/enqueueJob throwing mid-loop) may have
+        // already persisted materials 1..k pointing at these files'
+        // storagePath — deleting them then would leave those materials
+        // permanently unrecoverable (retryMaterial would ENOENT forever).
+        if (err instanceof Error && err.message.startsWith('unsupported-format:')) {
+          await Promise.all(files.map((file) => fs.rm(file.path, { force: true })));
+        }
         throw err;
       }
       return;
@@ -189,6 +212,17 @@ const MATERIAL_ERROR_STATUS: Record<string, number> = {
 };
 
 materialsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  // multer's errors carry a `code` (e.g. `LIMIT_FILE_SIZE`), not a `status` —
+  // left unhandled, the central errorHandler defaults them to 500, so an
+  // over-limit upload was returning "500 File too large" instead of a 4xx
+  // (I5). LIMIT_FILE_SIZE is the client sending too much data -> 413; every
+  // other MulterError (bad field name, too many files via MAX_FILES_PER_UPLOAD,
+  // etc.) is a malformed request -> 400.
+  if (err instanceof multer.MulterError) {
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    res.status(status).json({ error: err.message });
+    return;
+  }
   if (err instanceof Error) {
     if (Object.hasOwn(MATERIAL_ERROR_STATUS, err.message)) {
       res.status(MATERIAL_ERROR_STATUS[err.message]).json({ error: err.message });
