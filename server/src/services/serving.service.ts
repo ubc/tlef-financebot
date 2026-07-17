@@ -167,7 +167,7 @@ export async function studentCourseHome(
   puid: string,
   courseId: ObjectId,
 ): Promise<StudentCourseHomeTheme[]> {
-  const [themes, los, statuses] = await Promise.all([
+  const [themes, los, statuses, approvedQuestions] = await Promise.all([
     themesCol()
       .find({ courseId, archivedAt: { $exists: false } })
       .toArray(),
@@ -175,7 +175,21 @@ export async function studentCourseHome(
       .find({ courseId, archivedAt: { $exists: false } })
       .toArray(),
     getLoStatuses(puid, courseId),
+    questionsCol()
+      .find({ courseId, state: 'approved' })
+      .toArray(),
   ]);
+
+  // Fetch once, tally in memory (avoids an N+1 countDocuments per LO — a
+  // question's `loIds` is many-to-many, IN-Q13, so one question can bump
+  // the count for several LOs).
+  const approvedCountByLoId = new Map<string, number>();
+  for (const question of approvedQuestions) {
+    for (const loId of question.loIds) {
+      const key = loId.toString();
+      approvedCountByLoId.set(key, (approvedCountByLoId.get(key) ?? 0) + 1);
+    }
+  }
 
   const now = new Date();
   const result: StudentCourseHomeTheme[] = [];
@@ -187,7 +201,7 @@ export async function studentCourseHome(
     const themeLos = los.filter((lo) => lo.themeId.equals(theme._id));
     const losWithCoverage: StudentCourseHomeLo[] = [];
     for (const lo of themeLos) {
-      const approvedCount = await questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'approved' });
+      const approvedCount = approvedCountByLoId.get(lo._id.toString()) ?? 0;
       if (approvedCount === 0) continue;
       losWithCoverage.push({
         lo,
