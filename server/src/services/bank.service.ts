@@ -117,14 +117,28 @@ export async function reviewQueue(courseId: ObjectId): Promise<Array<BankItem & 
     if (!firstLoId) continue;
     const key = firstLoId.toString();
     if (coverageByLo.has(key)) continue;
-    coverageByLo.set(key, await questionsCol().countDocuments({ loIds: firstLoId, state: 'approved' }));
+    // courseId-scoped like every other query in this file — an LO id is not
+    // globally unique to a course, and PATCH lets an instructor tag their own
+    // question with any loId (no ownership check at that layer). Without this
+    // scope, a question in course B carrying course A's LO id would count
+    // toward A's approved coverage and skew A's review-queue ordering.
+    coverageByLo.set(key, await questionsCol().countDocuments({ courseId, loIds: firstLoId, state: 'approved' }));
   }
   const rankedRest = restRemaining
     .map((doc) => ({
       doc,
       coverage: doc.loIds[0] ? (coverageByLo.get(doc.loIds[0].toString()) ?? 0) : Number.POSITIVE_INFINITY,
     }))
-    .sort((a, b) => a.coverage - b.coverage)
+    // Explicit comparator, not `a.coverage - b.coverage` — two LO-less
+    // questions both carry Number.POSITIVE_INFINITY, and Infinity - Infinity
+    // is NaN. Array.prototype.sort coerces a NaN comparator result to +0
+    // (treats them as equal) so this was never actually broken, but that's
+    // an implementation detail of `sort` to depend on, not a guarantee to
+    // write into a comparator on purpose.
+    .sort((a, b) => {
+      if (a.coverage === b.coverage) return 0;
+      return a.coverage < b.coverage ? -1 : 1;
+    })
     .map((x) => x.doc);
   addAll(rankedRest, 3);
 

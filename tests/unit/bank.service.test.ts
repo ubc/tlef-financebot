@@ -150,6 +150,56 @@ describe('browseBank (IN-Q08)', () => {
     const [versionQuery] = versionsFind.mock.calls[0];
     expect(versionQuery).toEqual({ _id: { $in: [head.currentVersionId] } });
   });
+
+  // type/difficulty live on the QuestionVersion, not the head, so they're
+  // applied as a post-join JS filter (bank.service.ts:73-74) — never
+  // exercised before this review finding.
+  it('filters by type after the version join', async () => {
+    const mcqHead = makeQuestion();
+    const tfHead = makeQuestion();
+    questionsFindToArray.mockResolvedValueOnce([mcqHead, tfHead]);
+    versionsFindToArray.mockResolvedValueOnce([
+      makeVersion(mcqHead._id, mcqHead.currentVersionId, { type: 'mcq' }),
+      makeVersion(tfHead._id, tfHead.currentVersionId, { type: 'true-false' }),
+    ]);
+
+    const result = await browseBank(courseId, { type: 'true-false' });
+
+    expect(result.total).toBe(1);
+    expect(result.questions[0]._id).toEqual(tfHead._id);
+  });
+
+  it('filters by difficulty after the version join', async () => {
+    const easyHead = makeQuestion();
+    const hardHead = makeQuestion();
+    questionsFindToArray.mockResolvedValueOnce([easyHead, hardHead]);
+    versionsFindToArray.mockResolvedValueOnce([
+      makeVersion(easyHead._id, easyHead.currentVersionId, { difficulty: 'easy' }),
+      makeVersion(hardHead._id, hardHead.currentVersionId, { difficulty: 'hard' }),
+    ]);
+
+    const result = await browseBank(courseId, { difficulty: 'hard' });
+
+    expect(result.total).toBe(1);
+    expect(result.questions[0]._id).toEqual(hardHead._id);
+  });
+
+  it('applies type and difficulty filters together (both must match)', async () => {
+    const match = makeQuestion();
+    const wrongType = makeQuestion();
+    const wrongDifficulty = makeQuestion();
+    questionsFindToArray.mockResolvedValueOnce([match, wrongType, wrongDifficulty]);
+    versionsFindToArray.mockResolvedValueOnce([
+      makeVersion(match._id, match.currentVersionId, { type: 'true-false', difficulty: 'hard' }),
+      makeVersion(wrongType._id, wrongType.currentVersionId, { type: 'mcq', difficulty: 'hard' }),
+      makeVersion(wrongDifficulty._id, wrongDifficulty.currentVersionId, { type: 'true-false', difficulty: 'easy' }),
+    ]);
+
+    const result = await browseBank(courseId, { type: 'true-false', difficulty: 'hard' });
+
+    expect(result.total).toBe(1);
+    expect(result.questions[0]._id).toEqual(match._id);
+  });
 });
 
 // --- reviewQueue ---------------------------------------------------------------
@@ -222,6 +272,56 @@ describe('reviewQueue (IN-Q02 ordering)', () => {
     const result = await reviewQueue(courseId);
 
     expect(result.map((q) => q._id)).toEqual([thin._id, wellCovered._id]);
+  });
+
+  // Review finding 1: the coverage count must be course-scoped. PATCH
+  // exposes loIds with no ownership check, so an instructor of course A can
+  // tag their question with course B's LO id — without courseId in the
+  // filter, that question would count toward B's approved coverage and skew
+  // B's review-queue ordering. Pins the exact query shape passed to
+  // countDocuments so a regression that drops courseId fails this test.
+  it('scopes the under-coverage count to courseId — a same-LO question in another course must not affect it', async () => {
+    const sharedLoId = new ObjectId();
+    const thin = makeQuestion({ state: 'draft', loIds: [sharedLoId] });
+
+    questionsFindToArray
+      .mockResolvedValueOnce([]) // flagged
+      .mockResolvedValueOnce([]) // reviewed
+      .mockResolvedValueOnce([thin]); // rest
+    questionsCountDocuments.mockResolvedValue(0);
+    versionsFindToArray.mockResolvedValueOnce([makeVersion(thin._id, thin.currentVersionId)]);
+
+    await reviewQueue(courseId);
+
+    expect(questionsCountDocuments).toHaveBeenCalledWith({ courseId, loIds: sharedLoId, state: 'approved' });
+  });
+
+  // Review finding 7: two LO-less questions both rank Number.POSITIVE_INFINITY
+  // for coverage; Infinity - Infinity is NaN, which a subtraction comparator
+  // would hand to Array.prototype.sort. The explicit comparator must not
+  // depend on sort's NaN-to-+0 coercion to keep both questions present and
+  // ordered without throwing/dropping either.
+  it('ranks two LO-less questions in the rest tier without relying on Infinity - Infinity coercion', async () => {
+    const noLoA = makeQuestion({ state: 'draft', loIds: [] });
+    const noLoB = makeQuestion({ state: 'draft', loIds: [] });
+
+    questionsFindToArray
+      .mockResolvedValueOnce([]) // flagged
+      .mockResolvedValueOnce([]) // reviewed
+      .mockResolvedValueOnce([noLoA, noLoB]); // rest
+    versionsFindToArray.mockResolvedValueOnce([
+      makeVersion(noLoA._id, noLoA.currentVersionId),
+      makeVersion(noLoB._id, noLoB.currentVersionId),
+    ]);
+
+    const result = await reviewQueue(courseId);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((q) => q._id.toString()).sort()).toEqual(
+      [noLoA._id.toString(), noLoB._id.toString()].sort(),
+    );
+    // Neither question has an LO, so no coverage lookup should ever run.
+    expect(questionsCountDocuments).not.toHaveBeenCalled();
   });
 });
 

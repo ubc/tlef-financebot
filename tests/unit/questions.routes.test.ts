@@ -118,6 +118,130 @@ describe('GET /api/courses/:courseId/questions (browse, IN-Q08)', () => {
   });
 });
 
+// Review finding 2: questions.routes.ts:166 is the first use of
+// `validate({ query })` in this repo, depending on validate.ts's
+// Object.defineProperty shadowing of Express 5's req.query getter. Nothing
+// previously asserted a filter actually reaches browseBank — a regression
+// that silently passed `{}` through would have passed all prior tests.
+describe('GET /api/courses/:courseId/questions — filter surface (IN-Q08, finding 2)', () => {
+  beforeEach(() => {
+    jest.mocked(browseBank).mockResolvedValue({ total: 0, questions: [] } as never);
+  });
+
+  it('parses and passes the state filter to browseBank', async () => {
+    await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions?state=approved`);
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters).toEqual({ state: 'approved' });
+  });
+
+  it('parses and passes the loId filter to browseBank as an ObjectId', async () => {
+    const loId = new ObjectId();
+    await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?loId=${loId.toHexString()}`,
+    );
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters.loId).toBeInstanceOf(ObjectId);
+    expect((filters.loId as ObjectId).equals(loId)).toBe(true);
+  });
+
+  it('parses and passes the themeId filter to browseBank as an ObjectId', async () => {
+    const themeId = new ObjectId();
+    await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?themeId=${themeId.toHexString()}`,
+    );
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters.themeId).toBeInstanceOf(ObjectId);
+    expect((filters.themeId as ObjectId).equals(themeId)).toBe(true);
+  });
+
+  it('parses and passes the type filter to browseBank', async () => {
+    await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions?type=true-false`);
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters).toEqual({ type: 'true-false' });
+  });
+
+  it('parses and passes the difficulty filter to browseBank', async () => {
+    await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions?difficulty=hard`);
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters).toEqual({ difficulty: 'hard' });
+  });
+
+  it('parses and passes the label filter to browseBank', async () => {
+    await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?label=student-flagged`,
+    );
+
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters).toEqual({ label: 'student-flagged' });
+  });
+
+  it('400s an invalid state value without calling browseBank', async () => {
+    const res = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?state=bogus`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(browseBank).not.toHaveBeenCalled();
+  });
+
+  it('400s a malformed loId without calling browseBank', async () => {
+    const res = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?loId=not-an-object-id`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(browseBank).not.toHaveBeenCalled();
+  });
+
+  // Finding 4: includeArchived is not part of the HTTP contract — a request
+  // sending it must still 200 (unknown query keys are stripped by zod, not
+  // rejected) and must NOT reach browseBank as a filter.
+  it('strips an includeArchived query param rather than passing it through', async () => {
+    const res = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/questions?includeArchived=true`,
+    );
+
+    expect(res.status).toBe(200);
+    const [, filters] = jest.mocked(browseBank).mock.calls[0];
+    expect(filters).not.toHaveProperty('includeArchived');
+  });
+
+  it('omits agentDecision and internalNotes from the browse response — toBankItem\'s explicit field pick', async () => {
+    const current = { _id: new ObjectId(), version: 1, stem: 'x' };
+    jest.mocked(browseBank).mockResolvedValue({
+      total: 1,
+      questions: [
+        {
+          _id: questionId,
+          courseId,
+          currentVersionId: current._id,
+          currentVersion: 1,
+          state: 'draft',
+          loIds: [],
+          themeIds: [],
+          labels: [],
+          internalNotes: [{ puid: 'PUID-INSTR-0001', text: 'teaching-team-only note', at: new Date() }],
+          agentDecision: { decision: 'pass', reasoning: 'looks fine', roleAssessment: 'ok' },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          current,
+        },
+      ],
+    } as never);
+
+    const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.questions[0].agentDecision).toBeUndefined();
+    expect(res.body.questions[0].internalNotes).toBeUndefined();
+  });
+});
+
 describe('GET /api/courses/:courseId/review-queue (IN-Q02)', () => {
   it('403s a non-instructor', async () => {
     const res = await request(makeApp(student)).get(`/api/courses/${courseId.toHexString()}/review-queue`);

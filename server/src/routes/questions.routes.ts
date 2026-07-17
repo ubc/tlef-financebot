@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import { z } from 'zod';
 import { ensureApiAuthenticated } from '../components/auth';
-import { ensureCourseInstructor } from '../components/auth/course-guards';
+import { ensureCourseInstructor, NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   browseBank,
@@ -14,7 +14,7 @@ import {
   type BankItem,
 } from '../services/bank.service';
 import { editQuestion, transitionQuestion, bulkTransition } from '../services/questions.service';
-import type { Question } from '../types/domain';
+import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
 // browse/filter, review-queue, editing, and publication-transition surface,
@@ -29,18 +29,40 @@ const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const questionIdParams = z.object({ questionId: objectIdParam });
 
-const PUBLICATION_STATES = ['draft', 'pending-review', 'reviewed', 'approved', 'paused', 'archived'] as const;
-const QUESTION_TYPES = ['mcq', 'true-false'] as const;
-const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+// `satisfies readonly <Union>[]` checks these local lists against
+// domain.ts's unions at compile time — a typo or stale entry here fails the
+// build immediately, rather than as a silent runtime 400 discovered only
+// when a new domain value gets rejected by an out-of-date list here.
+const PUBLICATION_STATES = [
+  'draft',
+  'pending-review',
+  'reviewed',
+  'approved',
+  'paused',
+  'archived',
+] as const satisfies readonly PublicationState[];
+const QUESTION_TYPES = ['mcq', 'true-false'] as const satisfies readonly QuestionType[];
+const DIFFICULTIES = ['easy', 'medium', 'hard'] as const satisfies readonly Difficulty[];
 const QUESTION_LABELS = [
   'source-changed',
   'student-flagged',
   'convertible-to-parameterized',
   'auto-converted',
   'manually-edited',
-] as const;
-const OPTION_ROLES = ['correct', 'common-misconception', 'partially-correct', 'clearly-wrong'] as const;
+] as const satisfies readonly QuestionLabel[];
+const OPTION_ROLES = [
+  'correct',
+  'common-misconception',
+  'partially-correct',
+  'clearly-wrong',
+] as const satisfies readonly OptionRole[];
 
+// `includeArchived` is deliberately NOT part of this schema — the contract
+// (docs/api-contract.md line 47) lists only state/loId/themeId/type/
+// difficulty/label as the browse query surface, and the endpoint must match
+// it exactly. Nothing is lost: `state=archived` still reaches archived
+// questions per browseBank's rule. `includeArchived` stays in browseBank's
+// service signature (the brief mandates it; Task 15 may call it directly).
 const browseQuery = z.object({
   state: z.enum(PUBLICATION_STATES).optional(),
   loId: objectIdParam.optional(),
@@ -48,9 +70,6 @@ const browseQuery = z.object({
   type: z.enum(QUESTION_TYPES).optional(),
   difficulty: z.enum(DIFFICULTIES).optional(),
   label: z.enum(QUESTION_LABELS).optional(),
-  // Plain z.coerce.boolean() would treat the string "false" as truthy
-  // (Boolean("false") === true) — an easy footgun for a query-string flag.
-  includeArchived: z.enum(['true', 'false']).optional(),
 });
 
 // Element shape only — the count-vs-type rule (4 for mcq, 2 for true-false,
@@ -109,7 +128,12 @@ function stashCourseIdFromQuestion(): (req: Request, res: Response, next: NextFu
  * collect the distinct courseIds of the ones found, and require exactly
  * one. 403 (not 400) for the mixed/none case so the endpoint isn't an
  * existence oracle — a caller can't distinguish "some ids don't exist" from
- * "ids exist but span courses" from the status code alone.
+ * "ids exist but span courses" from the status code alone. That 403 also
+ * returns the exact same generic body `ensureCourseInstructor()` returns
+ * (NO_COURSE_ACCESS_BODY) rather than a distinguishing message — otherwise a
+ * caller could tell "single id, no access" apart from "ids span courses" by
+ * response body even though both are 403, which is the same oracle problem
+ * one level up.
  */
 function stashCourseIdFromBulk(): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -117,7 +141,7 @@ function stashCourseIdFromBulk(): (req: Request, res: Response, next: NextFuncti
     getDistinctQuestionCourseIds(ids)
       .then((courseIds) => {
         if (courseIds.length !== 1) {
-          res.status(403).json({ error: 'questions-span-multiple-courses' });
+          res.status(403).json(NO_COURSE_ACCESS_BODY);
           return;
         }
         res.locals.courseId = courseIds[0].toString();
@@ -130,7 +154,12 @@ function stashCourseIdFromBulk(): (req: Request, res: Response, next: NextFuncti
 /** Contract shape: `{ id, state, labels, loIds, themeIds, current }` — not the
  * service's `_id`, and deliberately not the rest of the Question head
  * (agentDecision/internalNotes are reserved for the single-question GET).
- * See docs/api-contract.md's Question bank section. */
+ * See docs/api-contract.md's Question bank section.
+ *
+ * Serialization rule (confirmed, deliberate): Question heads serialize as
+ * `id`; QuestionVersions serialize raw with their own `_id` — this is why
+ * PATCH returning a raw QuestionVersion below is correct and must not be
+ * "fixed" to an `id` mapping later. */
 function toBankItem(item: BankItem): {
   id: string;
   state: BankItem['state'];
@@ -174,7 +203,6 @@ questionsRouter.get(
       ...(q.type !== undefined ? { type: q.type } : {}),
       ...(q.difficulty !== undefined ? { difficulty: q.difficulty } : {}),
       ...(q.label !== undefined ? { label: q.label } : {}),
-      ...(q.includeArchived !== undefined ? { includeArchived: q.includeArchived === 'true' } : {}),
     });
     res.json({ total, questions: questions.map(toBankItem) });
   },
@@ -246,7 +274,7 @@ questionsRouter.post(
     const questionId = new ObjectId(String(req.params.questionId));
     const { to } = req.body as z.infer<typeof transitionBody>;
     const updated = await transitionQuestion(questionId, to, req.user!.puid);
-    res.json(toQuestionResponse(updated as WithId<Question>));
+    res.json(toQuestionResponse(updated));
   },
 );
 
