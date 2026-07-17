@@ -66,7 +66,15 @@ instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
   `{ correct, feedback: { strategy: 'a' | 'b', revealed: [{ key, text, role, explanation }] | chosenOnly, retryAvailable },
      mastery: { loStatus, recommendation? }, reviewBook: { added } }` (ST-P04)
 - `POST /api/courses/:courseId/los/:loId/skip { attempted: boolean }` → 204 (ST-P06)
-- `GET /api/courses/:courseId/session-summary` → start-of-session payload (ST-P11)
+- `GET /api/courses/:courseId/session-summary` →
+  `{ deferred?: SessionEndSummary, welcome: boolean }` — start-of-session payload; `welcome: true`
+  when the student has no attempts in the course yet, else `deferred` carries the summary stored
+  by `PUT .../deferred-summary` at the end of their last session, if any (ST-P11)
+- `PUT /api/courses/:courseId/deferred-summary { since: Date }` → `SessionEndSummary`
+  `{ losCovered: string[], questionsAttempted, accuracyByLo: [{ loId, attempted, correct, accuracy }],
+     reviewBookAdditions: [{ entryId, questionId, loId, themeId }], missedQuestions: string[] }`
+  — computes the summary since `since` and stores (upserts) it as the student's deferred
+  end-of-session summary for this course, to be surfaced by `GET .../session-summary` next time (ST-P10)
 
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)

@@ -1162,3 +1162,373 @@ button.class-row--link:focus-visible .class-row__title {
   border-radius: var(--radius-sm);
 }
 
+
+/* ---- Student practice (Task 14: course home, LO list, practice, review book, summary) --- */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+
+.banner--welcome {
+  border-color: var(--accent);
+}
+
+.banner__text {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.banner__link {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.banner__dismiss {
+  flex-shrink: 0;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.theme-card__title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.theme-card__title:hover {
+  color: var(--accent);
+}
+
+.theme-card__coverage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.coverage-bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.coverage-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.theme-card__coverage-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.lo-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.lo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.1rem;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 1px solid var(--border);
+}
+
+.lo-row:last-child {
+  border-bottom: none;
+}
+
+.lo-row:hover {
+  background: var(--surface-2);
+}
+
+.lo-row__name {
+  font-weight: 600;
+}
+
+.lo-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.lo-row__count {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* ---- Practice card --------------------------------------------------- */
+
+.practice-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.watermark {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.85rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+}
+
+.practice-card__stem {
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.practice-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.option-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.option-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.option-btn__key {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.option-btn--selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.option-btn--correct {
+  border-color: var(--up);
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.option-btn--correct .option-btn__key {
+  color: var(--ok-fg);
+}
+
+.option-btn--incorrect {
+  border-color: var(--down);
+  background: var(--err-bg);
+  color: var(--err-fg);
+}
+
+.option-btn--incorrect .option-btn__key {
+  color: var(--err-fg);
+}
+
+.option-btn--hidden-choice {
+  opacity: 0.55;
+}
+
+.option-btn:disabled {
+  cursor: default;
+}
+
+.practice-card__result {
+  margin: 0;
+  font-weight: 650;
+}
+
+.practice-card__result--correct {
+  color: var(--up);
+}
+
+.practice-card__result--incorrect {
+  color: var(--down);
+}
+
+.practice-card__explanations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.practice-card__explanation {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.practice-card__retry {
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 9rem;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.transcript:empty {
+  display: none;
+}
+
+.transcript__entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  background: var(--surface-2);
+}
+
+.transcript__entry--correct {
+  border-left: 3px solid var(--up);
+}
+
+.transcript__entry--incorrect {
+  border-left: 3px solid var(--down);
+}
+
+.transcript__stem {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* ---- Review Book -------------------------------------------------------- */
+
+.review-book__controls {
+  margin-bottom: 1rem;
+}
+
+.review-book__sort {
+  width: auto;
+}
+
+.review-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.review-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.review-group__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.1rem;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 650;
+}
+
+.review-group__summary::-webkit-details-marker {
+  display: none;
+}
+
+.review-group__count {
+  color: var(--muted);
+}
+
+.review-group__entries {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.review-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-entry:last-child {
+  border-bottom: none;
+}
+
+.review-entry__stem {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.review-entry__badges {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.review-entry__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}

@@ -350,7 +350,7 @@ git commit -m "feat: courses service and routes — hierarchy CRUD, term dates, 
 - Consumes: `coursesCol()`, `rosterCol()`, `usersCol()`; `User` from `req.user`.
 - Produces: `enrollByCode(user: User, code: string): Promise<{ courseId: ObjectId; name: string; courseCode: string }>` throwing `EnrollmentError` with `.code` one of `'not-recognized' | 'not-on-roster' | 'course-ended' | 'already-enrolled'`; `listEnrollments(user: User): Promise<Array<{ courseId, name, courseCode, term, active: boolean }>>` where `active` is false past `termEnd` (respecting per-student `extendedUntil`). Routes map error codes to statuses: 404 / 403 / 410 / 409 per the contract.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/unit/enrollment.service.test.ts` (collections mocked). Concrete cases:
 
@@ -406,12 +406,12 @@ it('is idempotent: already enrolled -> already-enrolled, no duplicate', async ()
 
 Roster match rule: the student's `uid` **or** `email` (both lower-cased) must equal a roster `identifier`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement service + routes**
+- [x] **Step 3: Implement service + routes**
 
 ```ts
 export class EnrollmentError extends Error {
@@ -441,17 +441,19 @@ export async function enrollByCode(user: User, code: string) {
 
 Routes (`enrollment.routes.ts`): `POST /api/enrollments` (body `{ code: z.string().min(1) }`) mapping `EnrollmentError.code` → 404/403/410/409 with the exact user-facing messages from ST-E02 ("you're not on the roster for this course — contact your instructor", "this course has ended", "code not recognized", informational duplicate message); `GET /api/enrollments` listing via `listEnrollments`. Mount in `app.ts`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/enrollment.service.ts server/src/routes/enrollment.routes.ts server/src/app.ts tests/unit/enrollment.service.test.ts
 git commit -m "feat: enrollment by registration code with roster cross-check and four error states (ST-E02)"
 ```
+
+**Note (post-implementation, Stephen 2026-07-16):** shipped as specified; review Approved, no Critical/Important findings. Two deferred Minors: `enrollByCode`/`listEnrollments` duplicate roster+expiry logic with subtly different null-handling (a shared `resolveAccessEnd()` helper would remove drift risk); test coverage exercises only the `uid` roster-match path, not `email` (the core doc's own spec has the same gap).
 
 ---
 
@@ -697,7 +699,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `recordSkip(puid, courseId, loId, attempted: boolean): Promise<void>` — sets `skipped`; new attempts clear it (ST-P06).
   - `themeCoverage(puid, courseId, themeId): Promise<{ covered: boolean; includesSkipped: boolean }>` — covered once all non-skipped active LOs are covered (§9.2).
 
-- [ ] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
+**Note (post-implementation, Stephen 2026-07-17):** "recomputes ... from the latest ≤10 attempts" above describes `attemptCount`/`windowAccuracy`/`windowRoles` only — those genuinely are freshly recomputed from the full capped window on every call. **Tier progression is an incremental delta, not a window replay**: each call applies exactly one tier transition using `prior.currentTier` (or `'easy'` if this is the LO's first-ever attempt) plus the newest attempt in the window. This is a deliberate, load-bearing design choice, not a shortcut — a full-window tier replay was tried and reverted because it silently collapses `currentTier` (e.g. `hard` → `easy`) once earlier tier-earning attempts age out of the 10-slot window during a legitimate common-misconception-miss streak, which this section's own rule requires to be tier-**neutral**. See `phase-1/Stephen/2026-07-11-phase-1-core-loop-stephen.md`'s Task 9 note and the gitignored `.superpowers/sdd/task-9-report.md` for the full incident. Anyone calling `computeProfile` directly (not through `recordAttemptInMastery`) with a multi-attempt window against a stale or null `prior` is outside its contract and will get an under-stepped tier by design.
+
+- [x] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
 
 ```
 1. easy ✓, medium ✓, hard ✓            -> tier walks easy→medium→hard; status in-progress (only 3 attempts)
@@ -710,8 +714,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 8. themeCoverage: LO-A covered, LO-B skipped -> covered:true, includesSkipped:true
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
 
 ---
 
@@ -730,7 +734,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `selectRetryQuestion(input: { puid; courseId; loId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] }): Promise<same | null>` — a **new** question testing the same concept (same LO, different questionId); `null` → caller degrades to Strategy B (§5.1).
   - `studentCourseHome(puid, courseId): Promise<Array<{ theme: Theme; available: boolean; los: Array<{ lo: LearningObjective; status: MasteryStatus; approvedCount: number }> }>>` — only themes/LOs with ≥1 approved question, `availableFrom` respected, archived hidden (ST-P01/P02).
 
-- [ ] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
+**Note (post-implementation, Stephen 2026-07-17):** `approvedCount` is tallied with a single course-wide `find({courseId, state:'approved'})` plus an in-memory `Map` keyed by `loId` (not one `countDocuments` per LO — that N+1 shape was caught in review since it's invisible under a test fake but real against Mongo). `available` on a returned entry is always `true` in practice — a not-yet-available theme is hidden entirely rather than included with `available:false`; flag before Task 14 if the client view ever needs to distinguish "locked but visible" from "absent."
+
+- [x] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
 
 ```
 1. picks only 'approved' — a bank of drafts/pending/paused returns null
@@ -744,8 +750,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 9. studentCourseHome hides a theme whose availableFrom is tomorrow and an LO with 0 approved
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
 
 ---
 
@@ -783,7 +789,9 @@ export interface AttemptResult {
   Behaviour: writes the AttemptRecord (pinning version, LO context, mode, applied strategy, difficulty from the version, paramValues, isRetry) → updates mastery (retry attempts are independent full-weight attempts) → on any miss, upserts the ReviewBookEntry **immediately regardless of retry outcome** (one entry per question; repeat miss updates `triggeringAttemptId`/`updatedAt`) → Strategy A miss additionally calls `selectRetryQuestion`; no retry available ⇒ degrade to full reveal (`strategy` stays `'a'`, `revealed` becomes all options — the §5.1 degradation) → `recommendation: 'advance-lo'` when this attempt flipped the LO to covered; `'advance-theme'` when the theme is now covered (ST-P05 backend).
   - Routes (`practice.routes.ts`, student-guarded): `POST /api/courses/:courseId/practice/next` (serves via `selectNextQuestion`; response **never** contains roles, explanations, or correctness — only `{ key, text }` options + `watermark: user.uid`), `POST /api/attempts`, `POST /api/courses/:courseId/los/:loId/skip`, `GET /api/courses/:courseId/home` (via `studentCourseHome`), `GET /api/courses/:courseId/session-summary` (last session's attempts grouped by LO + deferred summary — see Task 12's session model).
 
-- [ ] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
+**Note (post-implementation, Stephen 2026-07-17):** `AttemptRecord.themeId`/`ReviewBookEntry.themeId` must be derived from the theme owning the served `loId` (a `losCol()` lookup), **not** `question.themeIds[0]` — a question's `loIds`/`themeIds` are independently-populated many-to-many tag lists, so an arbitrary array index can silently pin the wrong theme for a question tagged across multiple themes, corrupting the `themeCoverage()` check behind `recommendation: 'advance-theme'`. `losCol()` is therefore a required Consumes entry this section omitted. `recommendation`'s precedence when one attempt both completes an LO and its theme: `'advance-theme'` supersedes `'advance-lo'` (a documented interpretation, not stated explicitly above). ⚠️ Cross-task, pre-existing, not fixed here: `editQuestion` (Task 4) doesn't reset `state` to `draft` on a post-approval edit, so `submitAttempt`'s `state === 'approved'` gate alone doesn't catch a student holding a stale `questionVersionId` from before the edit — raise at the Task 16 exit review.
+
+- [x] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
 
 ```
 1. decideStrategy truth table (6 cases: 3 course settings × CM/other roles)
@@ -803,8 +811,8 @@ export interface AttemptResult {
 
 `practice.routes.test.ts`: `/practice/next` response contains no `role`/`explanation` keys anywhere (walk the JSON); 403 non-enrolled; skip endpoint 204.
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
 
 ---
 
@@ -830,9 +838,9 @@ export interface AttemptResult {
   - Re-practice needs no new serving code: the client calls `POST /api/attempts` with `mode: 'review-book'` on the stored question (fresh attempt, full feedback, full mastery weight — ST-R03; parameterized re-randomization arrives with Phase 2's param execution).
 - Routes per contract: `GET /api/courses/:courseId/review-book?sort=`, `POST/DELETE /api/questions/:questionId/bookmark`, `DELETE /api/review-book/:entryId`, the two summary endpoints.
 
-- [ ] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
+- [x] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
 
 ---
 
@@ -880,11 +888,11 @@ Key behaviours to implement (each is small, concrete DOM code following the exis
 - **Review Book:** collapsed theme groups with counts; expanding lists entries (auto vs bookmark badges); sort dropdown; "Re-practice" serves the stored question and submits with `mode: 'review-book'`; remove button per entry; empty state (ST-R05).
 - **Session summary:** counts, accuracy per LO, missed list with links; "Defer to next session" PUTs the deferred summary (ST-P10/R06).
 
-- [ ] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
-- [ ] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
-- [ ] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
+- [x] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
+- [x] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
+- [x] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
+- [x] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
 
 ---
 
