@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
-import { attemptsCol, questionsCol, questionVersionsCol, coursesCol, reviewBookCol } from '../components/mongodb/collections';
+import { attemptsCol, questionsCol, questionVersionsCol, coursesCol, reviewBookCol, losCol } from '../components/mongodb/collections';
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from './mastery.service';
 import { selectRetryQuestion } from './serving.service';
 import type {
@@ -126,8 +126,15 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
   const course = await coursesCol().findOne({ _id: question.courseId });
   if (!course) throw new Error('question-not-servable');
 
-  const themeId = question.themeIds[0];
-  if (!themeId) throw new Error('question-not-servable');
+  // themeId is derived from the LO actually served (input.loId), not from
+  // question.themeIds[0] — Question.loIds/themeIds are independently-
+  // populated many-to-many tag lists (IN-Q13), so a question tagged to LOs
+  // spanning multiple themes has no reliable "first" theme. AttemptRecord's
+  // themeId is defined as "the LO context actually served under" (§5.1
+  // multi-LO rule), so it must come from the served LO's own themeId.
+  const lo = await losCol().findOne({ _id: input.loId });
+  if (!lo) throw new Error('lo-not-found');
+  const themeId = lo.themeId;
 
   const correct = selectedOption.role === 'correct';
   const appliedStrategy = decideStrategy(course.feedbackStrategy, selectedOption.role);

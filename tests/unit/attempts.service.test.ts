@@ -7,6 +7,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   coursesCol: jest.fn(),
   reviewBookCol: jest.fn(),
   attemptsCol: jest.fn(),
+  losCol: jest.fn(),
 }));
 
 jest.mock('../../server/src/services/mastery.service', () => ({
@@ -24,6 +25,7 @@ import {
   questionsCol,
   coursesCol,
   reviewBookCol,
+  losCol,
 } from '../../server/src/components/mongodb/collections';
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from '../../server/src/services/mastery.service';
 import { selectRetryQuestion } from '../../server/src/services/serving.service';
@@ -133,20 +135,28 @@ function version(overrides: Partial<{ difficulty: string }> = {}) {
   };
 }
 
-function questionHead(overrides: Partial<{ state: string }> = {}) {
+function questionHead(overrides: Partial<{ state: string; loIds: ObjectId[]; themeIds: ObjectId[] }> = {}) {
   return {
     _id: questionId,
     courseId,
     currentVersionId: versionId,
     currentVersion: 1,
     state: overrides.state ?? 'approved',
-    loIds: [loId],
-    themeIds: [themeId],
+    loIds: overrides.loIds ?? [loId],
+    themeIds: overrides.themeIds ?? [themeId],
     labels: [],
     internalNotes: [],
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+}
+
+/** LearningObjective fixture — themeId is the single source of truth for
+ * which theme an LO belongs to (a LearningObjective has exactly one
+ * themeId); this is what the fix derives AttemptRecord.themeId from,
+ * instead of the buggy question.themeIds[0]. */
+function loDoc(id: ObjectId, loTheme: ObjectId) {
+  return { _id: id, courseId, themeId: loTheme, name: 'An LO', order: 0 };
 }
 
 function courseDoc(feedbackStrategy: string) {
@@ -169,10 +179,16 @@ function seedCollections(opts: {
   feedbackStrategy: string;
   questionState?: string;
   reviewBookSeed?: ReviewBookDoc[];
+  loIds?: ObjectId[];
+  themeIds?: ObjectId[];
+  los?: ReturnType<typeof loDoc>[];
 }) {
   jest.mocked(questionVersionsCol).mockReturnValue(makeReadOnlyCol([version()]) as never);
-  jest.mocked(questionsCol).mockReturnValue(makeReadOnlyCol([questionHead({ state: opts.questionState })]) as never);
+  jest
+    .mocked(questionsCol)
+    .mockReturnValue(makeReadOnlyCol([questionHead({ state: opts.questionState, loIds: opts.loIds, themeIds: opts.themeIds })]) as never);
   jest.mocked(coursesCol).mockReturnValue(makeReadOnlyCol([courseDoc(opts.feedbackStrategy)]) as never);
+  jest.mocked(losCol).mockReturnValue(makeReadOnlyCol(opts.los ?? [loDoc(loId, themeId)]) as never);
   const reviewBookFake = makeReviewBookFake(opts.reviewBookSeed);
   jest.mocked(reviewBookCol).mockReturnValue(reviewBookFake as never);
   return reviewBookFake;
@@ -413,6 +429,117 @@ describe('submitAttempt: non-approved question', () => {
     seedCollections({ feedbackStrategy: 'adaptive', questionState: 'draft' });
 
     await expect(submitAttempt(baseInput({ selectedKey: 'A' }))).rejects.toThrow('question-not-servable');
+    expect(recordAttemptInMastery).not.toHaveBeenCalled();
+  });
+});
+
+// --- Case 11: recommendation + themeId derivation (Task 11 review fix) -----------
+//
+// AttemptRecord.themeId must be "the LO context actually served under"
+// (§5.1 multi-LO rule) — derived from the served LO's own themeId via
+// losCol(), NOT question.themeIds[0]. A question tagged to LOs spanning
+// multiple themes has no reliable "first" theme, and themeCoverage() must be
+// evaluated against the theme the student was actually practicing, or
+// 'advance-theme' can fire for a theme unrelated to the attempt.
+
+describe('submitAttempt: recommendation', () => {
+  it("case 11a: LO flips to covered but theme isn't fully covered -> 'advance-lo'", async () => {
+    seedCollections({ feedbackStrategy: 'adaptive' });
+    jest.mocked(getLoStatuses).mockResolvedValue(new Map([[loId.toHexString(), 'in-progress']]));
+    jest.mocked(recordAttemptInMastery).mockResolvedValue({
+      puid,
+      courseId,
+      loId,
+      status: 'covered',
+      attemptCount: 5,
+      windowAccuracy: 1,
+      windowRoles: {},
+      currentTier: 'medium',
+      attemptsSinceEvaluation: 5,
+      updatedAt: new Date(),
+    } as never);
+    jest.mocked(themeCoverage).mockResolvedValue({ covered: false, includesSkipped: false });
+
+    const result = await submitAttempt(baseInput({ selectedKey: 'A' }));
+
+    expect(result.mastery.loStatus).toBe('covered');
+    expect(result.mastery.recommendation).toBe('advance-lo');
+    expect(themeCoverage).toHaveBeenCalledWith(puid, courseId, themeId);
+    const [attempt] = jest.mocked(recordAttemptInMastery).mock.calls[0];
+    expect(attempt.themeId.equals(themeId)).toBe(true);
+  });
+
+  it("case 11b: LO flips to covered AND completes the theme -> 'advance-theme' (theme supersedes LO)", async () => {
+    seedCollections({ feedbackStrategy: 'adaptive' });
+    jest.mocked(getLoStatuses).mockResolvedValue(new Map([[loId.toHexString(), 'in-progress']]));
+    jest.mocked(recordAttemptInMastery).mockResolvedValue({
+      puid,
+      courseId,
+      loId,
+      status: 'covered',
+      attemptCount: 5,
+      windowAccuracy: 1,
+      windowRoles: {},
+      currentTier: 'medium',
+      attemptsSinceEvaluation: 5,
+      updatedAt: new Date(),
+    } as never);
+    jest.mocked(themeCoverage).mockResolvedValue({ covered: true, includesSkipped: false });
+
+    const result = await submitAttempt(baseInput({ selectedKey: 'A' }));
+
+    expect(result.mastery.loStatus).toBe('covered');
+    expect(result.mastery.recommendation).toBe('advance-theme');
+    expect(themeCoverage).toHaveBeenCalledWith(puid, courseId, themeId);
+  });
+
+  it('case 11c: question tagged to LOs spanning multiple themes -> themeId derives from the SERVED lo, not themeIds[0] (regression for the themeIds[0] bug)', async () => {
+    // The question is tagged (many-to-many, IN-Q13) to two LOs in two
+    // different themes. themeIds[0] is deliberately the WRONG theme (the one
+    // NOT associated with the LO actually served) so this test would have
+    // failed under the old `question.themeIds[0]` logic.
+    const otherLoId = new ObjectId();
+    const wrongThemeId = new ObjectId(); // themeIds[0] — NOT what was served
+    const rightThemeId = new ObjectId(); // the served LO's real theme
+
+    seedCollections({
+      feedbackStrategy: 'adaptive',
+      loIds: [otherLoId, loId],
+      themeIds: [wrongThemeId, rightThemeId],
+      los: [loDoc(otherLoId, wrongThemeId), loDoc(loId, rightThemeId)],
+    });
+    jest.mocked(getLoStatuses).mockResolvedValue(new Map([[loId.toHexString(), 'in-progress']]));
+    jest.mocked(recordAttemptInMastery).mockResolvedValue({
+      puid,
+      courseId,
+      loId,
+      status: 'covered',
+      attemptCount: 5,
+      windowAccuracy: 1,
+      windowRoles: {},
+      currentTier: 'medium',
+      attemptsSinceEvaluation: 5,
+      updatedAt: new Date(),
+    } as never);
+    jest.mocked(themeCoverage).mockResolvedValue({ covered: true, includesSkipped: false });
+
+    const result = await submitAttempt(baseInput({ selectedKey: 'A' }));
+
+    // Correct behaviour: themeCoverage/AttemptRecord use rightThemeId (the
+    // served LO's theme), never wrongThemeId (themeIds[0]).
+    expect(themeCoverage).toHaveBeenCalledWith(puid, courseId, rightThemeId);
+    expect(themeCoverage).not.toHaveBeenCalledWith(puid, courseId, wrongThemeId);
+    expect(result.mastery.recommendation).toBe('advance-theme');
+
+    const [attempt] = jest.mocked(recordAttemptInMastery).mock.calls[0];
+    expect(attempt.themeId.equals(rightThemeId)).toBe(true);
+    expect(attempt.themeId.equals(wrongThemeId)).toBe(false);
+  });
+
+  it("case 11d: throws 'lo-not-found' when the served LO does not exist (data-corruption guard)", async () => {
+    seedCollections({ feedbackStrategy: 'adaptive', los: [] });
+
+    await expect(submitAttempt(baseInput({ selectedKey: 'A' }))).rejects.toThrow('lo-not-found');
     expect(recordAttemptInMastery).not.toHaveBeenCalled();
   });
 });
