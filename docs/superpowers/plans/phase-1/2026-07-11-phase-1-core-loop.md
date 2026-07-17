@@ -687,7 +687,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `recordSkip(puid, courseId, loId, attempted: boolean): Promise<void>` — sets `skipped`; new attempts clear it (ST-P06).
   - `themeCoverage(puid, courseId, themeId): Promise<{ covered: boolean; includesSkipped: boolean }>` — covered once all non-skipped active LOs are covered (§9.2).
 
-- [ ] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
+**Note (post-implementation, Stephen 2026-07-17):** "recomputes ... from the latest ≤10 attempts" above describes `attemptCount`/`windowAccuracy`/`windowRoles` only — those genuinely are freshly recomputed from the full capped window on every call. **Tier progression is an incremental delta, not a window replay**: each call applies exactly one tier transition using `prior.currentTier` (or `'easy'` if this is the LO's first-ever attempt) plus the newest attempt in the window. This is a deliberate, load-bearing design choice, not a shortcut — a full-window tier replay was tried and reverted because it silently collapses `currentTier` (e.g. `hard` → `easy`) once earlier tier-earning attempts age out of the 10-slot window during a legitimate common-misconception-miss streak, which this section's own rule requires to be tier-**neutral**. See `phase-1/Stephen/2026-07-11-phase-1-core-loop-stephen.md`'s Task 9 note and the gitignored `.superpowers/sdd/task-9-report.md` for the full incident. Anyone calling `computeProfile` directly (not through `recordAttemptInMastery`) with a multi-attempt window against a stale or null `prior` is outside its contract and will get an under-stepped tier by design.
+
+- [x] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
 
 ```
 1. easy ✓, medium ✓, hard ✓            -> tier walks easy→medium→hard; status in-progress (only 3 attempts)
@@ -700,8 +702,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 8. themeCoverage: LO-A covered, LO-B skipped -> covered:true, includesSkipped:true
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
 
 ---
 
