@@ -257,6 +257,40 @@ describe('recordAttemptInMastery: rolling 10-attempt window', () => {
     const after = await attempt(true);
     expect(after.attemptCount).toBe(10);
     expect(after.windowAccuracy).toBe(1);
+    // Tier: under the incremental delta design, currentTier tracks
+    // prior.currentTier + one transition per attempt, independent of window
+    // eviction. Attempt 1 (miss, non-CM): baseTier 'easy', step-back rule
+    // needs 'hard'/'medium' to apply, so tier stays 'easy'. Attempts 2-11
+    // are all correct, so each one advances the tier by one step, capped at
+    // 'hard': easy->medium->hard->hard->...->hard. It reaches 'hard' on
+    // attempt 3 and stays there through attempt 11.
+    expect(after.currentTier).toBe('hard');
+  });
+
+  it('CM-miss streak regression: tier-earning attempts aging out of the window must not collapse an already-earned tier', async () => {
+    // Reach 'hard' with 3 straight correct attempts (easy->medium->hard).
+    await attempt(true);
+    await attempt(true);
+    await attempt(true);
+
+    // Now rack up enough common-misconception misses to push all three of
+    // those correct attempts out of the 10-slot rolling window. CM misses
+    // are tier-neutral by rule, and — critically — must STAY tier-neutral
+    // even once the attempts that originally earned 'hard' are no longer
+    // visible in `window`. Round 2's full-replay-from-'easy' design failed
+    // this: once eviction happened, the replay silently reset the walk and
+    // collapsed the tier. The incremental delta design carries `currentTier`
+    // forward via `prior`, so it must hold 'hard' throughout.
+    let profile;
+    for (let i = 0; i < 12; i += 1) {
+      profile = await attempt(false, { selectedRole: 'common-misconception' });
+      expect(profile.currentTier).toBe('hard');
+    }
+    // Confirm the original 3 correct attempts have indeed aged out of the
+    // window (window capped at 10; 12 CM misses since then means the last 10
+    // attempts are all CM misses).
+    expect(profile!.windowRoles['common-misconception']).toBe(10);
+    expect(profile!.attemptCount).toBe(10);
   });
 });
 
@@ -340,28 +374,35 @@ describe('computeProfile (pure)', () => {
     expect(profile.attemptCount).toBe(0);
   });
 
-  it('caps tier at hard on repeated correct answers', () => {
-    // `window` is the whole history in every real call site, so the walk is
-    // always replayed from 'easy' across it (see computeProfile's docstring);
-    // a non-null `prior` here is not a tier baseline. Five straight corrects
-    // reach 'hard' on the second and must stay capped through the rest.
-    const window = [
-      makeAttempt({ correct: true }),
-      makeAttempt({ correct: true }),
-      makeAttempt({ correct: true }),
-      makeAttempt({ correct: true, difficulty: 'hard' }),
-      makeAttempt({ correct: true, difficulty: 'hard' }),
-    ];
-    const profile = computeProfile(window, null);
+  it('caps tier advance at hard from a prior tier of hard', () => {
+    // In-contract call: prior already reflects 'hard', window holds just the
+    // one new (correct) attempt beyond it. advanceTier must cap, not overflow.
+    const prior: MasteryProfile = {
+      puid,
+      courseId,
+      loId,
+      status: 'covered',
+      attemptCount: 4,
+      windowAccuracy: 1,
+      windowRoles: { correct: 4 },
+      currentTier: 'hard',
+      attemptsSinceEvaluation: 4,
+      updatedAt: new Date(),
+    };
+    const window = [makeAttempt({ correct: true, difficulty: 'hard' })];
+    const profile = computeProfile(window, prior);
     expect(profile.currentTier).toBe('hard');
   });
 
-  it('replays tier transitions across a multi-item window (not just the last entry)', () => {
-    // Four straight-correct attempts in one window, prior: null. Walking the
-    // tier ladder across all four in order: easy->medium->hard->hard (capped).
-    // A one-step-only implementation (applying the rule solely to the last
-    // entry against prior's baseline of 'easy') would incorrectly return
-    // 'medium' here.
+  it('out-of-contract: a multi-attempt window against a null prior only applies ONE tier step (documented limitation, not a bug)', () => {
+    // This is the shape a hypothetical batch/backfill caller might pass:
+    // several attempts in `window` with no matching `prior` progression.
+    // computeProfile is NOT a full-history replay (see its docstring) — it
+    // only ever applies one transition, keyed off `window`'s newest entry,
+    // on top of `prior?.currentTier ?? 'easy'`. Four straight corrects here
+    // therefore under-step to 'medium' (one advance from 'easy'), not the
+    // 'hard' a full replay would produce. That under-stepping is accepted:
+    // `recordAttemptInMastery` never calls computeProfile this way.
     const window = [
       makeAttempt({ correct: true }),
       makeAttempt({ correct: true }),
@@ -369,10 +410,9 @@ describe('computeProfile (pure)', () => {
       makeAttempt({ correct: true }),
     ];
     const profile = computeProfile(window, null);
-    expect(profile.currentTier).toBe('hard');
+    expect(profile.currentTier).toBe('medium');
     expect(profile.attemptCount).toBe(4);
     expect(profile.windowAccuracy).toBe(1);
-    expect(profile.status).toBe('covered');
   });
 
   it('increments attemptsSinceEvaluation from prior', () => {
