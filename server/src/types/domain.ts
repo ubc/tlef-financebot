@@ -125,7 +125,11 @@ export interface QuestionVersion {
   paramSlots?: ParamSlot[];
   generateScript?: string; // instructor-authored generate() source (PrairieLearn convention)
   sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>; // question reference view (§10)
-  editedFields?: string[]; // fields manually changed vs the generated original (IN-Q03)
+  // Content keys patched in THIS edit only (per-edit, not cumulative) —
+  // IN-Q03. The set of fields that diverge from the generated original across
+  // the whole version chain is the union of editedFields over every version
+  // from v2 up to this one.
+  editedFields?: string[];
   createdBy: string; // puid or 'pipeline'
   createdAt: Date;
 }

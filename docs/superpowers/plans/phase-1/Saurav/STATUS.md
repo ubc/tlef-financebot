@@ -2,12 +2,16 @@
 
 _Last updated: 2026-07-16_
 
-**Tasks 1 and 2 are done and reviewed.** Task 1 is merged to `main` (PR #13).
-Task 2 is code-complete on branch `saurav/task-2-courses-service`, review
-**Approved**, and open in **PR #14** awaiting Saurav's merge. Full suite green:
-**87 unit**, typecheck + eslint clean. Next up is **Task 4** (question service) — the plan
-flags it as front-load work because Stephen's Tasks 10/11/14 need Approved
-questions to exist.
+**Tasks 1, 2, and 4 are done and reviewed.** Tasks 1 and 2 are **merged to
+`main`** (PR #13, PR #14 — `main` is now `2060254`). Task 4 is code-complete on
+branch `saurav/task-4-questions-service`, review **Spec ✅ / Quality Approved**,
+rebased onto post-#14 `main` and **awaiting Saurav's push + PR**. Full suite
+green: **104 unit** (87 from Tasks 1–2 + 17 new), typecheck + eslint clean.
+
+**Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
+exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
+(see "What I need from you" below). Next up is **Task 5** (bank routes), which
+needs Task 4 merged.
 
 Executed with the superpowers `subagent-driven-development` skill; the running
 ledger (commit ranges, per-task review verdicts, deferred Minor findings) is in
@@ -20,13 +24,81 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | Task | What | Status |
 |---|---|---|
 | 1 | Agenda-backed jobs component (`defineJob`/`enqueueJob`/`scheduleRecurring`/`stopJobs`) | merged, PR #13 (`3a8c649`) |
-| 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | reviewed, **PR #14 (open)** (`843c154`) |
+| 2 | Courses service + course-scoped guards + Courses/Hierarchy/Roster endpoints (IN-S01/S02/S03, IN-L06) | merged, PR #14 (`2060254`) |
+| 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | reviewed, **branch pushed? no — awaiting PR** (`7259f4e`) |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 4 — decided by Saurav during review (2026-07-16)
+
+1. **`editQuestion` does not create a version or add `manually-edited` for a
+   tagging-only patch.** The plan's recipe was an unconditional "insert
+   `version: n+1` + `$addToSet: { labels: 'manually-edited' }`", so an IN-Q13
+   retag — `editQuestion(id, { loIds }, puid)`, no content change — inserted a
+   **content-identical v2** and stamped the question as manually edited when
+   nobody had edited it. The label stops meaning anything and the version chain
+   fills with duplicate snapshots. Now: if the patch has no content key
+   (`stem`/`options`/`difficulty`/`paramSlots`), it updates the head's
+   `loIds`/`themeIds` only, inserts no version, adds no label, and returns the
+   current version. Option validation still runs *inside* the content branch, so
+   a bad-options patch throws before any early return — no bypass.
+   **Content-bearing edits are byte-identical to the plan; the PRD §2
+   append-only guarantee is untouched.**
+   → **The plan's Task 4 `editQuestion` recipe is now stale on this point.**
+
+2. **`editedFields` stays per-edit; `domain.ts`'s docstring was wrong and was
+   reworded.** The plan says "records `editedFields` (patched content keys)" —
+   per-edit. `domain.ts:128` said "fields manually changed vs the generated
+   original (IN-Q03)" — which reads cumulative. A genuine contradiction between
+   two normative sources. The plan governs: nothing is lost, because the
+   cumulative divergence-from-original set is the **union of `editedFields`
+   across the version chain**; only reading a single version in isolation is
+   weaker. The docstring now says exactly that.
+   → **No code change; `domain.ts:128` is the thing that moved.**
+
+3. **`transitionQuestion` hoists a single `const now`.** The core doc's excerpt
+   returns `{ ...question, state: to }`, which carries the **pre-update**
+   `updatedAt` while the DB got a fresh `new Date()` — so the returned timestamp
+   did not match storage. Task 5's routes will echo this return straight to the
+   client. One value now feeds the `$set`, the audit entry, and the return.
+
+### Task 4 — found in review, fixed without a ruling (in-spec)
+
+4. **`bulkTransition` no longer swallows every error.** The plan says "skips
+   invalid, returns updated count"; the implementation delivered that with a
+   bare `catch {}` — which also swallowed **infrastructure** failures. A Mongo
+   outage returned `0`, indistinguishable from "all N questions were in an
+   invalid state". Worse: if `transitionQuestion`'s state `updateOne` succeeded
+   and the **audit `insertOne` then threw**, the catch ate it — the question was
+   approved, the count under-reported, and the state change was **unaudited**,
+   the worst possible hole in a publication audit trail. Now only
+   `question-not-found` and `invalid-transition:*` are skipped; everything else
+   propagates. "Skips invalid ones" never meant "swallows all errors", so this
+   needed no ruling.
+   → **Task 5's routes must handle a rejected `bulkTransition`.**
+
+5. **`createQuestion` inserts the version before the head**, and `editQuestion`
+   gained `question-not-found` / `version-not-found` guards on paths the plan
+   left silent. `Question.currentVersionId` and `QuestionVersion.questionId` are
+   both required, so neither insert can go second — both `_id`s are
+   pre-generated with `new ObjectId()`. Ordering is then free, and an orphan
+   version (head insert fails) is invisible to every query path, whereas an
+   orphan head (version insert fails) is discoverable and points at a
+   `currentVersionId` that does not exist. No transactions/sessions — no service
+   in this repo uses them.
+
+6. **The RED phase was not a true RED.** The failing run was a
+   `TS2307: Cannot find module` compile error (`Tests: 0 total`), not observed
+   per-assertion failures — so the tests were never seen failing for the *right*
+   reason, and there is no evidence distinguishing "these tests pin the required
+   behaviour" from "these tests were written against the implementation". The
+   reviewer judged them sound on inspection and they were strengthened
+   afterwards, but the TDD evidence has a real gap. Recorded rather than
+   papered over.
 
 ### Task 2 — decided by Saurav during review (2026-07-16)
 
@@ -144,10 +216,13 @@ theme/LO create. Two ways to close it, decide at Task 15:
   carries every theme/LO name, so no server round-trip is needed. This likely
   makes the service function redundant.
 
-## Deferred review findings (triage before merging Task 2)
+## Deferred review findings — now triage for the Phase-1 whole-branch review
 
-Task 2's review came back Approved with no Critical/Important issues. Seven
-Minors were deliberately left; full detail in `.superpowers/sdd/progress.md`.
+Both Task 2's and Task 4's reviews came back Approved with **no
+Critical/Important issues outstanding**. The Minors below were deliberately
+left; full detail in the gitignored `.superpowers/sdd/progress.md`.
+
+**Task 2's Minors are now on `main` (PR #14 merged before they were triaged).**
 The two worth a second look:
 
 - `courses.routes.ts` — `err.message in COURSE_ERROR_STATUS` walks the
@@ -161,22 +236,59 @@ The two worth a second look:
 Also: `ensureCourseStudent` / `ensureCourseTa` ship unused — brief-mandated,
 intended for the student-facing tasks. Not a defect.
 
+**Task 4's Minors** (both test-only; production code is clean):
+
+- `tests/unit/questions.service.test.ts` — the "content+tags patch still
+  versions and labels" test is a near-duplicate of the `editedFields` test
+  (same `{ difficulty, loIds }` patch); the newer one is strictly better and
+  the older could fold into it.
+- `tests/unit/questions.service.test.ts` — `bulkTransition`'s `findOne` mock
+  returns the same doc for any id that isn't `validId`, so a test would still
+  pass if `bulkTransition` mangled ids. Low risk — the loop is trivial.
+
 ## What's left
 
-- **Task 4** — question service (versioning, publication transitions, tagging).
-  Independent of Task 2, branches cleanly off `main`. Front-load: Stephen's
-  Tasks 10/11/14 need Approved questions to exist.
-- Then Tasks 5, 6, 7, 8, 15.
+- **Task 5** — bank routes (browse/filter, review queue, editing, transitions).
+  Needs Task 4 merged. **Note: `bulkTransition` now rejects on non-domain
+  errors, so its route must handle a rejected promise** (see Task 4 deviation 4).
+- Then Tasks 6, 7, 8, 15.
 
 ## What I need from you (Stephen)
 
-Nothing blocking — but two heads-ups:
+Nothing blocking — but three heads-ups:
 
-1. **Task 2 adds `app.use('/api', coursesRouter)`** to `app.ts` (one appended
-   line, no reordering, per the shared-file convention) and introduces
-   `server/src/components/auth/course-guards.ts`. If your tasks touch course
-   authorization, use `ensureCourseInstructor()` / `ensureCourseStudent()` /
-   `ensureCourseTa()` from there rather than rolling your own — they check
-   `req.user.courseRoles` against the request's course and honour `isAdmin`.
-2. **Task 4 is next and is your unblocker** — it's what makes Approved
-   questions exist for your Tasks 10/11/14.
+1. **Task 2 (now on `main`) adds `app.use('/api', coursesRouter)`** to `app.ts`
+   (one appended line, no reordering, per the shared-file convention) and
+   introduces `server/src/components/auth/course-guards.ts`. If your tasks touch
+   course authorization, use `ensureCourseInstructor()` /
+   `ensureCourseStudent()` / `ensureCourseTa()` from there rather than rolling
+   your own — they check `req.user.courseRoles` against the request's course and
+   honour `isAdmin`.
+2. **Task 4 is your unblocker for Tasks 10/11/14** — `createQuestion` +
+   `transitionQuestion` are how Approved questions come into existence, so you
+   never have to wait on my Task 15 UI. Seed with:
+
+   ```ts
+   import { createQuestion, transitionQuestion } from '../services/questions.service';
+
+   const { questionId } = await createQuestion({
+     courseId, loIds: [loId], themeIds: [themeId],
+     type: 'mcq', stem: 'Which statement about NPV is correct?',
+     options: [
+       { key: 'A', text: '…', role: 'correct',              explanation: '…' },
+       { key: 'B', text: '…', role: 'common-misconception', explanation: '…' },
+       { key: 'C', text: '…', role: 'partially-correct',    explanation: '…' },
+       { key: 'D', text: '…', role: 'clearly-wrong',        explanation: '…' },
+     ],
+     difficulty: 'medium', createdBy: 'seed',
+   });
+   // Questions ALWAYS enter as draft — walk the state machine to approved:
+   await transitionQuestion(questionId, 'pending-review', 'seed');
+   await transitionQuestion(questionId, 'approved', 'seed'); // pending-review → approved is legal
+   ```
+
+   Exactly 4 options for `mcq` (2 for `true-false`) and exactly one `correct`,
+   or it throws `invalid-options:*`. `draft → approved` is **not** a legal jump.
+3. **`editQuestion` will not version or label a tagging-only patch** (see
+   deviation 1). If you retag a question's `loIds`/`themeIds`, its
+   `currentVersion` deliberately does not move.
