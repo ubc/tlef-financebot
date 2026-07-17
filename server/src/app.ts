@@ -15,6 +15,7 @@ import { questionsRouter } from './routes/questions.routes';
 import { enrollmentRouter } from './routes/enrollment.routes';
 import { practiceRouter } from './routes/practice.routes';
 import { reviewBookRouter } from './routes/review-book.routes';
+import { materialsRouter } from './routes/materials.routes';
 import { authRouter } from './routes/auth.routes';
 import { configureAuth } from './components/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
@@ -63,6 +64,7 @@ export function createApp(): Express {
   app.use('/api', coursesRouter); // Courses/Hierarchy/Roster (IN-S01/S02/S03, IN-L06) — instructor authoring surface.
   app.use('/api', questionsRouter); // Question bank browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08).
   app.use('/api', enrollmentRouter); // Enrollment by code + roster cross-check (ST-E02/E03).
+  app.use('/api', materialsRouter); // Material upload + async RAG ingestion (IN-S04/S05).
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).

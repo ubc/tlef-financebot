@@ -41,6 +41,12 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `res.locals.courseId` from the target question (or, for bulk transition,
   from the single course the batch resolves to) before
   `ensureCourseInstructor()` runs.
+- `materials.routes.ts` — Material upload + async RAG ingestion (IN-S04/S05):
+  `POST/GET /api/courses/:courseId/materials` (multipart `files[]` or JSON
+  `{ url }`), `POST /api/materials/:materialId/retry`,
+  `PUT /api/materials/:materialId/assignments`. All routes are
+  **instructor-gated**; materialId-scoped routes stash `res.locals.courseId`
+  from the target material first, the same pattern as `questions.routes.ts`.
 
 ## Auth-gating a route
 

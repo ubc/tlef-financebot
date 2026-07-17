@@ -600,22 +600,34 @@ git commit -m "feat: question bank browse/filter and prioritized review queue (I
 - Consumes: `multer` (disk storage under `uploads/` — gitignored), genai components (`document-parsing`, `chunking`, `embeddings`), qdrant component, jobs component (Task 1), `materialsCol()`.
 - Produces:
   - `createMaterials(courseId, files: Express.Multer.File[]): Promise<Material[]>` and `createUrlMaterial(courseId, url: string): Promise<Material>` — insert `status: 'processing'` docs, then `enqueueJob('material.ingest', { materialId })` per material (independent processing — one failure never blocks others, IN-S04).
-  - Job `material.ingest`: parse (file via toolkit by extension; URL via `fetch` + HTML parsing through the toolkit) → chunk → embed → upsert into the per-course Qdrant collection `course-<courseId>` with payload `{ materialId, chunk }` → set `status: 'ready'`; on error set `status: 'failed', error: message`. Register with `defineJob` in this service; import the service from `server.ts` after `startJobs()` so registration runs.
+  - Job `material.ingest`: parse (file via toolkit by extension; URL via `fetch` + HTML parsing through the toolkit) → chunk → embed → upsert into the per-course Qdrant collection `course-<courseId>` with payload `{ materialId, chunk }` → set `status: 'ready'`; on error set `status: 'failed', error: message`. ~~Register with `defineJob` in this service; import the service from `server.ts` after `startJobs()` so registration runs.~~ **← This instruction is WRONG and made the server fail to boot. See the note below.**
+
+> **🚨 Note (post-implementation, Saurav 2026-07-17) — READ THIS BEFORE REGISTERING A JOB IN TASK 7 OR TASK 8.**
+>
+> **Never call `defineJob()` at module level.** The compiled output is CommonJS, so `server.ts` → `app.ts` → `<your>.routes.ts` → `<your>.service.ts` pulls the service in via a **hoisted synchronous `require` that runs before `main()`** — and therefore before `startJobs()`. `requireAgenda()` then throws `Jobs not started` and **the whole app fails to boot**. The strikethrough instruction above assumed nothing else imports the service; a route always does.
+>
+> **Do this instead:** export a `registerXJobs()` function that calls `defineJob(...)`, and call it from `server.ts` immediately after `startJobs()`. `materials.service.ts`'s `registerMaterialJobs()` is the reference; `components/jobs/AGENTS.md` documents the pattern.
+>
+> This shipped green: **all 156 tests passed while the server could not start**, because no test imported `app.ts`. `tests/unit/app.smoke.test.ts` now guards it — keep `components/jobs` unmocked there or the guard is hollow.
+>
+> **Four more Task 6 deviations** (full rationale in `phase-1/Saurav/STATUS.md`): `'md'` added to `Material['format']` in `domain.ts`; **`.txt` is read directly via `fs.readFile`** because the document-parsing component supports `.pdf .docx .pptx .html .md` but **not `.txt`**; the URL path adds a timeout, byte cap, HTML content-type allowlist, and SSRF blocking across redirects; and **`components/qdrant/index.ts` was NOT modified** — its functions already take a collection name.
+>
+> **Two things Tasks 7/8 inherit from this service:** `courseCollection(courseId)` → `course-<hex>` is exported for you. Ingest point ids are **deterministic** (UUIDv5 over `materialId:chunkIndex`) so re-ingest overwrites rather than duplicating — but a re-ingest producing **fewer** chunks leaves orphan tail points in the collection (they still carry `payload.materialId` and are still retrievable). Closing that needs a delete-by-filter API the qdrant component lacks.
   - `retryMaterial(materialId)` — re-enqueues a failed material.
   - `assignMaterial(materialId, assignments: Array<{ themeId; loId? }>)` (IN-S05) — replaces assignments; never deletes the material or its questions.
   - `courseCollection(courseId: ObjectId): string` — returns `course-<hex>`; exported, used by generation (Task 8) and classification (Task 7).
   - Supported formats: `pdf docx pptx txt md url`; anything else → route responds 400 naming the format (inline error, IN-S04).
 - Routes: `POST /api/courses/:courseId/materials` (multipart `files[]` via `multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } })`, or JSON `{ url }`), `GET .../materials`, `POST /api/materials/:materialId/retry`, `PUT /api/materials/:materialId/assignments` — instructor-guarded.
 
-- [ ] **Step 1: Write failing tests** — mock collections + jobs + genai/qdrant modules. Cases: unsupported extension rejected with the format named; three files create three `processing` docs and three enqueues; ingest job success path calls parse→chunk→embed→upsert with collection `course-<id>` and sets `ready`; ingest job failure sets `failed` with the error message and does not throw (other files unaffected); URL material stores `sourceUrl`.
+- [x] **Step 1: Write failing tests** — mock collections + jobs + genai/qdrant modules. Cases: unsupported extension rejected with the format named; three files create three `processing` docs and three enqueues; ingest job success path calls parse→chunk→embed→upsert with collection `course-<id>` and sets `ready`; ingest job failure sets `failed` with the error message and does not throw (other files unaffected); URL material stores `sourceUrl`.
 
-- [ ] **Step 2: Run to verify FAIL.**
+- [x] **Step 2: Run to verify FAIL.**
 
-- [ ] **Step 3: Implement** service, job registration, routes; add `uploads/` to `.gitignore`. Verify manually: upload `tests/fixtures/sample-material.md` through the UI-less route with `curl -F "files=@tests/fixtures/sample-material.md" -b <session>` and watch status go `processing → ready`.
+- [x] **Step 3: Implement** service, job registration, routes; add `uploads/` to `.gitignore`. Verify manually: upload `tests/fixtures/sample-material.md` through the UI-less route with `curl -F "files=@tests/fixtures/sample-material.md" -b <session>` and watch status go `processing → ready`.
 
-- [ ] **Step 4: Run tests + typecheck** → PASS.
+- [x] **Step 4: Run tests + typecheck** → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/materials.service.ts server/src/routes/materials.routes.ts server/src/app.ts .gitignore tests/unit/materials.service.test.ts

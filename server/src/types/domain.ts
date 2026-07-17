@@ -173,7 +173,7 @@ export interface AttemptRecord {
 export interface Material {
   courseId: ObjectId;
   name: string;
-  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'url';
+  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
   status: 'processing' | 'ready' | 'failed';
   error?: string;
   sourceUrl?: string; // format === 'url'
