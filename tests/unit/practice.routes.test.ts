@@ -15,18 +15,23 @@ jest.mock('../../server/src/services/serving.service', () => ({
 jest.mock('../../server/src/services/attempts.service', () => ({
   submitAttempt: jest.fn(),
   getCourseIdForQuestionVersion: jest.fn(),
-  getSessionSummary: jest.fn(),
 }));
 
 jest.mock('../../server/src/services/mastery.service', () => ({
   recordSkip: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/review-book.service', () => ({
+  storeDeferredSummary: jest.fn(),
+  getSessionSummaryForStart: jest.fn(),
+}));
+
 import { practiceRouter } from '../../server/src/routes/practice.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import { selectNextQuestion, studentCourseHome } from '../../server/src/services/serving.service';
-import { submitAttempt, getCourseIdForQuestionVersion, getSessionSummary } from '../../server/src/services/attempts.service';
+import { submitAttempt, getCourseIdForQuestionVersion } from '../../server/src/services/attempts.service';
 import { recordSkip } from '../../server/src/services/mastery.service';
+import { storeDeferredSummary, getSessionSummaryForStart } from '../../server/src/services/review-book.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -66,8 +71,9 @@ beforeEach(() => {
   jest.mocked(studentCourseHome).mockReset();
   jest.mocked(submitAttempt).mockReset();
   jest.mocked(getCourseIdForQuestionVersion).mockReset();
-  jest.mocked(getSessionSummary).mockReset();
   jest.mocked(recordSkip).mockReset();
+  jest.mocked(storeDeferredSummary).mockReset();
+  jest.mocked(getSessionSummaryForStart).mockReset();
 });
 
 // -----------------------------------------------------------------------------
@@ -241,11 +247,32 @@ describe('GET /api/courses/:courseId/home', () => {
 
 describe('GET /api/courses/:courseId/session-summary', () => {
   it('200s the session summary', async () => {
-    jest.mocked(getSessionSummary).mockResolvedValue({ since: null, byLo: [], totalAttempts: 0 } as never);
+    jest.mocked(getSessionSummaryForStart).mockResolvedValue({ welcome: true });
 
     const res = await request(makeApp(student)).get(`/api/courses/${courseId.toHexString()}/session-summary`);
 
     expect(res.status).toBe(200);
-    expect(getSessionSummary).toHaveBeenCalledWith(student.puid, expect.any(ObjectId));
+    expect(getSessionSummaryForStart).toHaveBeenCalledWith(student.puid, expect.any(ObjectId));
+  });
+});
+
+describe('PUT /api/courses/:courseId/deferred-summary', () => {
+  it('200s and stores the deferred summary computed since the given timestamp', async () => {
+    const computed = {
+      losCovered: [],
+      questionsAttempted: 0,
+      accuracyByLo: [],
+      reviewBookAdditions: [],
+      missedQuestions: [],
+    };
+    jest.mocked(storeDeferredSummary).mockResolvedValue(computed);
+
+    const res = await request(makeApp(student))
+      .put(`/api/courses/${courseId.toHexString()}/deferred-summary`)
+      .send({ since: '2026-03-01T00:00:00Z' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(computed);
+    expect(storeDeferredSummary).toHaveBeenCalledWith(student.puid, expect.any(ObjectId), expect.any(Date));
   });
 });

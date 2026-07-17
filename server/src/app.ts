@@ -14,6 +14,7 @@ import { coursesRouter } from './routes/courses.routes';
 import { questionsRouter } from './routes/questions.routes';
 import { enrollmentRouter } from './routes/enrollment.routes';
 import { practiceRouter } from './routes/practice.routes';
+import { reviewBookRouter } from './routes/review-book.routes';
 import { authRouter } from './routes/auth.routes';
 import { configureAuth } from './components/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
@@ -64,6 +65,7 @@ export function createApp(): Express {
   app.use('/api', enrollmentRouter); // Enrollment by code + roster cross-check (ST-E02/E03).
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
+  app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).
 
   // Serve the compiled client. Any non-API request falls through to here.
   app.use(express.static(CLIENT_PUBLIC_DIR));

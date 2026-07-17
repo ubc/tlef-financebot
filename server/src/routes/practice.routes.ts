@@ -4,8 +4,9 @@ import { z } from 'zod';
 import { ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { selectNextQuestion, studentCourseHome } from '../services/serving.service';
-import { submitAttempt, getCourseIdForQuestionVersion, getSessionSummary } from '../services/attempts.service';
+import { submitAttempt, getCourseIdForQuestionVersion } from '../services/attempts.service';
 import { recordSkip } from '../services/mastery.service';
+import { storeDeferredSummary, getSessionSummaryForStart } from '../services/review-book.service';
 import type { PracticeMode } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -44,6 +45,8 @@ const submitAttemptBody = z.object({
 });
 
 const skipBody = z.object({ attempted: z.boolean().optional().default(false) });
+
+const deferredSummaryBody = z.object({ since: z.coerce.date() });
 
 /**
  * Resolves `res.locals.courseId` from the submitted `questionVersionId`
@@ -163,16 +166,33 @@ practiceRouter.get(
   },
 );
 
-/** GET /api/courses/:courseId/session-summary -> last session's attempts
- * grouped by LO. See getSessionSummary's docstring: a placeholder session
- * boundary pending Task 12's real session model. */
+/** GET /api/courses/:courseId/session-summary -> { deferred?, welcome }
+ * (ST-P10/P11, Task 12's real session model: a session = attempts since a
+ * client-provided `since` timestamp; `welcome: true` when the student has no
+ * attempts in the course yet). */
 practiceRouter.get(
   '/courses/:courseId/session-summary',
   validate({ params: courseIdParams }),
   ensureCourseStudent(),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
-    const summary = await getSessionSummary(req.user!.puid, courseId);
+    const summary = await getSessionSummaryForStart(req.user!.puid, courseId);
+    res.json(summary);
+  },
+);
+
+/** PUT /api/courses/:courseId/deferred-summary { since } -> the computed
+ * SessionEndSummary. Stores (overwrites) the student's deferred end-of-
+ * session summary for this course (ST-P10), to be surfaced by
+ * GET .../session-summary at the start of their next session. */
+practiceRouter.put(
+  '/courses/:courseId/deferred-summary',
+  validate({ params: courseIdParams, body: deferredSummaryBody }),
+  ensureCourseStudent(),
+  async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const { since } = req.body as z.infer<typeof deferredSummaryBody>;
+    const summary = await storeDeferredSummary(req.user!.puid, courseId, since);
     res.json(summary);
   },
 );

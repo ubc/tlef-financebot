@@ -286,6 +286,26 @@ export interface RosterEntry {
   addedAt: Date;
 }
 
+/** Stores the most recent end-of-session summary a student deferred to their
+ * next session (ST-P10/ST-P11), keyed (puid, courseId) — one row per
+ * student-course pair, overwritten on every new deferral. `summary` mirrors
+ * review-book.service's `SessionEndSummary` return shape; duplicated here
+ * (rather than imported) because domain document shapes are the persistence
+ * contract and shouldn't depend on a service module's exported type. */
+export interface SessionSummaryRecord {
+  puid: string;
+  courseId: ObjectId;
+  summary: {
+    losCovered: string[];
+    questionsAttempted: number;
+    accuracyByLo: Array<{ loId: string; attempted: number; correct: number; accuracy: number }>;
+    reviewBookAdditions: Array<{ entryId: string; questionId: string; loId: string; themeId: string }>;
+    missedQuestions: string[];
+  };
+  since: Date; // the client-provided session-start timestamp this summary was computed from
+  updatedAt: Date;
+}
+
 // --- Publication state machine -----------------------------------------------
 
 /** Allowed transitions (PRD §6.2). 'archived' is reachable from every state;
