@@ -350,7 +350,7 @@ git commit -m "feat: courses service and routes — hierarchy CRUD, term dates, 
 - Consumes: `coursesCol()`, `rosterCol()`, `usersCol()`; `User` from `req.user`.
 - Produces: `enrollByCode(user: User, code: string): Promise<{ courseId: ObjectId; name: string; courseCode: string }>` throwing `EnrollmentError` with `.code` one of `'not-recognized' | 'not-on-roster' | 'course-ended' | 'already-enrolled'`; `listEnrollments(user: User): Promise<Array<{ courseId, name, courseCode, term, active: boolean }>>` where `active` is false past `termEnd` (respecting per-student `extendedUntil`). Routes map error codes to statuses: 404 / 403 / 410 / 409 per the contract.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/unit/enrollment.service.test.ts` (collections mocked). Concrete cases:
 
@@ -406,12 +406,12 @@ it('is idempotent: already enrolled -> already-enrolled, no duplicate', async ()
 
 Roster match rule: the student's `uid` **or** `email` (both lower-cased) must equal a roster `identifier`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement service + routes**
+- [x] **Step 3: Implement service + routes**
 
 ```ts
 export class EnrollmentError extends Error {
@@ -441,17 +441,19 @@ export async function enrollByCode(user: User, code: string) {
 
 Routes (`enrollment.routes.ts`): `POST /api/enrollments` (body `{ code: z.string().min(1) }`) mapping `EnrollmentError.code` → 404/403/410/409 with the exact user-facing messages from ST-E02 ("you're not on the roster for this course — contact your instructor", "this course has ended", "code not recognized", informational duplicate message); `GET /api/enrollments` listing via `listEnrollments`. Mount in `app.ts`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/enrollment.service.ts server/src/routes/enrollment.routes.ts server/src/app.ts tests/unit/enrollment.service.test.ts
 git commit -m "feat: enrollment by registration code with roster cross-check and four error states (ST-E02)"
 ```
+
+**Note (post-implementation, Stephen 2026-07-16):** shipped as specified; review Approved, no Critical/Important findings. Two deferred Minors: `enrollByCode`/`listEnrollments` duplicate roster+expiry logic with subtly different null-handling (a shared `resolveAccessEnd()` helper would remove drift risk); test coverage exercises only the `uid` roster-match path, not `email` (the core doc's own spec has the same gap).
 
 ---
 
