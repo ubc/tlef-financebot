@@ -16,8 +16,17 @@ import { renderRag } from './views/rag.js';
 import { renderMembers } from './views/members.js';
 import { renderRole } from './views/role.js';
 import { renderClasses } from './views/classes.js';
+import { renderCourseHome } from './views/student/course-home.js';
+import { renderLoList } from './views/student/lo-list.js';
+import { renderPractice } from './views/student/practice.js';
+import { renderReviewBook } from './views/student/review-book.js';
+import { renderSessionSummary } from './views/student/session-summary.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
+// Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
+// specific patterns are listed before shorter ones so e.g. `/course/:id/theme/:themeId`
+// isn't shadowed by a hypothetical broader pattern (none currently overlap,
+// but keeping specific-first is the convention as this list grows).
 const ROUTES: Route[] = [
   { path: '/', render: renderHome },
   { path: '/faculty', render: renderRole('faculty') },
@@ -27,6 +36,12 @@ const ROUTES: Route[] = [
   { path: '/rag', render: renderRag },
   { path: '/classes', render: renderClasses },
   { path: '/members', render: renderMembers },
+  { path: '/course/:id/theme/:themeId', render: renderLoList },
+  { path: '/course/:id/practice-theme/:themeId', render: renderPractice },
+  { path: '/course/:id/practice/:loId', render: renderPractice },
+  { path: '/course/:id/review-book', render: renderReviewBook },
+  { path: '/course/:id/summary', render: renderSessionSummary },
+  { path: '/course/:id', render: renderCourseHome },
 ];
 
 const GROUP_ORDER: NavGroup[] = ['main', 'role', 'examples', 'account'];
