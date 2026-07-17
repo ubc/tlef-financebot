@@ -34,13 +34,34 @@ function stepBackTier(tier: Difficulty): Difficulty {
  * Recompute a (puid, LO) mastery profile from the rolling attempt window.
  *
  * `window` is chronological (oldest first), holding at most the last 10
- * attempts and always ending with the attempt just recorded. `prior` is the
- * profile as of before that attempt (or null if this LO has never been
- * attempted) — its `currentTier`/`status` are the baseline the latest
- * attempt's outcome is applied against. Tier state is therefore a running
- * delta carried via `prior`, not replayed from the window on every call; the
- * window itself only feeds the count/accuracy/role-distribution stats and the
- * "last 3 attempts" lookback the step-back rule needs.
+ * attempts — in every real call site (`recordAttemptInMastery`) it is the
+ * *entire* attempt history for this (puid, LO) up to the window cap, not an
+ * incremental delta. Because of that, `currentTier` is genuinely replayed
+ * from a fixed `'easy'` starting point across the *whole* window every call,
+ * exactly like `attemptCount`/`windowAccuracy`/`windowRoles` already are —
+ * using `prior?.currentTier` as the replay's starting point instead would
+ * double-count history already baked into `prior` (since `prior` is itself
+ * the result of replaying `window`'s earlier entries on a previous call) and
+ * silently over-advances the tier. `prior` therefore only supplies:
+ * `currentTier`/other fields as a fallback when `window` is empty (this LO
+ * has no attempts at all), and the running `attemptsSinceEvaluation` counter
+ * and identity/base fields, which aren't derivable from `window` alone.
+ *
+ * Tier progression is replayed step by step, in chronological order, across
+ * the whole window: correct → advance one tier (capped at `hard`); miss with
+ * `selectedRole: 'common-misconception'` → hold tier; miss with
+ * ≥2-of-the-last-3-attempts-so-far at `hard`/`medium` → step back one tier.
+ * Each step's "last 3" lookback is evaluated against the attempts up to and
+ * including that step within the window, not the window's overall last
+ * three.
+ *
+ * Known limitation: once total attempts exceed the 10-slot window, the
+ * oldest attempts are evicted and the replay can no longer see them — the
+ * walk still starts from `'easy'` on eviction, which is an approximation
+ * (there's no persisted "tier as of just before the oldest surviving
+ * attempt" checkpoint). In practice tier converges to `hard` within a
+ * handful of attempts, so this only matters for pathological miss-heavy
+ * streaks spanning >10 attempts; no scripted case exercises it.
  */
 export function computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile {
   const base = {
@@ -73,22 +94,35 @@ export function computeProfile(window: AttemptRecord[], prior: MasteryProfile | 
   }
 
   const latest = window[window.length - 1];
-  const baseTier: Difficulty = prior?.currentTier ?? 'easy';
 
-  let currentTier: Difficulty;
-  if (latest.correct) {
-    currentTier = advanceTier(baseTier);
-  } else if (latest.selectedRole === 'common-misconception') {
-    // Repeat the same difficulty/concept rather than penalizing tier.
-    currentTier = baseTier;
-  } else {
-    const last3 = window.slice(-3);
-    const missesInLast3 = last3.filter((a) => !a.correct).length;
-    currentTier = missesInLast3 >= 2 && (baseTier === 'hard' || baseTier === 'medium') ? stepBackTier(baseTier) : baseTier;
+  // Replay tier transitions across the whole window in chronological order,
+  // always starting from 'easy' (see docstring: window is the full history,
+  // so prior?.currentTier must NOT be used here — it would double-count).
+  // `tierBeforeLast` captures the tier the final attempt was actually
+  // answered at (i.e. before that attempt's own transition is applied) — the
+  // status regression rule needs that, not the post-transition tier.
+  let tier: Difficulty = 'easy';
+  let tierBeforeLast: Difficulty = tier;
+  for (let i = 0; i < window.length; i += 1) {
+    tierBeforeLast = tier;
+    const a = window[i];
+    if (a.correct) {
+      tier = advanceTier(tier);
+    } else if (a.selectedRole === 'common-misconception') {
+      // Repeat the same difficulty/concept rather than penalizing tier.
+      // tier unchanged.
+    } else {
+      const last3 = window.slice(Math.max(0, i - 2), i + 1);
+      const missesInLast3 = last3.filter((x) => !x.correct).length;
+      if (missesInLast3 >= 2 && (tier === 'hard' || tier === 'medium')) {
+        tier = stepBackTier(tier);
+      }
+    }
   }
+  const currentTier = tier;
 
   let status: MasteryStatus;
-  if (!latest.correct && baseTier === 'hard') {
+  if (!latest.correct && tierBeforeLast === 'hard') {
     // A miss on a hard question regresses covered -> in-progress. Never
     // struggling — that label is Layer 2's alone.
     status = 'in-progress';
@@ -199,10 +233,15 @@ export async function themeCoverage(
     .find({ courseId, themeId, archivedAt: { $exists: false } })
     .toArray();
 
+  const profiles = await masteryCol()
+    .find({ puid, courseId, loId: { $in: los.map((l) => l._id) } })
+    .toArray();
+  const profileByLoId = new Map(profiles.map((p) => [p.loId.toHexString(), p]));
+
   let includesSkipped = false;
   let covered = true;
   for (const lo of los) {
-    const profile = await masteryCol().findOne({ puid, courseId, loId: lo._id });
+    const profile = profileByLoId.get((lo._id as ObjectId).toHexString());
     if (profile?.skipped) {
       includesSkipped = true;
       continue;

@@ -33,6 +33,11 @@ function matchesFilter(doc: Record<string, unknown>, filter: Record<string, unkn
       const wantExists = (expected as { $exists: boolean }).$exists;
       return wantExists ? key in doc : !(key in doc);
     }
+    if (expected && typeof expected === 'object' && '$in' in (expected as Record<string, unknown>)) {
+      const candidates = (expected as { $in: unknown[] }).$in;
+      const actual = doc[key];
+      return candidates.some((c) => (c instanceof ObjectId && actual instanceof ObjectId ? c.equals(actual) : c === actual));
+    }
     const actual = doc[key];
     if (expected instanceof ObjectId) return expected.equals(actual as ObjectId);
     if (actual instanceof ObjectId) return actual.equals(expected as ObjectId);
@@ -336,21 +341,38 @@ describe('computeProfile (pure)', () => {
   });
 
   it('caps tier at hard on repeated correct answers', () => {
-    const prior: MasteryProfile = {
-      puid,
-      courseId,
-      loId,
-      status: 'covered',
-      attemptCount: 4,
-      windowAccuracy: 1,
-      windowRoles: { correct: 4 },
-      currentTier: 'hard',
-      attemptsSinceEvaluation: 4,
-      updatedAt: new Date(),
-    };
-    const window = [makeAttempt({ correct: true, difficulty: 'hard' })];
-    const profile = computeProfile(window, prior);
+    // `window` is the whole history in every real call site, so the walk is
+    // always replayed from 'easy' across it (see computeProfile's docstring);
+    // a non-null `prior` here is not a tier baseline. Five straight corrects
+    // reach 'hard' on the second and must stay capped through the rest.
+    const window = [
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true, difficulty: 'hard' }),
+      makeAttempt({ correct: true, difficulty: 'hard' }),
+    ];
+    const profile = computeProfile(window, null);
     expect(profile.currentTier).toBe('hard');
+  });
+
+  it('replays tier transitions across a multi-item window (not just the last entry)', () => {
+    // Four straight-correct attempts in one window, prior: null. Walking the
+    // tier ladder across all four in order: easy->medium->hard->hard (capped).
+    // A one-step-only implementation (applying the rule solely to the last
+    // entry against prior's baseline of 'easy') would incorrectly return
+    // 'medium' here.
+    const window = [
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true }),
+      makeAttempt({ correct: true }),
+    ];
+    const profile = computeProfile(window, null);
+    expect(profile.currentTier).toBe('hard');
+    expect(profile.attemptCount).toBe(4);
+    expect(profile.windowAccuracy).toBe(1);
+    expect(profile.status).toBe('covered');
   });
 
   it('increments attemptsSinceEvaluation from prior', () => {
