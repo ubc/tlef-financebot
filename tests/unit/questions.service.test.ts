@@ -182,6 +182,14 @@ describe('editQuestion (IN-Q03)', () => {
     expect(versionDoc.difficulty).toBe(currentVersion.difficulty); // copied, unpatched
     expect(versionDoc.editedFields).toEqual(['stem']);
     expect(versionDoc.createdBy).toBe('PUID-INSTR-0002');
+    // Copy-fidelity: the append-only copy must carry every other unpatched
+    // field forward, not just options/difficulty — questionId is load-bearing
+    // (drop it and every version after v1 orphans, silently breaking the
+    // {questionId, version} unique index) and type/sourceRefs are the rest of
+    // the content surface.
+    expect(versionDoc.questionId).toEqual(currentVersion.questionId);
+    expect(versionDoc.type).toBe(currentVersion.type);
+    expect(versionDoc.sourceRefs).toEqual(currentVersion.sourceRefs);
     expect(result.version).toBe(2);
   });
 
@@ -211,15 +219,75 @@ describe('editQuestion (IN-Q03)', () => {
   });
 
   it('does not record loIds/themeIds as editedFields (head fields, not version content)', async () => {
-    const result = await editQuestion(
-      questionId,
-      { difficulty: 'hard', loIds: [new ObjectId()] },
-      'PUID-INSTR-0002',
-    );
+    const newLoIds = [new ObjectId()];
+    const result = await editQuestion(questionId, { difficulty: 'hard', loIds: newLoIds }, 'PUID-INSTR-0002');
 
     expect(result.editedFields).toEqual(['difficulty']);
     const [, update] = questionsUpdateOne.mock.calls[0];
-    expect(update.$set.loIds).toBeDefined();
+    expect(update.$set.loIds).toEqual(newLoIds);
+  });
+
+  it('coerces a true-false incorrect option role to common-misconception on the edit path', async () => {
+    const tfCurrent: WithId<QuestionVersion> = { ...currentVersion, type: 'true-false', options: tfOptions() };
+    versionsFindOne.mockResolvedValue(tfCurrent);
+
+    const result = await editQuestion(
+      questionId,
+      { options: tfOptions({ F: 'clearly-wrong' }) },
+      'PUID-INSTR-0002',
+    );
+
+    expect(result.options.find((o) => o.key === 'T')?.role).toBe('correct');
+    expect(result.options.find((o) => o.key === 'F')?.role).toBe('common-misconception');
+  });
+
+  // --- tagging-only patches (IN-Q13) — human decision, review finding #2 ---
+  // A patch with no content key must not version, must not label, and must
+  // update only the head's tags.
+  describe('tagging-only patches do not version or label', () => {
+    it('a loIds-only patch updates the head loIds, inserts no version, adds no label, returns the current version unchanged', async () => {
+      const newLoIds = [new ObjectId()];
+
+      const result = await editQuestion(questionId, { loIds: newLoIds }, 'PUID-INSTR-0002');
+
+      expect(versionsInsertOne).not.toHaveBeenCalled();
+      expect(result).toEqual(currentVersion);
+
+      expect(questionsUpdateOne).toHaveBeenCalledTimes(1);
+      const [filter, update] = questionsUpdateOne.mock.calls[0];
+      expect(filter).toEqual({ _id: questionId });
+      expect(update.$set.loIds).toEqual(newLoIds);
+      expect(update.$set.updatedAt).toBeInstanceOf(Date);
+      expect(update.$set.currentVersionId).toBeUndefined();
+      expect(update.$set.currentVersion).toBeUndefined();
+      expect(update.$addToSet).toBeUndefined();
+    });
+
+    it('an empty patch inserts no version and adds no label', async () => {
+      const result = await editQuestion(questionId, {}, 'PUID-INSTR-0002');
+
+      expect(versionsInsertOne).not.toHaveBeenCalled();
+      expect(result).toEqual(currentVersion);
+
+      expect(questionsUpdateOne).toHaveBeenCalledTimes(1);
+      const [, update] = questionsUpdateOne.mock.calls[0];
+      expect(update.$addToSet).toBeUndefined();
+    });
+
+    it('a content+tags patch still versions and labels (unchanged from today)', async () => {
+      const newLoIds = [new ObjectId()];
+
+      const result = await editQuestion(questionId, { difficulty: 'hard', loIds: newLoIds }, 'PUID-INSTR-0002');
+
+      expect(versionsInsertOne).toHaveBeenCalledTimes(1);
+      expect(result.version).toBe(2);
+      expect(result.editedFields).toEqual(['difficulty']);
+
+      const [, update] = questionsUpdateOne.mock.calls[0];
+      expect(update.$set.loIds).toEqual(newLoIds);
+      expect(update.$set.currentVersion).toBe(2);
+      expect(update.$addToSet).toEqual({ labels: 'manually-edited' });
+    });
   });
 });
 
@@ -241,6 +309,9 @@ describe('transitionQuestion (IN-Q07)', () => {
     expect(filter).toEqual({ _id: questionId });
     expect(update.$set.state).toBe('approved');
     expect(update.$set.updatedAt).toBeInstanceOf(Date);
+    // The returned Question must carry the SAME updatedAt that was written to
+    // the DB, not the stale pre-update value from the findOne'd doc.
+    expect(result.updatedAt).toEqual(update.$set.updatedAt);
 
     expect(auditInsertOne).toHaveBeenCalledTimes(1);
     const [auditDoc] = auditInsertOne.mock.calls[0];
@@ -252,6 +323,7 @@ describe('transitionQuestion (IN-Q07)', () => {
       courseId,
       detail: { from: 'pending-review', to: 'approved' },
     });
+    expect(auditDoc.createdAt).toEqual(update.$set.updatedAt);
   });
 
   it('rejects draft -> approved without writing anything', async () => {
@@ -282,5 +354,38 @@ describe('bulkTransition (IN-Q07)', () => {
 
     expect(count).toBe(1);
     expect(questionsUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a missing question (question-not-found) without writing an audit entry for it', async () => {
+    const validId = new ObjectId();
+    const missingId = new ObjectId();
+    questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => {
+      if (_id.equals(validId)) return { _id: validId, state: 'pending-review' };
+      return null;
+    });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    const count = await bulkTransition([validId, missingId], 'approved', 'PUID-INSTR-0001');
+
+    expect(count).toBe(1);
+    // Skipped questions must produce no audit noise — exactly one insert, for
+    // the one question that actually transitioned.
+    expect(auditInsertOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates a non-domain error (e.g. Mongo unreachable) instead of counting it as a skip', async () => {
+    const validId = new ObjectId();
+    const brokenId = new ObjectId();
+    questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => {
+      if (_id.equals(validId)) return { _id: validId, state: 'pending-review' };
+      throw new Error('connection timed out');
+    });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    await expect(bulkTransition([validId, brokenId], 'approved', 'PUID-INSTR-0001')).rejects.toThrow(
+      'connection timed out',
+    );
   });
 });

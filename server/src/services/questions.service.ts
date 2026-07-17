@@ -89,18 +89,32 @@ export async function createQuestion(input: {
     ...(input.agentDecision !== undefined ? { agentDecision: input.agentDecision } : {}),
   };
 
-  await questionsCol().insertOne({ _id: questionId, ...question });
+  // Version first, then head — an orphan version (insert failed on the head)
+  // is invisible to every query path, but an orphan head (insert failed on
+  // the version) would point at a nonexistent currentVersionId and be
+  // discoverable/repairable. No transactions/sessions here — no service in
+  // this repo uses them, and both _ids are pre-generated so there's no
+  // read-after-write dependency between the two inserts.
   await questionVersionsCol().insertOne({ _id: versionId, ...version });
+  await questionsCol().insertOne({ _id: questionId, ...question });
 
   return { questionId, version: { _id: versionId, ...version } };
 }
 
 /**
- * Every edit creates a new version (n+1) — the current version is copied and
- * patched, never mutated in place. `loIds`/`themeIds` are head fields, not
- * version content, so they update the head directly and never appear in
- * `editedFields`. Adds the 'manually-edited' label via $addToSet (exactly
- * once, no matter how many times a question is edited).
+ * Every edit that changes CONTENT creates a new version (n+1) — the current
+ * version is copied and patched, never mutated in place. `loIds`/`themeIds`
+ * are head fields, not version content, so they update the head directly and
+ * never appear in `editedFields`. Adds the 'manually-edited' label via
+ * $addToSet (exactly once, no matter how many times a question is edited).
+ *
+ * A patch that contains NO content key (stem/options/difficulty/paramSlots)
+ * — e.g. an IN-Q13 retag that only touches loIds/themeIds, or an empty patch
+ * — is content-identical to the head, so it must not version, must not add
+ * the 'manually-edited' label, and must not stamp an unedited question as
+ * manually edited. It only updates the head's loIds/themeIds (+ updatedAt)
+ * and returns the CURRENT version unchanged (human decision, see task-4
+ * review finding #2).
  */
 export async function editQuestion(
   questionId: ObjectId,
@@ -137,6 +151,17 @@ export async function editQuestion(
     editedFields.push('paramSlots');
   }
 
+  const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};
+  if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
+  if (patch.themeIds !== undefined) headPatch.themeIds = patch.themeIds;
+
+  // Tagging-only (or empty) patch: no content changed, so no new version and
+  // no 'manually-edited' label — just the head's tags, if any were given.
+  if (editedFields.length === 0) {
+    await questionsCol().updateOne({ _id: questionId }, { $set: { updatedAt: new Date(), ...headPatch } });
+    return current;
+  }
+
   // Drop _id — this is a new version document, not an update of `current`.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _id, ...currentContent } = current;
@@ -150,10 +175,6 @@ export async function editQuestion(
   };
 
   const { insertedId } = await questionVersionsCol().insertOne(next);
-
-  const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};
-  if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
-  if (patch.themeIds !== undefined) headPatch.themeIds = patch.themeIds;
 
   await questionsCol().updateOne(
     { _id: questionId },
@@ -175,7 +196,8 @@ export async function transitionQuestion(
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
   if (!canTransition(question.state, to)) throw new Error(`invalid-transition:${question.state}->${to}`);
-  await questionsCol().updateOne({ _id: questionId }, { $set: { state: to, updatedAt: new Date() } });
+  const now = new Date();
+  await questionsCol().updateOne({ _id: questionId }, { $set: { state: to, updatedAt: now } });
   await auditCol().insertOne({
     actorPuid: byPuid,
     action: 'question.transition',
@@ -183,20 +205,28 @@ export async function transitionQuestion(
     targetId: questionId,
     courseId: question.courseId,
     detail: { from: question.state, to },
-    createdAt: new Date(),
+    createdAt: now,
   });
-  return { ...question, state: to };
+  return { ...question, state: to, updatedAt: now };
 }
 
-/** Applies transitionQuestion to each id; invalid transitions are skipped, not thrown. */
+/**
+ * Applies transitionQuestion to each id; only the two expected domain
+ * errors — a missing question, or a transition `canTransition` rejects —
+ * are skipped. Anything else (e.g. Mongo unreachable, or the audit
+ * `insertOne` throwing after the state `updateOne` already succeeded)
+ * propagates: swallowing it would under-report the count while leaving an
+ * unaudited state change in place.
+ */
 export async function bulkTransition(questionIds: ObjectId[], to: PublicationState, byPuid: string): Promise<number> {
   let count = 0;
   for (const questionId of questionIds) {
     try {
       await transitionQuestion(questionId, to, byPuid);
       count += 1;
-    } catch {
-      // Invalid transition (or missing question) — skip and keep going.
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg !== 'question-not-found' && !msg.startsWith('invalid-transition:')) throw err;
     }
   }
   return count;
