@@ -826,9 +826,9 @@ export interface AttemptResult {
   - Re-practice needs no new serving code: the client calls `POST /api/attempts` with `mode: 'review-book'` on the stored question (fresh attempt, full feedback, full mastery weight — ST-R03; parameterized re-randomization arrives with Phase 2's param execution).
 - Routes per contract: `GET /api/courses/:courseId/review-book?sort=`, `POST/DELETE /api/questions/:questionId/bookmark`, `DELETE /api/review-book/:entryId`, the two summary endpoints.
 
-- [ ] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
+- [x] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
 
 ---
 
