@@ -25,6 +25,10 @@ jest.mock('../../server/src/services/materials.service', () => ({
   assignMaterial: jest.fn(),
   getMaterialCourseId: jest.fn(),
 }));
+jest.mock('../../server/src/services/classification.service', () => ({
+  resolveClassification: jest.fn(),
+  suggestHierarchy: jest.fn(),
+}));
 
 import { materialsRouter } from '../../server/src/routes/materials.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
@@ -36,6 +40,7 @@ import {
   assignMaterial,
   getMaterialCourseId,
 } from '../../server/src/services/materials.service';
+import { resolveClassification, suggestHierarchy } from '../../server/src/services/classification.service';
 
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
@@ -91,6 +96,8 @@ beforeEach(() => {
   jest.mocked(retryMaterial).mockReset();
   jest.mocked(assignMaterial).mockReset();
   jest.mocked(getMaterialCourseId).mockReset();
+  jest.mocked(resolveClassification).mockReset();
+  jest.mocked(suggestHierarchy).mockReset();
 });
 
 describe('POST /api/courses/:courseId/materials — instructor guard', () => {
@@ -307,5 +314,76 @@ describe('I5 — multer errors are normalized, not left to default to 500', () =
 
     expect(res.status).toBe(400);
     expect(createMaterials).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/materials/:materialId/classification (IN-S06)', () => {
+  it('401s a signed-out caller without calling getMaterialCourseId', async () => {
+    const res = await request(makeApp(undefined))
+      .post(`/api/materials/${materialId.toHexString()}/classification`)
+      .send({ action: 'accept' });
+    expect(res.status).toBe(401);
+    expect(getMaterialCourseId).not.toHaveBeenCalled();
+    expect(resolveClassification).not.toHaveBeenCalled();
+  });
+
+  it('403s a non-instructor of the material\'s course', async () => {
+    jest.mocked(getMaterialCourseId).mockResolvedValue(otherCourseId);
+    const res = await request(makeApp(instructor))
+      .post(`/api/materials/${materialId.toHexString()}/classification`)
+      .send({ action: 'accept' });
+    expect(res.status).toBe(403);
+    expect(resolveClassification).not.toHaveBeenCalled();
+  });
+
+  it('400s an invalid action', async () => {
+    jest.mocked(getMaterialCourseId).mockResolvedValue(courseId);
+    const res = await request(makeApp(instructor))
+      .post(`/api/materials/${materialId.toHexString()}/classification`)
+      .send({ action: 'maybe' });
+    expect(res.status).toBe(400);
+    expect(resolveClassification).not.toHaveBeenCalled();
+  });
+
+  it('200s accept for the material\'s own instructor', async () => {
+    jest.mocked(getMaterialCourseId).mockResolvedValue(courseId);
+    jest.mocked(resolveClassification).mockResolvedValue({ _id: materialId, status: 'ready' } as never);
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/materials/${materialId.toHexString()}/classification`)
+      .send({ action: 'accept' });
+
+    expect(res.status).toBe(200);
+    expect(resolveClassification).toHaveBeenCalledWith(expect.any(ObjectId), 'accept');
+  });
+
+  it('400s "no-classification-suggestion" from the service via the normalizer', async () => {
+    jest.mocked(getMaterialCourseId).mockResolvedValue(courseId);
+    jest.mocked(resolveClassification).mockRejectedValue(new Error('no-classification-suggestion'));
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/materials/${materialId.toHexString()}/classification`)
+      .send({ action: 'accept' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('no-classification-suggestion');
+  });
+});
+
+describe('GET /api/courses/:courseId/suggest-hierarchy (IN-S06)', () => {
+  it('403s a non-instructor', async () => {
+    const res = await request(makeApp(student)).get(`/api/courses/${courseId.toHexString()}/suggest-hierarchy`);
+    expect(res.status).toBe(403);
+    expect(suggestHierarchy).not.toHaveBeenCalled();
+  });
+
+  it('200s an instructor and returns the suggested hierarchy', async () => {
+    jest.mocked(suggestHierarchy).mockResolvedValue({ themes: [{ name: 'Bonds', los: ['Price a bond'] }] });
+
+    const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/suggest-hierarchy`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ themes: [{ name: 'Bonds', los: ['Price a bond'] }] });
+    expect(suggestHierarchy).toHaveBeenCalledWith(expect.any(ObjectId));
   });
 });

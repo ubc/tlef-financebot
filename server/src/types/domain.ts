@@ -180,6 +180,11 @@ export interface Material {
   storagePath?: string; // uploaded file location on disk
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>; // many-to-many (IN-S05)
   classificationSuggestion?: { themeId: ObjectId; loId?: ObjectId; confidence: number }; // IN-S06
+  // First ~2000 chars of the ingested text, persisted at ingest time so IN-S06
+  // classification (classifyMaterial) and hierarchy suggestion (suggestHierarchy)
+  // never re-parse files or re-fetch URL materials. Absent until a material is
+  // ingested with non-empty text.
+  excerpt?: string; // IN-S06
   uploadedAt: Date;
 }
 

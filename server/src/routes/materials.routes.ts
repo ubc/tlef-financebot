@@ -17,10 +17,12 @@ import {
   assignMaterial,
   getMaterialCourseId,
 } from '../services/materials.service';
+import { resolveClassification, suggestHierarchy } from '../services/classification.service';
 
-// Material upload + async RAG ingestion endpoints (IN-S04/S05), exactly as
-// specified in docs/api-contract.md's "Materials" section. `POST .../classification`
-// (line 44 of the contract) is Task 7's, not this router's.
+// Material upload + async RAG ingestion endpoints (IN-S04/S05), plus Task 7's
+// IN-S06 classification accept/reject (`POST .../classification`, in the
+// contract) and AI-suggested hierarchy (`GET .../suggest-hierarchy`, a Task 7
+// contract addition).
 //
 // Course-scoped routes (`:courseId` directly in the path) are guarded the same
 // way as courses.routes.ts's Theme/LO create routes: `validate(params)` then
@@ -41,6 +43,8 @@ const urlMaterialBody = z.object({ url: z.string().url() });
 const assignmentsBody = z.object({
   assignments: z.array(z.object({ themeId: objectIdParam, loId: objectIdParam.optional() })),
 });
+
+const classificationBody = z.object({ action: z.enum(['accept', 'reject']) });
 
 // Disk storage under uploads/ (gitignored), capped at 50MB per the contract.
 // The filename callback preserves the original extension: document-parsing's
@@ -202,6 +206,45 @@ materialsRouter.put(
   },
 );
 
+/**
+ * POST /api/materials/:materialId/classification { action: 'accept' | 'reject' }
+ * -> Material (IN-S06). Instructor-only. Accept applies the material's pending
+ * LLM classificationSuggestion to its assignments and clears it; reject clears
+ * the suggestion. materialId-scoped, so it stashes res.locals.courseId first —
+ * same guard order as retry/assignments above.
+ */
+materialsRouter.post(
+  '/materials/:materialId/classification',
+  validate({ params: materialIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromMaterial(),
+  ensureCourseInstructor(),
+  validate({ body: classificationBody }),
+  async (req, res) => {
+    const materialId = new ObjectId(String(req.params.materialId));
+    const { action } = req.body as z.infer<typeof classificationBody>;
+    res.json(await resolveClassification(materialId, action));
+  },
+);
+
+/**
+ * GET /api/courses/:courseId/suggest-hierarchy -> { themes: [{ name, los }] }
+ * (IN-S06, slip candidate #3). Instructor-only. Read-only: computes an
+ * AI-suggested Theme/LO outline from the course's ingested materials and never
+ * writes the DB — the instructor applies it via the existing addTheme/addLo
+ * endpoints. NOTE: this endpoint is a Task 7 ADDITION to docs/api-contract.md
+ * (the contract had no suggest-hierarchy route) — flagged for two-developer
+ * review at PR time.
+ */
+materialsRouter.get(
+  '/courses/:courseId/suggest-hierarchy',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await suggestHierarchy(new ObjectId(String(req.params.courseId))));
+  },
+);
+
 // --- Error normalization -----------------------------------------------------
 
 // Domain errors thrown by materials.service (plain `Error(message)`, per its
@@ -209,6 +252,7 @@ materialsRouter.put(
 // questions.routes.ts's router-scoped normalizer pattern.
 const MATERIAL_ERROR_STATUS: Record<string, number> = {
   'material-not-found': 404,
+  'no-classification-suggestion': 400, // accept with nothing to accept (IN-S06)
 };
 
 materialsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

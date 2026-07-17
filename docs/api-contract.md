@@ -42,6 +42,10 @@ instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
 - `POST /api/materials/:materialId/retry` → Material
 - `PUT /api/materials/:materialId/assignments { assignments: [{ themeId, loId? }] }` → Material
 - `POST /api/materials/:materialId/classification { action: 'accept' | 'reject' }` → Material
+- `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los: [name] }] }` (IN-S06; AI-suggested outline, read-only — apply via the Theme/LO create endpoints above) <!-- ADDED in Task 7 (Saurav); pending two-developer review -->
+
+## Materials (instructor) — implementation note (IN-S06 auto-classification)
+On successful ingest a material may gain a `classificationSuggestion { themeId, loId?, confidence }` (LLM best-fit into the existing hierarchy; only stored when `confidence ≥ 0.5` and the names resolve). Accept via `POST .../classification { action: 'accept' }` (merges it into `assignments`, clears the suggestion); reject clears it. Absent/low-confidence ⇒ material shows "Unclassified" client-side.
 
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →

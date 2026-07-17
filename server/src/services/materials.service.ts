@@ -9,6 +9,7 @@ import { parseFile } from '../components/genai/document-parsing';
 import { ensureCollection, upsertPoints } from '../components/qdrant';
 import { defineJob, enqueueJob } from '../components/jobs';
 import { materialsCol } from '../components/mongodb/collections';
+import { classifyMaterial } from './classification.service';
 import type { Material } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -33,6 +34,10 @@ import type { Material } from '../types/domain';
 
 const UPLOAD_FORMATS = ['pdf', 'docx', 'pptx', 'txt', 'md'] as const;
 export type UploadFormat = (typeof UPLOAD_FORMATS)[number];
+
+// How much of the ingested text to persist on the Material for IN-S06 (Task 7)
+// classification/hierarchy suggestion — see `excerpt` in domain.ts.
+const EXCERPT_MAX_CHARS = 2000;
 
 /**
  * The subset of `Express.Multer.File` this service actually needs. Kept as a
@@ -432,6 +437,10 @@ export async function ingestMaterial(materialId: string): Promise<void> {
     if (!material) return; // material vanished (e.g. deleted); nothing to do.
 
     const text = await extractText(material);
+    // First ~2000 chars persisted for IN-S06 (Task 7): classifyMaterial and
+    // suggestHierarchy read this excerpt rather than re-parsing the file or
+    // re-fetching a URL material. Non-empty only.
+    const excerpt = text.slice(0, EXCERPT_MAX_CHARS);
     const chunks = await chunkText(text, material.name);
     if (chunks.length > 0) {
       const vectors = await embed(chunks.map((chunk) => chunk.text));
@@ -458,7 +467,23 @@ export async function ingestMaterial(materialId: string): Promise<void> {
       await upsertPoints(collectionName, points);
     }
 
-    await materialsCol().updateOne({ _id: id }, { $set: { status: 'ready' }, $unset: { error: '' } });
+    await materialsCol().updateOne(
+      { _id: id },
+      { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' } },
+    );
+
+    // IN-S06 (Task 7): best-effort auto-classification of the freshly ingested
+    // material. Deliberately guarded by its OWN try/catch, separate from the
+    // ingest try above: the material is already `ready`, so a classifier or LLM
+    // failure must never flip it back to `failed`. It stays ready + unclassified
+    // (client shows "Unclassified"); a later suggest/accept flow can revisit it.
+    if (excerpt) {
+      try {
+        await classifyMaterial(id);
+      } catch {
+        // advisory only — swallow so `ready` stands.
+      }
+    }
   } catch (err) {
     if (!id) return; // materialId itself was malformed; nothing to mark failed.
     const message = err instanceof Error ? err.message : String(err);
