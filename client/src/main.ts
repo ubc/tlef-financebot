@@ -28,6 +28,7 @@ import {
   isNavItemActive,
   type InstructorNavItem,
 } from './views/instructor/shell.js';
+import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -71,7 +72,8 @@ function instructorPlaceholder(title: string): (outlet: HTMLElement, params: Rou
 }
 
 const INSTRUCTOR_ROUTES: Route[] = [
-  { path: '/instructor/courses', render: instructorPlaceholder('My Courses') },
+  { path: '/instructor/courses/new', render: renderCreateCourse },
+  { path: '/instructor/courses', render: renderCourses },
   { path: '/instructor/course/:id/structure', render: instructorPlaceholder('Course Structure') },
   { path: '/instructor/course/:id/materials', render: instructorPlaceholder('Course Materials') },
   { path: '/instructor/course/:id/settings', render: instructorPlaceholder('Course Settings') },
