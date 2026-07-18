@@ -51,6 +51,24 @@
   --sidebar-w: 250px;
   --topbar-h: 60px;
   --content-max: 860px;
+
+  /* Instructor shell + primitives (Task 15) — approximated from the Figma
+     "Wireframe v0.2" screenshots, not exact design tokens (see
+     docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md). */
+  --instr-sidebar-bg: #2f7d46;
+  --instr-sidebar-text: #cfe6d7;
+  --instr-dark: #1a1f1a;
+  --instr-dark-hover: #2c332c;
+  --instr-green-bg: #e3f2e8;
+  --instr-green-fg: #1f5c34;
+  --instr-amber-bg: #faf1de;
+  --instr-amber-fg: #8a5c14;
+  --instr-red-bg: #fbe4e1;
+  --instr-red-fg: #8f2a1f;
+  --instr-blue-bg: #e2ecf7;
+  --instr-blue-fg: #2c5182;
+  --instr-gray-bg: #eceeec;
+  --instr-gray-fg: #5b625b;
 }
 
 :root[data-theme="dark"] {
@@ -82,6 +100,21 @@
   --err-fg: #ff9aa8;
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 30px -18px rgba(0, 0, 0, 0.7);
+
+  --instr-sidebar-bg: #1e5c33;
+  --instr-sidebar-text: #a9d1b6;
+  --instr-dark: #05070a;
+  --instr-dark-hover: #14181f;
+  --instr-green-bg: #123522;
+  --instr-green-fg: #6fe0a0;
+  --instr-amber-bg: #3a2f16;
+  --instr-amber-fg: #f0c368;
+  --instr-red-bg: #3a1820;
+  --instr-red-fg: #ff9aa8;
+  --instr-blue-bg: #16283f;
+  --instr-blue-fg: #8bb6ec;
+  --instr-gray-bg: #202722;
+  --instr-gray-fg: #9fada2;
 }
 
 * {
@@ -1531,4 +1564,285 @@ button.class-row--link:focus-visible .class-row__title {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+/* =============================================================================
+   Instructor shell + design-system primitives (Task 15, Task A). Follows the
+   wireframe *roughly* — green/white language, not exact tokens. See
+   docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md.
+   ========================================================================== */
+
+/* ---- Instructor shell ----------------------------------------------------- */
+
+/* Re-colors the shared .sidebar/.nav__* rules (see "App shell" above) by
+   overriding the tokens they already read from, rather than duplicating the
+   nav layout rules for a second sidebar variant. */
+.sidebar--instructor {
+  --sidebar-bg: var(--instr-sidebar-bg);
+  --sidebar-text: var(--instr-sidebar-text);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-active: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar--instructor .brand {
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.sidebar--instructor .brand__name {
+  color: #ffffff;
+  font-size: 1.15rem;
+}
+
+.instructor-pill {
+  align-self: flex-start;
+  margin: 0 0.5rem 1rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nav__link--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav__link--disabled:hover {
+  background: none;
+  color: var(--sidebar-text);
+}
+
+/* ---- Page header (per-view, not the shell topbar) ------------------------- */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header__title {
+  font-size: 1.7rem;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.page-header__subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.btn--instr-primary {
+  flex-shrink: 0;
+  background: var(--instr-dark);
+  border-color: var(--instr-dark);
+  color: #ffffff;
+}
+
+.btn--instr-primary:hover {
+  background: var(--instr-dark-hover);
+  border-color: var(--instr-dark-hover);
+}
+
+/* ---- Stat tile -------------------------------------------------------------- */
+
+.stat-tile-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-tile {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.stat-tile__value {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.stat-tile__value--good {
+  color: var(--instr-green-fg);
+}
+
+.stat-tile__value--warn {
+  color: var(--instr-amber-fg);
+}
+
+.stat-tile__value--bad {
+  color: var(--instr-red-fg);
+}
+
+.stat-tile__label {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---- Status badge (question status / agent decision / coverage) ----------- */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.status-badge--approved,
+.status-badge--pass,
+.status-badge--at-target {
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+}
+
+.status-badge--pending,
+.status-badge--flag,
+.status-badge--below-target {
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
+.status-badge--reject,
+.status-badge--empty {
+  background: var(--instr-red-bg);
+  color: var(--instr-red-fg);
+}
+
+.status-badge--reviewed {
+  background: var(--instr-blue-bg);
+  color: var(--instr-blue-fg);
+}
+
+.status-badge--draft,
+.status-badge--paused,
+.status-badge--archived,
+.status-badge--neutral {
+  background: var(--instr-gray-bg);
+  color: var(--instr-gray-fg);
+}
+
+/* ---- Checklist row ---------------------------------------------------------- */
+
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.checklist-row + .checklist-row {
+  margin-top: 0.5rem;
+}
+
+.checklist-row__mark {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.checklist-row--ok .checklist-row__mark {
+  color: var(--instr-green-fg);
+}
+
+.checklist-row__label {
+  flex: 1;
+}
+
+.checklist-row__label--pending {
+  font-weight: 650;
+}
+
+.checklist-row__action {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.checklist-row__action:hover {
+  text-decoration: underline;
+}
+
+/* ---- Filter tabs ------------------------------------------------------------ */
+
+.filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-tabs__tab {
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.filter-tabs__tab:hover {
+  color: var(--text);
+}
+
+.filter-tabs__tab--active {
+  color: var(--instr-green-fg);
+  border-bottom-color: var(--instr-green-fg);
+}
+
+/* ---- Upload zone ------------------------------------------------------------- */
+
+.upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1.25rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-zone--over {
+  border-color: var(--instr-green-fg);
+  background: var(--instr-green-bg);
+}
+
+.upload-zone__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.upload-zone__input {
+  display: none;
 }

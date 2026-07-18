@@ -437,3 +437,225 @@ export function unbookmarkQuestion(questionId: string): Promise<{ bookmarked: bo
 export async function removeReviewBookEntry(entryId: string): Promise<void> {
   await request<void>(`/api/review-book/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
 }
+
+// --- Instructor: courses & hierarchy (IN-S01/S02/S03, IN-L06) ---------------
+//
+// Corrections vs the Task-15 plan's Task A interface block, verified against
+// docs/api-contract.md + server/src/routes/courses.routes.ts (see
+// .superpowers/sdd/task-15/task-a-report.md for the full rationale):
+//  - Course identity is `_id` on the wire (raw Mongo doc), not `courseId` —
+//    matches the plan's own CourseTreeTheme/CourseTreeLo (`_id`) convention;
+//    the plan's `InstructorCourse.courseId` looks like the one outlier/typo.
+//  - `GET /api/courses/:courseId` returns the Course fields and `themes`
+//    FLATTENED at the top level (`{ ...course, themes }`), not nested under a
+//    `course` key. `getCourseTree` below re-nests it into `{ course, themes }`
+//    at the client boundary so callers get the plan's documented shape.
+//  - `updateCourse`'s `autoPause` patch field is an object
+//    (`{ minAttempts, flagPercent, flagCount }`), not a boolean — the plan's
+//    signature had the wrong type for it.
+//  - `getRoster` does not return `addedAt` (the route strips it before
+//    responding; contract agrees) — dropped from the return type.
+//  - `CourseTreeTheme.los` is optional: `addTheme`/`updateTheme` return a bare
+//    Theme (no `los`); only a Theme nested inside `getCourseTree`'s response
+//    carries one.
+//  - No `GET /api/courses` (list) endpoint exists anywhere in the routes or
+//    contract. `listInstructorCourses` below derives the list client-side from
+//    the session's `courseRoles` (an `instructor` role per course, from
+//    `GET /api/auth/me`) plus one `getCourseTree` call per course — flagged as
+//    a concern in the report (N+1, and misses courses an admin has no
+//    `courseRoles` entry for; there is no "list all courses" endpoint for that
+//    case either).
+//  - No `GET /api/courses/:courseId/publish-checklist` (or any other
+//    side-effect-free) endpoint exists — the checklist is only returned
+//    bundled with the side-effecting `POST .../publish` / `.../unpublish`.
+//    Calling either to merely preview the checklist would incorrectly
+//    publish/unpublish the course, so `getPublishChecklist` is NOT wired to a
+//    request call; it throws until a trivial read-only route is added
+//    server-side (out of scope for this task — no server changes allowed).
+//    Flagged prominently in the report.
+
+export interface InstructorCourse {
+  _id: string;
+  name: string;
+  courseCode: string;
+  term: string;
+  published: boolean;
+  termStart?: string;
+  termEnd?: string;
+  registrationCode?: string;
+}
+
+export interface CourseTreeLo {
+  _id: string;
+  name: string;
+  order: number;
+  themeId: string;
+}
+
+export interface CourseTreeTheme {
+  _id: string;
+  name: string;
+  order: number;
+  availableFrom?: string;
+  /** Present when this Theme came back nested inside a `CourseTree`; absent
+   * from a bare Theme response (`addTheme`/`updateTheme`). */
+  los?: CourseTreeLo[];
+}
+
+export interface CourseTree {
+  course: InstructorCourse;
+  themes: CourseTreeTheme[];
+}
+
+export interface ChecklistItem {
+  item: string;
+  ok: boolean;
+}
+
+export interface AutoPauseConfig {
+  minAttempts: number;
+  flagPercent: number;
+  flagCount: number;
+}
+
+/**
+ * No `GET /api/courses` endpoint exists (see the correction note above) — this
+ * derives "my courses" from the session's `courseRoles` (role === 'instructor')
+ * plus one `getCourseTree` call per course. Courses an admin can only reach via
+ * `isAdmin` (no explicit `courseRoles` entry) are not covered; there is no
+ * list-all endpoint for that case.
+ */
+export async function listInstructorCourses(): Promise<InstructorCourse[]> {
+  const { user } = await getAuthState();
+  const courseIds = Array.from(
+    new Set((user?.courseRoles ?? []).filter((cr) => cr.role === 'instructor').map((cr) => cr.courseId)),
+  );
+  const trees = await Promise.all(courseIds.map((courseId) => getCourseTree(courseId)));
+  return trees.map((tree) => tree.course);
+}
+
+/** POST /api/courses { name, courseCode, term } -> 201 Course. */
+export function createCourse(input: { name: string; courseCode: string; term: string }): Promise<InstructorCourse> {
+  return request<InstructorCourse>('/api/courses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+/** GET /api/courses/:courseId -> Course + themes: [Theme & { los }] (flat on
+ * the wire; re-nested here into { course, themes }). */
+export async function getCourseTree(courseId: string): Promise<CourseTree> {
+  const flat = await request<InstructorCourse & { themes: CourseTreeTheme[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}`,
+  );
+  const { themes, ...course } = flat;
+  return { course, themes };
+}
+
+/** PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? } -> Course. */
+export function updateCourse(
+  courseId: string,
+  patch: {
+    termStart?: string;
+    termEnd?: string;
+    feedbackStrategy?: 'adaptive' | 'strategy-a' | 'strategy-b';
+    autoPause?: AutoPauseConfig;
+    published?: boolean;
+  },
+): Promise<InstructorCourse> {
+  return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/courses/:courseId/registration-code -> { registrationCode } (regenerates). */
+export function regenerateRegistrationCode(courseId: string): Promise<{ registrationCode: string }> {
+  return request<{ registrationCode: string }>(`/api/courses/${encodeURIComponent(courseId)}/registration-code`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * No side-effect-free endpoint returns the publish checklist (see the
+ * correction note above) — `POST .../publish` and `.../unpublish` both return
+ * one, but both also flip `published` as a side effect. This always throws
+ * until a read-only `GET /api/courses/:courseId/publish-checklist` route is
+ * added server-side (a one-line wrapper around the existing
+ * `courses.service.publishChecklist`, which is already side-effect-free).
+ */
+export function getPublishChecklist(_courseId: string): Promise<ChecklistItem[]> {
+  return Promise.reject(
+    new Error(
+      'getPublishChecklist: no read-only endpoint exists yet — see the Task A report ' +
+        '(.superpowers/sdd/task-15/task-a-report.md) for the one-line server fix needed before this can be wired up.',
+    ),
+  );
+}
+
+/** POST /api/courses/:courseId/themes { name } -> 201 Theme. */
+export function addTheme(courseId: string, name: string): Promise<CourseTreeTheme> {
+  return request<CourseTreeTheme>(`/api/courses/${encodeURIComponent(courseId)}/themes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** PATCH /api/themes/:themeId { name?, availableFrom?, order? } -> Theme. */
+export function updateTheme(
+  themeId: string,
+  patch: { name?: string; availableFrom?: string; order?: number },
+): Promise<CourseTreeTheme> {
+  return request<CourseTreeTheme>(`/api/themes/${encodeURIComponent(themeId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/themes/:themeId/archive -> Theme. */
+export async function archiveTheme(themeId: string): Promise<void> {
+  await request<void>(`/api/themes/${encodeURIComponent(themeId)}/archive`, { method: 'POST' });
+}
+
+/** POST /api/themes/:themeId/los { name } -> 201 LearningObjective. */
+export function addLo(themeId: string, name: string): Promise<CourseTreeLo> {
+  return request<CourseTreeLo>(`/api/themes/${encodeURIComponent(themeId)}/los`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
+export function updateLo(loId: string, patch: { name?: string; order?: number }): Promise<CourseTreeLo> {
+  return request<CourseTreeLo>(`/api/los/${encodeURIComponent(loId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/los/:loId/archive -> LearningObjective. */
+export async function archiveLo(loId: string): Promise<void> {
+  await request<void>(`/api/los/${encodeURIComponent(loId)}/archive`, { method: 'POST' });
+}
+
+/** GET /api/courses/:courseId/roster -> [{ identifier, extendedUntil? }] (no `addedAt` on the wire). */
+export function getRoster(courseId: string): Promise<Array<{ identifier: string; extendedUntil?: string }>> {
+  return request<Array<{ identifier: string; extendedUntil?: string }>>(
+    `/api/courses/${encodeURIComponent(courseId)}/roster`,
+  );
+}
+
+/** PUT /api/courses/:courseId/roster { identifiers } -> { count }. */
+export function putRoster(courseId: string, identifiers: string[]): Promise<{ count: number }> {
+  return request<{ count: number }>(`/api/courses/${encodeURIComponent(courseId)}/roster`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifiers }),
+  });
+}
