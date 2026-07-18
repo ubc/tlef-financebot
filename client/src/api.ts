@@ -700,6 +700,67 @@ export function listMaterials(courseId: string): Promise<Material[]> {
   return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`);
 }
 
+/** POST /api/courses/:courseId/materials (multipart, field `files`) -> 201
+ * [Material] (one per uploaded file, status 'processing'). */
+export function uploadMaterials(courseId: string, files: File[]): Promise<Material[]> {
+  const form = new FormData();
+  for (const file of files) form.append('files', file);
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
+/** POST /api/courses/:courseId/materials { url } -> 201 [Material] (a single-
+ * element array, status 'processing'). */
+export function addUrlMaterial(courseId: string, url: string): Promise<Material[]> {
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
+/** POST /api/materials/:materialId/retry -> Material. */
+export function retryMaterial(materialId: string): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/retry`, { method: 'POST' });
+}
+
+/** PUT /api/materials/:materialId/assignments { assignments } -> Material
+ * (IN-S05; replaces the full assignments list). */
+export function assignMaterial(materialId: string, assignments: MaterialAssignment[]): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/assignments`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments }),
+  });
+}
+
+/** POST /api/materials/:materialId/classification { action } -> Material
+ * (IN-S06; 'accept' merges the suggestion into assignments and clears it,
+ * 'reject' clears it). */
+export function resolveClassification(materialId: string, action: 'accept' | 'reject'): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/classification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+}
+
+export interface SuggestedHierarchy {
+  themes: Array<{ name: string; los: string[] }>;
+}
+
+/** GET /api/courses/:courseId/suggest-hierarchy -> { themes: [{ name, los }] }
+ * (IN-S06; read-only AI-suggested Topic/LO outline computed from ingested
+ * materials — apply via addTheme/addLo, this endpoint never writes). Added
+ * per the Task D brief; no apply-UI is wired up this task (see the Task D
+ * report — kept out to avoid scope creep on top of the upload/classify/
+ * assign flow). */
+export function getSuggestedHierarchy(courseId: string): Promise<SuggestedHierarchy> {
+  return request<SuggestedHierarchy>(`/api/courses/${encodeURIComponent(courseId)}/suggest-hierarchy`);
+}
+
 // --- Instructor: pre-seeding coverage (IN-Q10) --------------------------------
 //
 // Added in Task C (consumed by the Course Dashboard's pre-publish checklist —

@@ -31,6 +31,7 @@ import {
 import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
 import { renderDashboard } from './views/instructor/dashboard.js';
 import { renderStructure } from './views/instructor/structure.js';
+import { renderMaterials } from './views/instructor/materials.js';
 import { renderSettings } from './views/instructor/settings.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
@@ -78,7 +79,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/courses/new', render: renderCreateCourse },
   { path: '/instructor/courses', render: renderCourses },
   { path: '/instructor/course/:id/structure', render: renderStructure },
-  { path: '/instructor/course/:id/materials', render: instructorPlaceholder('Course Materials') },
+  { path: '/instructor/course/:id/materials', render: renderMaterials },
   { path: '/instructor/course/:id/settings', render: renderSettings },
   { path: '/instructor/course/:id/bank/:questionId', render: instructorPlaceholder('Question Detail') },
   { path: '/instructor/course/:id/bank', render: instructorPlaceholder('Question Bank') },

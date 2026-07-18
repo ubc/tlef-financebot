@@ -2162,21 +2162,184 @@ button.class-row--link:focus-visible .class-row__title {
   font-weight: 650;
 }
 
-.materials-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1.1rem;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
 .materials-placeholder__text {
   margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+/* ---- Assigned Course Materials (Structure LO detail, I2 <- Task D) --------- */
+
+.assigned-materials {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.assigned-materials__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.assigned-materials__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.assigned-materials__add {
+  align-items: center;
+}
+
+.assigned-materials__add select {
+  flex: 1;
+}
+
+/* ---- Course Materials (I3) -------------------------------------------------- */
+
+.material-url-row {
+  margin-top: 0.85rem;
+}
+
+.material-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.material-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .material-row {
+    grid-template-columns: auto 1fr;
+  }
+}
+
+.material-row__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.material-row__dot--ready {
+  background: var(--instr-green-fg);
+}
+
+.material-row__dot--processing {
+  background: var(--instr-gray-fg);
+}
+
+.material-row__dot--failed {
+  background: var(--instr-red-fg);
+}
+
+.material-row__main {
+  min-width: 0;
+}
+
+.material-row__name {
+  margin: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.material-row__meta,
+.material-row__assign,
+.material-row__class {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.material-row__error {
+  margin: 0.2rem 0 0;
+  color: var(--instr-red-fg);
+  font-size: 0.78rem;
+}
+
+.unassigned-banner {
+  margin-top: 1rem;
+  padding: 0.75rem 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.unassigned-banner p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---- Assign Material panel (n3) --------------------------------------------- */
+
+.suggestion-box {
+  padding: 1rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--instr-blue-fg) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--instr-blue-bg);
+  margin-bottom: 1.25rem;
+}
+
+.suggestion-box__eyebrow {
+  margin: 0 0 0.5rem;
+  color: var(--instr-blue-fg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.suggestion-box__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.suggestion-box__desc {
+  margin: 0 0 0.4rem;
+  font-weight: 650;
+}
+
+.assign-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.assign-checklist__theme-name {
+  margin: 0 0 0.35rem;
+  font-weight: 650;
+}
+
+.assign-checklist__lo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0 0.2rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
 /* ---- Course Settings (I4) ---------------------------------------------------- */

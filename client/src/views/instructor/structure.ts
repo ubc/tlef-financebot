@@ -8,18 +8,22 @@ import {
   addTheme,
   archiveLo,
   archiveTheme,
+  assignMaterial,
   getCourseTree,
   getPreseeding,
+  listMaterials,
   updateLo,
   updateTheme,
   type CourseTreeLo,
   type CourseTreeTheme,
+  type Material,
   type PreseedingLo,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
+import { addAssignment, removeAssignment } from './material-assign.js';
 
 /**
  * Pure matcher behind the Structure editor's non-blocking duplicate-name
@@ -90,8 +94,9 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
 
   let tree;
   let preseeding: PreseedingLo[];
+  let materials: Material[];
   try {
-    [tree, preseeding] = await Promise.all([getCourseTree(courseId), getPreseeding(courseId)]);
+    [tree, preseeding, materials] = await Promise.all([getCourseTree(courseId), getPreseeding(courseId), listMaterials(courseId)]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderStructureInner(outlet, courseId)));
@@ -363,6 +368,86 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     );
   }
 
+  /**
+   * "Assigned Course Materials" panel in the LO detail pane — the panel Task
+   * C deferred (Task 15, Task D). Lists materials whose `assignments` include
+   * this LO (Remove -> `assignMaterial` with that one assignment stripped via
+   * `removeAssignment`), plus a "+ Assign material" picker over the course's
+   * `ready` materials not already on this LO (Add -> `assignMaterial` with
+   * the assignment appended via `addAssignment`). Kept consistent with the
+   * Materials view's (I3) assign flow by sharing `material-assign.ts`'s pure
+   * add/remove helpers rather than duplicating the merge logic.
+   */
+  function buildAssignedMaterialsPanel(lo: CourseTreeLo, theme: CourseTreeTheme): HTMLElement {
+    const assigned = materials.filter((m) => m.assignments.some((a) => a.themeId === theme._id && a.loId === lo._id));
+    const candidates = materials.filter(
+      (m) => m.status === 'ready' && !m.assignments.some((a) => a.themeId === theme._id && a.loId === lo._id),
+    );
+    const errorSlot = el('div', {});
+
+    const remove = async (material: Material): Promise<void> => {
+      errorSlot.replaceChildren();
+      try {
+        const updated = await assignMaterial(material._id, removeAssignment(material.assignments, theme._id, lo._id));
+        materials = materials.map((m) => (m._id === updated._id ? updated : m));
+        refresh();
+      } catch (error) {
+        errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      }
+    };
+
+    const select = el(
+      'select',
+      { class: 'input' },
+      ...candidates.map((m) => el('option', { value: m._id, text: m.name })),
+    ) as HTMLSelectElement;
+
+    const add = async (): Promise<void> => {
+      errorSlot.replaceChildren();
+      const material = candidates.find((m) => m._id === select.value);
+      if (!material) return;
+      try {
+        const updated = await assignMaterial(material._id, addAssignment(material.assignments, theme._id, lo._id));
+        materials = materials.map((m) => (m._id === updated._id ? updated : m));
+        refresh();
+      } catch (error) {
+        errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      }
+    };
+
+    return el(
+      'div',
+      { class: 'assigned-materials' },
+      assigned.length
+        ? el(
+            'div',
+            { class: 'assigned-materials__list' },
+            ...assigned.map((material) =>
+              el(
+                'div',
+                { class: 'assigned-materials__row' },
+                el('span', { class: 'assigned-materials__name', text: material.name }),
+                el(
+                  'button',
+                  { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void remove(material) },
+                  'Remove',
+                ),
+              ),
+            ),
+          )
+        : el('p', { class: 'materials-placeholder__text', text: 'No materials assigned to this Learning Objective yet.' }),
+      errorSlot,
+      candidates.length
+        ? el(
+            'div',
+            { class: 'row assigned-materials__add' },
+            select,
+            el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void add() }, '+ Assign material'),
+          )
+        : el('p', { class: 'materials-placeholder__text', text: 'No unassigned materials available to add.' }),
+    );
+  }
+
   function buildLoDetail(lo: CourseTreeLo, theme: CourseTreeTheme): HTMLElement {
     const index = (theme.los ?? []).indexOf(lo);
     const nameInput = el('input', { class: 'input', type: 'text', value: lo.name }) as HTMLInputElement;
@@ -428,15 +513,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       // server change, out of scope for this task. Omitted rather than faked.
       errorSlot,
       el('h3', { class: 'detail-section-title', text: 'Assigned Course Materials' }),
-      el(
-        'div',
-        { class: 'materials-placeholder' },
-        el('p', {
-          class: 'materials-placeholder__text',
-          text: 'Assigning materials to Learning Objectives lands in a later task.',
-        }),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled' }, '+ Assign material'),
-      ),
+      buildAssignedMaterialsPanel(lo, theme),
       el('h3', { class: 'detail-section-title', text: 'Questions in Bank' }),
       // Pending/Draft counts need the question bank (Task E) — omitted rather
       // than faked; only the approved count (from `getPreseeding`) is shown.
