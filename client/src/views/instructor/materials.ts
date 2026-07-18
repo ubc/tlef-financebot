@@ -130,35 +130,36 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   async function poll(): Promise<void> {
+    // Self-healing teardown: the router (router.ts) has no per-view teardown
+    // hook — it just replaces the outlet's children and calls the next
+    // route's render. `root` (this view's own top-level element) is that
+    // outlet's child, so once it's been swapped out `root.isConnected` goes
+    // false — regardless of *how* navigation happened (hashchange, or a
+    // RouterHandle.navigate() same-path re-render that never fires
+    // 'hashchange' at all). Checking it here, at the top of every tick, means
+    // a stray interval self-clears on its very next scheduled fire instead of
+    // depending on a specific navigation event to catch it.
+    if (!root.isConnected) {
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+      return;
+    }
     try {
       materials = await listMaterials(courseId);
     } catch {
       // Transient failure — keep the last known list and try again next tick.
     }
     schedulePoll();
-    refresh();
+    // Don't tear down an open Assign Material panel out from under the user:
+    // a background refresh triggered by some OTHER material still
+    // 'processing' would otherwise silently wipe their in-progress Topic/LO
+    // checkbox selections. `materials` (and therefore the eventual list view)
+    // still gets the fresh data — the DOM rebuild just waits until they're
+    // back on the list.
+    if (mode.type === 'list') refresh();
   }
-
-  // The router (router.ts) has no per-view teardown hook — it just clears the
-  // outlet and calls the next route's render. Since every navigation is a
-  // hash change (hash routing, no SPA fallback — see router.ts), a one-shot
-  // 'hashchange' listener registered once here is guaranteed to fire exactly
-  // when this view is torn down (navigating to a different course's Materials
-  // page re-renders this same route with a different :id, which is still a
-  // hash change), stopping any interval that may have started meanwhile. A
-  // second render of the SAME hash never fires 'hashchange' at all, so this
-  // view (and its live interval) simply keeps running — correct, since
-  // nothing was torn down.
-  window.addEventListener(
-    'hashchange',
-    () => {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
-      }
-    },
-    { once: true },
-  );
 
   const uploadErrorSlot = el('div', {});
   const urlInput = el('input', { class: 'input', type: 'url', placeholder: 'https://example.com/reading.pdf' }) as HTMLInputElement;
@@ -166,8 +167,11 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   async function doUpload(files: File[]): Promise<void> {
     uploadErrorSlot.replaceChildren();
     try {
-      await uploadMaterials(courseId, files);
-      applyMaterials(await listMaterials(courseId));
+      // The upload endpoint already returns the created Material(s) (status
+      // 'processing') — append them to the local list instead of an extra
+      // round-trip refetch; the 3s poll converges the rest once ingest runs.
+      const created = await uploadMaterials(courseId, files);
+      applyMaterials([...materials, ...created]);
       refresh();
     } catch (error) {
       uploadErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -179,9 +183,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     const url = urlInput.value.trim();
     if (!url) return;
     try {
-      await addUrlMaterial(courseId, url);
+      const created = await addUrlMaterial(courseId, url);
       urlInput.value = '';
-      applyMaterials(await listMaterials(courseId));
+      applyMaterials([...materials, ...created]);
       refresh();
     } catch (error) {
       uploadErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
