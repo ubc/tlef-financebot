@@ -13,6 +13,8 @@ function course(overrides: Partial<InstructorCourse> = {}): InstructorCourse {
     courseCode: 'COMM 298',
     term: 'Winter Term 1, 2026/27',
     published: false,
+    feedbackStrategy: 'adaptive',
+    autoPause: { minAttempts: 5, flagPercent: 30, flagCount: 15 },
     ...overrides,
   };
 }
@@ -48,5 +50,33 @@ describe('findDuplicateCourse', () => {
     const first = course({ _id: 'a' });
     const second = course({ _id: 'b' });
     expect(findDuplicateCourse([first, second], 'COMM 298', 'Winter Term 1, 2026/27')).toBe(first);
+  });
+});
+
+// Pure-logic test for the client-derived duplicate-name warning on Structure's
+// Add Topic / Add LO forms (Task 15, Task C). See
+// client/src/views/instructor/structure.ts.
+import { findDuplicateName } from '../../client/src/views/instructor/structure';
+
+describe('findDuplicateName', () => {
+  it('matches an existing name ignoring case and surrounding whitespace', () => {
+    const match = findDuplicateName(['Time Value of Money', 'Risk & Return'], '  time value of money  ');
+    expect(match).toBe('Time Value of Money');
+  });
+
+  it('returns undefined when no name matches', () => {
+    expect(findDuplicateName(['Time Value of Money'], 'Risk & Return')).toBeUndefined();
+  });
+
+  it('returns undefined for an empty name list', () => {
+    expect(findDuplicateName([], 'Time Value of Money')).toBeUndefined();
+  });
+
+  it('returns undefined for a blank candidate', () => {
+    expect(findDuplicateName(['Time Value of Money'], '   ')).toBeUndefined();
+  });
+
+  it('returns the first matching name among several', () => {
+    expect(findDuplicateName(['Alpha', 'Beta', 'beta'], 'BETA')).toBe('Beta');
   });
 });

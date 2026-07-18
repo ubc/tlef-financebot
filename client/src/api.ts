@@ -474,6 +474,12 @@ export async function removeReviewBookEntry(entryId: string): Promise<void> {
 //    server-side (out of scope for this task — no server changes allowed).
 //    Flagged prominently in the report.
 
+export interface AutoPauseConfig {
+  minAttempts: number;
+  flagPercent: number;
+  flagCount: number;
+}
+
 export interface InstructorCourse {
   _id: string;
   name: string;
@@ -483,6 +489,11 @@ export interface InstructorCourse {
   termStart?: string;
   termEnd?: string;
   registrationCode?: string;
+  // Always present on the wire (server/src/services/courses.service.ts sets
+  // defaults on create) — added here (Task C) so Settings (I4) can read/patch
+  // them without an unsafe cast; the Task A interface omitted them.
+  feedbackStrategy: 'adaptive' | 'strategy-a' | 'strategy-b';
+  autoPause: AutoPauseConfig;
 }
 
 export interface CourseTreeLo {
@@ -510,12 +521,6 @@ export interface CourseTree {
 export interface ChecklistItem {
   item: string;
   ok: boolean;
-}
-
-export interface AutoPauseConfig {
-  minAttempts: number;
-  flagPercent: number;
-  flagCount: number;
 }
 
 /**
@@ -658,4 +663,60 @@ export function putRoster(courseId: string, identifiers: string[]): Promise<{ co
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identifiers }),
   });
+}
+
+// --- Instructor: materials (IN-S04/S05/S06) ----------------------------------
+//
+// Added in Task C (consumed by the Course Dashboard's pre-publish checklist —
+// "Course materials uploaded and assigned" — via `listMaterials`, per the
+// plan's Task D signature). Task D reuses `listMaterials` for the full
+// upload/assign/classify view rather than re-adding it; it also adds the
+// remaining materials-slice functions (`uploadMaterials`, `addUrlMaterial`,
+// `retryMaterial`, `assignMaterial`, `resolveClassification`,
+// `getSuggestedHierarchy`) that Task C has no need for.
+
+export interface MaterialAssignment {
+  themeId: string;
+  loId?: string;
+}
+
+export interface Material {
+  _id: string;
+  courseId: string;
+  name: string;
+  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
+  status: 'processing' | 'ready' | 'failed';
+  error?: string;
+  sourceUrl?: string;
+  storagePath?: string;
+  assignments: MaterialAssignment[];
+  classificationSuggestion?: { themeId: string; loId?: string; confidence: number };
+  excerpt?: string;
+  uploadedAt: string;
+}
+
+/** GET /api/courses/:courseId/materials -> [Material]. */
+export function listMaterials(courseId: string): Promise<Material[]> {
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`);
+}
+
+// --- Instructor: pre-seeding coverage (IN-Q10) --------------------------------
+//
+// Added in Task C (consumed by the Course Dashboard's pre-publish checklist —
+// "Minimum 3 approved questions per LO" — and the Structure editor's LO detail
+// "Approved" stat, per the plan's Task G signature). Task G reuses
+// `getPreseeding` for the full coverage view + generation rather than
+// re-adding it.
+
+export interface PreseedingLo {
+  loId: string;
+  loName: string;
+  approved: number;
+  reviewed: number;
+  target: number;
+}
+
+/** GET /api/courses/:courseId/preseeding -> per-LO approved-question coverage. */
+export function getPreseeding(courseId: string): Promise<PreseedingLo[]> {
+  return request<PreseedingLo[]>(`/api/courses/${encodeURIComponent(courseId)}/preseeding`);
 }
