@@ -2446,3 +2446,293 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* ---- Question Bank browser (I7) --------------------------------------------- */
+
+.bank-summary {
+  margin: 0.25rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.bank-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.bank-filters__search {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.bank-filters select.input {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.bank-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.bank-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2.2fr) 0.7fr 1.1fr 0.7fr 1fr 1.4fr 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.bank-table__rows .bank-row:last-child {
+  border-bottom: none;
+}
+
+.bank-row--head {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+.bank-row__stem {
+  overflow-wrap: anywhere;
+}
+
+.bank-row__stem p {
+  margin: 0;
+}
+
+.bank-row__type,
+.bank-row__topic,
+.bank-row__difficulty {
+  color: var(--text);
+}
+
+.bank-row__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.bank-row__source-changed {
+  color: var(--instr-amber-fg);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.bank-footer {
+  margin: 0.75rem 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.bank-source-banner {
+  display: block;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--instr-amber-fg);
+  border-radius: var(--radius-sm);
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* ---- Question Detail / editor (I6) ------------------------------------------ */
+
+.breadcrumb-back {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.breadcrumb-back:hover {
+  color: var(--text);
+}
+
+.question-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .question-detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.question-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.question-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.question-meta__label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.question-meta-row label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-right: 0.4rem;
+}
+
+.question-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.lo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.82rem;
+}
+
+.lo-chip__remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.lo-chip__remove:hover {
+  color: var(--down);
+}
+
+.lo-chip-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lo-chip-add__select {
+  width: auto;
+}
+
+.option-editors {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 1rem 0;
+}
+
+.option-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.option-editor__role-label {
+  align-self: flex-start;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--instr-gray-bg);
+  color: var(--instr-gray-fg);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.option-editor__explanation-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.option-editor__explanation {
+  min-height: 3rem;
+}
+
+.question-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.question-save-row {
+  margin-top: 0.5rem;
+}
+
+/* Edited-field highlight (Task 15, Task E): toggled on stem/option/difficulty
+ * inputs when their live editor value diverges from the loaded version's
+ * baseline value (see question-detail.ts's `isFieldEdited`). Reset on save. */
+.edited {
+  border-color: var(--warn) !important;
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface-2)) !important;
+}
+
+.agent-report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.agent-report-panel__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.agent-report-block {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.agent-report-block__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.agent-report-block__body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.agent-report-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+}

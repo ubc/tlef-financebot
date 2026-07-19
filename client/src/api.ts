@@ -781,3 +781,184 @@ export interface PreseedingLo {
 export function getPreseeding(courseId: string): Promise<PreseedingLo[]> {
   return request<PreseedingLo[]>(`/api/courses/${encodeURIComponent(courseId)}/preseeding`);
 }
+
+// --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
+//
+// Added in Task E. Verified against server/src/routes/questions.routes.ts +
+// services/bank.service.ts + services/questions.service.ts + types/domain.ts
+// (docs/api-contract.md's "Question bank" section matches these routes
+// exactly — no drift to correct here, unlike Task A's course-hierarchy slice).
+//
+// CRITICAL serialization rule (Task-15 Task E brief): Question HEADS
+// serialize with `id` — questions.routes.ts's toBankItem()/toQuestionResponse()
+// both strip the Mongo `_id` and add `id`. The embedded `current`
+// QuestionVersion — and the bare QuestionVersion the PATCH endpoint returns —
+// serialize RAW, keeping their own `_id`. These are two different ids (a
+// question id vs. its current version's id); do not conflate them or assume
+// both come back as `id`.
+//
+// `includeArchived` is deliberately NOT a query param on the wire
+// (questions.routes.ts's browseQuery omits it to match the contract exactly)
+// — pass `state: 'archived'` to reach archived questions instead; browseBank's
+// server-side `includeArchived` filter field is not reachable from here.
+
+export type QuestionType = 'mcq' | 'true-false';
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export type PublicationState = 'draft' | 'pending-review' | 'reviewed' | 'approved' | 'paused' | 'archived';
+export type QuestionLabel =
+  | 'source-changed'
+  | 'student-flagged'
+  | 'convertible-to-parameterized'
+  | 'auto-converted'
+  | 'manually-edited';
+
+export interface QuestionOption {
+  key: string;
+  text: string;
+  role: OptionRole;
+  explanation: string;
+}
+
+/** A QuestionVersion exactly as it comes over the wire — raw `_id`, never `id`. */
+export interface QuestionVersion {
+  _id: string;
+  questionId: string;
+  version: number;
+  type: QuestionType;
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+  paramSlots?: Array<{ name: string; min?: number; max?: number; step?: number; values?: number[] }>;
+  generateScript?: string;
+  sourceRefs: Array<{ materialId: string; chunk?: string }>;
+  /** Content keys patched in the edit that created this version (per-edit, not
+   * cumulative) — absent on v1. */
+  editedFields?: string[];
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A question head exactly as it comes over the wire — `id`, never `_id`. */
+export interface QuestionHead {
+  id: string;
+  courseId: string;
+  currentVersionId: string;
+  currentVersion: number;
+  state: PublicationState;
+  loIds: string[];
+  themeIds: string[];
+  labels: QuestionLabel[];
+  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  generationPrompt?: string;
+  internalNotes: Array<{ puid: string; text: string; at: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A bank-list row: the contract's trimmed head shape (`id`, `state`,
+ * `labels`, `loIds`, `themeIds`) plus its joined `current` version — NOT the
+ * full `QuestionHead` (no `agentDecision`/`internalNotes`; those are reserved
+ * for the single-question `getQuestion`). */
+export interface BankQuestion {
+  id: string;
+  state: PublicationState;
+  labels: QuestionLabel[];
+  loIds: string[];
+  themeIds: string[];
+  current: QuestionVersion;
+}
+
+/** GET /api/questions/:questionId's full shape: the head plus its `current`
+ * version and lightweight version-history metadata. */
+export interface QuestionDetail extends QuestionHead {
+  current: QuestionVersion;
+  versions: Array<{ version: number; createdBy: string; createdAt: string; editedFields?: string[] }>;
+}
+
+export interface BankFilters {
+  state?: PublicationState;
+  loId?: string;
+  themeId?: string;
+  type?: QuestionType;
+  difficulty?: Difficulty;
+  label?: QuestionLabel;
+}
+
+/** Pure filter -> querystring builder (`?state=&loId=&themeId=&type=&difficulty=&label=`),
+ * matching `GET /api/courses/:courseId/questions`'s exact query surface.
+ * `includeArchived` is intentionally not a key here (see the module note
+ * above) — pass `state: 'archived'` instead. Omits any filter that's absent;
+ * returns `''` (no leading `?`) when every filter is absent. */
+export function bankFiltersToQuery(filters: BankFilters): string {
+  const params = new URLSearchParams();
+  if (filters.state) params.set('state', filters.state);
+  if (filters.loId) params.set('loId', filters.loId);
+  if (filters.themeId) params.set('themeId', filters.themeId);
+  if (filters.type) params.set('type', filters.type);
+  if (filters.difficulty) params.set('difficulty', filters.difficulty);
+  if (filters.label) params.set('label', filters.label);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/** GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=
+ * -> { total, questions }. Instructor-only. (IN-Q08) */
+export function browseBank(
+  courseId: string,
+  filters: BankFilters = {},
+): Promise<{ total: number; questions: BankQuestion[] }> {
+  return request<{ total: number; questions: BankQuestion[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}/questions${bankFiltersToQuery(filters)}`,
+  );
+}
+
+/** GET /api/questions/:questionId -> full head + current version + agentDecision
+ * + internalNotes + versions. Instructor-only. */
+export function getQuestion(questionId: string): Promise<QuestionDetail> {
+  return request<QuestionDetail>(`/api/questions/${encodeURIComponent(questionId)}`);
+}
+
+/** PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }
+ * -> the new current QuestionVersion (IN-Q03). A patch with no content key
+ * (stem/options/difficulty) — e.g. a loIds/themeIds-only retag — does not
+ * version; the server returns the unchanged current QuestionVersion in that
+ * case (see questions.service.ts's editQuestion doc comment). */
+export function editQuestion(
+  questionId: string,
+  patch: {
+    stem?: string;
+    options?: QuestionOption[];
+    difficulty?: Difficulty;
+    loIds?: string[];
+    themeIds?: string[];
+  },
+): Promise<QuestionVersion> {
+  return request<QuestionVersion>(`/api/questions/${encodeURIComponent(questionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/questions/:questionId/transition { to } -> the updated question
+ * head (validated against PUBLICATION_TRANSITIONS; 409 on an invalid move).
+ * Instructor-only. (IN-Q04/Q07) */
+export function transitionQuestion(questionId: string, to: PublicationState): Promise<QuestionHead> {
+  return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to }),
+  });
+}
+
+/** POST /api/questions/bulk-transition { questionIds, to } -> { updated }.
+ * Instructor-only, scoped to the single course the batch resolves to. Added
+ * here for Task E's Archive action; Task F's Review Queue bulk-approve reuses
+ * this same function. */
+export function bulkTransition(questionIds: string[], to: PublicationState): Promise<{ updated: number }> {
+  return request<{ updated: number }>('/api/questions/bulk-transition', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questionIds, to }),
+  });
+}
