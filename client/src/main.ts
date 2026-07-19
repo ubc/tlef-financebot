@@ -21,6 +21,22 @@ import { renderLoList } from './views/student/lo-list.js';
 import { renderPractice } from './views/student/practice.js';
 import { renderReviewBook } from './views/student/review-book.js';
 import { renderSessionSummary } from './views/student/session-summary.js';
+import {
+  INSTRUCTOR_NAV,
+  courseIdFromPath,
+  resolveHref,
+  isNavItemActive,
+  type InstructorNavItem,
+} from './views/instructor/shell.js';
+import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
+import { renderDashboard } from './views/instructor/dashboard.js';
+import { renderStructure } from './views/instructor/structure.js';
+import { renderMaterials } from './views/instructor/materials.js';
+import { renderSettings } from './views/instructor/settings.js';
+import { renderBank } from './views/instructor/bank.js';
+import { renderQuestionDetail } from './views/instructor/question-detail.js';
+import { renderReviewQueue } from './views/instructor/review-queue.js';
+import { renderPreseeding } from './views/instructor/preseeding.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -43,6 +59,47 @@ const ROUTES: Route[] = [
   { path: '/course/:id/summary', render: renderSessionSummary },
   { path: '/course/:id', render: renderCourseHome },
 ];
+
+// Instructor routes (Task 15). Specific-first ordering follows the
+// convention above, though `matchRoute`'s exact-segment-count matching means
+// these patterns never actually shadow one another. All instructor views
+// (Tasks B-G) are now wired — no placeholder routes remain.
+const INSTRUCTOR_ROUTES: Route[] = [
+  { path: '/instructor/courses/new', render: renderCreateCourse },
+  { path: '/instructor/courses', render: renderCourses },
+  { path: '/instructor/course/:id/structure', render: renderStructure },
+  { path: '/instructor/course/:id/materials', render: renderMaterials },
+  { path: '/instructor/course/:id/settings', render: renderSettings },
+  { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
+  { path: '/instructor/course/:id/bank', render: renderBank },
+  { path: '/instructor/course/:id/queue', render: renderReviewQueue },
+  { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
+  { path: '/instructor/course/:id', render: renderDashboard },
+];
+
+/** Instructor chrome shows when the session holds an `instructor` course role
+ * or `isAdmin` (Task-15 Global Constraints — "Instructor-only"). */
+// Who gets the instructor shell. Deliberately keyed on an EXPLICIT grant —
+// `isAdmin` or an instructor `courseRole` — NOT on faculty affiliation.
+//
+// Provisioning model (decided 2026-07-18): instructors are added by an Admin;
+// affiliation alone does not make someone an instructor. Interim for the pilot:
+// admins pre-provision an instructor course-role before first login, so a
+// provisioned instructor always has a role here and reaches the instructor
+// shell (and Create Course) with no dead-end. A first-time, affiliation-only
+// faculty user intentionally does NOT get this shell — they aren't an
+// instructor until an admin says so.
+//
+// Phase-2 follow-up: a platform-level "instructor" grant on the User, set via
+// an admin management surface (the A1/A2/I11 admin/TA screens), so admins can
+// provision instructors self-serve and an instructor with zero courses still
+// gets the shell without a seeded course-role. Until that lands, keep this
+// check as-is.
+function isInstructor(session: Session): boolean {
+  const user = session.user;
+  if (!user) return false;
+  return user.isAdmin || user.courseRoles.some((cr) => cr.role === 'instructor');
+}
 
 const GROUP_ORDER: NavGroup[] = ['main', 'role', 'examples', 'account'];
 
@@ -147,11 +204,118 @@ function buildShell(root: HTMLElement, session: Session): void {
   });
 }
 
+/**
+ * The green instructor shell — a distinct sidebar (not a NAV.roles-gated
+ * variant of the default shell) per the Task-15 wireframe. Course-scoped nav
+ * items (Dashboard/Structure/Materials/Bank/Queue/Settings) need the current
+ * courseId spliced into their href, and that changes on every navigation
+ * (moving between courses, or between "My Courses" and a course's pages), so
+ * — unlike the default shell's static NAV hrefs — the anchors here are
+ * rebuilt on every `onNavigate` rather than just toggling an active class.
+ */
+function buildInstructorShell(root: HTMLElement, session: Session): void {
+  const shell = el('div', { class: 'app-shell' });
+  const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
+  const anchors: Array<{ item: InstructorNavItem; link: HTMLAnchorElement }> = [];
+
+  for (const group of INSTRUCTOR_NAV) {
+    if (group.label) nav.append(el('p', { class: 'nav__group', text: group.label }));
+    for (const item of group.items) {
+      const link = el(
+        'a',
+        {
+          class: `nav__link${item.disabled ? ' nav__link--disabled' : ''}`,
+          href: '#',
+          onclick: (e: Event) => {
+            // No resolved destination yet (out-of-scope item, or a
+            // course-scoped item before any course is selected) — the '#'
+            // placeholder href must not navigate.
+            if (link.getAttribute('href') === '#') {
+              e.preventDefault();
+              return;
+            }
+            shell.classList.remove('is-open');
+          },
+        },
+        el('span', { class: 'nav__text', text: item.label }),
+      ) as HTMLAnchorElement;
+      anchors.push({ item, link });
+      nav.append(link);
+    }
+  }
+
+  const user = session.user;
+  // The wireframe's instructor brand mark is literally "FinanceBot" — hardcoded
+  // rather than routed through config.ts's APP.name (the app-wide re-skin
+  // point, see client/AGENTS.md) since renaming that would also rebrand the
+  // still-generic landing/student shell, which is outside this task's scope.
+  const aside = el(
+    'aside',
+    { class: 'sidebar sidebar--instructor' },
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
+    nav,
+    user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
+  );
+
+  const topbar = el(
+    'header',
+    { class: 'topbar' },
+    el(
+      'button',
+      {
+        class: 'icon-btn topbar__menu',
+        type: 'button',
+        'aria-label': 'Toggle navigation',
+        onclick: () => shell.classList.toggle('is-open'),
+      },
+      '≡',
+    ),
+    el('span', { class: 'topbar__title' }),
+    el(
+      'div',
+      { class: 'topbar__right' },
+      createThemeToggle(),
+      el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
+    ),
+  );
+
+  const outlet = el('main', { class: 'outlet', id: 'view-root', tabindex: '-1' });
+  const backdrop = el('div', {
+    class: 'backdrop',
+    'aria-hidden': 'true',
+    onclick: () => shell.classList.remove('is-open'),
+  });
+
+  shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
+  mount(root, shell);
+
+  startRouter({
+    routes: INSTRUCTOR_ROUTES,
+    outlet,
+    fallback: '/instructor/courses',
+    onNavigate: (path) => {
+      const courseId = courseIdFromPath(path);
+      for (const { item, link } of anchors) {
+        const href = resolveHref(item, courseId);
+        link.setAttribute('href', href ?? '#');
+        const active = isNavItemActive(item, path);
+        link.classList.toggle('nav__link--active', active);
+        link.classList.toggle('nav__link--disabled', !href);
+        if (active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      }
+      document.title = `Instructor · ${APP.name}`;
+    },
+  });
+}
+
 async function bootstrap(): Promise<void> {
   const root = byId('app');
   const session = await loadSession();
   if (session.authenticated) {
-    buildShell(root, session);
+    if (isInstructor(session)) buildInstructorShell(root, session);
+    else buildShell(root, session);
   } else {
     document.title = APP.name;
     renderLanding(root);

@@ -437,3 +437,585 @@ export function unbookmarkQuestion(questionId: string): Promise<{ bookmarked: bo
 export async function removeReviewBookEntry(entryId: string): Promise<void> {
   await request<void>(`/api/review-book/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
 }
+
+// --- Instructor: courses & hierarchy (IN-S01/S02/S03, IN-L06) ---------------
+//
+// Corrections vs the Task-15 plan's Task A interface block, verified against
+// docs/api-contract.md + server/src/routes/courses.routes.ts (see
+// .superpowers/sdd/task-15/task-a-report.md for the full rationale):
+//  - Course identity is `_id` on the wire (raw Mongo doc), not `courseId` —
+//    matches the plan's own CourseTreeTheme/CourseTreeLo (`_id`) convention;
+//    the plan's `InstructorCourse.courseId` looks like the one outlier/typo.
+//  - `GET /api/courses/:courseId` returns the Course fields and `themes`
+//    FLATTENED at the top level (`{ ...course, themes }`), not nested under a
+//    `course` key. `getCourseTree` below re-nests it into `{ course, themes }`
+//    at the client boundary so callers get the plan's documented shape.
+//  - `updateCourse`'s `autoPause` patch field is an object
+//    (`{ minAttempts, flagPercent, flagCount }`), not a boolean — the plan's
+//    signature had the wrong type for it.
+//  - `getRoster` does not return `addedAt` (the route strips it before
+//    responding; contract agrees) — dropped from the return type.
+//  - `CourseTreeTheme.los` is optional: `addTheme`/`updateTheme` return a bare
+//    Theme (no `los`); only a Theme nested inside `getCourseTree`'s response
+//    carries one.
+//  - No `GET /api/courses` (list) endpoint exists anywhere in the routes or
+//    contract. `listInstructorCourses` below derives the list client-side from
+//    the session's `courseRoles` (an `instructor` role per course, from
+//    `GET /api/auth/me`) plus one `getCourseTree` call per course — flagged as
+//    a concern in the report (N+1, and misses courses an admin has no
+//    `courseRoles` entry for; there is no "list all courses" endpoint for that
+//    case either).
+//  - No `GET /api/courses/:courseId/publish-checklist` (or any other
+//    side-effect-free) endpoint exists — the checklist is only returned
+//    bundled with the side-effecting `POST .../publish` / `.../unpublish`.
+//    Calling either to merely preview the checklist would incorrectly
+//    publish/unpublish the course, so `getPublishChecklist` is NOT wired to a
+//    request call; it throws until a trivial read-only route is added
+//    server-side (out of scope for this task — no server changes allowed).
+//    Flagged prominently in the report.
+
+export interface AutoPauseConfig {
+  minAttempts: number;
+  flagPercent: number;
+  flagCount: number;
+}
+
+export interface InstructorCourse {
+  _id: string;
+  name: string;
+  courseCode: string;
+  term: string;
+  published: boolean;
+  termStart?: string;
+  termEnd?: string;
+  registrationCode?: string;
+  // Always present on the wire (server/src/services/courses.service.ts sets
+  // defaults on create) — added here (Task C) so Settings (I4) can read/patch
+  // them without an unsafe cast; the Task A interface omitted them.
+  feedbackStrategy: 'adaptive' | 'strategy-a' | 'strategy-b';
+  autoPause: AutoPauseConfig;
+}
+
+export interface CourseTreeLo {
+  _id: string;
+  name: string;
+  order: number;
+  themeId: string;
+}
+
+export interface CourseTreeTheme {
+  _id: string;
+  name: string;
+  order: number;
+  availableFrom?: string;
+  /** Present when this Theme came back nested inside a `CourseTree`; absent
+   * from a bare Theme response (`addTheme`/`updateTheme`). */
+  los?: CourseTreeLo[];
+}
+
+export interface CourseTree {
+  course: InstructorCourse;
+  themes: CourseTreeTheme[];
+}
+
+export interface ChecklistItem {
+  item: string;
+  ok: boolean;
+}
+
+/**
+ * No `GET /api/courses` endpoint exists (see the correction note above) — this
+ * derives "my courses" from the session's `courseRoles` (role === 'instructor')
+ * plus one `getCourseTree` call per course. Courses an admin can only reach via
+ * `isAdmin` (no explicit `courseRoles` entry) are not covered; there is no
+ * list-all endpoint for that case.
+ */
+export async function listInstructorCourses(): Promise<InstructorCourse[]> {
+  const { user } = await getAuthState();
+  const courseIds = Array.from(
+    new Set((user?.courseRoles ?? []).filter((cr) => cr.role === 'instructor').map((cr) => cr.courseId)),
+  );
+  const trees = await Promise.all(courseIds.map((courseId) => getCourseTree(courseId)));
+  return trees.map((tree) => tree.course);
+}
+
+/** POST /api/courses { name, courseCode, term } -> 201 Course. */
+export function createCourse(input: { name: string; courseCode: string; term: string }): Promise<InstructorCourse> {
+  return request<InstructorCourse>('/api/courses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+/** GET /api/courses/:courseId -> Course + themes: [Theme & { los }] (flat on
+ * the wire; re-nested here into { course, themes }). */
+export async function getCourseTree(courseId: string): Promise<CourseTree> {
+  const flat = await request<InstructorCourse & { themes: CourseTreeTheme[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}`,
+  );
+  const { themes, ...course } = flat;
+  return { course, themes };
+}
+
+/** PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? } -> Course. */
+export function updateCourse(
+  courseId: string,
+  patch: {
+    termStart?: string;
+    termEnd?: string;
+    feedbackStrategy?: 'adaptive' | 'strategy-a' | 'strategy-b';
+    autoPause?: AutoPauseConfig;
+    published?: boolean;
+  },
+): Promise<InstructorCourse> {
+  return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/courses/:courseId/registration-code -> { registrationCode } (regenerates). */
+export function regenerateRegistrationCode(courseId: string): Promise<{ registrationCode: string }> {
+  return request<{ registrationCode: string }>(`/api/courses/${encodeURIComponent(courseId)}/registration-code`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * No side-effect-free endpoint returns the publish checklist (see the
+ * correction note above) — `POST .../publish` and `.../unpublish` both return
+ * one, but both also flip `published` as a side effect. This always throws
+ * until a read-only `GET /api/courses/:courseId/publish-checklist` route is
+ * added server-side (a one-line wrapper around the existing
+ * `courses.service.publishChecklist`, which is already side-effect-free).
+ */
+export function getPublishChecklist(_courseId: string): Promise<ChecklistItem[]> {
+  return Promise.reject(
+    new Error(
+      'getPublishChecklist: no read-only endpoint exists yet — see the Task A report ' +
+        '(.superpowers/sdd/task-15/task-a-report.md) for the one-line server fix needed before this can be wired up.',
+    ),
+  );
+}
+
+/** POST /api/courses/:courseId/themes { name } -> 201 Theme. */
+export function addTheme(courseId: string, name: string): Promise<CourseTreeTheme> {
+  return request<CourseTreeTheme>(`/api/courses/${encodeURIComponent(courseId)}/themes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** PATCH /api/themes/:themeId { name?, availableFrom?, order? } -> Theme. */
+export function updateTheme(
+  themeId: string,
+  patch: { name?: string; availableFrom?: string; order?: number },
+): Promise<CourseTreeTheme> {
+  return request<CourseTreeTheme>(`/api/themes/${encodeURIComponent(themeId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/themes/:themeId/archive -> Theme. */
+export async function archiveTheme(themeId: string): Promise<void> {
+  await request<void>(`/api/themes/${encodeURIComponent(themeId)}/archive`, { method: 'POST' });
+}
+
+/** POST /api/themes/:themeId/los { name } -> 201 LearningObjective. */
+export function addLo(themeId: string, name: string): Promise<CourseTreeLo> {
+  return request<CourseTreeLo>(`/api/themes/${encodeURIComponent(themeId)}/los`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
+export function updateLo(loId: string, patch: { name?: string; order?: number }): Promise<CourseTreeLo> {
+  return request<CourseTreeLo>(`/api/los/${encodeURIComponent(loId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/los/:loId/archive -> LearningObjective. */
+export async function archiveLo(loId: string): Promise<void> {
+  await request<void>(`/api/los/${encodeURIComponent(loId)}/archive`, { method: 'POST' });
+}
+
+/** GET /api/courses/:courseId/roster -> [{ identifier, extendedUntil? }] (no `addedAt` on the wire). */
+export function getRoster(courseId: string): Promise<Array<{ identifier: string; extendedUntil?: string }>> {
+  return request<Array<{ identifier: string; extendedUntil?: string }>>(
+    `/api/courses/${encodeURIComponent(courseId)}/roster`,
+  );
+}
+
+/** PUT /api/courses/:courseId/roster { identifiers } -> { count }. */
+export function putRoster(courseId: string, identifiers: string[]): Promise<{ count: number }> {
+  return request<{ count: number }>(`/api/courses/${encodeURIComponent(courseId)}/roster`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifiers }),
+  });
+}
+
+// --- Instructor: materials (IN-S04/S05/S06) ----------------------------------
+//
+// Added in Task C (consumed by the Course Dashboard's pre-publish checklist —
+// "Course materials uploaded and assigned" — via `listMaterials`, per the
+// plan's Task D signature). Task D reuses `listMaterials` for the full
+// upload/assign/classify view rather than re-adding it; it also adds the
+// remaining materials-slice functions (`uploadMaterials`, `addUrlMaterial`,
+// `retryMaterial`, `assignMaterial`, `resolveClassification`,
+// `getSuggestedHierarchy`) that Task C has no need for.
+
+export interface MaterialAssignment {
+  themeId: string;
+  loId?: string;
+}
+
+export interface Material {
+  _id: string;
+  courseId: string;
+  name: string;
+  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
+  status: 'processing' | 'ready' | 'failed';
+  error?: string;
+  sourceUrl?: string;
+  storagePath?: string;
+  assignments: MaterialAssignment[];
+  classificationSuggestion?: { themeId: string; loId?: string; confidence: number };
+  excerpt?: string;
+  uploadedAt: string;
+}
+
+/** GET /api/courses/:courseId/materials -> [Material]. */
+export function listMaterials(courseId: string): Promise<Material[]> {
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`);
+}
+
+/** POST /api/courses/:courseId/materials (multipart, field `files`) -> 201
+ * [Material] (one per uploaded file, status 'processing'). */
+export function uploadMaterials(courseId: string, files: File[]): Promise<Material[]> {
+  const form = new FormData();
+  for (const file of files) form.append('files', file);
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
+/** POST /api/courses/:courseId/materials { url } -> 201 [Material] (a single-
+ * element array, status 'processing'). */
+export function addUrlMaterial(courseId: string, url: string): Promise<Material[]> {
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
+/** POST /api/materials/:materialId/retry -> Material. */
+export function retryMaterial(materialId: string): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/retry`, { method: 'POST' });
+}
+
+/** PUT /api/materials/:materialId/assignments { assignments } -> Material
+ * (IN-S05; replaces the full assignments list). */
+export function assignMaterial(materialId: string, assignments: MaterialAssignment[]): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/assignments`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments }),
+  });
+}
+
+/** POST /api/materials/:materialId/classification { action } -> Material
+ * (IN-S06; 'accept' merges the suggestion into assignments and clears it,
+ * 'reject' clears it). */
+export function resolveClassification(materialId: string, action: 'accept' | 'reject'): Promise<Material> {
+  return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/classification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+}
+
+export interface SuggestedHierarchy {
+  themes: Array<{ name: string; los: string[] }>;
+}
+
+/** GET /api/courses/:courseId/suggest-hierarchy -> { themes: [{ name, los }] }
+ * (IN-S06; read-only AI-suggested Topic/LO outline computed from ingested
+ * materials — apply via addTheme/addLo, this endpoint never writes). Added
+ * per the Task D brief; no apply-UI is wired up this task (see the Task D
+ * report — kept out to avoid scope creep on top of the upload/classify/
+ * assign flow). */
+export function getSuggestedHierarchy(courseId: string): Promise<SuggestedHierarchy> {
+  return request<SuggestedHierarchy>(`/api/courses/${encodeURIComponent(courseId)}/suggest-hierarchy`);
+}
+
+// --- Instructor: pre-seeding coverage (IN-Q10) --------------------------------
+//
+// Added in Task C (consumed by the Course Dashboard's pre-publish checklist —
+// "Minimum 3 approved questions per LO" — and the Structure editor's LO detail
+// "Approved" stat, per the plan's Task G signature). Task G reuses
+// `getPreseeding` for the full coverage view + generation rather than
+// re-adding it.
+
+export interface PreseedingLo {
+  loId: string;
+  loName: string;
+  approved: number;
+  reviewed: number;
+  target: number;
+}
+
+/** GET /api/courses/:courseId/preseeding -> per-LO approved-question coverage. */
+export function getPreseeding(courseId: string): Promise<PreseedingLo[]> {
+  return request<PreseedingLo[]>(`/api/courses/${encodeURIComponent(courseId)}/preseeding`);
+}
+
+// --- Instructor: question generation (IN-Q10) ---------------------------------
+//
+// Added in Task G. Verified against server/src/routes/generation.routes.ts's
+// `generateBody` zod schema: `count` is an optional int 1-20 (server defaults
+// to 3 when omitted), `type`/`difficulty` are optional enums, `prompt` is an
+// optional string up to 2000 chars (plain text — @mentions of materials are
+// just characters in this field, there is no separate material-reference
+// param). The route ALWAYS responds 202 with a `jobId` — generation runs as a
+// background job; results land later as Draft questions (see preseeding.ts's
+// module note for why the UI never waits on this promise for a preview).
+
+export type GenerationQuestionType = 'mcq' | 'true-false';
+export type GenerationDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface GenerateQuestionsInput {
+  loId: string;
+  count?: number;
+  type?: GenerationQuestionType;
+  difficulty?: GenerationDifficulty;
+  prompt?: string;
+}
+
+/** POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?,
+ * prompt? } -> 202 { jobId }. Enqueues the async three-agent generation
+ * pipeline for one LO. */
+export function generateQuestions(courseId: string, input: GenerateQuestionsInput): Promise<{ jobId: string }> {
+  return request<{ jobId: string }>(`/api/courses/${encodeURIComponent(courseId)}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+// --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
+//
+// Added in Task E. Verified against server/src/routes/questions.routes.ts +
+// services/bank.service.ts + services/questions.service.ts + types/domain.ts
+// (docs/api-contract.md's "Question bank" section matches these routes
+// exactly — no drift to correct here, unlike Task A's course-hierarchy slice).
+//
+// CRITICAL serialization rule (Task-15 Task E brief): Question HEADS
+// serialize with `id` — questions.routes.ts's toBankItem()/toQuestionResponse()
+// both strip the Mongo `_id` and add `id`. The embedded `current`
+// QuestionVersion — and the bare QuestionVersion the PATCH endpoint returns —
+// serialize RAW, keeping their own `_id`. These are two different ids (a
+// question id vs. its current version's id); do not conflate them or assume
+// both come back as `id`.
+//
+// `includeArchived` is deliberately NOT a query param on the wire
+// (questions.routes.ts's browseQuery omits it to match the contract exactly)
+// — pass `state: 'archived'` to reach archived questions instead; browseBank's
+// server-side `includeArchived` filter field is not reachable from here.
+
+export type QuestionType = 'mcq' | 'true-false';
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export type PublicationState = 'draft' | 'pending-review' | 'reviewed' | 'approved' | 'paused' | 'archived';
+export type QuestionLabel =
+  | 'source-changed'
+  | 'student-flagged'
+  | 'convertible-to-parameterized'
+  | 'auto-converted'
+  | 'manually-edited';
+
+export interface QuestionOption {
+  key: string;
+  text: string;
+  role: OptionRole;
+  explanation: string;
+}
+
+/** A QuestionVersion exactly as it comes over the wire — raw `_id`, never `id`. */
+export interface QuestionVersion {
+  _id: string;
+  questionId: string;
+  version: number;
+  type: QuestionType;
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+  paramSlots?: Array<{ name: string; min?: number; max?: number; step?: number; values?: number[] }>;
+  generateScript?: string;
+  sourceRefs: Array<{ materialId: string; chunk?: string }>;
+  /** Content keys patched in the edit that created this version (per-edit, not
+   * cumulative) — absent on v1. */
+  editedFields?: string[];
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A question head exactly as it comes over the wire — `id`, never `_id`. */
+export interface QuestionHead {
+  id: string;
+  courseId: string;
+  currentVersionId: string;
+  currentVersion: number;
+  state: PublicationState;
+  loIds: string[];
+  themeIds: string[];
+  labels: QuestionLabel[];
+  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  generationPrompt?: string;
+  internalNotes: Array<{ puid: string; text: string; at: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A bank-list row: the contract's trimmed head shape (`id`, `state`,
+ * `labels`, `loIds`, `themeIds`) plus its joined `current` version — NOT the
+ * full `QuestionHead` (no `agentDecision`/`internalNotes`; those are reserved
+ * for the single-question `getQuestion`). */
+export interface BankQuestion {
+  id: string;
+  state: PublicationState;
+  labels: QuestionLabel[];
+  loIds: string[];
+  themeIds: string[];
+  current: QuestionVersion;
+}
+
+/** GET /api/questions/:questionId's full shape: the head plus its `current`
+ * version and lightweight version-history metadata. */
+export interface QuestionDetail extends QuestionHead {
+  current: QuestionVersion;
+  versions: Array<{ version: number; createdBy: string; createdAt: string; editedFields?: string[] }>;
+}
+
+export interface BankFilters {
+  state?: PublicationState;
+  loId?: string;
+  themeId?: string;
+  type?: QuestionType;
+  difficulty?: Difficulty;
+  label?: QuestionLabel;
+}
+
+/** Pure filter -> querystring builder (`?state=&loId=&themeId=&type=&difficulty=&label=`),
+ * matching `GET /api/courses/:courseId/questions`'s exact query surface.
+ * `includeArchived` is intentionally not a key here (see the module note
+ * above) — pass `state: 'archived'` instead. Omits any filter that's absent;
+ * returns `''` (no leading `?`) when every filter is absent. */
+export function bankFiltersToQuery(filters: BankFilters): string {
+  const params = new URLSearchParams();
+  if (filters.state) params.set('state', filters.state);
+  if (filters.loId) params.set('loId', filters.loId);
+  if (filters.themeId) params.set('themeId', filters.themeId);
+  if (filters.type) params.set('type', filters.type);
+  if (filters.difficulty) params.set('difficulty', filters.difficulty);
+  if (filters.label) params.set('label', filters.label);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/** GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=
+ * -> { total, questions }. Instructor-only. (IN-Q08) */
+export function browseBank(
+  courseId: string,
+  filters: BankFilters = {},
+): Promise<{ total: number; questions: BankQuestion[] }> {
+  return request<{ total: number; questions: BankQuestion[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}/questions${bankFiltersToQuery(filters)}`,
+  );
+}
+
+/** GET /api/questions/:questionId -> full head + current version + agentDecision
+ * + internalNotes + versions. Instructor-only. */
+export function getQuestion(questionId: string): Promise<QuestionDetail> {
+  return request<QuestionDetail>(`/api/questions/${encodeURIComponent(questionId)}`);
+}
+
+/** PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }
+ * -> the new current QuestionVersion (IN-Q03). A patch with no content key
+ * (stem/options/difficulty) — e.g. a loIds/themeIds-only retag — does not
+ * version; the server returns the unchanged current QuestionVersion in that
+ * case (see questions.service.ts's editQuestion doc comment). */
+export function editQuestion(
+  questionId: string,
+  patch: {
+    stem?: string;
+    options?: QuestionOption[];
+    difficulty?: Difficulty;
+    loIds?: string[];
+    themeIds?: string[];
+  },
+): Promise<QuestionVersion> {
+  return request<QuestionVersion>(`/api/questions/${encodeURIComponent(questionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+/** POST /api/questions/:questionId/transition { to } -> the updated question
+ * head (validated against PUBLICATION_TRANSITIONS; 409 on an invalid move).
+ * Instructor-only. (IN-Q04/Q07) */
+export function transitionQuestion(questionId: string, to: PublicationState): Promise<QuestionHead> {
+  return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to }),
+  });
+}
+
+/** POST /api/questions/bulk-transition { questionIds, to } -> { updated }.
+ * Instructor-only, scoped to the single course the batch resolves to. Added
+ * here for Task E's Archive action; Task F's Review Queue bulk-approve reuses
+ * this same function. */
+export function bulkTransition(questionIds: string[], to: PublicationState): Promise<{ updated: number }> {
+  return request<{ updated: number }>('/api/questions/bulk-transition', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questionIds, to }),
+  });
+}
+
+// --- Instructor: review queue (IN-Q02) — Task F -----------------------------
+//
+// Verified against server/src/routes/questions.routes.ts:242-251 +
+// services/bank.service.ts's reviewQueue(). The route does
+// `queue.map((item) => ({ ...toBankItem(item), priority: item.priority }))`
+// — i.e. exactly the `BankQuestion` shape (see the Task E note above:
+// `toBankItem` deliberately omits `agentDecision`/`internalNotes`, reserving
+// them for the single-question `getQuestion`) plus one extra field,
+// `priority` (1 = student-flagged, 2 = `state === 'reviewed'`, 3 = the rest,
+// ranked by LO under-coverage — see reviewQueue()'s doc comment). This type
+// intentionally does NOT carry `agentDecision`: the review-queue endpoint
+// never returns it, and review-queue.ts's per-row Agent Decision badge / tab
+// filters fetch it for real via `getQuestion` rather than fabricate it.
+
+export interface ReviewQueueItem extends BankQuestion {
+  priority: number;
+}
+
+/** GET /api/courses/:courseId/review-queue -> prioritized list (IN-Q02).
+ * Instructor-only. */
+export function getReviewQueue(courseId: string): Promise<ReviewQueueItem[]> {
+  return request<ReviewQueueItem[]>(`/api/courses/${encodeURIComponent(courseId)}/review-queue`);
+}

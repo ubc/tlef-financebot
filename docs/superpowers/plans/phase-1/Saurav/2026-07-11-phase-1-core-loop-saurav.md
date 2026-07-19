@@ -282,10 +282,17 @@ Requires Tasks 2, 5, 6, 7, 8 merged (their endpoints).
 
 Key behaviours (small, concrete DOM code in the existing views' style; see the core document, Task 15): duplicate-name inline warning (non-blocking) on theme/LO create; edited-field highlighting in the editor (`.edited` class vs the loaded version); approve moves state immediately and updates the row without reload; bulk approve `confirm()` with the count; publish shows the checklist with warnings but allows publishing; upload form accepts multiple files + a URL field and polls `GET /materials` every 3s while any material is `processing`.
 
-- [ ] **Step 1: Build views route by route against the live API** — keep each view file focused; shared bits (option buttons, status badge) go in `client/src/ui.ts` (coordinate with Stephen's Task 14, which also touches `ui.ts`).
-- [ ] **Step 2: Typecheck + lint** — `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 3: Playwright spec** `tests/e2e/instructor-pipeline.spec.ts` — create course → add theme/LO → upload fixture material → generate for the LO (guard `test.skip(!process.env.LLM_AVAILABLE)`) → approve a question → publish course.
-- [ ] **Step 4: Commit** — `git commit -m "feat: instructor course setup, materials, bank, review queue, and pre-seeding views"`
+> **RE-PLANNED (2026-07-18): now wireframe-driven.** Task 15 was expanded from
+> "small DOM in the existing shell" to follow the Figma "Wireframe v0.2"
+> instructor screens (green instructor shell + shared component vocabulary).
+> The detailed 8-sub-task plan is
+> **`docs/superpowers/plans/phase-1/Saurav/2026-07-17-task-15-instructor-views.md`**
+> (+ `task-15-wireframe-reference.md`), executed via subagent-driven-development.
+
+- [x] **Step 1: Build the six instructor views** (shell + primitives + api client → My Courses/Create → Dashboard/Structure/Settings → Materials → Bank/Detail → Review Queue → Pre-seeding/Generate). Done as sub-tasks A–G, each implemented + reviewed.
+- [x] **Step 2: Typecheck + lint + build** → PASS (390 unit tests green).
+- [x] **Step 3: Playwright spec** `tests/e2e/instructor-pipeline.spec.ts` (sub-task H) — written; **live run deferred to the ~Aug 2 checkpoint** (no stack in-session), parses + typechecks + lints clean.
+- [x] **Step 4: Commit** — landed as commits `73b3061`..`15df236` (+ this doc/decision commit).
 
 ---
 

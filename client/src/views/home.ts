@@ -7,6 +7,7 @@ import { emptyState, errorState, eyebrow, loadingState } from '../ui.js';
 import { getSession, displayName } from '../auth.js';
 import { ApiError, enrollInCourse, listEnrollments, type AuthUser, type Enrollment } from '../api.js';
 import { healthCard } from './health.js';
+import { renderMyCourses } from './instructor/courses.js';
 
 /** The user's primary role, used to route to a role-appropriate home (ST-E01).
  * Admin wins, then instructor (faculty affiliation), else student. Phase 1
@@ -151,6 +152,18 @@ export function renderHome(outlet: HTMLElement): void {
 
   if (role === 'student') {
     outlet.append(el('div', { class: 'view view--overview' }, intro, myCoursesCard()));
+    return;
+  }
+
+  // A `faculty`-affiliated user who doesn't (yet) qualify for the full green
+  // instructor shell (main.ts's `isInstructor` needs `isAdmin` or an
+  // `instructor` courseRole) still lands here with `role === 'instructor'`
+  // (see `primaryRole` above). Render My Courses directly rather than the
+  // generic "Phase 1 builds this view out" stub — it already owns its own
+  // header/empty-state, so it replaces the intro rather than following it
+  // (Task 15, Task B).
+  if (role === 'instructor') {
+    void renderMyCourses(outlet);
     return;
   }
 
