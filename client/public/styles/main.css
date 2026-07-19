@@ -2736,3 +2736,91 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* ---- Review Queue (I5) ------------------------------------------------------- */
+
+.queue-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.queue-controls select.input {
+  width: auto;
+}
+
+.queue-message {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+}
+
+.queue-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.queue-row {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(220px, 2.4fr) 1.1fr 0.9fr 1fr 1.4fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.queue-table__rows .queue-row:last-child {
+  border-bottom: none;
+}
+
+.queue-row--head {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+.queue-row__stem {
+  overflow-wrap: anywhere;
+}
+
+.queue-row__stem p {
+  margin: 0;
+}
+
+.queue-row__flag {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.queue-row__flag--red {
+  color: var(--instr-red-fg);
+}
+
+.queue-row__type-lo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--text);
+}
+
+.queue-row__type-lo span:last-child {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.queue-row__actions {
+  display: flex;
+  gap: 0.4rem;
+}

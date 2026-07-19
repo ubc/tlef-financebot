@@ -962,3 +962,27 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
     body: JSON.stringify({ questionIds, to }),
   });
 }
+
+// --- Instructor: review queue (IN-Q02) — Task F -----------------------------
+//
+// Verified against server/src/routes/questions.routes.ts:242-251 +
+// services/bank.service.ts's reviewQueue(). The route does
+// `queue.map((item) => ({ ...toBankItem(item), priority: item.priority }))`
+// — i.e. exactly the `BankQuestion` shape (see the Task E note above:
+// `toBankItem` deliberately omits `agentDecision`/`internalNotes`, reserving
+// them for the single-question `getQuestion`) plus one extra field,
+// `priority` (1 = student-flagged, 2 = `state === 'reviewed'`, 3 = the rest,
+// ranked by LO under-coverage — see reviewQueue()'s doc comment). This type
+// intentionally does NOT carry `agentDecision`: the review-queue endpoint
+// never returns it, and review-queue.ts's per-row Agent Decision badge / tab
+// filters fetch it for real via `getQuestion` rather than fabricate it.
+
+export interface ReviewQueueItem extends BankQuestion {
+  priority: number;
+}
+
+/** GET /api/courses/:courseId/review-queue -> prioritized list (IN-Q02).
+ * Instructor-only. */
+export function getReviewQueue(courseId: string): Promise<ReviewQueueItem[]> {
+  return request<ReviewQueueItem[]>(`/api/courses/${encodeURIComponent(courseId)}/review-queue`);
+}
