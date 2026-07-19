@@ -44,13 +44,52 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | merged, PR #16 (`99d0d72`) |
 | 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | merged, PR #17 |
 | 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | in review, PR #19 (`3b4896b`) |
-| 8 | Generation service + routes — three-agent pipeline (generator/validator/reviewer, per-step models), pre-seeding progress (§9.1, IN-Q10) | code-complete on `saurav/task-8-generation` (stacked on Task 7), **awaiting push + PR** (`7f604df`) |
+| 8 | Generation service + routes — three-agent pipeline (generator/validator/reviewer, per-step models), pre-seeding progress (§9.1, IN-Q10) | merged, PR #20 |
+| 15 | Instructor client views (wireframe-driven) — shell + primitives + api, My Courses/Create, Dashboard/Structure/Settings, Materials, Bank/Detail, Review Queue, Pre-seeding/Generate, e2e (IN-S01–S06, IN-Q02–Q05, IN-Q08, IN-Q10, IN-L06) | code-complete on `saurav/task-15-instructor-views` (`15df236`), **awaiting push + PR** |
 
 ## Deviations from the plan
 
 Everything below is a place the shipped code does **not** match the plan text as
 written. Each was either forced by a constraint the plan didn't anticipate or
 decided explicitly — none are drift.
+
+### Task 15 — decided/forced during implementation (2026-07-18)
+
+1. **Re-planned wireframe-driven.** Original brief was "small DOM in the starter
+   shell." Mid-task, Saurav + Stephen's Figma "Wireframe v0.2" instructor screens
+   became the target, so Task 15 was re-planned to follow them *roughly* (green
+   instructor shell + a shared component vocabulary in `instructor-ui.ts`),
+   decomposed into 8 sub-tasks (A–H) and executed via
+   subagent-driven-development. New plan:
+   `2026-07-17-task-15-instructor-views.md` (+ `task-15-wireframe-reference.md`).
+2. **Client-only; two endpoints derived client-side** (per the plan's
+   no-server-changes constraint): no `GET /api/courses` list → `listInstructorCourses`
+   derives from session `courseRoles` + N `getCourseTree`; no read-only
+   publish-checklist route → the dashboard checklist is derived client-side from
+   course + tree + materials + pre-seeding. `getPublishChecklist` remains a loud
+   never-called stub.
+3. **Async generation, no live preview.** The I12 wireframe shows a synchronous
+   "generated question" preview; our pipeline is async (`202 {jobId}`, Drafts land
+   later). The generate action enqueues and shows a "queued → see Review Queue"
+   confirmation; the preview panel is intentionally omitted.
+4. **Provisioning decision (I1 — first-run instructor shell).** `isInstructor()`
+   keys the instructor shell on an EXPLICIT grant (`isAdmin` or an instructor
+   `courseRole`), NOT faculty affiliation. **Model (Saurav, 2026-07-18):**
+   instructors are **admin-provisioned**; affiliation alone doesn't make one.
+   Interim for the pilot: admins pre-provision an instructor course-role before
+   first login (a provisioned instructor always reaches the shell + Create Course
+   — no dead-end). **Phase-2 follow-up:** a platform-level instructor grant set via
+   an admin management surface (the A1/A2/I11 admin/TA screens) so instructors with
+   zero courses still get the shell without a seeded role. Documented at
+   `client/src/main.ts` `isInstructor()`.
+5. **Deferred Minors (final-review triage → follow-ups):** dedupe
+   `approveTarget`/`topicLoLabel` (copied across bank/detail/queue); remove/wire the
+   dead `getSuggestedHierarchy` export (N10 apply-UI not built); add request
+   sequencing to `bank.ts` filter reload (stale-response race); disable
+   approve/bulk buttons in-flight; `settings.ts` auto-pause allows 0 vs server >0;
+   `question-detail.ts` index-based option compare. None block merge.
+6. **e2e live run deferred** to the ~Aug 2 joint checkpoint (no stack in-session);
+   spec parses + typechecks + lints clean.
 
 ### Task 8 — decided/forced during implementation (2026-07-17)
 

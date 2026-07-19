@@ -79,6 +79,22 @@ const INSTRUCTOR_ROUTES: Route[] = [
 
 /** Instructor chrome shows when the session holds an `instructor` course role
  * or `isAdmin` (Task-15 Global Constraints — "Instructor-only"). */
+// Who gets the instructor shell. Deliberately keyed on an EXPLICIT grant —
+// `isAdmin` or an instructor `courseRole` — NOT on faculty affiliation.
+//
+// Provisioning model (decided 2026-07-18): instructors are added by an Admin;
+// affiliation alone does not make someone an instructor. Interim for the pilot:
+// admins pre-provision an instructor course-role before first login, so a
+// provisioned instructor always has a role here and reaches the instructor
+// shell (and Create Course) with no dead-end. A first-time, affiliation-only
+// faculty user intentionally does NOT get this shell — they aren't an
+// instructor until an admin says so.
+//
+// Phase-2 follow-up: a platform-level "instructor" grant on the User, set via
+// an admin management surface (the A1/A2/I11 admin/TA screens), so admins can
+// provision instructors self-serve and an instructor with zero courses still
+// gets the shell without a seeded course-role. Until that lands, keep this
+// check as-is.
 function isInstructor(session: Session): boolean {
   const user = session.user;
   if (!user) return false;
