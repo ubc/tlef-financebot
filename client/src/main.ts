@@ -4,11 +4,11 @@
 // compiled output as native ES modules (see client/AGENTS.md).
 import { APP, NAV, NAV_GROUPS, type NavGroup } from './config.js';
 import { byId, el, mount } from './dom.js';
-import { badge, eyebrow } from './ui.js';
+import { badge } from './ui.js';
 import { initTheme, createThemeToggle } from './theme.js';
 import { loadSession, displayName, type Session } from './auth.js';
 import { setUnauthorizedHandler } from './api.js';
-import { startRouter, type Route, type RouteParams } from './router.js';
+import { startRouter, type Route } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
 import { renderNotes } from './views/notes.js';
@@ -36,6 +36,7 @@ import { renderSettings } from './views/instructor/settings.js';
 import { renderBank } from './views/instructor/bank.js';
 import { renderQuestionDetail } from './views/instructor/question-detail.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
+import { renderPreseeding } from './views/instructor/preseeding.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -59,25 +60,10 @@ const ROUTES: Route[] = [
   { path: '/course/:id', render: renderCourseHome },
 ];
 
-// Instructor routes (Task 15, Task A). Views for the real instructor pages
-// land in Tasks B-G; until then each route resolves to a minimal titled
-// placeholder so navigation works end-to-end. Specific-first ordering follows
-// the convention above, though `matchRoute`'s exact-segment-count matching
-// means these patterns never actually shadow one another.
-function instructorPlaceholder(title: string): (outlet: HTMLElement, params: RouteParams) => void {
-  return (outlet) => {
-    mount(
-      outlet,
-      el(
-        'div',
-        { class: 'view' },
-        el('div', { class: 'view__intro' }, eyebrow('Instructor'), el('h1', { class: 'view__title', text: title })),
-        el('p', { class: 'view__lead', text: 'This view lands in a later task.' }),
-      ),
-    );
-  };
-}
-
+// Instructor routes (Task 15). Specific-first ordering follows the
+// convention above, though `matchRoute`'s exact-segment-count matching means
+// these patterns never actually shadow one another. All instructor views
+// (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/courses/new', render: renderCreateCourse },
   { path: '/instructor/courses', render: renderCourses },
@@ -87,7 +73,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
   { path: '/instructor/course/:id/bank', render: renderBank },
   { path: '/instructor/course/:id/queue', render: renderReviewQueue },
-  { path: '/instructor/course/:id/preseeding', render: instructorPlaceholder('Pre-seeding Coverage') },
+  { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
 

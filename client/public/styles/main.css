@@ -2824,3 +2824,113 @@ button.class-row--link:focus-visible .class-row__title {
   display: flex;
   gap: 0.4rem;
 }
+
+/* ---- Pre-seeding coverage + Generate (N9 / I12) ----------------------------- */
+
+.preseeding-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  margin-bottom: 2rem;
+}
+
+.preseeding-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) 1fr 0.7fr 0.7fr 1.1fr 1.3fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.preseeding-table__rows .preseeding-row:last-child {
+  border-bottom: none;
+}
+
+.preseeding-row--head {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+.preseeding-row__topic,
+.preseeding-row__target {
+  color: var(--muted);
+}
+
+.preseeding-row__approved--good {
+  color: var(--instr-green-fg);
+  font-weight: 700;
+}
+
+.preseeding-row__approved--warn {
+  color: var(--instr-amber-fg);
+  font-weight: 700;
+}
+
+.preseeding-row__approved--bad {
+  color: var(--instr-red-fg);
+  font-weight: 700;
+}
+
+.preseeding-bulk-status {
+  margin: -0.5rem 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.preseeding-form__hint {
+  margin: 0.2rem 0 1.1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.preseeding-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.chip-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.chip-btn:hover {
+  border-color: var(--instr-green-fg);
+  color: var(--instr-green-fg);
+}
+
+.preseeding-form__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.preseeding-queued-message {
+  padding: 0.75rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--instr-green-fg) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+  font-size: 0.88rem;
+  margin: 1rem 0;
+}
+
+.preseeding-queued-message a {
+  color: inherit;
+  font-weight: 650;
+}

@@ -782,6 +782,39 @@ export function getPreseeding(courseId: string): Promise<PreseedingLo[]> {
   return request<PreseedingLo[]>(`/api/courses/${encodeURIComponent(courseId)}/preseeding`);
 }
 
+// --- Instructor: question generation (IN-Q10) ---------------------------------
+//
+// Added in Task G. Verified against server/src/routes/generation.routes.ts's
+// `generateBody` zod schema: `count` is an optional int 1-20 (server defaults
+// to 3 when omitted), `type`/`difficulty` are optional enums, `prompt` is an
+// optional string up to 2000 chars (plain text — @mentions of materials are
+// just characters in this field, there is no separate material-reference
+// param). The route ALWAYS responds 202 with a `jobId` — generation runs as a
+// background job; results land later as Draft questions (see preseeding.ts's
+// module note for why the UI never waits on this promise for a preview).
+
+export type GenerationQuestionType = 'mcq' | 'true-false';
+export type GenerationDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface GenerateQuestionsInput {
+  loId: string;
+  count?: number;
+  type?: GenerationQuestionType;
+  difficulty?: GenerationDifficulty;
+  prompt?: string;
+}
+
+/** POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?,
+ * prompt? } -> 202 { jobId }. Enqueues the async three-agent generation
+ * pipeline for one LO. */
+export function generateQuestions(courseId: string, input: GenerateQuestionsInput): Promise<{ jobId: string }> {
+  return request<{ jobId: string }>(`/api/courses/${encodeURIComponent(courseId)}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
 // --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
 //
 // Added in Task E. Verified against server/src/routes/questions.routes.ts +
