@@ -12,13 +12,23 @@
 // server-side toBankItem() function backs both endpoints). The wireframe's
 // "Agent: Flag/Reject/Pass" tabs and per-row Agent Decision badge need real
 // (not fabricated) `agentDecision.decision` values, so this view enriches the
-// queue with one `getQuestion(id)` per item after the initial load (Promise.
-// allSettled — a single failed lookup doesn't fail the page; that item's
-// Agent Decision just reads "—" and never matches an Agent: tab). No server
-// change; `getQuestion` already exists (Task E). This trades an extra request
-// per row for real data instead of a fake/derived agent decision — flagged in
-// the Task F report as a perf tradeoff worth reconsidering if course review
-// queues grow large.
+// queue with one `getQuestion(id)` per item (Promise.allSettled — a single
+// failed lookup doesn't fail the page; that item's Agent Decision just reads
+// "—" and never matches an Agent: tab). No server change; `getQuestion`
+// already exists (Task E). This trades an extra request per row for real data
+// instead of a fake/derived agent decision — flagged in the Task F report as
+// a perf tradeoff worth reconsidering if course review queues grow large.
+//
+// First-paint note (Task F re-review fix): enrichment runs in the
+// BACKGROUND, not awaited before the first render — the header/tabs/table/
+// stem/status need none of it (all already on `ReviewQueueItem`); only the
+// Agent Decision column/tabs do, and they render "—"/0 until enrichment
+// fills in. `loadToken` + `root.isConnected` guard `enrichAgentDecisions`'s
+// eventual DOM write against two staleness cases: (1) a `reload()`/bulk-
+// approve refetch starting a newer enrichment while an older one is still
+// in flight (the older one's token no longer matches `loadToken`, so its
+// resolution is a no-op), and (2) the user navigating away entirely before
+// enrichment settles (`root` is detached from `outlet` by then).
 //
 // Omitted vs. the wireframe (no data source; "omit rather than fake" per the
 // Task F brief): the row flag indicators for "High error rate" and
@@ -163,15 +173,28 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   const agentDecisions = new Map<string, AgentDecisionInfo | undefined>();
 
+  // Bumped every time a fresh enrichment starts (initial load, reload(), a
+  // bulk-approve refetch). `enrichAgentDecisions` captures its own token at
+  // start and checks it on resolve — a superseded (stale) run drops its
+  // result instead of overwriting newer data or re-rendering over a newer
+  // render. See the module note.
+  let loadToken = 0;
+
   /** Fetches the real `agentDecision` for every queue item in parallel (see
-   * the module note). Runs once on load and again after a reload — never
-   * inline per-row, so the Agent: tab counts are always computed over the
-   * full, consistently-enriched set. */
+   * the module note), in the BACKGROUND — callers never await this before
+   * their own first paint. On resolve, bails out silently if a newer
+   * enrichment has since started (`token !== loadToken`) or the view has been
+   * navigated away from (`!root.isConnected`); otherwise fills in
+   * `agentDecisions` and re-renders the tabs (counts) + rows (badges). */
   async function enrichAgentDecisions(items: ReviewQueueItem[]): Promise<void> {
+    const token = ++loadToken;
     const results = await Promise.allSettled(items.map((item) => getQuestion(item.id)));
+    if (token !== loadToken || !root.isConnected) return;
     results.forEach((result, i) => {
       agentDecisions.set(items[i].id, result.status === 'fulfilled' ? result.value.agentDecision : undefined);
     });
+    renderTabs();
+    renderResults();
   }
 
   let activeTab: QueueTab = 'all';
@@ -240,8 +263,9 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       bulkMessage = `Approved ${updated} of ${ids.length} question${ids.length === 1 ? '' : 's'} (others were not in an approvable state).`;
       selected.clear();
       queueItems = await getReviewQueue(courseId);
-      await enrichAgentDecisions(queueItems);
+      agentDecisions.clear();
       renderTabs();
+      void enrichAgentDecisions(queueItems); // background — see the module note
     } catch (error) {
       actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
     }
@@ -373,19 +397,26 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   async function reload(): Promise<void> {
     loadErrorMessage = null;
+    let fetched: ReviewQueueItem[] | null = null;
     try {
-      queueItems = await getReviewQueue(courseId);
-      await enrichAgentDecisions(queueItems);
+      fetched = await getReviewQueue(courseId);
     } catch (error) {
       loadErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    if (fetched) {
+      queueItems = fetched;
+      agentDecisions.clear();
     }
     renderTabs();
     renderControls();
     renderResults();
+    if (fetched) void enrichAgentDecisions(queueItems); // background — see the module note
   }
 
-  await enrichAgentDecisions(queueItems);
-
+  // First paint happens immediately — none of the header/tabs/table/stem/
+  // status needs `agentDecision`, only the Agent Decision column/tabs do
+  // (they render "—"/0 until enrichment, kicked off right after, fills them
+  // in and re-renders — see the module note).
   body.replaceChildren(
     pageHeader(
       'Review Queue',
@@ -396,6 +427,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   renderTabs();
   renderControls();
   renderResults();
+  void enrichAgentDecisions(queueItems);
 }
 
 export function renderReviewQueue(outlet: HTMLElement, params: RouteParams): void {
