@@ -17,7 +17,7 @@
 - **Every view is `export function renderX(outlet: HTMLElement, params: RouteParams): void | Promise<void>`** built with `el`/`mount` from `dom.ts`; no innerHTML string templating for dynamic/user data (XSS). Use `renderRichText` for question stems/options/explanations.
 - **Preserve all Task 14 security-relevant behavior unchanged:** `/practice/next` and attempt-feedback responses never leak `role`/`explanation`/correctness beyond what the applied strategy's response actually contains — `practice-card.ts`'s existing reveal logic must not be touched beyond layout, and any refactor must keep rendering strictly from API response fields (never inferred/guessed).
 - **Out-of-scope elements render visible-but-inactive**, same convention Task 15 used: the Flag button (no backend capability — `flagsCol()` has no writer), the Exam Prep nav item (no Exam feature built), and the "Locked by instructor" topic state (no backend field — zero-Approved-question topics keep the existing Task 10 behavior of being fully hidden, never shown as locked).
-- **Verification per task:** `npm run typecheck && npm run lint && npm run build` all clean. No new unit-test harness for view-layer DOM code (matches Task 14/15 precedent); correctness is typecheck+lint+build plus the Task E Playwright pass over the existing `tests/e2e/practice-loop.spec.ts`. Where a step adds pure logic, add a `tests/unit/*.test.ts` for it.
+- **Verification per task:** `npm run typecheck && npm run lint && npm run build` all clean. No new unit-test harness for view-layer DOM code (matches Task 14/15 precedent); correctness is typecheck+lint+build plus the Task 5 Playwright pass over the existing `tests/e2e/practice-loop.spec.ts`. Where a step adds pure logic, add a `tests/unit/*.test.ts` for it.
 - **Full design doc:** `docs/superpowers/specs/2026-07-20-student-ui-figma-rebuild-design.md` — read it before starting; it has the complete screen→route→file mapping table and the reasoning behind every scope decision below.
 
 ---
@@ -33,7 +33,7 @@ Same posture as Saurav's Task 15 plan (`docs/superpowers/plans/phase-1/Saurav/20
 **New**
 - `client/src/student-ui.ts` — shared student components (stat tile row reuse, status badge reuse, page header w/ breadcrumb, practice context panel, copyright footer, topic/LO row primitives).
 - `client/src/views/student/shell.ts` — student sidebar/nav config + active-state resolver (mirrors `views/instructor/shell.ts`).
-- `client/src/practice-actions.ts` — the mutable Skip/End-Session hand-off slot between `practice.ts` and the persistent shell (see Task A Step 3).
+- `client/src/practice-actions.ts` — the mutable Skip/End-Session hand-off slot between `practice.ts` and the persistent shell (see Task 1 Step 3).
 
 **Modified**
 - `client/src/main.ts` — add `buildStudentShell`, route `bootstrap()`'s non-instructor branch to it.
@@ -49,7 +49,7 @@ Same posture as Saurav's Task 15 plan (`docs/superpowers/plans/phase-1/Saurav/20
 
 ---
 
-### Task A: Foundation — student shell + shared primitives + styles
+### Task 1: Foundation — student shell + shared primitives + styles
 
 **Files:**
 - Create: `client/src/student-ui.ts`, `client/src/views/student/shell.ts`, `client/src/practice-actions.ts`
@@ -226,10 +226,10 @@ export function clearPracticeActions(): void {
 
 ---
 
-### Task B: My Courses, Topic List, LO List (Figma 1, 2, 3)
+### Task 2: My Courses, Topic List, LO List (Figma 1, 2, 3)
 
 **Files:** Modify `client/src/views/home.ts` (student branch), `client/src/views/student/course-home.ts`, `client/src/views/student/lo-list.ts`.
-**Wireframes:** 1 `148:2726`, 2 `148:2777`, 3 `148:2834`. **Consumes (Task A):** `progressRow`, `pageHeader`, `copyrightFooter`, `breadcrumb`, `statusBadge`/`masteryBadge` (existing `ui.ts`). **Consumes (existing api.ts):** `listEnrollments`, `enrollInCourse`, `getCourseHome`.
+**Wireframes:** 1 `148:2726`, 2 `148:2777`, 3 `148:2834`. **Consumes (Task 1):** `progressRow`, `pageHeader`, `copyrightFooter`, `breadcrumb`, `statusBadge`/`masteryBadge` (existing `ui.ts`). **Consumes (existing api.ts):** `listEnrollments`, `enrollInCourse`, `getCourseHome`.
 
 **Behaviors / acceptance:**
 - **My Courses (`home.ts` student branch, Figma 1):** card grid of enrolled courses (name, code·term, Active/Ended badge, progress bar `N/M LOs covered`, "Open →"/"View" per active-vs-ended), a dashed-border "Enter registration code" + "Join" control below the cards (calls `enrollInCourse`, refreshes on success, surfaces `ApiError.message` inline), `copyrightFooter()` at the bottom. Keep the existing behavior (already close to this) — this task's job is matching the exact card/join-box layout and adding the footer.
@@ -245,10 +245,10 @@ export function clearPracticeActions(): void {
 
 ---
 
-### Task C: Practice + Feedback (Figma 4, 5, 6, 12)
+### Task 3: Practice + Feedback (Figma 4, 5, 6, 12)
 
-**Files:** Modify `client/src/views/student/practice.ts`, `client/src/views/student/practice-card.ts`. Consumes `client/src/practice-actions.ts` (Task A).
-**Wireframes:** 4 `148:2901`, 5 `148:2967`, 6 `148:3015`, 12 `148:3456`. **Consumes (Task A):** `breadcrumb`, `practiceContextPanel` (rendered by the shell, not this view — this task just ensures `practice.ts` exposes what the shell needs: current topic/LO name, status, answered/correct counts — expose via a small return value or a shared `practice-session.ts` getter, implementer's call, keep `practice-session.ts`'s existing public functions intact), `copyrightFooter`.
+**Files:** Modify `client/src/views/student/practice.ts`, `client/src/views/student/practice-card.ts`. Consumes `client/src/practice-actions.ts` (Task 1).
+**Wireframes:** 4 `148:2901`, 5 `148:2967`, 6 `148:3015`, 12 `148:3456`. **Consumes (Task 1):** `breadcrumb`, `practiceContextPanel` (rendered by the shell, not this view — this task just ensures `practice.ts` exposes what the shell needs: current topic/LO name, status, answered/correct counts — expose via a small return value or a shared `practice-session.ts` getter, implementer's call, keep `practice-session.ts`'s existing public functions intact), `copyrightFooter`.
 
 **Behaviors / acceptance — preserve exactly, layout only:**
 - Option locking, Strategy-A retry-in-place with original explanations withheld until resolved, adaptive feedback reveal (never render more than the API response contains), skip-LO, transcript with "practice this LO more" links, end-session, submit-retry-on-error recovery — **all Task 14 logic is unchanged**; only DOM structure/CSS classes may change.
@@ -256,13 +256,13 @@ export function clearPracticeActions(): void {
 - **Transcript entries** (Figma 4): each prior Q gets a `Q{n}` label, the stem, and a collapsed one-line result — `"✓ You answered: Option B (Correct)"` for a correct answer, `"✕ You answered: Option A · Correct: Option C"` for a Strategy-B/full-reveal miss (only when the API response actually included the correct option — never infer it), or the existing narrower Strategy-A-miss summary when explanations are withheld. Keep the existing "practice this LO more" per-entry link.
 - **Current question card** (Figma 4/5/6): `Q{n} — Multiple Choice` / `Q{n} — True/False` label above the stem; options as full-width rows with a lettered tile badge (existing `optionButton` from `ui.ts` — verify/adjust its CSS to match the wireframe's row treatment, keep its function signature); selected-pre-submit shows `(selected)` suffix text per Figma (add via existing `optionButton` state, no signature change needed — render the suffix text conditionally when `state === 'selected'`).
 - **Below options:** existing Bookmark button, **plus a new disabled Flag button** (`<button class="btn btn--ghost btn--sm" disabled>🏳 Flag</button>` — no click handler, no backend call, per the Global Constraints out-of-scope list) to the left; Submit (primary) to the right — matches Figma's left-ghost/right-primary split.
-- **Skip / End Session buttons move out of the card** — Task A's shell renders them in the sidebar context panel. `practice.ts` keeps owning the actual `doSkip` logic and the `endSessionHref` computation; it now calls `setPracticeActions(...)` (Task A's `practice-actions.ts`) instead of rendering `<button>`s for them directly, and `clearPracticeActions()` on teardown/navigation-away so a non-practice screen never shows a stale context panel.
+- **Skip / End Session buttons move out of the card** — Task 1's shell renders them in the sidebar context panel. `practice.ts` keeps owning the actual `doSkip` logic and the `endSessionHref` computation; it now calls `setPracticeActions(...)` (Task 1's `practice-actions.ts`) instead of rendering `<button>`s for them directly, and `clearPracticeActions()` on teardown/navigation-away so a non-practice screen never shows a stale context panel.
 - `copyrightFooter()` at the bottom of the practice view.
 - Review-book re-practice (Figma 12, `mode=review-book`) reuses this same view/card — no separate file; verify it still resolves to the stored question via the existing query-param flow.
 
 **Steps:**
 - [ ] **Step 1:** add the breadcrumb + Session-Summary-link header to `practice.ts`.
-- [ ] **Step 2:** move Skip/End-Session out of the card into the shell's context panel (Task A); wire the shared state.
+- [ ] **Step 2:** move Skip/End-Session out of the card into the shell's context panel (Task 1); wire the shared state.
 - [ ] **Step 3:** rebuild the transcript entries' layout (Q-numbering, collapsed result line) in `practice.ts`.
 - [ ] **Step 4:** rebuild the current-question card layout (row-style options, Q-label, selected suffix) plus the disabled Flag button in `practice-card.ts`.
 - [ ] **Step 5:** add `copyrightFooter()`.
@@ -272,14 +272,14 @@ export function clearPracticeActions(): void {
 
 ---
 
-### Task D: Review Book + Session Summary (Figma 7, 11)
+### Task 4: Review Book + Session Summary (Figma 7, 11)
 
 **Files:** Modify `client/src/views/student/review-book.ts`, `client/src/views/student/session-summary.ts`.
-**Wireframes:** 7 `148:3066`, 11 `148:3388`. **Consumes (Task A):** `statTile`, `pageHeader`, `copyrightFooter`, `breadcrumb`. **Consumes (existing api.ts):** `getReviewBook`, `bookmarkQuestion`/`unbookmarkQuestion`, `getSessionSummary`, `deferSessionSummary`.
+**Wireframes:** 7 `148:3066`, 11 `148:3388`. **Consumes (Task 1):** `statTile`, `pageHeader`, `copyrightFooter`, `breadcrumb`. **Consumes (existing api.ts):** `getReviewBook`, `bookmarkQuestion`/`unbookmarkQuestion`, `getSessionSummary`, `deferSessionSummary`.
 
 **Behaviors / acceptance:**
 - **Review Book (Figma 11):** top-right sort control (existing `theme`/`date` sorts only, per Task 12's slip guidance — do not add UI for sorts the backend doesn't implement); topic-group header row (topic name, `N questions`, "Topic Practice →" and "Practice All →" — both navigate into the existing practice routes, no new backend calls) with a light background; per-LO `progressRow`-style rows (name, `N auto-collected · M bookmarked` meta, question count badge, "Review" ghost + "Practice again" primary buttons); expand caret reveals individual entries (stem excerpt via `renderRichText`, source label Auto-collected/Bookmarked, heart icon for bookmark toggle — existing `toggleBookmark` behavior, do not change semantics). Empty state unchanged. `copyrightFooter()`.
-- **Session Summary (Figma 7):** `pageHeader` with `Topic/Chapter Name · Session ended` subtitle; a `statTile` row (LOs Covered, Questions Answered, Correct Answers, Accuracy, Review Book Added — five tiles, reuse `statTile` from Task A/`instructor-ui.ts`); "Topics This Session" accordion (topic header with `N LOs · X/Y correct · Covered/In Progress` summary, expand to per-LO rows with a right-aligned `X / Y correct` in green); "Missed Questions — Added to Review Book" list (stem excerpt + "Review →" per row, linking into Review Book); a muted "Recommended next steps:" banner (derive the sentence from the summary data already returned — e.g. next uncovered LO, missed count, whether all topics are covered enough to suggest Exam Prep — keep it simple, client-derived, no new endpoint); three actions **Continue Practice** (primary, back into practice), **Go to Review Book** (ghost), **Back to Course** (ghost) — plus the existing **Defer to next session** action from Task 14 (ST-P10), kept as a fourth, visually secondary control (e.g. a text link below the three buttons) since it's a distinct "end without continuing" action not in the wireframe's three-button row. `copyrightFooter()`.
+- **Session Summary (Figma 7):** `pageHeader` with `Topic/Chapter Name · Session ended` subtitle; a `statTile` row (LOs Covered, Questions Answered, Correct Answers, Accuracy, Review Book Added — five tiles, reuse `statTile` from Task 1/`instructor-ui.ts`); "Topics This Session" accordion (topic header with `N LOs · X/Y correct · Covered/In Progress` summary, expand to per-LO rows with a right-aligned `X / Y correct` in green); "Missed Questions — Added to Review Book" list (stem excerpt + "Review →" per row, linking into Review Book); a muted "Recommended next steps:" banner (derive the sentence from the summary data already returned — e.g. next uncovered LO, missed count, whether all topics are covered enough to suggest Exam Prep — keep it simple, client-derived, no new endpoint); three actions **Continue Practice** (primary, back into practice), **Go to Review Book** (ghost), **Back to Course** (ghost) — plus the existing **Defer to next session** action from Task 14 (ST-P10), kept as a fourth, visually secondary control (e.g. a text link below the three buttons) since it's a distinct "end without continuing" action not in the wireframe's three-button row. `copyrightFooter()`.
 
 **Steps:**
 - [ ] **Step 1:** rebuild `review-book.ts` against Figma 11 (topic grouping, per-LO rows, expand, Topic Practice/Practice All entry points).
@@ -289,7 +289,7 @@ export function clearPracticeActions(): void {
 
 ---
 
-### Task E: e2e verification pass
+### Task 5: e2e verification pass
 
 **Files:** Modify `tests/e2e/practice-loop.spec.ts` only if a selector it relies on no longer matches the rebuilt markup (the spec asserts behavior — "sees feedback", "finds it in the Review Book" — via text/role queries, which should mostly survive; fix only what actually breaks).
 
@@ -303,10 +303,10 @@ export function clearPracticeActions(): void {
 
 ## Self-Review
 
-**Spec coverage** (design doc section → task): Shell + `student-ui.ts` primitives + CSS tokens → Task A. My Courses/Topic List/LO List (screens 1/2/3) → Task B. Practice + Feedback (screens 4/5/6/12) → Task C. Review Book + Session Summary (screens 7/11) → Task D. e2e verification → Task E. Out-of-scope list (S* screens, Flag backend, Locked-topic state, Exam Prep) → called out in Global Constraints and in each task's acceptance criteria as "disabled/absent", not silently dropped.
+**Spec coverage** (design doc section → task): Shell + `student-ui.ts` primitives + CSS tokens → Task 1. My Courses/Topic List/LO List (screens 1/2/3) → Task 2. Practice + Feedback (screens 4/5/6/12) → Task 3. Review Book + Session Summary (screens 7/11) → Task 4. e2e verification → Task 5. Out-of-scope list (S* screens, Flag backend, Locked-topic state, Exam Prep) → called out in Global Constraints and in each task's acceptance criteria as "disabled/absent", not silently dropped.
 
 **Placeholder scan:** view bodies are intentionally spec-by-behavior (see the authoring note, same posture as the approved Task-15 plan); all shared *interfaces* (`student-ui.ts`, `shell.ts`) carry complete code. No "TBD"/"add error handling"-style gaps — every ambiguous implementation choice explicitly says "implementer's call" with the constraint that must still hold (e.g. "keep both shells working either way").
 
-**Type consistency:** `student-ui.ts` re-exports `statTile`/`pageHeader` from `instructor-ui.ts` rather than redefining them — Task B/D consume the same signatures Task A/instructor code already established. `progressRow`'s `action.primary: boolean` maps consistently to `.btn--instr-primary`/`.btn--ghost` across Tasks B/D. `courseIdFromPath`/`isPracticePath` (Task A) are the only new pure logic; both are simple regex functions — no test file was added for them in the plan above because they're one-line pattern matches consumed immediately in Task A's own `main.ts` wiring and exercised end-to-end by Task E's e2e run, consistent with the "no unit-test harness for view-layer code" constraint. If the implementer judges a unit test worth adding for these two, that's an allowed, not required, addition.
+**Type consistency:** `student-ui.ts` re-exports `statTile`/`pageHeader` from `instructor-ui.ts` rather than redefining them — Task 2/4 consume the same signatures Task 1/instructor code already established. `progressRow`'s `action.primary: boolean` maps consistently to `.btn--instr-primary`/`.btn--ghost` across Tasks 2/4. `courseIdFromPath`/`isPracticePath` (Task 1) are the only new pure logic; both are simple regex functions — no test file was added for them in the plan above because they're one-line pattern matches consumed immediately in Task 1's own `main.ts` wiring and exercised end-to-end by Task 5's e2e run, consistent with the "no unit-test harness for view-layer code" constraint. If the implementer judges a unit test worth adding for these two, that's an allowed, not required, addition.
 
 **Open item flagged for review, not blocking:** the design doc leaves the course-switcher dropdown's exact interaction and the Defer-action's exact placement on Session Summary as implementer-time decisions (both called out explicitly in Tasks A and D above) — raise the chosen behavior at task review rather than treating either as pre-decided.
