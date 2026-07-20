@@ -3052,6 +3052,7 @@ button.class-row--link:focus-visible .class-row__title {
 
 .progress-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.85rem;
   padding: 0.85rem 1.1rem;
@@ -3092,4 +3093,35 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.progress-row__continue {
+  flex-basis: 100%;
+  margin: -0.35rem 0 0 2.6rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+/* ---- My Courses card grid / join box (Figma screen 1) ----------------------- */
+
+.course-tile__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.join-box {
+  margin-top: 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.join-box__label {
+  margin: 0 0 0.6rem;
+  font-weight: 650;
+  font-size: 0.9rem;
 }
