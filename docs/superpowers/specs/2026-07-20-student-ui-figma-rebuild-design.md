@@ -82,12 +82,23 @@ than reusing the generic `NAV`-driven `buildShell`. Decision: `bootstrap()`'s
 `buildStudentShell` unconditionally for every authenticated non-instructor
 session — matching how the instructor/student split already works (keyed on
 `isInstructor()`, no separate "is this a student" check needed, since Phase 1
-has exactly two authenticated roles). The generic `NAV`-driven `buildShell`
-and its example pages (`/notes`, `/rag`, `/faculty`, `/student`, `/staff`,
-`/classes`, `/members`) become dead code for authenticated users once this
-ships — same fate Task 15 already gave the generic shell for instructors.
-They aren't deleted in this project (out of scope; a separate cleanup task
-if the team decides the boilerplate examples are no longer needed at all).
+has exactly two authenticated roles).
+
+**Revised during Task 1 implementation (2026-07-20):** this repo's strict
+`noUnusedLocals` TypeScript setting fails the build once `buildShell` has no
+remaining caller — leaving it in place (the original plan here) is not
+actually compile-clean without an `export`-only workaround. Decided: delete
+`buildShell`/`buildSidebar`/`isVisible`/`GROUP_ORDER` and their now-unused
+`NAV`/`NAV_GROUPS`/`badge` imports from `main.ts` outright, rather than keep
+dead code alive artificially. The `ROUTES` array, the example view files
+themselves (`views/notes.ts`, `views/rag.ts`, `views/role.ts`,
+`views/classes.ts`, `views/members.ts`), and `config.ts`'s `NAV`/`NAV_GROUPS`
+data are **not** touched by this — only `main.ts`'s now-unreachable
+*consumers* of them are removed. The example pages become unreachable via any
+shell (no route to them, since both `buildInstructorShell` and
+`buildStudentShell` register their own route tables), but their source files
+and the generic router-registration code stay in the tree if a future
+cleanup task wants to either wire them back in or delete them properly.
 
 Sidebar (blue, ~240px, mirrors instructor's `sidebar sidebar--instructor`
 pattern but with its own modifier class `sidebar--student`):
