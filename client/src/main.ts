@@ -34,7 +34,7 @@ import {
   type StudentNavItem,
 } from './views/student/shell.js';
 import { practiceContextPanel } from './student-ui.js';
-import { getPracticeActions } from './practice-actions.js';
+import { getPracticeActions, onPracticeActionsChange } from './practice-actions.js';
 import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
 import { renderDashboard } from './views/instructor/dashboard.js';
 import { renderStructure } from './views/instructor/structure.js';
@@ -325,13 +325,43 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
   shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
   mount(root, shell);
 
+  // Whether the currently-resolved route is a practice route — set on every
+  // onNavigate, read by `syncPracticeContext` too, since that can also run
+  // asynchronously (via `onPracticeActionsChange`) well after onNavigate.
+  let practiceMode = false;
+
+  // Renders (or clears) the sidebar context panel from whatever
+  // `getPracticeActions()` currently holds. Called both on navigation and
+  // whenever practice.ts calls `setPracticeActions()`/`clearPracticeActions()`
+  // mid-render — the router's onNavigate fires BEFORE the new route's view
+  // renders (see router.ts), so relying on onNavigate alone would show a
+  // stale or empty panel until the *next* navigation.
+  const syncPracticeContext = (): void => {
+    const actions = practiceMode ? getPracticeActions() : null;
+    mount(
+      practiceContextSlot,
+      actions
+        ? practiceContextPanel(
+            actions.topicName,
+            actions.loName,
+            actions.statusLabel,
+            actions.answered,
+            actions.correct,
+            actions.onSkip,
+            actions.endSessionHref,
+          )
+        : null,
+    );
+  };
+  onPracticeActionsChange(syncPracticeContext);
+
   startRouter({
     routes: ROUTES,
     outlet,
     fallback: '/',
     onNavigate: (path) => {
       const courseId = studentCourseIdFromPath(path);
-      const practiceMode = isPracticePath(path);
+      practiceMode = isPracticePath(path);
       nav.hidden = practiceMode;
       for (const { item, link } of anchors) {
         const href = studentNavHref(item, courseId);
@@ -343,13 +373,7 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
         else link.removeAttribute('aria-current');
       }
 
-      const actions = practiceMode ? getPracticeActions() : null;
-      mount(
-        practiceContextSlot,
-        actions
-          ? practiceContextPanel(actions.topicName, actions.loName, actions.statusLabel, actions.answered, actions.correct)
-          : null,
-      );
+      syncPracticeContext();
 
       document.title = APP.name;
     },

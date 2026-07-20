@@ -555,6 +555,15 @@ a {
   flex: 1;
 }
 
+/* An author `display` rule normally wins over the UA `[hidden]` stylesheet
+ * rule regardless of selector specificity (cascade origin, not specificity,
+ * decides that tie) — so `.nav[hidden]` must be spelled out explicitly to
+ * actually hide the static nav while a practice-context panel replaces it
+ * (main.ts's `nav.hidden = practiceMode`). */
+.nav[hidden] {
+  display: none;
+}
+
 .nav__group {
   margin: 1.1rem 0.65rem 0.35rem;
   font-size: 0.66rem;
@@ -1335,6 +1344,13 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.78rem;
 }
 
+/* ---- Practice header (breadcrumb + Session Summary link) -------------- */
+
+.practice-header__row {
+  justify-content: space-between;
+  align-items: center;
+}
+
 /* ---- Practice card --------------------------------------------------- */
 
 .practice-card {
@@ -1358,6 +1374,10 @@ button.class-row--link:focus-visible .class-row__title {
   opacity: 0.35;
   pointer-events: none;
   user-select: none;
+}
+
+.practice-card__qlabel {
+  margin: 0;
 }
 
 .practice-card__stem {
@@ -1391,9 +1411,25 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 .option-btn__key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   font-weight: 700;
   color: var(--muted);
+}
+
+.option-btn__suffix {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 0.6rem;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--accent);
 }
 
 .option-btn--selected {
@@ -1462,6 +1498,10 @@ button.class-row--link:focus-visible .class-row__title {
   border-top: 1px dashed var(--border-strong);
 }
 
+.practice-card__footer {
+  justify-content: space-between;
+}
+
 .transcript {
   display: flex;
   flex-direction: column;
@@ -1478,10 +1518,10 @@ button.class-row--link:focus-visible .class-row__title {
 
 .transcript__entry {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.35rem 0.6rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   background: var(--surface-2);
@@ -1495,11 +1535,29 @@ button.class-row--link:focus-visible .class-row__title {
   border-left: 3px solid var(--down);
 }
 
+.transcript__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.transcript__qlabel {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 .transcript__stem {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
+}
+
+.transcript__result {
+  margin: 0;
+  font-weight: 600;
 }
 
 /* ---- Review Book -------------------------------------------------------- */
@@ -3011,6 +3069,25 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0;
   font-size: 0.78rem;
   color: rgba(255, 255, 255, 0.75);
+}
+
+.practice-context__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.practice-context__actions .btn {
+  width: 100%;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.practice-context__actions .btn:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ---- Copyright / disclaimer footer (every student screen, PRD §4.1) ------- */

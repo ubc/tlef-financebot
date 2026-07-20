@@ -45,6 +45,15 @@ export function makeQuestionCard(
   let selectedKey: string | undefined;
   let result: AttemptResult | undefined;
   let submitting = false;
+  // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
+  // recomputed on every `draw()` — `submit()` pushes this same question
+  // into `session.transcript` partway through this card's life, so reading
+  // `session.transcript.length` inside `draw()` would relabel this card
+  // (e.g. "Q1" pre-submit becoming "Q2" post-submit) once its own attempt
+  // is recorded. A retry-in-place recursion still gets the next number
+  // correctly, since its `makeQuestionCard` call happens (and captures
+  // this) after the original's attempt is already recorded.
+  const questionNumber = session.transcript.length + 1;
 
   const submit = async (): Promise<void> => {
     if (!selectedKey || submitting) return;
@@ -71,6 +80,9 @@ export function makeQuestionCard(
   };
 
   const draw = (): void => {
+    const typeLabel = question.type === 'mcq' ? 'Multiple Choice' : 'True/False';
+    const qLabel = el('p', { class: 'eyebrow practice-card__qlabel', text: `Q${questionNumber} — ${typeLabel}` });
+
     const stemEl = el('div', { class: 'practice-card__stem' });
     renderRichText(stemEl, question.stem);
 
@@ -118,12 +130,20 @@ export function makeQuestionCard(
     let retryCard: HTMLElement | false = false;
     let footer: HTMLElement | false = false;
 
+    // The disabled Flag button (Figma 4/5/6) — "coming soon", per the
+    // Global Constraints out-of-scope list: no click handler, no backend
+    // call. Skip moved out of the card into the shell's sidebar context
+    // panel (Task 3), driven by practice.ts's `setPracticeActions()`;
+    // `callbacks.onSkip` is still threaded through for the retry-in-place
+    // recursion below, which reuses these same Callbacks end to end.
+    const flagButton = (): HTMLElement => el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: true }, '🏳 Flag');
+
     if (!locked) {
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
+        flagButton(),
         el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: callbacks.onSkip }, 'Skip this LO'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the
@@ -138,6 +158,7 @@ export function makeQuestionCard(
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
+        flagButton(),
         el(
           'button',
           { class: 'btn btn--primary', type: 'button', onclick: () => (recommendation ? callbacks.onAdvanceLo() : callbacks.onNext()) },
@@ -149,6 +170,7 @@ export function makeQuestionCard(
     mount(
       card,
       watermark(question.watermark),
+      qLabel,
       stemEl,
       el('div', { class: 'practice-card__options' }, ...options),
       feedback,

@@ -8,13 +8,19 @@ import { statTile, pageHeader } from './instructor-ui.js';
 export { statTile, pageHeader };
 
 /** The blue sidebar's practice-in-progress context card: current Topic/LO,
- * mastery status label, and a running "N answered · M correct" line. */
+ * mastery status label, a running "N answered · M correct" line, and the
+ * Skip/End-Session actions moved out of the practice card's own body
+ * (Task 3) — `onSkip`/`endSessionHref` are the still-owns-the-logic
+ * hand-off from practice.ts via practice-actions.ts; this panel only
+ * renders them. */
 export function practiceContextPanel(
   topicName: string,
   loName: string,
   statusLabel: string,
   answered: number,
   correct: number,
+  onSkip: () => void,
+  endSessionHref: string,
 ): HTMLElement {
   return el(
     'div',
@@ -24,6 +30,12 @@ export function practiceContextPanel(
     el('p', { class: 'practice-context__lo', text: loName }),
     el('p', { class: 'practice-context__status', text: statusLabel }),
     el('p', { class: 'practice-context__counts', text: `${answered} answered · ${correct} correct` }),
+    el(
+      'div',
+      { class: 'practice-context__actions' },
+      el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: onSkip }, 'Skip this LO'),
+      el('a', { class: 'btn btn--ghost btn--sm', href: endSessionHref }, 'End Session & Return'),
+    ),
   );
 }
 
