@@ -2,9 +2,8 @@
 // shell based on GET /api/auth/me, builds the sidebar + top bar, and starts the
 // hash router. Imports use a `.js` extension because the browser loads the
 // compiled output as native ES modules (see client/AGENTS.md).
-import { APP, NAV, NAV_GROUPS, type NavGroup } from './config.js';
+import { APP } from './config.js';
 import { byId, el, mount } from './dom.js';
-import { badge } from './ui.js';
 import { initTheme, createThemeToggle } from './theme.js';
 import { loadSession, displayName, type Session } from './auth.js';
 import { setUnauthorizedHandler } from './api.js';
@@ -28,6 +27,14 @@ import {
   isNavItemActive,
   type InstructorNavItem,
 } from './views/instructor/shell.js';
+import {
+  STUDENT_NAV,
+  courseIdFromPath as studentCourseIdFromPath,
+  isPracticePath,
+  type StudentNavItem,
+} from './views/student/shell.js';
+import { practiceContextPanel } from './student-ui.js';
+import { getPracticeActions } from './practice-actions.js';
 import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
 import { renderDashboard } from './views/instructor/dashboard.js';
 import { renderStructure } from './views/instructor/structure.js';
@@ -99,109 +106,6 @@ function isInstructor(session: Session): boolean {
   const user = session.user;
   if (!user) return false;
   return user.isAdmin || user.courseRoles.some((cr) => cr.role === 'instructor');
-}
-
-const GROUP_ORDER: NavGroup[] = ['main', 'role', 'examples', 'account'];
-
-/** An item shows if it isn't role-gated, or the user holds one of its roles. */
-function isVisible(item: (typeof NAV)[number], roles: string[]): boolean {
-  return !item.roles || item.roles.some((role) => roles.includes(role));
-}
-
-function buildSidebar(
-  shell: HTMLElement,
-  roles: string[],
-): { aside: HTMLElement; links: Map<string, HTMLElement> } {
-  const links = new Map<string, HTMLElement>();
-  const nav = el('nav', { class: 'nav', 'aria-label': 'Primary' });
-
-  for (const group of GROUP_ORDER) {
-    const items = NAV.filter((item) => item.group === group && isVisible(item, roles));
-    if (!items.length) continue;
-    if (NAV_GROUPS[group]) nav.append(el('p', { class: 'nav__group', text: NAV_GROUPS[group] }));
-    for (const item of items) {
-      const link = el(
-        'a',
-        { class: 'nav__link', href: `#${item.path}`, onclick: () => shell.classList.remove('is-open') },
-        el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: item.glyph }),
-        el('span', { class: 'nav__text', text: item.label }),
-        item.demo ? badge('DEMO', 'demo') : false,
-      );
-      links.set(item.path, link);
-      nav.append(link);
-    }
-  }
-
-  const aside = el(
-    'aside',
-    { class: 'sidebar' },
-    el(
-      'div',
-      { class: 'brand' },
-      el('span', { class: 'brand__mark', text: APP.shortName }),
-      el('span', { class: 'brand__name', text: APP.name }),
-    ),
-    nav,
-    el('div', { class: 'sidebar__foot mono', text: `v${APP.version}` }),
-  );
-  return { aside, links };
-}
-
-function buildShell(root: HTMLElement, session: Session): void {
-  const shell = el('div', { class: 'app-shell' });
-  const { aside, links } = buildSidebar(shell, session.roles);
-
-  const title = el('h1', { class: 'topbar__title' });
-  const user = session.user;
-  const topbar = el(
-    'header',
-    { class: 'topbar' },
-    el(
-      'button',
-      {
-        class: 'icon-btn topbar__menu',
-        type: 'button',
-        'aria-label': 'Toggle navigation',
-        onclick: () => shell.classList.toggle('is-open'),
-      },
-      '≡',
-    ),
-    title,
-    el(
-      'div',
-      { class: 'topbar__right' },
-      user ? el('span', { class: 'user mono', title: user.puid, text: displayName(user) }) : false,
-      createThemeToggle(),
-      el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
-    ),
-  );
-
-  const outlet = el('main', { class: 'outlet', id: 'view-root', tabindex: '-1' });
-  const backdrop = el('div', {
-    class: 'backdrop',
-    'aria-hidden': 'true',
-    onclick: () => shell.classList.remove('is-open'),
-  });
-
-  shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
-  mount(root, shell);
-
-  startRouter({
-    routes: ROUTES,
-    outlet,
-    fallback: '/',
-    onNavigate: (path) => {
-      for (const [itemPath, link] of links) {
-        const active = itemPath === path;
-        link.classList.toggle('nav__link--active', active);
-        if (active) link.setAttribute('aria-current', 'page');
-        else link.removeAttribute('aria-current');
-      }
-      const item = NAV.find((entry) => entry.path === path);
-      title.textContent = item?.label ?? APP.name;
-      document.title = item ? `${item.label} · ${APP.name}` : APP.name;
-    },
-  });
 }
 
 /**
@@ -310,12 +214,154 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   });
 }
 
+/** Whether a student nav item's href needs the current courseId spliced in
+ * (`item.path` declared with a param) vs. being course-less (declared with
+ * none, e.g. 'My Courses'). Relies on `Function.length`, which reflects the
+ * declared parameter count regardless of whether the body reads it. */
+function studentNavNeedsCourse(item: StudentNavItem): boolean {
+  return item.path.length > 0;
+}
+
+/** The href for a student nav item given the current course context, or
+ * `null` when it has nowhere to go yet (disabled, or course-scoped before
+ * any course is selected). Mirrors instructor/shell.ts's `resolveHref`. */
+function studentNavHref(item: StudentNavItem, courseId: string | undefined): string | null {
+  if (item.disabled) return null;
+  if (!studentNavNeedsCourse(item)) return `#${item.path('')}`;
+  if (!courseId) return null;
+  return `#${item.path(courseId)}`;
+}
+
+/** Whether `item` is the active nav entry for the current student path. */
+function isStudentNavActive(item: StudentNavItem, path: string, courseId: string | undefined): boolean {
+  if (item.disabled) return false;
+  if (!studentNavNeedsCourse(item)) return item.path('') === path;
+  if (!courseId) return false;
+  return item.path(courseId) === path;
+}
+
+/**
+ * The blue student shell — mirrors `buildInstructorShell`'s structure
+ * (persistent sidebar, static routes, per-navigate active-state resolution).
+ * Two differences from the instructor shell: (1) nav items are keyed by
+ * label, not a route pattern, since STUDENT_NAV mixes course-less and
+ * course-scoped entries with no shared prefix; (2) while a practice route is
+ * active (`isPracticePath`), the static nav gives way to a practice-context
+ * panel sourced from `getPracticeActions()` — the currently-rendered
+ * practice view's hand-off slot (practice-actions.ts), since no student nav
+ * item targets an in-progress practice session directly.
+ */
+function buildStudentShell(root: HTMLElement, session: Session): void {
+  const shell = el('div', { class: 'app-shell' });
+  const nav = el('nav', { class: 'nav', 'aria-label': 'Student' });
+  const anchors: Array<{ item: StudentNavItem; link: HTMLAnchorElement }> = [];
+
+  for (const item of STUDENT_NAV) {
+    const link = el(
+      'a',
+      {
+        class: `nav__link${item.disabled ? ' nav__link--disabled' : ''}`,
+        href: '#',
+        onclick: (e: Event) => {
+          // No resolved destination yet (disabled item, or a course-scoped
+          // item before any course is selected) — the '#' placeholder href
+          // must not navigate.
+          if (link.getAttribute('href') === '#') {
+            e.preventDefault();
+            return;
+          }
+          shell.classList.remove('is-open');
+        },
+      },
+      el('span', { class: 'nav__text', text: item.label }),
+    ) as HTMLAnchorElement;
+    anchors.push({ item, link });
+    nav.append(link);
+  }
+
+  const practiceContextSlot = el('div', { class: 'practice-context-slot' });
+
+  const user = session.user;
+  // Same "hardcode the wireframe's literal brand mark" rationale as
+  // buildInstructorShell above.
+  const aside = el(
+    'aside',
+    { class: 'sidebar sidebar--student' },
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    nav,
+    practiceContextSlot,
+    user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
+  );
+
+  const topbar = el(
+    'header',
+    { class: 'topbar' },
+    el(
+      'button',
+      {
+        class: 'icon-btn topbar__menu',
+        type: 'button',
+        'aria-label': 'Toggle navigation',
+        onclick: () => shell.classList.toggle('is-open'),
+      },
+      '≡',
+    ),
+    el('span', { class: 'topbar__title' }),
+    el(
+      'div',
+      { class: 'topbar__right' },
+      createThemeToggle(),
+      el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
+    ),
+  );
+
+  const outlet = el('main', { class: 'outlet', id: 'view-root', tabindex: '-1' });
+  const backdrop = el('div', {
+    class: 'backdrop',
+    'aria-hidden': 'true',
+    onclick: () => shell.classList.remove('is-open'),
+  });
+
+  shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
+  mount(root, shell);
+
+  startRouter({
+    routes: ROUTES,
+    outlet,
+    fallback: '/',
+    onNavigate: (path) => {
+      const courseId = studentCourseIdFromPath(path);
+      const practiceMode = isPracticePath(path);
+      nav.hidden = practiceMode;
+      for (const { item, link } of anchors) {
+        const href = studentNavHref(item, courseId);
+        link.setAttribute('href', href ?? '#');
+        const active = !practiceMode && isStudentNavActive(item, path, courseId);
+        link.classList.toggle('nav__link--active', active);
+        link.classList.toggle('nav__link--disabled', Boolean(item.disabled) || !href);
+        if (active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      }
+
+      const actions = practiceMode ? getPracticeActions() : null;
+      mount(
+        practiceContextSlot,
+        actions
+          ? practiceContextPanel(actions.topicName, actions.loName, actions.statusLabel, actions.answered, actions.correct)
+          : null,
+      );
+
+      document.title = APP.name;
+    },
+  });
+}
+
 async function bootstrap(): Promise<void> {
   const root = byId('app');
   const session = await loadSession();
   if (session.authenticated) {
     if (isInstructor(session)) buildInstructorShell(root, session);
-    else buildShell(root, session);
+    else buildStudentShell(root, session);
   } else {
     document.title = APP.name;
     renderLanding(root);

@@ -69,6 +69,14 @@
   --instr-blue-fg: #2c5182;
   --instr-gray-bg: #eceeec;
   --instr-gray-fg: #5b625b;
+
+  /* Student shell + primitives (Task 1) — same "approximate, not exact"
+     treatment as the instructor tokens above, blue per the student wireframe
+     screens instead of green. */
+  --student-sidebar-bg: #3b5fd6;
+  --student-sidebar-text: #d6e0fb;
+  --student-dark: #1a1f1a;
+  --student-dark-hover: #2c332c;
 }
 
 :root[data-theme="dark"] {
@@ -115,6 +123,11 @@
   --instr-blue-fg: #8bb6ec;
   --instr-gray-bg: #202722;
   --instr-gray-fg: #9fada2;
+
+  --student-sidebar-bg: #24398f;
+  --student-sidebar-text: #b9c8f5;
+  --student-dark: #05070a;
+  --student-dark-hover: #14181f;
 }
 
 * {
@@ -2933,4 +2946,150 @@ button.class-row--link:focus-visible .class-row__title {
 .preseeding-queued-message a {
   color: inherit;
   font-weight: 650;
+}
+
+/* =============================================================================
+   Student shell + design-system primitives (Task 1). Follows the wireframe
+   *roughly* — blue/white language, not exact tokens. Mirrors the "Instructor
+   shell" section above: re-colors the shared .sidebar/.nav__* rules rather
+   than duplicating the nav layout for a third sidebar variant.
+   ========================================================================== */
+
+/* ---- Student shell -------------------------------------------------------- */
+
+.sidebar--student {
+  --sidebar-bg: var(--student-sidebar-bg);
+  --sidebar-text: var(--student-sidebar-text);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-active: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar--student .brand {
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.sidebar--student .brand__name {
+  color: #ffffff;
+  font-size: 1.15rem;
+}
+
+/* ---- Practice context panel (sidebar, in-session only) -------------------- */
+
+.practice-context-slot:not(:empty) {
+  margin-top: 0.5rem;
+}
+
+.practice-context {
+  margin: 0 0.5rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.practice-context__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.practice-context__lo {
+  margin: 0 0 0.6rem;
+  font-weight: 650;
+  color: #ffffff;
+}
+
+.practice-context__status {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.practice-context__counts {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ---- Copyright / disclaimer footer (every student screen, PRD §4.1) ------- */
+
+.copyright-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.copyright-footer__line {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.copyright-footer__line:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Breadcrumb ------------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.breadcrumb__sep {
+  opacity: 0.6;
+}
+
+/* ---- Progress row (Topic-list / LO-list row) -------------------------------- */
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.progress-row + .progress-row {
+  margin-top: 0.5rem;
+}
+
+.progress-row__index {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.progress-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-row__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.progress-row__meta {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
