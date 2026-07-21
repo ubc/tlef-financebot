@@ -1,6 +1,65 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-20_
+_Last updated: 2026-07-21_
+
+## Update (2026-07-21): two post-merge fixes shipped, AI-suggested-hierarchy in progress
+
+**PR #22 (student UI rebuild) and PR #23 (My Courses 404 fix) are both merged
+to `main`.** `main` is now `3b1c668`.
+
+### PR #23 — `listInstructorCourses()` 404-on-one-stale-entry bug (merged)
+
+Found live while testing: `listInstructorCourses()` (`client/src/api.ts`)
+used `Promise.all` to fetch one `getCourseTree` per `courseRoles` entry, so a
+single stale reference (a course deleted without cleaning up the role — an
+existing, documented limitation: course deletion doesn't cascade-clean
+`user.courseRoles`) made the **entire** My Courses list 404 and hide every
+real course, not just the missing one. A test instructor account had 28
+`courseRoles` entries but only 1 course actually existed in Mongo — even
+creating a brand-new course still showed `course-not-found`. Fixed by
+switching to `Promise.allSettled` and dropping 404s (other errors still
+surface). This touches Saurav's Task 15 code; flagged in the PR for his
+review even though it's small and isolated.
+
+### In progress, uncommitted: AI-suggested Topic/LO hierarchy (N10)
+
+The user asked whether AI can create LOs — answer was **no, not yet**: the
+backend (`suggestHierarchy` in `classification.service.ts`, IN-S06) has been
+fully built since Task 7, and `client/src/api.ts` even has a
+`getSuggestedHierarchy()` client function for it, but **no view ever calls
+it** — Task 15 explicitly deferred the apply-UI to avoid scope creep
+(comment in `api.ts`: "no apply-UI is wired up this task"). User asked me to
+wire it up.
+
+**Branch:** `stephen/ai-suggested-hierarchy` (synced onto `main` @ `3b1c668`
+as of this update). **Not yet committed, not pushed, not reviewed** — this
+is genuinely in-progress work, user is testing it live before I commit.
+
+**What's built:** `client/src/views/instructor/structure.ts`'s tree-pane
+toolbar gets a "✨ Suggest Structure (AI)" button next to "+ Add Topic". On
+click: calls `getSuggestedHierarchy(courseId)` (read-only — the endpoint
+never writes), renders the suggested Topics/LOs as a checkbox tree (all
+checked by default, mirroring the existing `assign-checklist` pattern from
+`materials.ts`'s manual-assign UI), instructor can uncheck anything unwanted,
+"Apply Selected" then creates the checked ones for real via the existing
+`addTheme`/`addLo` endpoints (same mutation path the manual Add Topic/Add LO
+forms already use — no new server code). Empty-materials case (no `ready`
+materials yet) shows a friendly "upload materials first" message instead of
+an empty suggestion list.
+
+**Verification so far:** `npm run typecheck && npm run lint && npm run build`
+clean; `npx jest` 390/390 (unchanged — no server/logic files touched, this is
+client-only). **Not yet click-tested end-to-end** — needs a course with at
+least one `ready` (fully processed) material to produce a non-empty
+suggestion, which requires Ollama + Qdrant actually running locally.
+
+**Also discovered/fixed along the way:** the local dev server got killed
+during a `git reset --hard` + rebase to resync this branch onto the newly
+merged main — restarted it (`npm run dev` in the background), confirmed
+healthy (`/api/health` 200, My Courses correctly shows "123 — Test" as
+`faculty`/`faculty`, confirming PR #23's fix works live).
+
+---
 
 ## Update (2026-07-20): student UI rebuilt against Figma, PR #22 open
 
