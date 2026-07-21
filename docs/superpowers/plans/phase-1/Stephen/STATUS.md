@@ -2,6 +2,61 @@
 
 _Last updated: 2026-07-21_
 
+## Update (2026-07-21, later): AI-suggested hierarchy done, materials-ingest hang fixed, PR #24 open
+
+**Branch `stephen/ai-suggested-hierarchy` → PR #24, open, not yet merged.**
+Two commits:
+
+1. **`fix(genai): fix hosted-LLM endpoint fallback and PDF-parse hangs in
+   materials ingest`** — found while manually testing materials upload
+   against a real course. Two real bugs, both making the ingest pipeline
+   (upload → parse → chunk → embed → Qdrant) silently stall in `processing`
+   forever with no error:
+   - `env.ts` defaulted `LLM_ENDPOINT` to the local Ollama URL
+     (`http://localhost:11434`) whenever the env var was unset **or blank**,
+     regardless of `LLM_PROVIDER` — so switching to a hosted provider
+     (tested with `LLM_PROVIDER=openai`) without also hardcoding a
+     non-empty endpoint silently left every call pointed at a local Ollama
+     server that wasn't running. Fixed: `resolveLlmEndpoint()` only applies
+     the Ollama default when the provider actually is `'ollama'`. 3 new
+     `config.test.ts` cases.
+   - The toolkit's PDF parser (`@opendocsg/pdf2md`) can leave its parse
+     promise pending forever on an otherwise-valid PDF — reproduced live
+     (a real uploaded PDF sat "Processing" for 10+ minutes with the ingest
+     job genuinely locked, not just slow). Fixed: `parseFile()` bounds the
+     toolkit's PDF attempt to 15s and falls back to Poppler's `pdftotext`
+     (60s timeout) on rejection or timeout. 4 new `document-parsing.test.ts`
+     cases, including the exact "parser never settles" scenario.
+   - Also added `[FinanceBot:RAG]` stage logging through the whole ingest
+     pipeline (queued/started/parsed/chunked/embedded/indexed/completed/
+     failed) — there was previously **zero console output** anywhere in
+     this path, which is why the hang above took real live debugging
+     (Mongo/Agenda job inspection) to even see instead of reading a log.
+   - Diagnosed collaboratively: found live in this session (traced via
+     Agenda's `agendaJobs` collection showing a job genuinely `lockedAt`
+     with no completion), the actual fixes were written by Codex per the
+     user's request, verified here (typecheck/lint/build/full jest: 41
+     suites / 397 tests, up from 40/390).
+
+2. **`feat(client): AI-suggested Topic/LO hierarchy in Course Structure
+   editor`** — wires up IN-S06's apply-UI (wireframe N10), which the user
+   asked for after learning the backend (`suggestHierarchy`) and client
+   fetch function have existed since Task 7/15 but no view ever called
+   them (Task 15 deliberately deferred this exact UI). Course Structure's
+   toolbar gets a "Suggest Structure (AI)" button → checkbox grid of
+   suggested Topics/LOs (all checked by default, instructor can uncheck) →
+   "Apply Selected" creates the kept ones via the existing `addTheme`/
+   `addLo` endpoints. No new server code. Started by me, polished (grid
+   layout, per-topic cards) by Codex in the same working session.
+
+**Not yet verified end-to-end in the browser** (the materials-ingest fix
+should be exercised by re-uploading a PDF against a real course and watching
+it actually reach `Ready`, then trying the new Suggest Structure button) —
+typecheck/lint/build/jest are all that's confirmed so far. Flagging this
+explicitly since the user asked to merge without that live click-through.
+
+---
+
 ## Update (2026-07-21): two post-merge fixes shipped, AI-suggested-hierarchy in progress
 
 **PR #22 (student UI rebuild) and PR #23 (My Courses 404 fix) are both merged
