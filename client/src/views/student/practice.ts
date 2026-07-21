@@ -10,10 +10,11 @@
 // owns `doSkip` and `endSessionHref` but hands them to the persistent
 // student shell's sidebar context panel via `setPracticeActions()`
 // (practice-actions.ts), called on every render that changes what the
-// panel should show. `clearPracticeActions()` is not needed for
-// correctness: the shell only reads `getPracticeActions()` while
-// `isPracticePath(currentPath)` is true (main.ts), so a stale hand-off
-// object is simply never looked at once the student navigates away.
+// panel should show. `renderPractice` calls `clearPracticeActions()` first
+// thing, before any async load: without it, navigating from one practice
+// session straight into another (or hitting a load error) would leave the
+// previous session's topic/LO/counts showing in the sidebar panel until
+// the new `setPracticeActions()` call lands.
 import {
   getCourseHome,
   getNextPracticeQuestion,
@@ -29,7 +30,7 @@ import { emptyState, errorState, loadingState } from '../../ui.js';
 import { currentQuery } from '../../router.js';
 import type { RouteParams } from '../../router.js';
 import { breadcrumb, copyrightFooter } from '../../student-ui.js';
-import { setPracticeActions } from '../../practice-actions.js';
+import { clearPracticeActions, setPracticeActions } from '../../practice-actions.js';
 import { currentLo, makeQuestionCard, type PracticeCtx } from './practice-card.js';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -173,6 +174,8 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
 }
 
 export async function renderPractice(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  clearPracticeActions();
+
   const courseId = params.id;
   const isThemeMode = params.themeId !== undefined;
   const mode: PracticeMode = currentQuery().get('mode') === 'review-book' ? 'review-book' : 'topic-practice';

@@ -25,7 +25,7 @@ import {
 import { el } from '../../dom.js';
 import { badge, emptyState, errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
-import { copyrightFooter } from '../../student-ui.js';
+import { copyrightFooter, pageHeader } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
 
 interface LoMeta {
@@ -236,18 +236,14 @@ export async function renderReviewBook(outlet: HTMLElement, params: RouteParams)
   const courseId = params.id;
   let sort: ReviewBookSort = 'theme';
 
-  const header = el(
-    'div',
-    { class: 'page-header' },
-    el(
-      'div',
-      { class: 'page-header__text' },
-      el('h1', { class: 'page-header__title', text: 'Review Book' }),
-      el('p', {
-        class: 'page-header__subtitle',
-        text: 'Missed questions and bookmarks, grouped by topic and learning objective.',
-      }),
-    ),
+  // No primary action button here (unlike the usual pageHeader() caller), so
+  // build the title/subtitle block via the shared primitive and append the
+  // sort <select> as a plain sibling rather than hand-rolling the header.
+  const header = pageHeader(
+    'Review Book',
+    'Missed questions and bookmarks, grouped by topic and learning objective.',
+  );
+  header.append(
     el(
       'select',
       {

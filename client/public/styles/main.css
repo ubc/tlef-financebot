@@ -75,8 +75,6 @@
      screens instead of green. */
   --student-sidebar-bg: #3b5fd6;
   --student-sidebar-text: #d6e0fb;
-  --student-dark: #1a1f1a;
-  --student-dark-hover: #2c332c;
 }
 
 :root[data-theme="dark"] {
@@ -126,8 +124,6 @@
 
   --student-sidebar-bg: #24398f;
   --student-sidebar-text: #b9c8f5;
-  --student-dark: #05070a;
-  --student-dark-hover: #14181f;
 }
 
 * {

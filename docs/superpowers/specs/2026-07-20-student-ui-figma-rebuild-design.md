@@ -94,11 +94,13 @@ dead code alive artificially. The `ROUTES` array, the example view files
 themselves (`views/notes.ts`, `views/rag.ts`, `views/role.ts`,
 `views/classes.ts`, `views/members.ts`), and `config.ts`'s `NAV`/`NAV_GROUPS`
 data are **not** touched by this — only `main.ts`'s now-unreachable
-*consumers* of them are removed. The example pages become unreachable via any
-shell (no route to them, since both `buildInstructorShell` and
-`buildStudentShell` register their own route tables), but their source files
-and the generic router-registration code stay in the tree if a future
-cleanup task wants to either wire them back in or delete them properly.
+*consumers* of them are removed. The example pages' nav links are removed
+(no shell links to them, since both `buildInstructorShell` and
+`buildStudentShell` register their own nav), but `ROUTES` still registers
+their paths, so they remain reachable via direct hash URL; their source
+files and the generic router-registration code stay in the tree if a future
+cleanup task wants to either wire them back into the nav or delete them
+properly.
 
 Sidebar (blue, ~240px, mirrors instructor's `sidebar sidebar--instructor`
 pattern but with its own modifier class `sidebar--student`):
