@@ -682,6 +682,16 @@ a {
   animation: rise 0.22s ease both;
 }
 
+/* Structure needs room for its editor and AI review workspace. Other views
+   retain the narrower reading width controlled by --content-max. */
+.view--structure {
+  max-width: none;
+}
+
+.view--question-detail {
+  max-width: 1180px;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -2229,9 +2239,13 @@ button.class-row--link:focus-visible .class-row__title {
 
 .structure-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 320px) 1fr;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
+}
+
+.structure-layout--suggestion {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @media (max-width: 900px) {
@@ -2243,6 +2257,7 @@ button.class-row--link:focus-visible .class-row__title {
 .structure-tree {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 0.5rem;
   padding: 1rem;
   border: 1px solid var(--border);
@@ -2259,6 +2274,16 @@ button.class-row--link:focus-visible .class-row__title {
 .structure-tree__add {
   width: 100%;
   margin-bottom: 0.5rem;
+}
+
+.structure-tree__toolbar {
+  margin-bottom: 0.5rem;
+}
+
+.structure-tree__toolbar .structure-tree__add {
+  width: auto;
+  flex: 1;
+  margin-bottom: 0;
 }
 
 .tree-theme + .tree-theme {
@@ -2559,6 +2584,58 @@ button.class-row--link:focus-visible .class-row__title {
   background: var(--surface);
 }
 
+.suggestion-panel {
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.suggestion-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.suggestion-panel__theme {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.suggestion-panel__topic {
+  align-items: flex-start;
+  padding: 0;
+}
+
+.suggestion-panel__lo {
+  align-items: flex-start;
+  margin-left: 1.5rem;
+  padding: 0.35rem 0;
+  line-height: 1.45;
+}
+
+.suggestion-panel__topic input,
+.suggestion-panel__lo input {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+
+.suggestion-panel__actions {
+  padding-top: 0.25rem;
+}
+
+@media (max-width: 600px) {
+  .structure-tree__toolbar {
+    flex-direction: column;
+  }
+
+  .suggestion-panel__lo {
+    margin-left: 0.75rem;
+  }
+}
+
 .assign-checklist__theme-name {
   margin: 0 0 0.35rem;
   font-weight: 650;
@@ -2795,7 +2872,7 @@ button.class-row--link:focus-visible .class-row__title {
 
 .question-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 0.9fr);
   gap: 1.5rem;
   align-items: start;
 }
@@ -2809,6 +2886,7 @@ button.class-row--link:focus-visible .class-row__title {
 .question-editor {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 0.5rem;
 }
 
@@ -2837,6 +2915,7 @@ button.class-row--link:focus-visible .class-row__title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -2867,13 +2946,22 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 .lo-chip-add {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  flex: 1 1 100%;
+  min-width: 0;
   gap: 0.4rem;
 }
 
 .lo-chip-add__select {
-  width: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lo-chip-add .btn {
+  white-space: nowrap;
 }
 
 .option-editors {
@@ -2931,6 +3019,7 @@ button.class-row--link:focus-visible .class-row__title {
 .agent-report-panel {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 1rem;
 }
 
@@ -2960,12 +3049,28 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0;
   font-size: 0.85rem;
   color: var(--muted);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .agent-report-empty {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+  .question-meta-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lo-chip-add {
+    grid-template-columns: 1fr;
+  }
+
+  .question-actions {
+    flex-wrap: wrap;
+  }
 }
 
 /* ---- Review Queue (I5) ------------------------------------------------------- */
