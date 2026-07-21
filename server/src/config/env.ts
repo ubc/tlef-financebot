@@ -11,6 +11,19 @@ function optional(key: string, fallback: string): string {
 }
 
 const llmDefaultModel = optional('LLM_DEFAULT_MODEL', 'ministral-3:latest');
+const llmProvider = optional('LLM_PROVIDER', 'ollama');
+
+/**
+ * Only Ollama has a useful local endpoint default. Hosted providers must leave
+ * the endpoint unset so their SDK can use its canonical API URL.
+ */
+export function resolveLlmEndpoint(provider: string, configuredEndpoint?: string): string {
+  const endpoint = configuredEndpoint?.trim();
+  if (endpoint) return endpoint;
+  return provider === 'ollama' ? 'http://localhost:11434' : '';
+}
+
+const llmEndpoint = resolveLlmEndpoint(llmProvider, process.env.LLM_ENDPOINT);
 
 /** A per-pipeline-step model override that falls back to LLM_DEFAULT_MODEL. */
 function stepModel(key: string): string {
@@ -81,9 +94,9 @@ export const env = {
   // ollama | openai | anthropic | ubc-llm-sandbox. `endpoint` is used by ollama
   // and ubc-llm-sandbox (and OpenAI-compatible gateways); `apiKey` by
   // openai / anthropic / ubc-llm-sandbox. Defaults target a local Ollama.
-  llmProvider: optional('LLM_PROVIDER', 'ollama'),
+  llmProvider,
   llmDefaultModel,
-  llmEndpoint: optional('LLM_ENDPOINT', 'http://localhost:11434'),
+  llmEndpoint,
   llmApiKey: optional('LLM_API_KEY', ''),
 
   // Per-pipeline-step model selection (PRD §2 / AD-07): generator, structure
@@ -106,8 +119,8 @@ export const env = {
   // openai | ...) whose embedding model is used. The model fixes the vector
   // dimension, which MUST match the Qdrant collection size — the RAG service
   // derives it at runtime so they can never drift.
-  embeddingsProvider: optional('EMBEDDINGS_PROVIDER', 'ollama'),
-  embeddingsModel: optional('EMBEDDINGS_MODEL', 'nomic-embed-text'),
+  embeddingsProvider: optional('EMBEDDINGS_PROVIDER', 'fastembed'),
+  embeddingsModel: optional('EMBEDDINGS_MODEL', 'fast-bge-small-en-v1.5'),
 
   // When true, the genai toolkit modules log their full (verbose) debug/info
   // output. Off by default so only warnings/errors from the toolkit surface,

@@ -96,7 +96,7 @@ interface OptionDraft {
 
 async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string, fallbackCourseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading question…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view view--question-detail' }, body);
   mount(outlet, root);
 
   let detail: QuestionDetail;

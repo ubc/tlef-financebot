@@ -13,8 +13,8 @@ helpers.
 
 | Variable | Meaning | Example |
 | --- | --- | --- |
-| `EMBEDDINGS_PROVIDER` | `fastembed` (local, self-contained) **or** an LLM provider name (`ollama` \| `openai` \| ...) | `ollama` |
-| `EMBEDDINGS_MODEL` | Embedding model id (ignored for `fastembed`'s default) | `nomic-embed-text` |
+| `EMBEDDINGS_PROVIDER` | `fastembed` (local, self-contained) **or** an LLM provider name (`ollama` \| `openai` \| ...) | `fastembed` |
+| `EMBEDDINGS_MODEL` | Embedding model id used for configuration/health reporting | `fast-bge-small-en-v1.5` |
 
 When `EMBEDDINGS_PROVIDER` is an LLM provider name, the module routes through
 `ubc-genai-toolkit-llm` and reuses `LLM_ENDPOINT` / `LLM_API_KEY` from the `llm`
@@ -35,13 +35,21 @@ The installed version differs from the package README: the module is created via
 a **static async factory** and takes a `providerType`, not a plain `{ model }`.
 
 ```ts
-import { EmbeddingsModule, type EmbeddingsConfig } from 'ubc-genai-toolkit-embeddings';
+import {
+  EmbeddingsModule,
+  FastEmbedModel,
+  type EmbeddingsConfig,
+} from 'ubc-genai-toolkit-embeddings';
 import { createGenaiLogger } from '../logger';
 
 const logger = createGenaiLogger('genai:embeddings'); // quiet by default
 
 // fastembed (local):
-const m1 = await EmbeddingsModule.create({ providerType: 'fastembed', logger });
+const m1 = await EmbeddingsModule.create({
+  providerType: 'fastembed',
+  fastembedConfig: { model: FastEmbedModel.BGESmallENV15, cacheDir: 'local_cache' },
+  logger,
+});
 
 // via an LLM provider (e.g. Ollama nomic-embed-text):
 const m2 = await EmbeddingsModule.create({

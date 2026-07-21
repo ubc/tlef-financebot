@@ -11,6 +11,7 @@ import {
   assignMaterial,
   getCourseTree,
   getPreseeding,
+  getSuggestedHierarchy,
   listMaterials,
   updateLo,
   updateTheme,
@@ -18,6 +19,7 @@ import {
   type CourseTreeTheme,
   type Material,
   type PreseedingLo,
+  type SuggestedHierarchy,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
@@ -89,7 +91,7 @@ function addNameForm(opts: {
 
 async function renderStructureInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course structure…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view view--structure' }, body);
   mount(outlet, root);
 
   let tree;
@@ -110,6 +112,14 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   let addingLoForTheme: string | null = null;
   let treeErrorMessage: string | null = null;
 
+  // AI-suggested hierarchy (IN-S06, wireframe N10): a read-only suggestion
+  // fetched on demand; applying it is just repeated addTheme/addLo calls, the
+  // same mutation path the manual Add Topic/Add LO forms already use — this
+  // never writes anything the instructor hasn't explicitly kept checked.
+  let suggestState: 'idle' | 'loading' | { hierarchy: SuggestedHierarchy } | { error: string } = 'idle';
+  let applyingSuggestion = false;
+  let applyError: string | null = null;
+
   const layout = el('div', { class: 'structure-layout' });
   body.replaceChildren(pageHeader('Course Structure', 'Add, rename, and organize Topics and Learning Objectives.'), layout);
 
@@ -125,8 +135,14 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     return undefined;
   }
 
+  function isReviewingSuggestion(): boolean {
+    return suggestState !== 'idle' && suggestState !== 'loading';
+  }
+
   function refresh(): void {
-    layout.replaceChildren(buildTreePane(), buildDetailPane());
+    const reviewingSuggestion = isReviewingSuggestion();
+    layout.classList.toggle('structure-layout--suggestion', reviewingSuggestion);
+    layout.replaceChildren(buildTreePane(), ...(reviewingSuggestion ? [] : [buildDetailPane()]));
   }
 
   async function handleAddTheme(name: string): Promise<void> {
@@ -162,12 +178,181 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     }
   }
 
+  async function handleSuggestHierarchy(): Promise<void> {
+    suggestState = 'loading';
+    applyError = null;
+    refresh();
+    try {
+      const hierarchy = await getSuggestedHierarchy(courseId);
+      suggestState = { hierarchy };
+    } catch (error) {
+      suggestState = { error: error instanceof ApiError ? error.message : (error as Error).message };
+    }
+    refresh();
+  }
+
+  /** Selected-topic / selected-LO checkbox state for the suggestion panel,
+   * built fresh each time a hierarchy is fetched — everything starts checked. */
+  function buildSuggestionPanel(hierarchy: SuggestedHierarchy): HTMLElement {
+    if (hierarchy.themes.length === 0) {
+      return el(
+        'div',
+        { class: 'assign-checklist suggestion-panel' },
+        el('p', { class: 'materials-placeholder__text', text: 'No suggestions yet — upload and process course materials first, then try again.' }),
+        el(
+          'button',
+          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => { suggestState = 'idle'; refresh(); } },
+          'Dismiss',
+        ),
+      );
+    }
+
+    // themeIndex -> { checked, loChecked[] } — a topic unchecked skips all its
+    // LOs too, regardless of their own checkbox state (simple parent/child rule).
+    const themeChecks = hierarchy.themes.map((theme) => ({
+      checked: true,
+      loChecked: theme.los.map(() => true),
+    }));
+
+    const panel = el('div', { class: 'assign-checklist suggestion-panel' });
+
+    const renderRows = (): void => {
+      mount(
+        panel,
+        el('p', { class: 'materials-placeholder__text', text: 'Review the AI-suggested Topics and Learning Objectives below, uncheck anything you don’t want, then apply.' }),
+        el(
+          'div',
+          { class: 'suggestion-panel__grid' },
+          ...hierarchy.themes.map((theme, ti) =>
+            el(
+              'div',
+              { class: 'assign-checklist__theme suggestion-panel__theme' },
+              el(
+                'label',
+                { class: 'assign-checklist__lo suggestion-panel__topic' },
+                el('input', {
+                  type: 'checkbox',
+                  checked: themeChecks[ti].checked ? 'checked' : undefined,
+                  onchange: (e: Event) => {
+                    themeChecks[ti].checked = (e.target as HTMLInputElement).checked;
+                  },
+                }),
+                el('span', { class: 'assign-checklist__theme-name', text: theme.name }),
+              ),
+              ...theme.los.map((loName, li) =>
+                el(
+                  'label',
+                  { class: 'assign-checklist__lo suggestion-panel__lo' },
+                  el('input', {
+                    type: 'checkbox',
+                    checked: themeChecks[ti].loChecked[li] ? 'checked' : undefined,
+                    onchange: (e: Event) => {
+                      themeChecks[ti].loChecked[li] = (e.target as HTMLInputElement).checked;
+                    },
+                  }),
+                  el('span', { text: loName }),
+                ),
+              ),
+            ),
+          ),
+        ),
+        applyError ? errorState(applyError) : false,
+        el(
+          'div',
+          { class: 'row suggestion-panel__actions' },
+          el(
+            'button',
+            {
+              class: 'btn btn--instr-primary btn--sm',
+              type: 'button',
+              disabled: applyingSuggestion ? 'disabled' : undefined,
+              onclick: () => void applySelected(),
+            },
+            applyingSuggestion ? 'Applying…' : 'Apply Selected',
+          ),
+          el(
+            'button',
+            {
+              class: 'btn btn--ghost btn--sm',
+              type: 'button',
+              disabled: applyingSuggestion ? 'disabled' : undefined,
+              onclick: () => {
+                suggestState = 'idle';
+                refresh();
+              },
+            },
+            'Dismiss',
+          ),
+        ),
+      );
+    };
+
+    async function applySelected(): Promise<void> {
+      applyingSuggestion = true;
+      applyError = null;
+      renderRows();
+      try {
+        for (let ti = 0; ti < hierarchy.themes.length; ti++) {
+          if (!themeChecks[ti].checked) continue;
+          const suggested = hierarchy.themes[ti];
+          const createdTheme = await addTheme(courseId, suggested.name);
+          themes.push({ ...createdTheme, los: createdTheme.los ?? [] });
+          expanded.add(createdTheme._id);
+          for (let li = 0; li < suggested.los.length; li++) {
+            if (!themeChecks[ti].loChecked[li]) continue;
+            const createdLo = await addLo(createdTheme._id, suggested.los[li]);
+            const theme = findTheme(createdTheme._id);
+            if (theme) theme.los = [...(theme.los ?? []), createdLo];
+          }
+        }
+        suggestState = 'idle';
+        applyingSuggestion = false;
+        refresh();
+      } catch (error) {
+        applyingSuggestion = false;
+        applyError = error instanceof ApiError ? error.message : (error as Error).message;
+        renderRows();
+      }
+    }
+
+    renderRows();
+    return panel;
+  }
+
   function buildTreePane(): HTMLElement {
     return el(
       'div',
       { class: 'structure-tree' },
       el('h2', { class: 'structure-tree__title', text: 'Course Structure' }),
       treeErrorMessage ? errorState(treeErrorMessage) : false,
+      el(
+        'div',
+        { class: 'row structure-tree__toolbar' },
+        addingTheme
+          ? false
+          : el(
+              'button',
+              {
+                class: 'btn btn--instr-primary structure-tree__add',
+                type: 'button',
+                onclick: () => {
+                  addingTheme = true;
+                  refresh();
+                },
+              },
+              '+ Add Topic',
+            ),
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost structure-tree__add',
+            type: 'button',
+            disabled: suggestState === 'loading' ? 'disabled' : undefined,
+            onclick: () => void handleSuggestHierarchy(),
+          },
+          suggestState === 'loading' ? 'Suggesting…' : 'Suggest Structure (AI)',
+        ),
+      ),
       addingTheme
         ? addNameForm({
             placeholder: 'Topic name',
@@ -178,19 +363,13 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
               refresh();
             },
           })
-        : el(
-            'button',
-            {
-              class: 'btn btn--instr-primary structure-tree__add',
-              type: 'button',
-              onclick: () => {
-                addingTheme = true;
-                refresh();
-              },
-            },
-            '+ Add Topic',
-          ),
-      ...themes.map((theme, index) => buildThemeNode(theme, index)),
+        : false,
+      suggestState !== 'idle' && suggestState !== 'loading'
+        ? 'hierarchy' in suggestState
+          ? buildSuggestionPanel(suggestState.hierarchy)
+          : errorState(suggestState.error, () => void handleSuggestHierarchy())
+        : false,
+      ...(isReviewingSuggestion() ? [] : themes.map((theme, index) => buildThemeNode(theme, index))),
     );
   }
 

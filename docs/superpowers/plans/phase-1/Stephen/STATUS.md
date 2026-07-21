@@ -1,6 +1,120 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-20_
+_Last updated: 2026-07-21_
+
+## Update (2026-07-21, later): AI-suggested hierarchy done, materials-ingest hang fixed, PR #24 open
+
+**Branch `stephen/ai-suggested-hierarchy` → PR #24, open, not yet merged.**
+Two commits:
+
+1. **`fix(genai): fix hosted-LLM endpoint fallback and PDF-parse hangs in
+   materials ingest`** — found while manually testing materials upload
+   against a real course. Two real bugs, both making the ingest pipeline
+   (upload → parse → chunk → embed → Qdrant) silently stall in `processing`
+   forever with no error:
+   - `env.ts` defaulted `LLM_ENDPOINT` to the local Ollama URL
+     (`http://localhost:11434`) whenever the env var was unset **or blank**,
+     regardless of `LLM_PROVIDER` — so switching to a hosted provider
+     (tested with `LLM_PROVIDER=openai`) without also hardcoding a
+     non-empty endpoint silently left every call pointed at a local Ollama
+     server that wasn't running. Fixed: `resolveLlmEndpoint()` only applies
+     the Ollama default when the provider actually is `'ollama'`. 3 new
+     `config.test.ts` cases.
+   - The toolkit's PDF parser (`@opendocsg/pdf2md`) can leave its parse
+     promise pending forever on an otherwise-valid PDF — reproduced live
+     (a real uploaded PDF sat "Processing" for 10+ minutes with the ingest
+     job genuinely locked, not just slow). Fixed: `parseFile()` bounds the
+     toolkit's PDF attempt to 15s and falls back to Poppler's `pdftotext`
+     (60s timeout) on rejection or timeout. 4 new `document-parsing.test.ts`
+     cases, including the exact "parser never settles" scenario.
+   - Also added `[FinanceBot:RAG]` stage logging through the whole ingest
+     pipeline (queued/started/parsed/chunked/embedded/indexed/completed/
+     failed) — there was previously **zero console output** anywhere in
+     this path, which is why the hang above took real live debugging
+     (Mongo/Agenda job inspection) to even see instead of reading a log.
+   - Diagnosed collaboratively: found live in this session (traced via
+     Agenda's `agendaJobs` collection showing a job genuinely `lockedAt`
+     with no completion), the actual fixes were written by Codex per the
+     user's request, verified here (typecheck/lint/build/full jest: 41
+     suites / 397 tests, up from 40/390).
+
+2. **`feat(client): AI-suggested Topic/LO hierarchy in Course Structure
+   editor`** — wires up IN-S06's apply-UI (wireframe N10), which the user
+   asked for after learning the backend (`suggestHierarchy`) and client
+   fetch function have existed since Task 7/15 but no view ever called
+   them (Task 15 deliberately deferred this exact UI). Course Structure's
+   toolbar gets a "Suggest Structure (AI)" button → checkbox grid of
+   suggested Topics/LOs (all checked by default, instructor can uncheck) →
+   "Apply Selected" creates the kept ones via the existing `addTheme`/
+   `addLo` endpoints. No new server code. Started by me, polished (grid
+   layout, per-topic cards) by Codex in the same working session.
+
+**Not yet verified end-to-end in the browser** (the materials-ingest fix
+should be exercised by re-uploading a PDF against a real course and watching
+it actually reach `Ready`, then trying the new Suggest Structure button) —
+typecheck/lint/build/jest are all that's confirmed so far. Flagging this
+explicitly since the user asked to merge without that live click-through.
+
+---
+
+## Update (2026-07-21): two post-merge fixes shipped, AI-suggested-hierarchy in progress
+
+**PR #22 (student UI rebuild) and PR #23 (My Courses 404 fix) are both merged
+to `main`.** `main` is now `3b1c668`.
+
+### PR #23 — `listInstructorCourses()` 404-on-one-stale-entry bug (merged)
+
+Found live while testing: `listInstructorCourses()` (`client/src/api.ts`)
+used `Promise.all` to fetch one `getCourseTree` per `courseRoles` entry, so a
+single stale reference (a course deleted without cleaning up the role — an
+existing, documented limitation: course deletion doesn't cascade-clean
+`user.courseRoles`) made the **entire** My Courses list 404 and hide every
+real course, not just the missing one. A test instructor account had 28
+`courseRoles` entries but only 1 course actually existed in Mongo — even
+creating a brand-new course still showed `course-not-found`. Fixed by
+switching to `Promise.allSettled` and dropping 404s (other errors still
+surface). This touches Saurav's Task 15 code; flagged in the PR for his
+review even though it's small and isolated.
+
+### In progress, uncommitted: AI-suggested Topic/LO hierarchy (N10)
+
+The user asked whether AI can create LOs — answer was **no, not yet**: the
+backend (`suggestHierarchy` in `classification.service.ts`, IN-S06) has been
+fully built since Task 7, and `client/src/api.ts` even has a
+`getSuggestedHierarchy()` client function for it, but **no view ever calls
+it** — Task 15 explicitly deferred the apply-UI to avoid scope creep
+(comment in `api.ts`: "no apply-UI is wired up this task"). User asked me to
+wire it up.
+
+**Branch:** `stephen/ai-suggested-hierarchy` (synced onto `main` @ `3b1c668`
+as of this update). **Not yet committed, not pushed, not reviewed** — this
+is genuinely in-progress work, user is testing it live before I commit.
+
+**What's built:** `client/src/views/instructor/structure.ts`'s tree-pane
+toolbar gets a "✨ Suggest Structure (AI)" button next to "+ Add Topic". On
+click: calls `getSuggestedHierarchy(courseId)` (read-only — the endpoint
+never writes), renders the suggested Topics/LOs as a checkbox tree (all
+checked by default, mirroring the existing `assign-checklist` pattern from
+`materials.ts`'s manual-assign UI), instructor can uncheck anything unwanted,
+"Apply Selected" then creates the checked ones for real via the existing
+`addTheme`/`addLo` endpoints (same mutation path the manual Add Topic/Add LO
+forms already use — no new server code). Empty-materials case (no `ready`
+materials yet) shows a friendly "upload materials first" message instead of
+an empty suggestion list.
+
+**Verification so far:** `npm run typecheck && npm run lint && npm run build`
+clean; `npx jest` 390/390 (unchanged — no server/logic files touched, this is
+client-only). **Not yet click-tested end-to-end** — needs a course with at
+least one `ready` (fully processed) material to produce a non-empty
+suggestion, which requires Ollama + Qdrant actually running locally.
+
+**Also discovered/fixed along the way:** the local dev server got killed
+during a `git reset --hard` + rebase to resync this branch onto the newly
+merged main — restarted it (`npm run dev` in the background), confirmed
+healthy (`/api/health` 200, My Courses correctly shows "123 — Test" as
+`faculty`/`faculty`, confirming PR #23's fix works live).
+
+---
 
 ## Update (2026-07-20): student UI rebuilt against Figma, PR #22 open
 
