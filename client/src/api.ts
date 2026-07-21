@@ -529,13 +529,26 @@ export interface ChecklistItem {
  * plus one `getCourseTree` call per course. Courses an admin can only reach via
  * `isAdmin` (no explicit `courseRoles` entry) are not covered; there is no
  * list-all endpoint for that case.
+ *
+ * `courseRoles` can outlive the course it points to (course deletion doesn't
+ * cascade-clean the reference), so a single stale entry must not take down
+ * the whole list — settle each fetch independently and drop 404s; any other
+ * error (network, 5xx) still surfaces by rethrowing.
  */
 export async function listInstructorCourses(): Promise<InstructorCourse[]> {
   const { user } = await getAuthState();
   const courseIds = Array.from(
     new Set((user?.courseRoles ?? []).filter((cr) => cr.role === 'instructor').map((cr) => cr.courseId)),
   );
-  const trees = await Promise.all(courseIds.map((courseId) => getCourseTree(courseId)));
+  const results = await Promise.allSettled(courseIds.map((courseId) => getCourseTree(courseId)));
+  const trees: CourseTree[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      trees.push(result.value);
+    } else if (!(result.reason instanceof ApiError) || result.reason.status !== 404) {
+      throw result.reason;
+    }
+  }
   return trees.map((tree) => tree.course);
 }
 
