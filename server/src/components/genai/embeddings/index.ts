@@ -1,5 +1,6 @@
 import {
   EmbeddingsModule,
+  FastEmbedModel,
   type EmbeddingsConfig,
 } from 'ubc-genai-toolkit-embeddings';
 import type { ProviderType } from 'ubc-genai-toolkit-llm';
@@ -19,7 +20,18 @@ const logger = createGenaiLogger('genai:embeddings');
 
 function buildConfig(): Partial<EmbeddingsConfig> {
   if (env.embeddingsProvider === 'fastembed') {
-    return { providerType: 'fastembed', logger };
+    // Match CREATE's effective local embedding model explicitly. The toolkit
+    // currently defaults to this model too, but pinning it here prevents an
+    // upstream default change from silently changing vector dimensions.
+    return {
+      providerType: 'fastembed',
+      fastembedConfig: {
+        model: FastEmbedModel.BGESmallENV15,
+        cacheDir: 'local_cache',
+        showDownloadProgress: true,
+      },
+      logger,
+    };
   }
   return {
     providerType: 'ubc-genai-toolkit-llm',

@@ -148,6 +148,7 @@ export async function createMaterials(
     const { insertedId } = await materialsCol().insertOne(doc);
     materials.push({ _id: insertedId, ...doc });
     await enqueueJob<{ materialId: string }>('material.ingest', { materialId: insertedId.toString() });
+    console.log(`[FinanceBot:RAG] queued materialId=${insertedId.toString()} type=${doc.format} source=upload`);
   }
   return materials;
 }
@@ -165,6 +166,7 @@ export async function createUrlMaterial(courseId: ObjectId, url: string): Promis
   };
   const { insertedId } = await materialsCol().insertOne(doc);
   await enqueueJob<{ materialId: string }>('material.ingest', { materialId: insertedId.toString() });
+  console.log(`[FinanceBot:RAG] queued materialId=${insertedId.toString()} type=url source=url`);
   return { _id: insertedId, ...doc };
 }
 
@@ -181,6 +183,7 @@ export async function retryMaterial(materialId: ObjectId): Promise<WithId<Materi
   );
   if (!material) throw new Error('material-not-found');
   await enqueueJob<{ materialId: string }>('material.ingest', { materialId: materialId.toString() });
+  console.log(`[FinanceBot:RAG] queued materialId=${materialId.toString()} type=${material.format} source=retry`);
   return material;
 }
 
@@ -436,14 +439,18 @@ export async function ingestMaterial(materialId: string): Promise<void> {
     const material = await materialsCol().findOne({ _id: id });
     if (!material) return; // material vanished (e.g. deleted); nothing to do.
 
+    console.log(`[FinanceBot:RAG] started materialId=${materialId} type=${material.format}`);
     const text = await extractText(material);
+    console.log(`[FinanceBot:RAG] parsed materialId=${materialId} chars=${text.length}`);
     // First ~2000 chars persisted for IN-S06 (Task 7): classifyMaterial and
     // suggestHierarchy read this excerpt rather than re-parsing the file or
     // re-fetching a URL material. Non-empty only.
     const excerpt = text.slice(0, EXCERPT_MAX_CHARS);
     const chunks = await chunkText(text, material.name);
+    console.log(`[FinanceBot:RAG] chunked materialId=${materialId} chunks=${chunks.length}`);
     if (chunks.length > 0) {
       const vectors = await embed(chunks.map((chunk) => chunk.text));
+      console.log(`[FinanceBot:RAG] embedded materialId=${materialId} vectors=${vectors.length}`);
       const collectionName = courseCollection(material.courseId);
       await ensureMaterialsCollection(collectionName);
       // Captured as a plain string const so the closure below doesn't need
@@ -465,12 +472,14 @@ export async function ingestMaterial(materialId: string): Promise<void> {
       // before this upsert, which the qdrant component doesn't expose yet.
       // Out of Task 6's scope; Task 8 should not inherit this silently.
       await upsertPoints(collectionName, points);
+      console.log(`[FinanceBot:RAG] indexed materialId=${materialId} points=${points.length}`);
     }
 
     await materialsCol().updateOne(
       { _id: id },
       { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' } },
     );
+    console.log(`[FinanceBot:RAG] completed materialId=${materialId}`);
 
     // IN-S06 (Task 7): best-effort auto-classification of the freshly ingested
     // material. Deliberately guarded by its OWN try/catch, separate from the
@@ -487,6 +496,7 @@ export async function ingestMaterial(materialId: string): Promise<void> {
   } catch (err) {
     if (!id) return; // materialId itself was malformed; nothing to mark failed.
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[FinanceBot:RAG] failed materialId=${materialId}: ${message}`);
     try {
       await materialsCol().updateOne({ _id: id }, { $set: { status: 'failed', error: message } });
     } catch {

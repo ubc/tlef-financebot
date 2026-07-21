@@ -31,6 +31,26 @@ describe('config: per-step model selection (AD-07 groundwork)', () => {
   });
 });
 
+describe('config: LLM endpoint selection', () => {
+  it('uses local Ollama when its endpoint is blank', () => {
+    const { env } = loadEnv({ LLM_PROVIDER: 'ollama', LLM_ENDPOINT: '' });
+    expect(env.llmEndpoint).toBe('http://localhost:11434');
+  });
+
+  it('leaves a hosted provider endpoint unset so the SDK uses its default', () => {
+    const { env } = loadEnv({ LLM_PROVIDER: 'openai', LLM_ENDPOINT: '' });
+    expect(env.llmEndpoint).toBe('');
+  });
+
+  it('preserves an explicit OpenAI-compatible gateway endpoint', () => {
+    const { env } = loadEnv({
+      LLM_PROVIDER: 'openai',
+      LLM_ENDPOINT: 'https://llm.example.test/v1',
+    });
+    expect(env.llmEndpoint).toBe('https://llm.example.test/v1');
+  });
+});
+
 describe('config: admin allowlist and worker limits', () => {
   it('parses ADMIN_CWL_ALLOWLIST as a trimmed, non-empty list', () => {
     const { env } = loadEnv({ ADMIN_CWL_ALLOWLIST: ' PUID-A , PUID-B ,, ' });
