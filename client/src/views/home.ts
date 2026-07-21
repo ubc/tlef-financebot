@@ -3,11 +3,20 @@
 // where to look. The student branch (ST-E01/E02/E03) replaces that stub with a
 // real "My courses" list plus a join-by-code control.
 import { el } from '../dom.js';
-import { emptyState, errorState, eyebrow, loadingState } from '../ui.js';
+import { badge, emptyState, errorState, eyebrow, loadingState } from '../ui.js';
 import { getSession, displayName } from '../auth.js';
-import { ApiError, enrollInCourse, listEnrollments, type AuthUser, type Enrollment } from '../api.js';
+import {
+  ApiError,
+  enrollInCourse,
+  getCourseHome,
+  listEnrollments,
+  type AuthUser,
+  type CourseHomeTheme,
+  type Enrollment,
+} from '../api.js';
 import { healthCard } from './health.js';
 import { renderMyCourses } from './instructor/courses.js';
+import { pageHeader, copyrightFooter } from '../student-ui.js';
 
 /** The user's primary role, used to route to a role-appropriate home (ST-E01).
  * Admin wins, then instructor (faculty affiliation), else student. Phase 1
@@ -49,39 +58,66 @@ function componentCard(info: ComponentInfo): HTMLElement {
   );
 }
 
-function courseRow(enrollment: Enrollment): HTMLElement {
+/** Sums LO coverage across every Topic in a course's home payload, for the
+ * "N/M LOs covered" progress bar on that course's My Courses card. */
+function courseCoverage(home: CourseHomeTheme[]): { covered: number; total: number } {
+  return home.reduce(
+    (acc, group) => {
+      const total = group.los.length;
+      const covered = group.los.filter((l) => l.status === 'covered').length;
+      return { covered: acc.covered + covered, total: acc.total + total };
+    },
+    { covered: 0, total: 0 },
+  );
+}
+
+/** A single "My Courses" card (Figma screen 1): name, code · term, an
+ * Active/Ended badge, an LO-coverage progress bar, and a primary action that
+ * reads "Open →" for active courses or "View" for ended ones. */
+function courseCard(enrollment: Enrollment, coverage: { covered: number; total: number } | null): HTMLElement {
+  const { covered, total } = coverage ?? { covered: 0, total: 0 };
   return el(
-    'a',
-    { class: 'class-row class-row--link', href: `#/course/${encodeURIComponent(enrollment.courseId)}` },
+    'article',
+    { class: 'theme-card' },
     el(
-      'span',
-      { class: 'class-row__main' },
-      el('span', { class: 'class-row__code mono', text: enrollment.courseCode }),
-      el('span', { class: 'class-row__title', text: enrollment.name }),
+      'div',
+      { class: 'course-tile__head' },
+      el('h3', { class: 'theme-card__title', text: enrollment.name }),
+      badge(enrollment.active ? 'Active' : 'Ended', enrollment.active ? 'up' : 'muted'),
+    ),
+    el('p', { class: 'theme-card__coverage-label mono', text: `${enrollment.courseCode} · ${enrollment.term}` }),
+    el(
+      'div',
+      { class: 'theme-card__coverage' },
+      el('div', { class: 'coverage-bar' }, el('div', { class: 'coverage-bar__fill', style: `width:${total ? (covered / total) * 100 : 0}%` })),
+      el('span', { class: 'theme-card__coverage-label mono', text: `${covered}/${total} LOs covered` }),
     ),
     el(
-      'span',
-      { class: 'class-row__meta' },
-      el('span', { class: 'mono', text: enrollment.term }),
-      !enrollment.active ? el('span', { class: 'badge badge--muted', text: 'ENDED' }) : false,
+      'a',
+      {
+        class: `btn btn--sm ${enrollment.active ? 'btn--instr-primary' : 'btn--ghost'}`,
+        href: `#/course/${encodeURIComponent(enrollment.courseId)}`,
+      },
+      enrollment.active ? 'Open →' : 'View',
     ),
   );
 }
 
-/** "My courses" (ST-E02/E03): the student's enrolled courses plus a
- * join-by-registration-code control. */
-function myCoursesCard(): HTMLElement {
-  const body = el('div', { class: 'card__body' }, loadingState('Loading your courses…'));
-  const codeInput = el('input', { class: 'input', type: 'text', placeholder: 'Registration code', 'aria-label': 'Registration code' }) as HTMLInputElement;
+/** "My courses" (ST-E02/E03, Figma screen 1): a card grid of the student's
+ * enrolled courses plus a dashed-border join-by-registration-code box. */
+function myCoursesSection(): HTMLElement {
+  const body = el('div', {}, loadingState('Loading your courses…'));
+  const codeInput = el('input', { class: 'input', type: 'text', placeholder: 'Enter registration code', 'aria-label': 'Registration code' }) as HTMLInputElement;
   const joinError = el('p', {});
-  const card = el(
-    'section',
-    { class: 'card' },
-    el('div', { class: 'card__head' }, el('div', {}, eyebrow('Student'), el('h2', { class: 'card__title', text: 'My courses' }))),
+  const section = el(
+    'div',
+    { class: 'view' },
+    pageHeader('My Courses', ''),
     body,
     el(
       'div',
-      { class: 'card__body' },
+      { class: 'join-box' },
+      el('p', { class: 'join-box__label', text: 'Enter registration code' }),
       el(
         'form',
         {
@@ -92,20 +128,30 @@ function myCoursesCard(): HTMLElement {
           },
         },
         codeInput,
-        el('button', { class: 'btn btn--primary btn--sm', type: 'submit' }, 'Add a course'),
+        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'submit' }, 'Join'),
       ),
       joinError,
     ),
+    copyrightFooter(),
   );
 
   const load = async (): Promise<void> => {
     body.replaceChildren(loadingState('Loading your courses…'));
     try {
       const enrollments = await listEnrollments();
+      if (enrollments.length === 0) {
+        body.replaceChildren(emptyState('You are not enrolled in any courses yet — add one with a registration code below.'));
+        return;
+      }
+      const homes = await Promise.all(
+        enrollments.map((e) => getCourseHome(e.courseId).catch(() => null)),
+      );
       body.replaceChildren(
-        enrollments.length
-          ? el('div', {}, ...enrollments.map(courseRow))
-          : emptyState('You are not enrolled in any courses yet — add one with a registration code below.'),
+        el(
+          'div',
+          { class: 'theme-grid' },
+          ...enrollments.map((enrollment, i) => courseCard(enrollment, homes[i] ? courseCoverage(homes[i] as CourseHomeTheme[]) : null)),
+        ),
       );
     } catch (error) {
       body.replaceChildren(errorState((error as Error).message, () => void load()));
@@ -127,7 +173,7 @@ function myCoursesCard(): HTMLElement {
   };
 
   void load();
-  return card;
+  return section;
 }
 
 export function renderHome(outlet: HTMLElement): void {
@@ -151,7 +197,7 @@ export function renderHome(outlet: HTMLElement): void {
   );
 
   if (role === 'student') {
-    outlet.append(el('div', { class: 'view view--overview' }, intro, myCoursesCard()));
+    outlet.append(myCoursesSection());
     return;
   }
 

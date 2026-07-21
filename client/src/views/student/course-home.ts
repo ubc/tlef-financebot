@@ -1,10 +1,20 @@
-// Student course home (ST-P01/P02): theme cards with a coverage indicator and
-// a "Practice this Theme" shortcut, plus a start-of-session banner (welcome on
-// a student's first-ever visit, or a "pick up where you left off" summary of
-// their last deferred session — ST-P11).
-import { getCourseHome, getSessionSummary, type CourseHomeTheme, type SessionSummaryForStart } from '../../api.js';
+// Student course home / "Topic List" (ST-P01/P02, Figma wireframe screen 2):
+// a pageHeader (course name + code · term · overall LO coverage) followed by
+// a "Topic Practice" list of progressRows — one per Topic (the domain model
+// still calls this a Theme; see student-ui.ts/design-doc note that "Topic
+// List" is this same screen, not a new page) — plus a start-of-session
+// banner (welcome on a student's first-ever visit, or a "pick up where you
+// left off" summary of their last deferred session — ST-P11).
+import {
+  getCourseHome,
+  getSessionSummary,
+  listEnrollments,
+  type CourseHomeTheme,
+  type SessionSummaryForStart,
+} from '../../api.js';
 import { el } from '../../dom.js';
-import { emptyState, errorState, eyebrow, loadingState } from '../../ui.js';
+import { emptyState, errorState, loadingState, masteryBadge } from '../../ui.js';
+import { pageHeader, progressRow, copyrightFooter } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
 
 function coverage(theme: CourseHomeTheme): { covered: number; total: number } {
@@ -13,12 +23,33 @@ function coverage(theme: CourseHomeTheme): { covered: number; total: number } {
   return { covered, total };
 }
 
+function overallCoverage(home: CourseHomeTheme[]): { covered: number; total: number } {
+  return home.reduce(
+    (acc, group) => {
+      const { covered, total } = coverage(group);
+      return { covered: acc.covered + covered, total: acc.total + total };
+    },
+    { covered: 0, total: 0 },
+  );
+}
+
+/** A Topic's aggregate mastery, reusing the LO-level `MasteryStatus`
+ * vocabulary (masteryBadge) rather than inventing topic-specific wording —
+ * 'covered' once every LO is covered, 'in-progress' once any LO has been
+ * touched, else 'not-attempted'. */
+function topicStatus(theme: CourseHomeTheme): 'not-attempted' | 'in-progress' | 'covered' {
+  const { covered, total } = coverage(theme);
+  if (total > 0 && covered === total) return 'covered';
+  const touched = theme.los.some((l) => l.status !== 'not-attempted');
+  return touched ? 'in-progress' : 'not-attempted';
+}
+
 function sessionBanner(courseId: string, summary: SessionSummaryForStart, onDismiss: () => void): HTMLElement | false {
   if (summary.welcome) {
     return el(
       'div',
       { class: 'banner banner--welcome' },
-      el('p', { class: 'banner__text', text: "Welcome! Pick a theme below to start practicing — there's no rush." }),
+      el('p', { class: 'banner__text', text: "Welcome! Pick a topic below to start practicing — there's no rush." }),
       el('button', { class: 'icon-btn banner__dismiss', type: 'button', 'aria-label': 'Dismiss', onclick: onDismiss }, '✕'),
     );
   }
@@ -48,53 +79,62 @@ function sessionBanner(courseId: string, summary: SessionSummaryForStart, onDism
   );
 }
 
-function themeCard(courseId: string, group: CourseHomeTheme): HTMLElement {
+function topicRow(courseId: string, group: CourseHomeTheme, index: number): HTMLElement {
   const { covered, total } = coverage(group);
-  return el(
-    'article',
-    { class: 'theme-card' },
-    el(
-      'a',
-      { class: 'theme-card__title', href: `#/course/${encodeURIComponent(courseId)}/theme/${encodeURIComponent(group.theme._id)}` },
-      group.theme.name,
-    ),
-    el(
-      'div',
-      { class: 'theme-card__coverage' },
-      el('div', { class: 'coverage-bar' }, el('div', { class: 'coverage-bar__fill', style: `width:${total ? (covered / total) * 100 : 0}%` })),
-      el('span', { class: 'theme-card__coverage-label mono', text: `${covered}/${total} LOs covered` }),
-    ),
-    el(
-      'a',
-      { class: 'btn btn--primary btn--sm', href: `#/course/${encodeURIComponent(courseId)}/practice-theme/${encodeURIComponent(group.theme._id)}` },
-      'Practice this Theme',
-    ),
+  const status = topicStatus(group);
+  const href = `#/course/${encodeURIComponent(courseId)}/practice-theme/${encodeURIComponent(group.theme._id)}`;
+  return progressRow(
+    index,
+    group.theme.name,
+    `${covered}/${total} LOs covered`,
+    masteryBadge(status),
+    {
+      text: status === 'not-attempted' ? 'Start →' : 'Practice again',
+      primary: true,
+      onClick: () => {
+        window.location.hash = href;
+      },
+    },
   );
 }
 
 export async function renderCourseHome(outlet: HTMLElement, params: RouteParams): Promise<void> {
   const courseId = params.id;
-  const root = el(
-    'div',
-    { class: 'view' },
-    el('div', { class: 'view__intro' }, eyebrow('Course'), el('h1', { class: 'view__title', text: 'Practice' })),
-  );
-  const bannerSlot = el('div', {});
-  const body = el('div', {}, loadingState('Loading your course…'));
-  root.append(bannerSlot, body);
+  const root = el('div', { class: 'view' }, loadingState('Loading your course…'));
   outlet.append(root);
 
   try {
-    const [home, summary] = await Promise.all([getCourseHome(courseId), getSessionSummary(courseId)]);
+    const [home, enrollments, summary] = await Promise.all([
+      getCourseHome(courseId),
+      listEnrollments(),
+      getSessionSummary(courseId),
+    ]);
+    const enrollment = enrollments.find((e) => e.courseId === courseId);
+    const { covered, total } = overallCoverage(home);
+    const coverageLabel = `${covered}/${total} LOs covered`;
+    const subtitle = enrollment ? `${enrollment.courseCode} · ${enrollment.term} · ${coverageLabel}` : coverageLabel;
+
+    const bannerSlot = el('div', {});
     const banner = sessionBanner(courseId, summary, () => bannerSlot.replaceChildren());
     if (banner) bannerSlot.append(banner);
 
-    if (home.length === 0) {
-      body.replaceChildren(emptyState('No themes are available to practice yet — check back once your instructor publishes questions.'));
-      return;
-    }
-    body.replaceChildren(el('div', { class: 'theme-grid' }, ...home.map((group) => themeCard(courseId, group))));
+    const body =
+      home.length === 0
+        ? emptyState('No topics are available to practice yet — check back once your instructor publishes questions.')
+        : el(
+            'section',
+            {},
+            el('h2', { class: 'section-title', text: 'Topic Practice' }),
+            el('div', { class: 'stack' }, ...home.map((group, i) => topicRow(courseId, group, i + 1))),
+          );
+
+    root.replaceChildren(
+      pageHeader(enrollment?.name ?? 'Course', subtitle),
+      bannerSlot,
+      body,
+      copyrightFooter(),
+    );
   } catch (error) {
-    body.replaceChildren(errorState((error as Error).message, () => void renderCourseHome(outlet, params)));
+    root.replaceChildren(errorState((error as Error).message, () => void renderCourseHome(outlet, params)));
   }
 }

@@ -69,6 +69,12 @@
   --instr-blue-fg: #2c5182;
   --instr-gray-bg: #eceeec;
   --instr-gray-fg: #5b625b;
+
+  /* Student shell + primitives (Task 1) — same "approximate, not exact"
+     treatment as the instructor tokens above, blue per the student wireframe
+     screens instead of green. */
+  --student-sidebar-bg: #3b5fd6;
+  --student-sidebar-text: #d6e0fb;
 }
 
 :root[data-theme="dark"] {
@@ -115,6 +121,9 @@
   --instr-blue-fg: #8bb6ec;
   --instr-gray-bg: #202722;
   --instr-gray-fg: #9fada2;
+
+  --student-sidebar-bg: #24398f;
+  --student-sidebar-text: #b9c8f5;
 }
 
 * {
@@ -540,6 +549,15 @@ a {
   flex-direction: column;
   gap: 0.15rem;
   flex: 1;
+}
+
+/* An author `display` rule normally wins over the UA `[hidden]` stylesheet
+ * rule regardless of selector specificity (cascade origin, not specificity,
+ * decides that tie) — so `.nav[hidden]` must be spelled out explicitly to
+ * actually hide the static nav while a practice-context panel replaces it
+ * (main.ts's `nav.hidden = practiceMode`). */
+.nav[hidden] {
+  display: none;
 }
 
 .nav__group {
@@ -1322,6 +1340,13 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.78rem;
 }
 
+/* ---- Practice header (breadcrumb + Session Summary link) -------------- */
+
+.practice-header__row {
+  justify-content: space-between;
+  align-items: center;
+}
+
 /* ---- Practice card --------------------------------------------------- */
 
 .practice-card {
@@ -1345,6 +1370,10 @@ button.class-row--link:focus-visible .class-row__title {
   opacity: 0.35;
   pointer-events: none;
   user-select: none;
+}
+
+.practice-card__qlabel {
+  margin: 0;
 }
 
 .practice-card__stem {
@@ -1378,9 +1407,25 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 .option-btn__key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   font-weight: 700;
   color: var(--muted);
+}
+
+.option-btn__suffix {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 0.6rem;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--accent);
 }
 
 .option-btn--selected {
@@ -1449,6 +1494,10 @@ button.class-row--link:focus-visible .class-row__title {
   border-top: 1px dashed var(--border-strong);
 }
 
+.practice-card__footer {
+  justify-content: space-between;
+}
+
 .transcript {
   display: flex;
   flex-direction: column;
@@ -1465,10 +1514,10 @@ button.class-row--link:focus-visible .class-row__title {
 
 .transcript__entry {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.35rem 0.6rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   background: var(--surface-2);
@@ -1482,6 +1531,19 @@ button.class-row--link:focus-visible .class-row__title {
   border-left: 3px solid var(--down);
 }
 
+.transcript__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.transcript__qlabel {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 .transcript__stem {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1489,52 +1551,90 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--muted);
 }
 
-/* ---- Review Book -------------------------------------------------------- */
-
-.review-book__controls {
-  margin-bottom: 1rem;
+.transcript__result {
+  margin: 0;
+  font-weight: 600;
 }
+
+/* ---- Review Book (Figma wireframe screen 11) ----------------------------- */
 
 .review-book__sort {
   width: auto;
+  flex-shrink: 0;
 }
 
 .review-groups {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.25rem;
 }
 
-.review-group {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.review-group__summary {
+.review-topic__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.85rem 1.1rem;
-  cursor: pointer;
-  list-style: none;
-  font-weight: 650;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  margin-bottom: 0.5rem;
 }
 
-.review-group__summary::-webkit-details-marker {
-  display: none;
+.review-topic__name {
+  margin: 0;
+  font-weight: 680;
 }
 
-.review-group__count {
+.review-topic__count {
+  margin: 0.2rem 0 0;
   color: var(--muted);
+  font-size: 0.82rem;
 }
 
-.review-group__entries {
+.review-topic__los {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-lo {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.review-lo__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1.1rem;
+}
+
+.review-lo__actions {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.review-lo__caret,
+.summary-topic__caret {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.review-lo__entries {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .review-entry {
@@ -1562,8 +1662,139 @@ button.class-row--link:focus-visible .class-row__title {
 
 .review-entry__actions {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.review-entry__heart {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--muted);
+  padding: 0.1rem 0.2rem;
+}
+
+.review-entry__heart--active {
+  color: var(--err-fg);
+}
+
+/* ---- Session Summary (Figma wireframe screen 7) -------------------------- */
+
+.summary-section {
+  margin-top: 1.5rem;
+}
+
+.summary-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-topic {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.summary-topic__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1.1rem;
+}
+
+.summary-topic__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.summary-topic__name {
+  margin: 0;
+  font-weight: 650;
+}
+
+.summary-topic__meta {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.summary-topic__los {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.summary-lo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.1rem 0.6rem 2.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.summary-lo-row:last-child {
+  border-bottom: none;
+}
+
+.summary-lo-row__accuracy {
+  flex-shrink: 0;
+  color: var(--ok-fg);
+  font-weight: 650;
+}
+
+.summary-missed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-missed__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.summary-missed__stem {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.summary-missed__link {
+  flex-shrink: 0;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.summary-actions {
+  margin-top: 1.5rem;
+}
+
+.summary-defer {
+  margin-top: 0.75rem;
+}
+
+.summary-defer__link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* =============================================================================
@@ -2933,4 +3164,201 @@ button.class-row--link:focus-visible .class-row__title {
 .preseeding-queued-message a {
   color: inherit;
   font-weight: 650;
+}
+
+/* =============================================================================
+   Student shell + design-system primitives (Task 1). Follows the wireframe
+   *roughly* — blue/white language, not exact tokens. Mirrors the "Instructor
+   shell" section above: re-colors the shared .sidebar/.nav__* rules rather
+   than duplicating the nav layout for a third sidebar variant.
+   ========================================================================== */
+
+/* ---- Student shell -------------------------------------------------------- */
+
+.sidebar--student {
+  --sidebar-bg: var(--student-sidebar-bg);
+  --sidebar-text: var(--student-sidebar-text);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-active: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar--student .brand {
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.sidebar--student .brand__name {
+  color: #ffffff;
+  font-size: 1.15rem;
+}
+
+/* ---- Practice context panel (sidebar, in-session only) -------------------- */
+
+.practice-context-slot:not(:empty) {
+  margin-top: 0.5rem;
+}
+
+.practice-context {
+  margin: 0 0.5rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.practice-context__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.practice-context__lo {
+  margin: 0 0 0.6rem;
+  font-weight: 650;
+  color: #ffffff;
+}
+
+.practice-context__status {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.practice-context__counts {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.practice-context__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.practice-context__actions .btn {
+  width: 100%;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.practice-context__actions .btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- Copyright / disclaimer footer (every student screen, PRD §4.1) ------- */
+
+.copyright-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.copyright-footer__line {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.copyright-footer__line:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Breadcrumb ------------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.breadcrumb__sep {
+  opacity: 0.6;
+}
+
+/* ---- Progress row (Topic-list / LO-list row) -------------------------------- */
+
+.progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.progress-row + .progress-row {
+  margin-top: 0.5rem;
+}
+
+.progress-row__index {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.progress-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-row__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.progress-row__meta {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.progress-row__continue {
+  flex-basis: 100%;
+  margin: -0.35rem 0 0 2.6rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+/* ---- My Courses card grid / join box (Figma screen 1) ----------------------- */
+
+.course-tile__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.join-box {
+  margin-top: 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.join-box__label {
+  margin: 0 0 0.6rem;
+  font-weight: 650;
+  font-size: 0.9rem;
 }

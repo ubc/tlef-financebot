@@ -93,6 +93,10 @@ export function optionButton(
     },
     el('span', { class: 'option-btn__key mono', text: key }),
     textEl,
+    // Pre-submit "chosen but not yet locked" affordance (Figma 4) — purely a
+    // suffix label driven by the state this function already receives, no
+    // new data and no change to the reveal/lock semantics that pick `state`.
+    state === 'selected' ? el('span', { class: 'option-btn__suffix', text: '(selected)' }) : false,
   );
 }
 

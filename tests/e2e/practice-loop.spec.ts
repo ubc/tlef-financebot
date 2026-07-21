@@ -129,15 +129,19 @@ test.describe('practice loop (student)', () => {
 
     await page.goto('/#/');
     await page.getByPlaceholder('Registration code').fill(registrationCode);
-    await page.getByRole('button', { name: /add a course/i }).click();
+    await page.getByRole('button', { name: /join/i }).click();
     await expect(page.getByText('FIN-E2E')).toBeVisible();
 
-    await page.getByText('Practice Loop E2E Course').click();
-    await expect(page.getByRole('heading', { name: 'Practice' })).toBeVisible();
+    await expect(page.getByText('Practice Loop E2E Course')).toBeVisible();
+    await page.getByRole('link', { name: /open/i }).click();
+    await expect(page.getByRole('heading', { name: 'Practice Loop E2E Course' })).toBeVisible();
     await expect(page.getByText(THEME_NAME)).toBeVisible();
 
-    await page.getByRole('link', { name: THEME_NAME }).click();
-    await page.getByRole('link', { name: /start practice/i }).click();
+    // The Topic List row (Task 4's predecessor rebuild) renders the topic
+    // name as plain text plus a `progressRow` action *button* (not a link)
+    // that jumps straight into that theme's practice loop — no separate
+    // LO-list "Start Practice" hop needed.
+    await page.getByRole('button', { name: /start/i }).click();
 
     // First attempt: the correct option.
     await expect(page.locator('.practice-card')).toBeVisible();
@@ -156,7 +160,11 @@ test.describe('practice loop (student)', () => {
     await expect(page.getByText(/not quite/i)).toBeVisible();
 
     await page.goto(`/#/course/${courseId}/review-book`);
-    await page.getByText(THEME_NAME).click(); // expand the collapsed theme group
+    // Topic groups (Task 4's rebuild) are no longer collapsible themselves —
+    // the theme name is always visible; the collapse now lives one level
+    // down, per LO. Expand that LO row's caret to reveal the entry.
+    await expect(page.getByText(THEME_NAME)).toBeVisible();
+    await page.getByRole('button', { name: /expand entries/i }).click();
     await expect(page.getByText(STEM.slice(0, 40))).toBeVisible();
   });
 });
