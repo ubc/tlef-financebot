@@ -1,6 +1,50 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-17_
+_Last updated: 2026-07-20_
+
+## Update (2026-07-20): student UI rebuilt against Figma, PR #22 open
+
+Tasks 3/9/10/11/12/14 below (PR #18) are **merged to `main`**, along with
+Saurav's Tasks 1/2/4/5/6/7/8/15 — Phase 1's backend and both instructor and
+(pre-rebuild) student UIs are all on `main` as of `a17ede4`.
+
+**New work since then:** once Saurav's Task 15 shipped a real instructor UI
+built against the team's Figma "Wireframe v0.2" (green shell + shared
+`instructor-ui.ts` primitives), the student side needed the same treatment —
+the original Task 14 UI predated that workflow and used the generic
+boilerplate shell. Brainstormed + planned + executed as its own 5-task plan:
+
+- Design doc: `docs/superpowers/specs/2026-07-20-student-ui-figma-rebuild-design.md`
+- Plan: `docs/superpowers/plans/phase-1/Stephen/2026-07-20-student-ui-figma-rebuild.md`
+- **PR #22, open**: https://github.com/ubc/tlef-financebot/pull/22 (branch
+  `stephen/student-ui-figma-rebuild`, based on `main` @ `a17ede4`)
+
+All 5 tasks done, each individually reviewed clean, plus a final whole-branch
+review (**Ready to merge: Yes**, zero Critical/Important) with its 5 Minor
+findings fixed in a follow-up commit before the PR was opened. Full suite:
+**390/390 unit tests / 40 suites**, typecheck/lint/build clean, student e2e
+(`practice-loop.spec.ts`) passing live.
+
+**Two things worth a second pair of eyes on this PR:**
+1. Deleted the generic `buildShell`/`buildSidebar` boilerplate shell (rather
+   than keeping it as originally planned) — forced by this repo's strict
+   `noUnusedLocals` once nothing called it anymore. Human-confirmed during
+   execution; design doc updated to match. The example pages (`/notes`,
+   `/rag`, etc.) lose their nav links but stay reachable by direct hash URL.
+2. Built a real Bookmark UI (Review Book heart-icon toggle) — turned out no
+   Bookmark button existed anywhere in the client despite Task 12's backend
+   (`bookmarkQuestion`/`unbookmarkQuestion`) being fully built. Wired for
+   real here since the wireframe requires it; no new endpoint.
+
+**Also surfaced, not fixed here (out of scope, flagging for Saurav):**
+`tests/e2e/instructor-pipeline.spec.ts` fails on a pre-existing duplicate-
+heading bug in `client/src/views/instructor/structure.ts`, traced via git
+history to commit `f378db6` (predates this PR, an ancestor of the already-
+merged instructor Task 15). Confirmed unrelated to the student-UI changes.
+
+---
+
+## Original entry (2026-07-17)
 
 **Tasks 3, 9, 10, 11, 12, and 14 (all of Dev A's non-joint, non-"either owner"
 tasks) are done, reviewed, and committed** on branch
