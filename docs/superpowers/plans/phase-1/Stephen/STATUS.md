@@ -1,6 +1,44 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-22_
+
+## Update (2026-07-22): PR #24 merged; Phase 1 closeout / Phase 2 impact review
+
+**PR #24 is merged to `main`** (`7b9c87c`, merged 2026-07-21). The previous
+entry below still describes it as open because it is the contemporaneous work
+log; this entry supersedes that status.
+
+Ran `npm run sync-plans -- Stephen` on 2026-07-22 and checked both developers'
+plan folders plus GitHub's merged PR history. The shared code state is ahead of
+some coordination documents:
+
+- Saurav's latest merged work is PR #21 (Phase 1 Task 15 instructor views),
+  after PRs #19/#20 for Tasks 7/8. His `STATUS.md` and UI handoff still describe
+  those PRs as open/in review; I did **not** edit his personal files.
+- The shared Phase 1 core plan still has unchecked implementation steps for
+  Saurav's already-merged Tasks 7, 8, and 15.
+- Phase 1 Task 13 (Layer-2 mastery) remains unstarted and is an approved slip
+  candidate. Task 16 is the uncompleted **joint phase-exit sync point**.
+- Phase 2 has a shared implementation plan, but no task has an `Owner` line and
+  neither developer has written a personal Phase 2 plan yet. Ownership must be
+  agreed before either developer begins that phase.
+
+No code or API contract was changed in this review. I added:
+
+- [`2026-07-22-phase-1-closeout-review.md`](./2026-07-22-phase-1-closeout-review.md)
+  — Stephen's coordination checklist for closing Phase 1 without silently
+  absorbing new product scope.
+- [`../../../specs/2026-07-22-authoring-workflow-review.md`](../../../specs/2026-07-22-authoring-workflow-review.md)
+  — a proposal mapping the product review findings onto Phase 1 stabilization
+  and Phase 2 dependencies. It is deliberately marked **proposed / pending
+  Stephen + Saurav review**.
+
+The key recommendation is to keep most workflow improvements out of the Phase
+1 exit gate, but decide two correctness prerequisites before Phase 2 builds on
+them: generation must not silently fall back to ungrounded course questions,
+and question-state transitions need compare-and-set protection before Phase 2
+adds auto-pause/flag resolution. The joint review should decide whether those
+land as Phase 1 stabilization tasks or as explicit Phase 2 prerequisites.
 
 ## Update (2026-07-21, later): AI-suggested hierarchy done, materials-ingest hang fixed, PR #24 open
 
