@@ -2,6 +2,28 @@
 
 _Last updated: 2026-07-22_
 
+## Update (2026-07-22, later): default stabilization design selected
+
+Stephen authorized Codex to turn the review into the default executable plan
+rather than wait for a synchronous design session with Saurav. The plan is now:
+
+1. formally slip Task 13;
+2. Dev B implements strict assigned-material grounding and question-transition
+   compare-and-set as Phase 1 stabilization;
+3. Stephen reviews those two cross-arc changes and drives the joint Task 16
+   proof/live checkpoint;
+4. persistent run/progress infrastructure starts the Phase 2 content lane; and
+5. Phase 2 ownership follows the existing student vs instructor/AI arc split.
+
+Detailed handoff:
+[`2026-07-22-phase-1-stabilization-handoff.md`](./2026-07-22-phase-1-stabilization-handoff.md).
+Phase 2 ownership/dependency proposal:
+[`../../phase-2/Stephen/2026-07-22-phase-2-ownership-dependency-proposal.md`](../../phase-2/Stephen/2026-07-22-phase-2-ownership-dependency-proposal.md).
+
+This is Stephen's approved default. It still stops at the repository's required
+sync point: Saurav must have an opportunity to review the handoff before his
+tasks are executed or the shared core/API documents are changed.
+
 ## Update (2026-07-22): PR #24 merged; Phase 1 closeout / Phase 2 impact review
 
 **PR #24 is merged to `main`** (`7b9c87c`, merged 2026-07-21). The previous

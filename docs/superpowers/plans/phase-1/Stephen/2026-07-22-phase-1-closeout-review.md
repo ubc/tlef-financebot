@@ -1,8 +1,8 @@
 # Phase 1 Closeout and Future-Plan Impact Review — Stephen (Dev A)
 
-> **Status:** analysis and coordination only; no implementation is authorized
-> by this document. Proposed decisions require Stephen + Saurav review at the
-> Phase 1 sync point.
+> **Status:** Stephen's decisions are selected; no implementation is authorized
+> by this document. Saurav receives the detailed stabilization handoff for the
+> repository-required asynchronous sync review.
 >
 > The repository's referenced `superpowers:writing-plans` skill was not
 > available in this Codex session, so this coordination plan uses the same
@@ -11,9 +11,9 @@
 
 ## Goal
 
-Close Phase 1 against the code that actually merged, decide which findings from
-the 2026-07-22 product review are correctness prerequisites, and prevent Phase 2
-from building on interfaces that the team already expects to change.
+Close Phase 1 against the code that actually merged, record the selected
+correctness prerequisites, and prevent Phase 2 from building on interfaces that
+the team already expects to change.
 
 ## Verified shared state (2026-07-22)
 
@@ -47,26 +47,28 @@ decisions and should land in a jointly reviewed documentation PR.
   grounded generation → instructor review/approval → student serving/attempt.
   This covers the deferred Task 8 checkpoint, PR #24 click-through, and most of
   Task 16 without inventing a separate demo.
-- [ ] **Make Task 13 explicit.** Record either `slipped to backlog` or an agreed
-  owner and completion plan; do not leave “either owner” ambiguous at exit.
+- [x] **Make Task 13 explicit.** Stephen selected `slipped to backlog`; S0 in
+  the stabilization handoff records it in the shared plan.
 - [ ] **Complete Task 16 jointly.** Approved-only serving proof, core-loop E2E,
   and the full verification suite remain the formal phase exit.
-- [ ] **Classify two correctness findings.** Stephen + Saurav decide whether
-  strict grounded retrieval and compare-and-set question transitions are
-  Phase 1 stabilization work or named Phase 2 prerequisites. They should not
-  disappear into a generic UX backlog.
+- [x] **Classify two correctness findings.** Stephen selected strict grounding
+  (S1) and compare-and-set question transitions (S2) as Phase 1 stabilization
+  before Task 16. Saurav receives an exception-based asynchronous review rather
+  than an open-ended design request.
 
 ## Gate B — prepare Phase 2 before implementation
 
-- [ ] Add an `Owner` to every Phase 2 task and record cross-developer sync
-  points. No personal Phase 2 plan should be written before this allocation.
-- [ ] Add prerequisite edges identified in the shared review proposal:
+- [x] Design an `Owner`/review-owner map for every Phase 2 task. Integration
+  into the shared core plan remains pending Saurav acknowledgment; no personal
+  implementation plan should be written before integration.
+- [x] Design the prerequisite edges identified in the shared review proposal:
   question-transition concurrency before flag auto-pause/resolution; reliable
   material-to-LO retrieval before redirects and custom generation; persistent
   run identity before adding richer generation UX.
-- [ ] Decide the Phase 2 content model before Tasks 4/5/8/9 make it expensive to
-  change: retain the immutable Question/QuestionVersion model, and add template
-  or family provenance rather than replacing it with arbitrary scripts.
+- [x] Select the Phase 2 content-model direction before Tasks 4/5/8/9 make it
+  expensive to change: retain the immutable Question/QuestionVersion model and
+  add template/family provenance rather than replacing it with arbitrary
+  scripts.
 - [ ] After decisions, update the normative documents together: PRD semantics,
   domain model, API contract, shared Phase 2 plan, and each developer's personal
   plan. Contract changes require two-developer review.
