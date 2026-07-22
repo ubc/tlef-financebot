@@ -1,7 +1,7 @@
 # Stephen — Phase 2 Review-Derived Improvements
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: active; P2-0 contract/design preparation in progress_  
+_Status: P2-0 contract prepared and synced; waiting at Saurav review point_  
 _Branch: `codex/phase-2-content-runs`_  
 _Phase 1 Task 16: intentionally deferred, not completed_
 
@@ -78,7 +78,7 @@ map are reviewed.
 - [x] Write the exact `ContentRun` discriminated union and legal transitions.
 - [x] Draft additive run snapshot/list/SSE endpoints and enqueue-response
   migration, including guard/error semantics.
-- [ ] Update Stephen's plan/status and sync for Saurav review.
+- [x] Update Stephen's plan/status and sync for Saurav review (`a971d25`).
 - [ ] Stop at the contract sync point; do not edit shared API routes before
   Saurav has acknowledged or raised a concrete interface objection.
 

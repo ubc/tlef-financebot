@@ -19,6 +19,8 @@ Stephen's Phase 2 execution plan is
 [`../../phase-2/Stephen/2026-07-22-phase-2-review-improvements-stephen.md`](../../phase-2/Stephen/2026-07-22-phase-2-review-improvements-stephen.md).
 The P2-0 API/domain sync proposal is
 [`../../phase-2/Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](../../phase-2/Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
+It was published for Saurav at `a971d25`; implementation is paused at the
+repository-required API-contract review point.
 
 ## Update (2026-07-22, PR #25 merged)
 
