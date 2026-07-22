@@ -352,6 +352,17 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
     expect(res.body.error).toBe('invalid-transition:draft->approved');
   });
 
+  it('409s when another reviewer already changed the expected state', async () => {
+    jest.mocked(transitionQuestion).mockRejectedValue(new Error('question-conflict'));
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/transition`)
+      .send({ to: 'approved' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('question-conflict');
+  });
+
   it('200s a valid transition', async () => {
     jest.mocked(transitionQuestion).mockResolvedValue({
       _id: questionId,

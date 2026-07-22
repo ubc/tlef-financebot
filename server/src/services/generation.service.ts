@@ -3,7 +3,7 @@ import { completeJson } from '../components/genai/llm';
 import { embedOne } from '../components/genai/embeddings';
 import { search } from '../components/qdrant';
 import { defineJob } from '../components/jobs';
-import { losCol, questionsCol } from '../components/mongodb/collections';
+import { losCol, materialsCol, questionsCol } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
 import { courseCollection } from './materials.service';
@@ -114,7 +114,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // Retrieve once: every question in this batch targets the same LO/prompt, so
   // the grounding query is identical. Variety across the batch comes from the
   // warm generator (GENERATOR_TEMPERATURE), not from re-retrieving.
-  const chunks = await retrieveChunks(collection, lo.name, prompt);
+  const chunks = await retrieveChunks(collection, courseId, lo, prompt);
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks);
@@ -219,28 +219,62 @@ export function registerGenerationJobs(): void {
 
 // --- Internals ---------------------------------------------------------------
 
-/** Retrieve grounding chunks. Best-effort: a missing collection (course with no
- * ingested materials yet — "thin-LO" generation) yields no chunks and the
- * question is generated ungrounded rather than failing the batch. */
-async function retrieveChunks(collection: string, loName: string, prompt?: string): Promise<RetrievedChunk[]> {
-  const query = prompt ? `${loName}\n${prompt}` : loName;
+/** Ready materials assigned directly to the LO, plus Theme-wide materials
+ * whose assignment has no narrower loId. Other course materials are forbidden
+ * grounding even when their vector score is higher. */
+async function groundingMaterialIds(
+  courseId: ObjectId,
+  lo: { _id: ObjectId; themeId: ObjectId },
+): Promise<string[]> {
+  const materials = await materialsCol().find({ courseId, status: 'ready' }).toArray();
+  return materials
+    .filter((material) =>
+      material.assignments.some(
+        (assignment) =>
+          assignment.loId?.equals(lo._id) === true ||
+          (assignment.loId === undefined && assignment.themeId.equals(lo.themeId)),
+      ),
+    )
+    .map((material) => material._id.toHexString());
+}
+
+/** Retrieve strictly assigned grounding chunks. Missing assignments, a Qdrant
+ * failure, or zero usable hits is a visible service failure: never fall back to
+ * generating from the LO name or general model knowledge. */
+async function retrieveChunks(
+  collection: string,
+  courseId: ObjectId,
+  lo: { _id: ObjectId; themeId: ObjectId; name: string },
+  prompt?: string,
+): Promise<RetrievedChunk[]> {
+  const allowedMaterialIds = await groundingMaterialIds(courseId, lo);
+  if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+
+  const query = prompt ? `${lo.name}\n${prompt}` : lo.name;
   const vector = await embedOne(query);
   let hits;
   try {
-    hits = await search(collection, vector, RETRIEVE_TOP_K);
+    hits = await search(collection, vector, RETRIEVE_TOP_K, {
+      must: [{ key: 'materialId', match: { any: allowedMaterialIds } }],
+    });
   } catch (err) {
     console.warn(
-      `[generation] retrieval failed for ${collection} (generating ungrounded): ` +
+      `[generation] assigned-material retrieval failed for ${collection}: ` +
         `${err instanceof Error ? err.message : String(err)}`,
     );
-    return [];
+    throw new Error('generation-retrieval-failed', { cause: err });
   }
-  return hits
+  const allowed = new Set(allowedMaterialIds);
+  const chunks = hits
     .map((hit) => ({
       materialId: typeof hit.payload?.materialId === 'string' ? hit.payload.materialId : undefined,
       text: typeof hit.payload?.chunk === 'string' ? hit.payload.chunk : '',
     }))
-    .filter((chunk) => chunk.text.length > 0);
+    // Defense in depth: Qdrant should enforce the filter, but never trust a
+    // malformed/stale hit enough to write a forbidden sourceRef.
+    .filter((chunk) => chunk.materialId !== undefined && allowed.has(chunk.materialId) && chunk.text.length > 0);
+  if (chunks.length === 0) throw new Error('generation-no-grounding');
+  return chunks;
 }
 
 /** Run the generator, retrying once if the produced options don't satisfy the
@@ -298,7 +332,6 @@ function normalizeDecision(value: unknown): 'pass' | 'flag' | 'reject' {
 // --- Prompts (exported so Phase 4 content QA can tune them independently) -----
 
 function renderChunks(chunks: RetrievedChunk[]): string {
-  if (chunks.length === 0) return '(no course material retrieved — rely on the LO name only, stay conservative)';
   return chunks.map((chunk, i) => `[${i + 1}] ${chunk.text}`).join('\n\n');
 }
 

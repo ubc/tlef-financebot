@@ -345,6 +345,7 @@ questionsRouter.post(
 const QUESTION_ERROR_STATUS: Record<string, number> = {
   'question-not-found': 404,
   'version-not-found': 404,
+  'question-conflict': 409,
 };
 
 questionsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

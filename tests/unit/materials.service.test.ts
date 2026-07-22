@@ -19,6 +19,7 @@ jest.mock('../../server/src/components/genai/document-parsing', () => ({ parseFi
 jest.mock('../../server/src/components/qdrant', () => ({
   ensureCollection: jest.fn(),
   upsertPoints: jest.fn(),
+  deletePointsByFilter: jest.fn(),
 }));
 // IN-S06 (Task 7) wires best-effort classifyMaterial into the ingest tail;
 // mock it here so these IN-S04/S05 tests stay isolated from the classifier.
@@ -44,7 +45,7 @@ import { enqueueJob } from '../../server/src/components/jobs';
 import { chunkText } from '../../server/src/components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../../server/src/components/genai/embeddings';
 import { parseFile } from '../../server/src/components/genai/document-parsing';
-import { ensureCollection, upsertPoints } from '../../server/src/components/qdrant';
+import { ensureCollection, upsertPoints, deletePointsByFilter } from '../../server/src/components/qdrant';
 import { classifyMaterial } from '../../server/src/services/classification.service';
 
 const insertOne = jest.fn();
@@ -196,8 +197,14 @@ describe('ingestMaterial — success path (IN-S04)', () => {
     const [collectionName, points] = jest.mocked(upsertPoints).mock.calls[0];
     expect(collectionName).toBe(`course-${courseId.toHexString()}`);
     expect(points).toHaveLength(2);
-    expect(points[0].payload).toMatchObject({ materialId: materialId.toString(), chunk: 'chunk a' });
-    expect(points[1].payload).toMatchObject({ materialId: materialId.toString(), chunk: 'chunk b' });
+    expect(points[0].payload).toMatchObject({ materialId: materialId.toString(), chunkIndex: 0, chunk: 'chunk a' });
+    expect(points[1].payload).toMatchObject({ materialId: materialId.toString(), chunkIndex: 1, chunk: 'chunk b' });
+    expect(deletePointsByFilter).toHaveBeenCalledWith(collectionName, {
+      must: [{ key: 'materialId', match: { value: materialId.toString() } }],
+    });
+    expect(jest.mocked(deletePointsByFilter).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(upsertPoints).mock.invocationCallOrder[0]!,
+    );
 
     const [filter, update] = updateOne.mock.calls[0];
     expect(filter).toEqual({ _id: materialId });
@@ -715,17 +722,21 @@ describe('ingestMaterial — .txt direct read (ruled decision, uncovered branch)
   });
 });
 
-describe('ingestMaterial — zero chunks (uncovered branch)', () => {
-  it('skips embed/ensureCollection/upsert and still marks ready when chunking produces no chunks', async () => {
+describe('ingestMaterial — zero chunks (clean replacement)', () => {
+  it('deletes any stale prior vectors, skips embed/upsert, and marks ready', async () => {
     const materialId = new ObjectId();
-    findOne.mockResolvedValue(materialFixture(materialId, new ObjectId(), 'empty.pdf'));
+    const courseId = new ObjectId();
+    findOne.mockResolvedValue(materialFixture(materialId, courseId, 'empty.pdf'));
     jest.mocked(parseFile).mockResolvedValue('');
     jest.mocked(chunkText).mockResolvedValue([] as never);
 
     await ingestMaterial(materialId.toString());
 
     expect(embed).not.toHaveBeenCalled();
-    expect(ensureCollection).not.toHaveBeenCalled();
+    expect(ensureCollection).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, 3);
+    expect(deletePointsByFilter).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, {
+      must: [{ key: 'materialId', match: { value: materialId.toString() } }],
+    });
     expect(upsertPoints).not.toHaveBeenCalled();
     expect(updateOne.mock.calls[0]?.[1].$set.status).toBe('ready');
   });

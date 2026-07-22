@@ -6,7 +6,7 @@ import { ObjectId, type WithId } from 'mongodb';
 import { chunkText } from '../components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../components/genai/embeddings';
 import { parseFile } from '../components/genai/document-parsing';
-import { ensureCollection, upsertPoints } from '../components/qdrant';
+import { deletePointsByFilter, ensureCollection, upsertPoints } from '../components/qdrant';
 import { defineJob, enqueueJob } from '../components/jobs';
 import { materialsCol } from '../components/mongodb/collections';
 import { classifyMaterial } from './classification.service';
@@ -448,29 +448,27 @@ export async function ingestMaterial(materialId: string): Promise<void> {
     const excerpt = text.slice(0, EXCERPT_MAX_CHARS);
     const chunks = await chunkText(text, material.name);
     console.log(`[FinanceBot:RAG] chunked materialId=${materialId} chunks=${chunks.length}`);
+    const vectors = chunks.length > 0 ? await embed(chunks.map((chunk) => chunk.text)) : [];
     if (chunks.length > 0) {
-      const vectors = await embed(chunks.map((chunk) => chunk.text));
       console.log(`[FinanceBot:RAG] embedded materialId=${materialId} vectors=${vectors.length}`);
-      const collectionName = courseCollection(material.courseId);
-      await ensureMaterialsCollection(collectionName);
-      // Captured as a plain string const so the closure below doesn't need
-      // to re-narrow the outer `let id: ObjectId | undefined` (TypeScript
-      // doesn't carry narrowing into closures for a mutable outer binding).
-      const materialIdStr = id.toString();
+    }
+    const collectionName = courseCollection(material.courseId);
+    await ensureMaterialsCollection(collectionName);
+    // Captured as a plain string const so the closure below doesn't need
+    // to re-narrow the outer `let id: ObjectId | undefined` (TypeScript
+    // doesn't carry narrowing into closures for a mutable outer binding).
+    const materialIdStr = id.toString();
+    // Replace the material's entire point set. Deterministic upsert ids alone
+    // cannot remove old tail chunks when a re-parse becomes shorter.
+    await deletePointsByFilter(collectionName, {
+      must: [{ key: 'materialId', match: { value: materialIdStr } }],
+    });
+    if (chunks.length > 0) {
       const points = chunks.map((chunk, i) => ({
         id: materialPointId(materialIdStr, i),
         vector: vectors[i],
-        payload: { materialId: materialIdStr, chunk: chunk.text },
+        payload: { materialId: materialIdStr, chunkIndex: i, chunk: chunk.text },
       }));
-      // I2 residual (deliberately deferred, not fixed here): deterministic
-      // point ids make upsert overwrite rather than duplicate for a re-ingest
-      // that produces the SAME OR MORE chunks, but a re-ingest that produces
-      // FEWER chunks than a previous run leaves the old tail points
-      // (`materialPointId(materialId, n..)` for chunk indices beyond the new
-      // count) orphaned in the collection forever — upsert never deletes.
-      // Closing this needs a delete-by-filter (on `payload.materialId`)
-      // before this upsert, which the qdrant component doesn't expose yet.
-      // Out of Task 6's scope; Task 8 should not inherit this silently.
       await upsertPoints(collectionName, points);
       console.log(`[FinanceBot:RAG] indexed materialId=${materialId} points=${points.length}`);
     }
