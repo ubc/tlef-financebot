@@ -13,8 +13,8 @@ _Implementation status: not started_
 
 All conditions are required:
 
-- [ ] Phase 1 S1 strict grounding is merged.
-- [ ] Phase 1 S2 transition CAS is merged.
+- [x] Phase 1 S1 strict grounding is merged (PR #25).
+- [x] Phase 1 S2 transition CAS is merged (PR #25).
 - [ ] Phase 1 Task 16 and its full verification suite pass.
 - [ ] Task 13 is recorded as slipped.
 - [ ] The shared Phase 2 plan contains the owner map below.

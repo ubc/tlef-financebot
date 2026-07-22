@@ -1,7 +1,7 @@
 # Phase 1 Stabilization and Exit Handoff
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: S1/S2 code-complete by Stephen at `d96bf6a`; S0/S3 pending_
+_Status: S1/S2 merged in PR #25 at `ddf6137`; S0/S3 pending_
 _Code changes authorized by this document: none yet_
 
 > This is a cross-arc handoff stored in Stephen's folder so `sync-plans`
@@ -36,8 +36,8 @@ student loop. Avoid pulling Phase 2 workflow features into the Phase 1 gate.
 `S0 plan reconciliation → S1 strict grounding → S2 transition CAS → S3 joint Task 16`
 
 Stephen explicitly authorized a cross-owner takeover and implemented S1/S2
-together on `codex/phase-1-stabilization`. Saurav should review rather than
-duplicate them. S3 starts only after `d96bf6a` is merged.
+together on `codex/phase-1-stabilization`; PR #25 is now merged. Saurav should
+not duplicate them. S3 may begin after S0 coordination state is reconciled.
 
 ---
 

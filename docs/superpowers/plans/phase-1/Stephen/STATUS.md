@@ -2,6 +2,16 @@
 
 _Last updated: 2026-07-22_
 
+## Update (2026-07-22, PR #25 merged)
+
+**PR #25 is merged to `main`** at `ddf6137` (2026-07-22 23:32 UTC):
+`Phase 1 stabilization: strict grounding and CAS transitions`.
+
+S1 strict assigned-material grounding and S2 publication-transition CAS are
+now Phase 1's merged baseline; Saurav should not reimplement them. The remaining
+Phase 1 exit work is S0 coordination reconciliation plus the joint Task 16
+Approved-only/core-loop proof. Phase 2 has not started.
+
 ## Update (2026-07-22, S1/S2 code-complete)
 
 Stephen's authorized cross-owner stabilization implementation is complete on
