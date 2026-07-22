@@ -2,6 +2,59 @@
 
 _Last updated: 2026-07-22_
 
+## Update (2026-07-22, S1/S2 code-complete)
+
+Stephen's authorized cross-owner stabilization implementation is complete on
+`codex/phase-1-stabilization` at **`d96bf6a`**
+(`fix: enforce grounded generation and CAS transitions`). It is not yet merged,
+so Phase 1 Task 16 remains blocked on this branch landing.
+
+**S1 — strict assigned-material grounding:**
+
+- Qdrant search now accepts payload filters and exposes waited
+  delete-by-filter.
+- Re-ingest deletes the material's complete prior vector set before upserting
+  the deterministic replacement, including the zero-chunk case; payloads now
+  include `chunkIndex`.
+- Generation allows only ready materials assigned directly to the LO or
+  Theme-wide with no narrower LO. Sibling-LO material is filtered at Qdrant and
+  rejected again defensively before `sourceRefs`.
+- Missing assignments, retrieval failure, and zero usable hits now fail with
+  stable errors; none calls the generator or creates an ungrounded Draft.
+
+**S2 — publication transition CAS:**
+
+- transitions update by `_id + expected state` and require `matchedCount === 1`;
+- stale concurrent transitions return `question-conflict` / HTTP 409 and write
+  no contradictory audit;
+- bulk transitions skip conflicts while still propagating infrastructure
+  failures.
+
+**Verification (Node 22.22.3):** full Jest **42 suites / 409 tests**, typecheck,
+lint, and build all pass. The default shell's Node 18 cannot run the installed
+npm/ESLint/build tooling (`util.styleText` / `import.meta.dirname`), so final
+verification used the installed compatible Node 22 runtime rather than changing
+project scripts.
+
+## Update (2026-07-22, stabilization takeover started)
+
+Stephen explicitly authorized this session to implement S1/S2 directly rather
+than wait for Saurav's acknowledgment, provided the cross-owner work is recorded
+here so Saurav does not duplicate it.
+
+**Branch:** `codex/phase-1-stabilization` from `origin/main` @ `08eaecc`.
+
+**Stephen is taking over these Dev B-owned stabilization tasks:**
+
+- **S1:** strict assigned-material grounding, filter-aware Qdrant retrieval,
+  and clean delete-before-upsert re-ingest;
+- **S2:** expected-state compare-and-set for Question publication transitions,
+  with 409 conflict behavior and no contradictory audit entry.
+
+Saurav should treat S1/S2 as owned by Stephen for this execution and review the
+result rather than starting parallel implementations. Phase 2 has **not**
+started: after S1/S2, Phase 1 still requires the joint Task 16 exit proof.
+
 ## Update (2026-07-22, later): default stabilization design selected
 
 Stephen authorized Codex to turn the review into the default executable plan
