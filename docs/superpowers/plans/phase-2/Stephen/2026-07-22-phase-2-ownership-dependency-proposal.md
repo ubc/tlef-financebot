@@ -2,12 +2,14 @@
 
 _Authorizing developer: Stephen (Dev A)_  
 _Status: Stephen-approved default; Saurav asynchronous review required before integration into the shared Phase 2 core plan_  
-_Implementation status: not started_
+_Implementation status: P2-0 planning started by Stephen; contract sync pending_
 
 > This is not Stephen's personal Phase 2 implementation plan. It fixes the
 > missing owner/dependency layer so both developers can generate their own
-> task-by-task plans after Phase 1 exits. Until it is copied into the shared
-> core plan and acknowledged by Saurav, no agent should start Phase 2.
+> task-by-task plans after Phase 1 exits. Stephen subsequently made an explicit
+> sequencing decision to defer Task 16 and start P2-0. That exception is
+> recorded below; it does not mark the Phase 1 exit gate complete or waive the
+> P2-0 API-contract sync point.
 
 ## Phase 2 entry gate
 
@@ -15,7 +17,8 @@ All conditions are required:
 
 - [x] Phase 1 S1 strict grounding is merged (PR #25).
 - [x] Phase 1 S2 transition CAS is merged (PR #25).
-- [ ] Phase 1 Task 16 and its full verification suite pass.
+- [ ] Phase 1 Task 16 and its full verification suite pass — **intentionally
+  deferred by Stephen; Phase 2 may proceed without claiming Phase 1 exit**.
 - [ ] Task 13 is recorded as slipped.
 - [ ] The shared Phase 2 plan contains the owner map below.
 - [ ] Stephen and Saurav each create and sync a personal Phase 2 plan containing
@@ -25,7 +28,7 @@ All conditions are required:
 
 | Work | Primary owner | Review/integration owner | Rationale |
 |---|---|---|---|
-| P2-0 persistent ingest/generation runs + SSE | Dev B / Saurav | Dev A / Stephen | Extends Saurav's jobs, materials, generation, instructor UI |
+| P2-0 persistent ingest/generation runs + SSE | Dev A / Stephen (explicit takeover, 2026-07-22) | Dev B / Saurav | Stephen authorized starting the Task-16-derived reliability improvement now; Saurav retains contract/instructor-path review |
 | Task 1 flag service/state machine | Dev B / Saurav | Dev A / Stephen | Extends Question transitions and instructor safety flow |
 | Task 2 student flag control | Dev A / Stephen | Dev B / Saurav | Student practice surface |
 | Task 2 instructor resolution queue | Dev B / Saurav | Dev A / Stephen | Instructor review surface; integrates Task 2 |
@@ -60,8 +63,8 @@ P2-0 and Tasks 1/4 may start in parallel once the entry gate is satisfied.
 
 ## P2-0: Persistent content runs and live progress
 
-**Owner:** Dev B / Saurav  
-**Reviewer:** Dev A / Stephen  
+**Owner:** Dev A / Stephen (explicit cross-owner takeover, 2026-07-22)
+**Reviewer:** Dev B / Saurav
 **Contract sync point:** yes — approve interfaces in `docs/api-contract.md`
 before implementation
 
@@ -108,6 +111,10 @@ truth. Native `EventSource` is sufficient; no Redux or WebSocket dependency.
 - [ ] course/user guards prevent cross-course run reads/SSE subscription; and
 - [ ] existing material and generation happy paths remain compatible after the
   contract migration.
+
+Stephen's exact P2-0 contract proposal (including the course-level SSE change
+needed for multi-file uploads) is
+[`2026-07-22-p2-0-content-run-contract-proposal.md`](./2026-07-22-p2-0-content-run-contract-proposal.md).
 
 ## Changes to existing Phase 2 tasks
 

@@ -1,7 +1,7 @@
 # Phase 1 Stabilization and Exit Handoff
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: S1/S2 merged in PR #25 at `ddf6137`; S0/S3 pending_
+_Status: S1/S2 merged in PR #25 at `ddf6137`; S0 pending; S3 intentionally deferred by Stephen_
 _Code changes authorized by this document: none yet_
 
 > This is a cross-arc handoff stored in Stephen's folder so `sync-plans`
@@ -33,11 +33,13 @@ student loop. Avoid pulling Phase 2 workflow features into the Phase 1 gate.
 
 ## Execution order
 
-`S0 plan reconciliation → S1 strict grounding → S2 transition CAS → S3 joint Task 16`
+`S0 plan reconciliation → S1 strict grounding → S2 transition CAS → S3 joint Task 16 (deferred)`
 
 Stephen explicitly authorized a cross-owner takeover and implemented S1/S2
 together on `codex/phase-1-stabilization`; PR #25 is now merged. Saurav should
-not duplicate them. S3 may begin after S0 coordination state is reconciled.
+not duplicate them. On 2026-07-22 Stephen chose to defer S3 and start the Phase
+2 improvement lane. S3 remains required if the team later wants to claim the
+Phase 1 exit gate passed.
 
 ---
 
@@ -208,6 +210,10 @@ failure UI to Phase 2 run records. Do not invent a one-off polling endpoint.
 
 **Owner:** Joint; Stephen drives the tests, Saurav verifies the instructor/AI path  
 **Depends on:** S0, S1, and S2 merged
+
+**Current sequencing:** intentionally deferred by Stephen on 2026-07-22. Leave
+all checkboxes below unchecked; this is not a completion or a slip of the
+underlying safety proof.
 
 **Files and normative behavior:** use Task 16 in the shared Phase 1 core plan.
 Do not create a competing test contract in this handoff.

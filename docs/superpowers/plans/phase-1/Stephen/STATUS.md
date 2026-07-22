@@ -2,6 +2,24 @@
 
 _Last updated: 2026-07-22_
 
+## Update (2026-07-22, Stephen product decision: defer Task 16 and start Phase 2)
+
+Stephen explicitly chose to **defer, not complete, Phase 1 Task 16** and begin
+the Phase 2 improvement lane discovered during Task 16 exploration. This is a
+product sequencing decision, not evidence that the Phase 1 exit gate passed:
+
+- Task 16's Approved-only/core-loop E2E checkboxes remain unchecked;
+- the repository must not claim Phase 1 fully exited;
+- S1/S2 from PR #25 remain the merged correctness baseline; and
+- Stephen is taking over P2-0 persistent content runs/live progress from the
+  proposed Dev B lane, with Saurav reviewing the API contract before it is
+  integrated.
+
+Stephen's Phase 2 execution plan is
+[`../../phase-2/Stephen/2026-07-22-phase-2-review-improvements-stephen.md`](../../phase-2/Stephen/2026-07-22-phase-2-review-improvements-stephen.md).
+The P2-0 API/domain sync proposal is
+[`../../phase-2/Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](../../phase-2/Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
+
 ## Update (2026-07-22, PR #25 merged)
 
 **PR #25 is merged to `main`** at `ddf6137` (2026-07-22 23:32 UTC):
@@ -10,7 +28,9 @@ _Last updated: 2026-07-22_
 S1 strict assigned-material grounding and S2 publication-transition CAS are
 now Phase 1's merged baseline; Saurav should not reimplement them. The remaining
 Phase 1 exit work is S0 coordination reconciliation plus the joint Task 16
-Approved-only/core-loop proof. Phase 2 has not started.
+Approved-only/core-loop proof. The later update above supersedes the original
+sequencing statement: Phase 2 work has now started while Task 16 remains
+explicitly deferred.
 
 ## Update (2026-07-22, S1/S2 code-complete)
 
