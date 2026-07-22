@@ -1,7 +1,7 @@
 # Phase 1 Stabilization and Exit Handoff
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: default execution plan; Saurav asynchronous review required before Dev B tasks begin_  
+_Status: S1/S2 code-complete by Stephen at `d96bf6a`; S0/S3 pending_
 _Code changes authorized by this document: none yet_
 
 > This is a cross-arc handoff stored in Stephen's folder so `sync-plans`
@@ -35,8 +35,9 @@ student loop. Avoid pulling Phase 2 workflow features into the Phase 1 gate.
 
 `S0 plan reconciliation → S1 strict grounding → S2 transition CAS → S3 joint Task 16`
 
-S1 and S2 may be implemented in parallel on separate Dev B branches after
-Saurav acknowledges the handoff. S3 starts only after both are merged.
+Stephen explicitly authorized a cross-owner takeover and implemented S1/S2
+together on `codex/phase-1-stabilization`. Saurav should review rather than
+duplicate them. S3 starts only after `d96bf6a` is merged.
 
 ---
 
@@ -68,8 +69,8 @@ This task changes status only. Do not use it to claim S1/S2 complete.
 
 ### S1: Strict assigned-material grounding and clean re-ingest
 
-**Owner:** Dev B (Saurav — materials/generation arc)  
-**Reviewer:** Dev A (Stephen — student-serving/provenance consumer)  
+**Owner:** Dev A (Stephen — explicit cross-owner takeover, 2026-07-22)
+**Reviewer:** Dev B (Saurav — original materials/generation owner)
 **Depends on:** merged Phase 1 Tasks 6 and 8
 
 **Files:**
@@ -127,20 +128,20 @@ This task changes status only. Do not use it to claim S1/S2 complete.
 
 **Required tests:**
 
-- [ ] Filter-aware Qdrant search forwards the filter and existing unfiltered
+- [x] Filter-aware Qdrant search forwards the filter and existing unfiltered
   calls still work.
-- [ ] Filter delete uses `wait: true` and the supplied `materialId` condition.
-- [ ] Ingest records `chunkIndex` and calls delete before replacement upsert.
-- [ ] A shorter re-ingest replaces the material's full vector set conceptually;
+- [x] Filter delete uses `wait: true` and the supplied `materialId` condition.
+- [x] Ingest records `chunkIndex` and calls delete before replacement upsert.
+- [x] A shorter re-ingest replaces the material's full vector set conceptually;
   no old tail survives the service call ordering.
-- [ ] Direct-LO and Theme-wide assignments are allowed.
-- [ ] A material assigned only to a sibling LO is excluded from the search
+- [x] Direct-LO and Theme-wide assignments are allowed.
+- [x] A material assigned only to a sibling LO is excluded from the search
   filter and can never enter `sourceRefs`.
-- [ ] No assigned ready material throws `generation-no-assigned-materials`
+- [x] No assigned ready material throws `generation-no-assigned-materials`
   before embedding/search/LLM calls.
-- [ ] Search rejection throws `generation-retrieval-failed`; zero filtered hits
+- [x] Search rejection throws `generation-retrieval-failed`; zero filtered hits
   throws `generation-no-grounding`; neither inserts a Draft.
-- [ ] Existing generation tests remain green after updating the search mock
+- [x] Existing generation tests remain green after updating the search mock
   expectation to include the filter.
 
 **Verification:**
@@ -156,8 +157,8 @@ failure UI to Phase 2 run records. Do not invent a one-off polling endpoint.
 
 ### S2: Compare-and-set publication transitions
 
-**Owner:** Dev B (Saurav — question state machine owner)  
-**Reviewer:** Dev A (Stephen — serving/attempts consumer)  
+**Owner:** Dev A (Stephen — explicit cross-owner takeover, 2026-07-22)
+**Reviewer:** Dev B (Saurav — original question state-machine owner)
 **Depends on:** merged Phase 1 Tasks 4 and 5
 
 **Files:**
@@ -186,14 +187,14 @@ failure UI to Phase 2 run records. Do not invent a one-off polling endpoint.
 
 **Required tests:**
 
-- [ ] Successful transition filters by `_id + expected state`, changes one
+- [x] Successful transition filters by `_id + expected state`, changes one
   document, then writes exactly one correct audit record.
-- [ ] `matchedCount: 0` throws `question-conflict`, returns no optimistic state,
+- [x] `matchedCount: 0` throws `question-conflict`, returns no optimistic state,
   and writes no audit record.
-- [ ] Two simulated reviewers reading the same old state yield one success and
+- [x] Two simulated reviewers reading the same old state yield one success and
   one conflict rather than two contradictory audits.
-- [ ] Route maps `question-conflict` to 409.
-- [ ] Bulk transition skips a conflicted item, reports only successful updates,
+- [x] Route maps `question-conflict` to 409.
+- [x] Bulk transition skips a conflicted item, reports only successful updates,
   and still propagates an unexpected Mongo failure.
 
 **Verification:**
