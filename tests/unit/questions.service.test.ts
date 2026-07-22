@@ -169,7 +169,7 @@ describe('editQuestion (IN-Q03)', () => {
     questionsFindOne.mockResolvedValue(questionHead);
     versionsFindOne.mockResolvedValue(currentVersion);
     versionsInsertOne.mockResolvedValue({ acknowledged: true, insertedId: new ObjectId() });
-    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
   });
 
   it('inserts version 2 copying unpatched fields and records editedFields for the patched key', async () => {
@@ -299,14 +299,14 @@ describe('transitionQuestion (IN-Q07)', () => {
   it('allows pending-review -> approved and writes an audit log entry', async () => {
     const courseId = new ObjectId();
     questionsFindOne.mockResolvedValue({ _id: questionId, courseId, state: 'pending-review' });
-    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
     auditInsertOne.mockResolvedValue({ acknowledged: true });
 
     const result = await transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001');
 
     expect(result.state).toBe('approved');
     const [filter, update] = questionsUpdateOne.mock.calls[0];
-    expect(filter).toEqual({ _id: questionId });
+    expect(filter).toEqual({ _id: questionId, state: 'pending-review' });
     expect(update.$set.state).toBe('approved');
     expect(update.$set.updatedAt).toBeInstanceOf(Date);
     // The returned Question must carry the SAME updatedAt that was written to
@@ -335,6 +335,42 @@ describe('transitionQuestion (IN-Q07)', () => {
     expect(questionsUpdateOne).not.toHaveBeenCalled();
     expect(auditInsertOne).not.toHaveBeenCalled();
   });
+
+  it('rejects a stale concurrent transition without writing a contradictory audit', async () => {
+    questionsFindOne.mockResolvedValue({
+      _id: questionId,
+      courseId: new ObjectId(),
+      state: 'pending-review',
+    });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
+
+    await expect(transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001')).rejects.toThrow(
+      'question-conflict',
+    );
+
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'pending-review' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
+    );
+    expect(auditInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('allows only one of two reviewers that read the same state to transition and audit', async () => {
+    const courseId = new ObjectId();
+    questionsFindOne.mockResolvedValue({ _id: questionId, courseId, state: 'pending-review' });
+    questionsUpdateOne
+      .mockResolvedValueOnce({ acknowledged: true, matchedCount: 1 })
+      .mockResolvedValueOnce({ acknowledged: true, matchedCount: 0 });
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    await expect(transitionQuestion(questionId, 'approved', 'PUID-ONE')).resolves.toMatchObject({
+      state: 'approved',
+    });
+    await expect(transitionQuestion(questionId, 'approved', 'PUID-TWO')).rejects.toThrow('question-conflict');
+
+    expect(auditInsertOne).toHaveBeenCalledTimes(1);
+    expect(auditInsertOne.mock.calls[0][0].actorPuid).toBe('PUID-ONE');
+  });
 });
 
 // --- bulkTransition -----------------------------------------------------------
@@ -347,7 +383,7 @@ describe('bulkTransition (IN-Q07)', () => {
       if (_id.equals(validId)) return { _id: validId, state: 'pending-review' };
       return { _id: invalidId, state: 'draft' };
     });
-    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
     auditInsertOne.mockResolvedValue({ acknowledged: true });
 
     const count = await bulkTransition([validId, invalidId], 'approved', 'PUID-INSTR-0001');
@@ -363,7 +399,7 @@ describe('bulkTransition (IN-Q07)', () => {
       if (_id.equals(validId)) return { _id: validId, state: 'pending-review' };
       return null;
     });
-    questionsUpdateOne.mockResolvedValue({ acknowledged: true });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
     auditInsertOne.mockResolvedValue({ acknowledged: true });
 
     const count = await bulkTransition([validId, missingId], 'approved', 'PUID-INSTR-0001');
@@ -387,5 +423,25 @@ describe('bulkTransition (IN-Q07)', () => {
     await expect(bulkTransition([validId, brokenId], 'approved', 'PUID-INSTR-0001')).rejects.toThrow(
       'connection timed out',
     );
+  });
+
+  it('skips an item whose expected state changed concurrently', async () => {
+    const successfulId = new ObjectId();
+    const conflictedId = new ObjectId();
+    questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => ({
+      _id,
+      courseId: new ObjectId(),
+      state: 'pending-review',
+    }));
+    questionsUpdateOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => ({
+      acknowledged: true,
+      matchedCount: _id.equals(successfulId) ? 1 : 0,
+    }));
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    const count = await bulkTransition([successfulId, conflictedId], 'approved', 'PUID-INSTR-0001');
+
+    expect(count).toBe(1);
+    expect(auditInsertOne).toHaveBeenCalledTimes(1);
   });
 });

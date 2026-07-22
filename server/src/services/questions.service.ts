@@ -201,7 +201,11 @@ export async function transitionQuestion(
   if (!question) throw new Error('question-not-found');
   if (!canTransition(question.state, to)) throw new Error(`invalid-transition:${question.state}->${to}`);
   const now = new Date();
-  await questionsCol().updateOne({ _id: questionId }, { $set: { state: to, updatedAt: now } });
+  const result = await questionsCol().updateOne(
+    { _id: questionId, state: question.state },
+    { $set: { state: to, updatedAt: now } },
+  );
+  if (result.matchedCount !== 1) throw new Error('question-conflict');
   await auditCol().insertOne({
     actorPuid: byPuid,
     action: 'question.transition',
@@ -215,9 +219,10 @@ export async function transitionQuestion(
 }
 
 /**
- * Applies transitionQuestion to each id; only the two expected domain
- * errors — a missing question, or a transition `canTransition` rejects —
- * are skipped. Anything else (e.g. Mongo unreachable, or the audit
+ * Applies transitionQuestion to each id; only the expected domain
+ * errors — a missing question, a transition `canTransition` rejects, or an
+ * expected-state CAS conflict — are skipped. Anything else (e.g. Mongo
+ * unreachable, or the audit
  * `insertOne` throwing after the state `updateOne` already succeeded)
  * propagates: swallowing it would under-report the count while leaving an
  * unaudited state change in place.
@@ -230,7 +235,9 @@ export async function bulkTransition(questionIds: ObjectId[], to: PublicationSta
       count += 1;
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      if (msg !== 'question-not-found' && !msg.startsWith('invalid-transition:')) throw err;
+      if (msg !== 'question-not-found' && msg !== 'question-conflict' && !msg.startsWith('invalid-transition:')) {
+        throw err;
+      }
     }
   }
   return count;

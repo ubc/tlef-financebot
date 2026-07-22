@@ -26,6 +26,7 @@ jest.mock('../../server/src/services/materials.service', () => ({
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
+  materialsCol: jest.fn(),
   questionsCol: jest.fn(),
 }));
 
@@ -35,10 +36,11 @@ import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
 import { search } from '../../server/src/components/qdrant';
 import { createQuestion } from '../../server/src/services/questions.service';
-import { losCol, questionsCol } from '../../server/src/components/mongodb/collections';
+import { losCol, materialsCol, questionsCol } from '../../server/src/components/mongodb/collections';
 
 const loFindOne = jest.fn();
 const loToArray = jest.fn();
+const materialToArray = jest.fn();
 const countDocuments = jest.fn();
 
 function validOptions() {
@@ -65,6 +67,7 @@ beforeEach(() => {
   jest.mocked(createQuestion).mockReset();
   loFindOne.mockReset();
   loToArray.mockReset();
+  materialToArray.mockReset();
   countDocuments.mockReset();
 
   jest.mocked(losCol).mockReturnValue({
@@ -72,8 +75,19 @@ beforeEach(() => {
     find: jest.fn(() => ({ sort: jest.fn(() => ({ toArray: loToArray })), toArray: loToArray })),
   } as never);
   jest.mocked(questionsCol).mockReturnValue({ countDocuments } as never);
+  jest.mocked(materialsCol).mockReturnValue({
+    find: jest.fn(() => ({ toArray: materialToArray })),
+  } as never);
 
   loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR' });
+  materialToArray.mockResolvedValue([
+    {
+      _id: materialId,
+      courseId,
+      status: 'ready',
+      assignments: [{ themeId, loId }],
+    },
+  ]);
   jest.mocked(embedOne).mockResolvedValue([0.1, 0.2, 0.3]);
   jest.mocked(search).mockResolvedValue([
     { id: 'p1', score: 0.9, payload: { materialId: materialId.toHexString(), chunk: 'IRR context' } },
@@ -110,7 +124,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
 
     await runGenerationPipeline({ courseId, loId, count: 1, prompt: 'focus on IRR', byPuid: 'PUID-INSTR' });
 
-    expect(search).toHaveBeenCalledWith('course-abc', [0.1, 0.2, 0.3], 6);
+    expect(search).toHaveBeenCalledWith('course-abc', [0.1, 0.2, 0.3], 6, {
+      must: [{ key: 'materialId', match: { any: [materialId.toHexString()] } }],
+    });
     const arg = jest.mocked(createQuestion).mock.calls[0][0];
     expect(arg.courseId).toEqual(courseId);
     expect(arg.loIds).toEqual([loId]);
@@ -168,6 +184,103 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     expect(createQuestion).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('allows a ready material assigned to the LO theme without a narrower loId', async () => {
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId }] },
+    ]);
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    expect(search).toHaveBeenCalledWith('course-abc', [0.1, 0.2, 0.3], 6, {
+      must: [{ key: 'materialId', match: { any: [materialId.toHexString()] } }],
+    });
+  });
+
+  it('excludes ready materials assigned only to a sibling LO from grounding and sourceRefs', async () => {
+    const siblingMaterialId = new ObjectId();
+    const siblingLoId = new ObjectId();
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId, loId }] },
+      {
+        _id: siblingMaterialId,
+        courseId,
+        status: 'ready',
+        assignments: [{ themeId, loId: siblingLoId }],
+      },
+    ]);
+    jest.mocked(search).mockResolvedValue([
+      {
+        id: 'sibling',
+        score: 0.99,
+        payload: { materialId: siblingMaterialId.toHexString(), chunk: 'wrong LO' },
+      },
+      { id: 'allowed', score: 0.8, payload: { materialId: materialId.toHexString(), chunk: 'right LO' } },
+    ]);
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    expect(search).toHaveBeenCalledWith('course-abc', [0.1, 0.2, 0.3], 6, {
+      must: [{ key: 'materialId', match: { any: [materialId.toHexString()] } }],
+    });
+    expect(jest.mocked(createQuestion).mock.calls[0][0].sourceRefs).toEqual([
+      { materialId, chunk: 'right LO' },
+    ]);
+  });
+
+  it('fails before embedding or LLM calls when no ready material is assigned', async () => {
+    materialToArray.mockResolvedValue([
+      {
+        _id: new ObjectId(),
+        courseId,
+        status: 'ready',
+        assignments: [{ themeId, loId: new ObjectId() }],
+      },
+    ]);
+
+    await expect(
+      runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' }),
+    ).rejects.toThrow('generation-no-assigned-materials');
+
+    expect(embedOne).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+    expect(completeJson).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
+
+  it('surfaces retrieval failure without falling back to ungrounded generation', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.mocked(search).mockRejectedValue(new Error('qdrant down'));
+
+    await expect(
+      runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' }),
+    ).rejects.toThrow('generation-retrieval-failed');
+
+    expect(completeJson).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('surfaces zero filtered hits without generating from the LO name alone', async () => {
+    jest.mocked(search).mockResolvedValue([]);
+
+    await expect(
+      runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' }),
+    ).rejects.toThrow('generation-no-grounding');
+
+    expect(completeJson).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
   });
 });
 

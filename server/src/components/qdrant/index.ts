@@ -1,4 +1,4 @@
-import { QdrantClient } from '@qdrant/js-client-rest';
+import { QdrantClient, type Schemas } from '@qdrant/js-client-rest';
 import { env } from '../../config/env';
 
 // Vector database integration using @qdrant/js-client-rest. Stores the
@@ -42,18 +42,34 @@ export interface SearchHit {
   payload: Record<string, unknown> | null;
 }
 
-/** Return the `limit` nearest points to `vector`, with their payloads. */
+/** Qdrant's payload-filter shape, re-exported so services can request scoped
+ * retrieval/deletion without importing the SDK or reaching into `qdrant`. */
+export type QdrantFilter = Schemas['Filter'];
+
+/** Return the `limit` nearest points to `vector`, with their payloads. The
+ * optional filter restricts results by payload (for example materialId). */
 export async function search(
   name: string,
   vector: number[],
   limit = 5,
+  filter?: QdrantFilter,
 ): Promise<SearchHit[]> {
-  const results = await qdrant.search(name, { vector, limit, with_payload: true });
+  const results = await qdrant.search(name, {
+    vector,
+    limit,
+    with_payload: true,
+    ...(filter ? { filter } : {}),
+  });
   return results.map((hit) => ({
     id: hit.id,
     score: hit.score,
     payload: (hit.payload ?? null) as Record<string, unknown> | null,
   }));
+}
+
+/** Delete every point matching a payload filter and wait until it is applied. */
+export async function deletePointsByFilter(name: string, filter: QdrantFilter): Promise<void> {
+  await qdrant.delete(name, { filter, wait: true });
 }
 
 /** Lightweight reachability check used by GET /api/health. Never throws. */
