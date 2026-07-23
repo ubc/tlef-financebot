@@ -95,6 +95,13 @@ export function registerShibbolethStrategy(): void {
       logoutUrl: env.samlLogoutUrl,
       metadataUrl: env.samlIdpMetadataUrl,
       cert: loadIdpCert(),
+      // SP private key: passport-ubcshib loads this into passport-saml as both
+      // `privateKey` (to sign our AuthnRequests) and `decryptionPvk` (to decrypt
+      // assertions the IdP encrypts to us). Required on STAGING/PRODUCTION, where
+      // the real UBC IdP encrypts assertions and may require signed requests.
+      // Blank for LOCAL, where the docker-simple-saml IdP does neither. Pass
+      // undefined (not '') so the library's "no key" path is taken when unset.
+      privateKeyPath: env.samlPrivateKeyPath || undefined,
       attributeConfig: ATTRIBUTES,
       // The local IdP does not sign our AuthnRequests or use SLO, and skipping
       // InResponseTo validation avoids a request-cache dependency in dev.

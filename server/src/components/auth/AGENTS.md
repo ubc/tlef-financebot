@@ -77,6 +77,8 @@ express.urlencoded()            // the SAML callback is form-urlencoded
 The login/callback/logout paths are NOT under `/api` because their URLs must
 match the ACS/SLO locations registered in the IdP's SP metadata.
 
+The ACS route path is **derived from `SAML_CALLBACK_URL`** (`new URL(env.samlCallbackUrl).pathname` in `auth.routes.ts`), not hardcoded, so it always matches the ACS URL passport-saml puts in the AuthnRequest. Locally that is `/auth/ubcshib/callback`; on STAGING/PRODUCTION UBC IAM registers `/Shibboleth.sso/SAML2/POST`, so the same code serves that path there. Hardcoding one would 404 the other environment's callback.
+
 ## Environment variables
 
 | Variable | Meaning | LOCAL default |
@@ -89,6 +91,7 @@ match the ACS/SLO locations registered in the IdP's SP metadata.
 | `SAML_LOGOUT_URL` | IdP SLO endpoint | `.../SingleLogoutService.php` |
 | `SAML_IDP_METADATA_URL` | IdP metadata (used by the cert-fetch script) | `.../metadata.php` |
 | `SAML_IDP_CERT_PATH` | Path to the IdP signing cert (PEM) | `./server/certs/idp.pem` |
+| `SAML_PRIVATE_KEY_PATH` | Path to the SP's own private key (PEM); signs AuthnRequests + decrypts assertions | `` (blank; STAGING/PROD only) |
 | `SAML_FORCE_AUTHN` | Force re-auth at the IdP on every login | `true` |
 | `POST_LOGIN_REDIRECT` / `POST_LOGOUT_REDIRECT` | Post-auth redirects | `/` |
 
@@ -132,9 +135,15 @@ sessionIndex.
 - `SAML_ISSUER` must EXACTLY match an SP entry key in the IdP's
   `saml20-sp-remote.php`, and `SAML_CALLBACK_URL` must match that entry's ACS
   `Location`. Mismatches are the most common failure.
-- No SP private key is needed for LOCAL (the IdP does not validate AuthnRequests
-  or encrypt assertions). For STAGING/PRODUCTION you register with UBC IAM and
-  may need `privateKeyPath` — see the passport-ubcshib README.
+- No SP private key is needed for LOCAL (the docker-simple-saml IdP does not
+  validate AuthnRequests or encrypt assertions), so `SAML_PRIVATE_KEY_PATH` is
+  blank there. STAGING/PRODUCTION **do** need it: the real UBC IdP encrypts
+  assertions to your SP (and may require signed AuthnRequests). The strategy
+  passes `privateKeyPath: env.samlPrivateKeyPath || undefined` to
+  passport-ubcshib, which loads that PEM as both `privateKey` (request signing)
+  and `decryptionPvk` (assertion decryption). The key must pair with the SP
+  certificate you register with UBC IAM. Passing `undefined` (not `''`) when
+  unset keeps the library's "no key" path for LOCAL.
 - We store the whole SAML profile in the session (`AppUser`). A real app should
   upsert a user document (via `components/mongodb`) in the verify callback and
   serialize only its id.
@@ -205,7 +214,78 @@ split as `ensureApiAuthenticated`. Note `eduPersonAffiliation` is multi-valued, 
 
 ## Moving to STAGING / PRODUCTION
 
-Set `SAML_ENVIRONMENT`, switch `SAML_ISSUER` / `SAML_CALLBACK_URL` to your
-HTTPS URLs, point the `SAML_*` endpoints at UBC's IdP (or unset them to use the
-library's built-in presets), and register the SP with UBC IAM. See the
-passport-ubcshib README's staging/production guide.
+On STAGING/PRODUCTION the app authenticates against the **real UBC Shibboleth
+IdP** (`https://authentication.stg.id.ubc.ca` / `https://authentication.ubc.ca`)
+instead of docker-simple-saml. The app is still the SAML Service Provider itself
+(passport-saml via passport-ubcshib) — there is no separate Shibboleth SP
+daemon (`shibd`) in front, even though UBC IAM registers the SP with the
+standard `/Shibboleth.sso/...` handler URLs.
+
+### 1. Register the SP with UBC IAM
+
+You send IAM your SP metadata (entityID, ACS location, signing + encryption
+certs). **IAM owns the IdP and the metadata is fixed once registered** — the app
+must be configured to match it, not the other way around. Two values must line
+up exactly:
+
+- The metadata `entityID` ⟺ your `SAML_ISSUER` (byte-for-byte — a trailing
+  slash mismatch makes the IdP reject the SP as unknown).
+- The metadata ACS `Location` (typically
+  `https://<host>/Shibboleth.sso/SAML2/POST`) ⟺ your `SAML_CALLBACK_URL`. The
+  ACS route is derived from that URL (see "Routes" above), so the app serves
+  whatever path you register.
+
+### 2. Set the environment variables
+
+```bash
+SAML_ENVIRONMENT=STAGING                     # or PRODUCTION
+SAML_ISSUER=https://<host>                   # EXACTLY the metadata entityID
+SAML_CALLBACK_URL=https://<host>/Shibboleth.sso/SAML2/POST   # the metadata ACS
+SAML_IDP_CERT_PATH=/path/to/idp-signing-cert.pem            # UBC IdP signing cert
+SAML_PRIVATE_KEY_PATH=/path/to/sp-key.pem                   # pairs with your SP cert
+```
+
+The IdP SSO/logout endpoints come from the library's built-in preset keyed on
+`SAML_ENVIRONMENT` (`UBC_CONFIG.STAGING` / `.PRODUCTION` in
+`node_modules/passport-ubcshib/index.js`), so you normally **do not** set
+`SAML_ENTRY_POINT` / `SAML_LOGOUT_URL` / `SAML_IDP_METADATA_URL`. Caveat: the
+strategy currently passes `entryPoint`/`logoutUrl`/`metadataUrl` from `env`,
+which default to the **localhost** docker-simple-saml URLs — and an explicit
+value wins over the preset (`options.entryPoint || ubcConfig.entryPoint`). So on
+staging you must **either** leave those three env vars unset AND ensure the
+config defaults don't leak (they currently do), **or** set them explicitly to
+the UBC staging URLs:
+
+```bash
+SAML_ENTRY_POINT=https://authentication.stg.id.ubc.ca/idp/profile/SAML2/Redirect/SSO
+SAML_LOGOUT_URL=https://authentication.stg.id.ubc.ca/idp/profile/Logout
+SAML_IDP_METADATA_URL=https://authentication.stg.id.ubc.ca/idp/shibboleth
+```
+
+Setting them explicitly is the reliable option given today's config defaults.
+
+Also set `SAML_FORCE_AUTHN=false` if you want to preserve cross-app SSO, and use
+HTTPS `POST_LOGIN_REDIRECT` / `POST_LOGOUT_REDIRECT` as needed.
+
+### 3. Certificates
+
+- `SAML_IDP_CERT_PATH` must contain the IdP's **signing** certificate. UBC's
+  metadata carries several `<ds:X509Certificate>` entries (signing +
+  encryption); `npm run saml:fetch-cert` grabs the *first* one, so verify you
+  got the signing cert, not the encryption cert.
+- `SAML_PRIVATE_KEY_PATH` must be the private key that pairs with the SP
+  certificate registered with IAM (required — the IdP encrypts assertions to
+  you; see the private-key gotcha above).
+
+### Common failure modes
+
+| Symptom | Likely cause |
+| --- | --- |
+| Login redirects to `localhost:6122` | `SAML_ENTRY_POINT` unset → config default leaks the local URL. Set it (step 2). |
+| IdP says the SP/issuer is unknown | `SAML_ISSUER` ≠ metadata `entityID` (often a trailing slash). |
+| IdP posts back to a 404 | `SAML_CALLBACK_URL` path ≠ registered ACS `Location`. |
+| Login fails after the round-trip | Missing/wrong `SAML_PRIVATE_KEY_PATH` (can't decrypt) or wrong `SAML_IDP_CERT_PATH` (signature check fails). |
+| `NotBefore` / `NotOnOrAfter` assertion rejection | Server clock skew vs the IdP; relax via `acceptedClockSkewMs` on the strategy. |
+
+See the passport-ubcshib README's staging/production guide for the underlying
+`passport-saml` options.

@@ -9,8 +9,15 @@ authRouter.get('/auth/ubcshib', passport.authenticate('ubcshib'));
 
 // Assertion Consumer Service: the IdP POSTs the signed SAML response here.
 // On success passport establishes the session; then we redirect into the app.
+//
+// The ACS path is derived from SAML_CALLBACK_URL so it always matches the URL
+// passport-saml puts in the AuthnRequest (and the ACS Location registered in
+// the IdP's SP metadata): locally that is `/auth/ubcshib/callback`, while on
+// STAGING/PRODUCTION UBC IAM registers `/Shibboleth.sso/SAML2/POST`. Hardcoding
+// one path would 404 the other environment's callback.
+const callbackPath = new URL(env.samlCallbackUrl).pathname;
 authRouter.post(
-  '/auth/ubcshib/callback',
+  callbackPath,
   passport.authenticate('ubcshib', { failureRedirect: '/?login=failed' }),
   (_req, res) => {
     res.redirect(env.postLoginRedirect);

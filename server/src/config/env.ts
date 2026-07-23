@@ -69,6 +69,11 @@ export const env = {
   samlLogoutUrl: optional('SAML_LOGOUT_URL', 'http://localhost:6122/simplesaml/saml2/idp/SingleLogoutService.php'),
   samlIdpMetadataUrl: optional('SAML_IDP_METADATA_URL', 'http://localhost:6122/simplesaml/saml2/idp/metadata.php'),
   samlIdpCertPath: optional('SAML_IDP_CERT_PATH', './server/certs/idp.pem'),
+  // Path to the SP's own private key (PEM). Used by passport-saml to sign
+  // AuthnRequests and to decrypt encrypted assertions (decryptionPvk). The
+  // local docker-simple-saml IdP does neither, so this is blank for LOCAL;
+  // STAGING/PRODUCTION (real UBC IdP, which encrypts assertions) require it.
+  samlPrivateKeyPath: optional('SAML_PRIVATE_KEY_PATH', ''),
   // Force re-authentication at the IdP on every login (ForceAuthn). Keeps dev
   // logout meaningful: after logging out, the next login returns to the IdP
   // login page instead of silently reusing the IdP's SSO session. Consider
