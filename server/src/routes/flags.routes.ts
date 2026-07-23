@@ -143,18 +143,30 @@ flagsRouter.post(
 // HTTP status here, matching questions.routes.ts's router-scoped normalizer
 // pattern. 'question-conflict' can bubble up from transitionQuestion's own
 // CAS check inside resolveFlag/checkAutoPause — it must NOT be swallowed
-// here as anything other than a straight passthrough to 409.
+// here as anything other than a straight passthrough to 409. The
+// `invalid-transition:` prefix also bubbles up from transitionQuestion (e.g.
+// `invalid-transition:archived->archived` when a question's second open flag
+// is resolved with `archive` after the first already archived it) — matched
+// the same way questions.routes.ts's own normalizer does, so it maps to 409
+// instead of falling through to an unmapped 500.
 const FLAG_ERROR_STATUS: Record<string, number> = {
   'question-not-found': 404,
+  'course-not-found': 404,
   'flag-not-found': 404,
   'invalid-flag-transition': 409,
   'question-conflict': 409,
 };
 
 flagsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-  if (err instanceof Error && Object.hasOwn(FLAG_ERROR_STATUS, err.message)) {
-    res.status(FLAG_ERROR_STATUS[err.message]).json({ error: err.message });
-    return;
+  if (err instanceof Error) {
+    if (Object.hasOwn(FLAG_ERROR_STATUS, err.message)) {
+      res.status(FLAG_ERROR_STATUS[err.message]).json({ error: err.message });
+      return;
+    }
+    if (err.message.startsWith('invalid-transition:')) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
   }
   next(err);
 });

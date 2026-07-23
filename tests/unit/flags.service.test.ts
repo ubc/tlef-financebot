@@ -258,6 +258,27 @@ describe('checkAutoPause (§4.3)', () => {
 
     expect(paused).toBe(true);
   });
+
+  it('7b. absolute-count arm is INDEPENDENT of the minAttempts small-sample guard (regression for the OR-grouping fix)', async () => {
+    // 3 attempters (< default minAttempts:5) but 15 open flags (== default
+    // flagCount:15). The plan's formula is
+    // `(attempts>=minAttempts AND flag%>=flagPercent) OR (flagCount>=flagCount)`
+    // -- the flagCount arm alone must fire this, regardless of attempt count.
+    const question = baseQuestion({ state: 'approved' });
+    const course = baseCourse({ _id: question.courseId });
+    questionsFindOne.mockResolvedValue(question);
+    coursesFindOne.mockResolvedValue(course);
+    attemptsDistinct.mockResolvedValue(attempterPuids(3));
+    flagsCountDocuments.mockResolvedValue(15);
+
+    const paused = await checkAutoPause(question._id);
+
+    expect(paused).toBe(true);
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: question._id, state: 'approved' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
+    );
+  });
 });
 
 // --- resolveFlag (§6.2) -------------------------------------------------------
@@ -299,6 +320,76 @@ describe('resolveFlag (§6.2)', () => {
     );
   });
 
+  it("9b. resolveFlag 'correct' un-pauses a paused question", async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'paused' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+
+    const result = await resolveFlag(flag._id, 'correct', 'PUID-INSTR-0001');
+
+    expect(result.state).toBe('resolved-corrected');
+    // transitionQuestion's own CAS update proves the question-side effect
+    // actually fired (paused -> approved), not just that no error was thrown.
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'paused' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
+    );
+    const [, flagUpdate] = flagsUpdateOne.mock.calls[0];
+    expect(flagUpdate.$set.state).toBe('resolved-corrected');
+  });
+
+  it("9c. resolveFlag 'clear' on a paused question un-pauses when the remaining open-flag/attempt counts no longer meet the auto-pause threshold", async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ questionId, questionVersionId: versionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, currentVersionId: versionId, state: 'paused' });
+    const course = baseCourse({ _id: question.courseId }); // default: minAttempts 5, flagPercent 30, flagCount 15
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    coursesFindOne.mockResolvedValue(course);
+    // After excluding this flag: 5 attempters, 0 remaining open flags (0%) --
+    // neither arm of the threshold is met any more.
+    attemptsDistinct.mockResolvedValue(Array.from({ length: 5 }, (_, i) => `PUID-STU-${i}`));
+    flagsCountDocuments.mockResolvedValue(0);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+    expect(result.state).toBe('resolved-cleared');
+    // The re-count query must exclude the just-resolved flag by _id.
+    expect(flagsCountDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: { $ne: flag._id } }),
+    );
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'paused' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
+    );
+  });
+
+  it("9d. resolveFlag 'clear' on a paused question stays paused when the remaining open flags STILL meet the threshold", async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ questionId, questionVersionId: versionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, currentVersionId: versionId, state: 'paused' });
+    const course = baseCourse({ _id: question.courseId }); // default flagCount: 15
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    coursesFindOne.mockResolvedValue(course);
+    // After excluding this flag, 15 open flags still remain -> absolute
+    // flagCount arm still met -> question must stay paused.
+    attemptsDistinct.mockResolvedValue(Array.from({ length: 3 }, (_, i) => `PUID-STU-${i}`));
+    flagsCountDocuments.mockResolvedValue(15);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+    expect(result.state).toBe('resolved-cleared');
+    // No question-state transition attempted -- the flag document write is
+    // the ONLY questionsUpdateOne-adjacent write; questionsUpdateOne itself
+    // (the question-state CAS update) must not be called at all.
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('10. resolveFlag on an already-resolved flag throws invalid-flag-transition', async () => {
     const flag = baseFlag({ state: 'resolved-cleared' });
     flagsFindOne.mockResolvedValue(flag);
@@ -307,6 +398,27 @@ describe('resolveFlag (§6.2)', () => {
 
     expect(flagsUpdateOne).not.toHaveBeenCalled();
     expect(questionsUpdateOne).not.toHaveBeenCalled();
+    expect(auditInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('10b. resolveFlag(\'archive\') on a question already archived (e.g. a second flag on the same question) propagates the domain error WITHOUT writing the flag to a terminal state', async () => {
+    // Reproduces the deterministic (non-concurrent) two-open-flags-on-one-
+    // question scenario: the question is already 'archived' by the time
+    // this second flag's resolution runs. PUBLICATION_TRANSITIONS['archived']
+    // = ['draft'], so transitionQuestion throws
+    // invalid-transition:archived->archived -- and this flag must NOT be
+    // left "resolved" with the consequence never having happened.
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'archived' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+
+    await expect(resolveFlag(flag._id, 'archive', 'PUID-INSTR-0001')).rejects.toThrow(
+      'invalid-transition:archived->archived',
+    );
+
+    expect(flagsUpdateOne).not.toHaveBeenCalled();
     expect(auditInsertOne).not.toHaveBeenCalled();
   });
 });

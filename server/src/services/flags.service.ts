@@ -45,19 +45,32 @@ const RESOLUTION_TARGET_STATE: Record<'correct' | 'archive' | 'clear', FlagState
 };
 
 /** Shared by checkAutoPause and resolveFlag's 'clear' re-evaluation so the
- * §4.3 formula lives in exactly one place. Below course.autoPause.minAttempts
- * is an absolute small-sample guard — it blocks a pause even if the
- * percentage or absolute-count arm would otherwise fire. */
+ * §4.3 formula lives in exactly one place. Two INDEPENDENT arms, OR'd
+ * together, exactly per the phase-2 plan's Global Constraints:
+ * `(attempts >= minAttempts AND flag% >= flagPercent) OR (flagCount >=
+ * flagCount)`. The absolute-count arm is intentionally NOT gated behind the
+ * minAttempts small-sample guard — that guard only protects the percentage
+ * arm from firing off a tiny sample. (Fixed post-review: a prior version
+ * incorrectly AND'd minAttempts across both arms.) */
 function meetsAutoPauseThreshold(attemptersCount: number, openFlagCount: number, autoPause: Course['autoPause']): boolean {
-  if (attemptersCount < autoPause.minAttempts) return false;
   const percent = attemptersCount === 0 ? 0 : (openFlagCount / attemptersCount) * 100;
-  return percent >= autoPause.flagPercent || openFlagCount >= autoPause.flagCount;
+  const percentArmMet = attemptersCount >= autoPause.minAttempts && percent >= autoPause.flagPercent;
+  const countArmMet = openFlagCount >= autoPause.flagCount;
+  return percentArmMet || countArmMet;
 }
 
 /** Open/unresolved flags on a version — 'escalated' still counts as
- * unresolved for the auto-pause formula (resolved ambiguity #1). */
-async function countOpenFlags(questionVersionId: ObjectId): Promise<number> {
-  return flagsCol().countDocuments({ questionVersionId, state: { $in: ['open', 'escalated'] } });
+ * unresolved for the auto-pause formula (resolved ambiguity #1).
+ * `excludeFlagId`, when given, excludes that specific flag from the count —
+ * used by resolveFlag's 'clear' re-evaluation to exclude the just-resolved
+ * flag from its own open-flag count via the query itself, independent of
+ * write ordering (see resolveFlag's doc comment). */
+async function countOpenFlags(questionVersionId: ObjectId, excludeFlagId?: ObjectId): Promise<number> {
+  return flagsCol().countDocuments({
+    questionVersionId,
+    state: { $in: ['open', 'escalated'] },
+    ...(excludeFlagId ? { _id: { $ne: excludeFlagId } } : {}),
+  });
 }
 
 async function countDistinctAttempters(questionVersionId: ObjectId): Promise<number> {
@@ -115,7 +128,7 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
   if (question.state !== 'approved') return false;
 
   const course = await coursesCol().findOne({ _id: question.courseId });
-  if (!course) throw new Error('question-not-found');
+  if (!course) throw new Error('course-not-found');
 
   const [attemptersCount, openFlagCount] = await Promise.all([
     countDistinctAttempters(question.currentVersionId),
@@ -130,10 +143,18 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
 }
 
 /**
- * §6.2: records the instructor's resolution, closes the flag, and applies
- * the question consequence. The flag's state is written BEFORE any
- * question-state re-evaluation so the 'clear' re-check below naturally
- * excludes this flag from its own open-flag count (resolved ambiguity #7).
+ * §6.2: records the instructor's resolution, applies the question-side
+ * consequence, then closes the flag. The question-side consequence (if any)
+ * is applied FIRST and must succeed (or determine there's nothing to do)
+ * BEFORE the flag document is written to its terminal state. This ordering
+ * is deliberate: `transitionQuestion` can throw a domain error (e.g.
+ * `invalid-transition:archived->archived` if two open flags on the same
+ * question are both resolved with `archive`) and we must never leave a flag
+ * "resolved" while its stated consequence silently failed to apply — so any
+ * such error propagates before `flagsCol()` is touched at all. The 'clear'
+ * re-evaluation excludes this flag from its own open-flag recount via an
+ * explicit `_id: {$ne}` in the query (see `countOpenFlags`), not via write
+ * ordering, so this reordering doesn't change its result.
  */
 export async function resolveFlag(
   flagId: ObjectId,
@@ -147,10 +168,6 @@ export async function resolveFlag(
   const target = RESOLUTION_TARGET_STATE[action];
   if (!canFlagTransition(flag.state, target)) throw new Error('invalid-flag-transition');
 
-  const resolvedAt = new Date();
-  const resolution = { action, puid: byPuid, at: resolvedAt };
-  await flagsCol().updateOne({ _id: flagId }, { $set: { state: target, resolution } });
-
   if (action === 'correct') {
     // Direct instructor correction path (§6.2): only un-pause. The actual
     // content fix happens through a separate PATCH /api/questions/:id call
@@ -162,18 +179,23 @@ export async function resolveFlag(
   } else if (action === 'archive') {
     // Both paused->archived and approved->archived are valid transitions
     // (PUBLICATION_TRANSITIONS) — always apply, regardless of current state.
+    // If the question is already archived (e.g. a second open flag on the
+    // same question being resolved after the first archived it),
+    // transitionQuestion throws `invalid-transition:archived->archived`
+    // BEFORE this flag is ever written — it stays in its prior state rather
+    // than getting stuck "resolved" with no consequence applied.
     await transitionQuestion(flag.questionId, 'archived', byPuid);
   } else {
     // clear: leave the question untouched unless it was paused, in which
     // case re-run the same threshold formula (now excluding this
-    // just-resolved flag) and un-pause if it's no longer met.
+    // just-resolved flag via the query) and un-pause if it's no longer met.
     const question = await questionsCol().findOne({ _id: flag.questionId });
     if (question?.state === 'paused') {
       const course = await coursesCol().findOne({ _id: question.courseId });
       if (course) {
         const [attemptersCount, openFlagCount] = await Promise.all([
           countDistinctAttempters(flag.questionVersionId),
-          countOpenFlags(flag.questionVersionId),
+          countOpenFlags(flag.questionVersionId, flagId),
         ]);
         if (!meetsAutoPauseThreshold(attemptersCount, openFlagCount, course.autoPause)) {
           await transitionQuestion(flag.questionId, 'approved', byPuid);
@@ -181,6 +203,10 @@ export async function resolveFlag(
       }
     }
   }
+
+  const resolvedAt = new Date();
+  const resolution = { action, puid: byPuid, at: resolvedAt };
+  await flagsCol().updateOne({ _id: flagId }, { $set: { state: target, resolution } });
 
   await auditCol().insertOne({
     actorPuid: byPuid,
