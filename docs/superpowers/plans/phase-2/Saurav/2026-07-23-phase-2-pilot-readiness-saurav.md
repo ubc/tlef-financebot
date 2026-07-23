@@ -132,11 +132,30 @@ honest against `git log`.
 - Produces: `flagQuestion`, `FLAG_TRANSITIONS`/`canFlagTransition`, `checkAutoPause`, `resolveFlag`, `listFlags`. Full signatures, the auto-pause threshold formula, and the resolution-consequence mapping are in the core document, Task 1 Interfaces.
 - Routes: `POST /api/questions/:questionId/flag` (student-guarded), `GET /api/courses/:courseId/flags?state=`, `POST /api/flags/:flagId/resolve` (instructor-guarded).
 
-- [ ] **Step 1: Write the failing tests** — the ten cases in the core document, Task 1 Step 1 (idempotent re-flag; auto-pause percentage/small-sample-guard/absolute arms; configurable thresholds; resolve clear/archive/invalid-transition).
-- [ ] **Step 2: Run to verify FAIL** — `npx jest tests/unit/flags.service.test.ts`.
-- [ ] **Step 3: Implement** service and routes per the core document, Task 1 Step 3. Call `checkAutoPause` from `flagQuestion` after each new flag.
-- [ ] **Step 4: Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: student flagging, flag state machine, and configurable auto-pause (ST-P09, §4.3, §6.2)"`
+- [x] **Step 1: Write the failing tests** — the ten cases in the core document, Task 1 Step 1 (idempotent re-flag; auto-pause percentage/small-sample-guard/absolute arms; configurable thresholds; resolve clear/archive/invalid-transition).
+- [x] **Step 2: Run to verify FAIL** — `npx jest tests/unit/flags.service.test.ts`.
+- [x] **Step 3: Implement** service and routes per the core document, Task 1 Step 3. Call `checkAutoPause` from `flagQuestion` after each new flag.
+- [x] **Step 4: Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: student flagging, flag state machine, and configurable auto-pause (ST-P09, §4.3, §6.2)"`
+
+**Post-implementation note (2026-07-23, subagent-driven-development, review clean after one fix round):**
+the first review pass caught two real correctness gaps beyond the 10 required
+tests: (1) the auto-pause formula's absolute `flagCount` arm was incorrectly
+gated behind the `minAttempts` small-sample guard — the spec's two arms are
+independent, OR'd; (2) `resolveFlag` wrote the flag to a terminal state
+*before* the question-side consequence, so a failure on that side (e.g.
+resolving a second flag on an already-archived question) left the flag
+permanently marked resolved with no audit entry and no consequence applied.
+Both fixed (commit `590ea94`): the formula now computes its two arms
+independently, and all three `resolveFlag` branches apply the question-side
+consequence first, writing the flag's terminal state only after it succeeds.
+Added test coverage for the previously-untested `correct`-un-pause and
+`clear`-re-evaluation branches. One accepted Minor carried forward: the
+`archive` branch has a narrow partial-failure window if `transitionQuestion`
+succeeds but the subsequent flag write fails (retry then permanently throws
+`invalid-transition:archived->archived`) — consistent with other
+non-transactional write patterns already accepted elsewhere in this codebase
+(e.g. `transitionQuestion`'s own state-then-audit ordering).
 
 ---
 

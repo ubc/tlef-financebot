@@ -103,7 +103,7 @@ P2-0 and Tasks 1/4 may start in parallel once the entry gate is satisfied.
   - `listFlags(courseId, state?: FlagState): Promise<Array<Flag & { question, currentVersion }>>`.
 - Routes: `POST /api/questions/:questionId/flag` (student-guarded; body `{ reason?: string }` — submittable blank); `GET /api/courses/:courseId/flags?state=` and `POST /api/flags/:flagId/resolve` (instructor-guarded).
 
-- [ ] **Step 1: Write the failing tests** — cases, in full `it()` blocks with mocked collections:
+- [x] **Step 1: Write the failing tests** — cases, in full `it()` blocks with mocked collections:
 
 ```
 1. first flag inserts state:'open' pinned to the CURRENT questionVersionId and
@@ -120,10 +120,20 @@ P2-0 and Tasks 1/4 may start in parallel once the entry gate is satisfied.
 10. resolveFlag on an already-resolved flag throws 'invalid-flag-transition'
 ```
 
-- [ ] **Step 2: Run to verify FAIL** — `npx jest tests/unit/flags.service.test.ts`.
-- [ ] **Step 3: Implement** service and routes; call `checkAutoPause` from `flagQuestion` after each new flag. The student-facing route responds `{ flagged: true }` with a brief confirmation either way (idempotent UX).
-- [ ] **Step 4: Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: student flagging, flag state machine, and configurable auto-pause (ST-P09, §4.3, §6.2)"`
+- [x] **Step 2: Run to verify FAIL** — `npx jest tests/unit/flags.service.test.ts`.
+- [x] **Step 3: Implement** service and routes; call `checkAutoPause` from `flagQuestion` after each new flag. The student-facing route responds `{ flagged: true }` with a brief confirmation either way (idempotent UX).
+- [x] **Step 4: Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: student flagging, flag state machine, and configurable auto-pause (ST-P09, §4.3, §6.2)"`
+
+**Post-implementation note (2026-07-23):** two correctness gaps found in review
+and fixed before merge — see Saurav's personal plan
+([`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-1)),
+"Post-implementation note", for the full detail. Summary: the auto-pause
+formula's two arms were incorrectly coupled (fixed to be independent, OR'd,
+per this doc's Global Constraints); `resolveFlag` now applies the
+question-side consequence before writing the flag's terminal state (was
+reversed, which could leave a flag "resolved" with its consequence never
+applied).
 
 ---
 
