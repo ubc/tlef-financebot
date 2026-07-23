@@ -183,13 +183,37 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   /** Resolves every open/escalated flag in `group` with `action`, stopping at
    * the first failure (resolved ambiguity #4, applied to all three actions
    * for consistent, simple error handling — see the module note re: the
-   * archive edge case this can surface). */
+   * archive edge case this can surface).
+   *
+   * One failure mode is deterministic and well-understood rather than a
+   * genuine error: `resolveFlag('archive')` (Task 1) always calls
+   * `transitionQuestion(..., 'archived', ...)` unconditionally, so archiving
+   * a group with 2+ open flags on the SAME question succeeds for the first
+   * flag (question -> archived) and then throws the raw
+   * `invalid-transition:archived->archived` on the second. That raw string is
+   * a confusing thing to show an instructor — it gives no indication the
+   * question WAS archived, or that the fix is to `Clear` the rest of the
+   * group rather than retry `Archive` (which will fail identically forever).
+   * Detected and translated to an actionable message here; any other
+   * unexpected error still surfaces as-is (no general error-translation layer
+   * for cases we haven't seen). */
   async function resolveGroupFlags(group: FlagGroup, action: ResolveAction): Promise<{ ok: boolean; error?: string }> {
-    for (const flag of openFlags(group)) {
+    const targets = openFlags(group);
+    let resolvedCount = 0;
+    for (const flag of targets) {
       try {
         await resolveFlagApi(flag.id, action);
+        resolvedCount++;
       } catch (error) {
-        return { ok: false, error: error instanceof ApiError ? error.message : (error as Error).message };
+        const rawMessage = error instanceof ApiError ? error.message : (error as Error).message;
+        if (action === 'archive' && rawMessage === 'invalid-transition:archived->archived') {
+          const remaining = targets.length - resolvedCount;
+          return {
+            ok: false,
+            error: `${resolvedCount} of ${targets.length} flag${targets.length === 1 ? '' : 's'} resolved; the question was already archived. Use Clear to close the remaining flag${remaining === 1 ? '' : 's'}.`,
+          };
+        }
+        return { ok: false, error: rawMessage };
       }
     }
     return { ok: true };
