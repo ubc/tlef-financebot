@@ -22,6 +22,13 @@ The P2-0 API/domain sync proposal is
 It was published for Saurav at `a971d25`; implementation is paused at the
 repository-required API-contract review point.
 
+**Stephen override (later on 2026-07-22):** Saurav's acknowledgment is no
+longer a prerequisite for P2-0 implementation. Stephen instructed Codex to
+start directly, record the takeover here, and inform Saurav asynchronously.
+Saurav remains the review/integration counterpart and should not duplicate
+P2-0, but his response does not block Stephen's branch from progressing. The
+earlier “paused” sentence records the state before this explicit override.
+
 ## Update (2026-07-22, PR #25 merged)
 
 **PR #25 is merged to `main`** at `ddf6137` (2026-07-22 23:32 UTC):

@@ -2,14 +2,15 @@
 
 _Authorizing developer: Stephen (Dev A)_  
 _Status: Stephen-approved default; Saurav asynchronous review required before integration into the shared Phase 2 core plan_  
-_Implementation status: P2-0 planning started by Stephen; contract sync pending_
+_Implementation status: P2-0 implementation authorized by Stephen; Saurav review is asynchronous/non-blocking_
 
 > This is not Stephen's personal Phase 2 implementation plan. It fixes the
 > missing owner/dependency layer so both developers can generate their own
 > task-by-task plans after Phase 1 exits. Stephen subsequently made an explicit
 > sequencing decision to defer Task 16 and start P2-0. That exception is
 > recorded below; it does not mark the Phase 1 exit gate complete or waive the
-> P2-0 API-contract sync point.
+> P2-0 API-contract visibility/review requirement. Stephen later authorized
+> implementation to proceed without waiting for Saurav's acknowledgment.
 
 ## Phase 2 entry gate
 
@@ -65,8 +66,8 @@ P2-0 and Tasks 1/4 may start in parallel once the entry gate is satisfied.
 
 **Owner:** Dev A / Stephen (explicit cross-owner takeover, 2026-07-22)
 **Reviewer:** Dev B / Saurav
-**Contract sync point:** yes — approve interfaces in `docs/api-contract.md`
-before implementation
+**Contract sync point:** proposal must be published and Saurav informed;
+Stephen explicitly authorized implementation before acknowledgment
 
 **Goal:** Agenda remains the executor, while Mongo run records become the
 recoverable source of truth for material ingestion and question generation.

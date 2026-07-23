@@ -1,7 +1,7 @@
 # Stephen — Phase 2 Review-Derived Improvements
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: P2-0 contract prepared and synced; waiting at Saurav review point_  
+_Status: P2-0 implementation authorized and starting; Saurav informed asynchronously_  
 _Branch: `codex/phase-2-content-runs`_  
 _Phase 1 Task 16: intentionally deferred, not completed_
 
@@ -26,8 +26,9 @@ adding more fire-and-forget endpoints.
 - Stephen is taking over P2-0 from Saurav's proposed lane. Saurav reviews the
   contract and instructor/AI integration; he should not implement P2-0 in
   parallel.
-- A P2-0 API contract proposal is a required sync point. Prepare it, sync it,
-  and stop for Saurav's review before changing shared endpoints.
+- The P2-0 API contract proposal is still published for Saurav's asynchronous
+  review. Stephen explicitly overrode the acknowledgment-as-entry-gate on
+  2026-07-22: inform Saurav, but do not wait for a response before developing.
 - Do not add Redux, WebSockets, GraphQL, Neo4j, or a parallel workflow engine.
   Mongo stores run truth, Agenda executes work, and native SSE carries updates.
 
@@ -79,8 +80,8 @@ map are reviewed.
 - [x] Draft additive run snapshot/list/SSE endpoints and enqueue-response
   migration, including guard/error semantics.
 - [x] Update Stephen's plan/status and sync for Saurav review (`a971d25`).
-- [ ] Stop at the contract sync point; do not edit shared API routes before
-  Saurav has acknowledged or raised a concrete interface objection.
+- [x] Publish the contract for asynchronous Saurav review. Per Stephen's later
+  explicit authorization, acknowledgment is not required before implementation.
 
 ### Implementation after contract acknowledgment
 
@@ -119,10 +120,10 @@ map are reviewed.
 
 ## Stop condition for this first slice
 
-P2-I0 changes shared API behavior and is therefore a two-developer sync point.
-The first deliverable is a precise contract/design proposal published through
-`sync-plans`. Implementation starts after Saurav review; merge waits for the
-same reviewer plus the verification evidence above.
+P2-I0 changes shared API behavior, so the contract/design proposal is published
+through `sync-plans` and all changes remain clearly reviewable. Stephen has
+authorized implementation without waiting for Saurav's response; Saurav is
+informed asynchronously and remains the integration reviewer.
 
 Contract proposal:
 [`2026-07-22-p2-0-content-run-contract-proposal.md`](./2026-07-22-p2-0-content-run-contract-proposal.md).

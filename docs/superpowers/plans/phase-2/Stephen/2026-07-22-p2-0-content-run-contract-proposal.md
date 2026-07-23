@@ -1,7 +1,7 @@
 # P2-0 Content Run Contract Proposal
 
 _Author: Stephen / Codex_  
-_Status: proposed sync-point contract; no shared API/code change yet_  
+_Status: accepted for implementation by Stephen; Saurav review remains asynchronous_  
 _Owner after acceptance: Stephen_  
 _Required reviewer: Saurav_
 
@@ -446,5 +446,7 @@ Please acknowledge this contract or name a concrete objection against one of:
 4. `partial` generation semantics; or
 5. explicit failed-on-restart instead of unsafe automatic resume.
 
-After acknowledgment, Stephen implements this slice and updates the shared API
-contract/core Phase 2 plan in the same code PR.
+Stephen explicitly authorized implementation without waiting for
+acknowledgment. Saurav remains informed through this synced proposal and may
+raise a concrete objection during branch/PR review. The shared API contract and
+core Phase 2 plan are updated in the same code PR.
