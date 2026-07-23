@@ -4,6 +4,7 @@ import passport from 'passport';
 import { Strategy as UBCShibStrategy } from 'passport-ubcshib';
 import { env } from '../../../config/env';
 import { upsertUserFromSaml } from '../../../services/users.service';
+import { describeSamlAttributes, resolveSamlAttributes } from '../saml-attributes';
 
 /**
  * The authenticated user we store in the session. In this boilerplate we keep
@@ -17,7 +18,11 @@ export interface AppUser {
   attributes: Record<string, unknown>;
 }
 
-/** Attributes we ask the IdP for (friendly names; mapped by passport-ubcshib). */
+/**
+ * Attributes we ask the IdP for (friendly names; mapped by passport-ubcshib).
+ * The library's mapping is incomplete, so the verify callback re-resolves them
+ * with `resolveSamlAttributes()` — see `../saml-attributes.ts`.
+ */
 const ATTRIBUTES = [
   'uid',
   'ubcEduCwlPuid',
@@ -83,6 +88,48 @@ function loadIdpCert(): string {
   }
 }
 
+/**
+ * Log what the IdP actually asserted about the user, every login.
+ *
+ * When login fails because an attribute is missing, the only question that
+ * matters is whether the IdP released it at all — and against an IdP you do not
+ * control (UBC IAM's), you cannot answer that by reading your own code. So we
+ * log the assertion's attribute NAMES (not values: those are personal data)
+ * plus what we resolved them to. Three outcomes are then distinguishable:
+ *
+ *   - no names at all      -> the IdP released nothing; an IAM-side change.
+ *   - names, but not ours  -> released under a name we do not recognise; add it
+ *                             to SAML_ATTRIBUTE_ALIASES in ../saml-attributes.ts.
+ *   - names resolved       -> our side is fine.
+ *
+ * Set SAML_DEBUG_ATTRIBUTES=true to also log the values. That is personal data
+ * (names, email, PUID) going into the server log, so keep it off except for a
+ * short, deliberate diagnostic window.
+ */
+function logSamlAttributes(
+  profile: Record<string, unknown>,
+  attributes: Record<string, unknown>,
+): void {
+  const { rawNames, resolvedNames, missingNames } = describeSamlAttributes(profile, attributes);
+  console.log(
+    `[server] SAML: assertion attribute names: ${rawNames.join(', ') || '(none released)'}`,
+  );
+  console.log(`[server] SAML: resolved as: ${resolvedNames.join(', ') || '(none)'}`);
+  if (missingNames.length > 0) {
+    console.warn(
+      `[server] SAML: required attribute(s) not resolved: ${missingNames.join(', ')}. ` +
+        `Either the IdP did not release them (ask UBC IAM), or they arrived under an ` +
+        `unrecognised name — compare against the assertion attribute names logged above.`,
+    );
+  }
+  if (env.samlDebugAttributes) {
+    console.warn(
+      `[server] SAML: attribute values (SAML_DEBUG_ATTRIBUTES=true — personal data): ` +
+        JSON.stringify(attributes),
+    );
+  }
+}
+
 /** Register the "ubcshib" strategy on the shared passport instance. */
 export function registerShibbolethStrategy(): void {
   const strategy = new UBCShibStrategy(
@@ -109,9 +156,14 @@ export function registerShibbolethStrategy(): void {
       validateInResponseTo: false,
     },
     (profile, done) => {
+      // Re-resolve the attributes rather than using profile.attributes directly:
+      // passport-ubcshib's mapping drops some names the real UBC IdP uses.
+      const raw = profile as unknown as Record<string, unknown>;
+      const attributes = resolveSamlAttributes(raw);
+      logSamlAttributes(raw, attributes);
       // ST-E01: PUID -> FinanceBot identity on every login; no profile step.
-      upsertUserFromSaml(profile.attributes ?? {})
-        .then((user) => done(null, { nameId: profile.nameID, puid: user.puid, attributes: profile.attributes ?? {} }))
+      upsertUserFromSaml(attributes)
+        .then((user) => done(null, { nameId: profile.nameID, puid: user.puid, attributes }))
         .catch((err) => done(err as Error));
     },
   );

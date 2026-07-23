@@ -79,6 +79,11 @@ export const env = {
   // login page instead of silently reusing the IdP's SSO session. Consider
   // 'false' in production to preserve cross-app SSO.
   samlForceAuthn: optional('SAML_FORCE_AUTHN', 'true') === 'true',
+  // Log the VALUES of the SAML attributes on each login, not just their names.
+  // Personal data (name, email, PUID) in the server log — turn on only for a
+  // deliberate diagnostic window. Names are always logged; see
+  // components/auth/saml-attributes.ts.
+  samlDebugAttributes: optional('SAML_DEBUG_ATTRIBUTES', 'false') === 'true',
   postLoginRedirect: optional('POST_LOGIN_REDIRECT', '/'),
   postLogoutRedirect: optional('POST_LOGOUT_REDIRECT', '/'),
 

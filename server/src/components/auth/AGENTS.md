@@ -38,6 +38,10 @@ Two one-time local setup steps are required (documented in the root README):
   browser to the IdP), it responds `401 { error }` so a `fetch()` caller gets a
   machine-readable answer instead of the IdP's HTML login page. See "Protecting
   routes" below.
+- `saml-attributes.ts` — `resolveSamlAttributes()` / `describeSamlAttributes()`.
+  Turns the assertion's attribute `Name`s (OID / MACE URNs on the real IdP,
+  friendly names locally) into friendly names, covering the gaps in
+  passport-ubcshib's own mapping. See "SAML attribute names" below.
 - `roles.ts` — authorization helpers keyed on `eduPersonAffiliation`:
   `rolesOf(user)` (lower-cased role array), `hasRole(user, ...roles)`, and the
   `ensureRole(...roles)` guard (`401` signed out, `403` wrong role). See
@@ -147,6 +151,63 @@ sessionIndex.
 - We store the whole SAML profile in the session (`AppUser`). A real app should
   upsert a user document (via `components/mongodb`) in the verify callback and
   serialize only its id.
+
+## SAML attribute names (why `saml-attributes.ts` exists)
+
+A SAML assertion names each attribute with a URN, and the same attribute arrives
+under different names depending on the IdP:
+
+| Attribute | LOCAL (docker-simple-saml) | Real UBC IdP |
+| --- | --- | --- |
+| PUID | `ubcEduCwlPuid` | `urn:oid:1.3.6.1.4.1.60.6.1.6` **or** `urn:mace:dir:attribute-def:ubcEduCwlPuid` |
+| uid | `uid` | `urn:oid:0.9.2342.19200300.100.1.1` |
+| affiliation | `eduPersonAffiliation` | `urn:oid:1.3.6.1.4.1.5923.1.1.1.1` |
+
+`passport-saml` keys the profile by whatever `Name` the assertion carried — it
+never reads `FriendlyName`. `passport-ubcshib` then maps some of those into
+`profile.attributes`, but its table has gaps that bite on the real IdP:
+
+- **The MACE form of `ubcEduCwlPuid` is unreachable.** The library builds a
+  reverse friendly→OID map from a table where both the MACE URN and the OID map
+  to `ubcEduCwlPuid`; the OID (declared second) overwrites the MACE entry, so a
+  MACE-named PUID matches nothing and is dropped.
+- **`uid` and `eduPersonPrincipalName` have no OID entries**, so they survive
+  only when the IdP sends friendly names.
+
+Both cases look exactly like "the IdP did not release the attribute", which is
+an expensive thing to misdiagnose against an IdP you do not control. **LOCAL
+cannot catch either**: docker-simple-saml sends friendly names, which hit the
+library's passthrough branch, so everything works locally regardless.
+
+So the verify callback ignores `profile.attributes` and calls
+`resolveSamlAttributes(profile)`, which starts from what the library mapped and
+fills gaps from the raw profile using `SAML_ATTRIBUTE_ALIASES` (plus a generic
+rule: any `urn:mace:dir:attribute-def:X` resolves to `X`). It is additive — it
+can only find attributes genuinely present in the assertion.
+
+**If a new attribute is needed**, add it to `ATTRIBUTES` in
+`strategies/shibboleth.ts` (what we ask the IdP for) *and* to
+`SAML_ATTRIBUTE_ALIASES` (how we recognise it coming back).
+
+### Login diagnostics
+
+Every login logs the attribute **names** the assertion carried and what they
+resolved to — names are not personal data, and they are what distinguishes:
+
+```
+[server] SAML: assertion attribute names: urn:oid:1.3.6.1.4.1.60.6.1.6, urn:oid:2.5.4.42
+[server] SAML: resolved as: givenName, ubcEduCwlPuid
+```
+
+| What you see | What it means |
+| --- | --- |
+| `(none released)` | The IdP asserted no attributes. This is the only case that is genuinely UBC IAM's to fix. |
+| Names listed, but a required one unresolved | Released under a name we don't recognise → add it to `SAML_ATTRIBUTE_ALIASES`. |
+| Everything resolved | Attribute plumbing is fine; look elsewhere. |
+
+`SAML_DEBUG_ATTRIBUTES=true` additionally logs the **values**. That puts
+personal data (name, email, PUID) in the server log, so enable it only for a
+short, deliberate diagnostic window and turn it back off.
 
 ## Protecting routes (auth-gating)
 
@@ -286,6 +347,7 @@ HTTPS `POST_LOGIN_REDIRECT` / `POST_LOGOUT_REDIRECT` as needed.
 | IdP posts back to a 404 | `SAML_CALLBACK_URL` path ≠ registered ACS `Location`. |
 | Login fails after the round-trip | Missing/wrong `SAML_PRIVATE_KEY_PATH` (can't decrypt) or wrong `SAML_IDP_CERT_PATH` (signature check fails). |
 | `NotBefore` / `NotOnOrAfter` assertion rejection | Server clock skew vs the IdP; relax via `acceptedClockSkewMs` on the strategy. |
+| Round-trip succeeds but an attribute (e.g. the PUID) is missing | Check the `assertion attribute names` log line before asking IAM: the attribute may be released under a name we don't map. See "SAML attribute names" above. |
 
 See the passport-ubcshib README's staging/production guide for the underlying
 `passport-saml` options.
