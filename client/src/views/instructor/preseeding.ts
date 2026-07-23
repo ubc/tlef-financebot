@@ -9,13 +9,11 @@
 // ASYNC PIPELINE — no live preview (Task G brief, CRITICAL): the I12
 // wireframe shows a synchronous "Generated output" preview panel ending in a
 // "Review & Approve ->" action. The server does not support that —
-// `POST .../generate` returns `202 { jobId }` immediately and the
-// three-agent pipeline runs as a BACKGROUND JOB; the resulting questions
-// land later as Draft questions in the bank/review queue. So "Generate
-// Question ->" below enqueues and shows a queued CONFIRMATION (with a link
-// to the Review Queue) instead of blocking on, or fabricating, a result. The
-// preview panel is intentionally omitted — see the comment at the bottom of
-// `renderForm`.
+// `POST .../generate` returns `202 { runId }` immediately and the three-agent
+// pipeline runs as a BACKGROUND JOB. A course-scoped EventSource now renders
+// durable retrieve/generate/validate/review/persist progress and refreshes
+// coverage when Drafts land. The preview panel remains intentionally omitted:
+// it would still fabricate synchronous output that does not exist yet.
 //
 // Threshold note: the API's `target` (5 — `GENERATION_TARGET` in
 // generation.service.ts) is displayed as-is in the Target column, but the
@@ -43,6 +41,9 @@ import {
   generateQuestions,
   getCourseTree,
   getPreseeding,
+  listContentRuns,
+  subscribeContentRuns,
+  type ContentRunSummary,
   type CourseTree,
   type GenerationDifficulty,
   type GenerationQuestionType,
@@ -172,23 +173,31 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 
   let preseeding: PreseedingLo[];
   let tree: CourseTree;
+  let recentRuns: ContentRunSummary[];
   try {
-    [preseeding, tree] = await Promise.all([getPreseeding(courseId), getCourseTree(courseId)]);
+    [preseeding, tree, recentRuns] = await Promise.all([
+      getPreseeding(courseId),
+      getCourseTree(courseId),
+      listContentRuns(courseId, { kind: 'question-generation', limit: 25 }),
+    ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderPreseedingInner(outlet, courseId)));
     return;
   }
 
-  const rows = buildRows(preseeding, tree);
+  let rows = buildRows(preseeding, tree);
+  const runs = new Map(recentRuns.map((run) => [run._id, run]));
+  const refreshedTerminalRuns = new Set<string>();
   const losInScope = tree.themes.flatMap((theme, themeIndex) =>
     (theme.los ?? []).map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} / LO ${loIndex + 1}: ${lo.name}` })),
   );
 
   const tilesContainer = el('div', {});
   const tableContainer = el('div', {});
+  const runContainer = el('div', {});
   const formContainer = el('div', {});
-  const layout = el('div', {}, tilesContainer, tableContainer, formContainer);
+  const layout = el('div', {}, tilesContainer, tableContainer, runContainer, formContainer);
 
   // --- Generate form state (I12) -------------------------------------------
 
@@ -198,6 +207,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let formError: string | null = null;
   let formQueuedMessage: string | null = null;
   let formBusy = false;
+  let activeFormRunId: string | null = null;
 
   // Persistent — never recreated by `renderForm`, so typing in it doesn't get
   // interrupted the way rebuilding the whole form on every keystroke would
@@ -228,18 +238,51 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     formQueuedMessage = null;
     renderForm();
     try {
-      await generateQuestions(courseId, {
+      const queued = await generateQuestions(courseId, {
         loId: formLoId,
         type: formType,
         difficulty: formDifficulty,
         prompt: promptTextarea.value.trim() || undefined,
       });
-      formQueuedMessage = 'Generation queued — new Draft questions will appear in the Review Queue shortly.';
+      activeFormRunId = queued.runId;
+      formQueuedMessage = `Generation queued as run ${queued.runId.slice(-8)}.`;
     } catch (error) {
       formError = error instanceof ApiError ? error.message : (error as Error).message;
     }
     formBusy = false;
     renderForm();
+  }
+
+  function runStatusText(run: ContentRunSummary): string {
+    const stage = run.stage.charAt(0).toUpperCase() + run.stage.slice(1);
+    const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
+    const created = run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0;
+    const failed = run.kind === 'question-generation' ? run.result?.failures.length ?? 0 : 0;
+    return `${run.status} · ${stage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed`;
+  }
+
+  function runStatusPanel(run: ContentRunSummary): HTMLElement {
+    const created = run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0;
+    return el(
+      'div',
+      { class: `preseeding-queued-message content-run-status content-run-status--${run.status}`, role: 'status' },
+      el('strong', { text: `Run ${run._id.slice(-8)}` }),
+      el('span', { text: ` — ${runStatusText(run)}` }),
+      created > 0
+        ? el(
+            'a',
+            {
+              href: `#/instructor/course/${encodeURIComponent(courseId)}/queue`,
+              onclick: (event: Event) => {
+                event.preventDefault();
+                navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`);
+              },
+            },
+            ' Review Drafts →',
+          )
+        : false,
+      run.error ? el('p', { class: 'material-row__error', text: run.error.message }) : false,
+    );
   }
 
   function renderForm(): void {
@@ -336,6 +379,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             ),
           )
         : false,
+      activeFormRunId && runs.get(activeFormRunId) ? runStatusPanel(runs.get(activeFormRunId)!) : false,
       el(
         'button',
         {
@@ -348,7 +392,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       ),
       // The I12 wireframe also shows a synchronous "Generated output"
       // preview panel here, ending in "Review & Approve ->". Omitted: the
-      // pipeline is async (202 { jobId }), so at the point this button
+      // pipeline is async (202 { runId }), so at the point this button
       // resolves the question doesn't exist yet — there is nothing real to
       // preview. The queued-message link above (Review Queue) is the actual
       // destination once the background job lands a Draft.
@@ -373,8 +417,11 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     // together; a single LO's failure doesn't stop the rest from enqueuing.
     const results = await Promise.allSettled(thin.map((lo) => generateQuestions(courseId, { loId: lo.loId })));
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const runIds = results
+      .filter((result): result is PromiseFulfilledResult<{ runId: string }> => result.status === 'fulfilled')
+      .map((result) => result.value.runId.slice(-8));
     bulkBusy = false;
-    bulkMessage = `Queued generation for ${succeeded} of ${thin.length} LO${thin.length === 1 ? '' : 's'} — new Draft questions will appear in the Review Queue shortly.`;
+    bulkMessage = `Queued generation for ${succeeded} of ${thin.length} LO${thin.length === 1 ? '' : 's'}${runIds.length ? ` — runs ${runIds.join(', ')}` : ''}.`;
     if (succeeded < thin.length) {
       bulkError = `${thin.length - succeeded} LO${thin.length - succeeded === 1 ? '' : 's'} failed to enqueue — try again from that row's "Generate Questions" action.`;
     }
@@ -444,6 +491,45 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     );
   }
 
+  function renderRuns(): void {
+    const generationRuns = recentRuns.filter((run) => run.kind === 'question-generation').slice(0, 8);
+    mount(
+      runContainer,
+      generationRuns.length > 0
+        ? el(
+            'section',
+            { class: 'content-run-history' },
+            el('h2', { class: 'detail-section-title', text: 'Recent Generation Activity' }),
+            ...generationRuns.map(runStatusPanel),
+          )
+        : false,
+    );
+  }
+
+  async function applyRunUpdate(run: ContentRunSummary, source: 'snapshot' | 'live'): Promise<void> {
+    if (run.kind !== 'question-generation') return;
+    const previous = runs.get(run._id);
+    runs.set(run._id, run);
+    recentRuns = [run, ...recentRuns.filter((existing) => existing._id !== run._id)]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 25);
+    renderRuns();
+    if (activeFormRunId === run._id) renderForm();
+
+    const terminal = ['completed', 'partial', 'failed'].includes(run.status);
+    const wasActive = previous !== undefined && !['completed', 'partial', 'failed'].includes(previous.status);
+    if (!terminal || refreshedTerminalRuns.has(run._id) || (source === 'snapshot' && !wasActive)) return;
+    refreshedTerminalRuns.add(run._id);
+    try {
+      preseeding = await getPreseeding(courseId);
+      rows = buildRows(preseeding, tree);
+      renderTiles();
+      renderTable();
+    } catch {
+      // Run truth remains visible even if the aggregate refresh is transiently unavailable.
+    }
+  }
+
   body.replaceChildren(
     pageHeader(
       'Question Bank Coverage',
@@ -454,7 +540,21 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   );
   renderTiles();
   renderTable();
+  renderRuns();
   renderForm();
+
+  const closeStream = subscribeContentRuns(courseId, {
+    onSnapshot: (recent) => {
+      for (const run of recent) void applyRunUpdate(run, 'snapshot');
+    },
+    onRun: (run) => void applyRunUpdate(run, 'live'),
+  });
+  const lifecycleObserver = new MutationObserver(() => {
+    if (root.isConnected) return;
+    closeStream();
+    lifecycleObserver.disconnect();
+  });
+  lifecycleObserver.observe(outlet, { childList: true });
 }
 
 export function renderPreseeding(outlet: HTMLElement, params: RouteParams): void {

@@ -454,12 +454,18 @@ manual checklist text. Full detail in Saurav's personal plan
 - Test: `tests/unit/custom-generation.test.ts`
 
 **Interfaces:**
-- Consumes: Phase 1 Task 8 pipeline; `materialsCol()`.
+- Consumes: Phase 1 Task 8 pipeline; P2-0 durable generation-run contract;
+  `materialsCol()`.
 - Produces:
   - @-mention resolution: `prompt` text like `@lecture-3.pdf` resolves to that material's chunks (retrieval restricted to mentioned materials when any mention present).
   - `PRESET_PROMPTS: Array<{ label: string; text: string }>` (four presets: calculation question, concept check, common-misconception probe, applied scenario) — served by `GET /api/generation/presets`, populating the input for editing.
   - `regenerateQuestion(questionId, prompt, byPuid): Promise<{ variant: { stem; options; ... } }>` — runs the pipeline for one question **without saving**; the client shows original and variant side-by-side; "Replace" calls the existing `editQuestion` with the variant's content (original untouched until then, IN-Q12); regeneration attempts recorded on the question (`regenerations: [{ prompt, at }]` — add the optional field to `Question`).
   - Generation UI: free-text prompt with target LO / type / difficulty controls, preset picker, material @-mention autocomplete; output lands in the review queue as Draft with the prompt recorded (IN-Q11).
+  - P2-0 compatibility: custom-prompt batch generation returns its unique
+    `runId` and reuses course-level run history/SSE. If side-by-side
+    regeneration becomes asynchronous, extend the `ContentRun` contract in
+    the same PR; do not restore the constant Agenda `jobId` response or add a
+    separate client-only progress tracker.
 
 - [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
 - [ ] **Step 2–4: FAIL → implement → PASS.**

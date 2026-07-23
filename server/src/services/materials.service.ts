@@ -10,7 +10,13 @@ import { deletePointsByFilter, ensureCollection, upsertPoints } from '../compone
 import { defineJob, enqueueJob } from '../components/jobs';
 import { materialsCol } from '../components/mongodb/collections';
 import { classifyMaterial } from './classification.service';
-import type { Material } from '../types/domain';
+import {
+  createMaterialIngestRun,
+  failContentRun,
+  getContentRun,
+  updateContentRun,
+} from './content-runs.service';
+import type { Material, MaterialIngestResult, MaterialIngestStage } from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Materials service (IN-S04/S05): instructor course-material upload + async RAG
@@ -38,6 +44,16 @@ export type UploadFormat = (typeof UPLOAD_FORMATS)[number];
 // How much of the ingested text to persist on the Material for IN-S06 (Task 7)
 // classification/hierarchy suggestion — see `excerpt` in domain.ts.
 const EXCERPT_MAX_CHARS = 2000;
+export const MATERIAL_INGEST_JOB = 'material.ingest';
+
+interface MaterialIngestJobData {
+  runId: string;
+}
+
+function materialIngestErrorCode(message: string): string {
+  const prefix = message.split(':')[0] ?? '';
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(prefix) ? prefix : 'material-ingest-failed';
+}
 
 /**
  * The subset of `Express.Multer.File` this service actually needs. Kept as a
@@ -127,6 +143,7 @@ function detectUploadFormat(filename: string): UploadFormat | undefined {
 export async function createMaterials(
   courseId: ObjectId,
   files: UploadedFile[],
+  requestedBy = 'system',
 ): Promise<WithId<Material>[]> {
   const prepared = files.map((file) => ({ file, format: detectUploadFormat(file.originalname) }));
   const invalid = prepared.find((p) => !p.format);
@@ -146,15 +163,17 @@ export async function createMaterials(
       uploadedAt: new Date(),
     };
     const { insertedId } = await materialsCol().insertOne(doc);
-    materials.push({ _id: insertedId, ...doc });
-    await enqueueJob<{ materialId: string }>('material.ingest', { materialId: insertedId.toString() });
-    console.log(`[FinanceBot:RAG] queued materialId=${insertedId.toString()} type=${doc.format} source=upload`);
+    materials.push(await attachAndEnqueueRun({ _id: insertedId, ...doc }, 'upload', requestedBy));
   }
   return materials;
 }
 
 /** Insert a `processing` URL Material and enqueue its ingest job (IN-S04). */
-export async function createUrlMaterial(courseId: ObjectId, url: string): Promise<WithId<Material>> {
+export async function createUrlMaterial(
+  courseId: ObjectId,
+  url: string,
+  requestedBy = 'system',
+): Promise<WithId<Material>> {
   const doc: Material = {
     courseId,
     name: url,
@@ -165,9 +184,7 @@ export async function createUrlMaterial(courseId: ObjectId, url: string): Promis
     uploadedAt: new Date(),
   };
   const { insertedId } = await materialsCol().insertOne(doc);
-  await enqueueJob<{ materialId: string }>('material.ingest', { materialId: insertedId.toString() });
-  console.log(`[FinanceBot:RAG] queued materialId=${insertedId.toString()} type=url source=url`);
-  return { _id: insertedId, ...doc };
+  return attachAndEnqueueRun({ _id: insertedId, ...doc }, 'upload', requestedBy);
 }
 
 export async function listMaterials(courseId: ObjectId): Promise<WithId<Material>[]> {
@@ -175,16 +192,109 @@ export async function listMaterials(courseId: ObjectId): Promise<WithId<Material
 }
 
 /** Re-enqueue a failed material for ingestion. */
-export async function retryMaterial(materialId: ObjectId): Promise<WithId<Material>> {
+export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'): Promise<WithId<Material>> {
+  const current = await materialsCol().findOne({ _id: materialId });
+  if (!current) throw new Error('material-not-found');
+  if (current.status !== 'failed') throw new Error('material-retry-conflict');
+
+  const run = await createMaterialIngestRun({
+    courseId: current.courseId,
+    requestedBy,
+    materialId,
+    sourceName: current.name,
+    sourceFormat: current.format,
+    trigger: 'retry',
+    ...(current.activeRunId ? { previousRunId: current.activeRunId } : {}),
+  });
   const material = await materialsCol().findOneAndUpdate(
-    { _id: materialId },
-    { $set: { status: 'processing' }, $unset: { error: '' } },
+    { _id: materialId, status: 'failed', ...(current.activeRunId ? { activeRunId: current.activeRunId } : {}) },
+    { $set: { status: 'processing', activeRunId: run._id }, $unset: { error: '' } },
     { returnDocument: 'after' },
   );
-  if (!material) throw new Error('material-not-found');
-  await enqueueJob<{ materialId: string }>('material.ingest', { materialId: materialId.toString() });
-  console.log(`[FinanceBot:RAG] queued materialId=${materialId.toString()} type=${material.format} source=retry`);
-  return material;
+  if (!material) {
+    await failContentRun(run._id, {
+      code: 'material-retry-conflict',
+      message: 'This material was already retried. Refresh to see the active run.',
+      atStage: 'queued',
+      retryable: true,
+    });
+    throw new Error('material-retry-conflict');
+  }
+  return enqueueMaterialRun(material, run._id, 'retry');
+}
+
+async function attachAndEnqueueRun(
+  material: WithId<Material>,
+  trigger: 'upload' | 'retry',
+  requestedBy: string,
+): Promise<WithId<Material>> {
+  let run: Awaited<ReturnType<typeof createMaterialIngestRun>> | undefined;
+  let failureCode = 'content-run-create-failed';
+  try {
+    run = await createMaterialIngestRun({
+      courseId: material.courseId,
+      requestedBy,
+      materialId: material._id,
+      sourceName: material.name,
+      sourceFormat: material.format,
+      trigger,
+      ...(trigger === 'retry' && material.activeRunId ? { previousRunId: material.activeRunId } : {}),
+    });
+    failureCode = 'material-run-link-failed';
+    const linked = await materialsCol().updateOne({ _id: material._id }, { $set: { activeRunId: run._id } });
+    if (linked.matchedCount === 0) throw new Error('material-run-link-failed');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const writes: Array<Promise<unknown>> = [
+      materialsCol().updateOne(
+        { _id: material._id },
+        { $set: { status: 'failed', error: message } },
+      ),
+    ];
+    if (run) {
+      writes.push(
+        failContentRun(run._id, {
+          code: failureCode,
+          message,
+          atStage: 'queued',
+          retryable: true,
+        }),
+      );
+    }
+    await Promise.allSettled(writes);
+    return { ...material, status: 'failed', error: message };
+  }
+  return enqueueMaterialRun({ ...material, activeRunId: run._id }, run._id, trigger);
+}
+
+async function enqueueMaterialRun(
+  material: WithId<Material>,
+  runId: ObjectId,
+  trigger: 'upload' | 'retry',
+): Promise<WithId<Material>> {
+  try {
+    await enqueueJob<MaterialIngestJobData>(MATERIAL_INGEST_JOB, { runId: runId.toHexString() });
+    console.log(
+      `[FinanceBot:RAG] queued runId=${runId.toHexString()} materialId=${material._id.toHexString()} ` +
+        `type=${material.format} source=${trigger}`,
+    );
+    return material;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await Promise.allSettled([
+      failContentRun(runId, {
+        code: 'content-run-enqueue-failed',
+        message,
+        atStage: 'queued',
+        retryable: true,
+      }),
+      materialsCol().updateOne(
+        { _id: material._id, activeRunId: runId },
+        { $set: { status: 'failed', error: message } },
+      ),
+    ]);
+    return { ...material, status: 'failed', error: message };
+  }
 }
 
 /** IN-S05: replace a material's Theme/LO assignments. Never deletes the
@@ -422,44 +532,75 @@ function materialPointId(materialId: string, chunkIndex: number): string {
  * message and returns normally, so one material's failure never blocks,
  * retry-storms, or crashes its siblings (IN-S04).
  */
-export async function ingestMaterial(materialId: string): Promise<void> {
-  // Declared outside the try so the catch block can still address the right
-  // document — but constructed INSIDE the try (below), since this function
-  // must never throw (IN-S04) regardless of why, including a malformed
-  // materialId. Left `undefined` if construction itself fails; the catch
-  // block below guards on that rather than risk an `updateOne({ _id:
-  // undefined }, ...)`, which the MongoDB driver would serialize as `{}` and
-  // could silently update an unrelated document.
+export async function ingestMaterial(materialId: string, runId?: string): Promise<void> {
   let id: ObjectId | undefined;
+  let stage: MaterialIngestStage = 'parsing';
+  const result: MaterialIngestResult = {
+    characterCount: 0,
+    chunkCount: 0,
+    vectorCount: 0,
+    indexedCount: 0,
+    classification: 'skipped',
+  };
+
   try {
-    // materialId always comes from our own insertedId.toString() calls (see
-    // createMaterials/createUrlMaterial/retryMaterial), so this construction
-    // cannot fail in practice.
     id = new ObjectId(materialId);
     const material = await materialsCol().findOne({ _id: id });
-    if (!material) return; // material vanished (e.g. deleted); nothing to do.
+    if (!material) {
+      if (runId) throw new Error('material-not-found');
+      return;
+    }
 
-    console.log(`[FinanceBot:RAG] started materialId=${materialId} type=${material.format}`);
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), {
+        status: 'running',
+        stage,
+        message: 'Parsing source material',
+      });
+    }
+
+    console.log(`[FinanceBot:RAG] started runId=${runId ?? 'direct'} materialId=${materialId} type=${material.format}`);
     const text = await extractText(material);
+    result.characterCount = text.length;
     console.log(`[FinanceBot:RAG] parsed materialId=${materialId} chars=${text.length}`);
-    // First ~2000 chars persisted for IN-S06 (Task 7): classifyMaterial and
-    // suggestHierarchy read this excerpt rather than re-parsing the file or
-    // re-fetching a URL material. Non-empty only.
     const excerpt = text.slice(0, EXCERPT_MAX_CHARS);
+
+    stage = 'chunking';
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), { status: 'running', stage, message: 'Chunking parsed text' });
+    }
     const chunks = await chunkText(text, material.name);
+    result.chunkCount = chunks.length;
     console.log(`[FinanceBot:RAG] chunked materialId=${materialId} chunks=${chunks.length}`);
+
+    stage = 'embedding';
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), {
+        status: 'running',
+        stage,
+        totalUnits: chunks.length,
+        message: `Embedding ${chunks.length} chunks`,
+      });
+    }
     const vectors = chunks.length > 0 ? await embed(chunks.map((chunk) => chunk.text)) : [];
+    result.vectorCount = vectors.length;
     if (chunks.length > 0) {
       console.log(`[FinanceBot:RAG] embedded materialId=${materialId} vectors=${vectors.length}`);
     }
+
+    stage = 'indexing';
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), {
+        status: 'running',
+        stage,
+        completedUnits: vectors.length,
+        totalUnits: chunks.length,
+        message: `Indexing ${vectors.length} vectors`,
+      });
+    }
     const collectionName = courseCollection(material.courseId);
     await ensureMaterialsCollection(collectionName);
-    // Captured as a plain string const so the closure below doesn't need
-    // to re-narrow the outer `let id: ObjectId | undefined` (TypeScript
-    // doesn't carry narrowing into closures for a mutable outer binding).
     const materialIdStr = id.toString();
-    // Replace the material's entire point set. Deterministic upsert ids alone
-    // cannot remove old tail chunks when a re-parse becomes shorter.
     await deletePointsByFilter(collectionName, {
       must: [{ key: 'materialId', match: { value: materialIdStr } }],
     });
@@ -470,38 +611,91 @@ export async function ingestMaterial(materialId: string): Promise<void> {
         payload: { materialId: materialIdStr, chunkIndex: i, chunk: chunk.text },
       }));
       await upsertPoints(collectionName, points);
+      result.indexedCount = points.length;
       console.log(`[FinanceBot:RAG] indexed materialId=${materialId} points=${points.length}`);
     }
 
-    await materialsCol().updateOne(
-      { _id: id },
+    const ready = await materialsCol().updateOne(
+      { _id: id, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
       { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' } },
     );
-    console.log(`[FinanceBot:RAG] completed materialId=${materialId}`);
+    if (runId && ready.matchedCount === 0) throw new Error('material-run-superseded');
 
-    // IN-S06 (Task 7): best-effort auto-classification of the freshly ingested
-    // material. Deliberately guarded by its OWN try/catch, separate from the
-    // ingest try above: the material is already `ready`, so a classifier or LLM
-    // failure must never flip it back to `failed`. It stays ready + unclassified
-    // (client shows "Unclassified"); a later suggest/accept flow can revisit it.
+    stage = 'classifying';
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), {
+        status: 'running',
+        stage,
+        completedUnits: chunks.length,
+        totalUnits: chunks.length,
+        message: excerpt ? 'Classifying material against course structure' : 'No text available to classify',
+      });
+    }
     if (excerpt) {
       try {
         await classifyMaterial(id);
-      } catch {
-        // advisory only — swallow so `ready` stands.
+        if (runId) {
+          const classified = await materialsCol().findOne(
+            { _id: id },
+            { projection: { classificationSuggestion: 1 } },
+          );
+          result.classification = classified?.classificationSuggestion ? 'suggested' : 'no-match';
+        }
+      } catch (classificationError) {
+        result.classification = 'warning';
+        if (runId) {
+          await updateContentRun(new ObjectId(runId), {
+            status: 'running',
+            stage,
+            completedUnits: chunks.length,
+            totalUnits: chunks.length,
+            warning: {
+              code: 'material-classification-failed',
+              message: classificationError instanceof Error ? classificationError.message : String(classificationError),
+              atStage: stage,
+            },
+            eventType: 'warning',
+            message: 'Material is ready, but automatic classification failed',
+          });
+        }
       }
     }
+
+    if (runId) {
+      await updateContentRun(new ObjectId(runId), {
+        status: 'completed',
+        stage,
+        completedUnits: chunks.length,
+        totalUnits: chunks.length,
+        result,
+        message: 'Material ingestion completed',
+      });
+    }
+    console.log(`[FinanceBot:RAG] completed runId=${runId ?? 'direct'} materialId=${materialId}`);
   } catch (err) {
-    if (!id) return; // materialId itself was malformed; nothing to mark failed.
+    if (!id) return;
     const message = err instanceof Error ? err.message : String(err);
+    if (runId && message === 'content-run-conflict') return;
     console.error(`[FinanceBot:RAG] failed materialId=${materialId}: ${message}`);
     try {
-      await materialsCol().updateOne({ _id: id }, { $set: { status: 'failed', error: message } });
+      await materialsCol().updateOne(
+        { _id: id, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
+        { $set: { status: 'failed', error: message } },
+      );
+      if (runId) {
+        await failContentRun(
+          new ObjectId(runId),
+          {
+            code: materialIngestErrorCode(message),
+            message,
+            atStage: stage,
+            retryable: true,
+          },
+          result,
+        );
+      }
     } catch {
-      // Guard the degenerate case: if even this write fails, swallow it
-      // rather than reject out of the job handler (IN-S04's "must never
-      // throw"). The material is left in whatever status it was already in;
-      // a subsequent retry (or the next ingest attempt) will try again.
+      // Preserve IN-S04 isolation even if the failure-status write itself fails.
     }
   }
 }
@@ -520,5 +714,15 @@ export async function ingestMaterial(materialId: string): Promise<void> {
  * component and never call this.
  */
 export function registerMaterialJobs(): void {
-  defineJob<{ materialId: string }>('material.ingest', ({ materialId }) => ingestMaterial(materialId));
+  defineJob<MaterialIngestJobData>(MATERIAL_INGEST_JOB, async ({ runId }) => {
+    let runObjectId: ObjectId;
+    try {
+      runObjectId = new ObjectId(runId);
+    } catch {
+      return;
+    }
+    const run = await getContentRun(runObjectId);
+    if (!run || run.kind !== 'material-ingest' || run.status !== 'queued') return;
+    await ingestMaterial(run.input.materialId.toHexString(), runId);
+  });
 }

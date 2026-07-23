@@ -22,6 +22,7 @@ from `env` (`env.mongodbUri`, `env.mongodbDbName`); no `process.env` access here
 | `defineJob<T>(name, handler)` | Register a named job handler. Throws if `startJobs()` has not run. |
 | `enqueueJob<T>(name, data)` | Run a job now. Throws if `startJobs()` has not run. |
 | `scheduleRecurring(name, interval)` | Schedule a defined job on a recurring interval (e.g. `'1 day'`). |
+| `hasPendingJob(name, runId)` | Startup-only check for a live Agenda job whose `data.runId` matches a durable content run. |
 
 ## Registering job handlers: do NOT call `defineJob()` at module level
 
