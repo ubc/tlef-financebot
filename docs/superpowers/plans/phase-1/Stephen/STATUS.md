@@ -32,7 +32,11 @@ P2-0 persistent content runs and live progress are now code-complete:
 
 **Automated verification (Node 22.22.3):** lint, server/client typecheck, build,
 diff check, focused service/route/SSE tests, and full Jest all pass — **44 test
-suites / 430 tests**. The live browser reload/reconnect smoke remains an honest
+suites / 433 tests**. Final recovery review also made reconnect replay recent
+terminal snapshots (so offline completion cannot leave stale `running` UI),
+excluded completed Agenda records from pending-job reconciliation, persisted
+allowed grounding IDs before Qdrant retrieval, and isolated Material run/link
+failures from permanent `processing`. The live browser reload/reconnect smoke remains an honest
 pre-merge checkpoint because the local app and Mongo/Qdrant/SAML backing
 services were not running (ports 6118/27017/6333/6122 unavailable).
 

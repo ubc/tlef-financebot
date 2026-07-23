@@ -331,7 +331,7 @@ Response behavior:
 
 ```text
 event: snapshot
-data: { "runs": ContentRunSummary[] }   // current queued/running runs
+data: { "runs": ContentRunSummary[] }   // newest 100 runs, including terminal
 
 event: run
 id: <runId>:<revision>
@@ -339,7 +339,9 @@ data: ContentRunSummary
 ```
 
 - Authenticate and validate the course before sending SSE headers.
-- Send the persisted active-run snapshot immediately on every connection.
+- Send the newest 100 persisted run snapshots immediately on every connection.
+  Terminal runs are required: if a run finishes while EventSource is offline,
+  active-only replay would leave the client stuck on its last `running` state.
 - Then send `run` only after the corresponding Mongo CAS succeeds.
 - Ignore `Last-Event-ID` for replay: reconnect always starts from the newest
   persisted snapshot, so an in-memory event buffer is never authoritative.
@@ -389,7 +391,8 @@ collection.
 - Pre-seeding stores every returned generation `runId`, renders live status and
   success/failure counts, refreshes coverage on terminal success/partial, and
   links completed Draft IDs to the existing Review Queue/detail surfaces.
-- Reload recovers active/recent runs from list + the stream's initial snapshot.
+- Reload recovers active/recent runs from list + the stream's initial snapshot;
+  reconnect also converges terminal changes missed while the stream was down.
   A transient stream failure may use bounded snapshot polling as fallback; it
   never discards the last persisted state.
 
@@ -414,7 +417,8 @@ collection.
 - snapshot/list/stream require authentication + the target course instructor;
 - mismatched course/run returns indistinguishable 404;
 - list filters/limit validate and sort newest first;
-- connect and reconnect receive current persisted active snapshots;
+- connect and reconnect receive current persisted recent snapshots, including
+  terminal changes that could have been missed while disconnected;
 - an update is observable only after the mocked persistence promise resolves;
 - disconnect removes the subscriber/heartbeat.
 

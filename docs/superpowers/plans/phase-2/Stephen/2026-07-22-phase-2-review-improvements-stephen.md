@@ -140,7 +140,7 @@ Contract proposal:
 - Code-complete on `codex/phase-2-content-runs`; not yet merged.
 - Node 22.22.3: lint, server/client typecheck, build, and `git diff --check`
   pass.
-- Full Jest: 44 suites / 430 tests pass, including focused durable-run CAS,
+- Full Jest: 44 suites / 433 tests pass, including focused durable-run CAS,
   restart reconciliation, SSE connect/reconnect/cleanup, material failure and
   classification-warning, concurrent retry, generation partial, and strict
   grounding failure cases.
