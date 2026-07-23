@@ -6,7 +6,11 @@ Saurav's personal, task-by-task implementation plans for Phase 2 — Pilot Readi
 core phase document
 [`../2026-07-11-phase-2-pilot-readiness.md`](../2026-07-11-phase-2-pilot-readiness.md),
 covering only the tasks whose `**Owner:**` matches Saurav, and save the result
-in this folder (e.g. `2026-07-11-phase-2-pilot-readiness-saurav.md`).
+in this folder (e.g. `2026-07-23-phase-2-pilot-readiness-saurav.md` — dated to
+when the plan was written, not the core document's date).
+
+Current plan: [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
+Progress: [`STATUS.md`](STATUS.md).
 
 **How to share it:** run `npm run sync-plans -- Saurav` to publish this folder
 to `main` and pull Stephen's latest plans. See the root `CLAUDE.md` /
