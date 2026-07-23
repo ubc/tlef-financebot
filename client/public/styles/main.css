@@ -3161,6 +3161,64 @@ button.class-row--link:focus-visible .class-row__title {
   gap: 0.4rem;
 }
 
+/* ---- Flag queue (Task 2, instructor half) ----------------------------------- */
+
+.flag-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.flag-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 3fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.flag-table__rows .flag-row:last-child {
+  border-bottom: none;
+}
+
+.flag-row--head {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+.flag-row__stem {
+  overflow-wrap: anywhere;
+}
+
+.flag-row__stem p {
+  margin: 0;
+}
+
+.flag-row__topic,
+.flag-row__reason,
+.flag-row__stale {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.flag-row__stale {
+  font-style: italic;
+}
+
+.flag-row__actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-self: end;
+}
+
 /* ---- Pre-seeding coverage + Generate (N9 / I12) ----------------------------- */
 
 .preseeding-table {

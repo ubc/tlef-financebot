@@ -43,6 +43,7 @@ import { renderSettings } from './views/instructor/settings.js';
 import { renderBank } from './views/instructor/bank.js';
 import { renderQuestionDetail } from './views/instructor/question-detail.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
+import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
@@ -80,6 +81,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
   { path: '/instructor/course/:id/bank', render: renderBank },
   { path: '/instructor/course/:id/queue', render: renderReviewQueue },
+  { path: '/instructor/course/:id/flags', render: renderFlagQueue },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
