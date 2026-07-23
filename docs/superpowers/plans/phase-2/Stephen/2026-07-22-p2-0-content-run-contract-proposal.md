@@ -1,9 +1,11 @@
 # P2-0 Content Run Contract Proposal
 
 _Author: Stephen / Codex_  
-_Status: accepted for implementation by Stephen; Saurav review remains asynchronous_  
-_Owner after acceptance: Stephen_  
-_Required reviewer: Saurav_
+_Status: implemented and automatically verified on `codex/phase-2-content-runs`; live smoke/PR pending_
+
+_Owner: Stephen_
+
+_Integration reviewer: Saurav (asynchronous, non-blocking)_
 
 ## Decision summary
 
@@ -436,9 +438,10 @@ collection.
 - Redux, WebSockets, or a second job/workflow engine; and
 - multi-process SSE fan-out.
 
-## Review request for Saurav
+## Asynchronous integration note for Saurav
 
-Please acknowledge this contract or name a concrete objection against one of:
+No acknowledgment is required before Stephen continues. During normal PR
+review, please name any concrete objection against one of:
 
 1. one run per Material (rather than one upload-batch run);
 2. one course-level SSE stream;

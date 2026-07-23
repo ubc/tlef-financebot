@@ -1,7 +1,8 @@
 # Stephen — Phase 2 Review-Derived Improvements
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: P2-0 implementation authorized and starting; Saurav informed asynchronously_  
+_Status: P2-0 implementation and automated verification complete; live smoke/PR pending; Saurav informed asynchronously_
+
 _Branch: `codex/phase-2-content-runs`_  
 _Phase 1 Task 16: intentionally deferred, not completed_
 
@@ -52,8 +53,10 @@ map are reviewed.
 ## P2-I0: Persistent content runs and live progress
 
 **Owner:** Stephen (explicit cross-owner takeover)  
-**Reviewer:** Saurav  
-**Sync point:** API/domain contract before implementation  
+**Integration reviewer:** Saurav (asynchronous, non-blocking)
+
+**Sync point:** API/domain contract published before implementation
+
 **Depends on:** merged Phase 1 jobs, materials, generation, S1 grounding
 
 ### Intended behavior
@@ -83,40 +86,44 @@ map are reviewed.
 - [x] Publish the contract for asynchronous Saurav review. Per Stephen's later
   explicit authorization, acknowledgment is not required before implementation.
 
-### Implementation after contract acknowledgment
+### Implementation
 
-- [ ] Add `ContentRun` domain types, `contentRunsCol()`, indexes, and a bounded
+- [x] Add `ContentRun` domain types, `contentRunsCol()`, indexes, and a bounded
   append/update service with compare-and-set legal transitions.
-- [ ] Add authenticated course-scoped snapshot/list/SSE routes; persist before
+- [x] Add authenticated course-scoped snapshot/list/SSE routes; persist before
   broadcast and clean up subscribers on disconnect.
-- [ ] Change material enqueue/worker flow to create and advance an ingest run,
+- [x] Change material enqueue/worker flow to create and advance an ingest run,
   returning/linking its unique ID without breaking material retrieval.
-- [ ] Change generation enqueue/worker flow to create and advance a generation
+- [x] Change generation enqueue/worker flow to create and advance a generation
   run, record allowed material IDs/source provenance, preserve successful
   Draft IDs, and surface per-item failures.
-- [ ] Reconcile orphaned runs during startup after jobs are registered.
-- [ ] Add instructor progress/history UI with reload/reconnect behavior and
+- [x] Reconcile orphaned runs after Agenda startup and before content handlers
+  are registered.
+- [x] Add instructor progress/history UI with reload/reconnect behavior and
   actionable terminal errors.
-- [ ] Update `docs/api-contract.md`, component guidance, shared state, and the
-  shared Phase 2 core plan in the same PR once the contract is accepted.
+- [x] Update `docs/api-contract.md`, component guidance, shared state, and the
+  shared Phase 2 core plan in the same PR.
 
 ### Required tests
 
-- [ ] Identical enqueue requests receive distinct run IDs.
-- [ ] Legal stages are persisted with monotonic counters; stale/illegal updates
+- [x] Identical enqueue requests receive distinct run IDs.
+- [x] Legal stages are persisted with monotonic counters; stale/illegal updates
   fail compare-and-set without broadcasting false progress.
-- [ ] Every broadcast follows a successful Mongo write.
-- [ ] SSE connect/reconnect receives the latest snapshot, then future events.
-- [ ] Cross-course and wrong-role snapshot/list/SSE reads are rejected.
-- [ ] One generation item failure yields `partial` and preserves successful
+- [x] Every broadcast follows a successful Mongo write.
+- [x] SSE connect/reconnect receives the latest snapshot, then future events.
+- [x] Cross-course and wrong-role snapshot/list/SSE reads are rejected.
+- [x] One generation item failure yields `partial` and preserves successful
   Draft IDs plus failure details.
-- [ ] Material parse/chunk/embed/index failures become durable terminal runs and
+- [x] Material parse/chunk/embed/index failures become durable terminal runs and
   never leave the UI in an endless `processing` state.
-- [ ] Startup reconciliation gives interrupted runs an explicit terminal error.
-- [ ] Existing material, generation, strict-grounding, and job tests remain
+- [x] Startup reconciliation gives interrupted runs an explicit terminal error.
+- [x] Existing material, generation, strict-grounding, and job tests remain
   green after contract migration.
-- [ ] Typecheck, lint, build, full Jest, and the focused browser reconnect flow
+- [x] Typecheck, lint, build, full Jest, and focused route-level reconnect tests
   pass under the repository's supported Node 22 runtime.
+- [ ] Run one live browser smoke against local backing services: start a
+  material and generation run, reload both instructor views mid-run, and
+  verify the persisted snapshot resumes before future SSE events.
 
 ## Stop condition for this first slice
 
@@ -127,3 +134,19 @@ informed asynchronously and remains the integration reviewer.
 
 Contract proposal:
 [`2026-07-22-p2-0-content-run-contract-proposal.md`](./2026-07-22-p2-0-content-run-contract-proposal.md).
+
+## Verification and handoff (2026-07-22)
+
+- Code-complete on `codex/phase-2-content-runs`; not yet merged.
+- Node 22.22.3: lint, server/client typecheck, build, and `git diff --check`
+  pass.
+- Full Jest: 44 suites / 430 tests pass, including focused durable-run CAS,
+  restart reconciliation, SSE connect/reconnect/cleanup, material failure and
+  classification-warning, concurrent retry, generation partial, and strict
+  grounding failure cases.
+- Live browser smoke remains pending because the app and its Mongo/Qdrant/SAML
+  backing services were not running locally. This does not reopen the
+  implementation design; it is the final runtime evidence checkpoint.
+- Saurav should review/integrate the branch normally and must not implement a
+  parallel content-run model. No acknowledgment is required for Stephen to
+  continue.

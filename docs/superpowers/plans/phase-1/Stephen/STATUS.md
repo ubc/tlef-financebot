@@ -2,6 +2,43 @@
 
 _Last updated: 2026-07-22_
 
+## Update (2026-07-22, P2-0 code-complete; Saurav informed without blocking)
+
+Stephen explicitly confirmed that P2-0 must continue without waiting for
+Saurav's acknowledgment. Saurav is informed through this status and Stephen's
+synced Phase 2 plan; his normal integration review remains welcome, but it is
+not an implementation gate.
+
+**Branch:** `codex/phase-2-content-runs` (pending PR/merge).
+
+P2-0 persistent content runs and live progress are now code-complete:
+
+- Mongo `contentRuns` stores distinct material-ingest and question-generation
+  runs, legal compare-and-set transitions, bounded event history, progress,
+  warnings, partial results, and durable terminal errors.
+- Agenda carries only `{ runId }`; enqueue failures and startup-interrupted or
+  missing jobs become visible failed runs instead of permanent spinners.
+- Course-scoped instructor list/snapshot/SSE endpoints recover persisted state
+  on connect/reconnect and publish only after successful Mongo writes.
+- Material upload/retry links `activeRunId`; generation returns unique
+  `{ runId }`, pins allowed grounding Materials/model choices, preserves
+  successful Drafts on per-item failure, and reports `partial` truthfully.
+- Materials and Pre-seeding now show stage/counters/history over one
+  course-level EventSource. The permanent three-second Material polling loop
+  is removed; terminal events trigger one convergence refresh.
+- `docs/api-contract.md`, component guidance, and the shared Phase 2 plan now
+  make P2-0 a foundation for later generation work instead of permitting a
+  second job/progress model.
+
+**Automated verification (Node 22.22.3):** lint, server/client typecheck, build,
+diff check, focused service/route/SSE tests, and full Jest all pass — **44 test
+suites / 430 tests**. The live browser reload/reconnect smoke remains an honest
+pre-merge checkpoint because the local app and Mongo/Qdrant/SAML backing
+services were not running (ports 6118/27017/6333/6122 unavailable).
+
+Phase 1 Task 16 remains explicitly deferred and unchecked; this work does not
+claim the Phase 1 exit gate passed.
+
 ## Update (2026-07-22, Stephen product decision: defer Task 16 and start Phase 2)
 
 Stephen explicitly chose to **defer, not complete, Phase 1 Task 16** and begin
