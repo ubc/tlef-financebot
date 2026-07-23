@@ -2,9 +2,12 @@
 
 _Last updated: 2026-07-23_
 
-**Nothing implemented yet.** This file exists from the planning pass, not from
-code review. Personal plan:
+**Task 1 code-complete on `saurav/task-1-flag-service`, awaiting push + PR.**
+Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
+Executed with the superpowers `subagent-driven-development` skill; the running
+ledger (commit ranges, review verdicts) is in the gitignored
+`.superpowers/sdd/progress.md`.
 
 ## How the Phase 2 split happened
 
@@ -27,8 +30,8 @@ Stephen's source documents (unedited by me):
 
 | Task | What | Status | Blocked by |
 |---|---|---|---|
-| 1 | Flag service — state machine, auto-pause | not started | nothing (Phase 1 S2 already merged) |
-| 2 (my half) | Instructor flag-resolution queue | not started | Task 1 |
+| 1 | Flag service — state machine, auto-pause | code-complete (`saurav/task-1-flag-service`, commits `0eb53c6`+`590ea94`), awaiting push + PR | nothing (Phase 1 S2 already merged) |
+| 2 (my half) | Instructor flag-resolution queue | not started | Task 1 (done, not yet merged) |
 | 3 | In-app notifications, tiered | not started | Task 1 |
 | 6 | Remediation report + checklist | not started | Task 3 |
 | 8 | Question import (CSV/JSON/QTI) | not started | nothing |
@@ -38,6 +41,32 @@ Stephen's source documents (unedited by me):
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
+
+## Deviations from the plan
+
+### Task 1 — found in review, fixed without a ruling (in-spec)
+
+1. **Auto-pause formula's two arms were incorrectly coupled.** The brief's
+   independent-arms formula `(attempts≥minAttempts AND flag%≥flagPercent) OR
+   (flagCount≥flagCount)` was implemented as `attempts≥minAttempts AND
+   (flag%≥flagPercent OR flagCount≥flagCount)` — gating the absolute-count arm
+   behind the small-sample guard too. Caught in review (none of the 10
+   required tests probed that quadrant); fixed to two genuinely independent
+   arms, OR'd, with a new test covering the exposed case (low attempt count,
+   absolute `flagCount` threshold met → should still pause).
+2. **`resolveFlag` wrote the flag to a terminal state before the question-side
+   consequence.** A failure on the question side (e.g. resolving a second
+   flag with `action:'archive'` on an already-archived question throws
+   `invalid-transition:archived->archived`) left the flag permanently marked
+   resolved with the stated consequence never applied and no audit entry.
+   Fixed: all three `resolveFlag` branches now apply the question-side
+   consequence first and only write the flag's terminal state once it
+   succeeds. One accepted-Minor residual: `archive`'s consequence-then-write
+   ordering still has a narrow window if the question-side call succeeds but
+   the subsequent flag write itself fails (retry then permanently throws) —
+   consistent with other non-transactional write patterns already accepted
+   elsewhere in this codebase (`transitionQuestion`'s own state-then-audit
+   ordering), not fixed here.
 
 ## Not mine (Stephen's, Dev A) — tracked here only so nobody duplicates them
 
