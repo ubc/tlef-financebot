@@ -22,6 +22,40 @@
 
 ---
 
+### P2-0 foundation: durable content runs + live progress
+
+**Owner:** Stephen (explicit cross-owner takeover)
+
+**Integration reviewer:** Saurav (asynchronous, non-blocking)
+
+**Status:** code-complete on `codex/phase-2-content-runs`; do not mark merged until its PR lands
+
+Stephen's Task 16 exploration showed that material ingestion and question
+generation could remain visually stuck or lose all request identity after a
+reload. Phase 2 therefore starts with a small shared foundation before the
+numbered pilot tasks: Mongo `contentRuns` is the durable source of truth,
+Agenda jobs carry only `{ runId }`, and one course-scoped SSE stream delivers
+persisted updates to instructor views.
+
+**Interfaces:**
+
+- Produces the `ContentRun` discriminated union, `contentRunsCol()` and indexes,
+  compare-and-set status/stage updates, bounded event history, and startup
+  reconciliation for interrupted/missing jobs.
+- Produces guarded list/snapshot/SSE routes under
+  `/api/courses/:courseId/content-runs`, `Material.activeRunId`, and the unique
+  `202 { runId }` response for question generation.
+- Material ingestion and Phase 1 pre-seeding generation now use this foundation;
+  future Phase 2 work must extend it rather than introduce a second polling,
+  job-history, or workflow state model.
+- Full contract and rationale:
+  [`Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](./Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
+
+- [ ] **Merge checkpoint:** implementation, automated tests, docs, and live
+  reload/reconnect smoke are complete and the P2-0 PR is merged.
+
+---
+
 ### Task 1: Flag service — student flagging + flag state machine (ST-P09, §6.2)
 
 **Files:**
@@ -327,12 +361,18 @@ try {
 - Test: `tests/unit/custom-generation.test.ts`
 
 **Interfaces:**
-- Consumes: Phase 1 Task 8 pipeline; `materialsCol()`.
+- Consumes: Phase 1 Task 8 pipeline; P2-0 durable generation-run contract;
+  `materialsCol()`.
 - Produces:
   - @-mention resolution: `prompt` text like `@lecture-3.pdf` resolves to that material's chunks (retrieval restricted to mentioned materials when any mention present).
   - `PRESET_PROMPTS: Array<{ label: string; text: string }>` (four presets: calculation question, concept check, common-misconception probe, applied scenario) — served by `GET /api/generation/presets`, populating the input for editing.
   - `regenerateQuestion(questionId, prompt, byPuid): Promise<{ variant: { stem; options; ... } }>` — runs the pipeline for one question **without saving**; the client shows original and variant side-by-side; "Replace" calls the existing `editQuestion` with the variant's content (original untouched until then, IN-Q12); regeneration attempts recorded on the question (`regenerations: [{ prompt, at }]` — add the optional field to `Question`).
   - Generation UI: free-text prompt with target LO / type / difficulty controls, preset picker, material @-mention autocomplete; output lands in the review queue as Draft with the prompt recorded (IN-Q11).
+  - P2-0 compatibility: custom-prompt batch generation returns its unique
+    `runId` and reuses course-level run history/SSE. If side-by-side
+    regeneration becomes asynchronous, extend the `ContentRun` contract in
+    the same PR; do not restore the constant Agenda `jobId` response or add a
+    separate client-only progress tracker.
 
 - [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
 - [ ] **Step 2–4: FAIL → implement → PASS.**

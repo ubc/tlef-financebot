@@ -24,6 +24,12 @@ jest.mock('../../server/src/components/qdrant', () => ({
 // IN-S06 (Task 7) wires best-effort classifyMaterial into the ingest tail;
 // mock it here so these IN-S04/S05 tests stay isolated from the classifier.
 jest.mock('../../server/src/services/classification.service', () => ({ classifyMaterial: jest.fn() }));
+jest.mock('../../server/src/services/content-runs.service', () => ({
+  createMaterialIngestRun: jest.fn(),
+  failContentRun: jest.fn(),
+  getContentRun: jest.fn(),
+  updateContentRun: jest.fn(),
+}));
 
 import os from 'node:os';
 import path from 'node:path';
@@ -47,6 +53,12 @@ import { embed, getEmbeddingDimension } from '../../server/src/components/genai/
 import { parseFile } from '../../server/src/components/genai/document-parsing';
 import { ensureCollection, upsertPoints, deletePointsByFilter } from '../../server/src/components/qdrant';
 import { classifyMaterial } from '../../server/src/services/classification.service';
+import {
+  createMaterialIngestRun,
+  failContentRun,
+  getContentRun,
+  updateContentRun,
+} from '../../server/src/services/content-runs.service';
 
 const insertOne = jest.fn();
 const findOne = jest.fn();
@@ -106,6 +118,33 @@ beforeEach(() => {
     findOneAndDelete,
   } as never);
   insertOne.mockImplementation(async () => ({ insertedId: new ObjectId() }));
+  jest.mocked(createMaterialIngestRun).mockImplementation(async (input) => {
+    const now = new Date();
+    return {
+      _id: new ObjectId(),
+      courseId: input.courseId,
+      kind: 'material-ingest',
+      requestedBy: input.requestedBy,
+      status: 'queued',
+      stage: 'queued',
+      completedUnits: 0,
+      revision: 0,
+      events: [],
+      warnings: [],
+      input: {
+        materialId: input.materialId,
+        sourceName: input.sourceName,
+        sourceFormat: input.sourceFormat,
+        trigger: input.trigger,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  jest.mocked(failContentRun).mockReset();
+  jest.mocked(getContentRun).mockReset();
+  jest.mocked(updateContentRun).mockReset();
+  updateOne.mockResolvedValue({ matchedCount: 1 });
   jest.mocked(getEmbeddingDimension).mockResolvedValue(3);
 });
 
@@ -140,9 +179,39 @@ describe('createMaterials — independent processing (IN-S04)', () => {
       expect(doc.courseId).toEqual(courseId);
     }
     expect(enqueueJob).toHaveBeenCalledTimes(3);
-    expect(enqueueJob).toHaveBeenNthCalledWith(1, 'material.ingest', { materialId: ids[0].toString() });
-    expect(enqueueJob).toHaveBeenNthCalledWith(2, 'material.ingest', { materialId: ids[1].toString() });
-    expect(enqueueJob).toHaveBeenNthCalledWith(3, 'material.ingest', { materialId: ids[2].toString() });
+    expect(enqueueJob).toHaveBeenNthCalledWith(1, 'material.ingest', { runId: materials[0]!.activeRunId!.toString() });
+    expect(enqueueJob).toHaveBeenNthCalledWith(2, 'material.ingest', { runId: materials[1]!.activeRunId!.toString() });
+    expect(enqueueJob).toHaveBeenNthCalledWith(3, 'material.ingest', { runId: materials[2]!.activeRunId!.toString() });
+  });
+
+  it('returns a failed Material and durable failed run when Agenda enqueue is unavailable', async () => {
+    jest.mocked(enqueueJob).mockRejectedValueOnce(new Error('agenda down'));
+
+    const [material] = await createMaterials(new ObjectId(), [uploadedFile('a.pdf')], 'PUID-INSTR');
+
+    expect(material).toMatchObject({ status: 'failed', error: 'agenda down' });
+    expect(failContentRun).toHaveBeenCalledWith(
+      material!.activeRunId,
+      expect.objectContaining({ code: 'content-run-enqueue-failed', atStage: 'queued' }),
+    );
+    expect(updateOne).toHaveBeenLastCalledWith(
+      { _id: material!._id, activeRunId: material!.activeRunId },
+      { $set: { status: 'failed', error: 'agenda down' } },
+    );
+  });
+
+  it('marks the inserted Material failed when its durable run cannot be created', async () => {
+    jest.mocked(createMaterialIngestRun).mockRejectedValueOnce(new Error('run storage unavailable'));
+
+    const [material] = await createMaterials(new ObjectId(), [uploadedFile('notes.pdf')], 'PUID-INSTR');
+
+    expect(material).toMatchObject({ status: 'failed', error: 'run storage unavailable' });
+    expect(material!.activeRunId).toBeUndefined();
+    expect(updateOne).toHaveBeenLastCalledWith(
+      { _id: material!._id },
+      { $set: { status: 'failed', error: 'run storage unavailable' } },
+    );
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 });
 
@@ -159,7 +228,7 @@ describe('createUrlMaterial (IN-S04)', () => {
     expect(material.status).toBe('processing');
     const [doc] = insertOne.mock.calls[0];
     expect(doc.sourceUrl).toBe('https://example.com/notes');
-    expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { materialId: insertedId.toString() });
+    expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { runId: material.activeRunId!.toString() });
   });
 });
 
@@ -213,6 +282,97 @@ describe('ingestMaterial — success path (IN-S04)', () => {
     // material is handed to the best-effort classifier after being marked ready.
     expect(update.$set.excerpt).toBe('parsed text');
     expect(classifyMaterial).toHaveBeenCalledWith(materialId);
+  });
+
+  it('persists parse/chunk/embed/index/classify stages and a completed result for a durable run', async () => {
+    const courseId = new ObjectId();
+    const materialId = new ObjectId();
+    const runId = new ObjectId();
+    const material = materialFixture(materialId, courseId, 'notes.pdf', { activeRunId: runId });
+    findOne.mockResolvedValueOnce(material).mockResolvedValueOnce({ classificationSuggestion: { confidence: 0.9 } });
+    updateOne.mockResolvedValue({ matchedCount: 1 });
+    jest.mocked(parseFile).mockResolvedValue('parsed text');
+    jest.mocked(chunkText).mockResolvedValue([{ text: 'chunk', metadata: { chunkNumber: 0 } }] as never);
+    jest.mocked(embed).mockResolvedValue([[1, 2, 3]]);
+
+    await ingestMaterial(materialId.toHexString(), runId.toHexString());
+
+    const updates = jest.mocked(updateContentRun).mock.calls.map((call) => call[1]);
+    expect(updates.map((update) => update.stage)).toEqual([
+      'parsing',
+      'chunking',
+      'embedding',
+      'indexing',
+      'classifying',
+      'classifying',
+    ]);
+    expect(updates.at(-1)).toMatchObject({
+      status: 'completed',
+      completedUnits: 1,
+      totalUnits: 1,
+      result: {
+        characterCount: 11,
+        chunkCount: 1,
+        vectorCount: 1,
+        indexedCount: 1,
+        classification: 'suggested',
+      },
+    });
+    expect(failContentRun).not.toHaveBeenCalled();
+  });
+
+  it('completes with a durable warning when advisory classification fails', async () => {
+    const courseId = new ObjectId();
+    const materialId = new ObjectId();
+    const runId = new ObjectId();
+    const material = materialFixture(materialId, courseId, 'notes.pdf', { activeRunId: runId });
+    findOne.mockResolvedValue(material);
+    updateOne.mockResolvedValue({ matchedCount: 1 });
+    jest.mocked(parseFile).mockResolvedValue('parsed text');
+    jest.mocked(chunkText).mockResolvedValue([{ text: 'chunk', metadata: { chunkNumber: 0 } }] as never);
+    jest.mocked(embed).mockResolvedValue([[1, 2, 3]]);
+    jest.mocked(classifyMaterial).mockRejectedValueOnce(new Error('classifier unavailable'));
+
+    await ingestMaterial(materialId.toHexString(), runId.toHexString());
+
+    expect(updateContentRun).toHaveBeenCalledWith(
+      runId,
+      expect.objectContaining({
+        status: 'running',
+        stage: 'classifying',
+        warning: expect.objectContaining({ code: 'material-classification-failed' }),
+      }),
+    );
+    expect(jest.mocked(updateContentRun).mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'completed',
+      result: { classification: 'warning' },
+    });
+    expect(failContentRun).not.toHaveBeenCalled();
+  });
+
+  it('persists a stable terminal failure for a tracked parse error', async () => {
+    const courseId = new ObjectId();
+    const materialId = new ObjectId();
+    const runId = new ObjectId();
+    findOne.mockResolvedValue(materialFixture(materialId, courseId, 'broken.pdf', { activeRunId: runId }));
+    updateOne.mockResolvedValue({ matchedCount: 1 });
+    jest.mocked(parseFile).mockRejectedValue(new Error('corrupt pdf with arbitrary detail'));
+
+    await expect(ingestMaterial(materialId.toHexString(), runId.toHexString())).resolves.toBeUndefined();
+
+    expect(updateOne).toHaveBeenLastCalledWith(
+      { _id: materialId, activeRunId: runId },
+      { $set: { status: 'failed', error: 'corrupt pdf with arbitrary detail' } },
+    );
+    expect(failContentRun).toHaveBeenCalledWith(
+      runId,
+      expect.objectContaining({
+        code: 'material-ingest-failed',
+        message: 'corrupt pdf with arbitrary detail',
+        atStage: 'parsing',
+      }),
+      expect.any(Object),
+    );
   });
 });
 
@@ -817,25 +977,59 @@ describe('assignMaterial (IN-S05)', () => {
 });
 
 describe('retryMaterial', () => {
-  it('resets status to processing, clears any prior error, and re-enqueues the ingest job', async () => {
+  it('creates a new durable run, compare-and-sets failed to processing, and enqueues by runId', async () => {
     const materialId = new ObjectId();
-    const updated = materialFixture(materialId, new ObjectId(), 'broken.pdf', { status: 'processing' });
+    const current = materialFixture(materialId, new ObjectId(), 'broken.pdf', { status: 'failed', error: 'bad pdf' });
+    findOne.mockResolvedValue(current);
+    const runId = new ObjectId();
+    jest.mocked(createMaterialIngestRun).mockResolvedValue({ _id: runId } as never);
+    const updated = materialFixture(materialId, current.courseId, 'broken.pdf', {
+      status: 'processing',
+      activeRunId: runId,
+    });
     findOneAndUpdate.mockResolvedValue(updated);
 
     const result = await retryMaterial(materialId);
 
     expect(result).toBe(updated);
     const [filter, update, options] = findOneAndUpdate.mock.calls[0]!;
-    expect(filter).toEqual({ _id: materialId });
-    expect(update).toEqual({ $set: { status: 'processing' }, $unset: { error: '' } });
+    expect(filter).toEqual({ _id: materialId, status: 'failed' });
+    expect(update).toEqual({ $set: { status: 'processing', activeRunId: runId }, $unset: { error: '' } });
     expect(options).toEqual({ returnDocument: 'after' });
-    expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { materialId: materialId.toString() });
+    expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { runId: runId.toString() });
   });
 
   it('throws material-not-found and does not enqueue when the material does not exist', async () => {
-    findOneAndUpdate.mockResolvedValue(null);
+    findOne.mockResolvedValue(null);
 
     await expect(retryMaterial(new ObjectId())).rejects.toThrow('material-not-found');
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('fails the losing run when a concurrent retry already replaced the active run', async () => {
+    const materialId = new ObjectId();
+    const previousRunId = new ObjectId();
+    const current = materialFixture(materialId, new ObjectId(), 'broken.pdf', {
+      status: 'failed',
+      error: 'bad pdf',
+      activeRunId: previousRunId,
+    });
+    const losingRunId = new ObjectId();
+    findOne.mockResolvedValue(current);
+    jest.mocked(createMaterialIngestRun).mockResolvedValue({ _id: losingRunId } as never);
+    findOneAndUpdate.mockResolvedValue(null);
+
+    await expect(retryMaterial(materialId, 'PUID-INSTR')).rejects.toThrow('material-retry-conflict');
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: materialId, status: 'failed', activeRunId: previousRunId },
+      expect.any(Object),
+      { returnDocument: 'after' },
+    );
+    expect(failContentRun).toHaveBeenCalledWith(
+      losingRunId,
+      expect.objectContaining({ code: 'material-retry-conflict' }),
+    );
     expect(enqueueJob).not.toHaveBeenCalled();
   });
 });

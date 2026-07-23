@@ -3,11 +3,9 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
-import { enqueueJob } from '../components/jobs';
 import {
+  enqueueGenerationRun,
   preseedingProgress,
-  GENERATION_JOB,
-  type GenerationJobData,
 } from '../services/generation.service';
 
 // Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
@@ -32,7 +30,7 @@ const generateBody = z.object({
 
 /**
  * POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?, prompt? }
- * -> 202 { jobId }. Instructor-only. Enqueues the async pipeline; results land
+ * -> 202 { runId }. Instructor-only. Enqueues the async pipeline; results land
  * later as Draft questions in the review queue (the pipeline never publishes).
  */
 generationRouter.post(
@@ -41,18 +39,18 @@ generationRouter.post(
   ensureCourseInstructor(),
   validate({ body: generateBody }),
   async (req, res) => {
-    const courseId = String(req.params.courseId);
+    const courseId = new ObjectId(String(req.params.courseId));
     const body = req.body as z.infer<typeof generateBody>;
-    await enqueueJob<GenerationJobData>(GENERATION_JOB, {
+    const runId = await enqueueGenerationRun({
       courseId,
-      loId: body.loId,
+      loId: new ObjectId(body.loId),
       count: body.count ?? DEFAULT_GENERATION_COUNT,
       ...(body.type ? { type: body.type } : {}),
       ...(body.difficulty ? { difficulty: body.difficulty } : {}),
       ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
       byPuid: req.user!.puid,
     });
-    res.status(202).json({ jobId: GENERATION_JOB });
+    res.status(202).json({ runId: runId.toHexString() });
   },
 );
 
@@ -76,6 +74,7 @@ generationRouter.get(
 const GENERATION_ERROR_STATUS: Record<string, number> = {
   'lo-not-found': 404,
   'lo-not-in-course': 403,
+  'content-run-enqueue-failed': 503,
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

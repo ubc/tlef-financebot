@@ -47,6 +47,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `PUT /api/materials/:materialId/assignments`. All routes are
   **instructor-gated**; materialId-scoped routes stash `res.locals.courseId`
   from the target material first, the same pattern as `questions.routes.ts`.
+- `content-runs.routes.ts` — Phase 2 P2-0 durable material/generation progress:
+  recent course run history, one full snapshot, and one course-scoped SSE
+  stream. Instructor-gated; the stream sends recent persisted state before
+  live updates.
 
 ## Auth-gating a route
 

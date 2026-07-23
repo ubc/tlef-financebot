@@ -14,6 +14,7 @@ jest.mock('../../server/src/config/env', () => ({
     llmModelValidator: 'val-model',
     llmModelReviewer: 'rev-model',
     llmDefaultModel: 'default-model',
+    embeddingsModel: 'embed-model',
   },
 }));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
@@ -29,14 +30,32 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   materialsCol: jest.fn(),
   questionsCol: jest.fn(),
 }));
+jest.mock('../../server/src/services/content-runs.service', () => ({
+  createQuestionGenerationRun: jest.fn(),
+  failContentRun: jest.fn(),
+  getContentRun: jest.fn(),
+  updateContentRun: jest.fn(),
+}));
 
 import { ObjectId } from 'mongodb';
-import { runGenerationPipeline, preseedingProgress } from '../../server/src/services/generation.service';
+import {
+  enqueueGenerationRun,
+  preseedingProgress,
+  registerGenerationJobs,
+  runGenerationPipeline,
+} from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
 import { search } from '../../server/src/components/qdrant';
 import { createQuestion } from '../../server/src/services/questions.service';
 import { losCol, materialsCol, questionsCol } from '../../server/src/components/mongodb/collections';
+import { defineJob, enqueueJob } from '../../server/src/components/jobs';
+import {
+  createQuestionGenerationRun,
+  failContentRun,
+  getContentRun,
+  updateContentRun,
+} from '../../server/src/services/content-runs.service';
 
 const loFindOne = jest.fn();
 const loToArray = jest.fn();
@@ -69,6 +88,13 @@ beforeEach(() => {
   loToArray.mockReset();
   materialToArray.mockReset();
   countDocuments.mockReset();
+  jest.mocked(defineJob).mockReset();
+  jest.mocked(enqueueJob).mockReset();
+  jest.mocked(createQuestionGenerationRun).mockReset();
+  jest.mocked(failContentRun).mockReset();
+  jest.mocked(getContentRun).mockReset();
+  jest.mocked(updateContentRun).mockReset();
+  jest.mocked(updateContentRun).mockResolvedValue({} as never);
 
   jest.mocked(losCol).mockReturnValue({
     findOne: loFindOne,
@@ -96,6 +122,135 @@ beforeEach(() => {
     questionId: new ObjectId(),
     version: { _id: new ObjectId() },
   } as never);
+});
+
+describe('durable generation runs (P2-0)', () => {
+  it('validates the LO, persists a unique run, and enqueues only its runId', async () => {
+    const runId = new ObjectId();
+    jest.mocked(createQuestionGenerationRun).mockResolvedValue({
+      _id: runId,
+      result: { createdQuestionIds: [], failures: [] },
+    } as never);
+
+    const returned = await enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR' });
+
+    expect(returned).toEqual(runId);
+    expect(createQuestionGenerationRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        courseId,
+        loId,
+        count: 2,
+        type: 'mcq',
+        requestedBy: 'PUID-INSTR',
+        models: {
+          embedding: 'embed-model',
+          generator: 'gen-model',
+          validator: 'val-model',
+          reviewer: 'rev-model',
+        },
+      }),
+    );
+    expect(enqueueJob).toHaveBeenCalledWith('generation.run', { runId: runId.toHexString() });
+  });
+
+  it('keeps a successful Draft and finishes partial when another item fails validation', async () => {
+    const runId = new ObjectId();
+    const createdQuestionId = new ObjectId();
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: runId,
+      courseId,
+      kind: 'question-generation',
+      requestedBy: 'PUID-INSTR',
+      status: 'queued',
+      stage: 'queued',
+      completedUnits: 0,
+      totalUnits: 2,
+      revision: 0,
+      events: [],
+      warnings: [],
+      input: {
+        loId,
+        count: 2,
+        type: 'mcq',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      result: { createdQuestionIds: [], failures: [] },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockRejectedValueOnce(new Error('validator unavailable'))
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'good' });
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: createdQuestionId, version: {} } as never);
+
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: runId.toHexString() });
+
+    const terminal = jest
+      .mocked(updateContentRun)
+      .mock.calls.map((call) => call[1])
+      .find((update) => update.status === 'partial');
+    expect(terminal).toMatchObject({ status: 'partial', completedUnits: 2 });
+    expect(terminal?.result).toEqual({
+      createdQuestionIds: [createdQuestionId],
+      failures: [expect.objectContaining({ item: 1, stage: 'validating', code: 'generation-validation-failed' })],
+    });
+    const pinnedCallIndex = jest.mocked(updateContentRun).mock.calls.findIndex((call) =>
+      Boolean(call[1].grounding && call[1].grounding.retrievedChunkCount === 0),
+    );
+    expect(pinnedCallIndex).toBeGreaterThanOrEqual(0);
+    expect(jest.mocked(updateContentRun).mock.invocationCallOrder[pinnedCallIndex]!).toBeLessThan(
+      jest.mocked(search).mock.invocationCallOrder[0]!,
+    );
+    expect(failContentRun).not.toHaveBeenCalled();
+  });
+
+  it('durably fails a tracked batch before generation when assigned grounding is missing', async () => {
+    const runId = new ObjectId();
+    materialToArray.mockResolvedValue([]);
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: runId,
+      courseId,
+      kind: 'question-generation',
+      requestedBy: 'PUID-INSTR',
+      status: 'queued',
+      stage: 'queued',
+      completedUnits: 0,
+      totalUnits: 1,
+      revision: 0,
+      events: [],
+      warnings: [],
+      input: {
+        loId,
+        count: 1,
+        type: 'mcq',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      result: { createdQuestionIds: [], failures: [] },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: runId.toHexString() });
+
+    expect(failContentRun).toHaveBeenCalledWith(
+      runId,
+      expect.objectContaining({
+        code: 'generation-no-assigned-materials',
+        atStage: 'retrieving',
+      }),
+      { createdQuestionIds: [], failures: [] },
+    );
+    expect(completeJson).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
 });
 
 describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () => {

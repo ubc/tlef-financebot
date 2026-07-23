@@ -2,12 +2,26 @@ import { ObjectId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { embedOne } from '../components/genai/embeddings';
 import { search } from '../components/qdrant';
-import { defineJob } from '../components/jobs';
+import { defineJob, enqueueJob } from '../components/jobs';
 import { losCol, materialsCol, questionsCol } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
 import { courseCollection } from './materials.service';
-import type { Difficulty, OptionRole, QuestionOption, QuestionType } from '../types/domain';
+import {
+  createQuestionGenerationRun,
+  failContentRun,
+  getContentRun,
+  updateContentRun,
+} from './content-runs.service';
+import type {
+  Difficulty,
+  OptionRole,
+  QuestionGenerationFailure,
+  QuestionGenerationResult,
+  QuestionGenerationRun,
+  QuestionOption,
+  QuestionType,
+} from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Generation service (PRD §9.1, IN-Q10): the three-agent question pipeline.
@@ -61,23 +75,21 @@ export interface GenerationInput {
   difficulty?: Difficulty;
   prompt?: string;
   byPuid: string;
+  models?: QuestionGenerationRun['input']['models'];
 }
 
-/** JSON-serializable payload for the `generation.run` Agenda job (ObjectIds as
- * hex strings). */
+/** Agenda carries only the durable run identity; Mongo owns request details. */
 export interface GenerationJobData {
-  courseId: string;
-  loId: string;
-  count: number;
-  type?: QuestionType;
-  difficulty?: Difficulty;
-  prompt?: string;
-  byPuid: string;
+  runId: string;
 }
 
 interface RetrievedChunk {
   materialId?: string;
   text: string;
+}
+interface RetrievedGrounding {
+  chunks: RetrievedChunk[];
+  allowedMaterialIds: string[];
 }
 interface GeneratorOutput {
   stem: string;
@@ -90,6 +102,46 @@ interface ValidatorOutput {
 interface ReviewerOutput {
   decision: string;
   reasoning: string;
+}
+
+function configuredGenerationModels(): QuestionGenerationRun['input']['models'] {
+  return {
+    embedding: env.embeddingsModel,
+    generator: env.llmModelGenerator,
+    validator: env.llmModelValidator,
+    reviewer: env.llmModelReviewer,
+  };
+}
+
+/** Validate the target synchronously, persist one unique run, then enqueue it. */
+export async function enqueueGenerationRun(input: GenerationInput): Promise<ObjectId> {
+  const lo = await losCol().findOne({ _id: input.loId });
+  if (!lo) throw new Error('lo-not-found');
+  if (!lo.courseId.equals(input.courseId)) throw new Error('lo-not-in-course');
+
+  const run = await createQuestionGenerationRun({
+    courseId: input.courseId,
+    requestedBy: input.byPuid,
+    loId: input.loId,
+    count: input.count,
+    type: input.type ?? 'mcq',
+    ...(input.difficulty ? { difficulty: input.difficulty } : {}),
+    ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+    models: input.models ?? configuredGenerationModels(),
+  });
+  try {
+    await enqueueJob<GenerationJobData>(GENERATION_JOB, { runId: run._id.toHexString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await failContentRun(run._id, {
+      code: 'content-run-enqueue-failed',
+      message,
+      atStage: 'queued',
+      retryable: true,
+    }, run.result);
+    throw new Error('content-run-enqueue-failed', { cause: error });
+  }
+  return run._id;
 }
 
 /**
@@ -114,7 +166,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // Retrieve once: every question in this batch targets the same LO/prompt, so
   // the grounding query is identical. Variety across the batch comes from the
   // warm generator (GENERATOR_TEMPERATURE), not from re-retrieving.
-  const chunks = await retrieveChunks(collection, courseId, lo, prompt);
+  const { chunks } = await retrieveChunks(collection, courseId, lo, prompt);
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks);
@@ -176,6 +228,236 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   return created;
 }
 
+interface TrackedCandidate {
+  item: number;
+  generated: GeneratorOutput;
+  validation?: ValidatorOutput;
+  review?: ReviewerOutput;
+}
+
+function generationFailure(
+  item: number,
+  stage: QuestionGenerationFailure['stage'],
+  error: unknown,
+  fallbackCode: string,
+): QuestionGenerationFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  const prefix = message.split(':')[0];
+  return {
+    item,
+    stage,
+    code: /^[a-z0-9-]+$/.test(prefix) ? prefix : fallbackCode,
+    message,
+  };
+}
+
+/** Production job path: durable stages plus per-item partial-success semantics. */
+async function runTrackedGenerationPipeline(input: GenerationInput, runId: ObjectId): Promise<ObjectId[]> {
+  const { courseId, loId, count, prompt, byPuid } = input;
+  const type: QuestionType = input.type ?? 'mcq';
+  const models = input.models ?? configuredGenerationModels();
+  const result: QuestionGenerationResult = { createdQuestionIds: [], failures: [] };
+  let stage: QuestionGenerationRun['stage'] = 'retrieving';
+
+  try {
+    await updateContentRun(runId, { status: 'running', stage, message: 'Retrieving assigned course material' });
+    const lo = await losCol().findOne({ _id: loId });
+    if (!lo) throw new Error('lo-not-found');
+    if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
+
+    const allowedMaterialIds = await groundingMaterialIds(courseId, lo);
+    if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+    await updateContentRun(runId, {
+      status: 'running',
+      stage,
+      grounding: {
+        allowedMaterialIds: allowedMaterialIds.map((id) => new ObjectId(id)),
+        retrievedChunkCount: 0,
+      },
+      result,
+      message: `Pinned ${allowedMaterialIds.length} assigned material${allowedMaterialIds.length === 1 ? '' : 's'}`,
+    });
+    const grounding = await retrieveChunks(courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds);
+    const chunks = grounding.chunks;
+    stage = 'generating';
+    await updateContentRun(runId, {
+      status: 'running',
+      stage,
+      grounding: {
+        allowedMaterialIds: grounding.allowedMaterialIds.map((id) => new ObjectId(id)),
+        retrievedChunkCount: chunks.length,
+      },
+      result,
+      message: `Retrieved ${chunks.length} grounded chunks`,
+    });
+
+    const generated: TrackedCandidate[] = [];
+    for (let item = 0; item < count; item += 1) {
+      try {
+        const candidate = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
+        if (!candidate) throw new Error('generation-invalid-options');
+        generated.push({ item, generated: candidate });
+        await updateContentRun(runId, {
+          status: 'running',
+          stage,
+          completedUnits: result.failures.length,
+          result,
+          message: `Generated candidate ${item + 1} of ${count}`,
+        });
+      } catch (error) {
+        result.failures.push(generationFailure(item, 'generating', error, 'generation-item-failed'));
+        await updateContentRun(runId, {
+          status: 'running',
+          stage,
+          completedUnits: result.failures.length,
+          result,
+          message: `Candidate ${item + 1} failed during generation`,
+        });
+      }
+    }
+
+    stage = 'validating';
+    await updateContentRun(runId, {
+      status: 'running',
+      stage,
+      completedUnits: result.failures.length,
+      result,
+      message: `Validating ${generated.length} candidates`,
+    });
+    const validated: TrackedCandidate[] = [];
+    for (const candidate of generated) {
+      try {
+        candidate.validation = await completeJson<ValidatorOutput>(
+          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated }),
+          { model: models.validator },
+        );
+        validated.push(candidate);
+      } catch (error) {
+        result.failures.push(generationFailure(candidate.item, 'validating', error, 'generation-validation-failed'));
+      }
+      await updateContentRun(runId, {
+        status: 'running',
+        stage,
+        completedUnits: result.failures.length,
+        result,
+        message: `Validated candidate ${candidate.item + 1}`,
+      });
+    }
+
+    stage = 'reviewing';
+    await updateContentRun(runId, {
+      status: 'running',
+      stage,
+      completedUnits: result.failures.length,
+      result,
+      message: `Reviewing ${validated.length} candidates`,
+    });
+    const reviewed: TrackedCandidate[] = [];
+    for (const candidate of validated) {
+      try {
+        candidate.review = await completeJson<ReviewerOutput>(
+          REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
+          { model: models.reviewer },
+        );
+        reviewed.push(candidate);
+      } catch (error) {
+        result.failures.push(generationFailure(candidate.item, 'reviewing', error, 'generation-review-failed'));
+      }
+      await updateContentRun(runId, {
+        status: 'running',
+        stage,
+        completedUnits: result.failures.length,
+        result,
+        message: `Reviewed candidate ${candidate.item + 1}`,
+      });
+    }
+
+    stage = 'persisting';
+    await updateContentRun(runId, {
+      status: 'running',
+      stage,
+      completedUnits: result.failures.length,
+      result,
+      message: `Saving ${reviewed.length} Draft questions`,
+    });
+    const sourceRefs = chunks
+      .filter((chunk) => chunk.materialId)
+      .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
+    for (const candidate of reviewed) {
+      try {
+        const { questionId } = await createQuestion({
+          courseId,
+          loIds: [loId],
+          themeIds: [lo.themeId],
+          type,
+          stem: candidate.generated.stem,
+          options: candidate.generated.options,
+          difficulty: normalizeDifficulty(input.difficulty ?? candidate.generated.difficulty),
+          sourceRefs,
+          createdBy: byPuid,
+          ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
+          agentDecision: {
+            decision: normalizeDecision(candidate.review?.decision),
+            reasoning: String(candidate.review?.reasoning ?? ''),
+            roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
+          },
+        });
+        result.createdQuestionIds.push(questionId);
+      } catch (error) {
+        result.failures.push(generationFailure(candidate.item, 'persisting', error, 'generation-persist-failed'));
+      }
+      await updateContentRun(runId, {
+        status: 'running',
+        stage,
+        completedUnits: result.createdQuestionIds.length + result.failures.length,
+        result,
+        message: `Processed candidate ${candidate.item + 1}`,
+      });
+    }
+
+    if (result.createdQuestionIds.length === 0) {
+      await failContentRun(
+        runId,
+        {
+          code: 'generation-no-questions-created',
+          message: 'No Draft questions could be created from this run.',
+          atStage: stage,
+          retryable: true,
+        },
+        result,
+      );
+      return [];
+    }
+
+    const status = result.createdQuestionIds.length === count ? 'completed' : 'partial';
+    await updateContentRun(runId, {
+      status,
+      stage,
+      completedUnits: count,
+      result,
+      message:
+        status === 'completed'
+          ? `Created ${result.createdQuestionIds.length} Draft questions`
+          : `Created ${result.createdQuestionIds.length} of ${count} Draft questions`,
+    });
+    return result.createdQuestionIds;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === 'content-run-conflict') return result.createdQuestionIds;
+    await failContentRun(
+      runId,
+      {
+        code: /^[a-z0-9-]+$/.test(message) ? message : 'generation-run-failed',
+        message,
+        atStage: stage,
+        retryable: true,
+      },
+      result,
+    );
+    return result.createdQuestionIds;
+  }
+}
+
 /**
  * Per-LO pre-seeding progress (IN-Q10): how many Approved / Reviewed questions
  * each LO has, against the target of 5. Read-only.
@@ -204,17 +486,29 @@ export async function preseedingProgress(
 /** Registers the `generation.run` job. Called from server.ts AFTER startJobs()
  * — never at module load (see the module header / Task 6 boot-crash lesson). */
 export function registerGenerationJobs(): void {
-  defineJob<GenerationJobData>(GENERATION_JOB, (data) =>
-    runGenerationPipeline({
-      courseId: new ObjectId(data.courseId),
-      loId: new ObjectId(data.loId),
-      count: data.count,
-      ...(data.type ? { type: data.type } : {}),
-      ...(data.difficulty ? { difficulty: data.difficulty } : {}),
-      ...(data.prompt !== undefined ? { prompt: data.prompt } : {}),
-      byPuid: data.byPuid,
-    }).then(() => undefined),
-  );
+  defineJob<GenerationJobData>(GENERATION_JOB, async ({ runId }) => {
+    let id: ObjectId;
+    try {
+      id = new ObjectId(runId);
+    } catch {
+      return;
+    }
+    const run = await getContentRun(id);
+    if (!run || run.kind !== 'question-generation' || run.status !== 'queued') return;
+    await runTrackedGenerationPipeline(
+      {
+        courseId: run.courseId,
+        loId: run.input.loId,
+        count: run.input.count,
+        type: run.input.type,
+        ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
+        ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
+        byPuid: run.requestedBy,
+        models: run.input.models,
+      },
+      id,
+    );
+  });
 }
 
 // --- Internals ---------------------------------------------------------------
@@ -246,8 +540,9 @@ async function retrieveChunks(
   courseId: ObjectId,
   lo: { _id: ObjectId; themeId: ObjectId; name: string },
   prompt?: string,
-): Promise<RetrievedChunk[]> {
-  const allowedMaterialIds = await groundingMaterialIds(courseId, lo);
+  pinnedMaterialIds?: string[],
+): Promise<RetrievedGrounding> {
+  const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo));
   if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
 
   const query = prompt ? `${lo.name}\n${prompt}` : lo.name;
@@ -274,7 +569,7 @@ async function retrieveChunks(
     // malformed/stale hit enough to write a forbidden sourceRef.
     .filter((chunk) => chunk.materialId !== undefined && allowed.has(chunk.materialId) && chunk.text.length > 0);
   if (chunks.length === 0) throw new Error('generation-no-grounding');
-  return chunks;
+  return { chunks, allowedMaterialIds };
 }
 
 /** Run the generator, retrying once if the produced options don't satisfy the
@@ -285,11 +580,12 @@ async function generateValidQuestion(
   difficulty: Difficulty | undefined,
   prompt: string | undefined,
   chunks: RetrievedChunk[],
+  model = env.llmModelGenerator,
 ): Promise<GeneratorOutput | null> {
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
     const candidate = await completeJson<GeneratorOutput>(
       GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
-      { model: env.llmModelGenerator, temperature: GENERATOR_TEMPERATURE },
+      { model, temperature: GENERATOR_TEMPERATURE },
     );
     if (candidate && optionShapeValid(type, candidate.options)) return candidate;
     console.warn(

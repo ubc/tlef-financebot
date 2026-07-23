@@ -3271,6 +3271,36 @@ button.class-row--link:focus-visible .class-row__title {
   font-weight: 650;
 }
 
+.content-run-history {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.content-run-history .section-title,
+.content-run-history .detail-section-title {
+  margin-top: 0;
+}
+
+.content-run-status {
+  display: block;
+  margin: 0.55rem 0;
+}
+
+.content-run-status--failed {
+  border-color: color-mix(in srgb, var(--instr-red-fg) 35%, transparent);
+  background: var(--instr-red-bg);
+  color: var(--instr-red-fg);
+}
+
+.content-run-status--partial {
+  border-color: color-mix(in srgb, var(--instr-amber-fg) 35%, transparent);
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
 /* =============================================================================
    Student shell + design-system primitives (Task 1). Follows the wireframe
    *roughly* — blue/white language, not exact tokens. Mirrors the "Instructor

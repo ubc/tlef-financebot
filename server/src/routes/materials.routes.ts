@@ -128,7 +128,7 @@ materialsRouter.post(
 
     if (files.length > 0) {
       try {
-        const materials = await createMaterials(courseId, files);
+        const materials = await createMaterials(courseId, files, req.user!.puid);
         res.status(201).json(materials);
       } catch (err) {
         // Only clean up when NO material could have been persisted (I4).
@@ -156,7 +156,7 @@ materialsRouter.post(
       });
       return;
     }
-    res.status(201).json([await createUrlMaterial(courseId, parsed.data.url)]);
+    res.status(201).json([await createUrlMaterial(courseId, parsed.data.url, req.user!.puid)]);
   },
 );
 
@@ -178,7 +178,7 @@ materialsRouter.post(
   stashCourseIdFromMaterial(),
   ensureCourseInstructor(),
   async (req, res) => {
-    res.json(await retryMaterial(new ObjectId(String(req.params.materialId))));
+    res.json(await retryMaterial(new ObjectId(String(req.params.materialId)), req.user!.puid));
   },
 );
 
@@ -252,6 +252,7 @@ materialsRouter.get(
 // questions.routes.ts's router-scoped normalizer pattern.
 const MATERIAL_ERROR_STATUS: Record<string, number> = {
   'material-not-found': 404,
+  'material-retry-conflict': 409,
   'no-classification-suggestion': 400, // accept with nothing to accept (IN-S06)
 };
 

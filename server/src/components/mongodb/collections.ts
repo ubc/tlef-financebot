@@ -4,6 +4,7 @@ import type {
   User, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
+  ContentRun,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -26,6 +27,7 @@ export const notificationsCol = (): Collection<Notification> => getDb().collecti
 export const auditCol = (): Collection<AuditLog> => getDb().collection<AuditLog>('auditLogs');
 export const rosterCol = (): Collection<RosterEntry> => getDb().collection<RosterEntry>('rosterEntries');
 export const sessionSummariesCol = (): Collection<SessionSummaryRecord> => getDb().collection<SessionSummaryRecord>('sessionSummaries');
+export const contentRunsCol = (): Collection<ContentRun> => getDb().collection<ContentRun>('contentRuns');
 
 export interface IndexSpec {
   collection: string;
@@ -55,6 +57,8 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'auditLogs', keys: { courseId: 1, createdAt: -1 } },
   { collection: 'rosterEntries', keys: { courseId: 1, identifier: 1 }, options: { unique: true } },
   { collection: 'sessionSummaries', keys: { puid: 1, courseId: 1 }, options: { unique: true } },
+  { collection: 'contentRuns', keys: { courseId: 1, createdAt: -1 } },
+  { collection: 'contentRuns', keys: { courseId: 1, kind: 1, status: 1, createdAt: -1 } },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

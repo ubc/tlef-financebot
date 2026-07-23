@@ -50,6 +50,17 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export type CourseRole = 'student' | 'instructor' | 'ta';
 
+export type ContentRunKind = 'material-ingest' | 'question-generation';
+export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
+export type MaterialIngestStage = 'queued' | 'parsing' | 'chunking' | 'embedding' | 'indexing' | 'classifying';
+export type QuestionGenerationStage =
+  | 'queued'
+  | 'retrieving'
+  | 'generating'
+  | 'validating'
+  | 'reviewing'
+  | 'persisting';
+
 // --- Documents ---------------------------------------------------------------
 
 /** Keyed by CWL PUID (unique index). No PII beyond CWL login attributes. */
@@ -185,8 +196,109 @@ export interface Material {
   // never re-parse files or re-fetch URL materials. Absent until a material is
   // ingested with non-empty text.
   excerpt?: string; // IN-S06
+  /** Newest durable ingest attempt. Older attempts remain in contentRuns. */
+  activeRunId?: ObjectId;
   uploadedAt: Date;
 }
+
+export interface ContentRunError {
+  code: string;
+  message: string;
+  atStage: string;
+  retryable: boolean;
+}
+
+export interface ContentRunWarning {
+  code: string;
+  message: string;
+  atStage: string;
+  at: Date;
+}
+
+export interface ContentRunEvent {
+  revision: number;
+  at: Date;
+  type: 'status' | 'stage' | 'progress' | 'warning';
+  status: ContentRunStatus;
+  stage: string;
+  completedUnits: number;
+  totalUnits?: number;
+  message?: string;
+}
+
+interface ContentRunBase {
+  courseId: ObjectId;
+  requestedBy: string;
+  status: ContentRunStatus;
+  completedUnits: number;
+  totalUnits?: number;
+  revision: number;
+  events: ContentRunEvent[];
+  warnings: ContentRunWarning[];
+  error?: ContentRunError;
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+}
+
+export interface MaterialIngestResult {
+  characterCount: number;
+  chunkCount: number;
+  vectorCount: number;
+  indexedCount: number;
+  classification: 'suggested' | 'no-match' | 'skipped' | 'warning';
+}
+
+export interface MaterialIngestRun extends ContentRunBase {
+  kind: 'material-ingest';
+  stage: MaterialIngestStage;
+  input: {
+    materialId: ObjectId;
+    sourceName: string;
+    sourceFormat: Material['format'];
+    trigger: 'upload' | 'retry';
+    previousRunId?: ObjectId;
+  };
+  result?: MaterialIngestResult;
+}
+
+export interface QuestionGenerationFailure {
+  item: number;
+  stage: 'generating' | 'validating' | 'reviewing' | 'persisting';
+  code: string;
+  message: string;
+}
+
+export interface QuestionGenerationResult {
+  createdQuestionIds: ObjectId[];
+  failures: QuestionGenerationFailure[];
+}
+
+export interface QuestionGenerationRun extends ContentRunBase {
+  kind: 'question-generation';
+  stage: QuestionGenerationStage;
+  input: {
+    loId: ObjectId;
+    count: number;
+    type: QuestionType;
+    difficulty?: Difficulty;
+    prompt?: string;
+    models: {
+      embedding: string;
+      generator: string;
+      validator: string;
+      reviewer: string;
+    };
+  };
+  grounding?: {
+    allowedMaterialIds: ObjectId[];
+    retrievedChunkCount: number;
+  };
+  result?: QuestionGenerationResult;
+}
+
+export type ContentRun = MaterialIngestRun | QuestionGenerationRun;
 
 /** (User, LO) rollup computed from AttemptRecords — never raw judgments. */
 export interface MasteryProfile {

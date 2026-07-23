@@ -22,5 +22,7 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['questions:{"loIds":1}']).toBeDefined();
     expect(byCollection['notifications:{"recipientPuid":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['flags:{"questionVersionId":1,"state":1}']).toBeDefined();
+    expect(byCollection['contentRuns:{"courseId":1,"createdAt":-1}']).toBeDefined();
+    expect(byCollection['contentRuns:{"courseId":1,"kind":1,"status":1,"createdAt":-1}']).toBeDefined();
   });
 });

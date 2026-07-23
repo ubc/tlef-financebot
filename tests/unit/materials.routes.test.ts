@@ -159,7 +159,11 @@ describe('POST /api/courses/:courseId/materials — multipart vs { url } branch'
       .send({ url: 'https://example.com/notes' });
 
     expect(res.status).toBe(201);
-    expect(createUrlMaterial).toHaveBeenCalledWith(expect.any(ObjectId), 'https://example.com/notes');
+    expect(createUrlMaterial).toHaveBeenCalledWith(
+      expect.any(ObjectId),
+      'https://example.com/notes',
+      'PUID-INSTR-0001',
+    );
     expect(createMaterials).not.toHaveBeenCalled();
   });
 
@@ -278,7 +282,7 @@ describe('materialId-scoped routes authenticate BEFORE the stash DB lookup', () 
     const res = await request(makeApp(instructor)).post(`/api/materials/${materialId.toHexString()}/retry`);
 
     expect(res.status).toBe(200);
-    expect(retryMaterial).toHaveBeenCalledWith(expect.any(ObjectId));
+    expect(retryMaterial).toHaveBeenCalledWith(expect.any(ObjectId), 'PUID-INSTR-0001');
   });
 
   it('200s assignments for the material\'s own instructor and replaces assignments', async () => {

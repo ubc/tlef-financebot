@@ -4,9 +4,10 @@ import { connectMongo, closeMongo } from './components/mongodb';
 import { ensureIndexes } from './components/mongodb/collections';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
-import { startJobs } from './components/jobs';
+import { startJobs, stopJobs } from './components/jobs';
 import { registerMaterialJobs } from './services/materials.service';
 import { registerGenerationJobs } from './services/generation.service';
+import { reconcileContentRuns } from './services/content-runs.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -27,6 +28,17 @@ async function main(): Promise<void> {
 
   await startJobs();
   console.log('[server] job queue started');
+
+  // Reconcile durable run truth before registering content handlers. Old
+  // Agenda jobs may still exist after a crash; once handlers are registered
+  // they first inspect the run and no-op when reconciliation made it terminal.
+  const reconciled = await reconcileContentRuns();
+  if (reconciled.interrupted > 0 || reconciled.missingJobs > 0) {
+    console.warn(
+      `[server] content runs reconciled: interrupted=${reconciled.interrupted}, ` +
+        `missingJobs=${reconciled.missingJobs}`,
+    );
+  }
 
   // Registers the material.ingest job handler. Must run after startJobs()
   // (defineJob() requires an already-started Agenda instance) — this can no
@@ -75,6 +87,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`\n[server] ${signal} received, shutting down...`);
     server.close();
+    await stopJobs();
     await closeMongo();
     process.exit(0);
   };

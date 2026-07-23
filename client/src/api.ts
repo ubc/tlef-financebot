@@ -705,7 +705,129 @@ export interface Material {
   assignments: MaterialAssignment[];
   classificationSuggestion?: { themeId: string; loId?: string; confidence: number };
   excerpt?: string;
+  activeRunId?: string;
   uploadedAt: string;
+}
+
+// --- Instructor: durable content runs (Phase 2 P2-0) ------------------------
+
+export type ContentRunKind = 'material-ingest' | 'question-generation';
+export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
+
+export interface ContentRunError {
+  code: string;
+  message: string;
+  atStage: string;
+  retryable: boolean;
+}
+
+interface ContentRunBase {
+  _id: string;
+  courseId: string;
+  kind: ContentRunKind;
+  requestedBy: string;
+  status: ContentRunStatus;
+  stage: string;
+  completedUnits: number;
+  totalUnits?: number;
+  revision: number;
+  warnings: Array<{ code: string; message: string; atStage: string; at: string }>;
+  error?: ContentRunError;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface MaterialIngestRun extends ContentRunBase {
+  kind: 'material-ingest';
+  input: {
+    materialId: string;
+    sourceName: string;
+    sourceFormat: Material['format'];
+    trigger: 'upload' | 'retry';
+    previousRunId?: string;
+  };
+  result?: {
+    characterCount: number;
+    chunkCount: number;
+    vectorCount: number;
+    indexedCount: number;
+    classification: 'suggested' | 'no-match' | 'skipped' | 'warning';
+  };
+}
+
+export interface QuestionGenerationRun extends ContentRunBase {
+  kind: 'question-generation';
+  input: {
+    loId: string;
+    count: number;
+    type: GenerationQuestionType;
+    difficulty?: GenerationDifficulty;
+    prompt?: string;
+    models: { embedding: string; generator: string; validator: string; reviewer: string };
+  };
+  grounding?: { allowedMaterialIds: string[]; retrievedChunkCount: number };
+  result?: {
+    createdQuestionIds: string[];
+    failures: Array<{ item: number; stage: string; code: string; message: string }>;
+  };
+}
+
+export type ContentRunSummary = MaterialIngestRun | QuestionGenerationRun;
+
+export interface ContentRunEvent {
+  revision: number;
+  at: string;
+  type: 'status' | 'stage' | 'progress' | 'warning';
+  status: ContentRunStatus;
+  stage: string;
+  completedUnits: number;
+  totalUnits?: number;
+  message?: string;
+}
+
+export type ContentRunSnapshot = ContentRunSummary & { events: ContentRunEvent[] };
+
+/** GET /api/courses/:courseId/content-runs -> recent compact history. */
+export function listContentRuns(
+  courseId: string,
+  filters: { kind?: ContentRunKind; status?: ContentRunStatus; limit?: number } = {},
+): Promise<ContentRunSummary[]> {
+  const query = new URLSearchParams();
+  if (filters.kind) query.set('kind', filters.kind);
+  if (filters.status) query.set('status', filters.status);
+  if (filters.limit !== undefined) query.set('limit', String(filters.limit));
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  return request<ContentRunSummary[]>(`/api/courses/${encodeURIComponent(courseId)}/content-runs${suffix}`);
+}
+
+/** GET one full durable snapshot, including its bounded event history. */
+export function getContentRun(courseId: string, runId: string): Promise<ContentRunSnapshot> {
+  return request<ContentRunSnapshot>(
+    `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+/** One EventSource per course. Every reconnect receives recent persisted runs. */
+export function subscribeContentRuns(
+  courseId: string,
+  handlers: {
+    onSnapshot: (runs: ContentRunSummary[]) => void;
+    onRun: (run: ContentRunSummary) => void;
+    onError?: () => void;
+  },
+): () => void {
+  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/content-runs/events`);
+  source.addEventListener('snapshot', (event) => {
+    const data = JSON.parse((event as MessageEvent<string>).data) as { runs: ContentRunSummary[] };
+    handlers.onSnapshot(data.runs);
+  });
+  source.addEventListener('run', (event) => {
+    handlers.onRun(JSON.parse((event as MessageEvent<string>).data) as ContentRunSummary);
+  });
+  if (handlers.onError) source.addEventListener('error', handlers.onError);
+  return () => source.close();
 }
 
 /** GET /api/courses/:courseId/materials -> [Material]. */
@@ -802,9 +924,8 @@ export function getPreseeding(courseId: string): Promise<PreseedingLo[]> {
 // to 3 when omitted), `type`/`difficulty` are optional enums, `prompt` is an
 // optional string up to 2000 chars (plain text — @mentions of materials are
 // just characters in this field, there is no separate material-reference
-// param). The route ALWAYS responds 202 with a `jobId` — generation runs as a
-// background job; results land later as Draft questions (see preseeding.ts's
-// module note for why the UI never waits on this promise for a preview).
+// param). The route responds 202 with a unique durable `runId`; progress is
+// delivered through the course content-run stream and results land as Drafts.
 
 export type GenerationQuestionType = 'mcq' | 'true-false';
 export type GenerationDifficulty = 'easy' | 'medium' | 'hard';
@@ -818,10 +939,10 @@ export interface GenerateQuestionsInput {
 }
 
 /** POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?,
- * prompt? } -> 202 { jobId }. Enqueues the async three-agent generation
+ * prompt? } -> 202 { runId }. Enqueues the async three-agent generation
  * pipeline for one LO. */
-export function generateQuestions(courseId: string, input: GenerateQuestionsInput): Promise<{ jobId: string }> {
-  return request<{ jobId: string }>(`/api/courses/${encodeURIComponent(courseId)}/generate`, {
+export function generateQuestions(courseId: string, input: GenerateQuestionsInput): Promise<{ runId: string }> {
+  return request<{ runId: string }>(`/api/courses/${encodeURIComponent(courseId)}/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
