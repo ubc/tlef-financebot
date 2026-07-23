@@ -22,7 +22,70 @@
 
 ---
 
+## Phase 2 entry gate
+
+_Integrated 2026-07-23 from Stephen's [`phase-2-ownership-dependency-proposal.md`](Stephen/2026-07-22-phase-2-ownership-dependency-proposal.md), per Saurav's review._
+
+- [x] Phase 1 S1 strict grounding merged (PR #25).
+- [x] Phase 1 S2 transition CAS merged (PR #25).
+- [ ] Phase 1 Task 16 (exit demo + Approved-only proof) — **not required to start Phase 2**; Stephen explicitly deferred it on 2026-07-22. Still owed before either developer claims the Phase 1 exit gate passed.
+- [x] Task 13 (Layer-2 mastery evaluator) recorded as **slipped** (Stephen's 2026-07-22 closeout decision), not silently absent.
+- [x] This shared plan carries the owner map below.
+- [ ] Each developer's personal Phase 2 plan is written and synced (Saurav's: `Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`).
+
+## Owner map
+
+Adopted as proposed by Stephen (2026-07-22), unchanged. Dev A = Stephen, Dev B = Saurav.
+
+| Work | Primary owner | Review/integration owner |
+|---|---|---|
+| P2-0 persistent ingest/generation runs + SSE (not a numbered task here — see below) | Dev A / Stephen (explicit cross-owner takeover, 2026-07-22) | Dev B / Saurav |
+| Task 1 flag service/state machine | Dev B / Saurav | Dev A / Stephen |
+| Task 2 — student flag control half | Dev A / Stephen | Dev B / Saurav |
+| Task 2 — instructor resolution queue half | Dev B / Saurav | Dev A / Stephen |
+| Task 3 notifications | Dev B / Saurav | Dev A / Stephen |
+| Task 4 parameter sandbox | Dev A / Stephen | Dev B / Saurav |
+| Task 5 parameter serving/config | Dev A / Stephen | Dev B / Saurav |
+| Task 6 remediation | Dev B / Saurav | Dev A / Stephen |
+| Task 7 progression/redirect + finite rounds | Dev A / Stephen | Dev B / Saurav |
+| Task 8 question import | Dev B / Saurav | Dev A / Stephen |
+| Task 9 script migration | Dev B / Saurav | Dev A / Stephen |
+| Task 10 custom generation/blueprint | Dev B / Saurav | Dev A / Stephen |
+| Task 11 phase exit | Joint; Stephen drives E2E, Saurav verifies instructor/AI path | Joint |
+
+Task 2 is one shared feature but two independently reviewable commits/checkbox
+groups (student control vs. instructor queue) — neither developer edits the
+other's half opportunistically; Saurav integrates after both are ready.
+
+**P2-0 (persistent content runs + live progress).** Stephen took this over as
+new Phase-2 infrastructure not in this doc's original 11 tasks — it replaces
+today's polling/fire-and-forget generation enqueue with a durable Mongo
+`contentRuns` record + course-scoped SSE. Full contract:
+[`Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
+Code-complete on `codex/phase-2-content-runs`, **not yet merged** (no PR opened
+as of 2026-07-23). Task 10 depends on it — the generation UI must consume run
+state, not a second ad hoc polling mechanism, so Task 10 cannot start until
+P2-0 merges and the run/list/SSE endpoints land in `docs/api-contract.md`.
+
+## Dependency graph
+
+1. Phase 1 S1 → P2-0 and Task 10.
+2. Phase 1 S2 → Task 1 → Tasks 2, 3, 6, and 11.
+3. P2-0 → Task 10.
+4. Task 3 → Tasks 6 and 7 notification emissions.
+5. Task 4 → Task 5 → Task 9.
+6. Task 8 → Task 9.
+7. Tasks 1, 2, 3, and 6 → Task 11 flag-loop exit proof.
+8. Task 7 may run after Task 3 and the existing Phase 1 mastery/attempts arc; it does not depend on parameterization.
+
+P2-0 and Tasks 1/4 may start in parallel once the entry gate is satisfied.
+
+---
+
 ### Task 1: Flag service — student flagging + flag state machine (ST-P09, §6.2)
+
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
 
 **Files:**
 - Create: `server/src/services/flags.service.ts`
@@ -66,6 +129,9 @@
 
 ### Task 2: Flag UI — student control + instructor resolution queue
 
+**Owner:** split — student control: Dev A (Stephen); instructor resolution queue: Dev B (Saurav)
+**Reviewer:** the other developer, per half
+
 **Files:**
 - Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
 - Create: `client/src/views/instructor/flags.ts`
@@ -82,6 +148,9 @@
 ---
 
 ### Task 3: In-app notification system with tiering (PRD §4.3, §9.1)
+
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
 
 **Files:**
 - Create: `server/src/services/notifications.service.ts`
@@ -107,6 +176,9 @@
 ---
 
 ### Task 4: Parameterized execution sandbox — worker_threads `generate()` (PRD §2)
+
+**Owner:** Dev A (Stephen)
+**Reviewer:** Dev B (Saurav)
 
 **Files:**
 - Create: `server/src/components/param-worker/index.ts`
@@ -214,6 +286,9 @@ try {
 
 ### Task 5: Parameterization config + serve-time randomization (IN-Q09, ST-P03/ST-R04)
 
+**Owner:** Dev A (Stephen)
+**Reviewer:** Dev B (Saurav)
+
 **Files:**
 - Create: `server/src/services/params.service.ts`
 - Modify: `server/src/services/serving.service.ts` + `attempts.service.ts` (Phase 1) — randomize at serve time, pin on the attempt
@@ -238,6 +313,9 @@ try {
 
 ### Task 6: Instructor flag resolution + manual remediation checklist (IN-Q06, §6.2)
 
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
+
 **Files:**
 - Modify: `server/src/services/flags.service.ts` (correctness-affecting path)
 - Create: `server/src/services/remediation.service.ts`
@@ -255,6 +333,9 @@ try {
 ---
 
 ### Task 7: Progression recommendations + repeated-failure redirect surfaces (ST-P05, ST-P07)
+
+**Owner:** Dev A (Stephen)
+**Reviewer:** Dev B (Saurav)
 
 **Files:**
 - Modify: `server/src/services/attempts.service.ts` (redirect trigger)
@@ -274,6 +355,9 @@ try {
 ---
 
 ### Task 8: Question import — CSV/JSON/QTI with preview and partial success (IN-Q01)
+
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
 
 **Files:**
 - Create: `server/src/services/import.service.ts`
@@ -303,6 +387,10 @@ try {
 
 ### Task 9: Parameterized-script migration (IN-Q10 tail)
 
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
+**Depends on:** Dev A's Tasks 4 (sandbox) and 5 (params service) merged.
+
 **Files:**
 - Modify: `server/src/services/import.service.ts` + `import.routes.ts` (script upload path)
 - Modify: `client/src/views/instructor/import.ts`
@@ -319,6 +407,10 @@ try {
 ---
 
 ### Task 10: Custom-prompt generation + regeneration (IN-Q11, IN-Q12) — *first to slip (phase doc #1)*
+
+**Owner:** Dev B (Saurav)
+**Reviewer:** Dev A (Stephen)
+**Depends on:** P2-0 merged (generation UI must consume run state, not a second ad hoc poll — see the P2-0 note above).
 
 **Files:**
 - Modify: `server/src/services/generation.service.ts` (already accepts `prompt` — add @-mention resolution + presets + regenerate)
@@ -341,6 +433,9 @@ try {
 ---
 
 ### Task 11: Phase exit — flag-loop E2E
+
+**Owner:** Joint — Stephen drives the E2E spec; Saurav verifies the instructor/AI side of the loop (flag queue, resolution, remediation notice).
+**Reviewer:** Joint
 
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
@@ -368,3 +463,17 @@ Run: `npm run test:e2e -- tests/e2e/flag-loop.spec.ts` → PASS.
 3. Daily batched summary (Task 3's recurring job only — keep standard + elevated tiers).
 
 **Never slip:** Tasks 1, 3 (core tiers), 4.
+
+## Carried over from Phase 1 (not this plan's scope, tracked for visibility)
+
+- **Phase 1 Task 13** (Layer-2 LLM mastery evaluator) — recorded **slipped** per
+  Stephen's 2026-07-22 closeout decision (see
+  [`../phase-1/Stephen/2026-07-22-phase-1-closeout-review.md`](../phase-1/Stephen/2026-07-22-phase-1-closeout-review.md)).
+  Not part of Phase 2; still nobody's active task.
+- **Phase 1 Task 16** (exit demo + Approved-only proof) — deferred, not
+  completed. Doesn't block Phase 2 per Stephen's explicit exception, but the
+  Phase 1 exit gate isn't claimed until it runs.
+- **Phase 1 shared-doc reconciliation (S0)** — the Phase 1 core plan's Task 7/8/15
+  checkboxes and Saurav's `STATUS.md`/`PHASE-1-UI-HANDOFF.md` are stale
+  relative to merged PRs #19–21; owed as a docs-only pass, tracked in
+  [`Saurav/STATUS.md`](Saurav/STATUS.md) "What's left".
