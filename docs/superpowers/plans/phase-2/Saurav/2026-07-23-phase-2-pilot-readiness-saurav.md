@@ -173,9 +173,27 @@ non-transactional write patterns already accepted elsewhere in this codebase
 - Consumes: Task 1's `GET /api/courses/:courseId/flags` and `POST /api/flags/:flagId/resolve`.
 - Produces: instructor flag queue showing question content, reason, date, flag count per version, with Correct / Archive / Clear actions — Correct opens the existing question editor first, then resolves (per the core document, Task 2).
 
-- [ ] **Step 1: Implement the instructor surface** (follow the Phase-1 instructor view patterns from `views/instructor/review-queue.ts`).
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "feat: instructor flag-resolution queue"`
+- [x] **Step 1: Implement the instructor surface** (follow the Phase-1 instructor view patterns from `views/instructor/review-queue.ts`).
+- [x] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS. (No live stack available — typecheck/lint verified; live-browser check deferred to the ~joint checkpoint pattern used in Phase 1.)
+- [x] **Step 3: Commit** — `git commit -m "feat: instructor flag-resolution queue (Task 2, instructor half)"`
+
+**Post-implementation note (2026-07-23, subagent-driven-development, review clean after one fix round):**
+rows are grouped client-side by `questionVersionId` (one row per question+
+version, `listFlags` returns flat per-flag records); Correct/Archive/Clear act
+on the whole group via a sequential per-flag `resolveFlag` loop (no bulk-
+resolve endpoint exists). Review caught one real UX gap: archiving a group
+with 2+ open flags on the same question — the first resolve succeeds
+(question archived), the second throws `invalid-transition:archived->archived`
+(Task 1's own fixed write-ordering correctly leaves that second flag
+untouched, not corrupted) — and the raw error string was shown to the
+instructor with no explanation. Fixed: a narrow, exact-match translation for
+this one known failure mode ("N of M flag(s) resolved; the question was
+already archived. Use Clear to close the remaining flag(s).") while every
+other error still falls through to the unchanged raw-message fallback.
+Accepted Minor: that translation is coupled to the server's exact error
+string and fails safe (reverts to the old raw message) if that string ever
+changes — not fixed now, noted for whoever next touches
+`flags.service.ts`'s error strings.
 
 > **After merge:** confirm with Stephen that his student-control half posts to
 > the same flag/resolve routes and that both surfaces read consistent state.

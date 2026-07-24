@@ -151,8 +151,8 @@ applied).
 - Consumes: Task 1 routes.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09); instructor flag queue showing question content, reason, date, flag count per version, with Correct / Archive / Clear actions — Correct opens the existing question editor first, then resolves.
 
-- [ ] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow).
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS.
+- [ ] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow). **Instructor half done** (Saurav, `saurav/task-2-flag-queue`, commits `ca6ef9f`+`bd76b53`, review clean) — student-control half (Stephen) still open; leaving this box unchecked until both halves land, per the split-task convention. See [`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-2-my-half-instructor-flag-resolution-queue) for the instructor half's post-implementation note.
+- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS. (Instructor half: typecheck/lint clean, no live stack available to browser-verify.)
 - [ ] **Step 3: Commit** — `git commit -m "feat: flag controls in practice view and instructor flag-resolution queue"`
 
 ---
