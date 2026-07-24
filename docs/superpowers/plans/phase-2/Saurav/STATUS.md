@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-23_
 
-**Task 1 code-complete on `saurav/task-1-flag-service`, awaiting push + PR.**
+**Task 1 and Task 2 (instructor half) code-complete, both pushed as PRs.**
 Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
 Executed with the superpowers `subagent-driven-development` skill; the running
@@ -30,9 +30,9 @@ Stephen's source documents (unedited by me):
 
 | Task | What | Status | Blocked by |
 |---|---|---|---|
-| 1 | Flag service — state machine, auto-pause | code-complete (`saurav/task-1-flag-service`, commits `0eb53c6`+`590ea94`), awaiting push + PR | nothing (Phase 1 S2 already merged) |
-| 2 (my half) | Instructor flag-resolution queue | not started | Task 1 (done, not yet merged) |
-| 3 | In-app notifications, tiered | not started | Task 1 |
+| 1 | Flag service — state machine, auto-pause | **PR #27 open** (`saurav/task-1-flag-service`, commits `0eb53c6`+`590ea94`, review clean) | nothing (Phase 1 S2 already merged) |
+| 2 (my half) | Instructor flag-resolution queue | **PR open** (`saurav/task-2-flag-queue`, stacked on Task 1's branch, commits `ca6ef9f`+`bd76b53`, review clean) | Task 1 (done, not yet merged — this branch is stacked) |
+| 3 | In-app notifications, tiered | not started | Task 1 (done, not yet merged) |
 | 6 | Remediation report + checklist | not started | Task 3 |
 | 8 | Question import (CSV/JSON/QTI) | not started | nothing |
 | 9 | Parameterized-script migration | not started | Stephen's Tasks 4 + 5, my Task 8 |
@@ -43,6 +43,24 @@ Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
 
 ## Deviations from the plan
+
+### Task 2 (instructor half) — found in review, fixed without a ruling (in-spec)
+
+1. **Archive on a multi-flag group hit an unmapped, confusing error.** The
+   brief's "one row per (question, version) group, act on the whole group"
+   design (necessary since `listFlags` returns flat per-flag rows and there's
+   no bulk-resolve endpoint) means Archive loops `resolveFlag` per flag in
+   the group. The second call on an already-archived question throws
+   `invalid-transition:archived->archived` — Task 1's write-ordering fix
+   correctly leaves that flag untouched rather than corrupting it, but the
+   raw error string reached the instructor with no explanation. Fixed with a
+   narrow, exact-match translation for this one known failure mode; every
+   other error still falls through unchanged.
+
+**Branch note:** `saurav/task-2-flag-queue` is stacked on
+`saurav/task-1-flag-service` (not yet merged) — same pattern as Phase 1's
+Task 8 stacking on Task 7. Rebase onto `main` after PR #27 (Task 1) merges,
+before merging PR for Task 2.
 
 ### Task 1 — found in review, fixed without a ruling (in-spec)
 

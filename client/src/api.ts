@@ -1032,3 +1032,75 @@ export interface ReviewQueueItem extends BankQuestion {
 export function getReviewQueue(courseId: string): Promise<ReviewQueueItem[]> {
   return request<ReviewQueueItem[]>(`/api/courses/${encodeURIComponent(courseId)}/review-queue`);
 }
+
+// --- Instructor: flag-resolution queue (ST-P09, §6.2) — Task 2 --------------
+//
+// Verified against server/src/routes/flags.routes.ts + services/flags.service.ts
+// (Task 1, this branch). `toFlagResponse` remaps the top-level flag's `_id` ->
+// `id` (same convention as `toQuestionResponse`), but `listFlags`'s joined
+// `question`/`currentVersion` are passed straight through as raw Mongo
+// documents — NOT re-mapped, so they keep `_id` (see `QuestionVersion` above,
+// which does the same for the same reason). Both join shapes are trimmed here
+// to the fields flags.ts actually renders (stem/type/options via
+// `currentVersion`, state/loIds/themeIds via `question`) — same trimming
+// convention as `BankQuestion` vs. the full `QuestionHead`.
+
+export type FlagState = 'open' | 'escalated' | 'resolved-corrected' | 'resolved-archived' | 'resolved-cleared';
+
+export interface FlagQuestionJoin {
+  _id: string;
+  courseId: string;
+  currentVersionId: string;
+  state: PublicationState;
+  loIds: string[];
+  themeIds: string[];
+  labels: QuestionLabel[];
+}
+
+export interface FlagVersionJoin {
+  _id: string;
+  questionId: string;
+  version: number;
+  type: QuestionType;
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+}
+
+export interface Flag {
+  id: string;
+  courseId: string;
+  questionId: string;
+  questionVersionId: string; // the version this flag was raised against (§6.2) — may differ from question.currentVersionId after a later edit
+  puid: string;
+  reason?: string;
+  state: FlagState;
+  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: string };
+  createdAt: string;
+  question: FlagQuestionJoin | null;
+  currentVersion: FlagVersionJoin | null;
+}
+
+/** GET /api/courses/:courseId/flags?state= -> flags joined with question +
+ * current version (`listFlags`). Instructor-only. `state` omitted fetches
+ * every flag state for the course — flags.ts always calls it this way and
+ * groups/filters open-vs-resolved client-side (see its module note). */
+export function listCourseFlags(courseId: string, state?: FlagState): Promise<Flag[]> {
+  const qs = state ? `?state=${encodeURIComponent(state)}` : '';
+  return request<Flag[]>(`/api/courses/${encodeURIComponent(courseId)}/flags${qs}`);
+}
+
+/** POST /api/flags/:flagId/resolve { action, correctnessAffecting? } -> the
+ * resolved Flag. Instructor-only; the server resolves courseId from the flag
+ * itself, so no courseId is needed here. */
+export function resolveFlag(
+  flagId: string,
+  action: 'correct' | 'archive' | 'clear',
+  correctnessAffecting?: boolean,
+): Promise<Flag> {
+  return request<Flag>(`/api/flags/${encodeURIComponent(flagId)}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}) }),
+  });
+}
