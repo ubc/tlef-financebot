@@ -10,6 +10,8 @@ import {
 } from '../components/mongodb/collections';
 import { transitionQuestion } from './questions.service';
 import { notify, notifyCourseStaff } from './notifications.service';
+import { remediationReport, notifyAffectedStudents } from './remediation.service';
+import type { RemediationReport } from './remediation.service';
 import type { Flag, FlagState, Course, Question, QuestionVersion } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -22,9 +24,11 @@ import type { Flag, FlagState, Course, Question, QuestionVersion } from '../type
 // notifications.service's notify()/notifyCourseStaff()). The pending-review
 // backlog check (checkReviewBacklog) is NOT wired from here — it runs from
 // notifications.service's runDailySummary per-course loop instead, since
-// flagging a question never itself moves anything into pending-review. The
-// remaining `// Task 6:` comment marks a future wiring point outside this
-// task's scope. See server/src/services/AGENTS.md.
+// flagging a question never itself moves anything into pending-review.
+// resolveFlag's correctness-affecting branch (§6.2, Task 6) delegates to
+// remediation.service.ts for both the blast-radius report and the "Notify
+// affected students" action — this file only calls into it, never queries
+// attemptsCol()/reviewBookCol() directly. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
 /** Flag case state machine — decoupled from PublicationState (PRD §6.2).
@@ -191,13 +195,18 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
  * re-evaluation excludes this flag from its own open-flag recount via an
  * explicit `_id: {$ne}` in the query (see `countOpenFlags`), not via write
  * ordering, so this reordering doesn't change its result.
+ *
+ * Return type is widened ADDITIVELY with an optional `remediation` field
+ * (resolved ambiguity #3) — present only when `opts.correctnessAffecting` is
+ * true AND the report computed successfully, so Task 2's existing callers
+ * (which ignore the extra field) keep working unchanged.
  */
 export async function resolveFlag(
   flagId: ObjectId,
   action: 'correct' | 'archive' | 'clear',
   byPuid: string,
   opts?: { correctnessAffecting?: boolean },
-): Promise<WithId<Flag>> {
+): Promise<WithId<Flag> & { remediation?: RemediationReport }> {
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
 
@@ -272,11 +281,36 @@ export async function resolveFlag(
   } catch (err) {
     console.error('notifications: failed to emit flag-resolved notification', err);
   }
+  // §6.2 remediation (Task 6): the flag write + audit entry above have
+  // ALREADY committed, so — mirroring the notify() try/catches above — a
+  // failure computing the report must never turn this already-succeeded
+  // resolution into a 500. On failure, log and omit `remediation`; the
+  // instructor still gets a resolved flag, just without the checklist (they
+  // can be told to retry / escalate manually).
+  let remediation: RemediationReport | undefined;
   if (opts?.correctnessAffecting) {
-    // Task 6: trigger remediation report + notification when correctnessAffecting
+    try {
+      remediation = await remediationReport(flag.questionVersionId);
+    } catch (err) {
+      console.error('remediation: failed to compute remediation report', err);
+    }
   }
 
-  return { ...flag, state: target, resolution };
+  return { ...flag, state: target, resolution, ...(remediation ? { remediation } : {}) };
+}
+
+/**
+ * §6.2 "Notify affected students" button (Task 6): an EXPLICIT instructor
+ * action, unlike the advisory `notify()` calls above — a failure here must
+ * surface to the caller as an error rather than being swallowed, since
+ * nothing has committed yet from the caller's point of view (no flag write
+ * precedes this; it's invoked independently via
+ * `POST /api/flags/:flagId/remediation/notify`).
+ */
+export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: number }> {
+  const flag = await flagsCol().findOne({ _id: flagId });
+  if (!flag) throw new Error('flag-not-found');
+  return notifyAffectedStudents(flag.questionVersionId, flag.courseId);
 }
 
 /**

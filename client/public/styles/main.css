@@ -3180,7 +3180,13 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.88rem;
 }
 
-.flag-table__rows .flag-row:last-child {
+/* Each body row is wrapped in .flag-group (row + optional remediation panel,
+   Task 6) so the "no trailing border" rule below targets the truly LAST
+   group in the list, not any row that happens to be an only child of its own
+   wrapper -- .flag-row's own border-bottom above still separates a row from
+   its panel when both are present. */
+.flag-table__rows > .flag-group:last-child .flag-row,
+.flag-table__rows > .flag-group:last-child .remediation-panel {
   border-bottom: none;
 }
 
@@ -3215,8 +3221,58 @@ button.class-row--link:focus-visible .class-row__title {
 
 .flag-row__actions {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
   justify-self: end;
+}
+
+.flag-row__correctness {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- Remediation checklist panel (§6.2, Task 6) ----------------------------- */
+
+.remediation-panel {
+  padding: 0.75rem 1rem 1rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.remediation-panel__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.remediation-panel__stats {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.remediation-panel__checklist {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.remediation-panel__notify-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.remediation-panel__notified {
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* ---- Pre-seeding coverage + Generate (N9 / I12) ----------------------------- */

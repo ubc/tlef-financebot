@@ -28,7 +28,26 @@
 // reports "resolved" while its consequence silently failed. That second flag
 // is left `open` (the question is already archived either way); the row
 // reappears after reload so the instructor can `Clear` the leftover flag.
-import { ApiError, getCourseTree, listCourseFlags, resolveFlag as resolveFlagApi, type CourseTree, type Flag } from '../../api.js';
+//
+// Task 6 (§6.2 remediation): a "Correctness-affecting" checkbox next to the
+// resolve actions threads `correctnessAffecting` through to every
+// resolveFlagApi call in the group. Per the resolved grouping ambiguity, a
+// correctness-affecting group resolve produces one IDENTICAL remediation
+// report per flag in the group (same questionVersionId) — this view keeps
+// only the first one it sees per group and renders the checklist panel ONCE,
+// not once per flag. "Notify affected students" likewise fires once per
+// group (any one flag id in the group — the server resolves the notify
+// target from that flag's questionVersionId, shared by the whole group).
+import {
+  ApiError,
+  getCourseTree,
+  listCourseFlags,
+  resolveFlag as resolveFlagApi,
+  notifyRemediation as notifyRemediationApi,
+  type CourseTree,
+  type Flag,
+  type RemediationReport,
+} from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { renderRichText } from '../../render.js';
@@ -180,6 +199,24 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
 
   const resultsContainer = el('div', {});
 
+  // Task 6 (§6.2 remediation): per-group state, keyed by `questionVersionId`
+  // (the grouping key — see the module note). Survives `reload()` (which only
+  // replaces `flags`, not these maps) so the checklist panel stays visible
+  // across the re-render a resolve action triggers.
+  const remediationReports = new Map<string, RemediationReport>();
+  const notifiedCounts = new Map<string, number>();
+  const notifyErrorMessages = new Map<string, string>();
+
+  function recordRemediation(group: FlagGroup, remediation: RemediationReport | undefined): void {
+    if (!remediation) return;
+    remediationReports.set(group.questionVersionId, remediation);
+    // A fresh correctness-affecting resolve on this group supersedes any
+    // earlier notify state (defensive — the common case is this only ever
+    // happens once per group).
+    notifiedCounts.delete(group.questionVersionId);
+    notifyErrorMessages.delete(group.questionVersionId);
+  }
+
   /** Resolves every open/escalated flag in `group` with `action`, stopping at
    * the first failure (resolved ambiguity #4, applied to all three actions
    * for consistent, simple error handling — see the module note re: the
@@ -196,13 +233,25 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
    * group rather than retry `Archive` (which will fail identically forever).
    * Detected and translated to an actionable message here; any other
    * unexpected error still surfaces as-is (no general error-translation layer
-   * for cases we haven't seen). */
-  async function resolveGroupFlags(group: FlagGroup, action: ResolveAction): Promise<{ ok: boolean; error?: string }> {
+   * for cases we haven't seen).
+   *
+   * Task 6: also threads `correctnessAffecting` through to every
+   * `resolveFlagApi` call. Per the resolved grouping ambiguity, a
+   * correctness-affecting group resolve returns one IDENTICAL remediation
+   * report per flag (same questionVersionId) — only the FIRST one seen is
+   * kept and returned, so the caller renders the checklist once per group. */
+  async function resolveGroupFlags(
+    group: FlagGroup,
+    action: ResolveAction,
+    correctnessAffecting: boolean,
+  ): Promise<{ ok: boolean; error?: string; remediation?: RemediationReport }> {
     const targets = openFlags(group);
     let resolvedCount = 0;
+    let remediation: RemediationReport | undefined;
     for (const flag of targets) {
       try {
-        await resolveFlagApi(flag.id, action);
+        const resolved = await resolveFlagApi(flag.id, action, correctnessAffecting || undefined);
+        if (!remediation && resolved.remediation) remediation = resolved.remediation;
         resolvedCount++;
       } catch (error) {
         const rawMessage = error instanceof ApiError ? error.message : (error as Error).message;
@@ -216,7 +265,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
         return { ok: false, error: rawMessage };
       }
     }
-    return { ok: true };
+    return { ok: true, remediation };
   }
 
   async function reload(): Promise<void> {
@@ -229,33 +278,113 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     renderResults();
   }
 
-  async function handleClear(group: FlagGroup): Promise<void> {
+  async function handleClear(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
     actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'clear');
+    const result = await resolveGroupFlags(group, 'clear', correctnessAffecting);
     if (!result.ok) actionErrorMessage = result.error ?? 'Failed to clear flag(s).';
+    else recordRemediation(group, result.remediation);
     await reload();
   }
 
-  async function handleArchive(group: FlagGroup): Promise<void> {
+  async function handleArchive(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
     const count = openFlags(group).length;
     if (!window.confirm(`Archive this question? This resolves ${count} flag${count === 1 ? '' : 's'} and removes it from student practice.`)) return;
     actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'archive');
+    const result = await resolveGroupFlags(group, 'archive', correctnessAffecting);
     if (!result.ok) actionErrorMessage = result.error ?? 'Failed to archive question.';
+    else recordRemediation(group, result.remediation);
     await reload();
   }
 
-  async function handleCorrect(group: FlagGroup): Promise<void> {
+  async function handleCorrect(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
     const count = openFlags(group).length;
-    if (!window.confirm(`Resolve ${count} flag${count === 1 ? '' : 's'} as corrected and open the question editor?`)) return;
+    const confirmText = correctnessAffecting
+      ? `Resolve ${count} flag${count === 1 ? '' : 's'} as corrected?`
+      : `Resolve ${count} flag${count === 1 ? '' : 's'} as corrected and open the question editor?`;
+    if (!window.confirm(confirmText)) return;
     actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'correct');
+    const result = await resolveGroupFlags(group, 'correct', correctnessAffecting);
     if (!result.ok) {
       actionErrorMessage = result.error ?? 'Failed to resolve flag(s); question editor not opened.';
       await reload();
       return;
     }
+    if (correctnessAffecting) {
+      // A correctness-affecting resolve surfaces the remediation checklist
+      // (§6.2, Task 6) — stay on this view instead of the usual
+      // navigate-to-editor shortcut, so the instructor sees the blast-radius
+      // report and the "Notify affected students" action.
+      recordRemediation(group, result.remediation);
+      await reload();
+      return;
+    }
     navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(group.questionId)}`);
+  }
+
+  /** "Notify affected students" (§6.2, Task 6) — fires once per group, using
+   * any one flag in the group (the server resolves the notify target from
+   * that flag's `questionVersionId`, which every flag in the group shares by
+   * construction). An explicit user action: unlike resolve failures, a
+   * notify failure is shown inline in the checklist panel rather than
+   * silently retried. */
+  async function handleNotify(group: FlagGroup): Promise<void> {
+    const targetFlag = group.flags[0];
+    if (!targetFlag) return;
+    notifyErrorMessages.delete(group.questionVersionId);
+    try {
+      const result = await notifyRemediationApi(targetFlag.id);
+      notifiedCounts.set(group.questionVersionId, result.notified);
+    } catch (error) {
+      notifyErrorMessages.set(group.questionVersionId, error instanceof ApiError ? error.message : (error as Error).message);
+    }
+    renderResults();
+  }
+
+  /** The §6.2 remediation checklist panel: report numbers + the four
+   * checklist items (three manual, one automated via the "Notify affected
+   * students" button) — rendered under a group's row once it has a stored
+   * remediation report (resolved ambiguity #4: pilot scope is a MANUAL
+   * checklist plus exactly one automated action). Returns `false` (rendering
+   * nothing) for groups that were never resolved with `correctnessAffecting`. */
+  function remediationPanel(group: FlagGroup): HTMLElement | false {
+    const report = remediationReports.get(group.questionVersionId);
+    if (!report) return false;
+
+    const notified = notifiedCounts.get(group.questionVersionId);
+    const notifyError = notifyErrorMessages.get(group.questionVersionId);
+    const studentCount = report.affectedStudents.length;
+
+    const stats =
+      `${report.affectedAttempts} attempt${report.affectedAttempts === 1 ? '' : 's'} across ${studentCount} student${studentCount === 1 ? '' : 's'} ` +
+      `were served the affected content (${report.examAttempts} in exam-prep mode). ` +
+      `${report.reviewBookEntries} Review Book entr${report.reviewBookEntries === 1 ? 'y' : 'ies'} may reference it.`;
+
+    return el(
+      'div',
+      { class: 'remediation-panel' },
+      el('h3', { class: 'remediation-panel__title', text: 'Remediation checklist (correctness-affecting)' }),
+      el('p', { class: 'remediation-panel__stats', text: stats }),
+      el(
+        'ul',
+        { class: 'remediation-panel__checklist' },
+        el('li', { text: 'Recompute correctness for the affected attempts.' }),
+        el('li', { text: 'Drop the affected attempts from mastery windows and re-evaluate.' }),
+        el('li', { text: 'Remove any wrongly-added Review Book entries.' }),
+        el(
+          'li',
+          { class: 'remediation-panel__notify-item' },
+          el('span', { text: 'Notify affected students.' }),
+          notified !== undefined
+            ? el('span', { class: 'remediation-panel__notified', text: ` Notified ${notified} student${notified === 1 ? '' : 's'}.` })
+            : el(
+                'button',
+                { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void handleNotify(group) },
+                'Notify affected students',
+              ),
+        ),
+      ),
+      notifyError ? errorState(notifyError) : false,
+    );
   }
 
   function groupRow(group: FlagGroup): HTMLElement {
@@ -271,23 +400,40 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       ? flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
 
+    // Task 6 (§6.2 remediation): read at click time via closure, rather than
+    // tracked in module state — the checkbox (and this whole row) is rebuilt
+    // on every `renderResults()`, so there's nothing to persist between
+    // renders.
+    const correctnessCheckbox = el('input', {
+      type: 'checkbox',
+      'aria-label': 'Correctness-affecting',
+    }) as HTMLInputElement;
+
     const actions = open
       ? el(
           'div',
           { class: 'flag-row__actions' },
-          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void handleCorrect(group) }, 'Correct'),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleArchive(group) }, 'Archive'),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClear(group) }, 'Clear'),
+          el(
+            'label',
+            { class: 'flag-row__correctness', title: 'Mark this resolution as correctness-affecting to see the remediation checklist.' },
+            correctnessCheckbox,
+            el('span', { text: 'Correctness-affecting' }),
+          ),
+          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void handleCorrect(group, correctnessCheckbox.checked) }, 'Correct'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleArchive(group, correctnessCheckbox.checked) }, 'Archive'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClear(group, correctnessCheckbox.checked) }, 'Clear'),
         )
       : false;
 
-    return el(
+    const row = el(
       'div',
       { class: 'flag-row' },
       el('div', {}, stemCell, el('p', { class: 'flag-row__topic', text: topicLo }), reasonsSummary(group), staleVersionNote(group)),
       badge,
       actions,
     );
+
+    return el('div', { class: 'flag-group' }, row, remediationPanel(group));
   }
 
   function renderResults(): void {

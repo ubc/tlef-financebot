@@ -1067,6 +1067,18 @@ export interface FlagVersionJoin {
   difficulty: Difficulty;
 }
 
+/** §6.2 step 1 remediation report (Task 6) — the "blast radius" of a
+ * correctness-affecting flag resolution. Matches
+ * server/src/services/remediation.service.ts's `RemediationReport` exactly:
+ * four fields, no mastery count (that step is manual-checklist text only —
+ * see flags.ts's rendering of it). */
+export interface RemediationReport {
+  affectedAttempts: number;
+  affectedStudents: string[];
+  reviewBookEntries: number;
+  examAttempts: number;
+}
+
 export interface Flag {
   id: string;
   courseId: string;
@@ -1079,6 +1091,9 @@ export interface Flag {
   createdAt: string;
   question: FlagQuestionJoin | null;
   currentVersion: FlagVersionJoin | null;
+  // Present only on the response to a correctness-affecting resolve (Task 6,
+  // resolved ambiguity #3) — never on listCourseFlags' rows.
+  remediation?: RemediationReport;
 }
 
 /** GET /api/courses/:courseId/flags?state= -> flags joined with question +
@@ -1102,6 +1117,15 @@ export function resolveFlag(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}) }),
+  });
+}
+
+/** POST /api/flags/:flagId/remediation/notify -> { notified: number }.
+ * Instructor-only; explicit "Notify affected students" action from the §6.2
+ * remediation checklist (Task 6). No body. */
+export function notifyRemediation(flagId: string): Promise<{ notified: number }> {
+  return request<{ notified: number }>(`/api/flags/${encodeURIComponent(flagId)}/remediation/notify`, {
+    method: 'POST',
   });
 }
 
