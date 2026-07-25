@@ -204,6 +204,39 @@ describe('runDailySummary', () => {
       expect(doc.priority).toBe('standard');
     }
   });
+
+  // Fixed post-review: checkReviewBacklog moved here from flags.service.ts's
+  // flag-creation path (flagging a question never itself moves anything into
+  // pending-review, so that trigger point was causally unrelated to what the
+  // check measures). This pins that it now runs for every course visited by
+  // this loop, and specifically that it is NOT skipped by the `total === 0`
+  // early-continue -- the backlog condition is independent of the day's
+  // flag/pending-review-change count.
+  it('3c. runs checkReviewBacklog for every course even on a quiet day, and it still fires when the backlog is over threshold', async () => {
+    const course = baseCourse({ reviewBacklogThreshold: 10 });
+    coursesFindToArray.mockResolvedValue([course]);
+    coursesFindOne.mockResolvedValue(course);
+    flagsCountDocuments.mockResolvedValue(0); // quiet day: no new flags
+    // Differentiate checkReviewBacklog's plain pending-review count query
+    // (no updatedAt filter) from runDailySummary's own recent-changes query
+    // (has an updatedAt filter) -- the backlog is over threshold overall,
+    // but nothing changed in the last 24h.
+    questionsCountDocuments.mockImplementation((filter: Record<string, unknown>) =>
+      Promise.resolve('updatedAt' in filter ? 0 : 12),
+    );
+    coursesFindOneAndUpdate.mockResolvedValueOnce(course);
+    const instructor = staffUser('PUID-INSTR-0001', 'instructor', course._id);
+    usersFindToArray.mockResolvedValue([instructor]);
+
+    await runDailySummary();
+
+    // The daily-summary total (newFlags + pendingReviewChanges) is 0, so no
+    // daily-summary notification goes out -- but the backlog check still ran
+    // and still fired its own review-backlog notification.
+    expect(notificationsInsertOne).toHaveBeenCalledTimes(1);
+    const [doc] = notificationsInsertOne.mock.calls[0];
+    expect(doc.kind).toBe('review-backlog');
+  });
 });
 
 // --- checkReviewBacklog (§9.1) ----------------------------------------------
@@ -222,6 +255,26 @@ describe('checkReviewBacklog', () => {
     const first = await checkReviewBacklog(course._id);
     expect(first).toBe(true);
     expect(notificationsInsertOne).toHaveBeenCalledTimes(1);
+
+    // Pin the actual CAS mechanism itself -- not just the externally observed
+    // call count -- so this test would fail if the atomic filter were ever
+    // weakened (e.g. filtering only by _id) or if lastBacklogNotifiedAt were
+    // never actually stamped.
+    expect(coursesFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [filterArg, updateArg] = coursesFindOneAndUpdate.mock.calls[0];
+    expect(filterArg).toMatchObject({ _id: course._id });
+    expect(Array.isArray(filterArg.$or)).toBe(true);
+    expect(filterArg.$or).toContainEqual({ lastBacklogNotifiedAt: { $exists: false } });
+    expect(
+      filterArg.$or.some(
+        (clause: Record<string, unknown>) =>
+          typeof clause.lastBacklogNotifiedAt === 'object' &&
+          clause.lastBacklogNotifiedAt !== null &&
+          '$lt' in (clause.lastBacklogNotifiedAt as Record<string, unknown>) &&
+          (clause.lastBacklogNotifiedAt as { $lt: unknown }).$lt instanceof Date,
+      ),
+    ).toBe(true);
+    expect(updateArg).toMatchObject({ $set: { lastBacklogNotifiedAt: expect.any(Date) } });
 
     // Second check within the same 24h window: the CAS filter (unset OR
     // older than 24h) no longer matches server-side, so findOneAndUpdate

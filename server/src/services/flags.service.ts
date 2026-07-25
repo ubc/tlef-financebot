@@ -9,7 +9,7 @@ import {
   auditCol,
 } from '../components/mongodb/collections';
 import { transitionQuestion } from './questions.service';
-import { notify, notifyCourseStaff, checkReviewBacklog } from './notifications.service';
+import { notify, notifyCourseStaff } from './notifications.service';
 import type { Flag, FlagState, Course, Question, QuestionVersion } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -19,8 +19,11 @@ import type { Flag, FlagState, Course, Question, QuestionVersion } from '../type
 // edit doesn't retroactively misattribute or silently resolve a flag raised
 // against stale content. Consumed by Task 2 (instructor flag-resolution
 // queue UI, done) and Task 3 (notifications, wired below via
-// notifications.service's notify()/notifyCourseStaff()/checkReviewBacklog()).
-// The remaining `// Task 6:` comment marks a future wiring point outside this
+// notifications.service's notify()/notifyCourseStaff()). The pending-review
+// backlog check (checkReviewBacklog) is NOT wired from here — it runs from
+// notifications.service's runDailySummary per-course loop instead, since
+// flagging a question never itself moves anything into pending-review. The
+// remaining `// Task 6:` comment marks a future wiring point outside this
 // task's scope. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
@@ -116,18 +119,21 @@ export async function flagQuestion(input: {
   await checkAutoPause(input.questionId);
 
   // Task 3: notify(course staff, kind: 'flag') — standard-priority, one per
-  // new (non-duplicate) flag. The pending-review backlog check lives here
-  // too (rather than as its own recurring job) since a new flag is the most
-  // natural trigger point for it per the phase-2 plan; checkReviewBacklog
-  // itself no-ops below threshold or within its own 24h cooldown.
-  await notifyCourseStaff(question.courseId, {
-    kind: 'flag',
-    priority: 'standard',
-    body: input.reason ? `A question was flagged: "${input.reason}"` : 'A question was flagged.',
-    refType: 'flag',
-    refId: flagId,
-  });
-  await checkReviewBacklog(question.courseId);
+  // new (non-duplicate) flag. Notifications are advisory: a failure here must
+  // never turn an already-committed flag write into a 500 for the caller (and
+  // must never make a retry look like a duplicate/invalid transition), so it
+  // is logged and swallowed rather than propagated.
+  try {
+    await notifyCourseStaff(question.courseId, {
+      kind: 'flag',
+      priority: 'standard',
+      body: input.reason ? `A question was flagged: "${input.reason}"` : 'A question was flagged.',
+      refType: 'flag',
+      refId: flagId,
+    });
+  } catch (err) {
+    console.error('notifications: failed to emit new-flag notification', err);
+  }
 
   return { flagged: true, duplicate: false };
 }
@@ -155,14 +161,20 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
 
   await transitionQuestion(questionId, 'paused', 'system:auto-pause');
   // Task 3: notify(course staff, kind: 'auto-pause', priority: 'elevated') —
-  // visually distinct client-side (border + icon per §4.3).
-  await notifyCourseStaff(course._id, {
-    kind: 'auto-pause',
-    priority: 'elevated',
-    body: 'A question was auto-paused after exceeding the flag thresholds.',
-    refType: 'question',
-    refId: questionId,
-  });
+  // visually distinct client-side (border + icon per §4.3). This runs after
+  // transitionQuestion has already committed the pause, so a notification
+  // failure here must not propagate — the pause itself already succeeded.
+  try {
+    await notifyCourseStaff(course._id, {
+      kind: 'auto-pause',
+      priority: 'elevated',
+      body: 'A question was auto-paused after exceeding the flag thresholds.',
+      refType: 'question',
+      refId: questionId,
+    });
+  } catch (err) {
+    console.error('notifications: failed to emit auto-pause notification', err);
+  }
   return true;
 }
 
@@ -242,16 +254,24 @@ export async function resolveFlag(
     createdAt: resolvedAt,
   });
 
-  // Task 3: notify(flagging student, kind: 'flag-resolved')
-  await notify({
-    recipientPuid: flag.puid,
-    courseId: flag.courseId,
-    kind: 'flag-resolved',
-    priority: 'standard',
-    body: `Your flag was resolved (${action}).`,
-    refType: 'flag',
-    refId: flagId,
-  });
+  // Task 3: notify(flagging student, kind: 'flag-resolved'). The resolution
+  // (and its question-side consequence) has already been committed above, so
+  // a notification failure here must not turn this into a 500 — a retry
+  // would otherwise hit invalid-flag-transition since the resolution already
+  // landed, leaving the instructor believing a successful action failed.
+  try {
+    await notify({
+      recipientPuid: flag.puid,
+      courseId: flag.courseId,
+      kind: 'flag-resolved',
+      priority: 'standard',
+      body: `Your flag was resolved (${action}).`,
+      refType: 'flag',
+      refId: flagId,
+    });
+  } catch (err) {
+    console.error('notifications: failed to emit flag-resolved notification', err);
+  }
   if (opts?.correctnessAffecting) {
     // Task 6: trigger remediation report + notification when correctnessAffecting
   }

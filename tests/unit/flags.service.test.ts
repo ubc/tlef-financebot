@@ -456,7 +456,7 @@ describe('canFlagTransition', () => {
 // tests/unit/notifications.service.test.ts; here it's mocked wholesale.
 
 describe('Task 3: notification wiring', () => {
-  it('flagQuestion notifies course staff (kind: flag) and runs the backlog check, but only for a NEW (non-duplicate) flag', async () => {
+  it('flagQuestion notifies course staff (kind: flag), but only for a NEW (non-duplicate) flag', async () => {
     const courseId = new ObjectId();
     const question = baseQuestion({ courseId, state: 'draft' });
     questionsFindOne.mockResolvedValue(question);
@@ -465,10 +465,14 @@ describe('Task 3: notification wiring', () => {
     await flagQuestion({ puid: 'PUID-STU-0001', questionId: question._id });
 
     expect(notifyCourseStaff).toHaveBeenCalledWith(courseId, expect.objectContaining({ kind: 'flag', priority: 'standard' }));
-    expect(checkReviewBacklog).toHaveBeenCalledWith(courseId);
+    // checkReviewBacklog is NOT wired from flagQuestion (fixed post-review):
+    // flagging a question never itself moves anything into pending-review,
+    // so the backlog check now runs from runDailySummary's per-course loop
+    // instead -- see notifications.service.test.ts's runDailySummary tests.
+    expect(checkReviewBacklog).not.toHaveBeenCalled();
   });
 
-  it('flagQuestion does NOT notify or run the backlog check on a duplicate flag', async () => {
+  it('flagQuestion does NOT notify on a duplicate flag', async () => {
     const question = baseQuestion({ state: 'draft' });
     questionsFindOne.mockResolvedValue(question);
     flagsFindOne.mockResolvedValue(baseFlag({ questionId: question._id, questionVersionId: question.currentVersionId, puid: 'PUID-STU-0001' }));
@@ -476,7 +480,6 @@ describe('Task 3: notification wiring', () => {
     await flagQuestion({ puid: 'PUID-STU-0001', questionId: question._id });
 
     expect(notifyCourseStaff).not.toHaveBeenCalled();
-    expect(checkReviewBacklog).not.toHaveBeenCalled();
   });
 
   it("checkAutoPause notifies course staff with priority: 'elevated' when it pauses a question", async () => {
@@ -529,6 +532,58 @@ describe('Task 3: notification wiring', () => {
     await expect(resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001')).rejects.toThrow('invalid-flag-transition');
 
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  // Fixed post-review: notifications are advisory and must never turn an
+  // already-committed domain write into a thrown error / 500 for the caller
+  // -- each site below already succeeded (flag inserted, question paused,
+  // flag resolved+audited) before its notify call runs, so a notify()
+  // rejection is logged and swallowed rather than propagated.
+  describe('notification failures never propagate past the triggering operation', () => {
+    it('flagQuestion resolves normally even when notifyCourseStaff rejects', async () => {
+      const question = baseQuestion({ state: 'draft' });
+      questionsFindOne.mockResolvedValue(question);
+      flagsFindOne.mockResolvedValue(null);
+      jest.mocked(notifyCourseStaff).mockRejectedValueOnce(new Error('mongo down'));
+
+      await expect(flagQuestion({ puid: 'PUID-STU-0001', questionId: question._id })).resolves.toEqual({
+        flagged: true,
+        duplicate: false,
+      });
+    });
+
+    it('checkAutoPause resolves true even when notifyCourseStaff rejects (the pause itself already committed)', async () => {
+      const question = baseQuestion({ state: 'approved' });
+      const course = baseCourse({ _id: question.courseId });
+      questionsFindOne.mockResolvedValue(question);
+      coursesFindOne.mockResolvedValue(course);
+      attemptsDistinct.mockResolvedValue(Array.from({ length: 5 }, (_, i) => `PUID-STU-${i}`));
+      flagsCountDocuments.mockResolvedValue(2);
+      jest.mocked(notifyCourseStaff).mockRejectedValueOnce(new Error('mongo down'));
+
+      await expect(checkAutoPause(question._id)).resolves.toBe(true);
+      expect(questionsUpdateOne).toHaveBeenCalledWith(
+        { _id: question._id, state: 'approved' },
+        expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
+      );
+    });
+
+    it("resolveFlag returns the resolved flag even when notify rejects (a retry must not hit invalid-flag-transition)", async () => {
+      const questionId = new ObjectId();
+      const flag = baseFlag({ questionId, puid: 'PUID-STU-0007', state: 'open' });
+      const question = baseQuestion({ _id: questionId, state: 'approved' });
+      flagsFindOne.mockResolvedValue(flag);
+      questionsFindOne.mockResolvedValue(question);
+      jest.mocked(notify).mockRejectedValueOnce(new Error('mongo down'));
+
+      const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+      expect(result.state).toBe('resolved-cleared');
+      expect(flagsUpdateOne).toHaveBeenCalledWith(
+        { _id: flag._id },
+        expect.objectContaining({ $set: expect.objectContaining({ state: 'resolved-cleared' }) }),
+      );
+    });
   });
 });
 

@@ -56,14 +56,21 @@ export function createNotificationBell(): HTMLElement {
     const count = unreadCount(notifications);
     badge.textContent = count > 99 ? '99+' : String(count);
     badge.hidden = count === 0;
+    // Fold the unread count into the button's own accessible name -- it must
+    // not live only in the sibling badge <span>, which sits outside the
+    // button and so isn't announced as part of it.
+    const label = count > 0 ? `Notifications (${count} unread)` : 'Notifications';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
   }
 
   function renderItem(n: AppNotification): HTMLElement {
     const unread = !n.readAt;
     return el(
-      'div',
+      'button',
       {
         class: `notif-item${n.priority === 'elevated' ? ' notif-item--elevated' : ''}${unread ? ' notif-item--unread' : ''}`,
+        type: 'button',
         onclick: () => void handleOpenItem(n),
       },
       el('span', { class: 'notif-item__icon', 'aria-hidden': 'true', text: n.priority === 'elevated' ? '⚠' : '●' }),
@@ -77,6 +84,7 @@ export function createNotificationBell(): HTMLElement {
   }
 
   function renderPanel(): void {
+    button.setAttribute('aria-expanded', String(open));
     panel.hidden = !open;
     if (!open) return;
     if (notifications.length === 0) {

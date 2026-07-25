@@ -82,10 +82,13 @@ export async function notifyCourseStaff(
 /**
  * §9.1: pending-review backlog past the instructor-set threshold ->
  * `review-backlog` notification to course staff, emitted at most once per
- * 24h per course. Called from flags.service.ts's flag-creation path (a new
- * flag can push a question into a state that grows the backlog indirectly,
- * and this is the most natural place to check per the phase-2 plan) rather
- * than from a separate recurring job.
+ * 24h per course. Called from runDailySummary's per-course loop below —
+ * that job already iterates every course once a day independent of flag
+ * activity, which is the natural home for a check whose measured quantity
+ * (pending-review count) flag creation never actually moves. (Previously
+ * called from flags.service.ts's flag-creation path; moved here because
+ * flagging a question never transitions it into pending-review, so that
+ * trigger point was causally unrelated to what this check measures.)
  *
  * The "not repeated within 24h" guarantee must hold under CONCURRENT flag
  * creation, not just in-process timing — so the check-and-claim happens in a
@@ -129,13 +132,18 @@ export async function checkReviewBacklog(courseId: ObjectId): Promise<boolean> {
  * that total is nonzero, send one `daily-summary` standard notification to
  * each instructor (TAs are intentionally excluded here — the brief specifies
  * "instructor(s)" for this emission, unlike notifyCourseStaff's broader
- * instructor+TA target used by the other three).
+ * instructor+TA target used by the other three). Also runs checkReviewBacklog
+ * for every course, unconditionally — that check is an independent condition
+ * from the day's flag/pending-review-change count, so it must not be skipped
+ * by the `total === 0` short-circuit below.
  */
 export async function runDailySummary(): Promise<void> {
   const since = new Date(Date.now() - DAILY_SUMMARY_WINDOW_MS);
   const courses = await coursesCol().find({}).toArray();
 
   for (const course of courses) {
+    await checkReviewBacklog(course._id);
+
     const [newFlags, pendingReviewChanges] = await Promise.all([
       flagsCol().countDocuments({ courseId: course._id, createdAt: { $gte: since } }),
       questionsCol().countDocuments({ courseId: course._id, state: 'pending-review', updatedAt: { $gte: since } }),

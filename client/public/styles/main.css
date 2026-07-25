@@ -3599,9 +3599,16 @@ button.class-row--link:focus-visible .class-row__title {
   display: flex;
   align-items: flex-start;
   gap: 0.55rem;
+  width: 100%;
   padding: 0.65rem 0.9rem;
+  border: 0;
   border-bottom: 1px solid var(--border);
   border-left: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.15s;
 }
