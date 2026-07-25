@@ -16,6 +16,7 @@ import { enrollmentRouter } from './routes/enrollment.routes';
 import { practiceRouter } from './routes/practice.routes';
 import { reviewBookRouter } from './routes/review-book.routes';
 import { flagsRouter } from './routes/flags.routes';
+import { notificationsRouter } from './routes/notifications.routes';
 import { materialsRouter } from './routes/materials.routes';
 import { generationRouter } from './routes/generation.routes';
 import { authRouter } from './routes/auth.routes';
@@ -72,6 +73,7 @@ export function createApp(): Express {
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).
   app.use('/api', flagsRouter); // Student flagging + instructor flag-resolution queue + configurable auto-pause (ST-P09, §4.3, §6.2).
+  app.use('/api', notificationsRouter); // In-app notifications: poll/read/read-all, scoped to the signed-in user (§4.3, §9.1).
 
   // Serve the compiled client. Any non-API request falls through to here.
   app.use(express.static(CLIENT_PUBLIC_DIR));

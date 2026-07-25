@@ -7,6 +7,7 @@ import { pingQdrant } from './components/qdrant';
 import { startJobs } from './components/jobs';
 import { registerMaterialJobs } from './services/materials.service';
 import { registerGenerationJobs } from './services/generation.service';
+import { registerNotificationJobs } from './services/notifications.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -43,6 +44,15 @@ async function main(): Promise<void> {
   // service and app.ts mounts that router, so a module-level defineJob() would
   // run before startJobs() and crash boot (the Task 6 lesson).
   registerGenerationJobs();
+
+  // Same rule for the notifications.daily-summary job (§4.3, §9.1): the
+  // registration function itself calls scheduleRecurring('24 hours') after
+  // defineJob(), so both must run after startJobs() — notifications.routes.ts
+  // (mounted by createApp() below) imports notifications.service.ts too, so a
+  // module-level defineJob()/scheduleRecurring() call would hit the same
+  // hoisted-require ordering crash as the two jobs above. Awaited (unlike the
+  // two calls above) because scheduleRecurring() is itself async.
+  await registerNotificationJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

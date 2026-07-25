@@ -44,6 +44,7 @@ export async function createCourse(
     feedbackStrategy: 'adaptive',
     autoPause: { minAttempts: 5, flagPercent: 30, flagCount: 15 },
     redirectFailureThreshold: 3,
+    reviewBacklogThreshold: 10, // §9.1 default
     createdAt: new Date(),
   };
   const { insertedId } = await coursesCol().insertOne(course);
@@ -61,7 +62,7 @@ export async function createCourse(
  */
 export async function updateCourse(
   courseId: ObjectId,
-  patch: Partial<Pick<Course, 'termStart' | 'termEnd' | 'feedbackStrategy' | 'autoPause'>>,
+  patch: Partial<Pick<Course, 'termStart' | 'termEnd' | 'feedbackStrategy' | 'autoPause' | 'reviewBacklogThreshold'>>,
 ): Promise<WithId<Course>> {
   const course = await getCourse(courseId);
   const termStart = patch.termStart ?? course.termStart;

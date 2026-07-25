@@ -53,6 +53,7 @@ const updateCourseBody = z.object({
   termEnd: z.coerce.date().optional(),
   feedbackStrategy: z.enum(['adaptive', 'strategy-a', 'strategy-b']).optional(),
   autoPause: autoPauseBody.optional(),
+  reviewBacklogThreshold: z.number().int().positive().optional(),
   published: z.boolean().optional(),
 });
 

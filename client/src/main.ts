@@ -5,6 +5,7 @@
 import { APP } from './config.js';
 import { byId, el, mount } from './dom.js';
 import { initTheme, createThemeToggle } from './theme.js';
+import { createNotificationBell } from './notifications-bell.js';
 import { loadSession, displayName, type Session } from './auth.js';
 import { setUnauthorizedHandler } from './api.js';
 import { startRouter, type Route } from './router.js';
@@ -181,6 +182,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
     el(
       'div',
       { class: 'topbar__right' },
+      createNotificationBell(),
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
@@ -312,6 +314,7 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
     el(
       'div',
       { class: 'topbar__right' },
+      createNotificationBell(),
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
