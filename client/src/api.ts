@@ -1104,3 +1104,46 @@ export function resolveFlag(
     body: JSON.stringify({ action, ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}) }),
   });
 }
+
+// --- Notifications (§4.3, §9.1) — Task 3 -------------------------------------
+// Verified against server/src/routes/notifications.routes.ts +
+// services/notifications.service.ts (this branch). Every route is scoped to
+// the signed-in user's own notifications; there is no courseId parameter.
+
+export type NotificationKind =
+  | 'flag'
+  | 'auto-pause'
+  | 'daily-summary'
+  | 'flag-resolved'
+  | 'correction'
+  | 'review-backlog'
+  | 'redirect';
+
+export interface AppNotification {
+  id: string;
+  recipientPuid: string;
+  courseId?: string;
+  kind: NotificationKind;
+  priority: 'standard' | 'elevated';
+  body: string;
+  refType?: string;
+  refId?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
+/** GET /api/notifications?unreadOnly= -> newest-first, limit 50. Bell poll target. */
+export function listNotifications(unreadOnly?: boolean): Promise<AppNotification[]> {
+  const qs = unreadOnly ? '?unreadOnly=true' : '';
+  return request<AppNotification[]>(`/api/notifications${qs}`);
+}
+
+/** POST /api/notifications/:id/read -> the updated notification. */
+export function markNotificationRead(id: string): Promise<AppNotification> {
+  return request<AppNotification>(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+}
+
+/** POST /api/notifications/read-all -> { count }. */
+export function markAllNotificationsRead(): Promise<{ count: number }> {
+  return request<{ count: number }>('/api/notifications/read-all', { method: 'POST' });
+}

@@ -79,6 +79,8 @@ export interface Course {
   feedbackStrategy: FeedbackStrategy; // default 'adaptive' (IN-S10)
   autoPause: { minAttempts: number; flagPercent: number; flagCount: number }; // §4.3 defaults 5/30/15
   redirectFailureThreshold: number; // ST-P07, default 3
+  reviewBacklogThreshold: number; // §9.1, default 10 -- pending-review count that triggers a 'review-backlog' notification
+  lastBacklogNotifiedAt?: Date; // §9.1 -- written by notifications.service's checkReviewBacklog, at most once per 24h
   createdAt: Date;
 }
 

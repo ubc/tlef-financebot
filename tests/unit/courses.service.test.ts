@@ -102,6 +102,7 @@ describe('createCourse (IN-S01)', () => {
     expect(doc.feedbackStrategy).toBe('adaptive');
     expect(doc.autoPause).toEqual({ minAttempts: 5, flagPercent: 30, flagCount: 15 });
     expect(doc.redirectFailureThreshold).toBe(3);
+    expect(doc.reviewBacklogThreshold).toBe(10);
     expect(typeof doc.registrationCode).toBe('string');
     expect(doc.registrationCode.length).toBeGreaterThanOrEqual(8);
     expect(doc.ownerPuid).toBe('PUID-INSTR-0001');
@@ -131,6 +132,20 @@ describe('updateCourse (IN-S02: term dates)', () => {
     ).rejects.toThrow('term-end-before-start');
 
     expect(coursesUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('threads reviewBacklogThreshold through to the $set patch like the other optional fields (§9.1)', async () => {
+    coursesFindOne.mockResolvedValue({
+      _id: new ObjectId(),
+      name: 'Intro to Finance',
+      courseCode: 'COMM 298',
+      term: '2026W1',
+    });
+
+    await updateCourse(new ObjectId(), { reviewBacklogThreshold: 25 });
+
+    const [, update] = coursesUpdateOne.mock.calls[0];
+    expect(update).toEqual({ $set: { reviewBacklogThreshold: 25 } });
   });
 });
 

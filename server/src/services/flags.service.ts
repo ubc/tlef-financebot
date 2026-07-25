@@ -9,6 +9,7 @@ import {
   auditCol,
 } from '../components/mongodb/collections';
 import { transitionQuestion } from './questions.service';
+import { notify, notifyCourseStaff, checkReviewBacklog } from './notifications.service';
 import type { Flag, FlagState, Course, Question, QuestionVersion } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -17,9 +18,10 @@ import type { Flag, FlagState, Course, Question, QuestionVersion } from '../type
 // QuestionVersion (never just the mutable Question head) so a later content
 // edit doesn't retroactively misattribute or silently resolve a flag raised
 // against stale content. Consumed by Task 2 (instructor flag-resolution
-// queue UI) and Task 3 (notifications) — neither exists yet; see the two
-// `// Task 3:` / `// Task 6:` comments below for their future wiring points.
-// See server/src/services/AGENTS.md.
+// queue UI, done) and Task 3 (notifications, wired below via
+// notifications.service's notify()/notifyCourseStaff()/checkReviewBacklog()).
+// The remaining `// Task 6:` comment marks a future wiring point outside this
+// task's scope. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
 /** Flag case state machine — decoupled from PublicationState (PRD §6.2).
@@ -113,6 +115,20 @@ export async function flagQuestion(input: {
 
   await checkAutoPause(input.questionId);
 
+  // Task 3: notify(course staff, kind: 'flag') — standard-priority, one per
+  // new (non-duplicate) flag. The pending-review backlog check lives here
+  // too (rather than as its own recurring job) since a new flag is the most
+  // natural trigger point for it per the phase-2 plan; checkReviewBacklog
+  // itself no-ops below threshold or within its own 24h cooldown.
+  await notifyCourseStaff(question.courseId, {
+    kind: 'flag',
+    priority: 'standard',
+    body: input.reason ? `A question was flagged: "${input.reason}"` : 'A question was flagged.',
+    refType: 'flag',
+    refId: flagId,
+  });
+  await checkReviewBacklog(question.courseId);
+
   return { flagged: true, duplicate: false };
 }
 
@@ -138,7 +154,15 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
   if (!meetsAutoPauseThreshold(attemptersCount, openFlagCount, course.autoPause)) return false;
 
   await transitionQuestion(questionId, 'paused', 'system:auto-pause');
-  // Task 3: notify(course staff, kind: 'auto-pause', priority: 'elevated')
+  // Task 3: notify(course staff, kind: 'auto-pause', priority: 'elevated') —
+  // visually distinct client-side (border + icon per §4.3).
+  await notifyCourseStaff(course._id, {
+    kind: 'auto-pause',
+    priority: 'elevated',
+    body: 'A question was auto-paused after exceeding the flag thresholds.',
+    refType: 'question',
+    refId: questionId,
+  });
   return true;
 }
 
@@ -219,6 +243,15 @@ export async function resolveFlag(
   });
 
   // Task 3: notify(flagging student, kind: 'flag-resolved')
+  await notify({
+    recipientPuid: flag.puid,
+    courseId: flag.courseId,
+    kind: 'flag-resolved',
+    priority: 'standard',
+    body: `Your flag was resolved (${action}).`,
+    refType: 'flag',
+    refId: flagId,
+  });
   if (opts?.correctnessAffecting) {
     // Task 6: trigger remediation report + notification when correctnessAffecting
   }
