@@ -1,8 +1,9 @@
 # Saurav — Phase 2 progress
 
-_Last updated: 2026-07-23_
+_Last updated: 2026-07-24_
 
-**Task 1 and Task 2 (instructor half) code-complete, both pushed as PRs.**
+**Task 1 and Task 2 (instructor half) merged (PRs #27/#29, #28). Task 3
+code-complete, review clean, ready to push as a PR.**
 Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
 Executed with the superpowers `subagent-driven-development` skill; the running
@@ -30,9 +31,9 @@ Stephen's source documents (unedited by me):
 
 | Task | What | Status | Blocked by |
 |---|---|---|---|
-| 1 | Flag service — state machine, auto-pause | **PR #27 open** (`saurav/task-1-flag-service`, commits `0eb53c6`+`590ea94`, review clean) | nothing (Phase 1 S2 already merged) |
-| 2 (my half) | Instructor flag-resolution queue | **PR open** (`saurav/task-2-flag-queue`, stacked on Task 1's branch, commits `ca6ef9f`+`bd76b53`, review clean) | Task 1 (done, not yet merged — this branch is stacked) |
-| 3 | In-app notifications, tiered | not started | Task 1 (done, not yet merged) |
+| 1 | Flag service — state machine, auto-pause | **Merged** (PRs #27, #29 — `saurav/task-1-flag-service`) | nothing |
+| 2 (my half) | Instructor flag-resolution queue | **Merged** (PR #28 — `saurav/task-2-flag-queue`) | nothing |
+| 3 | In-app notifications, tiered | **Code-complete, review clean** (`saurav/task-3-notifications`, commits `557b25f`+`5037867`) — not yet pushed as a PR | nothing |
 | 6 | Remediation report + checklist | not started | Task 3 |
 | 8 | Question import (CSV/JSON/QTI) | not started | nothing |
 | 9 | Parameterized-script migration | not started | Stephen's Tasks 4 + 5, my Task 8 |
@@ -43,6 +44,35 @@ Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
 
 ## Deviations from the plan
+
+### Task 3 — found in review, fixed without a ruling (in-spec)
+
+1. **`checkReviewBacklog` fired from a trigger causally unrelated to what it
+   measures.** Originally called from `flagQuestion` (flag creation), but it
+   counts questions in `pending-review` — a state flags never cause, so a
+   backlogged course could go unnotified indefinitely. Moved to run
+   unconditionally inside `runDailySummary`'s daily per-course sweep instead,
+   independent of that loop's own nonzero gate for the summary notification.
+2. **Three `notify()` calls could turn a committed domain write into a 500,**
+   with `resolveFlag`'s retry not idempotent. Wrapped all three in
+   try/catch-and-log; notifications are advisory and must never fail the
+   operation that triggered them.
+3. **No test pinned the puid-scoping security property** on the notification
+   routes. Added `tests/unit/notifications.routes.test.ts` asserting the
+   service always receives the session's puid, never one from request
+   params/body.
+4. **The 24h-dedup test only checked call counts,** not the actual CAS filter
+   — strengthened to assert on the real `findOneAndUpdate` args.
+5. **Notification rows were unclickable by keyboard** (`div` + `onclick`
+   instead of the codebase's own `class-row--link` button convention). Fixed
+   to a real `<button type="button">`, plus `aria-expanded`/count-aware
+   `aria-label` on the bell.
+
+Full detail, plus six accepted-Minor residuals (the most notable: panel
+re-render now steals keyboard focus every 30s from a focused row, a side
+effect of fix 5) and one self-noted non-review deviation (mark-read is
+per-item, not per-panel-open), in the personal plan's Task 3
+post-implementation note.
 
 ### Task 2 (instructor half) — found in review, fixed without a ruling (in-spec)
 
@@ -109,10 +139,9 @@ before merging PR for Task 2.
 
 ## What's left
 
-- Start **Task 1** — nothing blocks it.
-- After Task 1 merges, ping Stephen so his Task 2 student-control half can
-  code against the real flag routes (same pattern as Phase 1's Task 4 → his
-  Tasks 10/11/14).
+- Push **Task 3** as a PR (`saurav/task-3-notifications`) and ping Stephen —
+  his Task 7 redirect notification depends on `notify()` being live.
+- Start **Task 6** (remediation) — needs Task 3's `notify()`, now available.
 - Watch for **P2-0's PR** — Task 10 is blocked until it merges and
   `docs/api-contract.md` reflects the new `runId`/SSE shapes.
 - Watch for Stephen's **Tasks 4/5** merging — Task 9 is blocked until then.
@@ -120,10 +149,9 @@ before merging PR for Task 2.
 
 ## What I need from Stephen
 
-Nothing blocking to start Task 1. Heads-up items:
+Nothing blocking right now. Heads-up items:
 
-1. When P2-0 opens as a PR, flag it explicitly — Task 10 starts the same day.
-2. When Tasks 4/5 merge, flag it — Task 9 starts the same day.
-3. Confirm the Task 2 split boundary before either half lands, so the
-   student-control and instructor-queue surfaces integrate cleanly (same
-   flag/resolve routes, consistent state).
+1. Task 3 (notifications) just landed — his Task 7 redirect notification can
+   now code against the real `notify()` rather than a stub.
+2. When P2-0 opens as a PR, flag it explicitly — Task 10 starts the same day.
+3. When Tasks 4/5 merge, flag it — Task 9 starts the same day.

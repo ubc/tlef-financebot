@@ -216,9 +216,78 @@ changes — not fixed now, noted for whoever next touches
 - Routes: `GET /api/notifications?unreadOnly=`, `POST /api/notifications/:id/read`, `POST /api/notifications/read-all`.
 - Client: a bell in the top bar polling every 30s; elevated notifications styled distinctly.
 
-- [ ] **Step 1: Failing tests** — the four cases in the core document, Task 3 Step 1 (staff targeting, elevated priority on auto-pause, daily-summary quiet-day-sends-nothing, backlog not repeated within 24h).
-- [ ] **Step 2–4: FAIL → implement (service, routes, wiring, client bell) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: tiered in-app notifications with polling, auto-pause elevation, and daily batched summary (§4.3)"`
+- [x] **Step 1: Failing tests** — the four cases in the core document, Task 3 Step 1 (staff targeting, elevated priority on auto-pause, daily-summary quiet-day-sends-nothing, backlog not repeated within 24h).
+- [x] **Step 2–4: FAIL → implement (service, routes, wiring, client bell) → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: tiered in-app notifications with polling, auto-pause elevation, and daily batched summary (§4.3)"`
+
+**Post-implementation note (2026-07-24, subagent-driven-development, review found 5 Important, all fixed, re-review clean):**
+
+`notificationsCol()` and the `Notification` type were already in place from
+earlier work (collections.ts, types/domain.ts) — this task built
+`notifications.service.ts`, `notifications.routes.ts`, the three
+`flags.service.ts` wiring points, the `registerNotificationJobs()` recurring
+job, `Course.reviewBacklogThreshold`/`lastBacklogNotifiedAt`, and the client
+bell.
+
+First review pass (5 Important, no Critical):
+1. **`checkReviewBacklog` was triggered from the wrong place.** It was called
+   from `flagQuestion` (flag creation) but counts questions in
+   `pending-review` — a state flags never cause. A course could sit over
+   threshold indefinitely and never notify unless someone happened to also
+   flag something unrelated. The accompanying comment additionally
+   misattributed this trigger choice to "the phase-2 plan," which doesn't
+   specify one. Fixed: moved to run unconditionally inside
+   `runDailySummary`'s per-course loop (which already sweeps every course
+   daily), independent of that loop's own "only if nonzero" gate for the
+   summary notification itself. The 24h atomic CAS dedup is unchanged by the
+   move.
+2. **A notification failure could turn a committed domain operation into a
+   500, and `resolveFlag`'s retry wasn't idempotent.** All three
+   `notify()`/`notifyCourseStaff()` call sites in `flags.service.ts` ran
+   after the domain write (flag insert, auto-pause transition, flag
+   resolution + audit) had already committed. Fixed: each wrapped in
+   try/catch that logs and swallows — notifications are advisory and must
+   never fail the operation that triggered them.
+3. **No route-level test pinned the puid-scoping security property** — the
+   one property this task actually needs guaranteed (a user can only ever
+   read/mark-read their own notifications; the three routes take no
+   course-scoped URL segment). Added `tests/unit/notifications.routes.test.ts`
+   following the `notes.route.test.ts` gated-route pattern, asserting the
+   service is always called with the *session's* puid, never one from
+   request params/body.
+4. **The 24h-dedup test only asserted call counts**, not the actual CAS
+   filter/update shape — it would still have passed with the atomic filter
+   deleted entirely. Strengthened to inspect the real `findOneAndUpdate`
+   args.
+5. **Notification rows were `div`s with `onclick`** — not keyboard-operable,
+   against this codebase's own convention (`classes.ts`'s `class-row--link`
+   button). Fixed to a real `<button type="button">` with matching CSS reset,
+   plus `aria-expanded` and a count-aware `aria-label` on the bell button.
+
+Re-review: all 5 verified fixed in substance (not just claimed), no
+regressions, task quality **Approved**. Six Minor items accepted, not fixed
+(none block merge; noted for a future pass if this widget gets touched
+again): keyboard focus is now lost on every 30s panel re-render while a row
+is focused (a side effect of Fix 5 making rows focusable — the poll's
+unconditional `renderPanel()` should skip while the panel contains
+`document.activeElement`); `<p>`/`<div>` nested inside the new `<button>`
+(invalid content model, harmless in practice — swap for `<span>`s); unread/
+elevated state is visual-only in the accessibility tree (fold into the row's
+accessible name); the unread badge isn't `aria-hidden` so its count is
+announced twice; `runDailySummary`'s per-course loop has no per-course
+failure isolation (pre-existing shape, widened slightly by adding
+`checkReviewBacklog`'s extra queries to every iteration); and the 24h backlog
+cooldown exactly equals the daily job's own interval, so a run landing
+marginally early can make the backlog notification effectively fire every
+other day rather than every day — still within the "at most once per 24h"
+spec, just tighter than intended.
+
+One further deviation, not raised as a review finding (self-noted): the brief
+says "mark-read on open"; the implementation marks read on clicking an
+*individual* notification, not on opening the panel — deliberate, so a quick
+glance at the bell doesn't silently clear items the user hasn't actually
+read. Flagged by the first reviewer as a Minor "Misunderstood" and judged
+defensible rather than fixed.
 
 ---
 

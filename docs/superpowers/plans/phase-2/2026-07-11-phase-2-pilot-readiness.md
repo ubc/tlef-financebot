@@ -179,9 +179,21 @@ applied).
   - Routes: `GET /api/notifications?unreadOnly=` (poll target, newest first, limit 50), `POST /api/notifications/:id/read`, `POST /api/notifications/read-all`.
 - Client: a bell in the top bar polling every 30s; elevated notifications styled distinctly (border + icon); mark-read on open.
 
-- [ ] **Step 1: Failing tests** — flag emission targets exactly the course staff; auto-pause emits `priority: 'elevated'`; daily summary sends nothing on a quiet day and one per instructor on an active day; backlog notification not repeated within 24h (store `lastBacklogNotifiedAt` on the course).
-- [ ] **Step 2–4: FAIL → implement (service, routes, wiring, client bell) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: tiered in-app notifications with polling, auto-pause elevation, and daily batched summary (§4.3)"`
+- [x] **Step 1: Failing tests** — flag emission targets exactly the course staff; auto-pause emits `priority: 'elevated'`; daily summary sends nothing on a quiet day and one per instructor on an active day; backlog notification not repeated within 24h (store `lastBacklogNotifiedAt` on the course).
+- [x] **Step 2–4: FAIL → implement (service, routes, wiring, client bell) → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: tiered in-app notifications with polling, auto-pause elevation, and daily batched summary (§4.3)"`
+
+**Post-implementation note (2026-07-24):** one real correctness gap found in
+review and fixed before merge — see Saurav's personal plan
+([`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-3)),
+"Post-implementation note", for the full detail. Summary: the `review-backlog`
+check was originally triggered from flag creation, which has no causal
+relationship to the pending-review backlog it measures; moved to run
+unconditionally inside the daily-summary sweep instead. Also hardened:
+notification failures no longer propagate and fail the domain operation that
+triggered them (flag/auto-pause/resolve all already committed by that point),
+a route-level test now pins the puid-scoping security property, and the
+notification-row markup was fixed to be keyboard-operable.
 
 ---
 
