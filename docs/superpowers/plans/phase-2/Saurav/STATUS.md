@@ -1,9 +1,9 @@
 # Saurav — Phase 2 progress
 
-_Last updated: 2026-07-24_
+_Last updated: 2026-07-26_
 
-**Task 1 and Task 2 (instructor half) merged (PRs #27/#29, #28). Task 3
-code-complete, review clean, ready to push as a PR.**
+**Tasks 1, 2 (instructor half), and 3 merged (PRs #27/#29, #28, #30). Task 6
+code-complete, review approved, ready to push as a PR.**
 Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
 Executed with the superpowers `subagent-driven-development` skill; the running
@@ -33,8 +33,8 @@ Stephen's source documents (unedited by me):
 |---|---|---|---|
 | 1 | Flag service — state machine, auto-pause | **Merged** (PRs #27, #29 — `saurav/task-1-flag-service`) | nothing |
 | 2 (my half) | Instructor flag-resolution queue | **Merged** (PR #28 — `saurav/task-2-flag-queue`) | nothing |
-| 3 | In-app notifications, tiered | **Code-complete, review clean** (`saurav/task-3-notifications`, commits `557b25f`+`5037867`) — not yet pushed as a PR | nothing |
-| 6 | Remediation report + checklist | not started | Task 3 |
+| 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
+| 6 | Remediation report + checklist | **Code-complete, review approved** (`saurav/task-6-remediation`, commits `a5f56b1`+`20dc88f`+`8c3b6c3`) — not yet pushed as a PR | nothing |
 | 8 | Question import (CSV/JSON/QTI) | not started | nothing |
 | 9 | Parameterized-script migration | not started | Stephen's Tasks 4 + 5, my Task 8 |
 | 10 | Custom-prompt generation/regeneration | not started | **P2-0 merge** (Stephen, in progress) |
@@ -44,6 +44,41 @@ Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
 
 ## Deviations from the plan
+
+### Task 6 — two scope additions approved mid-review, plus review fixes
+
+**Scope additions (approved during review, now part of the task's contract):**
+
+1. **`GET /api/flags/:flagId/remediation` + persisted
+   `Flag.resolution.correctnessAffecting`.** The original design had the
+   remediation report ride back only on the resolve response. Flags are
+   terminal, so a page reload lost the report *and* the "Notify affected
+   students" button permanently — making the pilot's one automated
+   remediation action unreachable. The report is a read-only query and always
+   regenerable; only the correctness-affecting bit needed persisting.
+2. **Persisted `Flag.resolution.notifiedAt` / `notifiedCount`.** Once the
+   panel survived reloads, the "already notified" state did not, so a reload
+   re-armed the button and allowed re-sending the same in-app correction
+   notice to the same students.
+
+**Review findings, all fixed:** the report was discarded on the
+partial-archive path (the §6.2 headline scenario produced zero deliverable);
+suppressing the post-Correct navigate-to-editor left no route to the editor,
+dropping a Task 2 behavior; the durable panel still vanished if the instructor
+cleared the leftover flags, because the predicate read only the latest
+resolution; an async re-render could silently untick "Correctness-affecting",
+resolving without remediation (unrecoverable — flags are terminal); and the
+notify fan-out used `Promise.all`, so one rejection discarded every successful
+send and invited a double-notifying retry.
+
+**Follow-up worth tracking (not Task 6's to fix):** this repo has no
+client-side unit-test harness (`tests/unit/` is server-only; adding one needs
+a jsdom project plus a `moduleNameMapper` for the client's `.js` import
+extensions). Three review rounds disclosed the gap and two found real
+unrecoverable-outcome bugs in exactly that untested layer — caught by review,
+not by tests.
+
+Full detail in the personal plan's Task 6 post-implementation note.
 
 ### Task 3 — found in review, fixed without a ruling (in-spec)
 
@@ -139,9 +174,9 @@ before merging PR for Task 2.
 
 ## What's left
 
-- Push **Task 3** as a PR (`saurav/task-3-notifications`) and ping Stephen —
-  his Task 7 redirect notification depends on `notify()` being live.
-- Start **Task 6** (remediation) — needs Task 3's `notify()`, now available.
+- Push **Task 6** as a PR (`saurav/task-6-remediation`).
+- Start **Task 8** (question import) — independent of the flag/notification
+  arc, nothing blocks it.
 - Watch for **P2-0's PR** — Task 10 is blocked until it merges and
   `docs/api-contract.md` reflects the new `runId`/SSE shapes.
 - Watch for Stephen's **Tasks 4/5** merging — Task 9 is blocked until then.
@@ -151,7 +186,11 @@ before merging PR for Task 2.
 
 Nothing blocking right now. Heads-up items:
 
-1. Task 3 (notifications) just landed — his Task 7 redirect notification can
-   now code against the real `notify()` rather than a stub.
-2. When P2-0 opens as a PR, flag it explicitly — Task 10 starts the same day.
-3. When Tasks 4/5 merge, flag it — Task 9 starts the same day.
+1. Task 3 (notifications) is merged — his Task 7 redirect notification can now
+   code against the real `notify()` rather than a stub.
+2. Task 6 adds three optional fields to `Flag.resolution`
+   (`correctnessAffecting`, `notifiedAt`, `notifiedCount`) and one route
+   (`GET /api/flags/:flagId/remediation`) — worth a look at PR review since
+   his Task 2 student half reads flag shapes.
+3. When P2-0 opens as a PR, flag it explicitly — Task 10 starts the same day.
+4. When Tasks 4/5 merge, flag it — Task 9 starts the same day.

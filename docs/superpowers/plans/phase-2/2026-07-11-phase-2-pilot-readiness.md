@@ -348,9 +348,22 @@ try {
 - Consumes: `attemptsCol()`, `reviewBookCol()`, `masteryCol()`, notifications service.
 - Produces: `remediationReport(questionVersionId: ObjectId): Promise<{ affectedAttempts: number; affectedStudents: string[]; reviewBookEntries: number; examAttempts: number }>` — locates AttemptRecords pinned to the wrong version (§6.2 step 1). For the pilot the rest is a **guided manual checklist** rendered in the flag-resolution UI when the instructor marks a resolution "correctness-affecting": the report numbers plus the checklist text (recompute correctness; drop from mastery windows and re-evaluate; remove wrongly-added Review Book entries; notify affected students via `notify(kind: 'correction')` — a "Notify affected students" button does the notification step automatically since it's cheap). Full automation stays on the master slip list.
 
-- [ ] **Step 1: Failing tests** — report counts only attempts pinned to the exact version; the notify button notifies each distinct affected student once.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: correctness-affecting flag remediation report and student correction notices (§6.2 pilot scope)"`
+- [x] **Step 1: Failing tests** — report counts only attempts pinned to the exact version; the notify button notifies each distinct affected student once.
+- [x] **Step 2–4: FAIL → implement → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: correctness-affecting flag remediation report and student correction notices (§6.2 pilot scope)"`
+
+**Post-implementation note (2026-07-26):** three review rounds; the server half
+was accurate from the first pass, every finding was in the client wiring. Two
+scope additions were approved during review and are now part of this task's
+contract: `Flag.resolution` gained `correctnessAffecting?`, `notifiedAt?`, and
+`notifiedCount?`, and a `GET /api/flags/:flagId/remediation` route was added so
+the remediation panel and its notify button survive a page reload (without them
+the pilot's one automated remediation action was unreachable after a refresh).
+The brief's `masteryCol()` under "Consumes" is unused by design — `MasteryProfile`
+is an LO-level rollup with no per-version field, so that remediation step stays
+manual checklist text. Full detail in Saurav's personal plan
+([`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-6)),
+"Post-implementation note".
 
 ---
 

@@ -305,9 +305,68 @@ defensible rather than fixed.
 - Consumes: `attemptsCol()`, `reviewBookCol()`, `masteryCol()`, notifications service.
 - Produces: `remediationReport(questionVersionId)` — locates AttemptRecords pinned to the wrong version; the rest is a guided manual checklist rendered client-side when a resolution is marked "correctness-affecting", per the core document, Task 6.
 
-- [ ] **Step 1: Failing tests** — report counts only attempts pinned to the exact version; the notify button notifies each distinct affected student once.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: correctness-affecting flag remediation report and student correction notices (§6.2 pilot scope)"`
+- [x] **Step 1: Failing tests** — report counts only attempts pinned to the exact version; the notify button notifies each distinct affected student once.
+- [x] **Step 2–4: FAIL → implement → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: correctness-affecting flag remediation report and student correction notices (§6.2 pilot scope)"`
+
+**Post-implementation note (2026-07-26, subagent-driven-development, three review rounds, approved):**
+
+The brief was underspecified in several places; I resolved these as controller
+before dispatch, and they are now part of the task's effective contract:
+`examAttempts` counts affected attempts with `examAttemptId` set (via
+`attemptsCol()`, not a separate `examAttemptsCol()` query); `masteryCol()` is
+unused by design (the specified return shape has no mastery number and
+`MasteryProfile` is an LO-level rollup with no per-version field, so that step
+stays manual checklist text); `notify(kind: 'correction')` uses
+`priority: 'standard'`, since Global Constraints reserve `elevated` for
+auto-pause; the checklist renders once per group and notify fires once per
+group, per Task 2's `questionVersionId` grouping; and the report computation is
+wrapped so it can never fail an already-committed resolution (the notify
+button, being an explicit user action, does surface its failures).
+
+**Two scope additions approved mid-review** — both fix the same class of
+problem, that a §6.2 deliverable existed only in client memory:
+
+1. **`GET /api/flags/:flagId/remediation` + `Flag.resolution.correctnessAffecting`.**
+   The original design had the report ride back only on the resolve response.
+   Flags are terminal, so after a reload the report — and the "Notify affected
+   students" button with it — was gone permanently, making the pilot's one
+   automated remediation action unreachable. The report is a pure read-only
+   query over `questionVersionId` and so always regenerable; only the
+   "was this marked correctness-affecting?" bit needed persisting.
+2. **`Flag.resolution.notifiedAt` / `notifiedCount`.** Once the panel survived
+   reloads, the "already notified N students" state did not, so a reload
+   re-armed the button and allowed re-sending the same in-app correction notice
+   to the same students. Now stamped server-side across every
+   correctness-affecting flag in the group after a successful fan-out.
+
+Review findings, all fixed: the report was discarded on the partial-archive
+path (`invalid-transition:archived->archived` on a multi-flag group — the §6.2
+headline scenario, which produced zero deliverable); suppressing the
+post-Correct navigate-to-editor left no route to the editor at all, dropping a
+behavior Task 2 specified; the durable panel then vanished anyway if the
+instructor cleared the leftover flags, because the predicate read only the
+*latest* resolution rather than any of them; an async re-render could silently
+untick "Correctness-affecting", resolving without remediation (unrecoverable,
+since flags are terminal); the notify fan-out used `Promise.all`, so one
+rejection discarded every successful send and invited a double-notifying
+retry; and the headline version-exclusion test used `objectContaining`, which
+would have passed against the exact over-broad query it claimed to guard.
+
+Accepted, not fixed: `correctnessChecked` is never cleared, so a *new* flag
+landing on the same version can render a pre-ticked checkbox — the obvious fix
+(clearing it on resolve) would re-create the partial-archive bug, so it needs
+the narrower "only when the group has no open flags left" condition; and the
+notify stamp is not transactional with the fan-out, consistent with this
+file's other non-transactional write patterns.
+
+**Follow-up worth tracking (not this task's to fix):** there is no client-side
+unit-test harness in this repo — `tests/unit/` is server-only, and adding one
+needs a jsdom project plus a `moduleNameMapper` for the client's `.js` import
+extensions. Three consecutive review rounds disclosed this gap, and two of them
+found real unrecoverable-outcome bugs (the latest-resolution predicate and the
+checkbox reset) in exactly that untested layer. Both were caught by review
+rather than by tests, which is not a repeatable safety net.
 
 ---
 
