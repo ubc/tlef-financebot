@@ -1087,7 +1087,12 @@ export interface Flag {
   puid: string;
   reason?: string;
   state: FlagState;
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: string };
+  // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
+  // sub-document so the remediation panel can tell whether THIS flag's
+  // resolution should still show the checklist after a reload — see
+  // server/src/types/domain.ts's `Flag.resolution` and flags.ts's
+  // `latestResolutionIsCorrectnessAffecting`.
+  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: string; correctnessAffecting?: boolean };
   createdAt: string;
   question: FlagQuestionJoin | null;
   currentVersion: FlagVersionJoin | null;
@@ -1127,6 +1132,15 @@ export function notifyRemediation(flagId: string): Promise<{ notified: number }>
   return request<{ notified: number }>(`/api/flags/${encodeURIComponent(flagId)}/remediation/notify`, {
     method: 'POST',
   });
+}
+
+/** GET /api/flags/:flagId/remediation -> RemediationReport. Instructor-only;
+ * Task 6 review fix (Finding 3) — regenerates the report from the flag's
+ * questionVersionId so the checklist panel's blast-radius numbers survive a
+ * reload (flags are terminal, so the resolve response's one-shot
+ * `remediation` field can't be refetched any other way). */
+export function getRemediationReport(flagId: string): Promise<RemediationReport> {
+  return request<RemediationReport>(`/api/flags/${encodeURIComponent(flagId)}/remediation`);
 }
 
 // --- Notifications (§4.3, §9.1) — Task 3 -------------------------------------

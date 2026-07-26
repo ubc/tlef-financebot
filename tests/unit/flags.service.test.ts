@@ -40,7 +40,7 @@ jest.mock('../../server/src/services/remediation.service', () => ({
   notifyAffectedStudents: jest.fn(),
 }));
 
-import { flagQuestion, checkAutoPause, resolveFlag, listFlags, canFlagTransition, notifyRemediation } from '../../server/src/services/flags.service';
+import { flagQuestion, checkAutoPause, resolveFlag, listFlags, canFlagTransition, notifyRemediation, remediationReportForFlag } from '../../server/src/services/flags.service';
 import { notify, notifyCourseStaff, checkReviewBacklog } from '../../server/src/services/notifications.service';
 import { remediationReport, notifyAffectedStudents } from '../../server/src/services/remediation.service';
 import type { Question, Course, Flag } from '../../server/src/types/domain';
@@ -654,6 +654,39 @@ describe('Task 6: resolveFlag correctness-affecting remediation wiring', () => {
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
+
+  // Task 6 review fix (Finding 3): the resolve response's `remediation` is
+  // one-shot and flags are terminal, so the ONLY way the remediation panel
+  // can know -- after a reload -- whether a resolution was correctness-
+  // affecting is a persisted bit on the flag's own `resolution` sub-document.
+  it('resolveFlag({correctnessAffecting: true}) persists resolution.correctnessAffecting: true on the flag write and on the returned resolution', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    jest.mocked(remediationReport).mockResolvedValue({ affectedAttempts: 0, affectedStudents: [], reviewBookEntries: 0, examAttempts: 0 });
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001', { correctnessAffecting: true });
+
+    const [, update] = flagsUpdateOne.mock.calls[0];
+    expect(update.$set.resolution.correctnessAffecting).toBe(true);
+    expect(result.resolution!.correctnessAffecting).toBe(true);
+  });
+
+  it('resolveFlag without correctnessAffecting omits the key entirely (never writes correctnessAffecting: false)', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+    const [, update] = flagsUpdateOne.mock.calls[0];
+    expect(Object.hasOwn(update.$set.resolution, 'correctnessAffecting')).toBe(false);
+    expect(Object.hasOwn(result.resolution!, 'correctnessAffecting')).toBe(false);
+  });
 });
 
 describe("Task 6: notifyRemediation ('Notify affected students' button)", () => {
@@ -675,6 +708,33 @@ describe("Task 6: notifyRemediation ('Notify affected students' button)", () => 
 
     await expect(notifyRemediation(new ObjectId())).rejects.toThrow('flag-not-found');
     expect(notifyAffectedStudents).not.toHaveBeenCalled();
+  });
+});
+
+// Task 6 review fix (Finding 3): `remediationReportForFlag` is the
+// flag->version lookup GET /api/flags/:flagId/remediation calls into, so the
+// remediation panel can regenerate its report after a reload (flags are
+// terminal; the resolve response's one-shot `remediation` field is gone by
+// then). Mirrors notifyRemediation's own lookup, tested just above.
+describe('Task 6: remediationReportForFlag (GET /api/flags/:flagId/remediation)', () => {
+  it("resolves the target flag and delegates to remediationReport(flag.questionVersionId)", async () => {
+    const versionId = new ObjectId();
+    const flag = baseFlag({ questionVersionId: versionId });
+    const report = { affectedAttempts: 4, affectedStudents: ['PUID-STU-0001'], reviewBookEntries: 1, examAttempts: 0 };
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(remediationReport).mockResolvedValue(report);
+
+    const result = await remediationReportForFlag(flag._id);
+
+    expect(remediationReport).toHaveBeenCalledWith(versionId);
+    expect(result).toEqual(report);
+  });
+
+  it('throws flag-not-found for a nonexistent flag, without calling remediationReport', async () => {
+    flagsFindOne.mockResolvedValue(null);
+
+    await expect(remediationReportForFlag(new ObjectId())).rejects.toThrow('flag-not-found');
+    expect(remediationReport).not.toHaveBeenCalled();
   });
 });
 

@@ -250,7 +250,19 @@ export async function resolveFlag(
   }
 
   const resolvedAt = new Date();
-  const resolution = { action, puid: byPuid, at: resolvedAt };
+  // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
+  // sub-document, not just returned in-memory, so the remediation panel can
+  // tell — after a reload, once the resolve response's one-shot `remediation`
+  // field is long gone — whether THIS flag's resolution is one it should
+  // still be showing the checklist for. Conditional spread (not `false`)
+  // mirrors this file's `reason` field and notifications.service's `notify()`
+  // — an absent key, never an explicit `correctnessAffecting: false`.
+  const resolution = {
+    action,
+    puid: byPuid,
+    at: resolvedAt,
+    ...(opts?.correctnessAffecting ? { correctnessAffecting: true as const } : {}),
+  };
   await flagsCol().updateOne({ _id: flagId }, { $set: { state: target, resolution } });
 
   await auditCol().insertOne({
@@ -311,6 +323,21 @@ export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: n
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
   return notifyAffectedStudents(flag.questionVersionId, flag.courseId);
+}
+
+/**
+ * §6.2 remediation panel reload fix (Task 6 review, Finding 3): the report is
+ * a pure read-only query over `questionVersionId`, so it's always
+ * regenerable from a flag id — this is what `GET /api/flags/:flagId/remediation`
+ * calls so the checklist panel's blast-radius numbers survive a reload (flags
+ * are terminal; the resolve response's one-shot `remediation` field can never
+ * be refetched any other way). Mirrors `notifyRemediation`'s flag -> version
+ * lookup just above.
+ */
+export async function remediationReportForFlag(flagId: ObjectId): Promise<RemediationReport> {
+  const flag = await flagsCol().findOne({ _id: flagId });
+  if (!flag) throw new Error('flag-not-found');
+  return remediationReport(flag.questionVersionId);
 }
 
 /**

@@ -71,7 +71,6 @@ describe('remediationReport (§6.2 step 1)', () => {
   it('counts only attempts pinned to the exact questionVersionId -- attempts on a different version of the same question are excluded', async () => {
     const questionId = new ObjectId();
     const badVersionId = new ObjectId();
-    const otherVersionId = new ObjectId();
 
     // The mocked `find` is not itself filtering (that's Mongo's job in
     // production); this test proves remediationReport queries `attemptsCol()`
@@ -88,16 +87,17 @@ describe('remediationReport (§6.2 step 1)', () => {
 
     const report = await remediationReport(badVersionId);
 
-    expect(attemptsFind).toHaveBeenCalledWith(
-      expect.objectContaining({ questionVersionId: badVersionId }),
-      expect.anything(),
-    );
-    // Never queried against the other version's id, and never against a bare
-    // questionId (which would incorrectly pull in the other version's attempts).
-    expect(attemptsFind).not.toHaveBeenCalledWith(
-      expect.objectContaining({ questionVersionId: otherVersionId }),
-      expect.anything(),
-    );
+    // Exact-match form (Task 6 review fix, Minor 4) -- matches the
+    // `reviewBookEntries` test below's convention. The previous
+    // `objectContaining` + `not.toHaveBeenCalledWith(otherVersionId)` pair
+    // was weaker than it read: `objectContaining` would still pass if the
+    // implementation ALSO passed `questionId` in the filter (exactly the
+    // over-broad query this test claims to guard against), and the negative
+    // assertion was vacuous -- remediationReport makes exactly one `find`
+    // call with whatever argument it's given, so no implementation could
+    // fail it. Asserting the filter is EXACTLY `{ questionVersionId:
+    // badVersionId }` (no `questionId`, no other keys) is the real guard.
+    expect(attemptsFind).toHaveBeenCalledWith({ questionVersionId: badVersionId }, expect.anything());
 
     expect(report.affectedAttempts).toBe(2);
     expect(report.affectedStudents.sort()).toEqual(['PUID-STU-0001', 'PUID-STU-0002']);
@@ -128,6 +128,21 @@ describe('remediationReport (§6.2 step 1)', () => {
     const report = await remediationReport(versionId);
 
     expect(report.examAttempts).toBe(2);
+  });
+
+  it('examAttempts does not count an attempt with an explicit examAttemptId: null (Task 6 review fix, Minor 9)', async () => {
+    const versionId = new ObjectId();
+    attemptsFindToArray.mockResolvedValue([
+      baseAttempt({ questionVersionId: versionId, puid: 'PUID-STU-0001', mode: 'exam-prep', examAttemptId: new ObjectId() }),
+      // `examAttemptId: null` is not something any current writer sets, but
+      // `!= null` (not `!== undefined`) is the correct guard so a nullable
+      // field can't be miscounted if one ever does.
+      baseAttempt({ questionVersionId: versionId, puid: 'PUID-STU-0002', mode: 'topic-practice', examAttemptId: null as never }),
+    ]);
+
+    const report = await remediationReport(versionId);
+
+    expect(report.examAttempts).toBe(1);
   });
 
   it('reviewBookEntries is a count joined through the affected attempts\' _ids via triggeringAttemptId', async () => {
@@ -201,5 +216,40 @@ describe('notifyAffectedStudents', () => {
 
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ notified: 0 });
+  });
+
+  // Task 6 review fix (Minor 6): a rejected notify() must not throw the
+  // whole batch away -- Promise.all previously meant one failure lost the
+  // count of every notification that DID succeed, and left the "Notify
+  // affected students" button visible for a retry that would double-notify
+  // those already-succeeded students.
+  it('a partial notify failure returns the count actually sent, logging the rejection, rather than throwing', async () => {
+    const versionId = new ObjectId();
+    const courseId = new ObjectId();
+    attemptsDistinct.mockResolvedValue(['PUID-STU-0001', 'PUID-STU-0002', 'PUID-STU-0003']);
+    jest
+      .mocked(notify)
+      .mockResolvedValueOnce(undefined as never)
+      .mockRejectedValueOnce(new Error('smtp down'))
+      .mockResolvedValueOnce(undefined as never);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await notifyAffectedStudents(versionId, courseId);
+
+    expect(result).toEqual({ notified: 2 });
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('a TOTAL notify failure (every recipient rejected) throws rather than reporting a false "0 notified" success', async () => {
+    const versionId = new ObjectId();
+    const courseId = new ObjectId();
+    attemptsDistinct.mockResolvedValue(['PUID-STU-0001', 'PUID-STU-0002']);
+    jest.mocked(notify).mockRejectedValue(new Error('smtp down'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(notifyAffectedStudents(versionId, courseId)).rejects.toThrow();
+
+    errorSpy.mockRestore();
   });
 });

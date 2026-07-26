@@ -259,7 +259,13 @@ export interface Flag {
   reason?: string;
   state: FlagState;
   taRecommendation?: { action: 'correct' | 'archive' | 'clear'; note?: string; puid: string; at: Date };
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: Date };
+  // `correctnessAffecting` (Task 6 review fix): persists whether this
+  // resolution was marked correctness-affecting, so the remediation panel's
+  // "was this checklist relevant?" bit survives a reload — flags are
+  // terminal, so this can never be re-derived after the fact. Absent (not
+  // `false`) when unset, matching this file's other optional-field
+  // convention (see `reason` above).
+  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: Date; correctnessAffecting?: boolean };
   createdAt: Date;
 }
 

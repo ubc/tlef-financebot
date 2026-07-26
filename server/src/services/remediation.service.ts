@@ -44,7 +44,10 @@ export async function remediationReport(questionVersionId: ObjectId): Promise<Re
 
   const affectedAttempts = attempts.length;
   const affectedStudents = [...new Set(attempts.map((attempt) => attempt.puid))];
-  const examAttempts = attempts.filter((attempt) => attempt.examAttemptId !== undefined).length;
+  // `!= null` (not `!== undefined`) so an explicit `null` isn't miscounted as
+  // an exam attempt -- no writer sets `examAttemptId: null` today, but the
+  // field is optional/nullable on the wire and this is a one-word hardening.
+  const examAttempts = attempts.filter((attempt) => attempt.examAttemptId != null).length;
 
   const attemptIds = attempts.map((attempt) => attempt._id);
   const reviewBookEntries = attemptIds.length
@@ -63,6 +66,17 @@ export async function remediationReport(questionVersionId: ObjectId): Promise<Re
  * `attemptsCol().distinct('puid', ...)` rather than re-deriving the set from
  * `remediationReport`'s attempt list, mirroring flags.service.ts's own
  * `countDistinctAttempters` pattern -- the dedup happens server-side in Mongo.
+ *
+ * Task 6 review fix (Minor 6): fans out via `Promise.allSettled`, not
+ * `Promise.all` -- with `Promise.all`, one rejected `notify()` call rejects
+ * the whole batch, the route 500s, and the "Notify affected students" button
+ * stays visible for a retry that would double-notify every student who
+ * already succeeded (notifications already committed by that point). A
+ * rejected notification is logged (matching flags.service.ts's existing
+ * catch-and-log style for advisory notify() calls) and simply not counted.
+ * Only a TOTAL failure (every notify() call rejected, when there was at least
+ * one recipient) still throws, so a genuinely broken notification pipeline
+ * surfaces as an error rather than silently reporting "0 notified" as success.
  */
 export async function notifyAffectedStudents(
   questionVersionId: ObjectId,
@@ -70,7 +84,7 @@ export async function notifyAffectedStudents(
 ): Promise<{ notified: number }> {
   const puids = await attemptsCol().distinct('puid', { questionVersionId });
 
-  await Promise.all(
+  const results = await Promise.allSettled(
     puids.map((puid) =>
       notify({
         recipientPuid: puid,
@@ -84,5 +98,18 @@ export async function notifyAffectedStudents(
     ),
   );
 
-  return { notified: puids.length };
+  let notified = 0;
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      notified++;
+    } else {
+      console.error('remediation: failed to notify a student of a correction', result.reason);
+    }
+  }
+
+  if (puids.length > 0 && notified === 0) {
+    throw new Error('remediation-notify-failed');
+  }
+
+  return { notified };
 }

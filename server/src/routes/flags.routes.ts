@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ensureApiAuthenticated } from '../components/auth';
 import { ensureCourseInstructor, ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
-import { flagQuestion, resolveFlag, listFlags, notifyRemediation } from '../services/flags.service';
+import { flagQuestion, resolveFlag, listFlags, notifyRemediation, remediationReportForFlag } from '../services/flags.service';
 import { getQuestionCourseId } from '../services/bank.service';
 import { flagsCol } from '../components/mongodb/collections';
 import type { Flag, FlagState } from '../types/domain';
@@ -158,6 +158,26 @@ flagsRouter.post(
     const flagId = new ObjectId(String(req.params.flagId));
     const result = await notifyRemediation(flagId);
     res.json(result);
+  },
+);
+
+/** GET /api/flags/:flagId/remediation -> RemediationReport. Instructor-only,
+ * courseId stashed from the target flag — same guard chain as the
+ * resolve/notify routes above. Task 6 review fix (Finding 3): the report is
+ * regenerated (a pure read-only query over the flag's `questionVersionId`)
+ * rather than persisted, so the remediation panel's blast-radius numbers
+ * survive a reload even though flags are terminal and the resolve response's
+ * one-shot `remediation` field is gone by then. */
+flagsRouter.get(
+  '/flags/:flagId/remediation',
+  validate({ params: flagIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromFlag(),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const flagId = new ObjectId(String(req.params.flagId));
+    const report = await remediationReportForFlag(flagId);
+    res.json(report);
   },
 );
 

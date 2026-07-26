@@ -38,12 +38,24 @@
 // not once per flag. "Notify affected students" likewise fires once per
 // group (any one flag id in the group — the server resolves the notify
 // target from that flag's questionVersionId, shared by the whole group).
+//
+// Task 6 review fix (Finding 3): the resolve response's `remediation` field
+// is one-shot and flags are terminal, so a reload used to permanently lose
+// both the report and the "Notify affected students" button. The server now
+// persists `resolution.correctnessAffecting` on the flag and exposes
+// `GET /api/flags/:flagId/remediation` to regenerate the (pure read-only)
+// report. `latestResolutionIsCorrectnessAffecting` reads the persisted bit so
+// the panel renders for a group on a fresh load too; `remediationReports`
+// (below) still takes precedence when already populated — from either an
+// in-session resolve or an earlier fetch — so a reload triggered by a resolve
+// action never redundantly refetches what it already has.
 import {
   ApiError,
   getCourseTree,
   listCourseFlags,
   resolveFlag as resolveFlagApi,
   notifyRemediation as notifyRemediationApi,
+  getRemediationReport,
   type CourseTree,
   type Flag,
   type RemediationReport,
@@ -141,6 +153,18 @@ function latestResolutionAction(group: FlagGroup): ResolveAction | null {
   return resolved[0].resolution.action;
 }
 
+/** Whether the group's most recent resolution (same "latest resolved flag"
+ * rule as `latestResolutionAction` above) was marked correctness-affecting —
+ * read from the persisted `resolution.correctnessAffecting` bit (Task 6
+ * review fix, Finding 3), so this still answers correctly after a reload,
+ * not just in the same session the resolve happened in. */
+function latestResolutionIsCorrectnessAffecting(group: FlagGroup): boolean {
+  const resolved = group.flags.filter((f): f is Flag & { resolution: NonNullable<Flag['resolution']> } => Boolean(f.resolution));
+  if (resolved.length === 0) return false;
+  resolved.sort((a, b) => new Date(b.resolution.at).getTime() - new Date(a.resolution.at).getTime());
+  return resolved[0].resolution.correctnessAffecting === true;
+}
+
 /** Unresolved groups first (most recently flagged first within that set),
  * then resolved groups (most recently flagged first). */
 function sortGroups(groups: FlagGroup[]): FlagGroup[] {
@@ -206,15 +230,53 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   const remediationReports = new Map<string, RemediationReport>();
   const notifiedCounts = new Map<string, number>();
   const notifyErrorMessages = new Map<string, string>();
+  // Task 6 review fix (Finding 3): report re-fetch state, separate from the
+  // notify state above. `remediationFetchAttempted` gates `ensureRemediationReport`
+  // to at most one fetch per group per page load (whether it succeeds or
+  // fails) — without it, a failed fetch would refire on every re-render
+  // (`renderResults()` rebuilds every row), spamming the endpoint forever. A
+  // full page reload gets a fresh attempt since these maps are recreated with
+  // the view.
+  const remediationFetchErrors = new Map<string, string>();
+  const remediationFetchAttempted = new Set<string>();
 
   function recordRemediation(group: FlagGroup, remediation: RemediationReport | undefined): void {
     if (!remediation) return;
     remediationReports.set(group.questionVersionId, remediation);
     // A fresh correctness-affecting resolve on this group supersedes any
-    // earlier notify state (defensive — the common case is this only ever
-    // happens once per group).
+    // earlier notify/fetch-error state (defensive — the common case is this
+    // only ever happens once per group).
     notifiedCounts.delete(group.questionVersionId);
     notifyErrorMessages.delete(group.questionVersionId);
+    remediationFetchErrors.delete(group.questionVersionId);
+  }
+
+  /** Fetches the remediation report for a group that's correctness-affecting
+   * but not yet in `remediationReports` (Task 6 review fix, Finding 3) — e.g.
+   * after a reload, where only the persisted `correctnessAffecting` bit
+   * survived, not the report itself. The in-memory map always wins: this is
+   * a no-op whenever `group.questionVersionId` is already a key in it
+   * (either from an in-session resolve or an earlier fetch), so a resolve
+   * action's own `reload()` never redundantly refetches what it just
+   * received on the resolve response. Fire-and-forget: re-renders the queue
+   * when it settles so the panel picks up the numbers (or the error) once
+   * they're in. */
+  function ensureRemediationReport(group: FlagGroup): void {
+    const key = group.questionVersionId;
+    if (remediationReports.has(key) || remediationFetchAttempted.has(key)) return;
+    const targetFlag = group.flags[0];
+    if (!targetFlag) return;
+    remediationFetchAttempted.add(key);
+    void getRemediationReport(targetFlag.id)
+      .then((report) => {
+        remediationReports.set(key, report);
+        remediationFetchErrors.delete(key);
+        renderResults();
+      })
+      .catch((error) => {
+        remediationFetchErrors.set(key, error instanceof ApiError ? error.message : (error as Error).message);
+        renderResults();
+      });
   }
 
   /** Resolves every open/escalated flag in `group` with `action`, stopping at
@@ -239,7 +301,17 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
    * `resolveFlagApi` call. Per the resolved grouping ambiguity, a
    * correctness-affecting group resolve returns one IDENTICAL remediation
    * report per flag (same questionVersionId) — only the FIRST one seen is
-   * kept and returned, so the caller renders the checklist once per group. */
+   * kept and returned, so the caller renders the checklist once per group.
+   *
+   * Task 6 review fix (Finding 1): `remediation` is included on BOTH failure
+   * returns below, not just the success path. The headline §6.2 failure mode
+   * is exactly this loop hitting the documented `archived->archived` error on
+   * flag 2 after flag 1 already resolved and returned a report — dropping
+   * `remediation` there would discard the one deliverable the instructor
+   * came for, with no way to recover it (flags are terminal, so re-resolving
+   * can't regenerate it). Every caller now records whatever `remediation`
+   * comes back regardless of `ok`, since the report is valid for every flag
+   * that DID resolve even when a later one in the loop failed. */
   async function resolveGroupFlags(
     group: FlagGroup,
     action: ResolveAction,
@@ -260,9 +332,10 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
           return {
             ok: false,
             error: `${resolvedCount} of ${targets.length} flag${targets.length === 1 ? '' : 's'} resolved; the question was already archived. Use Clear to close the remaining flag${remaining === 1 ? '' : 's'}.`,
+            remediation,
           };
         }
-        return { ok: false, error: rawMessage };
+        return { ok: false, error: rawMessage, remediation };
       }
     }
     return { ok: true, remediation };
@@ -282,7 +355,10 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     actionErrorMessage = null;
     const result = await resolveGroupFlags(group, 'clear', correctnessAffecting);
     if (!result.ok) actionErrorMessage = result.error ?? 'Failed to clear flag(s).';
-    else recordRemediation(group, result.remediation);
+    // Task 6 review fix (Finding 1): recorded unconditionally — `remediation`
+    // is valid for every flag that DID resolve even when the group's overall
+    // result is a failure. `recordRemediation` itself no-ops when undefined.
+    recordRemediation(group, result.remediation);
     await reload();
   }
 
@@ -292,7 +368,11 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     actionErrorMessage = null;
     const result = await resolveGroupFlags(group, 'archive', correctnessAffecting);
     if (!result.ok) actionErrorMessage = result.error ?? 'Failed to archive question.';
-    else recordRemediation(group, result.remediation);
+    // See handleClear's comment above — recorded unconditionally (Finding 1).
+    // This is the concrete headline case: flag 1 archives and returns the
+    // report, flag 2 throws the deterministic archived->archived error and
+    // `ok` is false, but the report from flag 1 must not be discarded.
+    recordRemediation(group, result.remediation);
     await reload();
   }
 
@@ -304,6 +384,8 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     if (!window.confirm(confirmText)) return;
     actionErrorMessage = null;
     const result = await resolveGroupFlags(group, 'correct', correctnessAffecting);
+    // See handleClear's comment above — recorded unconditionally (Finding 1).
+    recordRemediation(group, result.remediation);
     if (!result.ok) {
       actionErrorMessage = result.error ?? 'Failed to resolve flag(s); question editor not opened.';
       await reload();
@@ -313,8 +395,10 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       // A correctness-affecting resolve surfaces the remediation checklist
       // (§6.2, Task 6) — stay on this view instead of the usual
       // navigate-to-editor shortcut, so the instructor sees the blast-radius
-      // report and the "Notify affected students" action.
-      recordRemediation(group, result.remediation);
+      // report and the "Notify affected students" action. The panel itself
+      // carries an "Open question editor" link (Finding 2) so the editor is
+      // still one click away rather than requiring a manual hunt through the
+      // bank.
       await reload();
       return;
     }
@@ -340,30 +424,78 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     renderResults();
   }
 
-  /** The §6.2 remediation checklist panel: report numbers + the four
-   * checklist items (three manual, one automated via the "Notify affected
-   * students" button) — rendered under a group's row once it has a stored
-   * remediation report (resolved ambiguity #4: pilot scope is a MANUAL
-   * checklist plus exactly one automated action). Returns `false` (rendering
-   * nothing) for groups that were never resolved with `correctnessAffecting`. */
+  /** The §6.2 remediation checklist panel: an editor link, report numbers,
+   * and the four checklist items (three manual, one automated via the
+   * "Notify affected students" button) — rendered under a group's row once
+   * it's correctness-affecting (resolved ambiguity #4: pilot scope is a
+   * MANUAL checklist plus exactly one automated action). Returns `false`
+   * (rendering nothing) for groups that were never resolved with
+   * `correctnessAffecting`.
+   *
+   * Task 6 review fix (Finding 2): "Open question editor" links to the same
+   * target `handleCorrect`'s post-resolve navigate used before it was
+   * suppressed for a correctness-affecting Correct — that suppression left no
+   * other path back to the editor from this view, so the panel now carries
+   * one, following the hash-router `<a href="#/...">` + `preventDefault` +
+   * `navigate()` convention used by question-detail.ts's breadcrumb-back link
+   * and preseeding.ts's queued-message link (a plain onclick-only button
+   * would skip the real `href`, which is what makes it a genuine link rather
+   * than a disguised button — e.g. reachable via "open in new tab").
+   *
+   * Task 6 review fix (Finding 3): shown whenever the group is
+   * correctness-affecting, whether or not the report has arrived yet —
+   * `hasStoredReport` renders immediately from an in-session resolve or an
+   * earlier fetch; otherwise `ensureRemediationReport` kicks off a fetch (a
+   * no-op if one is already in flight or already failed once) and the panel
+   * renders with the checklist and notify button right away, with a "loading"
+   * placeholder where the numbers go until the fetch resolves — or a brief
+   * inline error if it fails, without blocking the rest of the queue. */
   function remediationPanel(group: FlagGroup): HTMLElement | false {
-    const report = remediationReports.get(group.questionVersionId);
-    if (!report) return false;
+    const key = group.questionVersionId;
+    const hasStoredReport = remediationReports.has(key);
+    if (!hasStoredReport && !latestResolutionIsCorrectnessAffecting(group)) return false;
 
-    const notified = notifiedCounts.get(group.questionVersionId);
-    const notifyError = notifyErrorMessages.get(group.questionVersionId);
-    const studentCount = report.affectedStudents.length;
+    ensureRemediationReport(group);
 
-    const stats =
-      `${report.affectedAttempts} attempt${report.affectedAttempts === 1 ? '' : 's'} across ${studentCount} student${studentCount === 1 ? '' : 's'} ` +
-      `were served the affected content (${report.examAttempts} in exam-prep mode). ` +
-      `${report.reviewBookEntries} Review Book entr${report.reviewBookEntries === 1 ? 'y' : 'ies'} may reference it.`;
+    const report = remediationReports.get(key);
+    const fetchError = remediationFetchErrors.get(key);
+    const notified = notifiedCounts.get(key);
+    const notifyError = notifyErrorMessages.get(key);
+
+    const editorPath = `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(group.questionId)}`;
+
+    let stats: string | false = false;
+    if (report) {
+      const studentCount = report.affectedStudents.length;
+      stats =
+        `${report.affectedAttempts} attempt${report.affectedAttempts === 1 ? '' : 's'} across ${studentCount} student${studentCount === 1 ? '' : 's'} ` +
+        `were served the affected content (${report.examAttempts} in exam-prep mode). ` +
+        `${report.reviewBookEntries} Review Book entr${report.reviewBookEntries === 1 ? 'y' : 'ies'} may reference it.`;
+    } else if (!fetchError) {
+      stats = 'Loading blast-radius numbers…';
+    }
 
     return el(
       'div',
       { class: 'remediation-panel' },
       el('h3', { class: 'remediation-panel__title', text: 'Remediation checklist (correctness-affecting)' }),
-      el('p', { class: 'remediation-panel__stats', text: stats }),
+      el(
+        'p',
+        { class: 'remediation-panel__editor-link' },
+        el(
+          'a',
+          {
+            href: `#${editorPath}`,
+            onclick: (e: Event) => {
+              e.preventDefault();
+              navigate(editorPath);
+            },
+          },
+          'Open question editor →',
+        ),
+      ),
+      stats ? el('p', { class: 'remediation-panel__stats', text: stats }) : false,
+      fetchError ? errorState(`Couldn't load the blast-radius numbers: ${fetchError}`) : false,
       el(
         'ul',
         { class: 'remediation-panel__checklist' },

@@ -3181,12 +3181,16 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 /* Each body row is wrapped in .flag-group (row + optional remediation panel,
-   Task 6) so the "no trailing border" rule below targets the truly LAST
-   group in the list, not any row that happens to be an only child of its own
-   wrapper -- .flag-row's own border-bottom above still separates a row from
-   its panel when both are present. */
-.flag-table__rows > .flag-group:last-child .flag-row,
-.flag-table__rows > .flag-group:last-child .remediation-panel {
+   Task 6) so the "no trailing border" rule below can target whichever
+   element is actually LAST in the LAST group -- the row when there's no
+   panel, the panel when there is one -- via :last-child on each selector.
+   (Fixed post-review, Minor 7: an earlier version targeted BOTH .flag-row and
+   .remediation-panel unconditionally inside .flag-group:last-child, which
+   also stripped the row's own border-bottom when a panel followed it,
+   merging the row and panel with no separator -- the opposite of what the
+   comment claimed.) */
+.flag-table__rows > .flag-group:last-child > .flag-row:last-child,
+.flag-table__rows > .flag-group:last-child > .remediation-panel:last-child {
   border-bottom: none;
 }
 
@@ -3248,6 +3252,15 @@ button.class-row--link:focus-visible .class-row__title {
 .remediation-panel__title {
   margin: 0 0 0.35rem;
   font-size: 0.85rem;
+}
+
+.remediation-panel__editor-link {
+  margin: 0 0 0.6rem;
+}
+
+.remediation-panel__editor-link a {
+  font-weight: 650;
+  text-decoration: underline;
 }
 
 .remediation-panel__stats {
