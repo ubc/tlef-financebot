@@ -259,7 +259,28 @@ export interface Flag {
   reason?: string;
   state: FlagState;
   taRecommendation?: { action: 'correct' | 'archive' | 'clear'; note?: string; puid: string; at: Date };
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: Date };
+  // `correctnessAffecting` (Task 6 review fix): persists whether this
+  // resolution was marked correctness-affecting, so the remediation panel's
+  // "was this checklist relevant?" bit survives a reload — flags are
+  // terminal, so this can never be re-derived after the fact. Absent (not
+  // `false`) when unset, matching this file's other optional-field
+  // convention (see `reason` above).
+  // `notifiedAt`/`notifiedCount` (Task 6 re-review, Finding B): written by
+  // flags.service.ts's `notifyRemediation` after a successful "Notify
+  // affected students" call, onto every flag in the group whose resolution
+  // is correctness-affecting (not just the one flag id the notify request
+  // named). Persists the "already notified" marker across a reload the same
+  // way `correctnessAffecting` above persists the checklist's relevance, so
+  // the notify button can't be re-armed by a reload into re-sending the same
+  // correction notice to the same students.
+  resolution?: {
+    action: 'correct' | 'archive' | 'clear';
+    puid: string;
+    at: Date;
+    correctnessAffecting?: boolean;
+    notifiedAt?: Date;
+    notifiedCount?: number;
+  };
   createdAt: Date;
 }
 

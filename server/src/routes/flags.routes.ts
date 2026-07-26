@@ -5,10 +5,11 @@ import { z } from 'zod';
 import { ensureApiAuthenticated } from '../components/auth';
 import { ensureCourseInstructor, ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
-import { flagQuestion, resolveFlag, listFlags } from '../services/flags.service';
+import { flagQuestion, resolveFlag, listFlags, notifyRemediation, remediationReportForFlag } from '../services/flags.service';
 import { getQuestionCourseId } from '../services/bank.service';
 import { flagsCol } from '../components/mongodb/collections';
 import type { Flag, FlagState } from '../types/domain';
+import type { RemediationReport } from '../services/remediation.service';
 
 // Student flagging + instructor flag-resolution surface (ST-P09, §6.2), exactly
 // as specified in the Task 1 core doc. Routes with no `:courseId` in their path
@@ -77,8 +78,12 @@ function stashCourseIdFromFlag(): (req: Request, res: Response, next: NextFuncti
 }
 
 /** Id-mapping response shape, matching toQuestionResponse's convention in
- * questions.routes.ts: `id` instead of raw `_id`. */
-function toFlagResponse(flag: WithId<Flag>): Record<string, unknown> {
+ * questions.routes.ts: `id` instead of raw `_id`. Accepts an optional
+ * `remediation` field (resolved ambiguity #3, Task 6) — present only on a
+ * correctness-affecting resolve response; passed straight through via the
+ * `...rest` spread when it exists, so listFlags' plain `WithId<Flag>` rows
+ * (which never carry it) are unaffected. */
+function toFlagResponse(flag: WithId<Flag> & { remediation?: RemediationReport }): Record<string, unknown> {
   const { _id, ...rest } = flag;
   return { id: _id.toString(), ...rest };
 }
@@ -134,6 +139,45 @@ flagsRouter.post(
     const { action, correctnessAffecting } = req.body as z.infer<typeof resolveFlagBody>;
     const flag = await resolveFlag(flagId, action, req.user!.puid, { correctnessAffecting });
     res.json(toFlagResponse(flag));
+  },
+);
+
+/** POST /api/flags/:flagId/remediation/notify -> { notified: number }.
+ * Instructor-only, courseId stashed from the target flag (§6.2 remediation
+ * "Notify affected students" action, Task 6). No body. This is an explicit,
+ * separately-triggered user action (not part of resolve), reusing the same
+ * stashCourseIdFromFlag() + ensureCourseInstructor() guard chain as
+ * POST /flags/:flagId/resolve. */
+flagsRouter.post(
+  '/flags/:flagId/remediation/notify',
+  validate({ params: flagIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromFlag(),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const flagId = new ObjectId(String(req.params.flagId));
+    const result = await notifyRemediation(flagId);
+    res.json(result);
+  },
+);
+
+/** GET /api/flags/:flagId/remediation -> RemediationReport. Instructor-only,
+ * courseId stashed from the target flag — same guard chain as the
+ * resolve/notify routes above. Task 6 review fix (Finding 3): the report is
+ * regenerated (a pure read-only query over the flag's `questionVersionId`)
+ * rather than persisted, so the remediation panel's blast-radius numbers
+ * survive a reload even though flags are terminal and the resolve response's
+ * one-shot `remediation` field is gone by then. */
+flagsRouter.get(
+  '/flags/:flagId/remediation',
+  validate({ params: flagIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromFlag(),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const flagId = new ObjectId(String(req.params.flagId));
+    const report = await remediationReportForFlag(flagId);
+    res.json(report);
   },
 );
 

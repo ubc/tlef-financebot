@@ -1067,6 +1067,18 @@ export interface FlagVersionJoin {
   difficulty: Difficulty;
 }
 
+/** §6.2 step 1 remediation report (Task 6) — the "blast radius" of a
+ * correctness-affecting flag resolution. Matches
+ * server/src/services/remediation.service.ts's `RemediationReport` exactly:
+ * four fields, no mastery count (that step is manual-checklist text only —
+ * see flags.ts's rendering of it). */
+export interface RemediationReport {
+  affectedAttempts: number;
+  affectedStudents: string[];
+  reviewBookEntries: number;
+  examAttempts: number;
+}
+
 export interface Flag {
   id: string;
   courseId: string;
@@ -1075,10 +1087,28 @@ export interface Flag {
   puid: string;
   reason?: string;
   state: FlagState;
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: string };
+  // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
+  // sub-document so the remediation panel can tell whether THIS flag's
+  // resolution should still show the checklist after a reload — see
+  // server/src/types/domain.ts's `Flag.resolution` and flags.ts's
+  // `groupHasCorrectnessAffectingResolution`.
+  // `notifiedAt`/`notifiedCount` (Task 6 re-review, Finding B): persisted the
+  // same way, so the "Notify affected students" button's already-notified
+  // state survives a reload too — see flags.service.ts's `notifyRemediation`.
+  resolution?: {
+    action: 'correct' | 'archive' | 'clear';
+    puid: string;
+    at: string;
+    correctnessAffecting?: boolean;
+    notifiedAt?: string;
+    notifiedCount?: number;
+  };
   createdAt: string;
   question: FlagQuestionJoin | null;
   currentVersion: FlagVersionJoin | null;
+  // Present only on the response to a correctness-affecting resolve (Task 6,
+  // resolved ambiguity #3) — never on listCourseFlags' rows.
+  remediation?: RemediationReport;
 }
 
 /** GET /api/courses/:courseId/flags?state= -> flags joined with question +
@@ -1103,6 +1133,24 @@ export function resolveFlag(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}) }),
   });
+}
+
+/** POST /api/flags/:flagId/remediation/notify -> { notified: number }.
+ * Instructor-only; explicit "Notify affected students" action from the §6.2
+ * remediation checklist (Task 6). No body. */
+export function notifyRemediation(flagId: string): Promise<{ notified: number }> {
+  return request<{ notified: number }>(`/api/flags/${encodeURIComponent(flagId)}/remediation/notify`, {
+    method: 'POST',
+  });
+}
+
+/** GET /api/flags/:flagId/remediation -> RemediationReport. Instructor-only;
+ * Task 6 review fix (Finding 3) — regenerates the report from the flag's
+ * questionVersionId so the checklist panel's blast-radius numbers survive a
+ * reload (flags are terminal, so the resolve response's one-shot
+ * `remediation` field can't be refetched any other way). */
+export function getRemediationReport(flagId: string): Promise<RemediationReport> {
+  return request<RemediationReport>(`/api/flags/${encodeURIComponent(flagId)}/remediation`);
 }
 
 // --- Notifications (§4.3, §9.1) — Task 3 -------------------------------------

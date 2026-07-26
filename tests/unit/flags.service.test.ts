@@ -29,8 +29,20 @@ jest.mock('../../server/src/services/notifications.service', () => ({
   checkReviewBacklog: jest.fn(),
 }));
 
-import { flagQuestion, checkAutoPause, resolveFlag, listFlags, canFlagTransition } from '../../server/src/services/flags.service';
+// remediation.service (Task 6) is mocked wholesale too, for the same reason
+// as notifications.service above: these tests are about resolveFlag's
+// correctness-affecting WIRING (does it call remediationReport with the right
+// version id? does it swallow a failure? does notifyRemediation delegate
+// correctly?), not remediation.service's own query/dedup logic -- that's
+// covered by tests/unit/remediation.service.test.ts.
+jest.mock('../../server/src/services/remediation.service', () => ({
+  remediationReport: jest.fn(),
+  notifyAffectedStudents: jest.fn(),
+}));
+
+import { flagQuestion, checkAutoPause, resolveFlag, listFlags, canFlagTransition, notifyRemediation, remediationReportForFlag } from '../../server/src/services/flags.service';
 import { notify, notifyCourseStaff, checkReviewBacklog } from '../../server/src/services/notifications.service';
+import { remediationReport, notifyAffectedStudents } from '../../server/src/services/remediation.service';
 import type { Question, Course, Flag } from '../../server/src/types/domain';
 
 // Per-collection method mocks, wired onto the mocked accessors in beforeEach —
@@ -41,6 +53,7 @@ import type { Question, Course, Flag } from '../../server/src/types/domain';
 const flagsFindOne = jest.fn();
 const flagsInsertOne = jest.fn();
 const flagsUpdateOne = jest.fn();
+const flagsUpdateMany = jest.fn();
 const flagsCountDocuments = jest.fn();
 const flagsFind = jest.fn();
 const flagsFindToArray = jest.fn();
@@ -60,6 +73,7 @@ beforeEach(() => {
   flagsFindOne.mockReset();
   flagsInsertOne.mockReset();
   flagsUpdateOne.mockReset();
+  flagsUpdateMany.mockReset();
   flagsCountDocuments.mockReset();
   flagsFind.mockReset();
   flagsFindToArray.mockReset();
@@ -72,9 +86,12 @@ beforeEach(() => {
   jest.mocked(notify).mockReset();
   jest.mocked(notifyCourseStaff).mockReset();
   jest.mocked(checkReviewBacklog).mockReset();
+  jest.mocked(remediationReport).mockReset();
+  jest.mocked(notifyAffectedStudents).mockReset();
 
   flagsInsertOne.mockResolvedValue({ acknowledged: true, insertedId: new ObjectId() });
   flagsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
+  flagsUpdateMany.mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
   flagsFind.mockReturnValue({ toArray: flagsFindToArray });
   flagsFindToArray.mockResolvedValue([]);
   questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
@@ -84,6 +101,7 @@ beforeEach(() => {
     findOne: flagsFindOne,
     insertOne: flagsInsertOne,
     updateOne: flagsUpdateOne,
+    updateMany: flagsUpdateMany,
     countDocuments: flagsCountDocuments,
     find: flagsFind,
   } as never);
@@ -584,6 +602,173 @@ describe('Task 3: notification wiring', () => {
         expect.objectContaining({ $set: expect.objectContaining({ state: 'resolved-cleared' }) }),
       );
     });
+  });
+});
+
+// --- Task 6: correctness-affecting remediation wiring -------------------------
+
+describe('Task 6: resolveFlag correctness-affecting remediation wiring', () => {
+  it("resolveFlag({correctnessAffecting: true}) calls remediationReport(flag.questionVersionId) and returns its result on `remediation` (resolved ambiguity #3 -- report reaches the client on the resolve response)", async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ questionId, questionVersionId: versionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    const report = { affectedAttempts: 4, affectedStudents: ['PUID-STU-0001', 'PUID-STU-0002'], reviewBookEntries: 1, examAttempts: 1 };
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    jest.mocked(remediationReport).mockResolvedValue(report);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001', { correctnessAffecting: true });
+
+    expect(remediationReport).toHaveBeenCalledWith(versionId);
+    expect(result.remediation).toEqual(report);
+  });
+
+  it('resolveFlag without correctnessAffecting never calls remediationReport, and the result carries no `remediation` field', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+    expect(remediationReport).not.toHaveBeenCalled();
+    expect(result.remediation).toBeUndefined();
+  });
+
+  it('a remediationReport failure never fails the (already-committed) resolution -- logs and omits `remediation` rather than propagating (resolved ambiguity #5)', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    jest.mocked(remediationReport).mockRejectedValueOnce(new Error('mongo down'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001', { correctnessAffecting: true });
+
+    expect(result.state).toBe('resolved-cleared');
+    expect(result.remediation).toBeUndefined();
+    // The flag write already committed before the remediation branch runs.
+    expect(flagsUpdateOne).toHaveBeenCalledWith(
+      { _id: flag._id },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'resolved-cleared' }) }),
+    );
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // Task 6 review fix (Finding 3): the resolve response's `remediation` is
+  // one-shot and flags are terminal, so the ONLY way the remediation panel
+  // can know -- after a reload -- whether a resolution was correctness-
+  // affecting is a persisted bit on the flag's own `resolution` sub-document.
+  it('resolveFlag({correctnessAffecting: true}) persists resolution.correctnessAffecting: true on the flag write and on the returned resolution', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+    jest.mocked(remediationReport).mockResolvedValue({ affectedAttempts: 0, affectedStudents: [], reviewBookEntries: 0, examAttempts: 0 });
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001', { correctnessAffecting: true });
+
+    const [, update] = flagsUpdateOne.mock.calls[0];
+    expect(update.$set.resolution.correctnessAffecting).toBe(true);
+    expect(result.resolution!.correctnessAffecting).toBe(true);
+  });
+
+  it('resolveFlag without correctnessAffecting omits the key entirely (never writes correctnessAffecting: false)', async () => {
+    const questionId = new ObjectId();
+    const flag = baseFlag({ questionId, state: 'open' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValue(flag);
+    questionsFindOne.mockResolvedValue(question);
+
+    const result = await resolveFlag(flag._id, 'clear', 'PUID-INSTR-0001');
+
+    const [, update] = flagsUpdateOne.mock.calls[0];
+    expect(Object.hasOwn(update.$set.resolution, 'correctnessAffecting')).toBe(false);
+    expect(Object.hasOwn(result.resolution!, 'correctnessAffecting')).toBe(false);
+  });
+});
+
+describe("Task 6: notifyRemediation ('Notify affected students' button)", () => {
+  it('resolves the target flag and delegates to notifyAffectedStudents(questionVersionId, courseId)', async () => {
+    const courseId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ courseId, questionVersionId: versionId });
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(notifyAffectedStudents).mockResolvedValue({ notified: 3 });
+
+    const result = await notifyRemediation(flag._id);
+
+    expect(notifyAffectedStudents).toHaveBeenCalledWith(versionId, courseId);
+    expect(result).toEqual({ notified: 3 });
+  });
+
+  it('throws flag-not-found for a nonexistent flag, without calling notifyAffectedStudents', async () => {
+    flagsFindOne.mockResolvedValue(null);
+
+    await expect(notifyRemediation(new ObjectId())).rejects.toThrow('flag-not-found');
+    expect(notifyAffectedStudents).not.toHaveBeenCalled();
+  });
+
+  // Task 6 re-review (Finding B): the persisted "already notified" marker --
+  // without this, a reload turns the panel's "Notify affected students"
+  // button back into a fresh, unarmed button that would re-send the same
+  // in-app correction notice to the same students.
+  it('on success, stamps resolution.notifiedAt/notifiedCount onto every correctness-affecting flag sharing the questionVersionId -- not just the flag id in the URL', async () => {
+    const courseId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ courseId, questionVersionId: versionId });
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(notifyAffectedStudents).mockResolvedValue({ notified: 5 });
+
+    await notifyRemediation(flag._id);
+
+    expect(flagsUpdateMany).toHaveBeenCalledTimes(1);
+    const [filter, update] = flagsUpdateMany.mock.calls[0];
+    expect(filter).toEqual({ questionVersionId: versionId, 'resolution.correctnessAffecting': true });
+    expect(update.$set['resolution.notifiedCount']).toBe(5);
+    expect(update.$set['resolution.notifiedAt']).toBeInstanceOf(Date);
+  });
+
+  it('stamps nothing when the underlying notifyAffectedStudents call throws (e.g. a total notify failure)', async () => {
+    const flag = baseFlag();
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(notifyAffectedStudents).mockRejectedValueOnce(new Error('remediation-notify-failed'));
+
+    await expect(notifyRemediation(flag._id)).rejects.toThrow('remediation-notify-failed');
+
+    expect(flagsUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+// Task 6 review fix (Finding 3): `remediationReportForFlag` is the
+// flag->version lookup GET /api/flags/:flagId/remediation calls into, so the
+// remediation panel can regenerate its report after a reload (flags are
+// terminal; the resolve response's one-shot `remediation` field is gone by
+// then). Mirrors notifyRemediation's own lookup, tested just above.
+describe('Task 6: remediationReportForFlag (GET /api/flags/:flagId/remediation)', () => {
+  it("resolves the target flag and delegates to remediationReport(flag.questionVersionId)", async () => {
+    const versionId = new ObjectId();
+    const flag = baseFlag({ questionVersionId: versionId });
+    const report = { affectedAttempts: 4, affectedStudents: ['PUID-STU-0001'], reviewBookEntries: 1, examAttempts: 0 };
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(remediationReport).mockResolvedValue(report);
+
+    const result = await remediationReportForFlag(flag._id);
+
+    expect(remediationReport).toHaveBeenCalledWith(versionId);
+    expect(result).toEqual(report);
+  });
+
+  it('throws flag-not-found for a nonexistent flag, without calling remediationReport', async () => {
+    flagsFindOne.mockResolvedValue(null);
+
+    await expect(remediationReportForFlag(new ObjectId())).rejects.toThrow('flag-not-found');
+    expect(remediationReport).not.toHaveBeenCalled();
   });
 });
 

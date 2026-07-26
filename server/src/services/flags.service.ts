@@ -10,6 +10,8 @@ import {
 } from '../components/mongodb/collections';
 import { transitionQuestion } from './questions.service';
 import { notify, notifyCourseStaff } from './notifications.service';
+import { remediationReport, notifyAffectedStudents } from './remediation.service';
+import type { RemediationReport } from './remediation.service';
 import type { Flag, FlagState, Course, Question, QuestionVersion } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -22,9 +24,11 @@ import type { Flag, FlagState, Course, Question, QuestionVersion } from '../type
 // notifications.service's notify()/notifyCourseStaff()). The pending-review
 // backlog check (checkReviewBacklog) is NOT wired from here — it runs from
 // notifications.service's runDailySummary per-course loop instead, since
-// flagging a question never itself moves anything into pending-review. The
-// remaining `// Task 6:` comment marks a future wiring point outside this
-// task's scope. See server/src/services/AGENTS.md.
+// flagging a question never itself moves anything into pending-review.
+// resolveFlag's correctness-affecting branch (§6.2, Task 6) delegates to
+// remediation.service.ts for both the blast-radius report and the "Notify
+// affected students" action — this file only calls into it, never queries
+// attemptsCol()/reviewBookCol() directly. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
 /** Flag case state machine — decoupled from PublicationState (PRD §6.2).
@@ -191,13 +195,18 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
  * re-evaluation excludes this flag from its own open-flag recount via an
  * explicit `_id: {$ne}` in the query (see `countOpenFlags`), not via write
  * ordering, so this reordering doesn't change its result.
+ *
+ * Return type is widened ADDITIVELY with an optional `remediation` field
+ * (resolved ambiguity #3) — present only when `opts.correctnessAffecting` is
+ * true AND the report computed successfully, so Task 2's existing callers
+ * (which ignore the extra field) keep working unchanged.
  */
 export async function resolveFlag(
   flagId: ObjectId,
   action: 'correct' | 'archive' | 'clear',
   byPuid: string,
   opts?: { correctnessAffecting?: boolean },
-): Promise<WithId<Flag>> {
+): Promise<WithId<Flag> & { remediation?: RemediationReport }> {
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
 
@@ -241,7 +250,19 @@ export async function resolveFlag(
   }
 
   const resolvedAt = new Date();
-  const resolution = { action, puid: byPuid, at: resolvedAt };
+  // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
+  // sub-document, not just returned in-memory, so the remediation panel can
+  // tell — after a reload, once the resolve response's one-shot `remediation`
+  // field is long gone — whether THIS flag's resolution is one it should
+  // still be showing the checklist for. Conditional spread (not `false`)
+  // mirrors this file's `reason` field and notifications.service's `notify()`
+  // — an absent key, never an explicit `correctnessAffecting: false`.
+  const resolution = {
+    action,
+    puid: byPuid,
+    at: resolvedAt,
+    ...(opts?.correctnessAffecting ? { correctnessAffecting: true as const } : {}),
+  };
   await flagsCol().updateOne({ _id: flagId }, { $set: { state: target, resolution } });
 
   await auditCol().insertOne({
@@ -272,11 +293,80 @@ export async function resolveFlag(
   } catch (err) {
     console.error('notifications: failed to emit flag-resolved notification', err);
   }
+  // §6.2 remediation (Task 6): the flag write + audit entry above have
+  // ALREADY committed, so — mirroring the notify() try/catches above — a
+  // failure computing the report must never turn this already-succeeded
+  // resolution into a 500. On failure, log and omit `remediation`; the
+  // instructor still gets a resolved flag, just without the checklist (they
+  // can be told to retry / escalate manually).
+  let remediation: RemediationReport | undefined;
   if (opts?.correctnessAffecting) {
-    // Task 6: trigger remediation report + notification when correctnessAffecting
+    try {
+      remediation = await remediationReport(flag.questionVersionId);
+    } catch (err) {
+      console.error('remediation: failed to compute remediation report', err);
+    }
   }
 
-  return { ...flag, state: target, resolution };
+  return { ...flag, state: target, resolution, ...(remediation ? { remediation } : {}) };
+}
+
+/**
+ * §6.2 "Notify affected students" button (Task 6): an EXPLICIT instructor
+ * action, unlike the advisory `notify()` calls above — a failure here must
+ * surface to the caller as an error rather than being swallowed, since
+ * nothing has committed yet from the caller's point of view (no flag write
+ * precedes this; it's invoked independently via
+ * `POST /api/flags/:flagId/remediation/notify`).
+ *
+ * Task 6 re-review (Finding B): on success, stamps `resolution.notifiedAt` /
+ * `resolution.notifiedCount` onto every flag in the group — i.e. every flag
+ * sharing this flag's `questionVersionId` whose resolution is
+ * correctness-affecting — not just `flagId` itself. The client treats the
+ * group as the unit and reads the marker off whichever flag it happens to
+ * look at, so a partial stamp (only the URL's flag) would leave the button
+ * re-armed for the group's other flags after a reload. Deliberately placed
+ * here rather than in remediation.service.ts (flag-agnostic — it only knows
+ * `questionVersionId`) or in the route (no DB/service calls in routes, per
+ * routes/AGENTS.md). Never stamps on a thrown `notifyAffectedStudents` (the
+ * `await` below throws before the update runs), so a total notify failure
+ * leaves the marker unset and the button re-armed for a genuine retry.
+ */
+export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: number }> {
+  const flag = await flagsCol().findOne({ _id: flagId });
+  if (!flag) throw new Error('flag-not-found');
+  const result = await notifyAffectedStudents(flag.questionVersionId, flag.courseId);
+  // §6.2 remediation (Task 6): the notify call above has ALREADY sent the
+  // correction notices to every affected student, so — mirroring the notify()
+  // try/catches above — a failure stamping the marker must never turn this
+  // already-succeeded notify into an error. On failure, log and omit the stamp;
+  // the instructor gets their notification delivered to all students, just
+  // without the persisted marker (which is strictly better than a UI that
+  // advertises a retry for a notify that already succeeded).
+  try {
+    await flagsCol().updateMany(
+      { questionVersionId: flag.questionVersionId, 'resolution.correctnessAffecting': true },
+      { $set: { 'resolution.notifiedAt': new Date(), 'resolution.notifiedCount': result.notified } },
+    );
+  } catch (err) {
+    console.error('remediation: failed to stamp notification marker', err);
+  }
+  return result;
+}
+
+/**
+ * §6.2 remediation panel reload fix (Task 6 review, Finding 3): the report is
+ * a pure read-only query over `questionVersionId`, so it's always
+ * regenerable from a flag id — this is what `GET /api/flags/:flagId/remediation`
+ * calls so the checklist panel's blast-radius numbers survive a reload (flags
+ * are terminal; the resolve response's one-shot `remediation` field can never
+ * be refetched any other way). Mirrors `notifyRemediation`'s flag -> version
+ * lookup just above.
+ */
+export async function remediationReportForFlag(flagId: ObjectId): Promise<RemediationReport> {
+  const flag = await flagsCol().findOne({ _id: flagId });
+  if (!flag) throw new Error('flag-not-found');
+  return remediationReport(flag.questionVersionId);
 }
 
 /**
