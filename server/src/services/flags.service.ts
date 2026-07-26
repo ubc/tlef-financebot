@@ -336,10 +336,21 @@ export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: n
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
   const result = await notifyAffectedStudents(flag.questionVersionId, flag.courseId);
-  await flagsCol().updateMany(
-    { questionVersionId: flag.questionVersionId, 'resolution.correctnessAffecting': true },
-    { $set: { 'resolution.notifiedAt': new Date(), 'resolution.notifiedCount': result.notified } },
-  );
+  // §6.2 remediation (Task 6): the notify call above has ALREADY sent the
+  // correction notices to every affected student, so — mirroring the notify()
+  // try/catches above — a failure stamping the marker must never turn this
+  // already-succeeded notify into an error. On failure, log and omit the stamp;
+  // the instructor gets their notification delivered to all students, just
+  // without the persisted marker (which is strictly better than a UI that
+  // advertises a retry for a notify that already succeeded).
+  try {
+    await flagsCol().updateMany(
+      { questionVersionId: flag.questionVersionId, 'resolution.correctnessAffecting': true },
+      { $set: { 'resolution.notifiedAt': new Date(), 'resolution.notifiedCount': result.notified } },
+    );
+  } catch (err) {
+    console.error('remediation: failed to stamp notification marker', err);
+  }
   return result;
 }
 

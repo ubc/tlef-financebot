@@ -328,6 +328,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   function scheduleRender(): void {
     if (renderTimer !== undefined) return;
     renderTimer = setTimeout(() => {
+      if (!root.isConnected) return;
       renderTimer = undefined;
       renderResults();
     }, 0);
