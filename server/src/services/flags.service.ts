@@ -318,11 +318,29 @@ export async function resolveFlag(
  * nothing has committed yet from the caller's point of view (no flag write
  * precedes this; it's invoked independently via
  * `POST /api/flags/:flagId/remediation/notify`).
+ *
+ * Task 6 re-review (Finding B): on success, stamps `resolution.notifiedAt` /
+ * `resolution.notifiedCount` onto every flag in the group — i.e. every flag
+ * sharing this flag's `questionVersionId` whose resolution is
+ * correctness-affecting — not just `flagId` itself. The client treats the
+ * group as the unit and reads the marker off whichever flag it happens to
+ * look at, so a partial stamp (only the URL's flag) would leave the button
+ * re-armed for the group's other flags after a reload. Deliberately placed
+ * here rather than in remediation.service.ts (flag-agnostic — it only knows
+ * `questionVersionId`) or in the route (no DB/service calls in routes, per
+ * routes/AGENTS.md). Never stamps on a thrown `notifyAffectedStudents` (the
+ * `await` below throws before the update runs), so a total notify failure
+ * leaves the marker unset and the button re-armed for a genuine retry.
  */
 export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: number }> {
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
-  return notifyAffectedStudents(flag.questionVersionId, flag.courseId);
+  const result = await notifyAffectedStudents(flag.questionVersionId, flag.courseId);
+  await flagsCol().updateMany(
+    { questionVersionId: flag.questionVersionId, 'resolution.correctnessAffecting': true },
+    { $set: { 'resolution.notifiedAt': new Date(), 'resolution.notifiedCount': result.notified } },
+  );
+  return result;
 }
 
 /**

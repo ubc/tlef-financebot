@@ -53,6 +53,7 @@ import type { Question, Course, Flag } from '../../server/src/types/domain';
 const flagsFindOne = jest.fn();
 const flagsInsertOne = jest.fn();
 const flagsUpdateOne = jest.fn();
+const flagsUpdateMany = jest.fn();
 const flagsCountDocuments = jest.fn();
 const flagsFind = jest.fn();
 const flagsFindToArray = jest.fn();
@@ -72,6 +73,7 @@ beforeEach(() => {
   flagsFindOne.mockReset();
   flagsInsertOne.mockReset();
   flagsUpdateOne.mockReset();
+  flagsUpdateMany.mockReset();
   flagsCountDocuments.mockReset();
   flagsFind.mockReset();
   flagsFindToArray.mockReset();
@@ -89,6 +91,7 @@ beforeEach(() => {
 
   flagsInsertOne.mockResolvedValue({ acknowledged: true, insertedId: new ObjectId() });
   flagsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
+  flagsUpdateMany.mockResolvedValue({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
   flagsFind.mockReturnValue({ toArray: flagsFindToArray });
   flagsFindToArray.mockResolvedValue([]);
   questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
@@ -98,6 +101,7 @@ beforeEach(() => {
     findOne: flagsFindOne,
     insertOne: flagsInsertOne,
     updateOne: flagsUpdateOne,
+    updateMany: flagsUpdateMany,
     countDocuments: flagsCountDocuments,
     find: flagsFind,
   } as never);
@@ -708,6 +712,36 @@ describe("Task 6: notifyRemediation ('Notify affected students' button)", () => 
 
     await expect(notifyRemediation(new ObjectId())).rejects.toThrow('flag-not-found');
     expect(notifyAffectedStudents).not.toHaveBeenCalled();
+  });
+
+  // Task 6 re-review (Finding B): the persisted "already notified" marker --
+  // without this, a reload turns the panel's "Notify affected students"
+  // button back into a fresh, unarmed button that would re-send the same
+  // in-app correction notice to the same students.
+  it('on success, stamps resolution.notifiedAt/notifiedCount onto every correctness-affecting flag sharing the questionVersionId -- not just the flag id in the URL', async () => {
+    const courseId = new ObjectId();
+    const versionId = new ObjectId();
+    const flag = baseFlag({ courseId, questionVersionId: versionId });
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(notifyAffectedStudents).mockResolvedValue({ notified: 5 });
+
+    await notifyRemediation(flag._id);
+
+    expect(flagsUpdateMany).toHaveBeenCalledTimes(1);
+    const [filter, update] = flagsUpdateMany.mock.calls[0];
+    expect(filter).toEqual({ questionVersionId: versionId, 'resolution.correctnessAffecting': true });
+    expect(update.$set['resolution.notifiedCount']).toBe(5);
+    expect(update.$set['resolution.notifiedAt']).toBeInstanceOf(Date);
+  });
+
+  it('stamps nothing when the underlying notifyAffectedStudents call throws (e.g. a total notify failure)', async () => {
+    const flag = baseFlag();
+    flagsFindOne.mockResolvedValue(flag);
+    jest.mocked(notifyAffectedStudents).mockRejectedValueOnce(new Error('remediation-notify-failed'));
+
+    await expect(notifyRemediation(flag._id)).rejects.toThrow('remediation-notify-failed');
+
+    expect(flagsUpdateMany).not.toHaveBeenCalled();
   });
 });
 

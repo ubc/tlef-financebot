@@ -44,11 +44,34 @@
 // both the report and the "Notify affected students" button. The server now
 // persists `resolution.correctnessAffecting` on the flag and exposes
 // `GET /api/flags/:flagId/remediation` to regenerate the (pure read-only)
-// report. `latestResolutionIsCorrectnessAffecting` reads the persisted bit so
+// report. `groupHasCorrectnessAffectingResolution` reads the persisted bit so
 // the panel renders for a group on a fresh load too; `remediationReports`
 // (below) still takes precedence when already populated — from either an
 // in-session resolve or an earlier fetch — so a reload triggered by a resolve
 // action never redundantly refetches what it already has.
+//
+// Task 6 re-review (second round, findings A–F): (A) the fix above had a
+// latent bug — reading only the LATEST resolved flag's bit meant a later,
+// non-correctness-affecting Clear on a group (e.g. clearing the flag(s) left
+// over from the archived->archived edge case above, without re-ticking the
+// box) could re-hide an already-shown panel after reload.
+// `groupHasCorrectnessAffectingResolution` (renamed from
+// `latestResolutionIsCorrectnessAffecting`) now checks ANY resolved flag in
+// the group instead of just the latest. (B) "Notify affected students" gets
+// the same persisted-marker treatment `correctnessAffecting` got above —
+// `resolution.notifiedAt`/`notifiedCount`, stamped by flags.service.ts's
+// `notifyRemediation` on every correctness-affecting flag in the group — so a
+// reload can't re-arm the button into double-notifying the same students. (C)
+// the "Correctness-affecting" checkbox now survives a re-render (see
+// `correctnessChecked` below) — `ensureRemediationReport`'s fetch settling
+// and `handleNotify` both trigger one, so a render is no longer guaranteed to
+// follow only a user action. (D) the notify button's total-failure error
+// (`remediation-notify-failed`) is translated to an actionable message
+// client-side, the same way the `archived->archived` resolve error is. (E) a
+// failed report fetch now offers a "Try again" retry rather than requiring a
+// full page reload. (F) `ensureRemediationReport`'s settle-triggered
+// re-renders are coalesced via `scheduleRender` to avoid O(M²) DOM churn on a
+// queue with many correctness-affecting groups.
 import {
   ApiError,
   getCourseTree,
@@ -153,16 +176,44 @@ function latestResolutionAction(group: FlagGroup): ResolveAction | null {
   return resolved[0].resolution.action;
 }
 
-/** Whether the group's most recent resolution (same "latest resolved flag"
- * rule as `latestResolutionAction` above) was marked correctness-affecting —
- * read from the persisted `resolution.correctnessAffecting` bit (Task 6
- * review fix, Finding 3), so this still answers correctly after a reload,
- * not just in the same session the resolve happened in. */
-function latestResolutionIsCorrectnessAffecting(group: FlagGroup): boolean {
-  const resolved = group.flags.filter((f): f is Flag & { resolution: NonNullable<Flag['resolution']> } => Boolean(f.resolution));
-  if (resolved.length === 0) return false;
-  resolved.sort((a, b) => new Date(b.resolution.at).getTime() - new Date(a.resolution.at).getTime());
-  return resolved[0].resolution.correctnessAffecting === true;
+/** Whether the group carries ANY resolution marked correctness-affecting —
+ * NOT just the latest one, unlike `latestResolutionAction` immediately above.
+ * Remediation obligation is a property of the CONTENT that was served (the
+ * question version), not of whichever resolution happened to land last:
+ * ticking the box and Archiving a 3-flag group resolves flag 1
+ * correctness-affecting, then flag 2 throws the documented
+ * `archived->archived` error (see `resolveGroupFlags` below) and is left
+ * open; the instructor then Clears the rest per that error message's own
+ * guidance — without re-ticking the box, since nothing prompts them to. That
+ * produces a LATER, non-correctness-affecting resolution in the same group.
+ * A latest-wins rule would make the panel — and the persisted notify marker,
+ * Task 6 re-review Finding B — vanish on the very next reload, even though
+ * the original correctness-affecting archive still stands and its
+ * obligations were never discharged. `.some(...)` is correct here in a way
+ * it would NOT be for `latestResolutionAction`'s disposition badge, which
+ * legitimately wants "what's true of this question right now," not "was it
+ * ever true." Reads the persisted `resolution.correctnessAffecting` bit
+ * (Task 6 review fix, Finding 3), so this still answers correctly after a
+ * reload, not just in the same session the resolve happened in. */
+function groupHasCorrectnessAffectingResolution(group: FlagGroup): boolean {
+  return group.flags.some((flag) => flag.resolution?.correctnessAffecting === true);
+}
+
+/** The persisted "already notified" count for a group (Task 6 re-review,
+ * Finding B) — read off whichever flag in the group carries it. The notify
+ * wrapper (`notifyRemediation` in flags.service.ts) stamps it identically
+ * onto every correctness-affecting flag in the group on success, so any one
+ * of them answers the same; this is what lets the panel show "Notified N
+ * students" instead of an armed button after a reload, once the in-session
+ * `notifiedCounts` map (which always takes precedence — see
+ * `remediationPanel` below) is gone. */
+function persistedNotifiedCount(group: FlagGroup): number | undefined {
+  for (const flag of group.flags) {
+    if (flag.resolution?.correctnessAffecting && flag.resolution.notifiedCount !== undefined) {
+      return flag.resolution.notifiedCount;
+    }
+  }
+  return undefined;
 }
 
 /** Unresolved groups first (most recently flagged first within that set),
@@ -239,6 +290,15 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   // the view.
   const remediationFetchErrors = new Map<string, string>();
   const remediationFetchAttempted = new Set<string>();
+  // Task 6 re-review (Finding C): the "Correctness-affecting" checkbox's
+  // ticked/unticked state, keyed the same way as the maps above. Needed
+  // because a render is no longer guaranteed to follow only a user action —
+  // `ensureRemediationReport`'s fetch settling and `handleNotify` both call
+  // `renderResults()` on their own — so without this, an in-flight settle
+  // landing while the box is ticked would silently untick it right before a
+  // Correct/Archive/Clear click resolves without remediation. See
+  // `groupRow`'s construction of `correctnessCheckbox` below.
+  const correctnessChecked = new Map<string, boolean>();
 
   function recordRemediation(group: FlagGroup, remediation: RemediationReport | undefined): void {
     if (!remediation) return;
@@ -251,6 +311,28 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     remediationFetchErrors.delete(group.questionVersionId);
   }
 
+  // Task 6 re-review (Finding F): on first render, `ensureRemediationReport`
+  // fires once per correctness-affecting group in the queue — M parallel GETs
+  // on an M-group queue, each of which independently calls `renderResults()`
+  // (rebuilding every row) when it settles. Left alone that's O(M²) DOM
+  // churn. Coalescing the settle-triggered renders (rather than restructuring
+  // the fetch itself, which is out of scope) fixes this with a minimal,
+  // local change: any number of `scheduleRender()` calls arriving before the
+  // pending timer fires collapse into the ONE `renderResults()` that timer
+  // runs. `setTimeout(..., 0)` (not `queueMicrotask`) deliberately, since
+  // network responses land on separate macrotask turns — a microtask alone
+  // would rarely catch two in the same window; a zero-delay timer gives
+  // near-simultaneous settles (the common case: everything was kicked off in
+  // the same initial render) a real chance to coalesce.
+  let renderTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleRender(): void {
+    if (renderTimer !== undefined) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = undefined;
+      renderResults();
+    }, 0);
+  }
+
   /** Fetches the remediation report for a group that's correctness-affecting
    * but not yet in `remediationReports` (Task 6 review fix, Finding 3) — e.g.
    * after a reload, where only the persisted `correctnessAffecting` bit
@@ -258,9 +340,9 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
    * a no-op whenever `group.questionVersionId` is already a key in it
    * (either from an in-session resolve or an earlier fetch), so a resolve
    * action's own `reload()` never redundantly refetches what it just
-   * received on the resolve response. Fire-and-forget: re-renders the queue
-   * when it settles so the panel picks up the numbers (or the error) once
-   * they're in. */
+   * received on the resolve response. Fire-and-forget: schedules a
+   * (coalesced, see `scheduleRender` above) re-render when it settles so the
+   * panel picks up the numbers (or the error) once they're in. */
   function ensureRemediationReport(group: FlagGroup): void {
     const key = group.questionVersionId;
     if (remediationReports.has(key) || remediationFetchAttempted.has(key)) return;
@@ -271,11 +353,11 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       .then((report) => {
         remediationReports.set(key, report);
         remediationFetchErrors.delete(key);
-        renderResults();
+        scheduleRender();
       })
       .catch((error) => {
         remediationFetchErrors.set(key, error instanceof ApiError ? error.message : (error as Error).message);
-        renderResults();
+        scheduleRender();
       });
   }
 
@@ -410,7 +492,14 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
    * that flag's `questionVersionId`, which every flag in the group shares by
    * construction). An explicit user action: unlike resolve failures, a
    * notify failure is shown inline in the checklist panel rather than
-   * silently retried. */
+   * silently retried.
+   *
+   * Task 6 re-review (Finding B): on success the server persists the
+   * notified marker onto every correctness-affecting flag in the group (see
+   * flags.service.ts's `notifyRemediation`), so this button can't be re-armed
+   * by a reload into double-notifying the same students — `notifiedCounts`
+   * here is just the in-session cache; `remediationPanel` below also
+   * consults the persisted marker via `persistedNotifiedCount`. */
   async function handleNotify(group: FlagGroup): Promise<void> {
     const targetFlag = group.flags[0];
     if (!targetFlag) return;
@@ -419,7 +508,21 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       const result = await notifyRemediationApi(targetFlag.id);
       notifiedCounts.set(group.questionVersionId, result.notified);
     } catch (error) {
-      notifyErrorMessages.set(group.questionVersionId, error instanceof ApiError ? error.message : (error as Error).message);
+      const rawMessage = error instanceof ApiError ? error.message : (error as Error).message;
+      // Task 6 re-review (Finding D): `remediation-notify-failed` (thrown
+      // when EVERY notify() call in the fan-out rejected — see
+      // remediation.service.ts's `notifyAffectedStudents`) is a genuine
+      // server fault, correctly a 5xx rather than something client-
+      // correctable, but its raw message reads as an internal error code
+      // rather than something actionable. Translated the same way
+      // `resolveGroupFlags` above translates the one known
+      // `invalid-transition:archived->archived` resolve error.
+      notifyErrorMessages.set(
+        group.questionVersionId,
+        rawMessage === 'remediation-notify-failed'
+          ? 'Notification failed for every affected student — nothing was sent. Try again, or notify them manually in the meantime.'
+          : rawMessage,
+      );
     }
     renderResults();
   }
@@ -449,17 +552,27 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
    * no-op if one is already in flight or already failed once) and the panel
    * renders with the checklist and notify button right away, with a "loading"
    * placeholder where the numbers go until the fetch resolves — or a brief
-   * inline error if it fails, without blocking the rest of the queue. */
+   * inline error if it fails, without blocking the rest of the queue.
+   *
+   * Task 6 re-review (Finding A): the correctness-affecting check now reads
+   * `groupHasCorrectnessAffectingResolution` (ANY resolved flag, not just the
+   * latest) — see that function's doc comment for why "latest" was wrong.
+   * Finding B: the "Notified N students" state now also reads a persisted
+   * marker (`persistedNotifiedCount`) when the in-session `notifiedCounts`
+   * map has no entry, so it survives a reload. Finding E: a failed report
+   * fetch now offers a "Try again" retry rather than requiring a full page
+   * reload, by clearing this group's key out of `remediationFetchAttempted`
+   * (the gate stays — this only lets it re-arm once, on demand). */
   function remediationPanel(group: FlagGroup): HTMLElement | false {
     const key = group.questionVersionId;
     const hasStoredReport = remediationReports.has(key);
-    if (!hasStoredReport && !latestResolutionIsCorrectnessAffecting(group)) return false;
+    if (!hasStoredReport && !groupHasCorrectnessAffectingResolution(group)) return false;
 
     ensureRemediationReport(group);
 
     const report = remediationReports.get(key);
     const fetchError = remediationFetchErrors.get(key);
-    const notified = notifiedCounts.get(key);
+    const notified = notifiedCounts.has(key) ? notifiedCounts.get(key) : persistedNotifiedCount(group);
     const notifyError = notifyErrorMessages.get(key);
 
     const editorPath = `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(group.questionId)}`;
@@ -495,7 +608,12 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
         ),
       ),
       stats ? el('p', { class: 'remediation-panel__stats', text: stats }) : false,
-      fetchError ? errorState(`Couldn't load the blast-radius numbers: ${fetchError}`) : false,
+      fetchError
+        ? errorState(`Couldn't load the blast-radius numbers: ${fetchError}`, () => {
+            remediationFetchAttempted.delete(key);
+            renderResults();
+          })
+        : false,
       el(
         'ul',
         { class: 'remediation-panel__checklist' },
@@ -532,13 +650,24 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       ? flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
 
-    // Task 6 (§6.2 remediation): read at click time via closure, rather than
-    // tracked in module state — the checkbox (and this whole row) is rebuilt
-    // on every `renderResults()`, so there's nothing to persist between
-    // renders.
+    // Task 6 (§6.2 remediation): the checkbox (and this whole row) is rebuilt
+    // on every `renderResults()`. Task 6 re-review (Finding C): a render is
+    // no longer guaranteed to follow only a user action —
+    // `ensureRemediationReport`'s fetch settling and `handleNotify` both call
+    // `renderResults()` on their own — so an unticked-by-default rebuild
+    // would silently discard a tick made while one of those was in flight,
+    // right before a Correct/Archive/Clear resolves without remediation
+    // (unrecoverable, since flags are terminal). State now lives in
+    // `correctnessChecked`, keyed by `questionVersionId` like this view's
+    // other per-group maps (see their declarations above), read here to seed
+    // the checkbox and written on every `change`.
     const correctnessCheckbox = el('input', {
       type: 'checkbox',
       'aria-label': 'Correctness-affecting',
+      checked: correctnessChecked.get(group.questionVersionId) ?? false,
+      onchange: (e: Event) => {
+        correctnessChecked.set(group.questionVersionId, (e.target as HTMLInputElement).checked);
+      },
     }) as HTMLInputElement;
 
     const actions = open

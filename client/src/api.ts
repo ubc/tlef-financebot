@@ -1091,8 +1091,18 @@ export interface Flag {
   // sub-document so the remediation panel can tell whether THIS flag's
   // resolution should still show the checklist after a reload — see
   // server/src/types/domain.ts's `Flag.resolution` and flags.ts's
-  // `latestResolutionIsCorrectnessAffecting`.
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: string; correctnessAffecting?: boolean };
+  // `groupHasCorrectnessAffectingResolution`.
+  // `notifiedAt`/`notifiedCount` (Task 6 re-review, Finding B): persisted the
+  // same way, so the "Notify affected students" button's already-notified
+  // state survives a reload too — see flags.service.ts's `notifyRemediation`.
+  resolution?: {
+    action: 'correct' | 'archive' | 'clear';
+    puid: string;
+    at: string;
+    correctnessAffecting?: boolean;
+    notifiedAt?: string;
+    notifiedCount?: number;
+  };
   createdAt: string;
   question: FlagQuestionJoin | null;
   currentVersion: FlagVersionJoin | null;

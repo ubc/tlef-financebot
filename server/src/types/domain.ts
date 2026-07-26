@@ -265,7 +265,22 @@ export interface Flag {
   // terminal, so this can never be re-derived after the fact. Absent (not
   // `false`) when unset, matching this file's other optional-field
   // convention (see `reason` above).
-  resolution?: { action: 'correct' | 'archive' | 'clear'; puid: string; at: Date; correctnessAffecting?: boolean };
+  // `notifiedAt`/`notifiedCount` (Task 6 re-review, Finding B): written by
+  // flags.service.ts's `notifyRemediation` after a successful "Notify
+  // affected students" call, onto every flag in the group whose resolution
+  // is correctness-affecting (not just the one flag id the notify request
+  // named). Persists the "already notified" marker across a reload the same
+  // way `correctnessAffecting` above persists the checklist's relevance, so
+  // the notify button can't be re-armed by a reload into re-sending the same
+  // correction notice to the same students.
+  resolution?: {
+    action: 'correct' | 'archive' | 'clear';
+    puid: string;
+    at: Date;
+    correctnessAffecting?: boolean;
+    notifiedAt?: Date;
+    notifiedCount?: number;
+  };
   createdAt: Date;
 }
 
