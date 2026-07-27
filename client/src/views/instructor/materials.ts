@@ -1,5 +1,5 @@
-// Course Materials (I3) — upload (files + URL), async ingest status with 3s
-// polling, LLM auto-classification accept/reject, and Topic/LO assignment
+// Course Materials (I3) — upload (files + URL), durable live ingest progress,
+// LLM auto-classification accept/reject, and Topic/LO assignment
 // (Task 15, Task D). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-id `148:3664`) and `.superpowers/sdd/task-15/i3-materials.png` +
@@ -9,10 +9,13 @@ import {
   addUrlMaterial,
   assignMaterial,
   getCourseTree,
+  listContentRuns,
   listMaterials,
   resolveClassification,
   retryMaterial,
+  subscribeContentRuns,
   uploadMaterials,
+  type ContentRunSummary,
   type CourseTree,
   type Material,
   type MaterialAssignment,
@@ -22,8 +25,6 @@ import { pageHeader, statusBadge, uploadZone } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { assignmentSummary, classificationLabel } from './material-assign.js';
-
-const POLL_INTERVAL_MS = 3000;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -91,8 +92,13 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
 
   let tree: CourseTree;
   let materials: Material[];
+  let recentRuns: ContentRunSummary[];
   try {
-    [tree, materials] = await Promise.all([getCourseTree(courseId), listMaterials(courseId)]);
+    [tree, materials, recentRuns] = await Promise.all([
+      getCourseTree(courseId),
+      listMaterials(courseId),
+      listContentRuns(courseId, { kind: 'material-ingest', limit: 25 }),
+    ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderMaterialsInner(outlet, courseId)));
@@ -100,7 +106,8 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   let mode: { type: 'list' } | { type: 'assign'; materialId: string } = { type: 'list' };
-  let intervalId: ReturnType<typeof setInterval> | undefined;
+  const runs = new Map(recentRuns.map((run) => [run._id, run]));
+  const refreshedTerminalRuns = new Set<string>();
 
   function refresh(): void {
     body.replaceChildren(mode.type === 'list' ? buildListView() : buildAssignPanel(mode.materialId));
@@ -108,57 +115,10 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
 
   function applyMaterials(next: Material[]): void {
     materials = next;
-    schedulePoll();
   }
 
   function applyMaterialUpdate(updated: Material): void {
     materials = materials.map((m) => (m._id === updated._id ? updated : m));
-    schedulePoll();
-  }
-
-  /** Poll `listMaterials` every 3s while any material is still 'processing';
-   * stops itself the moment none remain (Task-15 Task D — "leaked interval is
-   * a defect"). */
-  function schedulePoll(): void {
-    const anyProcessing = materials.some((m) => m.status === 'processing');
-    if (anyProcessing && intervalId === undefined) {
-      intervalId = setInterval(() => void poll(), POLL_INTERVAL_MS);
-    } else if (!anyProcessing && intervalId !== undefined) {
-      clearInterval(intervalId);
-      intervalId = undefined;
-    }
-  }
-
-  async function poll(): Promise<void> {
-    // Self-healing teardown: the router (router.ts) has no per-view teardown
-    // hook — it just replaces the outlet's children and calls the next
-    // route's render. `root` (this view's own top-level element) is that
-    // outlet's child, so once it's been swapped out `root.isConnected` goes
-    // false — regardless of *how* navigation happened (hashchange, or a
-    // RouterHandle.navigate() same-path re-render that never fires
-    // 'hashchange' at all). Checking it here, at the top of every tick, means
-    // a stray interval self-clears on its very next scheduled fire instead of
-    // depending on a specific navigation event to catch it.
-    if (!root.isConnected) {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
-      }
-      return;
-    }
-    try {
-      materials = await listMaterials(courseId);
-    } catch {
-      // Transient failure — keep the last known list and try again next tick.
-    }
-    schedulePoll();
-    // Don't tear down an open Assign Material panel out from under the user:
-    // a background refresh triggered by some OTHER material still
-    // 'processing' would otherwise silently wipe their in-progress Topic/LO
-    // checkbox selections. `materials` (and therefore the eventual list view)
-    // still gets the fresh data — the DOM rebuild just waits until they're
-    // back on the list.
-    if (mode.type === 'list') refresh();
   }
 
   const uploadErrorSlot = el('div', {});
@@ -169,7 +129,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     try {
       // The upload endpoint already returns the created Material(s) (status
       // 'processing') — append them to the local list instead of an extra
-      // round-trip refetch; the 3s poll converges the rest once ingest runs.
+      // round-trip refetch; durable run events converge the rest as ingest runs.
       const created = await uploadMaterials(courseId, files);
       applyMaterials([...materials, ...created]);
       refresh();
@@ -202,7 +162,23 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     }
   }
 
+  function materialRun(material: Material): ContentRunSummary | undefined {
+    const run = material.activeRunId ? runs.get(material.activeRunId) : undefined;
+    return run?.kind === 'material-ingest' ? run : undefined;
+  }
+
+  function runProgress(run: ContentRunSummary | undefined): string | null {
+    if (!run) return null;
+    const stage = run.stage.charAt(0).toUpperCase() + run.stage.slice(1);
+    const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
+    if (run.status === 'failed') return `Failed during ${stage}${units}`;
+    if (run.status === 'completed') return `Completed · ${stage}${units}`;
+    return `${stage}${units}`;
+  }
+
   function materialRow(material: Material): HTMLElement {
+    const run = materialRun(material);
+    const progress = runProgress(run);
     const suggestion = material.classificationSuggestion;
     const classificationText =
       material.status !== 'ready' ? '—' : suggestion ? `Auto-classified (${classificationLabel(suggestion.confidence)})` : 'No match';
@@ -232,8 +208,15 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         'div',
         { class: 'material-row__main' },
         el('p', { class: 'material-row__name', text: material.name }),
-        el('p', { class: 'material-row__meta', text: `${statusLabel(material.status)} · Uploaded ${formatDate(material.uploadedAt)}` }),
-        material.status === 'failed' && material.error ? el('p', { class: 'material-row__error', text: material.error }) : false,
+        el('p', {
+          class: 'material-row__meta',
+          text: `${statusLabel(material.status)}${progress ? ` · ${progress}` : ''} · Uploaded ${formatDate(material.uploadedAt)}`,
+        }),
+        material.status === 'failed' && material.error
+          ? el('p', { class: 'material-row__error', text: material.error })
+          : run?.error
+            ? el('p', { class: 'material-row__error', text: run.error.message })
+            : false,
       ),
       el('p', { class: 'material-row__assign', text: material.status === 'ready' ? assignmentSummary(material, tree) : '—' }),
       el('p', { class: 'material-row__class', text: classificationText }),
@@ -260,6 +243,20 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       materials.length
         ? el('div', { class: 'material-list' }, ...materials.map((m) => materialRow(m)))
         : emptyState('No materials uploaded yet.'),
+      recentRuns.length > 0
+        ? el(
+            'div',
+            { class: 'content-run-history' },
+            el('h2', { class: 'section-title', text: 'Recent Processing Activity' }),
+            ...recentRuns.filter((run) => run.kind === 'material-ingest').slice(0, 8).map((run) =>
+              el(
+                'p',
+                { class: 'material-row__meta' },
+                `${run.input.sourceName} · ${run.status} · ${runProgress(run) ?? run.stage}`,
+              ),
+            ),
+          )
+        : false,
       unassignedCount > 0
         ? el(
             'div',
@@ -371,7 +368,45 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     );
   }
 
-  schedulePoll();
+  async function applyRunUpdate(run: ContentRunSummary, source: 'snapshot' | 'live'): Promise<void> {
+    if (run.kind !== 'material-ingest') return;
+    const previous = runs.get(run._id);
+    runs.set(run._id, run);
+    recentRuns = [run, ...recentRuns.filter((existing) => existing._id !== run._id)]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 25);
+
+    const terminal = ['completed', 'partial', 'failed'].includes(run.status);
+    const materialKnown = materials.some((material) => material._id === run.input.materialId);
+    const wasActive = previous !== undefined && !['completed', 'partial', 'failed'].includes(previous.status);
+    const terminalNeedsRefresh =
+      terminal && !refreshedTerminalRuns.has(run._id) && (source === 'live' || wasActive);
+    if (terminalNeedsRefresh) {
+      refreshedTerminalRuns.add(run._id);
+    }
+    if (!materialKnown || terminalNeedsRefresh) {
+      try {
+        applyMaterials(await listMaterials(courseId));
+      } catch {
+        // The persisted run remains visible; a later event/reload can converge
+        // the Material snapshot if this one refresh fails transiently.
+      }
+    }
+    if (mode.type === 'list') refresh();
+  }
+
+  const closeStream = subscribeContentRuns(courseId, {
+    onSnapshot: (recent) => {
+      for (const run of recent) void applyRunUpdate(run, 'snapshot');
+    },
+    onRun: (run) => void applyRunUpdate(run, 'live'),
+  });
+  const lifecycleObserver = new MutationObserver(() => {
+    if (root.isConnected) return;
+    closeStream();
+    lifecycleObserver.disconnect();
+  });
+  lifecycleObserver.observe(outlet, { childList: true });
   refresh();
 }
 

@@ -59,6 +59,13 @@ commonly need:
   locking reads `findOneAndUpdate(...).value`, which the repo's mongodb@7 driver
   no longer returns. Job handlers live next to the service that owns them; see
   `server/src/components/jobs/AGENTS.md`.
+- Persistent content runs (Phase 2 P2-0) are implemented: material ingestion
+  and question generation create unique Mongo `contentRuns`, Agenda receives
+  only the run id, workers persist CAS-guarded stages/results/errors, and
+  instructor pages receive one course-scoped SSE stream. Material responses
+  link their newest attempt through `activeRunId`; generation enqueue returns
+  `{ runId }`. Startup makes interrupted work explicitly failed/retryable
+  rather than leaving an endless processing state.
 - Courses (Phase 1 Task 2) are implemented: `services/courses.service.ts` +
   `routes/courses.routes.ts` cover the instructor Courses/Hierarchy/Roster
   surface (creation, term dates, registration code, Theme/LO CRUD, publish

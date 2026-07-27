@@ -51,6 +51,20 @@ export async function scheduleRecurring(name: string, interval: string): Promise
   await requireAgenda().every(interval, name);
 }
 
+/** Whether Agenda still has a non-disabled, non-failed job correlated to one
+ * durable content run. Used only during startup reconciliation; services do
+ * not query Agenda's private Mongo collection directly. */
+export async function hasPendingJob(name: string, runId: string): Promise<boolean> {
+  const jobs = await requireAgenda().jobs({
+    name,
+    'data.runId': runId,
+    disabled: { $ne: true },
+    failedAt: { $exists: false },
+    nextRunAt: { $exists: true, $ne: null },
+  });
+  return jobs.length > 0;
+}
+
 export async function stopJobs(): Promise<void> {
   if (!agenda) return;
   await agenda.stop(); // unlock jobs + clear processing interval

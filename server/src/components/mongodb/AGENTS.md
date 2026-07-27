@@ -80,6 +80,12 @@ await users.insertOne({ name: 'Ada' });
 Do the DB work in a `service` (see `server/src/services/AGENTS.md`); call the
 service from a route.
 
+Typed application collections and their index specs are centralized in
+`collections.ts`. Phase 2 P2-0 adds `contentRunsCol()` as the durable source of
+truth for material-ingest/question-generation progress; mutate it through
+`content-runs.service.ts` so revision CAS and post-write SSE publication remain
+coupled.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

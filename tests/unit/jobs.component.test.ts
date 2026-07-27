@@ -3,6 +3,7 @@ jest.mock('agenda', () => ({
     define: jest.fn(),
     now: jest.fn(),
     every: jest.fn(),
+    jobs: jest.fn().mockResolvedValue([{ attrs: { name: 'test-job' } }]),
     start: jest.fn(),
     stop: jest.fn(),
     close: jest.fn(),
@@ -10,7 +11,7 @@ jest.mock('agenda', () => ({
 }));
 
 import { Agenda } from 'agenda';
-import { defineJob, enqueueJob, startJobs } from '../../server/src/components/jobs';
+import { defineJob, enqueueJob, hasPendingJob, startJobs } from '../../server/src/components/jobs';
 
 describe('jobs component', () => {
   it('registers handlers and enqueues by name', async () => {
@@ -18,10 +19,18 @@ describe('jobs component', () => {
     const handler = jest.fn();
     defineJob('test-job', handler);
     await enqueueJob('test-job', { x: 1 });
+    await expect(hasPendingJob('test-job', 'run-1')).resolves.toBe(true);
 
     const mockAgendaInstance = (Agenda as unknown as jest.Mock).mock.results[0].value;
     expect(mockAgendaInstance.define).toHaveBeenCalledWith('test-job', expect.any(Function));
     expect(mockAgendaInstance.now).toHaveBeenCalledWith('test-job', { x: 1 });
+    expect(mockAgendaInstance.jobs).toHaveBeenCalledWith({
+      name: 'test-job',
+      'data.runId': 'run-1',
+      disabled: { $ne: true },
+      failedAt: { $exists: false },
+      nextRunAt: { $exists: true, $ne: null },
+    });
   });
 
   it('stopJobs stops and closes the private mongo connection', async () => {

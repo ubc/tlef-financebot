@@ -1,6 +1,6 @@
 // Integration test — generationRouter via supertest, mirroring
 // materials.routes.test.ts's makeApp pattern (req.user carries courseRoles).
-// The service + jobs component are mocked; this file is only about the ROUTE
+// The service is mocked; this file is only about the ROUTE
 // layer: instructor guarding, body validation, enqueue + 202 shape, and the
 // preseeding read.
 import express, { type Express } from 'express';
@@ -8,16 +8,14 @@ import request from 'supertest';
 import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
 
-jest.mock('../../server/src/components/jobs', () => ({ enqueueJob: jest.fn(), defineJob: jest.fn() }));
 jest.mock('../../server/src/services/generation.service', () => ({
+  enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
-  GENERATION_JOB: 'generation.run',
 }));
 
 import { generationRouter } from '../../server/src/routes/generation.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
-import { enqueueJob } from '../../server/src/components/jobs';
-import { preseedingProgress } from '../../server/src/services/generation.service';
+import { enqueueGenerationRun, preseedingProgress } from '../../server/src/services/generation.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -52,7 +50,8 @@ function makeApp(user?: User): Express {
 }
 
 beforeEach(() => {
-  jest.mocked(enqueueJob).mockReset();
+  jest.mocked(enqueueGenerationRun).mockReset();
+  jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
 });
 
@@ -62,7 +61,7 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
       .post(`/api/courses/${courseId.toHexString()}/generate`)
       .send({ loId: loId.toHexString() });
     expect(res.status).toBe(403);
-    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
   });
 
   it('400s a missing loId', async () => {
@@ -70,7 +69,7 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
       .post(`/api/courses/${courseId.toHexString()}/generate`)
       .send({ count: 3 });
     expect(res.status).toBe(400);
-    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
   });
 
   it('400s an out-of-range count', async () => {
@@ -78,19 +77,21 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
       .post(`/api/courses/${courseId.toHexString()}/generate`)
       .send({ loId: loId.toHexString(), count: 999 });
     expect(res.status).toBe(400);
-    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
   });
 
-  it('202s an instructor, enqueues generation.run with the resolved payload, and returns jobId', async () => {
+  it('202s an instructor, creates a durable run with the resolved payload, and returns its runId', async () => {
+    const runId = new ObjectId();
+    jest.mocked(enqueueGenerationRun).mockResolvedValue(runId);
     const res = await request(makeApp(instructor))
       .post(`/api/courses/${courseId.toHexString()}/generate`)
       .send({ loId: loId.toHexString(), count: 2, type: 'mcq', prompt: 'focus on IRR' });
 
     expect(res.status).toBe(202);
-    expect(res.body).toEqual({ jobId: 'generation.run' });
-    expect(enqueueJob).toHaveBeenCalledWith('generation.run', {
-      courseId: courseId.toHexString(),
-      loId: loId.toHexString(),
+    expect(res.body).toEqual({ runId: runId.toHexString() });
+    expect(enqueueGenerationRun).toHaveBeenCalledWith({
+      courseId,
+      loId,
       count: 2,
       type: 'mcq',
       prompt: 'focus on IRR',
@@ -102,7 +103,7 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
     await request(makeApp(instructor))
       .post(`/api/courses/${courseId.toHexString()}/generate`)
       .send({ loId: loId.toHexString() });
-    expect(jest.mocked(enqueueJob).mock.calls[0][1]).toMatchObject({ count: 3 });
+    expect(jest.mocked(enqueueGenerationRun).mock.calls[0]![0]).toMatchObject({ count: 3 });
   });
 });
 

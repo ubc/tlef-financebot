@@ -1,6 +1,38 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-22_
+_Last updated: 2026-07-27_
+
+## Update (2026-07-27): P2-0 live smoke test passed, PR opened
+
+Rebased `codex/phase-2-content-runs` onto current `main` (`1b6acbc`, which now
+also carries Saurav's Phase 2 Tasks 1/2/3/6 — flags, notifications,
+remediation, all merged 2026-07-23–26). Two small conflicts
+(`server/src/server.ts`'s import list, and the Phase 2 core plan doc's P2-0
+section duplicating what Saurav had already integrated) — resolved by keeping
+both job registrations and taking the already-integrated doc section. Clean
+after rebase: **49 test suites / 509 tests, typecheck/lint/build all clean.**
+
+**The one remaining item from the 2026-07-22 entry — a live browser
+reload/reconnect smoke test — is now done, against a real running stack**
+(Mongo/Qdrant/SAML/OpenAI, not mocked):
+
+- Logged in as instructor, opened Course Materials for a real course, and
+  uploaded a fresh file — confirmed the new per-material live stage/counter
+  line (`Ready · Completed · Classifying · 1/1`) and the new "Recent
+  Processing Activity" run-history panel both render from real SSE-delivered
+  state, not the old permanent-spinner polling UI.
+- Triggered a real custom-prompt question-generation run (OpenAI
+  `gpt-5.4-nano`) from Pre-seeding — **the actual checkpoint**: reloaded the
+  browser tab while the run was mid-flight (`running · Generating · 0/3`).
+  After reload, the page correctly recovered the run from persisted state via
+  SSE reconnect (`running · Validating · 0/3`, same `runId`) — no lost
+  progress, no stuck spinner, no duplicate/orphaned run. It then converged to
+  `completed · Persisting · 3/3 · 3 Drafts · 0 failed` on its own. Server
+  logs showed zero errors throughout.
+
+**PR opened:** #32. This unblocks Saurav's Task 10, which was explicitly
+waiting on P2-0 merging and `docs/api-contract.md` reflecting the run/SSE
+shapes.
 
 ## Update (2026-07-22, P2-0 code-complete; Saurav informed without blocking)
 

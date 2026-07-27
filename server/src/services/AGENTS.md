@@ -29,6 +29,11 @@ objects directly.
   user)` returns a role-specific payload; `ROLE_AREAS` lists the roles that have
   an area. Called only from the role-gated `routes/roles.routes.ts`. Keep or adapt
   for role-specific features.
+- `content-runs.service.ts` — Phase 2 P2-0 durable operation state. It owns
+  legal status/stage transitions, revision compare-and-set writes, bounded
+  event/warning history, startup reconciliation, and post-write course
+  subscribers. Material/generation services must call this API rather than
+  updating `contentRuns` directly.
 
 Other services will appear as more components are built up.
 
