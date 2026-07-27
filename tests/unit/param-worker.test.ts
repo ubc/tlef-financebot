@@ -56,6 +56,15 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
     ).rejects.toThrow();
   });
 
+  it('blocks the indirect-eval escape to the real process', async () => {
+    await expect(
+      executeGenerate(
+        'function generate(){ const g = eval; const p = g("process"); return { vars: { leak: p.pid } }; }',
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
   it('blocks dynamic import() with a clear error', async () => {
     await expect(
       executeGenerate(

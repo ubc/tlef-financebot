@@ -20,13 +20,36 @@ try {
   // Shadow every escape hatch the script could reach lexically. `Function`
   // itself must be shadowed too — otherwise a script can do
   // `Function('return process')()` to build a brand-new Function whose body
-  // runs in the worker's real global scope, bypassing every other shadow
+  // runs in the worker's real global scope, bypassing every other shadow.
+  // `eval` must be shadowed too — a *direct* `eval("process")` call resolves
+  // to this shadowed local, but per the ECMAScript spec any *indirect* call
+  // (e.g. `const g = eval; g("process")` or `(0, eval)("process")`) always
+  // executes in the global scope regardless of strict mode and cannot be
+  // intercepted any other way — shadowing the `eval` identifier itself is
+  // the only way to stop a script from ever obtaining the real, global eval
   // (see AGENTS.md threat model).
+  // Note on structure: `eval` (like `arguments`) can never be a parameter
+  // name of a function whose own body is strict — that's a hard
+  // ECMAScript syntax restriction, not a stylistic choice — so the
+  // `"use strict"` directive can't sit at the top of *this* outer
+  // function's body the way it did before `eval` was added to the
+  // parameter list. Instead the outer function (sloppy, but does nothing
+  // except hold the shadowed parameters) immediately returns an inner
+  // IIFE that opts into `"use strict"` and contains the actual script.
+  // The inner IIFE has its own `arguments` object, so it never exposes
+  // the outer function's — and referencing (not binding) `eval` from
+  // strict code is perfectly legal, so the script's lookup of `eval`
+  // still resolves to the outer shadowed parameter.
   const evaluator = new Function(
-    'require', 'process', 'fetch', 'globalThis', 'module', 'exports', '__dirname', '__filename', 'Function',
-    `"use strict"; ${script}; if (typeof generate !== 'function') throw new Error('script must define generate()'); return generate;`,
+    'require', 'process', 'fetch', 'globalThis', 'module', 'exports', '__dirname', '__filename', 'Function', 'eval',
+    `return (function () {
+      "use strict";
+      ${script}
+      if (typeof generate !== 'function') throw new Error('script must define generate()');
+      return generate;
+    })();`,
   );
-  const generate = evaluator(undefined, undefined, undefined, {}, undefined, undefined, undefined, undefined, undefined);
+  const generate = evaluator(undefined, undefined, undefined, {}, undefined, undefined, undefined, undefined, undefined, undefined);
   const result = generate(mulberry32(seed));
   const vars = result && typeof result === 'object' && result.vars ? result.vars : null;
   if (!vars) throw new Error('generate() must return { vars: { ... } }');
