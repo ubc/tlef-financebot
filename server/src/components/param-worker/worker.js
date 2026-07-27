@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, no-undef */
 // Sandbox worker: evaluates an instructor generate() script with a scrubbed
 // scope and a seeded PRNG. Resource limits are enforced by the parent via
 // worker_threads resourceLimits + terminate-on-timeout. Plain JS on purpose —
@@ -16,12 +17,16 @@ function mulberry32(seed) {
 
 try {
   const { script, seed } = workerData;
-  // Shadow every escape hatch the script could reach lexically.
+  // Shadow every escape hatch the script could reach lexically. `Function`
+  // itself must be shadowed too — otherwise a script can do
+  // `Function('return process')()` to build a brand-new Function whose body
+  // runs in the worker's real global scope, bypassing every other shadow
+  // (see AGENTS.md threat model).
   const evaluator = new Function(
-    'require', 'process', 'fetch', 'globalThis', 'module', 'exports', '__dirname', '__filename',
+    'require', 'process', 'fetch', 'globalThis', 'module', 'exports', '__dirname', '__filename', 'Function',
     `"use strict"; ${script}; if (typeof generate !== 'function') throw new Error('script must define generate()'); return generate;`,
   );
-  const generate = evaluator(undefined, undefined, undefined, {}, undefined, undefined, undefined, undefined);
+  const generate = evaluator(undefined, undefined, undefined, {}, undefined, undefined, undefined, undefined, undefined);
   const result = generate(mulberry32(seed));
   const vars = result && typeof result === 'object' && result.vars ? result.vars : null;
   if (!vars) throw new Error('generate() must return { vars: { ... } }');

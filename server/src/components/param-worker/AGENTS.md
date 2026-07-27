@@ -24,6 +24,15 @@ course-authoring access, not an arbitrary untrusted internet user. This is
   not repurpose this component to run untrusted student- or public-submitted
   code without a real isolation boundary (separate process/container, not
   just `worker_threads`).
+- **Residual limitation — the `import()` static scan is a text match, not a
+  parser.** `executeGenerate` rejects any script whose source contains the
+  literal substring `import(` before it ever spawns a worker. This catches
+  the straightforward case but a determined obfuscator can still build the
+  same call at runtime (e.g. string-concatenating `'im' + 'port'` into an
+  indirect eval, or other tricks the scan doesn't recognize as text). Per
+  the threat model above, this is defense-in-depth against accidental or
+  casual misuse by an instructor-trusted script, not a guarantee against a
+  deliberately adversarial one.
 
 ## Public API (`index.ts`)
 
@@ -39,12 +48,22 @@ Guarantees `executeGenerate` provides:
   (default 64MB) on the worker's old-generation heap.
 - **No network / fs / process** — the worker evaluates the script via
   `new Function(...)` with `require`, `process`, `fetch`, `globalThis`,
-  `module`, `exports`, `__dirname`, `__filename` all passed as parameters
-  bound to `undefined` (or `{}` for `globalThis`), shadowing any same-named
-  binding the script's top-level code could otherwise reach. A script that
-  calls `require('fs')`, `process.exit()`, or `fetch(...)` throws a
-  `TypeError` (calling `undefined`), which is caught and surfaced as a
-  rejection, not a crash.
+  `module`, `exports`, `__dirname`, `__filename`, and `Function` itself all
+  passed as parameters bound to `undefined` (or `{}` for `globalThis`),
+  shadowing any same-named binding the script's top-level code could
+  otherwise reach. A script that calls `require('fs')`, `process.exit()`, or
+  `fetch(...)` throws a `TypeError` (calling `undefined`), which is caught
+  and surfaced as a rejection, not a crash. `Function` is shadowed too —
+  without it, a script could do `Function('return process')()` to mint a
+  fresh `Function` whose body runs in the worker's real global scope,
+  bypassing every other shadow (since none of the parameter names are
+  referenced inside that new function body).
+- **No dynamic `import()`** — `executeGenerate` rejects (before spawning a
+  worker) any script whose source text contains the literal substring
+  `import(`, since dynamic import is a language construct that can reach the
+  real `node:fs` / `node:http` / etc. modules and can't be shadowed via
+  `new Function(...)` parameters the way identifiers can. See the threat
+  model above for this check's residual limitation.
 - **Every exit path cleans up** — resolve, reject, or timeout all funnel
   through one `settle()` that clears the timeout timer, removes the
   worker's listeners, and terminates the worker, so a call never leaks a

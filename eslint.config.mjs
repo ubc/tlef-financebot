@@ -35,14 +35,6 @@ export default tseslint.config(
     languageOptions: { sourceType: 'commonjs', globals: nodeGlobals },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
-  // param-worker's worker.js is a deliberately plain, uncompiled CommonJS
-  // worker_threads entry (see components/param-worker/AGENTS.md) — it needs
-  // require() and Node globals like a config file, not TS module resolution.
-  {
-    files: ['server/src/components/param-worker/worker.js'],
-    languageOptions: { sourceType: 'commonjs', globals: nodeGlobals },
-    rules: { '@typescript-eslint/no-require-imports': 'off' },
-  },
   // Ambient declaration files legitimately declaration-merge empty interfaces.
   {
     files: ['**/*.d.ts'],

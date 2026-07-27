@@ -40,4 +40,28 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
   it('rejects a script with no generate()', async () => {
     await expect(executeGenerate('const x = 1;', 1)).rejects.toThrow(/generate/);
   });
+
+  it('blocks the Function-constructor escape to the real process', async () => {
+    await expect(
+      executeGenerate(
+        'function generate(){ const p = Function("return process")(); return { vars: { leak: p.pid } }; }',
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks the Function-constructor escape to the real fetch', async () => {
+    await expect(
+      executeGenerate('function generate(){ const f = Function("return fetch")(); return { vars: {} }; }', 1),
+    ).rejects.toThrow();
+  });
+
+  it('blocks dynamic import() with a clear error', async () => {
+    await expect(
+      executeGenerate(
+        'function generate(){ return import("node:fs").then(fs => ({ vars: {} })); }',
+        1,
+      ),
+    ).rejects.toThrow('generate() script must not use import()');
+  });
 });
