@@ -7,6 +7,14 @@ jest.mock('../../server/src/services/preview.service', () => ({
   getPreviewHome: jest.fn(),
   getNextPreviewQuestion: jest.fn(),
   submitPreviewAttempt: jest.fn(),
+  flagPreviewQuestion: jest.fn(),
+  listPreviewReviewBook: jest.fn(),
+  togglePreviewBookmark: jest.fn(),
+  removePreviewReviewBookEntry: jest.fn(),
+  skipPreviewLo: jest.fn(),
+  getPreviewSessionStart: jest.fn(),
+  getPreviewSessionSummary: jest.fn(),
+  getPreviewRedirectMaterialSource: jest.fn(),
 }));
 
 import { previewRouter } from '../../server/src/routes/preview.routes';
@@ -21,6 +29,7 @@ const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
 const loId = new ObjectId();
 const questionVersionId = new ObjectId();
+const previewSessionId = '11111111-1111-4111-8111-111111111111';
 
 function userFixture(roleCourseId: ObjectId, role: 'student' | 'instructor'): User {
   return {
@@ -57,7 +66,9 @@ beforeEach(() => {
 
 describe('Instructor student-preview routes', () => {
   it('returns 401 signed out and 403 to a student or another course instructor', async () => {
-    const path = `/api/courses/${courseId.toHexString()}/preview/home`;
+    const path =
+      `/api/courses/${courseId.toHexString()}/preview/home` +
+      `?previewSessionId=${previewSessionId}`;
 
     expect((await request(makeApp()).get(path)).status).toBe(401);
     expect((await request(makeApp(userFixture(courseId, 'student'))).get(path)).status).toBe(403);
@@ -69,11 +80,17 @@ describe('Instructor student-preview routes', () => {
     jest.mocked(getPreviewHome).mockResolvedValue([]);
 
     const response = await request(makeApp(userFixture(courseId, 'instructor')))
-      .get(`/api/courses/${courseId.toHexString()}/preview/home`);
+      .get(
+        `/api/courses/${courseId.toHexString()}/preview/home` +
+        `?previewSessionId=${previewSessionId}`,
+      );
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([]);
-    expect(getPreviewHome).toHaveBeenCalledWith(courseId);
+    expect(getPreviewHome).toHaveBeenCalledWith(courseId, {
+      instructorPuid: 'PUID-INSTRUCTOR-0001',
+      previewSessionId,
+    });
   });
 
   it('serves and submits only through the explicit preview service', async () => {
@@ -107,12 +124,14 @@ describe('Instructor student-preview routes', () => {
 
     const nextResponse = await request(app)
       .post(`/api/courses/${courseId.toHexString()}/preview/practice/next`)
-      .send({ loId: loId.toHexString(), sessionServedIds: [] });
+      .send({ previewSessionId, loId: loId.toHexString(), sessionServedIds: [] });
     const attemptResponse = await request(app)
       .post(`/api/courses/${courseId.toHexString()}/preview/attempts`)
       .send({
+        previewSessionId,
         questionVersionId: questionVersionId.toHexString(),
         loId: loId.toHexString(),
+        mode: 'topic-practice',
         selectedKey: 'A',
         sessionServedIds: [],
       });
@@ -120,16 +139,20 @@ describe('Instructor student-preview routes', () => {
     expect(nextResponse.status).toBe(200);
     expect(attemptResponse.status).toBe(200);
     expect(getNextPreviewQuestion).toHaveBeenCalledWith({
+      instructorPuid: instructor.puid,
+      previewSessionId,
       courseId,
       loId,
       sessionServedIds: [],
-      watermarkUid: instructor.uid,
+      watermarkUid: 'anonymous-preview',
     });
     expect(submitPreviewAttempt).toHaveBeenCalledWith({
       instructorPuid: instructor.puid,
+      previewSessionId,
       courseId,
       questionVersionId,
       loId,
+      mode: 'topic-practice',
       selectedKey: 'A',
       sessionServedIds: [],
     });

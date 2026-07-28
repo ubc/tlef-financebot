@@ -23,6 +23,7 @@ import { el, mount } from '../../dom.js';
 import { checklistRow, pageHeader, statTile } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
+import { startAnonymousPreview } from '../../preview-session.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -61,7 +62,13 @@ function statTiles(data: DashboardData): HTMLElement {
   );
 }
 
-function quickActionCard(courseId: string, title: string, subtitle: string, path: string | null): HTMLElement {
+function quickActionCard(
+  courseId: string,
+  title: string,
+  subtitle: string,
+  path: string | null,
+  beforeNavigate?: () => void,
+): HTMLElement {
   const inactive = path === null;
   return el(
     'button',
@@ -69,7 +76,12 @@ function quickActionCard(courseId: string, title: string, subtitle: string, path
       class: `quick-action${inactive ? ' quick-action--disabled' : ''}`,
       type: 'button',
       disabled: inactive ? 'disabled' : undefined,
-      onclick: inactive ? undefined : () => navigate(path!.replace(':id', encodeURIComponent(courseId))),
+      onclick: inactive
+        ? undefined
+        : () => {
+            beforeNavigate?.();
+            navigate(path!.replace(':id', encodeURIComponent(courseId)));
+          },
     },
     el('p', { class: 'quick-action__title', text: title }),
     el('p', { class: 'quick-action__subtitle', text: subtitle }),
@@ -111,7 +123,13 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       quickActionCard(courseId, 'Upload Materials', 'Add course materials and assign to LOs', '/instructor/course/:id/materials'),
       quickActionCard(courseId, 'Content Map', 'Inspect material kinds and LO coverage gaps', '/instructor/course/:id/content-map'),
       quickActionCard(courseId, 'Review Queue', 'Review and approve pending questions', '/instructor/course/:id/queue'),
-      quickActionCard(courseId, 'Preview as Student', 'Test the approved student experience without saving progress', '/instructor/course/:id/preview'),
+      quickActionCard(
+        courseId,
+        'Preview as Student',
+        'Switch into the complete anonymous student experience',
+        '/preview/course/:id',
+        () => startAnonymousPreview(courseId),
+      ),
       quickActionCard(courseId, 'Student Analytics', 'View class performance and engagement', null),
     );
 

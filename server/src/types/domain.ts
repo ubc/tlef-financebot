@@ -223,12 +223,14 @@ export interface AttemptRecord {
  */
 export interface PreviewAttemptRecord {
   instructorPuid: string;
+  previewSessionId: string;
   preview: true;
   courseId: ObjectId;
   questionId: ObjectId;
   questionVersionId: ObjectId;
   loId: ObjectId;
   themeId: ObjectId;
+  mode: PracticeMode;
   strategy: AppliedStrategy;
   selectedKey: string;
   correct: boolean;
@@ -244,6 +246,38 @@ export interface PreviewAttemptRecord {
     difficulty: Difficulty;
   };
   createdAt: Date;
+}
+
+export interface PreviewReviewBookEntry {
+  _id: ObjectId;
+  questionId: ObjectId;
+  sources: Array<'auto' | 'bookmark'>;
+  triggeringAttemptId: ObjectId;
+  loId: ObjectId;
+  themeId: ObjectId;
+  addedAt: Date;
+  updatedAt: Date;
+}
+
+export interface PreviewFlagEntry {
+  questionId: ObjectId;
+  reason?: string;
+  createdAt: Date;
+}
+
+/**
+ * Mutable, short-lived state for one fresh anonymous-student Preview. It is
+ * structurally isolated from all live student collections and expires
+ * automatically. Attempt snapshots remain in `previewAttemptRecords`.
+ */
+export interface PreviewStudentSession {
+  previewSessionId: string;
+  instructorPuid: string;
+  courseId: ObjectId;
+  reviewBookEntries: PreviewReviewBookEntry[];
+  flags: PreviewFlagEntry[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Material {

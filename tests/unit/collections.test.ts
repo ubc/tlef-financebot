@@ -24,8 +24,16 @@ describe('collection index specs (PRD §2 data model)', () => {
   it('indexes the hot attempt-record and serving paths', () => {
     expect(byCollection['attemptRecords:{"puid":1,"courseId":1,"loId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['attemptRecords:{"questionVersionId":1}']).toBeDefined();
-    expect(byCollection['previewAttemptRecords:{"instructorPuid":1,"courseId":1,"createdAt":-1}']).toBeDefined();
+    expect(byCollection['previewAttemptRecords:{"instructorPuid":1,"courseId":1,"previewSessionId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['previewAttemptRecords:{"questionVersionId":1}']).toBeDefined();
+    expect(byCollection['previewAttemptRecords:{"createdAt":1}'].options?.expireAfterSeconds).toBe(86_400);
+    expect(
+      byCollection['previewStudentSessions:{"instructorPuid":1,"courseId":1,"previewSessionId":1}']
+        .options?.unique,
+    ).toBe(true);
+    expect(
+      byCollection['previewStudentSessions:{"updatedAt":1}'].options?.expireAfterSeconds,
+    ).toBe(86_400);
     expect(byCollection['questions:{"courseId":1,"state":1}']).toBeDefined();
     expect(byCollection['questions:{"loIds":1}']).toBeDefined();
     expect(byCollection['notifications:{"recipientPuid":1,"createdAt":-1}']).toBeDefined();

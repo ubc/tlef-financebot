@@ -10,6 +10,7 @@ import {
   masteryCol,
   notificationsCol,
   previewAttemptsCol,
+  previewStudentSessionsCol,
   questionVersionsCol,
   questionsCol,
   reviewBookCol,
@@ -117,6 +118,7 @@ test.describe('Instructor student preview', () => {
     );
     await Promise.all([
       previewAttemptsCol().deleteMany({ courseId }),
+      previewStudentSessionsCol().deleteMany({ courseId }),
       attemptsCol().deleteMany({ courseId }),
       masteryCol().deleteMany({ courseId }),
       reviewBookCol().deleteMany({ courseId }),
@@ -135,7 +137,7 @@ test.describe('Instructor student preview', () => {
     ]);
   });
 
-  test('previews published/unpublished approved content and saves no student progress', async ({ page }) => {
+  test('uses the full student shell while keeping every preview action isolated', async ({ page }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('console', (message) => {
@@ -147,22 +149,57 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByText('Sandbox (not yet published)')).toBeVisible();
 
     await page.getByRole('button', { name: /Preview as Student/i }).click();
-    await expect(page.getByText(/Instructor preview —/i)).toBeVisible();
-    await expect(page.getByText(/No student progress, Review Book entries, flags, or analytics will be saved/i)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`#\\/preview\\/course\\/${courseId.toHexString()}$`));
+    await expect(page.locator('.sidebar--student')).toBeVisible();
+    await expect(page.locator('.sidebar--instructor')).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Student' })).toBeVisible();
+    await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
+    await expect(page.getByText('Anonymous Student', { exact: true })).toBeVisible();
+    await expect(page.getByText('Anonymous Student Preview', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Review Book', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Exam Prep', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Exit Preview', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
     await expect(page.getByText(THEME_NAME)).toBeVisible();
-    await expect(page.getByText(LO_NAME)).toBeVisible();
 
-    await page.getByRole('link', { name: new RegExp(LO_NAME) }).click();
+    await page.getByRole('button', { name: 'Start →', exact: true }).click();
     await expect(page.locator('.practice-card')).toBeVisible();
+    await expect(page.getByRole('heading', { name: LO_NAME, exact: true })).toBeVisible();
     await expect(page.getByText(APPROVED_STEM)).toBeVisible();
     await expect(page.getByText(DRAFT_STEM)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Flag this question/i })).toHaveCount(0);
+    await page.getByRole('button', { name: /Flag this question/i }).click();
+    await page.getByRole('textbox', { name: /Why are you flagging/i })
+      .fill('Anonymous preview isolation check');
+    await page.getByRole('button', { name: 'Send flag', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Flagged');
 
-    await page.getByRole('button', { name: /^A\s+4$/ }).click();
+    await page.getByRole('button', { name: /^B\s+5$/ }).click();
     await page.getByRole('button', { name: 'Submit', exact: true }).click();
-    await expect(page.getByText('Correct!')).toBeVisible();
+    await expect(page.getByText(/Not quite/i)).toBeVisible();
+    const storedPreviewBeforeReload = await page.evaluate(
+      () => sessionStorage.getItem('financebot-anonymous-preview'),
+    );
+    expect(storedPreviewBeforeReload).not.toBeNull();
+    await page.reload();
+    await expect(page.locator('.practice-card')).toBeVisible();
+    await expect(page.evaluate(
+      () => sessionStorage.getItem('financebot-anonymous-preview'),
+    )).resolves.toBe(storedPreviewBeforeReload);
+    await page.getByRole('link', { name: 'End Session & Return', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Session Summary' })).toBeVisible();
+    await expect(page.getByText('Review Book Added')).toBeVisible();
+    await page.getByRole('link', { name: 'Go to Review Book', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Review Book' })).toBeVisible();
+    await expect(page.getByText(APPROVED_STEM)).toBeVisible();
 
     await expect.poll(() => previewAttemptsCol().countDocuments({ courseId })).toBe(1);
+    const previewSession = await previewStudentSessionsCol().findOne({
+      courseId,
+      instructorPuid,
+    });
+    expect(previewSession?.flags).toHaveLength(1);
+    expect(previewSession?.reviewBookEntries).toHaveLength(1);
     const liveCounts = await Promise.all([
       attemptsCol().countDocuments({ courseId }),
       masteryCol().countDocuments({ courseId }),
@@ -173,12 +210,17 @@ test.describe('Instructor student preview', () => {
     ]);
     expect(liveCounts).toEqual([0, 0, 0, 0, 0, 0]);
 
-    // Publication is deliberately irrelevant to the preview endpoints. Flip
-    // the same fixture to published and prove the UI remains usable without
-    // creating another submission.
+    await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();
+    await expect(page.locator('.sidebar--instructor')).toBeVisible();
+    await expect(page.locator('.sidebar--student')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+
+    // Publication is deliberately irrelevant to preview. Flip the fixture and
+    // prove the backwards-compatible legacy URL starts a new anonymous session.
     await coursesCol().updateOne({ _id: courseId }, { $set: { published: true } });
     await page.goto(`/#/instructor/course/${courseId.toHexString()}/preview`);
-    await page.getByRole('link', { name: new RegExp(LO_NAME) }).click();
+    await expect(page.locator('.sidebar--student')).toBeVisible();
+    await page.getByRole('button', { name: 'Start →', exact: true }).click();
     await expect(page.getByText(APPROVED_STEM)).toBeVisible();
     await expect(previewAttemptsCol().countDocuments({ courseId })).resolves.toBe(1);
     expect(pageErrors).toEqual([]);

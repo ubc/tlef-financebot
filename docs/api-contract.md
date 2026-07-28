@@ -269,24 +269,45 @@ All preview routes require the signed-in user to be an Instructor for the
 target course (or Admin). They do not require student enrollment and
 intentionally ignore `Course.published`, so an unpublished course can be
 tested before release. Theme archival/progressive release and the
-Approved-question gate still match the real student experience.
+Approved-question gate still match the real student experience. Entering
+Preview creates a fresh browser-scoped UUID and swaps the entire client into
+the real Student shell; refresh keeps that walkthrough, while Exit Preview
+clears it.
 
-- `GET /api/courses/:courseId/preview/home` → the student-visible hierarchy
-  shape from `GET .../home`, with neutral `not-attempted` statuses.
-- `POST /api/courses/:courseId/preview/practice/next { loId, sessionServedIds }`
-  → the same sanitized/substituted question shape as student
-  `POST .../practice/next`.
-- `POST /api/courses/:courseId/preview/attempts { questionVersionId, loId,
-  selectedKey, sessionServedIds, isRetry?, paramValues? }` → the same feedback
-  shape as `POST /api/attempts`, with neutral mastery and
-  `reviewBook: { added: false }`.
+Every stateful Preview request carries `previewSessionId` (UUID):
 
-Preview submissions write only `previewAttemptRecords`, which pin the
-Instructor, course/question/version/LO, answer, strategy, parameter values, and
-version snapshot. They never enter `attemptRecords`, mastery, Review Book,
-flags/auto-pause, remediation, summaries, progression, notifications, or
-student analytics. There is no client-controlled `preview` switch on the live
-student attempt endpoint.
+- `GET /api/courses/:courseId/preview/home?previewSessionId=...`
+- `POST /api/courses/:courseId/preview/practice/next`
+  `{ previewSessionId, loId, sessionServedIds }`
+- `POST /api/courses/:courseId/preview/attempts`
+  `{ previewSessionId, questionVersionId, loId, mode, selectedKey,
+     sessionServedIds, isRetry?, paramValues? }`
+- `POST /api/courses/:courseId/preview/questions/:questionId/flag`
+  `{ previewSessionId, reason? }`
+- `GET /api/courses/:courseId/preview/review-book?previewSessionId=...&sort=theme|date`
+- `POST /api/courses/:courseId/preview/questions/:questionId/bookmark`
+  `{ previewSessionId }`
+- `DELETE /api/courses/:courseId/preview/questions/:questionId/bookmark?previewSessionId=...`
+- `DELETE /api/courses/:courseId/preview/review-book/:entryId?previewSessionId=...`
+- `POST /api/courses/:courseId/preview/los/:loId/skip`
+  `{ previewSessionId, attempted }`
+- `GET /api/courses/:courseId/preview/session-summary?previewSessionId=...&since=...`
+  — omit `since` for the start-of-session shape.
+- `GET /api/courses/:courseId/preview/los/:loId/materials/:materialId/source`
+  — Instructor-gated remediation source with the same course/LO assignment
+  checks as Student mode.
+
+The response shapes match their Student equivalents. Preview attempts replay
+the real mastery calculation and feedback strategy; misses can populate the
+Preview Review Book, flags can be submitted, summaries reflect the walkthrough,
+and remediation links remain usable.
+
+Isolation is structural rather than a client-controlled `preview` flag:
+submissions write only `previewAttemptRecords`, while mutable Review Book and
+flag state lives only in `previewStudentSessions`. Both are keyed by Instructor,
+course, and Preview session and expire after 24 hours. Preview never writes live
+attempt, mastery, Review Book, flag/auto-pause, summary, notification,
+progression, or analytics collections.
 
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)

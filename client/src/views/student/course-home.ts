@@ -6,9 +6,6 @@
 // banner (welcome on a student's first-ever visit, or a "pick up where you
 // left off" summary of their last deferred session — ST-P11).
 import {
-  getCourseHome,
-  getSessionSummary,
-  listEnrollments,
   type CourseHomeTheme,
   type SessionSummaryForStart,
 } from '../../api.js';
@@ -16,6 +13,10 @@ import { el } from '../../dom.js';
 import { emptyState, errorState, loadingState, masteryBadge } from '../../ui.js';
 import { pageHeader, progressRow, copyrightFooter } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './experience.js';
 
 function coverage(theme: CourseHomeTheme): { covered: number; total: number } {
   const total = theme.los.length;
@@ -44,7 +45,12 @@ function topicStatus(theme: CourseHomeTheme): 'not-attempted' | 'in-progress' | 
   return touched ? 'in-progress' : 'not-attempted';
 }
 
-function sessionBanner(courseId: string, summary: SessionSummaryForStart, onDismiss: () => void): HTMLElement | false {
+function sessionBanner(
+  courseId: string,
+  summary: SessionSummaryForStart,
+  onDismiss: () => void,
+  experience: StudentExperience,
+): HTMLElement | false {
   if (summary.welcome) {
     return el(
       'div',
@@ -71,7 +77,7 @@ function sessionBanner(courseId: string, summary: SessionSummaryForStart, onDism
       el('p', { class: 'banner__text', text: `Welcome back — last time you covered ${deferred.losCovered.length} learning objective(s)${accuracy !== null ? ` at ${accuracy}% accuracy` : ''}.` }),
       el(
         'a',
-        { class: 'banner__link', href: `#/course/${encodeURIComponent(courseId)}/summary` },
+        { class: 'banner__link', href: experience.routes.summary(courseId) },
         'View full summary →',
       ),
     ),
@@ -79,10 +85,15 @@ function sessionBanner(courseId: string, summary: SessionSummaryForStart, onDism
   );
 }
 
-function topicRow(courseId: string, group: CourseHomeTheme, index: number): HTMLElement {
+function topicRow(
+  courseId: string,
+  group: CourseHomeTheme,
+  index: number,
+  experience: StudentExperience,
+): HTMLElement {
   const { covered, total } = coverage(group);
   const status = topicStatus(group);
-  const href = `#/course/${encodeURIComponent(courseId)}/practice-theme/${encodeURIComponent(group.theme._id)}`;
+  const href = experience.routes.practiceTheme(courseId, group.theme._id);
   return progressRow(
     index,
     group.theme.name,
@@ -98,16 +109,20 @@ function topicRow(courseId: string, group: CourseHomeTheme, index: number): HTML
   );
 }
 
-export async function renderCourseHome(outlet: HTMLElement, params: RouteParams): Promise<void> {
+export async function renderCourseHomeWithExperience(
+  outlet: HTMLElement,
+  params: RouteParams,
+  experience: StudentExperience,
+): Promise<void> {
   const courseId = params.id;
   const root = el('div', { class: 'view' }, loadingState('Loading your course…'));
   outlet.append(root);
 
   try {
     const [home, enrollments, summary] = await Promise.all([
-      getCourseHome(courseId),
-      listEnrollments(),
-      getSessionSummary(courseId),
+      experience.getHome(courseId),
+      experience.listEnrollments(courseId),
+      experience.getSessionStart(courseId),
     ]);
     const enrollment = enrollments.find((e) => e.courseId === courseId);
     const { covered, total } = overallCoverage(home);
@@ -115,7 +130,12 @@ export async function renderCourseHome(outlet: HTMLElement, params: RouteParams)
     const subtitle = enrollment ? `${enrollment.courseCode} · ${enrollment.term} · ${coverageLabel}` : coverageLabel;
 
     const bannerSlot = el('div', {});
-    const banner = sessionBanner(courseId, summary, () => bannerSlot.replaceChildren());
+    const banner = sessionBanner(
+      courseId,
+      summary,
+      () => bannerSlot.replaceChildren(),
+      experience,
+    );
     if (banner) bannerSlot.append(banner);
 
     const body =
@@ -125,7 +145,11 @@ export async function renderCourseHome(outlet: HTMLElement, params: RouteParams)
             'section',
             {},
             el('h2', { class: 'section-title', text: 'Topic Practice' }),
-            el('div', { class: 'stack' }, ...home.map((group, i) => topicRow(courseId, group, i + 1))),
+            el(
+              'div',
+              { class: 'stack' },
+              ...home.map((group, i) => topicRow(courseId, group, i + 1, experience)),
+            ),
           );
 
     root.replaceChildren(
@@ -135,6 +159,13 @@ export async function renderCourseHome(outlet: HTMLElement, params: RouteParams)
       copyrightFooter(),
     );
   } catch (error) {
-    root.replaceChildren(errorState((error as Error).message, () => void renderCourseHome(outlet, params)));
+    root.replaceChildren(errorState(
+      (error as Error).message,
+      () => void renderCourseHomeWithExperience(outlet, params, experience),
+    ));
   }
+}
+
+export function renderCourseHome(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  return renderCourseHomeWithExperience(outlet, params, LIVE_STUDENT_EXPERIENCE);
 }

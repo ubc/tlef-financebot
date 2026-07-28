@@ -5,10 +5,13 @@
 import { APP } from './config.js';
 import { byId, el, mount } from './dom.js';
 import { initTheme, createThemeToggle } from './theme.js';
-import { createNotificationBell } from './notifications-bell.js';
+import {
+  createAnonymousNotificationBell,
+  createNotificationBell,
+} from './notifications-bell.js';
 import { loadSession, displayName, type Session } from './auth.js';
 import { setUnauthorizedHandler } from './api.js';
-import { startRouter, type Route } from './router.js';
+import { startRouter, type Route, type RouterHandle } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
 import { renderNotes } from './views/notes.js';
@@ -48,9 +51,20 @@ import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
-import { renderStudentPreview } from './views/instructor/student-preview.js';
+import {
+  previewStudentRoutes as buildPreviewStudentRoutes,
+} from './views/instructor/student-preview.js';
 import { renderImport } from './views/instructor/import.js';
 import { renderAdminAccounts } from './views/admin/accounts.js';
+import {
+  createPreviewStudentExperience,
+  previewStudentRoutes as previewNavRoutes,
+} from './views/student/experience.js';
+import {
+  endAnonymousPreview,
+  getAnonymousPreviewSession,
+  startAnonymousPreview,
+} from './preview-session.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -86,7 +100,6 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/materials', render: renderMaterials },
   { path: '/instructor/course/:id/content-map', render: renderContentMap },
   { path: '/instructor/course/:id/settings', render: renderSettings },
-  { path: '/instructor/course/:id/preview', render: renderStudentPreview },
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
   { path: '/instructor/course/:id/bank', render: renderBank },
@@ -127,7 +140,7 @@ function isInstructor(session: Session): boolean {
  * — unlike the default shell's static NAV hrefs — the anchors here are
  * rebuilt on every `onNavigate` rather than just toggling an active class.
  */
-function buildInstructorShell(root: HTMLElement, session: Session): void {
+function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle {
   const shell = el('div', { class: 'app-shell' });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
   const anchors: Array<{ item: InstructorNavItem; link: HTMLAnchorElement }> = [];
@@ -213,7 +226,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
   mount(root, shell);
 
-  startRouter({
+  return startRouter({
     routes,
     outlet,
     fallback: session.user?.isAdmin ? '/admin/accounts' : '/instructor/courses',
@@ -259,6 +272,44 @@ function isStudentNavActive(item: StudentNavItem, path: string, courseId: string
   return item.path(courseId) === path;
 }
 
+interface StudentShellConfig {
+  routes: Route[];
+  fallback: string;
+  navItems: StudentNavItem[];
+  courseIdFromPath(path: string): string | undefined;
+  practicePath(path: string): boolean;
+  preview?: {
+    courseId: string;
+    exitHref: string;
+  };
+}
+
+const LIVE_STUDENT_SHELL: StudentShellConfig = {
+  routes: ROUTES,
+  fallback: '/',
+  navItems: STUDENT_NAV,
+  courseIdFromPath: studentCourseIdFromPath,
+  practicePath: isPracticePath,
+};
+
+function previewCourseIdFromPath(path: string): string | undefined {
+  const match = /^\/preview\/course\/([^/]+)/.exec(path);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+function isPreviewPracticePath(path: string): boolean {
+  return /^\/preview\/course\/[^/]+\/practice(-theme)?\//.test(path);
+}
+
+function previewNavItems(courseId: string): StudentNavItem[] {
+  const routes = previewNavRoutes();
+  return [
+    { label: 'My Courses', path: () => routes.courses(courseId).replace(/^#/, '') },
+    { label: 'Review Book', path: () => routes.reviewBook(courseId).replace(/^#/, '') },
+    { label: 'Exam Prep', path: () => '#', disabled: true },
+  ];
+}
+
 /**
  * The blue student shell — mirrors `buildInstructorShell`'s structure
  * (persistent sidebar, static routes, per-navigate active-state resolution).
@@ -270,12 +321,16 @@ function isStudentNavActive(item: StudentNavItem, path: string, courseId: string
  * practice view's hand-off slot (practice-actions.ts), since no student nav
  * item targets an in-progress practice session directly.
  */
-function buildStudentShell(root: HTMLElement, session: Session): void {
+function buildStudentShell(
+  root: HTMLElement,
+  session: Session,
+  config: StudentShellConfig = LIVE_STUDENT_SHELL,
+): RouterHandle {
   const shell = el('div', { class: 'app-shell' });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Student' });
   const anchors: Array<{ item: StudentNavItem; link: HTMLAnchorElement }> = [];
 
-  for (const item of STUDENT_NAV) {
+  for (const item of config.navItems) {
     const link = el(
       'a',
       {
@@ -305,9 +360,16 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
     'aside',
     { class: 'sidebar sidebar--student' },
     el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+    config.preview
+      ? el('span', { class: 'student-preview-pill', text: 'PREVIEW MODE' })
+      : false,
     nav,
     practiceContextSlot,
-    user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
+    config.preview
+      ? el('div', { class: 'sidebar__foot', text: 'Anonymous Student' })
+      : user
+        ? el('div', { class: 'sidebar__foot', text: displayName(user) })
+        : false,
   );
 
   const topbar = el(
@@ -327,8 +389,22 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
     el(
       'div',
       { class: 'topbar__right' },
-      createNotificationBell(),
+      config.preview
+        ? el('span', { class: 'preview-mode-label', text: 'Anonymous Student Preview' })
+        : false,
+      config.preview ? createAnonymousNotificationBell() : createNotificationBell(),
       createThemeToggle(),
+      config.preview
+        ? el(
+            'a',
+            {
+              class: 'btn btn--ghost btn--sm',
+              href: config.preview.exitHref,
+              onclick: () => endAnonymousPreview(),
+            },
+            'Exit Preview',
+          )
+        : false,
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
   );
@@ -373,13 +449,13 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
   };
   onPracticeActionsChange(syncPracticeContext);
 
-  startRouter({
-    routes: ROUTES,
+  return startRouter({
+    routes: config.routes,
     outlet,
-    fallback: '/',
+    fallback: config.fallback,
     onNavigate: (path) => {
-      const courseId = studentCourseIdFromPath(path);
-      practiceMode = isPracticePath(path);
+      const courseId = config.courseIdFromPath(path);
+      practiceMode = config.practicePath(path);
       nav.hidden = practiceMode;
       for (const { item, link } of anchors) {
         const href = studentNavHref(item, courseId);
@@ -393,21 +469,81 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
 
       syncPracticeContext();
 
-      document.title = APP.name;
+      document.title = config.preview ? `Student Preview · ${APP.name}` : APP.name;
     },
   });
 }
 
+function hashPath(): string {
+  const raw = window.location.hash.replace(/^#/, '').split('?')[0];
+  return raw || '/';
+}
+
+function buildPreviewStudentShell(
+  root: HTMLElement,
+  session: Session,
+  courseId: string,
+): RouterHandle {
+  const previewSessionId = getAnonymousPreviewSession(courseId);
+  const experience = createPreviewStudentExperience(previewSessionId);
+  return buildStudentShell(root, session, {
+    routes: buildPreviewStudentRoutes(experience),
+    fallback: `/preview/course/${encodeURIComponent(courseId)}`,
+    navItems: previewNavItems(courseId),
+    courseIdFromPath: previewCourseIdFromPath,
+    practicePath: isPreviewPracticePath,
+    preview: {
+      courseId,
+      exitHref: `#/instructor/course/${encodeURIComponent(courseId)}`,
+    },
+  });
+}
+
+type ShellMode = 'landing' | 'instructor' | 'student' | 'preview';
+let activeRouter: RouterHandle | undefined;
+let activeMode: ShellMode | undefined;
+let activeSession: Session | undefined;
+
+function shellMode(session: Session, path: string): ShellMode {
+  if (!session.authenticated) return 'landing';
+  if (isInstructor(session) && previewCourseIdFromPath(path)) return 'preview';
+  return isInstructor(session) ? 'instructor' : 'student';
+}
+
+function redirectLegacyPreview(session: Session): boolean {
+  const match = /^\/instructor\/course\/([^/]+)\/preview$/.exec(hashPath());
+  if (!session.authenticated || !isInstructor(session) || !match) return false;
+  const courseId = decodeURIComponent(match[1]);
+  startAnonymousPreview(courseId);
+  window.location.hash = `/preview/course/${encodeURIComponent(courseId)}`;
+  return true;
+}
+
 async function bootstrap(): Promise<void> {
+  activeRouter?.stop();
+  activeRouter = undefined;
   const root = byId('app');
   const session = await loadSession();
-  if (session.authenticated) {
-    if (isInstructor(session)) buildInstructorShell(root, session);
-    else buildStudentShell(root, session);
-  } else {
+  activeSession = session;
+
+  if (redirectLegacyPreview(session)) return;
+
+  activeMode = shellMode(session, hashPath());
+  if (activeMode === 'landing') {
     document.title = APP.name;
     renderLanding(root);
+    return;
   }
+  if (activeMode === 'preview') {
+    const courseId = previewCourseIdFromPath(hashPath());
+    if (courseId) {
+      activeRouter = buildPreviewStudentShell(root, session, courseId);
+      return;
+    }
+  }
+  activeRouter = activeMode === 'instructor'
+    ? buildInstructorShell(root, session)
+    : buildStudentShell(root, session);
 }
 
 // A 401 from a gated endpoint (e.g. the session expired) re-bootstraps: the
@@ -415,4 +551,18 @@ async function bootstrap(): Promise<void> {
 setUnauthorizedHandler(() => void bootstrap());
 
 initTheme();
+window.addEventListener('hashchange', (event) => {
+  if (!activeSession) return;
+  if (redirectLegacyPreview(activeSession)) {
+    activeRouter?.stop();
+    activeRouter = undefined;
+    event.stopImmediatePropagation();
+    return;
+  }
+  const nextMode = shellMode(activeSession, hashPath());
+  if (nextMode === activeMode) return;
+  activeRouter?.stop();
+  activeRouter = undefined;
+  void bootstrap();
+});
 document.addEventListener('DOMContentLoaded', () => void bootstrap());

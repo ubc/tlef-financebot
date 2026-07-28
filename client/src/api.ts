@@ -421,16 +421,20 @@ export function submitAttempt(input: SubmitAttemptInput): Promise<AttemptResult>
   });
 }
 
-/** Instructor-only hierarchy for explicit student preview. */
-export function getPreviewCourseHome(courseId: string): Promise<CourseHomeTheme[]> {
+/** Instructor-only hierarchy for one isolated anonymous-student preview. */
+export function getPreviewCourseHome(
+  courseId: string,
+  previewSessionId: string,
+): Promise<CourseHomeTheme[]> {
   return request<CourseHomeTheme[]>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/home`,
+    `/api/courses/${encodeURIComponent(courseId)}/preview/home?previewSessionId=${encodeURIComponent(previewSessionId)}`,
   );
 }
 
 /** Instructor-only approved-question serving; never requires student enrollment. */
 export function getNextPreviewQuestion(
   courseId: string,
+  previewSessionId: string,
   input: { loId: string; sessionServedIds: string[] },
 ): Promise<PracticeQuestion> {
   return request<PracticeQuestion>(
@@ -438,7 +442,7 @@ export function getNextPreviewQuestion(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, previewSessionId }),
     },
   );
 }
@@ -450,6 +454,7 @@ export function getNextPreviewQuestion(
  */
 export function submitPreviewAttempt(
   courseId: string,
+  previewSessionId: string,
   input: SubmitAttemptInput,
 ): Promise<AttemptResult> {
   const {
@@ -466,14 +471,123 @@ export function submitPreviewAttempt(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        previewSessionId,
         questionVersionId,
         loId,
+        mode: input.mode,
         selectedKey,
         sessionServedIds,
         ...(isRetry !== undefined ? { isRetry } : {}),
         ...(paramValues !== undefined ? { paramValues } : {}),
       }),
     },
+  );
+}
+
+export function flagPreviewQuestion(
+  courseId: string,
+  previewSessionId: string,
+  questionId: string,
+  reason?: string,
+): Promise<{ flagged: true }> {
+  const normalizedReason = reason?.trim();
+  return request<{ flagged: true }>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/flag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        previewSessionId,
+        ...(normalizedReason ? { reason: normalizedReason } : {}),
+      }),
+    },
+  );
+}
+
+export function getPreviewReviewBook(
+  courseId: string,
+  previewSessionId: string,
+  sort: ReviewBookSort = 'theme',
+): Promise<ReviewBookGroup[]> {
+  const query = new URLSearchParams({ previewSessionId, sort });
+  return request<ReviewBookGroup[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/review-book?${query.toString()}`,
+  );
+}
+
+export function bookmarkPreviewQuestion(
+  courseId: string,
+  previewSessionId: string,
+  questionId: string,
+): Promise<{ bookmarked: boolean }> {
+  return request<{ bookmarked: boolean }>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previewSessionId }),
+    },
+  );
+}
+
+export function unbookmarkPreviewQuestion(
+  courseId: string,
+  previewSessionId: string,
+  questionId: string,
+): Promise<{ bookmarked: boolean }> {
+  return request<{ bookmarked: boolean }>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function removePreviewReviewBookEntry(
+  courseId: string,
+  previewSessionId: string,
+  entryId: string,
+): Promise<void> {
+  await request<void>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/review-book/${encodeURIComponent(entryId)}?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function skipPreviewLo(
+  courseId: string,
+  previewSessionId: string,
+  loId: string,
+  attempted: boolean,
+): Promise<void> {
+  await request<void>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/los/${encodeURIComponent(loId)}/skip`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previewSessionId, attempted }),
+    },
+  );
+}
+
+export function getPreviewSessionSummary(
+  courseId: string,
+  previewSessionId: string,
+): Promise<SessionSummaryForStart> {
+  return request<SessionSummaryForStart>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+  );
+}
+
+export function endPreviewSessionSummary(
+  courseId: string,
+  previewSessionId: string,
+  since: Date,
+): Promise<SessionEndSummary> {
+  const query = new URLSearchParams({
+    previewSessionId,
+    since: since.toISOString(),
+  });
+  return request<SessionEndSummary>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?${query.toString()}`,
   );
 }
 

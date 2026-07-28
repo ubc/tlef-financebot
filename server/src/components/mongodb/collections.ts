@@ -2,7 +2,7 @@ import type { Collection, Document, IndexSpecification, CreateIndexesOptions } f
 import { getDb } from './index';
 import type {
   User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
-  PreviewAttemptRecord,
+  PreviewAttemptRecord, PreviewStudentSession,
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
@@ -23,6 +23,8 @@ export const questionVersionsCol = (): Collection<QuestionVersion> => getDb().co
 export const attemptsCol = (): Collection<AttemptRecord> => getDb().collection<AttemptRecord>('attemptRecords');
 export const previewAttemptsCol = (): Collection<PreviewAttemptRecord> =>
   getDb().collection<PreviewAttemptRecord>('previewAttemptRecords');
+export const previewStudentSessionsCol = (): Collection<PreviewStudentSession> =>
+  getDb().collection<PreviewStudentSession>('previewStudentSessions');
 export const materialsCol = (): Collection<Material> => getDb().collection<Material>('materials');
 export const masteryCol = (): Collection<MasteryProfile> => getDb().collection<MasteryProfile>('masteryProfiles');
 export const reviewBookCol = (): Collection<ReviewBookEntry> => getDb().collection<ReviewBookEntry>('reviewBookEntries');
@@ -55,8 +57,15 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'questionVersions', keys: { questionId: 1, version: 1 }, options: { unique: true } },
   { collection: 'attemptRecords', keys: { puid: 1, courseId: 1, loId: 1, createdAt: -1 } },
   { collection: 'attemptRecords', keys: { questionVersionId: 1 } },
-  { collection: 'previewAttemptRecords', keys: { instructorPuid: 1, courseId: 1, createdAt: -1 } },
+  { collection: 'previewAttemptRecords', keys: { instructorPuid: 1, courseId: 1, previewSessionId: 1, createdAt: -1 } },
   { collection: 'previewAttemptRecords', keys: { questionVersionId: 1 } },
+  { collection: 'previewAttemptRecords', keys: { createdAt: 1 }, options: { expireAfterSeconds: 86_400 } },
+  {
+    collection: 'previewStudentSessions',
+    keys: { instructorPuid: 1, courseId: 1, previewSessionId: 1 },
+    options: { unique: true },
+  },
+  { collection: 'previewStudentSessions', keys: { updatedAt: 1 }, options: { expireAfterSeconds: 86_400 } },
   { collection: 'materials', keys: { courseId: 1, uploadedAt: -1 } },
   { collection: 'masteryProfiles', keys: { puid: 1, courseId: 1, loId: 1 }, options: { unique: true } },
   { collection: 'reviewBookEntries', keys: { puid: 1, courseId: 1, questionId: 1 }, options: { unique: true } },
