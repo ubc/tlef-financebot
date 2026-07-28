@@ -12,6 +12,7 @@ _Last updated: 2026-07-28_
 - Task 2 student Flag control: **complete on stacked PR #35**.
 - Admin Console v0: **A1 complete on stacked PR #36**.
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
+- Task 11 flag-loop phase exit E2E: **active with Codex, stacked on PR #37**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -59,6 +60,16 @@ duplicate Task 5.
 All Task 7 browser fixtures, attempts, notifications, and temporary course
 roles were localhost-only and removed before handoff; residual fixture counts
 were verified as zero.
+
+## Task 11 claim
+
+Codex is driving the joint Phase 2 flag-loop exit spec on a short-lived branch
+stacked on PR #37. The scope is the E2E proof and its isolated fixture cleanup:
+student flag → instructor standard notification and queue → four additional
+student flags/attempts → elevated auto-pause → Approved-only serving exclusion
+→ instructor Clear → serving restored → student resolution notification.
+Saurav verification is informational, not a start blocker per Stephen's
+standing instruction.
 
 ## Admin v0 decisions
 

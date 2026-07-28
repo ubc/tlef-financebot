@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 7 released; PR #37 open
-**Base:** PR #35 head `a685800` (`codex/phase-2-task2-student-flag`)
+**State:** Task 11 flag-loop E2E active; Task 7 released on PR #37
+**Base:** PR #37 head `d2d3ef1` (`codex/phase-2-task7-progression`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -13,6 +13,26 @@ ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
 ## Active task
+
+Phase 2 Task 11 — joint flag-loop exit proof, driven by Stephen/Codex without
+waiting for Saurav confirmation.
+
+Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
+
+### Task 11 files claimed by Codex
+
+- create `tests/e2e/flag-loop.spec.ts`
+- `docs/superpowers/plans/phase-2/2026-07-11-phase-2-pilot-readiness.md`
+- `docs/superpowers/plans/phase-2/Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`
+- `docs/superpowers/plans/phase-2/Stephen/STATUS.md`
+- `docs/superpowers/plans/phase-2/Stephen/coordination/CODEX.md`
+
+Task 11 reads Saurav's flag/notification/queue implementation through public
+routes and direct E2E fixture queries. It does not claim or edit those service
+or client source files unless a real blocker is first recorded in both
+developers' status files.
+
+## Released Task 7
 
 Phase 2 Task 7 — progression recommendations, repeated-failure redirect, and
 Stephen's accepted finite-round semantics.
