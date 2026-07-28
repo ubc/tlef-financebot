@@ -1,6 +1,58 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-27 (latest)_
+_Last updated: 2026-07-28_
+
+## Update (2026-07-28): Phase 2 Task 5 (parameterization config + serve-time randomization) — done, ready to merge
+
+**Branch:** `worktree-stephen-phase-2-task5-params` (worktree
+`stephen-phase-2-task5-params`), based on `origin/main` @ `2557d86` (which
+already includes Task 4's PR #33 merge). 3 commits: `ae55672`
+(implementation), `704b950` (task-review fix round), `210c68f`
+(final-whole-branch-review fix round).
+
+Built via subagent-driven-development: implementer → task review (spec ✅,
+quality Approved after fixing one Important bug — an instructor couldn't
+clear a saved `generateScript` — and one Minor, unescaped regex in slot-name
+matching) → final whole-branch review, which caught two more Important
+integration gaps a task-scoped review couldn't see: the student practice
+card never echoed the served question's `paramValues` back on submit (so
+parameterized-question feedback showed raw `{{slot}}` placeholders and
+`AttemptRecord.paramValues` was never actually pinned end-to-end), and
+Review Book listings showed the same raw placeholders instead of the
+triggering attempt's substituted values. Both fixed and re-verified.
+**Final verdict: Ready to merge: Yes.**
+
+Delivered `server/src/services/params.service.ts` (`resolveParamValues`,
+`substituteParams`, seeded slot draws + `generate()` sandbox delegation via
+Task 4's `executeGenerate`), wired serve-time substitution into
+`practice.routes.ts`'s `/practice/next` (deliberately kept out of
+`serving.service.ts`, which stays pure selection logic per its own
+docstring), extended `attempts.service.ts` so feedback reveal and Strategy-A
+retry both show substituted text with the retry question getting its own
+fresh seed, added `generateScript` to `questions.service.ts`'s
+`ContentKey`/`editQuestion()` versioning (mirroring the already-shipped
+`paramSlots` pattern — it had been missed when `paramSlots` was added ahead
+of this task), two new routes (`PATCH /api/questions/:questionId/params`,
+`POST .../params/preview`), and the instructor `param-config.ts` panel.
+
+**Verification:** full suite 51 suites / 570 tests, typecheck/lint/build all
+clean throughout (re-run after every fix round, not just once at the end).
+
+**Coordination with Codex (Admin Console v0, parallel work):** this branch's
+final shared-file footprint, and the release note for Slice A2 (Student
+Preview, which depends on Task 5), are recorded in
+[`../../phase-2/Stephen/coordination/CLAUDE.md`](../../phase-2/Stephen/coordination/CLAUDE.md)
+— including two shared files Codex needs to know about that weren't on the
+original claim list: `review-book.service.ts` and
+`client/src/views/student/practice-card.ts` (this branch found and fixed a
+real bug there — `submit()` wasn't echoing `paramValues` back to the server
+at all; if Slice A2 reuses this file's submit logic it inherits the fix for
+free). `docs/superpowers/plans/phase-2/Stephen/STATUS.md` is
+Codex-claimed per the coordination protocol, so Task 5's status is recorded
+here and in `coordination/CLAUDE.md` instead of editing that file directly.
+
+**Next:** push and open a PR (decision pending — using
+`finishing-a-development-branch` next).
 
 ## Update (2026-07-27, latest): Phase 2 Task 4 (param sandbox) — 8 review rounds complete, finalizing for PR
 
