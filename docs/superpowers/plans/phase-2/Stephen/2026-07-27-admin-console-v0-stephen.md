@@ -4,7 +4,7 @@
 **Implementing agent:** Codex  
 **Status:** Approved for planning and implementation by Stephen on 2026-07-27  
 **Concurrent work:** Task 5 released on PR #34; Admin A1 complete on PR #36;
-Student Preview A2 active on an explicit #37 + #36 integration stack
+Student Preview A2 complete on draft PR #41 using the explicit #37 + #36 stack
 
 This is a deliberately small staging-enablement slice, not the full PRD Admin
 surface. It adds two capabilities Stephen needs now:
@@ -312,6 +312,19 @@ Opened as draft PR #41:
 https://github.com/ubc/tlef-financebot/pull/41. It targets PR #37 for the
 student-practice seam and contains PR #36's Admin A1 integration; merge those
 documented dependencies first, then rebase/retarget and mark #41 ready.
+
+**Release-readiness follow-up (2026-07-28):** Admin A1 now has a committed
+real-session Playwright regression (`tests/e2e/admin-accounts.spec.ts`,
+`57ee5f3`) that drives pending and active grants, Search, confirmation-backed
+Revoke for both rows, User-bit clearing, browser-error capture, and full
+fixture/Admin-state restoration. It is on base-synced #36 at `56a8ddd` and
+included by draft #41 at `04c188a`; both PRs are mergeable and CI green.
+
+The complete Admin/Phase 2 aggregation at `27b4b26` passed 61 Jest suites /
+640 tests, typecheck, lint, Node 24 build, and 12 real-session Chromium
+scenarios (one opt-in live-LLM scenario skipped). The Admin and Preview tests
+left zero grant/User/course fixtures. Final integration must preserve the
+combined `tests/e2e/global-setup.ts` recorded in `coordination/CODEX.md`.
 
 ## Required regression cases
 
