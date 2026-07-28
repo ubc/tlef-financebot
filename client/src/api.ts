@@ -64,6 +64,7 @@ export interface AuthUser {
   uid: string;
   displayName: string;
   isAdmin: boolean;
+  platformInstructor?: boolean;
   affiliations: string[];
   courseRoles: Array<{ courseId: string; role: string }>;
 }
@@ -80,6 +81,44 @@ export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
+}
+
+// --- Admin: platform-Instructor accounts -----------------------------------
+
+export interface PlatformInstructorAccount {
+  uid: string;
+  status: 'active' | 'pending';
+  grantedAt: string;
+  updatedAt: string;
+  user?: {
+    displayName: string;
+    email: string;
+    lastLoginAt: string;
+  };
+}
+
+/** GET /api/admin/platform-instructors?query= -> active/pending grants. */
+export function listPlatformInstructors(query = ''): Promise<PlatformInstructorAccount[]> {
+  const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
+  return request<PlatformInstructorAccount[]>(`/api/admin/platform-instructors${search}`);
+}
+
+/** PUT /api/admin/platform-instructors/:uid -> active or pending grant. */
+export function grantPlatformInstructor(uid: string): Promise<PlatformInstructorAccount> {
+  return request<PlatformInstructorAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+    { method: 'PUT' },
+  );
+}
+
+/** DELETE /api/admin/platform-instructors/:uid -> idempotent revocation. */
+export function revokePlatformInstructor(
+  uid: string,
+): Promise<{ uid: string; granted: false; revoked: boolean }> {
+  return request<{ uid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+    { method: 'DELETE' },
+  );
 }
 
 // --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
