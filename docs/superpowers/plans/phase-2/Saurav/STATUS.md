@@ -60,16 +60,62 @@ Stephen's source documents (unedited by me):
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
 | 6 | Remediation report + checklist | **Merged** (PR #31 — `saurav/task-6-remediation`, CI passed) | nothing |
 | 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
-| 9 | Parameterized-script migration | not started | PRs #34 + #39 merge |
+| 9 | Parameterized-script migration | **Complete by Stephen/Codex on CI-green draft PR #42** (`ae1f0e9`) | merge PR #34 + #39, then rebase/ready #42 |
 | 10 | Custom-prompt generation/regeneration | **Complete by Stephen/Codex on PR #40** (`0870e23`) | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
 
+## Stephen/Codex Task 9 takeover — 2026-07-28
+
+Stephen explicitly authorized Codex to finish remaining Saurav work with both
+status ledgers updated and no confirmation pause. Task 9 is the sole remaining
+Phase 2 implementation item: its Task 5 and Task 8 prerequisites are complete,
+released, and CI green on PRs #34/#39, though Stephen still controls their
+merges.
+
+Codex completed Task 9 on a new integration stack of those exact heads. The
+claim is limited to `server/src/services/import.service.ts`,
+`server/src/routes/import.routes.ts`, the smallest parameterized-create seam
+in `server/src/services/questions.service.ts`,
+`client/src/views/instructor/import.ts`, `client/src/api.ts`, focused
+script-migration unit/route/E2E tests, `docs/api-contract.md`, nearest
+`AGENTS.md`, and Task 9 plan/status documents. No flag, notification,
+remediation, generation, Admin, or student-practice file is claimed. Saurav
+need not confirm or stop unrelated work.
+
+Implementation and verification are complete at `ae1f0e9` on draft PR #42.
+The result adds no-write sandbox preview, mismatch-gated revalidation and
+Draft creation, the Import-page review flow, and focused unit/route/E2E tests.
+Full verification passed with 54 Jest suites / 594 tests, typecheck, lint,
+Node 24 build, plus a real SAML-session Chromium flow with exactly one
+Draft/version write, working navigation, zero browser errors, and zero
+residual fixtures. PR #42 is CI green and stays draft only until PRs #34/#39
+merge; Saurav need not act.
+
+## Stephen/Codex aggregate regression — 2026-07-28
+
+Regression-only branch `codex/phase-2-admin-integration-regression` at
+`c4def83` combines current `main` with the released Phase 2/Admin heads behind
+PRs #42/#41/#38/#40. It is not a merge PR and claims no Saurav files.
+
+Aggregate verification passed: 61 Jest suites / 640 tests, typecheck, lint,
+Node 24 build, and 10 real-SAML-session browser scenarios (1 opt-in live-LLM
+scenario skipped). The run covered generation/regeneration, instructor
+pipeline/publish, Admin Student Preview isolation, and script migration.
+
+It found one E2E-fixture integration gap, not a production permission bug:
+Admin A1 correctly requires a platform-Instructor grant for course creation,
+so the test `faculty` identity can no longer rely on affiliation alone. PR #36
+fixes global setup at `51b43c4` (CI green) by provisioning the grant using the
+IdP-returned canonical uid; production authorization remains unchanged.
+Exact shared-file merge resolutions are recorded in Stephen's STATUS and
+coordination ledger. Saurav need not act.
+
 ## Stephen/Codex Admin A2 coordination — 2026-07-28
 
-Student Preview A2 is now active on a Stephen-owned integration stack of
+Student Preview A2 was completed on a Stephen-owned integration stack of
 released PR #37 plus Admin A1 PR #36. It does not claim Saurav generation,
 import, flag, remediation, or notification files. The exact Preview paths are
 in Stephen's `coordination/CODEX.md`; Saurav need not confirm or stop work.

@@ -227,6 +227,16 @@ Steps:
 Completed on PR #36 (`7d76080`); full 53 suites / 585 tests and the live Admin
 active/pending/revoke browser regression passed.
 
+**Aggregate regression follow-up (2026-07-28):** combining Admin A1 with the
+remaining Phase 2 heads exposed a stale test fixture: course creation now
+correctly requires `platformInstructor`, but E2E `faculty` still depended on
+affiliation. Production permission was not loosened. Commit `51b43c4` on PR
+#36 provisions the admin-style grant during global setup using the canonical
+uid returned by the IdP; CI is green. The complete regression branch
+`codex/phase-2-admin-integration-regression` (`c4def83`) then passed 61 Jest
+suites / 640 tests, typecheck/lint/Node 24 build, and 10 browser scenarios
+(one opt-in live-LLM scenario skipped).
+
 ### Gate A1.5 — Task 5 handoff
 
 Preview does not begin until Claude's Task 5 is merged or Claude explicitly
