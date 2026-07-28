@@ -397,11 +397,15 @@ rather than by tests, which is not a repeatable safety net.
 
 **Interfaces:**
 - Consumes: Stephen's Task 4 sandbox (`executeGenerate`) and Task 5 params service; `createQuestion`.
-- Produces: `migrateScript` — validates the script in the sandbox, maps it onto a question template, presents for review, then enters as a parameterized Draft with `generateScript` set. Full signature in the core document, Task 9 Interfaces.
+- Produces: explicit no-write `previewScriptMigration` plus revalidating
+  `migrateScript`, served at `.../import/script/{preview,commit}`. Both return
+  sample values/rendered content and a mismatch list; only a matching commit
+  returns `questionId` and creates a parameterized Draft with `generateScript`
+  on v1. Full signature in the core document, Task 9 Interfaces.
 
-- [ ] **Step 1: Failing tests** — valid script yields sampleValues; mismatch list on vars/placeholder mismatch without inserting; sandbox rejection surfaces as a clean 400.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)"`
+- [x] **Step 1: Failing tests** — valid script yields sampleValues; mismatch list on vars/placeholder mismatch without inserting; sandbox rejection surfaces as a clean 400.
+- [x] **Step 2–4: FAIL → implement → PASS.** Completed by Stephen/Codex under the recorded takeover. Focused 3 suites / 36 tests; full 54 suites / 594 tests; typecheck/lint/Node 24 build and real SAML Chromium UI/DB verification passed with zero browser errors and residual fixtures.
+- [x] **Step 5: Commit** — `ae1f0e9` (`feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)`), CI-green draft PR #42 pending prerequisite PRs #34/#39.
 
 ---
 
@@ -423,16 +427,8 @@ changed from Phase 1's `{ jobId }` to `{ runId }` + SSE.
 - Produces: @-mention resolution, `PRESET_PROMPTS` + `GET /api/generation/presets`, `regenerateQuestion` (side-by-side preview, no autosave). Full signatures in the core document, Task 10 Interfaces — **note the response/progress shape there predates P2-0 and must be reconciled with the merged P2-0 contract before implementing**, not followed verbatim.
 
 - [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [x] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.**
-- [x] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
-
-**Cross-owner completion note (2026-07-28):** Stephen/Codex completed Task 10
-after recording the takeover in both status files. The existing
-`preseeding.ts` page was extended rather than duplicating its custom form and
-P2-0 stream in `generate.ts`. Exact ready/assigned material mentions, server
-presets, transient side-by-side regeneration, and explicit versioned Replace
-are covered by focused service/route tests and a real-session browser
-regression. No separate polling/progress model was added.
+- [x] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.** Completed by Stephen/Codex under the recorded takeover. Presets/@mentions, durable custom generation, transient regeneration, explicit replacement, focused/full tests, typecheck/lint/build, and real-browser clicks all passed.
+- [x] **Step 5: Commit** — `0870e23` (`feat: custom-prompt generation and explicit regeneration (IN-Q11/IN-Q12)`), CI-green PR #40.
 
 ---
 

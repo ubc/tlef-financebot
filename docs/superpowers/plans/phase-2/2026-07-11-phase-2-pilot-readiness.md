@@ -31,7 +31,7 @@ _Integrated 2026-07-23 from Stephen's [`phase-2-ownership-dependency-proposal.md
 - [ ] Phase 1 Task 16 (exit demo + Approved-only proof) — **not required to start Phase 2**; Stephen explicitly deferred it on 2026-07-22. Still owed before either developer claims the Phase 1 exit gate passed.
 - [x] Task 13 (Layer-2 mastery evaluator) recorded as **slipped** (Stephen's 2026-07-22 closeout decision), not silently absent.
 - [x] This shared plan carries the owner map below.
-- [ ] Each developer's personal Phase 2 plan is written and synced (Saurav's: `Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`).
+- [x] Each developer's personal Phase 2 plan is written and synced (Saurav's: `Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`; Stephen's: `Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`).
 
 ## Owner map
 
@@ -150,9 +150,9 @@ applied).
 - Consumes: Task 1 routes.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09); instructor flag queue showing question content, reason, date, flag count per version, with Correct / Archive / Clear actions — Correct opens the existing question editor first, then resolves.
 
-- [ ] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow). **Instructor half done** (Saurav, `saurav/task-2-flag-queue`, commits `ca6ef9f`+`bd76b53`, review clean) — student-control half (Stephen) still open; leaving this box unchecked until both halves land, per the split-task convention. See [`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-2-my-half-instructor-flag-resolution-queue) for the instructor half's post-implementation note.
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS. (Instructor half: typecheck/lint clean, no live stack available to browser-verify.)
-- [ ] **Step 3: Commit** — `git commit -m "feat: flag controls in practice view and instructor flag-resolution queue"`
+- [x] **Step 1: Implement both surfaces.** Instructor queue merged in PR #28; Stephen/Codex completed the student non-blocking Flag control on stacked PR #35.
+- [x] **Step 2: Verify in browser** — the Task 11 real-SAML flag loop exercised student submit/confirmation plus instructor queue/resolution; full typecheck/lint/build passed.
+- [x] **Step 3: Commit** — instructor commits `ca6ef9f` + `bd76b53`; student implementation `a685800` on PR #35.
 
 ---
 
@@ -209,9 +209,9 @@ notification-row markup was fixed to be keyboard-operable.
 
 **Interfaces:**
 - Consumes: `worker_threads`, `env.paramWorkerTimeoutMs`, `env.paramWorkerMemoryMb`.
-- Produces: `executeGenerate(script: string, seed: number): Promise<Record<string, number>>` — runs an instructor-authored `generate()` (PrairieLearn convention: the script defines `function generate(random) { return { vars: {...} } }`; we surface `result.vars`). Guarantees: hard timeout (`env.paramWorkerTimeoutMs`, terminate on expiry → `Error('param-timeout')`); memory cap via `resourceLimits: { maxOldGenerationSizeMb: env.paramWorkerMemoryMb }`; **no network / no fs / no process** — the worker evaluates the script via `new Function` with a scrubbed scope (shadow `require`, `process`, `globalThis.fetch`, `import` as `undefined`) and runs with a seeded PRNG (mulberry32 over the passed seed) as the `random` argument so identical seeds reproduce identical values.
+- Produces: `executeGenerate(script: string, seed: number): Promise<Record<string, number>>` — runs an instructor-authored `generate()` in a fresh worker and a separate `vm.createContext()` realm with a seeded in-context PRNG. Guarantees: hard terminate-on-timeout, worker memory cap, no injected Node/network/fs/process globals, no host object passed into sandbox code, and only validated serialized primitives crossing the realm boundary. Identical seeds reproduce identical numeric values. The original identifier-shadowing sketch below is historical and explicitly superseded by the delivered-design note after Step 5.
 
-- [ ] **Step 1: Write the failing abuse tests** (real worker, no mocks — this is the security net):
+- [x] **Step 1: Write the failing abuse tests** (real worker, no mocks — this is the security net):
 
 ```ts
 import { executeGenerate } from '../../server/src/components/param-worker';
@@ -259,8 +259,8 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
 });
 ```
 
-- [ ] **Step 2: Verify FAIL.**
-- [ ] **Step 3: Implement.** `worker.js` (checked in as plain JS next to the component, resolved via `path.join(__dirname, 'worker.js')` — confirm it is copied to `dist` by adding it to the server tsconfig's build via a `copyfiles` step in `build:server`, or reference it from `server/src` at runtime since `__dirname` differs between tsx and dist; use `path.resolve(process.cwd(), 'server/src/components/param-worker/worker.js')` to keep one canonical path):
+- [x] **Step 2: Verify FAIL.**
+- [x] **Step 3: Implement.** The following original sketch is retained only as planning history; the secure delivered implementation is the `vm.createContext()` architecture described after Step 5 and in the component `AGENTS.md`.
 
 ```js
 // Sandbox worker: evaluates an instructor generate() script with a scrubbed
@@ -452,11 +452,30 @@ than slipped.
 
 **Interfaces:**
 - Consumes: Task 4 sandbox (validation run), Task 5 params service, `createQuestion`.
-- Produces: `migrateScript(courseId, input: { script: string; stem: string; options: ...; correctKey: string; byPuid }): Promise<{ questionId; sampleValues: Record<string, number> }>` — validates the script in the sandbox (one seeded run; abuse-suite guarantees apply), maps it onto a question template (stem placeholders must cover every `vars` key — mismatches listed back for review), presents for review client-side, then enters as a parameterized **Draft** with `generateScript` set.
+- Produces:
+  `previewScriptMigration(input): Promise<ScriptMigrationResult>` and
+  `migrateScript(courseId, input): Promise<ScriptMigrationResult>`, exposed as
+  `POST .../import/script/{preview,commit}`. `ScriptMigrationResult` is
+  `{ questionId?, sampleValues, sampleStem, sampleOptions, mismatches }`.
+  Preview validates one fixed-seed sandbox run and never writes. Commit repeats
+  sandbox/template validation; stem placeholders must cover every `vars` key,
+  every stem/option placeholder must have a generated value, mismatches return
+  without inserting, and a match enters as a parameterized
+  **Draft** with `generateScript` set. This expands the original single-function
+  sketch so the required client review step has an explicit no-write endpoint.
 
-- [ ] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)"`
+- [x] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
+- [x] **Step 2–4: FAIL → implement → PASS.** Added explicit no-write preview + revalidating commit endpoints, Draft-only v1 script persistence, Import-page review/mismatch UI, and double-submit protection. Focused: 3 suites / 36 tests.
+- [x] **Step 5: Commit** — `ae1f0e9` (`feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)`), draft PR #42.
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed Task 9 under the
+recorded authorization, integrating the exact released PR #34 + PR #39 heads
+without merging either dependency. Full verification passed: 54 Jest suites /
+594 tests, typecheck, lint, Node 24 build, plus a real SAML-session Chromium
+flow covering sandbox preview, substituted samples, one Draft/version write,
+open-question navigation, zero browser errors, and zero residual fixtures.
+PR #42 is CI green and remains draft only until #34 and #39 merge and it can
+be rebased.
 
 ---
 
@@ -487,20 +506,8 @@ than slipped.
     separate client-only progress tracker.
 
 - [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [x] **Step 2–4: FAIL → implement → PASS.**
-- [x] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
-
-**Completed 2026-07-28 by Stephen/Codex under the recorded cross-owner
-authorization.** The Phase 1 pre-seeding page already contained the target
-LO/type/difficulty form and P2-0 run/SSE history, so Task 10 extended that
-canonical page instead of creating the older plan's duplicate `generate.ts`.
-Server-side mention resolution is exact, case-insensitive, and restricted to
-ready materials already assigned to the selected LO/theme. Regeneration is
-synchronous and transient: only request provenance is appended until the
-instructor explicitly chooses Replace, which uses the existing versioned edit
-path. Verification: 51 Jest suites / 543 tests, typecheck, lint, Node 24 build,
-and a real-session Playwright flow covering every new click and the
-no-PATCH-before-Replace invariant.
+- [x] **Step 2–4: FAIL → implement → PASS.** Completed by Stephen/Codex under the recorded takeover: editable presets, material-scoped @mentions, durable custom generation, transient side-by-side regeneration, and explicit replacement only. Focused/full tests, typecheck/lint/build, and real-browser click flow passed.
+- [x] **Step 5: Commit** — `0870e23` (`feat: custom-prompt generation and explicit regeneration (IN-Q11/IN-Q12)`), CI-green PR #40.
 
 ---
 
