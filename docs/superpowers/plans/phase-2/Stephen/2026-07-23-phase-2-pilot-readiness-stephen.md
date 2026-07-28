@@ -168,9 +168,9 @@ honest against `git log`.
 - Consumes: Task 4's `executeGenerate`; `questionVersionsCol()`; Phase-1 serving/attempts services.
 - Produces: `resolveParamValues`, `substituteParams`, the serving/attempt pinning changes, and the config/preview endpoints. Full signatures in the core document, Task 5 Interfaces.
 
-- [ ] **Step 1: Failing tests** — slot draw respects min/max/step and is seed-deterministic; substitution hits stem + options + explanations; missing placeholder surfaces a validation warning; script path delegates to the sandbox; serving pins the same values into the attempt payload round-trip.
-- [ ] **Step 2–4: FAIL → implement (service, route, serving/attempt wiring, panel) → PASS.** Re-run the Phase-1 serving/attempts suites — they must stay green.
-- [ ] **Step 5: Commit** — `git commit -m "feat: parameterization config, seeded serve-time randomization, fresh values on re-practice (IN-Q09, ST-R04)"`
+- [x] **Step 1: Failing tests** — slot draw respects min/max/step and is seed-deterministic; substitution hits stem + options + explanations; missing placeholder surfaces a validation warning; script path delegates to the sandbox; serving pins the same values into the attempt payload round-trip.
+- [x] **Step 2–4: FAIL → implement (service, route, serving/attempt wiring, panel) → PASS.** Re-run the Phase-1 serving/attempts suites — they must stay green. **Deviation from the file list above:** `serving.service.ts` was left untouched (stays pure selection logic per its own docstring) — the seed-draw/substitution wiring for `/practice/next` went into `practice.routes.ts` instead, which already assembles that response field-by-field for a security invariant. `questions.service.ts` also needed a small extension (`generateScript` added to `ContentKey`/`editQuestion`, which only had `paramSlots`). A final whole-branch review additionally caught and fixed two integration gaps outside this task's original file list: `client/src/views/student/practice-card.ts` wasn't echoing `paramValues` back on submit, and `review-book.service.ts` wasn't substituting parameterized stems — both fixed in the same branch. Full suite: 51 suites / 570 tests, typecheck/lint/build clean.
+- [x] **Step 5: Commit** — 3 commits (`ae55672` implementation, `704b950` + `210c68f` review-driven fix rounds) on `worktree-stephen-phase-2-task5-params`.
 
 ---
 

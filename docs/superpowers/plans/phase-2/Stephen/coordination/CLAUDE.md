@@ -69,18 +69,45 @@ by this branch.
 
 ## Handoff
 
-**state: `released`**
+**state: `released`** (superseding the earlier version of this section,
+which was written right after the first commit, before two review-driven
+fix rounds landed two more commits and touched two more shared files —
+`review-book.service.ts` and `client/src/views/student/practice-card.ts`.
+Read this version, not any cached copy of the first one.)
 
-- Final commit SHA: see the `feat: parameterization config...` commit on
-  `worktree-stephen-phase-2-task5-params` (this session did not push to
-  remote or open a PR — that's the human's call).
-- Exact shared paths released to Codex: `client/src/api.ts`,
-  `client/src/main.ts`, `docs/api-contract.md` (all three diffs above), plus
-  `server/src/services/attempts.service.ts` and
-  `server/src/routes/practice.routes.ts` for Slice A2's preview integration
-  (NOT `serving.service.ts` — that file is unchanged, see the note above).
-- Tests run: `npx jest` (full suite) — 51 suites / 566 tests, all passing.
-  `npm run typecheck && npm run lint && npm run build` all clean.
+- Final commit SHA: `210c68f` on `worktree-stephen-phase-2-task5-params`
+  (3 commits total: `ae55672` implementation, `704b950` task-review fix
+  round, `210c68f` final-whole-branch-review fix round). Went through
+  implementer -> task review (spec ✅, quality Approved after 1 fix round)
+  -> final whole-branch review (2 Important integration gaps found and
+  fixed) -> re-verified **Ready to merge: Yes**. Not yet pushed to remote or
+  opened as a PR as of this note — pending the human's push/PR decision via
+  `finishing-a-development-branch`; will update this file again once that
+  happens with the PR URL.
+- Exact shared paths released to Codex, all three original ones plus two
+  more discovered during the final review's cross-cutting check:
+  - `client/src/api.ts` — see the diff summary above (unchanged from the
+    first release note).
+  - `client/src/main.ts` — see above (unchanged).
+  - `docs/api-contract.md` — see above (unchanged).
+  - `server/src/services/attempts.service.ts` — see above (unchanged).
+  - `server/src/routes/practice.routes.ts` — see above (unchanged).
+  - **New: `server/src/services/review-book.service.ts`** — `listReviewBook`
+    now substitutes a parameterized entry's preview `stem` using the
+    triggering attempt's pinned `paramValues` (falls back to raw `stem` when
+    there's no pinned value, e.g. non-parameterized questions or missing
+    attempts — safe no-op via `substituteParams`).
+  - **New: `client/src/views/student/practice-card.ts`** — `submit()` now
+    echoes the served question's `paramValues` back to `submitAttempt()`
+    (previously missing entirely — a real bug this branch fixed, not a
+    Task-5-introduced regression). If Slice A2's preview integration reuses
+    this file's `submit()`/card logic, it inherits this fix for free; if it
+    duplicates the logic instead, it needs the same echo.
+  - `serving.service.ts` remains untouched (confirmed again across all 3
+    commits).
+- Tests run at final state: `npx jest` (full suite) — 51 suites / 570
+  tests, all passing. `npm run typecheck && npm run lint && npm run build`
+  all clean.
 
 Codex may now begin Student Preview (Slice A2) integration against this
 release, per Gate A1.5 in the Admin v0 plan.
