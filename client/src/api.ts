@@ -949,6 +949,59 @@ export function generateQuestions(courseId: string, input: GenerateQuestionsInpu
   });
 }
 
+// --- Instructor: question import (IN-Q01) -----------------------------------
+
+export type ImportFormat = 'csv' | 'json' | 'qti';
+
+export interface ImportCandidate {
+  type: QuestionType | 'other';
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    role?: OptionRole;
+    explanation?: string;
+  }>;
+  correctKey: string;
+  difficulty?: Difficulty;
+  parameterizable: boolean;
+}
+
+export interface ImportPreview {
+  format: ImportFormat;
+  candidates: ImportCandidate[];
+  failures: Array<{ line: number | string; reason: string }>;
+}
+
+/** Multipart upload -> parsed preview. No questions are written. */
+export function previewQuestionImport(courseId: string, file: File): Promise<ImportPreview> {
+  const form = new FormData();
+  form.append('file', file);
+  return request<ImportPreview>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/preview`,
+    { method: 'POST', body: form },
+  );
+}
+
+/** Confirm a preview -> Draft questions. The server revalidates every row. */
+export function commitQuestionImport(
+  courseId: string,
+  input: {
+    candidates: ImportCandidate[];
+    themeId?: string;
+    loId?: string;
+  },
+): Promise<{ imported: number; autoConverted: number }> {
+  return request<{ imported: number; autoConverted: number }>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/commit`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 // --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
 //
 // Added in Task E. Verified against server/src/routes/questions.routes.ts +
