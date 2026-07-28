@@ -54,6 +54,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/rag.ts` | EXAMPLE (genai + qdrant demo). Safe to delete. |
 | `views/members.ts` | The gated members-only area (auth-gating reference). |
 | `views/role.ts` | Role-gated area (Faculty/Student/Staff), one factory per role. |
+| `views/admin/accounts.ts` | Admin Console v0: grant/revoke global platform-Instructor access by CWL username and show active/pending-first-login state. |
 
 ## Adding a page
 
@@ -76,6 +77,12 @@ sidebar shows it only when the session's `roles` (from `GET /api/auth/me`, itsel
 derived from `eduPersonAffiliation`) include a match. The role views load a
 role-gated endpoint, so a deep-link to another role's page returns `403` and shows
 a friendly state (a `403` is left in-app; only `401` drops to the landing screen).
+
+FinanceBot's real Instructor shell is stricter than the generic role demo:
+`eduPersonAffiliation=faculty` alone is not authorization. `main.ts` requires
+Admin, `platformInstructor`, or an existing course Instructor role. Admins get
+an additional `/admin/accounts` navigation entry; the server's `ensureAdmin()`
+remains the actual gate.
 
 ## Re-skinning
 
