@@ -67,6 +67,7 @@ export function makeQuestionCard(
         mode: ctx.mode,
         sessionServedIds: session.sessionServedIds,
         ...(isRetry ? { isRetry: true } : {}),
+        ...(question.paramValues !== undefined ? { paramValues: question.paramValues } : {}),
       });
       session.recordAttempt({ question, selectedKey, result, loId: currentLo(ctx).lo._id });
       callbacks.onTranscriptChange();

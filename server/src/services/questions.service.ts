@@ -21,7 +21,7 @@ import type {
 // server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
-type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots';
+type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript';
 
 /** Enforces MCQ/T-F option shape (PRD §9.1). T/F wrong-role is coerced, never rejected. */
 function assertOptionInvariants(type: QuestionType, options: QuestionOption[]): QuestionOption[] {
@@ -107,7 +107,8 @@ export async function createQuestion(input: {
  * never appear in `editedFields`. Adds the 'manually-edited' label via
  * $addToSet (exactly once, no matter how many times a question is edited).
  *
- * A patch that contains NO content key (stem/options/difficulty/paramSlots)
+ * A patch that contains NO content key (stem/options/difficulty/paramSlots/
+ * generateScript)
  * — e.g. an IN-Q13 retag that only touches loIds/themeIds, or an empty patch
  * — is content-identical to the head, so it must not version, must not add
  * the 'manually-edited' label, and must not stamp an unedited question as
@@ -117,7 +118,7 @@ export async function createQuestion(input: {
  */
 export async function editQuestion(
   questionId: ObjectId,
-  patch: Partial<Pick<QuestionVersion, 'stem' | 'options' | 'difficulty' | 'paramSlots'>> & {
+  patch: Partial<Pick<QuestionVersion, 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'>> & {
     loIds?: ObjectId[];
     themeIds?: ObjectId[];
   },
@@ -148,6 +149,10 @@ export async function editQuestion(
   if (patch.paramSlots !== undefined) {
     contentPatch.paramSlots = patch.paramSlots;
     editedFields.push('paramSlots');
+  }
+  if (patch.generateScript !== undefined) {
+    contentPatch.generateScript = patch.generateScript;
+    editedFields.push('generateScript');
   }
 
   const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};

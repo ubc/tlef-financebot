@@ -5,6 +5,7 @@ import { ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { selectNextQuestion, studentCourseHome } from '../services/serving.service';
 import { submitAttempt, getCourseIdForQuestionVersion } from '../services/attempts.service';
+import { resolveParamValues, substituteParams, drawSeed } from '../services/params.service';
 import { recordSkip } from '../services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../services/review-book.service';
 import type { PracticeMode } from '../types/domain';
@@ -97,15 +98,28 @@ practiceRouter.post(
       return;
     }
 
+    // Fresh seed on every serve (ST-P03 draws the values here, once, then
+    // they are pinned for the whole attempt; ST-R04's "fresh seed on
+    // re-practice" falls out for free — see drawSeed()'s doc comment).
+    // `undefined` for a conceptual (non-parameterized) question — `stem`/
+    // `options` then pass through unsubstituted, and `paramValues`/`seed`
+    // are omitted from the response entirely rather than sent as `undefined`.
+    const seed = drawSeed();
+    const paramValues = await resolveParamValues(result.version, seed);
+
     res.json({
       questionId: result.question._id.toString(),
       questionVersionId: result.version._id.toString(),
       type: result.version.type,
-      stem: result.version.stem,
+      stem: paramValues ? substituteParams(result.version.stem, paramValues) : result.version.stem,
       difficulty: result.version.difficulty,
       degraded: result.degraded,
-      options: result.version.options.map((o) => ({ key: o.key, text: o.text })),
+      options: result.version.options.map((o) => ({
+        key: o.key,
+        text: paramValues ? substituteParams(o.text, paramValues) : o.text,
+      })),
       watermark: req.user!.uid,
+      ...(paramValues !== undefined ? { paramValues, seed } : {}),
     });
   },
 );
