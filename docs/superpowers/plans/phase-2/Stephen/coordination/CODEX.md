@@ -22,6 +22,8 @@ Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
 ### Task 11 files claimed by Codex
 
 - create `tests/e2e/flag-loop.spec.ts`
+- `tests/e2e/global-setup.ts` (explicit opt-in reuse of an existing auth state
+  so parallel agents can run isolated app ports without changing normal CI)
 - `docs/superpowers/plans/phase-2/2026-07-11-phase-2-pilot-readiness.md`
 - `docs/superpowers/plans/phase-2/Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`
 - `docs/superpowers/plans/phase-2/Stephen/STATUS.md`
