@@ -1,8 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { ensureApiAuthenticated } from '../components/auth';
-import { ensurePlatformInstructor } from '../components/auth/platform-guards';
+import { ensureApiAuthenticated, ensurePlatformInstructor } from '../components/auth';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
