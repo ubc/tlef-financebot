@@ -64,6 +64,7 @@ export interface AuthUser {
   uid: string;
   displayName: string;
   isAdmin: boolean;
+  platformInstructor?: boolean;
   affiliations: string[];
   courseRoles: Array<{ courseId: string; role: string }>;
 }
@@ -80,6 +81,47 @@ export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
+}
+
+// --- Admin: platform-Instructor accounts -----------------------------------
+
+export interface AdminAccount {
+  puid: string;
+  status: 'active' | 'pending';
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  platformInstructor: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  grantedAt?: string;
+  updatedAt?: string;
+}
+
+/** GET /api/admin/users?query= -> persisted users plus pending PUID grants. */
+export function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
+  const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
+  return request<AdminAccount[]>(`/api/admin/users${search}`);
+}
+
+/** PUT /api/admin/platform-instructors/:puid -> active or pending grant. */
+export function grantPlatformInstructor(puid: string): Promise<AdminAccount> {
+  return request<AdminAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
+    { method: 'PUT' },
+  );
+}
+
+/** DELETE /api/admin/platform-instructors/:puid -> idempotent revocation. */
+export function revokePlatformInstructor(
+  puid: string,
+): Promise<{ puid: string; granted: false; revoked: boolean }> {
+  return request<{ puid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
+    { method: 'DELETE' },
+  );
 }
 
 // --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
@@ -309,6 +351,23 @@ export function getNextPracticeQuestion(
   });
 }
 
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
+ * Student-only and idempotent for the signed-in student/current version. */
+export function flagPracticeQuestion(
+  questionId: string,
+  reason?: string,
+): Promise<{ flagged: true }> {
+  const normalizedReason = reason?.trim();
+  return request<{ flagged: true }>(
+    `/api/questions/${encodeURIComponent(questionId)}/flag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(normalizedReason ? { reason: normalizedReason } : {}),
+    },
+  );
+}
+
 export type PracticeMode = 'topic-practice' | 'review-book' | 'exam-prep';
 export type OptionRole = 'correct' | 'common-misconception' | 'partially-correct' | 'clearly-wrong';
 
@@ -337,6 +396,10 @@ export interface AttemptResult {
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
+  redirect?: {
+    materials: Array<{ name: string; materialId: string }>;
+    message: string;
+  };
 }
 
 export interface SubmitAttemptInput {

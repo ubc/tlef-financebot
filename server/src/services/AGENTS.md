@@ -38,6 +38,11 @@ objects directly.
   existing `generate(random)` templates through the real parameter worker.
   Script migration validates one deterministic sample, returns placeholder
   mismatches without writing, and creates only Draft question versions.
+- `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
+  Uses PUID as the canonical identity, updates an existing matching User when
+  present, leaves a pending grant otherwise, lists safe persisted User fields,
+  and writes role assignment/revocation audit events. Raw SAML assertions never
+  enter its response shapes.
 
 Other services will appear as more components are built up.
 

@@ -25,7 +25,7 @@ commonly need:
 - Authentication (`server/src/components/auth`) is implemented: SAML/Shibboleth
   login via `passport-ubcshib` against the local docker-simple-saml IdP, with
   sessions stored in MongoDB (`connect-mongo`). The client is an app shell behind
-  login: a public landing screen (health check + "Log in with CWL"), and after
+  login: a public landing screen ("Log in with CWL"), and after
   login a sidebar/top-bar app (Overview, the Notes/RAG demos, and a gated Members
   area) with Log out. See the README "Authentication" section for one-time local
   setup (SP entry + IdP certificate). Auth-gating is demonstrated end-to-end: the
@@ -37,6 +37,14 @@ commonly need:
   (`/api/roles/{faculty,student,staff}`) are gated with `ensureRole(...)` (403 for
   the wrong role, derived from `eduPersonAffiliation`), and the client shows each
   user only their own role menu.
+- Admin Console v0 account provisioning is implemented: Admins can grant or
+  revoke global `platformInstructor` access by PUID. A grant may exist before
+  first login and is then applied to the matching PUID-backed User; SAML faculty
+  affiliation never grants the capability by itself. The Admin accounts page
+  lists persisted Users plus pending-first-login grants. Admin access remains
+  separate from Instructor access. Course creation requires Admin or
+  `platformInstructor`, while access to existing courses remains course-scoped
+  through `ensureCourseInstructor()`.
 - Qdrant (`server/src/components/qdrant`) is implemented: a configured client,
   idempotent `ensureCollection`, and `upsertPoints` / `search` helpers. `GET
   /api/health` reports its reachability.

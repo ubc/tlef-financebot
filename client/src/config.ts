@@ -1,20 +1,12 @@
 // -----------------------------------------------------------------------------
-// App configuration — the ONE place to re-skin this boilerplate's shell.
-// Change the name/tagline here and the CSS custom properties in
-// public/styles/main.css (the `:root` token block) to rebrand the whole app.
+// App configuration — the ONE place to re-skin the app's shell. Change the name
+// here and the CSS custom properties in public/styles/main.css (the `:root`
+// token block) to rebrand the whole app.
 // -----------------------------------------------------------------------------
 
 export const APP = {
-  /** Product name shown in the sidebar brand and document title. */
-  name: 'TLEF Starter',
-  /** Short mark shown in the collapsed/mobile brand. */
-  shortName: 'TLEF',
-  /** One line describing what this is, shown on the landing screen. */
-  tagline: 'A TypeScript starter for UBC teaching-and-learning apps.',
-  /** Longer landing-screen blurb. */
-  intro:
-    'MongoDB, Qdrant vector search, SAML/CWL auth, and the UBC GenAI toolkit — ' +
-    'each wired up as an isolated, documented component you can build on.',
+  /** Product name: the login-screen wordmark, the sidebar brand, the doc title. */
+  name: 'FinanceBot',
   /** Version label shown in the sidebar footer. */
   version: '0.0.1',
 } as const;

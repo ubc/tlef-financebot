@@ -39,14 +39,18 @@ import {
 
 const courseId = new ObjectId();
 
-function userFixture(courseRoles: User['courseRoles']): User {
+function userFixture(
+  courseRoles: User['courseRoles'],
+  extra: Pick<User, 'isAdmin'> & Partial<Pick<User, 'platformInstructor'>> = { isAdmin: false },
+): User {
   return {
     puid: 'PUID-INSTR-0001',
     uid: 'instr1',
     displayName: 'Instructor One',
     email: 'instr1@example.ubc.ca',
     affiliations: ['faculty'],
-    isAdmin: false,
+    isAdmin: extra.isAdmin,
+    ...(extra.platformInstructor !== undefined ? { platformInstructor: extra.platformInstructor } : {}),
     courseRoles,
     createdAt: new Date(),
     lastLoginAt: new Date(),
@@ -55,6 +59,8 @@ function userFixture(courseRoles: User['courseRoles']): User {
 
 const instructor = userFixture([{ courseId, role: 'instructor' }]);
 const student = userFixture([{ courseId, role: 'student' }]);
+const platformInstructor = userFixture([], { isAdmin: false, platformInstructor: true });
+const admin = userFixture([], { isAdmin: true });
 
 function makeApp(user?: User): Express {
   const app = express();
@@ -84,13 +90,16 @@ describe('courses routes (auth + course-instructor gating)', () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it('201s creating a course for any signed-in user', async () => {
+  it.each([
+    ['platform Instructor', platformInstructor],
+    ['Admin', admin],
+  ])('201s creating a course for a %s', async (_label, creator) => {
     const created = {
       _id: courseId,
       name: 'Intro to Finance',
       courseCode: 'COMM 298',
       term: '2026W1',
-      ownerPuid: instructor.puid,
+      ownerPuid: creator.puid,
       registrationCode: 'ABCD2345',
       published: false,
       feedbackStrategy: 'adaptive',
@@ -100,20 +109,32 @@ describe('courses routes (auth + course-instructor gating)', () => {
     };
     jest.mocked(createCourse).mockResolvedValue(created as never);
 
-    const res = await request(makeApp(instructor))
+    const res = await request(makeApp(creator))
       .post('/api/courses')
       .send({ name: 'Intro to Finance', courseCode: 'COMM 298', term: '2026W1' });
 
     expect(res.status).toBe(201);
-    expect(createCourse).toHaveBeenCalledWith(instructor.puid, {
+    expect(createCourse).toHaveBeenCalledWith(creator.puid, {
       name: 'Intro to Finance',
       courseCode: 'COMM 298',
       term: '2026W1',
     });
   });
 
+  it.each([
+    ['student', student],
+    ['course Instructor without the platform grant', instructor],
+  ])('403s course creation for a %s', async (_label, creator) => {
+    const res = await request(makeApp(creator))
+      .post('/api/courses')
+      .send({ name: 'Intro to Finance', courseCode: 'COMM 298', term: '2026W1' });
+
+    expect(res.status).toBe(403);
+    expect(createCourse).not.toHaveBeenCalled();
+  });
+
   it('400s creating a course with an invalid body', async () => {
-    const res = await request(makeApp(instructor)).post('/api/courses').send({ name: '' });
+    const res = await request(makeApp(platformInstructor)).post('/api/courses').send({ name: '' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBeDefined();
     expect(createCourse).not.toHaveBeenCalled();
