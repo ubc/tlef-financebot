@@ -3,13 +3,14 @@
 **Owner:** Stephen  
 **Implementing agent:** Codex  
 **Status:** Approved for planning and implementation by Stephen on 2026-07-27  
-**Concurrent work:** Claude continues Phase 2 Task 5 (parameter serving/config)
+**Concurrent work:** Task 5 released on PR #34; Admin A1 complete on PR #36;
+Student Preview A2 complete on draft PR #41 using the explicit #37 + #36 stack
 
 This is a deliberately small staging-enablement slice, not the full PRD Admin
 surface. It adds two capabilities Stephen needs now:
 
-1. an Admin can grant or revoke a global platform-Instructor capability by CWL
-   username; and
+1. an Admin can list persisted users and grant or revoke a global
+   platform-Instructor capability by UBC PUID; and
 2. a course Instructor can open the real student practice UI in an explicit
    preview mode without enrolling as a student or polluting production learning
    records.
@@ -25,8 +26,8 @@ same files. Both agents must follow the claim protocol in
 
 - `User.platformInstructor?: boolean` is the global grant that exposes the
   Instructor shell and authorizes course creation.
-- `isAdmin` remains controlled only by `ADMIN_CWL_ALLOWLIST`. Admin v0 does not
-  grant or revoke Admin access.
+- `isAdmin` remains a separate capability. Admin v0 does not grant or revoke
+  Admin access, and `platformInstructor` never passes `ensureAdmin()`.
 - `courseRoles[].role === 'instructor'` remains the authority for an existing
   course. A platform Instructor does not automatically gain access to every
   course.
@@ -35,25 +36,19 @@ same files. Both agents must follow the claim protocol in
 - The UI is not the security boundary. Server routes enforce Admin,
   platform-Instructor, and course-Instructor permissions independently.
 
-### CWL username is not PUID
+### PUID is the canonical provisioning identity
 
 The existing `User` collection is uniquely keyed by SAML
-`ubcEduCwlPuid` (`puid`), while the value an Admin normally types is the CWL
-username (`uid`). Admin v0 must not create a fake `User` whose `puid` contains
-a CWL username: the first real SAML login would create a second User and lose
-the grant.
+`ubcEduCwlPuid` (`puid`). Staging assertions may omit `uid` and profile fields,
+so Admin v0 provisions by PUID instead of depending on CWL username release.
 
-Instead:
-
-- normalize the entered CWL username with `trim().toLowerCase()`;
-- store a small pending platform-Instructor grant keyed by normalized CWL
-  username;
-- update an already-existing matching User immediately when one exists; and
-- on first SAML login, apply the pending grant to the real PUID-backed User.
-
-Later SAML refreshes update identity attributes but must preserve an Admin-set
-`platformInstructor` value. Revocation removes the pending grant and clears the
-flag on a matching existing User.
+- Store a small pending platform-Instructor grant keyed by PUID.
+- Update an already-existing matching User immediately when one exists.
+- On first SAML login, apply the pending grant to the same PUID-backed User.
+- Never fabricate a placeholder User for a pending grant.
+- Recompute `platformInstructor` from the grant collection during login and
+  Passport deserialization so revocation is authoritative.
+- Display name falls back through SAML name/email/CWL fields and finally PUID.
 
 ### Student preview
 
@@ -94,15 +89,15 @@ All Admin routes require an authenticated `req.user.isAdmin`.
 
 ### Platform-Instructor grants
 
-- `GET /api/admin/platform-instructors?query=<text>`
-  - returns matching active/pending grants and any linked User identity;
+- `GET /api/admin/users?query=<text>`
+  - returns all matching persisted Users plus pending grants;
   - never returns secrets or raw SAML payloads.
-- `PUT /api/admin/platform-instructors/:uid`
-  - idempotently grants the normalized CWL username;
+- `PUT /api/admin/platform-instructors/:puid`
+  - idempotently grants the PUID;
   - body is empty;
   - records the acting Admin and timestamps;
   - updates an existing User immediately or remains pending until first login.
-- `DELETE /api/admin/platform-instructors/:uid`
+- `DELETE /api/admin/platform-instructors/:puid`
   - idempotently revokes the grant;
   - clears the matching User's `platformInstructor` flag.
 
@@ -131,12 +126,10 @@ visible in routing, tests, and logs.
 - `User.platformInstructor?: boolean`
 - `PlatformInstructorGrant`
   - `_id` supplied by Mongo
-  - `uid: string` — normalized CWL username, unique
+  - `puid: string` — UBC PUID, unique
   - `grantedByPuid: string`
   - `createdAt: Date`
   - `updatedAt: Date`
-  - `appliedToPuid?: string`
-  - `appliedAt?: Date`
 - `PreviewAttemptRecord`
   - the question/version/LO/course/answer snapshot needed to reproduce a
     preview submission
@@ -169,7 +162,7 @@ Keep `ensureCourseInstructor()`, `ensureCourseStudent()`, and
 ### Gate A0 — coordination and contract
 
 **Owner:** Codex  
-**Status:** in progress
+**Status:** complete
 
 Files:
 
@@ -180,9 +173,9 @@ Files:
 
 - [x] Record the product/security decisions.
 - [x] Publish per-agent file claims so each agent edits only its own ledger.
-- [ ] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
+- [x] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
   continuing Task 5.
-- [ ] Codex refreshes from `main` after the confirmation and starts A1 on a
+- [x] Codex refreshes from `main` after the confirmation and starts A1 on a
   short-lived `codex/` branch.
 
 ### Slice A1 — Admin accounts and platform-Instructor grant
@@ -208,20 +201,41 @@ Expected files:
 
 Steps:
 
-- [ ] Write failing tests for Admin-only access, grant idempotency, pending
+- [x] Write failing tests for Admin-only access, grant idempotency, pending
   first-login application, SAML refresh preservation, revoke, and
   platform-Instructor-only course creation.
-- [ ] Add the grant document/accessor/unique index and User flag.
-- [ ] Implement grant/revoke/search plus audit writes.
-- [ ] Apply pending grants during SAML upsert without fabricating a User or
+- [x] Add the grant document/accessor/unique index and User flag.
+- [x] Implement grant/revoke/search plus audit writes.
+- [x] Apply pending grants during SAML upsert without fabricating a User or
   replacing its PUID.
-- [ ] Gate course creation with `ensurePlatformInstructor()`.
-- [ ] Add the Admin accounts page and Admin-only navigation.
-- [ ] Update auth response/client types so shell selection uses
+- [x] Gate course creation with `ensurePlatformInstructor()`.
+- [x] Add the Admin accounts page and Admin-only navigation.
+- [x] Update auth response/client types so shell selection uses
   `isAdmin || platformInstructor || course instructor role`.
-- [ ] Run focused tests, full Jest, typecheck, lint, and build.
-- [ ] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
+- [x] Run focused tests, full Jest, typecheck, lint, and build.
+- [x] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
   and `STATUS.md`.
+
+Completed on PR #36 (`7d76080`); full 53 suites / 585 tests and the live Admin
+active/pending/revoke browser regression passed.
+
+**PUID-compatible replacement (2026-07-28):** PR #45 replaces #36 as the
+clean, current-main Admin A1 merge candidate. It provisions by PUID, lists all
+persisted Users plus pending grants, supports staging assertions with empty
+`uid`/profile fields, and keeps `platformInstructor` strictly separate from
+`isAdmin`. Implementation commit `8bd658f`; four focused suites / 21 tests,
+typecheck, lint, local SAML browser rendering, and desktop/390px layout checks
+passed.
+
+**Aggregate regression follow-up (2026-07-28):** combining Admin A1 with the
+remaining Phase 2 heads exposed a stale test fixture: course creation now
+correctly requires `platformInstructor`, but E2E `faculty` still depended on
+affiliation. Production permission was not loosened. Commit `51b43c4` on PR
+#36 provisions the admin-style grant during global setup using the canonical
+uid returned by the IdP; CI is green. The complete regression branch
+`codex/phase-2-admin-integration-regression` (`c4def83`) then passed 61 Jest
+suites / 640 tests, typecheck/lint/Node 24 build, and 10 browser scenarios
+(one opt-in live-LLM scenario skipped).
 
 ### Gate A1.5 — Task 5 handoff
 
@@ -236,10 +250,19 @@ releases the following paths with a commit SHA:
 Codex then rebases Admin work onto the latest `main` and reruns the Phase 1
 serving/attempt regression suites before touching preview integration.
 
+**Gate satisfied 2026-07-28:** Claude released Task 5 at `210c68f` on PR #34,
+including the final `paramValues` echo fix. Task 7 and Admin A1 are also
+complete and released on PRs #37/#36. Because Stephen requested continuous
+work while merges remain human-controlled, A2 starts on an explicit stacked
+integration branch: #37 is the base and #36 is merged into that branch. This
+does not merge any PR to `main`; its diff will shrink naturally as the
+dependencies are merged in their documented order.
+
 ### Slice A2 — Instructor Student Preview
 
 **Owner:** Codex  
 **Depends on:** Task 5 merged/released and A1 merged
+**Status:** complete on draft PR #41 (`9f68a44`)
 
 Expected files:
 
@@ -259,23 +282,49 @@ Expected files:
 
 Steps:
 
-- [ ] Write authorization tests proving students cannot call Instructor
+- [x] Write authorization tests proving students cannot call Instructor
   preview routes and an Instructor cannot preview another Instructor's course.
-- [ ] Write content tests proving unpublished courses are previewable while
+- [x] Write content tests proving unpublished courses are previewable while
   only approved questions serve.
-- [ ] Write isolation tests proving preview answers create no live
+- [x] Write isolation tests proving preview answers create no live
   `attemptRecords`, mastery, Review Book, flags/auto-pause counts,
   remediation recipients, summaries, or notifications.
-- [ ] Extract only the pure grading/response logic required to reuse the real
+- [x] Extract only the pure grading/response logic required to reuse the real
   student experience; keep persistence/context decisions at the route/service
   boundary.
-- [ ] Add the dashboard “Preview as Student” entry and persistent preview
+- [x] Add the dashboard “Preview as Student” entry and persistent preview
   banner.
-- [ ] Verify the published and unpublished course flows in a browser.
-- [ ] Run focused tests, the full Jest suite, typecheck, lint, build, and
+- [x] Verify the published and unpublished course flows in a browser.
+- [x] Run focused tests, the full Jest suite, typecheck, lint, build, and
   relevant Playwright coverage.
-- [ ] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
+- [x] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
   status.
+
+**A2 verification (2026-07-28):** 57 Jest suites / 606 tests, server/client
+typecheck, lint, and Node 24 build passed. The real-session Playwright
+regression clicked Dashboard → Preview as Student on an unpublished course,
+confirmed the persistent no-progress banner, served the Approved question
+while excluding a Draft, removed the flag control, submitted through the real
+question card, wrote exactly one `previewAttemptRecord`, and asserted zero
+live attempt/mastery/Review Book/flag/notification/session-summary records.
+Browser console/page errors and fixture residuals were zero.
+Opened as draft PR #41:
+https://github.com/ubc/tlef-financebot/pull/41. It targets PR #37 for the
+student-practice seam and contains PR #36's Admin A1 integration; merge those
+documented dependencies first, then rebase/retarget and mark #41 ready.
+
+**Release-readiness follow-up (2026-07-28):** Admin A1 now has a committed
+real-session Playwright regression (`tests/e2e/admin-accounts.spec.ts`,
+`57ee5f3`) that drives pending and active grants, Search, confirmation-backed
+Revoke for both rows, User-bit clearing, browser-error capture, and full
+fixture/Admin-state restoration. It is on base-synced #36 at `56a8ddd` and
+included by draft #41 at `04c188a`; both PRs are mergeable and CI green.
+
+The complete Admin/Phase 2 aggregation at `27b4b26` passed 61 Jest suites /
+640 tests, typecheck, lint, Node 24 build, and 12 real-session Chromium
+scenarios (one opt-in live-LLM scenario skipped). The Admin and Preview tests
+left zero grant/User/course fixtures. Final integration must preserve the
+combined `tests/e2e/global-setup.ts` recorded in `coordination/CODEX.md`.
 
 ## Required regression cases
 
@@ -283,8 +332,8 @@ Steps:
    platform-Instructor grant.
 2. A faculty affiliation alone does not grant the Instructor shell or server
    authorization.
-3. A pending CWL grant attaches to the real PUID User on first login.
-4. Subsequent SAML logins preserve the Admin-set grant.
+3. A pending PUID grant attaches to the matching User on first login.
+4. Subsequent SAML logins reapply the grant collection's authoritative value.
 5. Revocation removes the Instructor shell and future course-creation access
    but does not silently remove course ownership/history.
 6. A platform Instructor cannot access a course they do not own/teach.
@@ -307,4 +356,3 @@ Steps:
   remains a separate task.
 - Future “impersonate a named student” is explicitly not implied by this
   preview design and requires a separate privacy/security review.
-

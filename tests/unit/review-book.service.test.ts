@@ -300,6 +300,7 @@ describe('listReviewBook', () => {
     const entryOtherTheme = reviewBookEntry({ _id: new ObjectId(), themeId: themeTwo, addedAt: new Date('2026-01-15T00:00:00Z') });
 
     jest.mocked(reviewBookCol).mockReturnValue(makeFakeCollection([entryOld, entryNew, entryOtherTheme]) as never);
+    jest.mocked(attemptsCol).mockReturnValue(makeFakeCollection([attemptDoc()]) as never);
     jest.mocked(questionsCol).mockReturnValue(
       makeFakeCollection([questionDoc(), questionDoc({ _id: questionTwo, currentVersionId: versionTwo })]) as never,
     );
@@ -333,6 +334,46 @@ describe('listReviewBook', () => {
     const groups = await listReviewBook(puid, courseId, 'theme');
 
     expect(groups).toEqual([]);
+  });
+
+  it('substitutes a parameterized stem using the triggering attempt\'s pinned paramValues (final review I2)', async () => {
+    jest.mocked(reviewBookCol).mockReturnValue(makeFakeCollection([reviewBookEntry()]) as never);
+    jest.mocked(attemptsCol).mockReturnValue(makeFakeCollection([attemptDoc({ paramValues: { principal: 1000, rate: 5 } })]) as never);
+    jest.mocked(questionsCol).mockReturnValue(makeFakeCollection([questionDoc()]) as never);
+    jest.mocked(questionVersionsCol).mockReturnValue(
+      makeFakeCollection([versionDoc({ stem: 'A loan of {{principal}} at {{rate}}%.' })]) as never,
+    );
+    jest.mocked(themesCol).mockReturnValue(makeFakeCollection([themeDoc()]) as never);
+
+    const groups = await listReviewBook(puid, courseId, 'theme');
+
+    expect(groups[0].entries[0].question.stem).toBe('A loan of 1000 at 5%.');
+  });
+
+  it('leaves a parameterized stem unsubstituted (raw {{slot}}) when the triggering attempt has no pinned paramValues', async () => {
+    jest.mocked(reviewBookCol).mockReturnValue(makeFakeCollection([reviewBookEntry()]) as never);
+    jest.mocked(attemptsCol).mockReturnValue(makeFakeCollection([attemptDoc()]) as never); // no paramValues field
+    jest.mocked(questionsCol).mockReturnValue(makeFakeCollection([questionDoc()]) as never);
+    jest.mocked(questionVersionsCol).mockReturnValue(
+      makeFakeCollection([versionDoc({ stem: 'A loan of {{principal}} at {{rate}}%.' })]) as never,
+    );
+    jest.mocked(themesCol).mockReturnValue(makeFakeCollection([themeDoc()]) as never);
+
+    const groups = await listReviewBook(puid, courseId, 'theme');
+
+    expect(groups[0].entries[0].question.stem).toBe('A loan of {{principal}} at {{rate}}%.');
+  });
+
+  it('leaves a non-parameterized stem unchanged (substituteParams no-op with no placeholders)', async () => {
+    jest.mocked(reviewBookCol).mockReturnValue(makeFakeCollection([reviewBookEntry()]) as never);
+    jest.mocked(attemptsCol).mockReturnValue(makeFakeCollection([attemptDoc({ paramValues: { principal: 1000 } })]) as never);
+    jest.mocked(questionsCol).mockReturnValue(makeFakeCollection([questionDoc()]) as never);
+    jest.mocked(questionVersionsCol).mockReturnValue(makeFakeCollection([versionDoc({ stem: 'What is 2+2?' })]) as never);
+    jest.mocked(themesCol).mockReturnValue(makeFakeCollection([themeDoc()]) as never);
+
+    const groups = await listReviewBook(puid, courseId, 'theme');
+
+    expect(groups[0].entries[0].question.stem).toBe('What is 2+2?');
   });
 });
 

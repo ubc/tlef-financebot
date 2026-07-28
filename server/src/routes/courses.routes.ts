@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { ensureApiAuthenticated } from '../components/auth';
+import { ensureApiAuthenticated, ensurePlatformInstructor } from '../components/auth';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
@@ -26,9 +26,9 @@ import {
 
 // Courses / Hierarchy / Roster endpoints (IN-S01/S02/S03, IN-L06) — the
 // instructor authoring surface, exactly as specified in docs/api-contract.md.
-// `POST /api/courses` is open to any authenticated user (any signed-in user
-// may create a course in the pilot; tighten later via the Phase-3 capability
-// model). Every other route below is instructor-only for that course.
+// `POST /api/courses` requires the global platform-Instructor capability (or
+// Admin); courses.service then grants the creator the course Instructor role.
+// Every other route below is instructor-only for that course.
 export const coursesRouter = Router();
 
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
@@ -119,10 +119,10 @@ function stashCourseIdFromLo(paramName: 'loId'): (req: Request, res: Response, n
 
 // --- Courses -------------------------------------------------------------------
 
-/** POST /api/courses { name, courseCode, term } -> 201 Course. Any signed-in user. */
+/** POST /api/courses { name, courseCode, term } -> 201 Course. Platform-Instructor-only. */
 coursesRouter.post(
   '/courses',
-  ensureApiAuthenticated(),
+  ensurePlatformInstructor(),
   validate({ body: createCourseBody }),
   async (req, res) => {
     const course = await createCourse(req.user!.puid, req.body);

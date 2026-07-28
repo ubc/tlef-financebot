@@ -73,7 +73,7 @@ is a Node builtin).
 - [x] Phase 1 S1/S2 merged, PR #25 (Stephen's own stabilization takeover).
 - [x] Phase 1 Task 13 recorded slipped (Stephen's closeout decision).
 - [ ] Phase 1 Task 16 — Stephen's own explicit deferral; not blocking Phase 2 start.
-- [ ] **P2-0 not yet merged** — open the PR after the live smoke test; this also unblocks Saurav's Task 10.
+- [x] **P2-0 merged** — PR #32; durable run/SSE contract unblocked Task 10.
 
 ## Stephen's task order (Dev A) — proposed
 
@@ -122,15 +122,16 @@ honest against `git log`.
 **Depends on:** Saurav's Task 1 merged.
 
 **Files:**
-- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/api.ts` (typed student flag request)
 
 **Interfaces:**
 - Consumes: Saurav's Task 1 route, `POST /api/questions/:questionId/flag`.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09), per the core document, Task 2.
 
-- [ ] **Step 1: Implement the student surface** (follow the Phase-1 practice-view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow).
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
+- [x] **Step 1: Implement the student surface** — completed on stacked PR #35 with non-blocking submit and confirmation.
+- [x] **Step 2: Verify in browser** — covered by the real-SAML Task 11 flag-loop; typecheck/lint/build passed.
+- [x] **Step 3: Commit** — implementation `a685800`, stacked PR #35.
 
 ---
 
@@ -221,7 +222,7 @@ Phase 2 exit criterion while Admin A2 waits for the stacked PR chain to merge.
   real upload → preview → confirm flow.
 - [x] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
   verification with isolated fixture cleanup.
-- [x] **Step 6:** implementation commit `b691de8`; PR #39 from current `main`.
+- [x] **Step 6:** implementation commit `2d3313e`; PR #39 from current `main`.
 
 **Result:** focused 2 suites / 15 tests and full 52 suites / 548 tests passed;
 typecheck/lint/build passed. The real SAML instructor flow uploaded the CSV

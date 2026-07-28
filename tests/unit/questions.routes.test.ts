@@ -336,6 +336,145 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
   });
 });
 
+// -----------------------------------------------------------------------------
+// Task 5 (IN-Q09): param config endpoints. params.service.ts's
+// resolveParamValues/substituteParams/findUnusedParamSlots are NOT mocked
+// here — they're pure and run for real, so these exercise the real seeded
+// draw + substitution path end-to-end through the route.
+// -----------------------------------------------------------------------------
+
+describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
+  beforeEach(() => {
+    jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+  });
+
+  it('403s a non-instructor', async () => {
+    const res = await request(makeApp(student))
+      .patch(`/api/questions/${questionId.toHexString()}/params`)
+      .send({ paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
+
+    expect(res.status).toBe(403);
+    expect(editQuestion).not.toHaveBeenCalled();
+  });
+
+  it('saves paramSlots via editQuestion, scoped to just paramSlots/generateScript', async () => {
+    const version = { _id: new ObjectId(), version: 2, paramSlots: [{ name: 'rate', min: 1, max: 10 }] };
+    jest.mocked(editQuestion).mockResolvedValue(version as never);
+
+    const res = await request(makeApp(instructor))
+      .patch(`/api/questions/${questionId.toHexString()}/params`)
+      .send({ paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
+
+    expect(res.status).toBe(200);
+    expect(editQuestion).toHaveBeenCalledWith(
+      questionId,
+      { paramSlots: [{ name: 'rate', min: 1, max: 10 }] },
+      instructor.puid,
+    );
+    expect(res.body.paramSlots).toEqual([{ name: 'rate', min: 1, max: 10 }]);
+  });
+
+  it('saves generateScript independently of paramSlots', async () => {
+    jest.mocked(editQuestion).mockResolvedValue({ _id: new ObjectId(), version: 2 } as never);
+
+    const res = await request(makeApp(instructor))
+      .patch(`/api/questions/${questionId.toHexString()}/params`)
+      .send({ generateScript: 'function generate(random){ return { vars: {} }; }' });
+
+    expect(res.status).toBe(200);
+    expect(editQuestion).toHaveBeenCalledWith(
+      questionId,
+      { generateScript: 'function generate(random){ return { vars: {} }; }' },
+      instructor.puid,
+    );
+  });
+
+  it('rejects a malformed paramSlots element via zod without calling the service', async () => {
+    const res = await request(makeApp(instructor))
+      .patch(`/api/questions/${questionId.toHexString()}/params`)
+      .send({ paramSlots: [{ min: 1, max: 10 }] }); // missing required `name`
+
+    expect(res.status).toBe(400);
+    expect(editQuestion).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/questions/:questionId/params/preview (IN-Q09)', () => {
+  beforeEach(() => {
+    jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+  });
+
+  it('403s a non-instructor', async () => {
+    const res = await request(makeApp(student))
+      .post(`/api/questions/${questionId.toHexString()}/params/preview`)
+      .send({ paramSlots: [{ name: 'rate', min: 1, max: 10, step: 1 }] });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 5 draws, substituted against the provided candidate stem, without persisting anything', async () => {
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/params/preview`)
+      .send({ paramSlots: [{ name: 'rate', min: 5, max: 5, step: 1 }], stem: 'The rate is {{rate}}%.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.draws).toHaveLength(5);
+    for (const draw of res.body.draws) {
+      expect(draw.values).toEqual({ rate: 5 });
+      expect(draw.stem).toBe('The rate is 5%.');
+      expect(typeof draw.seed).toBe('number');
+    }
+    expect(editQuestion).not.toHaveBeenCalled();
+    // Doesn't need the saved version at all when the body supplies `stem`.
+    expect(getQuestionDetail).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the currently-saved stem when the body omits it', async () => {
+    jest.mocked(getQuestionDetail).mockResolvedValue({
+      question: {} as never,
+      current: { stem: 'Saved stem {{rate}}%' } as never,
+      versions: [],
+    });
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/params/preview`)
+      .send({ paramSlots: [{ name: 'rate', min: 3, max: 3, step: 1 }] });
+
+    expect(res.status).toBe(200);
+    expect(getQuestionDetail).toHaveBeenCalledWith(questionId);
+    expect(res.body.draws[0].stem).toBe('Saved stem 3%');
+  });
+
+  it('surfaces a validation warning for a defined slot with no matching placeholder', async () => {
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/params/preview`)
+      .send({
+        paramSlots: [
+          { name: 'rate', min: 1, max: 10, step: 1 },
+          { name: 'unused', min: 1, max: 10, step: 1 },
+        ],
+        stem: 'Rate is {{rate}}%.',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatch(/unused/);
+  });
+
+  it('delegates to the sandbox for a generateScript candidate', async () => {
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/params/preview`)
+      .send({ generateScript: 'function generate(random){ return { vars: { x: 42 } }; }', stem: 'x is {{x}}' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.draws).toHaveLength(5);
+    for (const draw of res.body.draws) {
+      expect(draw.values).toEqual({ x: 42 });
+      expect(draw.stem).toBe('x is 42');
+    }
+  });
+});
+
 describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
   beforeEach(() => {
     jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);

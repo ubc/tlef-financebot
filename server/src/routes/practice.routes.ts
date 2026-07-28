@@ -5,8 +5,10 @@ import { ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { selectNextQuestion, studentCourseHome } from '../services/serving.service';
 import { submitAttempt, getCourseIdForQuestionVersion } from '../services/attempts.service';
+import { resolveParamValues, substituteParams, drawSeed } from '../services/params.service';
 import { recordSkip } from '../services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../services/review-book.service';
+import { getRedirectMaterialSource } from '../services/progression.service';
 import type { PracticeMode } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -26,6 +28,11 @@ export const practiceRouter = Router();
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const courseIdLoIdParams = z.object({ courseId: objectIdParam, loId: objectIdParam });
+const courseIdLoIdMaterialIdParams = z.object({
+  courseId: objectIdParam,
+  loId: objectIdParam,
+  materialId: objectIdParam,
+});
 
 const PRACTICE_MODES = ['topic-practice', 'review-book', 'exam-prep'] as const satisfies readonly PracticeMode[];
 
@@ -97,15 +104,56 @@ practiceRouter.post(
       return;
     }
 
+    // Fresh seed on every serve (ST-P03 draws the values here, once, then
+    // they are pinned for the whole attempt; ST-R04's "fresh seed on
+    // re-practice" falls out for free — see drawSeed()'s doc comment).
+    // `undefined` for a conceptual (non-parameterized) question — `stem`/
+    // `options` then pass through unsubstituted, and `paramValues`/`seed`
+    // are omitted from the response entirely rather than sent as `undefined`.
+    const seed = drawSeed();
+    const paramValues = await resolveParamValues(result.version, seed);
+
     res.json({
       questionId: result.question._id.toString(),
       questionVersionId: result.version._id.toString(),
       type: result.version.type,
-      stem: result.version.stem,
+      stem: paramValues ? substituteParams(result.version.stem, paramValues) : result.version.stem,
       difficulty: result.version.difficulty,
       degraded: result.degraded,
-      options: result.version.options.map((o) => ({ key: o.key, text: o.text })),
+      options: result.version.options.map((o) => ({
+        key: o.key,
+        text: paramValues ? substituteParams(o.text, paramValues) : o.text,
+      })),
       watermark: req.user!.uid,
+      ...(paramValues !== undefined ? { paramValues, seed } : {}),
+    });
+  },
+);
+
+/** A real target for Task 7's redirect material links. Only ready materials
+ * assigned to this exact LO are exposed, and course enrollment is enforced
+ * before the source is resolved. URL materials redirect to their source;
+ * uploaded files are downloaded under their instructor-supplied name. */
+practiceRouter.get(
+  '/courses/:courseId/los/:loId/materials/:materialId/source',
+  validate({ params: courseIdLoIdMaterialIdParams }),
+  ensureCourseStudent(),
+  async (req, res, next) => {
+    const source = await getRedirectMaterialSource(
+      new ObjectId(String(req.params.courseId)),
+      new ObjectId(String(req.params.loId)),
+      new ObjectId(String(req.params.materialId)),
+    );
+    if (!source) {
+      res.status(404).json({ error: 'material-not-found' });
+      return;
+    }
+    if (source.kind === 'url') {
+      res.redirect(source.url);
+      return;
+    }
+    res.download(source.path, source.downloadName, (error) => {
+      if (error) next(error);
     });
   },
 );

@@ -2,8 +2,9 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 8 released on PR #39; no Codex implementation path active
-**Base:** PR #39 head `3fa3ff7` (`codex/phase-2-task8-import`)
+**State:** Admin PUID compatibility replacement released at `8bd658f`; PR #45
+open
+**Base:** `origin/main` at `124cdb2`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -12,13 +13,222 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
+## Released Admin PUID compatibility replacement
+
+Stephen requested a clean, main-based Admin PR that works with staging SAML
+assertions where `uid` and name fields may be empty. This branch replaces the
+uid-keyed experimental Admin A1 design from PR #36; it does not include
+Student Preview or any unrelated Phase 2 stack.
+
+Files claimed by Codex:
+
+- `server/src/services/admin.service.ts`
+- `server/src/routes/admin.routes.ts`
+- `server/src/services/users.service.ts`
+- `server/src/types/domain.ts`
+- `server/src/components/mongodb/collections.ts`
+- SAML attribute mapping/request files
+- `client/src/views/admin/accounts.ts`
+- the Admin seams in `client/src/api.ts` and `client/src/main.ts`
+- focused Admin/User/collection tests and Admin E2E
+- Admin/API/nearest AGENTS plan documentation
+- Admin-only scoped styles in `client/public/styles/main.css`
+
+Decisions:
+
+- PUID is the canonical grant key. Pending grants never create placeholder
+  Users and attach to the same PUID on first login.
+- `platformInstructor` grants Instructor shell/course-creation capability only.
+  Admin navigation and `/api/admin/*` remain gated solely by `isAdmin`.
+- Stephen's `ESI5CZY7J307` is a staging-only bootstrap Admin identity; the
+  hardcode is inactive when `SAML_ENVIRONMENT=PRODUCTION`.
+- The Admin directory returns safe persisted identity fields for all Users and
+  pending grants, never raw SAML/session data.
+- PUID grants use their own Mongo collection so the unique PUID index does not
+  collide with old uid-keyed experimental documents.
+
+Implementation commit: `8bd658f`. PR:
+https://github.com/ubc/tlef-financebot/pull/45.
+
+Verification: four focused suites / 21 tests, including an explicit
+platform-Instructor-is-not-Admin 403 regression; server/client typecheck; lint;
+live local SAML Admin directory rendering; desktop and 390px responsive layout
+with no horizontal overflow. All paths are released for review. Nothing was
+merged to `main`.
+
+## Released Task 9
+
+Stephen authorized Codex to complete remaining Saurav work with status
+recorded for both developers. Task 9 is the only remaining Phase 2
+implementation task. Its dependencies are complete/released/CI-green on PR
+#34 (sandbox-backed params service) and PR #39 (question import); Codex starts
+from those exact heads without merging either PR to `main`.
+
+Branch: `codex/phase-2-task9-script-migration`.
+
+### Task 9 files claimed by Codex
+
+- `server/src/services/import.service.ts`
+- `server/src/routes/import.routes.ts`
+- `server/src/services/questions.service.ts` (small create-time
+  `generateScript` seam only)
+- `client/src/views/instructor/import.ts`
+- `client/src/api.ts`
+- create `tests/unit/script-migration.test.ts`
+- focused import route/questions tests as required
+- create `tests/e2e/script-migration.spec.ts`
+- `docs/api-contract.md`
+- nearest `AGENTS.md`
+- Phase 2 Task 9 core/personal plan checkboxes and Stephen/Saurav status
+
+No flag, notification, remediation, generation, Admin, or student-practice
+file is claimed.
+
+### Task 9 handoff
+
+- Implementation commit: `ae1f0e9`
+- Draft PR: https://github.com/ubc/tlef-financebot/pull/42
+- Dependency order: merge PR #34 and PR #39, then rebase/retarget #42 and
+  mark it ready.
+- Verification: 3 focused suites / 36 tests; full 54 suites / 594 tests;
+  typecheck/lint/Node 24 build; real SAML-session Chromium preview → commit →
+  open-question flow, exactly one Draft/version write, zero browser errors,
+  and zero residual fixtures.
+- All Task 9 paths are released. Codex did not merge either prerequisite.
+
+## Released aggregate regression reference
+
+Branch `codex/phase-2-admin-integration-regression`, commit `27b4b26`, is a
+regression-only aggregation of current `main` plus PR #42, PR #41, PR #38,
+and PR #40 heads. It is pushed only so both agents can inspect the tested
+conflict resolutions; do not merge it as a task PR.
+
+Verification: 61 Jest suites / 640 tests, typecheck, lint, Node 24 build, and
+12 real-SAML-session browser scenarios passed; the opt-in live-LLM case was
+skipped. The expanded run includes a permanent Admin Accounts
+grant/search/revoke spec (`57ee5f3` on #36), and exact post-run fixture counts
+were zero for Admin grants, Admin fixture Users, and E2E courses.
+
+Shared-file resolution map:
+
+- `server/src/app.ts`: preserve `importRouter`, `adminRouter`, and
+  `previewRouter` imports/mounts.
+- `client/src/main.ts`: preserve `renderImport`, `renderAdminAccounts`, and
+  `renderStudentPreview` imports/routes.
+- `client/src/views/instructor/question-detail.ts`: render the real
+  `regenerateButton`, the Parameters link, and `regenerationPanel`.
+- `client/src/api.ts`: preserve the Import/ScriptMigration block and the
+  RegenerationVariant/regenerateQuestion block.
+- `tests/e2e/global-setup.ts`: preserve Task 11's auth-reuse branch and call
+  Admin A1 platform-Instructor provisioning for both fresh/reused sessions,
+  keyed by `/api/auth/me`'s canonical uid.
+
+### Release-readiness branch refresh
+
+- #34 main-sync: `6c61ce2` (docs-only conflict resolution; mergeable/CI green)
+- #36 Admin E2E + refreshed #34 base: `56a8ddd`
+- #40 main-sync: `a2b20e6` (docs-only conflict resolution; mergeable/CI green)
+- #41 latest Admin A1 test/base sync: `04c188a`
+- #42 main-sync: `20fdbe0` (docs-only conflict resolution; mergeable/CI green)
+
+The remaining core exit checkbox is not a code claim: actual COMM 298
+practice-set/script sources are absent from the searched workspace, so they
+cannot yet be imported as real Draft content.
+
+## Released Admin A2
+
+Instructor Student Preview is active on `codex/admin-student-preview`.
+Prerequisite code is released: Task 5 at `210c68f` / PR #34, Task 7 on PR #37,
+and Admin A1 on PR #36. To keep working without merging on Stephen's behalf,
+the implementation branch uses #37 as its stack base and merges #36 once.
+
+### Admin A2 files claimed by Codex
+
+- create `server/src/services/preview.service.ts`
+- create `server/src/routes/preview.routes.ts`
+- create `client/src/views/instructor/student-preview.ts`
+- create focused preview service/route tests and Preview E2E
+- `server/src/types/domain.ts`
+- `server/src/components/mongodb/collections.ts`
+- `server/src/app.ts`
+- `server/src/services/serving.service.ts`
+- `server/src/services/attempts.service.ts` only if a pure grading seam is
+  required; no preview write may enter the live attempt path
+- `client/src/api.ts`
+- `client/src/main.ts`
+- `client/src/views/instructor/dashboard.ts`
+- the smallest reusable student practice-card/session seam only if required
+- `client/public/styles/main.css` only for the persistent Preview banner/layout
+- `docs/api-contract.md`, nearest `AGENTS.md`, Admin plan/status documents
+
+No Admin A2 endpoint weakens `ensureCourseStudent()`. Preview activity uses its
+own collection and cannot enter mastery, Review Book, flags, remediation,
+summaries, notifications, progression, or analytics.
+
+### Admin A2 verification
+
+- 57 Jest suites / 606 tests passed.
+- Server/client typecheck and lint passed.
+- Node 24 vendor + server/client build passed.
+- Real SAML-session Playwright passed on an isolated port while Claude kept
+  its own server: Dashboard → Preview as Student, persistent no-progress
+  banner, published/unpublished course states, Approved served and Draft
+  excluded, Flag omitted, answer submitted, exactly one preview record, zero
+  live attempt/mastery/Review Book/flag/notification/session-summary records,
+  and zero browser errors.
+- Browser fixture/course role and all fixture documents were removed.
+
+Implementation commit: `9f68a44`. Draft PR:
+<https://github.com/ubc/tlef-financebot/pull/41>. It targets PR #37 and includes
+PR #36's Admin A1 integration; merge those dependency lines first, then
+rebase/retarget and mark #41 ready. All Admin A2 paths are released at this
+commit.
+
+## Released Task 10
+
+Phase 2 Task 10 — custom-prompt generation, material-scoped @-mentions,
+editable presets, and side-by-side question regeneration. Stephen authorized
+this Saurav-owned takeover; it is recorded in both developers' status files
+before implementation. P2-0 is merged, and no Saurav Task 10 implementation
+branch or active claim exists.
+
+Implementation commit: `0870e23`; PR:
+<https://github.com/ubc/tlef-financebot/pull/40>. All paths below are released.
+
+### Task 10 files claimed and released by Codex
+
+- `server/src/services/generation.service.ts`
+- `server/src/routes/generation.routes.ts`
+- `server/src/types/domain.ts`
+- `server/src/services/questions.service.ts`
+- `client/src/views/instructor/preseeding.ts`
+- `client/src/views/instructor/question-detail.ts`
+- `client/src/api.ts`
+- `tests/unit/custom-generation.test.ts`
+- `tests/unit/generation.routes.test.ts`
+- `tests/unit/preseeding.test.ts`
+- `tests/e2e/custom-generation.spec.ts`
+- `docs/api-contract.md`
+- Phase 2 Task 10 plan/status documents
+
+The existing pre-seeding view is the canonical generation UI and already
+consumes P2-0 run/SSE state, so Codex extended it instead of adding the
+duplicate `generate.ts` page named in the older plan. Shared files remain
+append-only/surgical.
+
+Verification: 51 Jest suites / 543 tests, typecheck, lint, Node 24 build, and
+one real-session Playwright scenario covering preset fill, material mention
+autocomplete, enqueue payload, side-by-side generation, zero PATCH before
+Replace, exactly one versioned PATCH after Replace, and zero browser errors.
+Fixture residual counts were zero.
+
 ## Released Task 8
 
 Phase 2 Task 8 — CSV/JSON/QTI question import with preview, partial-success
 parsing, parameterization flags, and Draft-only commit. Stephen explicitly
 authorized this takeover; complete on independent PR #39.
 
-Implementation commit: `b691de8`; plan update: `3fa3ff7`. All paths below are
+Implementation commit: `2d3313e`; plan/status publish: `46bf30b`. All paths below are
 released. Task 9 may extend the import files after PR #39 merges.
 
 ### Task 8 files claimed by Codex

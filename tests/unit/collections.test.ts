@@ -5,6 +5,7 @@ describe('collection index specs (PRD §2 data model)', () => {
 
   it('enforces identity and enrollment uniqueness', () => {
     expect(byCollection['users:{"puid":1}'].options?.unique).toBe(true);
+    expect(byCollection['platformInstructorPuidGrants:{"puid":1}'].options?.unique).toBe(true);
     expect(byCollection['courses:{"registrationCode":1}'].options?.unique).toBe(true);
     expect(byCollection['rosterEntries:{"courseId":1,"identifier":1}'].options?.unique).toBe(true);
   });

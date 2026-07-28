@@ -95,6 +95,7 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
     if (entry.result.correct) return `✓ You answered: Option ${entry.selectedKey} (Correct)`;
     const correctReveal = entry.result.feedback.revealed.find((r) => r.correct);
     if (correctReveal) return `✕ You answered: Option ${entry.selectedKey} · Correct: Option ${correctReveal.key}`;
+    if (entry.result.redirect) return `✕ You answered: Option ${entry.selectedKey} · Review suggested before continuing`;
     return `✕ You answered: Option ${entry.selectedKey} — retry the follow-up question above to see more`;
   };
 
@@ -128,7 +129,7 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
   const advanceLo = (): void => {
     if (ctx.isThemeMode && ctx.loIndex + 1 < ctx.los.length) {
       ctx.loIndex += 1;
-      session.resetAttemptedFlag();
+      session.startLo();
       title.textContent = currentLo(ctx).lo.name;
       refreshBreadcrumb();
       refreshActions();
@@ -136,6 +137,46 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
     } else {
       window.location.hash = backHref.replace(/^#/, '');
     }
+  };
+
+  const renderRoundSummary = (): void => {
+    const entries = session.roundTranscript;
+    const correct = entries.filter((entry) => entry.result.correct).length;
+    const accuracy = entries.length === 0 ? 0 : Math.round((correct / entries.length) * 100);
+    questionSlot.replaceChildren(
+      el(
+        'section',
+        { class: 'practice-round-summary', 'aria-labelledby': 'practice-round-summary-title' },
+        el('p', { class: 'eyebrow', text: `Round ${session.roundNumber} complete` }),
+        el('h2', { id: 'practice-round-summary-title', text: 'You have seen every available question for this LO.' }),
+        el('p', {
+          class: 'muted',
+          text: `${entries.length} answered · ${correct} correct · ${accuracy}% accuracy`,
+        }),
+        el(
+          'div',
+          { class: 'row' },
+          el(
+            'button',
+            {
+              class: 'btn btn--primary',
+              type: 'button',
+              onclick: () => {
+                session.startNextRound();
+                void loadQuestion();
+              },
+            },
+            'Continue with repeats',
+          ),
+          el(
+            'button',
+            { class: 'btn btn--ghost', type: 'button', onclick: advanceLo },
+            ctx.isThemeMode ? 'Finish this LO' : 'Back to topic',
+          ),
+        ),
+      ),
+    );
+    refreshActions();
   };
 
   const doSkip = async (): Promise<void> => {
@@ -154,6 +195,13 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
         loId: currentLo(ctx).lo._id,
         sessionServedIds: session.sessionServedIds,
       });
+      // The server returns a repeat only after every Approved candidate has
+      // been served. Treat that first repeated id as the finite-round
+      // boundary instead of silently entering an endless question loop.
+      if (session.hasServed(question.questionId)) {
+        renderRoundSummary();
+        return;
+      }
       session.recordServed(question);
       questionSlot.replaceChildren(
         makeQuestionCard(ctx, session, question, {

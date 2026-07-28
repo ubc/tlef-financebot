@@ -133,7 +133,11 @@ test.describe('practice loop (student)', () => {
     await expect(page.getByText('FIN-E2E')).toBeVisible();
 
     await expect(page.getByText('Practice Loop E2E Course')).toBeVisible();
-    await page.getByRole('link', { name: /open/i }).click();
+    await page
+      .getByRole('article')
+      .filter({ hasText: 'Practice Loop E2E Course' })
+      .getByRole('link', { name: /open/i })
+      .click();
     await expect(page.getByRole('heading', { name: 'Practice Loop E2E Course' })).toBeVisible();
     await expect(page.getByText(THEME_NAME)).toBeVisible();
 
@@ -150,6 +154,8 @@ test.describe('practice loop (student)', () => {
     await expect(page.getByText('Correct!')).toBeVisible();
 
     await page.getByRole('button', { name: /next question/i }).click();
+    await expect(page.getByText('Round 1 complete')).toBeVisible();
+    await page.getByRole('button', { name: 'Continue with repeats' }).click();
 
     // Second attempt on the (only) approved question: deliberately wrong —
     // 'clearly-wrong' under the default adaptive strategy resolves to

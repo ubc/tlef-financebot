@@ -121,7 +121,9 @@ test.describe('instructor pipeline', () => {
 
     await test.step('add a Topic and a Learning Objective', async () => {
       await page.getByRole('link', { name: 'Course Structure' }).click();
-      await expect(page.getByRole('heading', { name: 'Course Structure' })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'Course Structure', level: 1 }),
+      ).toBeVisible();
 
       await page.getByRole('button', { name: '+ Add Topic' }).click();
       await page.getByPlaceholder('Topic name').fill(TOPIC_NAME);
@@ -151,7 +153,8 @@ test.describe('instructor pipeline', () => {
       await expect(page.locator('.material-row__name')).toHaveText(FIXTURE_NAME);
       // Ingest is async — the row's status may still read Processing here
       // (Task H brief: "status may be processing"); either is a pass.
-      await expect(page.locator('.material-row__meta')).toContainText(/Processing|Ready/);
+      const materialRow = page.locator('.material-row').filter({ hasText: FIXTURE_NAME });
+      await expect(materialRow.locator('.material-row__meta')).toContainText(/Processing|Ready/);
     });
 
     await test.step('seed a question ready to approve (no live LLM in this environment)', async () => {

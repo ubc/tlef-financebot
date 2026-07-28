@@ -1,7 +1,7 @@
 import type { Collection, Document, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
-  User, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
+  User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
@@ -11,6 +11,8 @@ import type {
 // import these accessors instead of calling getDb().collection() with strings.
 
 export const usersCol = (): Collection<User> => getDb().collection<User>('users');
+export const platformInstructorGrantsCol = (): Collection<PlatformInstructorGrant> =>
+  getDb().collection<PlatformInstructorGrant>('platformInstructorPuidGrants');
 export const coursesCol = (): Collection<Course> => getDb().collection<Course>('courses');
 export const themesCol = (): Collection<Theme> => getDb().collection<Theme>('themes');
 export const losCol = (): Collection<LearningObjective> => getDb().collection<LearningObjective>('learningObjectives');
@@ -38,6 +40,7 @@ export interface IndexSpec {
 /** Exported for tests; applied by ensureIndexes(). */
 export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
+  { collection: 'platformInstructorPuidGrants', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },
   { collection: 'themes', keys: { courseId: 1, order: 1 } },
   { collection: 'learningObjectives', keys: { courseId: 1, themeId: 1, order: 1 } },
