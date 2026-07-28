@@ -1,12 +1,52 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-27 (later)_
+_Last updated: 2026-07-27 (latest)_
 
-## Update (2026-07-27, later): Phase 2 Task 4 (param sandbox) — in progress, NOT merged, mid security review
+## Update (2026-07-27, latest): Phase 2 Task 4 (param sandbox) — 8 review rounds complete, finalizing for PR
 
 **Branch:** `worktree-stephen+phase-2-param-sandbox` (worktree
-`stephen+phase-2-param-sandbox`), 7 commits ahead of `main` (`50c669a`).
-**Not pushed, no PR yet — do not treat this as done.**
+`stephen+phase-2-param-sandbox`), 10 commits ahead of `main` (`50c669a`).
+
+**All 8 adversarial review rounds are now complete**, including the 7th and
+8th rounds that the previous entry below flagged as not yet run:
+
+- **Round 7** found the round-6 fix was incomplete: the instructor script
+  runs first in the shared vm realm and can reassign a global the harness's
+  own post-`generate()` code depends on (e.g. `JSON.stringify`), redirecting
+  a "safe" internal call into a re-triggered version of the round-6 leak —
+  live-verified full RCE (real `process.pid`,
+  `child_process.execSync('whoami')`) via `JSON.stringify` tampering alone.
+  Fixed with two parts: intrinsics the harness needs (`JSON.stringify`,
+  `Object.keys`, `Object.create`, `Number.isFinite`, `String`) are captured
+  into local variables before the instructor script ever runs, and the
+  host's outer catch around the vm call no longer reads any property off
+  whatever it catches — it's a bare `catch {}` returning a fixed generic
+  string regardless of shape.
+- **Round 8** — the first round to find no new host-access/RCE escape.
+  Instead found a soundness bypass: `Promise.prototype.then` tampering can
+  hijack what the host's `await` resolves to, forging an `{ok:true,
+  vars:{...}}` envelope with non-numeric/nested/array values that bypass
+  every in-vm validation step, since a forged resolution skips the real
+  success path entirely. Confirmed NOT a host-access escape (the forged
+  data is inert `JSON.parse` output, and V8 hands the tampered `then` only
+  vm-realm functions). Fixed by having the host independently re-validate
+  every `vars` value (`typeof === 'number' && Number.isFinite()`) after
+  `JSON.parse`, rather than trusting the vm's own `ok:true` claim.
+
+Both fixes are committed (`d1232bc`, `db8b4af`), and
+`server/src/components/param-worker/AGENTS.md` now documents rounds 7 and 8
+in the same narrative style as rounds 3–6 (`85c30be`).
+
+**Final verification:** `tests/unit/param-worker.test.ts` 24/24 (real worker
+threads, no mocks — every one of the 8 rounds' exploits is now a permanent
+regression test). Full suite **50 suites / 533 tests**, typecheck/lint/build
+all clean.
+
+**Next:** push the branch and open a PR. Flagging for Saurav given the
+history — this one should be read closely, not rubber-stamped, given how
+many rounds each found something real.
+
+## Update (2026-07-27, earlier): Phase 2 Task 4 (param sandbox) — in progress, NOT merged, mid security review
 
 Started as Phase 2 Task 4 per Stephen's own task order (next up after P2-0
 merged, PR #32): a `worker_threads` sandbox for instructor-authored

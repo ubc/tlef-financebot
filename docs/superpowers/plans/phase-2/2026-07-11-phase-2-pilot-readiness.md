@@ -301,8 +301,18 @@ try {
 
 `index.ts`: spawn `new Worker(WORKER_PATH, { workerData: { script, seed }, resourceLimits: { maxOldGenerationSizeMb: env.paramWorkerMemoryMb } })`; race the `message` event against `setTimeout(env.paramWorkerTimeoutMs)`; on timeout `await worker.terminate()` and reject `param-timeout`; async results (promises returned from generate) are rejected because the worker posts synchronously — a `fetch` attempt rejects via `fetch is not a function` (undefined call). Write the AGENTS.md noting the threat model and that scripts are still instructor-trusted content, not hostile-user content.
 
-- [ ] **Step 4: Run the abuse suite** — `npx jest tests/unit/param-worker.test.ts` → all PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: worker_threads sandbox for parameterized generate() with timeout, memory, network, and fs guards"`
+- [x] **Step 4: Run the abuse suite** — `npx jest tests/unit/param-worker.test.ts` → all PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: worker_threads sandbox for parameterized generate() with timeout, memory, network, and fs guards"`
+
+**Delivered design differs from the excerpt above:** the literal identifier-
+shadowing `new Function(...)` approach shown in Step 3's code block turned
+out to be fundamentally insecure (defeatable via `[].constructor.constructor`
+property access, live-verified full RCE) — 8 adversarial review rounds found
+successive real escapes and drove a rewrite onto `vm.createContext()` for
+genuine realm isolation, with all three function-boundary directions
+(arguments/return/throw) crossing only as validated primitive strings. See
+`server/src/components/param-worker/AGENTS.md` for the full history and
+current threat model, and Stephen's `STATUS.md` for the round-by-round log.
 
 ---
 
