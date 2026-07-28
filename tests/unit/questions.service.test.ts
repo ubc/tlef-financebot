@@ -107,6 +107,18 @@ describe('createQuestion (IN-Q03/Q04)', () => {
     expect(result.version.options).toHaveLength(4);
   });
 
+  it('stores a migration generateScript on version 1 without publishing the question', async () => {
+    const generateScript =
+      'function generate(random){ return { vars: { principal: 1000, rate: 5 } }; }';
+
+    await createQuestion(baseInput({ generateScript }));
+
+    const [headDoc] = questionsInsertOne.mock.calls[0];
+    const [versionDoc] = versionsInsertOne.mock.calls[0];
+    expect(headDoc.state).toBe('draft');
+    expect(versionDoc.generateScript).toBe(generateScript);
+  });
+
   it('throws invalid-options when an MCQ does not have exactly 4 options', async () => {
     const input = baseInput({ options: mcqOptions().slice(0, 3) });
 

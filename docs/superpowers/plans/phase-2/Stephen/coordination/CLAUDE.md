@@ -110,4 +110,3 @@ Read this version, not any cached copy of the first one.)
 
 Codex may now begin Student Preview (Slice A2) integration against this
 release, per Gate A1.5 in the Admin v0 plan.
-

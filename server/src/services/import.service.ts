@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 import type { ObjectId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { losCol, themesCol } from '../components/mongodb/collections';
+import { executeGenerate } from '../components/param-worker';
 import type {
   Difficulty,
   OptionRole,
@@ -10,6 +11,7 @@ import type {
   QuestionOption,
   QuestionType,
 } from '../types/domain';
+import { substituteParams } from './params.service';
 import { createQuestion } from './questions.service';
 
 export type ImportFormat = 'csv' | 'json' | 'qti';
@@ -40,6 +42,23 @@ export interface ImportParseResult {
   failures: ImportFailure[];
 }
 
+export interface ScriptMigrationInput {
+  type: QuestionType;
+  stem: string;
+  options: ImportCandidateOption[];
+  correctKey: string;
+  difficulty?: Difficulty;
+  script: string;
+}
+
+export interface ScriptMigrationResult {
+  questionId?: ObjectId;
+  sampleValues: Record<string, number>;
+  sampleStem: string;
+  sampleOptions: Array<{ key: string; text: string; explanation: string }>;
+  mismatches: string[];
+}
+
 interface RawCandidate {
   type?: unknown;
   stem?: unknown;
@@ -62,6 +81,7 @@ const WRONG_ROLES = new Set<OptionRole>([
   'partially-correct',
   'clearly-wrong',
 ]);
+const SCRIPT_MIGRATION_SAMPLE_SEED = 20260728;
 
 class CandidateError extends Error {
   constructor(readonly code: string) {
@@ -525,4 +545,119 @@ export async function commitImport(
   }
 
   return { imported: prepared.length, autoConverted };
+}
+
+function placeholderNames(text: string): string[] {
+  const names: string[] = [];
+  const pattern = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+  for (const match of text.matchAll(pattern)) {
+    if (!names.includes(match[1])) names.push(match[1]);
+  }
+  return names;
+}
+
+async function inspectScriptMigration(input: ScriptMigrationInput): Promise<{
+  candidate: ImportCandidate;
+  preview: ScriptMigrationResult;
+}> {
+  if (!input.script.trim()) {
+    throw serviceError(400, 'invalid-script-migration:script-is-required');
+  }
+
+  let candidate: ImportCandidate;
+  try {
+    candidate = normalizeCandidate({
+      type: input.type,
+      stem: input.stem,
+      options: input.options,
+      correctKey: input.correctKey,
+      difficulty: input.difficulty,
+    });
+  } catch (error) {
+    const code = error instanceof CandidateError ? error.code : 'invalid-candidate';
+    throw serviceError(400, `invalid-script-migration:${code}`, error);
+  }
+  if (candidate.type === 'other') {
+    throw serviceError(400, 'invalid-script-migration:unsupported-question-type');
+  }
+
+  let sampleValues: Record<string, number>;
+  try {
+    sampleValues = await executeGenerate(input.script, SCRIPT_MIGRATION_SAMPLE_SEED);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'sandbox-rejected-script';
+    throw serviceError(400, `script-validation-failed:${message}`, error);
+  }
+
+  const stemPlaceholders = placeholderNames(candidate.stem);
+  const templatePlaceholders = placeholderNames(
+    [
+      candidate.stem,
+      ...candidate.options.flatMap((option) => [
+        option.text,
+        option.explanation ?? '',
+      ]),
+    ].join('\n'),
+  );
+  const generatedNames = Object.keys(sampleValues);
+  const mismatches = [
+    ...generatedNames
+      .filter((name) => !stemPlaceholders.includes(name))
+      .map((name) => `vars.${name} has no matching {{${name}}} placeholder in the stem`),
+    ...templatePlaceholders
+      .filter((name) => !Object.prototype.hasOwnProperty.call(sampleValues, name))
+      .map((name) => `{{${name}}} has no matching generated vars.${name}`),
+  ];
+
+  return {
+    candidate,
+    preview: {
+      sampleValues,
+      sampleStem: substituteParams(candidate.stem, sampleValues),
+      sampleOptions: candidate.options.map((option) => ({
+        key: option.key,
+        text: substituteParams(option.text, sampleValues),
+        explanation: substituteParams(option.explanation ?? '', sampleValues),
+      })),
+      mismatches,
+    },
+  };
+}
+
+/** Runs one deterministic sandbox sample and returns review-only rendered data. */
+export async function previewScriptMigration(
+  input: ScriptMigrationInput,
+): Promise<ScriptMigrationResult> {
+  return (await inspectScriptMigration(input)).preview;
+}
+
+/**
+ * Revalidates the reviewed template and creates a Draft only when every
+ * generated variable and every stem placeholder match.
+ */
+export async function migrateScript(
+  courseId: ObjectId,
+  input: ScriptMigrationInput & {
+    themeId?: ObjectId;
+    loId?: ObjectId;
+    byPuid: string;
+  },
+): Promise<ScriptMigrationResult> {
+  const { candidate, preview } = await inspectScriptMigration(input);
+  if (preview.mismatches.length > 0) return preview;
+
+  const assignment = await assignmentIds(courseId, input);
+  const { questionId } = await createQuestion({
+    courseId,
+    loIds: assignment.loIds,
+    themeIds: assignment.themeIds,
+    type: candidate.type as QuestionType,
+    stem: candidate.stem,
+    options: questionOptions(candidate),
+    difficulty: candidate.difficulty ?? 'medium',
+    createdBy: input.byPuid,
+    generateScript: input.script,
+  });
+
+  return { ...preview, questionId };
 }

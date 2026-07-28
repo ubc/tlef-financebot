@@ -84,6 +84,10 @@ commonly need:
   `ensureRole()`. Use these rather than rolling your own course checks. They
   resolve the course from `req.params.courseId`, or from `res.locals.courseId`
   for routes that look up a child resource (Theme/LO) first.
+- Question import (Phase 2 Tasks 8/9) is implemented: instructors can preview
+  and commit partial-success CSV/JSON/QTI batches as Drafts, or sandbox-preview
+  an existing parameterized `generate(random)` script and migrate it into one
+  parameterized Draft after variable/placeholder review.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage
