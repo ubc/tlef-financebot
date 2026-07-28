@@ -44,6 +44,10 @@ objects directly.
   submissions only to `previewAttemptRecords`. It reuses the pure
   `attempts.service.ts` grading seam but never calls live attempt/mastery,
   Review Book, flag, notification, summary, or progression workflows.
+- `import.service.ts` — Parses and commits CSV/JSON/QTI questions, and migrates
+  existing `generate(random)` templates through the real parameter worker.
+  Script migration validates one deterministic sample, returns placeholder
+  mismatches without writing, and creates only Draft question versions.
 
 Other services will appear as more components are built up.
 

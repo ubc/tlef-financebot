@@ -53,6 +53,7 @@ export async function createQuestion(input: {
   sourceRefs?: QuestionVersion['sourceRefs'];
   createdBy: string;
   generationPrompt?: string;
+  generateScript?: string;
   agentDecision?: Question['agentDecision'];
   labels?: QuestionLabel[];
 }): Promise<{ questionId: ObjectId; version: WithId<QuestionVersion> }> {
@@ -72,6 +73,7 @@ export async function createQuestion(input: {
     sourceRefs: input.sourceRefs ?? [],
     createdBy: input.createdBy,
     createdAt: now,
+    ...(input.generateScript !== undefined ? { generateScript: input.generateScript } : {}),
   };
 
   const question: Question = {
