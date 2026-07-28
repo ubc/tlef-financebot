@@ -220,6 +220,23 @@ describe('archiveTheme (cascade to Learning Objectives)', () => {
 });
 
 describe('publishChecklist + setPublished (IN-L06)', () => {
+  it('does not mark the approved-question requirement complete when the course has no LOs', async () => {
+    const courseId = new ObjectId();
+    coursesFindOne.mockResolvedValue({
+      _id: courseId,
+      registrationCode: 'ABCD2345',
+      published: false,
+    });
+    themesToArray.mockResolvedValue([]);
+    losToArray.mockResolvedValue([]);
+
+    const checklist = await publishChecklist(courseId);
+
+    expect(checklist[2]).toEqual({ item: 'At least one Learning Objective', ok: false });
+    expect(checklist[4]).toEqual({ item: 'Every LO has ≥3 Approved questions', ok: false });
+    expect(questionsCountDocuments).not.toHaveBeenCalled();
+  });
+
   it('flags a thin LO (<3 approved questions) but still allows publishing', async () => {
     const courseId = new ObjectId();
     const lo1 = { _id: new ObjectId(), name: 'NPV basics' };
