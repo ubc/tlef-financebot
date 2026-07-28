@@ -1,6 +1,11 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { connectMongo } from '../../server/src/components/mongodb';
+import {
+  platformInstructorGrantsCol,
+  usersCol,
+} from '../../server/src/components/mongodb/collections';
 
 // Where the authenticated browser state (cookies) is saved. Authenticated specs
 // reuse it via `test.use({ storageState: AUTH_FILE })` so they don't each repeat
@@ -41,11 +46,44 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
     // Fail loudly if the session was not actually established.
     const me = await page.request.get(`${baseURL}/api/auth/me`);
-    const state = (await me.json()) as { authenticated: boolean };
-    if (!state.authenticated) {
+    const state = (await me.json()) as {
+      authenticated: boolean;
+      user?: { puid: string; uid: string };
+    };
+    if (!state.authenticated || !state.user) {
       throw new Error(
         'global-setup: SAML login did not establish a session. Is the IdP running ' +
           'and the SP entry / certificate configured? See README "Authentication".',
+      );
+    }
+
+    // Admin Console v0 deliberately stopped treating the SAML `faculty`
+    // affiliation as a platform-wide Instructor grant. The shared E2E faculty
+    // fixture still needs to create isolated courses, so seed the same
+    // admin-managed grant record after login, keyed by the canonical uid the
+    // IdP actually returned (the local fixture's login name and uid differ).
+    // This is test-fixture setup only; production authorization remains behind
+    // ensurePlatformInstructor() and the Admin API.
+    if (username.trim().toLowerCase() === 'faculty') {
+      await connectMongo();
+      const now = new Date();
+      const uid = state.user.uid.trim().toLowerCase();
+      await platformInstructorGrantsCol().updateOne(
+        { uid },
+        {
+          $set: {
+            grantedByPuid: state.user.puid,
+            updatedAt: now,
+            appliedToPuid: state.user.puid,
+            appliedAt: now,
+          },
+          $setOnInsert: { uid, createdAt: now },
+        },
+        { upsert: true },
+      );
+      await usersCol().updateOne(
+        { puid: state.user.puid },
+        { $set: { platformInstructor: true } },
       );
     }
 
