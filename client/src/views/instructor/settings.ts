@@ -11,10 +11,12 @@
 // (docs/api-contract.md's Courses section).
 import {
   ApiError,
+  archiveCourse,
   getCourseTree,
   getRoster,
   putRoster,
   regenerateRegistrationCode,
+  restoreCourse,
   updateCourse,
   type AutoPauseConfig,
   type InstructorCourse,
@@ -63,6 +65,10 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   let selectedStrategy = course.feedbackStrategy;
   let autoPause: AutoPauseConfig = { ...course.autoPause };
   let registrationCode = course.registrationCode;
+  const nameInput = el('input', { class: 'input', type: 'text', value: course.name }) as HTMLInputElement;
+  const codeInput = el('input', { class: 'input', type: 'text', value: course.courseCode }) as HTMLInputElement;
+  const sectionInput = el('input', { class: 'input', type: 'text', value: course.section ?? '' }) as HTMLInputElement;
+  const termInput = el('input', { class: 'input', type: 'text', value: course.term }) as HTMLInputElement;
 
   const termStartInput = el('input', { class: 'input', type: 'date', value: toDateInputValue(course.termStart) }) as HTMLInputElement;
   const termEndInput = el('input', { class: 'input', type: 'date', value: toDateInputValue(course.termEnd) }) as HTMLInputElement;
@@ -135,6 +141,10 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     }
     try {
       const updated = await updateCourse(courseId, {
+        name: nameInput.value.trim(),
+        courseCode: codeInput.value.trim(),
+        section: sectionInput.value.trim() || null,
+        term: termInput.value.trim(),
         termStart: termStartInput.value ? new Date(termStartInput.value).toISOString() : undefined,
         termEnd: termEndInput.value ? new Date(termEndInput.value).toISOString() : undefined,
         feedbackStrategy: selectedStrategy,
@@ -146,6 +156,20 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
       renderStrategyGroup();
     } catch (error) {
       settingsErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+    }
+  };
+
+  const changeArchiveState = async (): Promise<void> => {
+    settingsErrorSlot.replaceChildren();
+    try {
+      course = course.lifecycle === 'archived'
+        ? await restoreCourse(courseId)
+        : await archiveCourse(courseId);
+      await renderSettingsInner(outlet, courseId);
+    } catch (error) {
+      settingsErrorSlot.replaceChildren(
+        errorState(error instanceof ApiError ? error.message : (error as Error).message),
+      );
     }
   };
 
@@ -190,14 +214,16 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
           'div',
           { class: 'form-field' },
           fieldLabel('Course Name'),
-          el('input', { class: 'input', type: 'text', value: course.name, disabled: 'disabled' }),
+          nameInput,
         ),
         el(
           'div',
           { class: 'form-field' },
           fieldLabel('Course Code'),
-          el('input', { class: 'input', type: 'text', value: course.courseCode, disabled: 'disabled' }),
+          codeInput,
         ),
+        el('div', { class: 'form-field' }, fieldLabel('Section'), sectionInput),
+        el('div', { class: 'form-field' }, fieldLabel('Term'), termInput),
         el('div', { class: 'form-field' }, fieldLabel('Term Start Date'), termStartInput),
         el('div', { class: 'form-field' }, fieldLabel('Term End Date'), termEndInput),
 
@@ -217,6 +243,15 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
         settingsErrorSlot,
         el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void saveSettings() }, 'Save Settings'),
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost',
+            type: 'button',
+            onclick: () => void changeArchiveState(),
+          },
+          course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course',
+        ),
       ),
       el(
         'div',

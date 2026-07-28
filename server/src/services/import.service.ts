@@ -493,7 +493,13 @@ async function assignmentIds(
 export async function commitImport(
   courseId: ObjectId,
   candidates: ImportCandidate[],
-  opts: { themeId?: ObjectId; loId?: ObjectId; byPuid: string },
+  opts: {
+    themeId?: ObjectId;
+    loId?: ObjectId;
+    byPuid: string;
+    format?: ImportFormat;
+    sourceName?: string;
+  },
 ): Promise<{ imported: number; autoConverted: number }> {
   if (!Array.isArray(candidates) || candidates.length === 0) {
     throw serviceError(400, 'invalid-import-candidate:no-candidates');
@@ -524,7 +530,7 @@ export async function commitImport(
   }
 
   let autoConverted = 0;
-  for (const item of prepared) {
+  for (const [itemIndex, item] of prepared.entries()) {
     const labels: QuestionLabel[] = [];
     if (item.candidate.parameterizable) labels.push('convertible-to-parameterized');
     if (item.autoConverted) {
@@ -541,6 +547,14 @@ export async function commitImport(
       difficulty: item.candidate.difficulty ?? 'medium',
       createdBy: opts.byPuid,
       labels,
+      provenance: opts.format
+        ? {
+            kind: 'imported',
+            format: opts.format,
+            ...(opts.sourceName ? { sourceName: opts.sourceName } : {}),
+            item: itemIndex,
+          }
+        : { kind: 'manual' },
     });
   }
 
@@ -641,6 +655,7 @@ export async function migrateScript(
     themeId?: ObjectId;
     loId?: ObjectId;
     byPuid: string;
+    sourceName?: string;
   },
 ): Promise<ScriptMigrationResult> {
   const { candidate, preview } = await inspectScriptMigration(input);
@@ -657,6 +672,10 @@ export async function migrateScript(
     difficulty: candidate.difficulty ?? 'medium',
     createdBy: input.byPuid,
     generateScript: input.script,
+    provenance: {
+      kind: 'script-migration',
+      ...(input.sourceName ? { sourceName: input.sourceName } : {}),
+    },
   });
 
   return { ...preview, questionId };

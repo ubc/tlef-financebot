@@ -34,6 +34,13 @@ objects directly.
   event/warning history, startup reconciliation, and post-write course
   subscribers. Material/generation services must call this API rather than
   updating `contentRuns` directly.
+- `generation-blueprints.service.ts` — persisted, course-scoped generation
+  recipes plus exact terminal-run retry. Recipes pin LO/count/type/prompt,
+  ready material IDs, and model choices; retry creates a distinct durable run
+  from the original immutable snapshot.
+- `content-map.service.ts` — instructor coverage read model joining the ordered
+  hierarchy, material kinds/assignments, question publication counts, and
+  recent content-run status. It is informational and never edits assignments.
 - `import.service.ts` — Parses and commits CSV/JSON/QTI questions, and migrates
   existing `generate(random)` templates through the real parameter worker.
   Script migration validates one deterministic sample, returns placeholder

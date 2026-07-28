@@ -11,12 +11,12 @@
 import {
   ApiError,
   getCourseTree,
+  getPublishChecklist,
   getPreseeding,
-  listMaterials,
-  regenerateRegistrationCode,
   updateCourse,
   type CourseTree,
   type CourseTreeTheme,
+  type ChecklistItem,
   type PreseedingLo,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
@@ -33,24 +33,19 @@ function totalLos(themes: CourseTreeTheme[]): number {
   return themes.reduce((sum, theme) => sum + (theme.los?.length ?? 0), 0);
 }
 
-function hasAtLeastOneTopicAndLo(themes: CourseTreeTheme[]): boolean {
-  return themes.some((theme) => (theme.los?.length ?? 0) > 0);
-}
-
 interface DashboardData {
   tree: CourseTree;
   preseeding: PreseedingLo[];
-  materialsReady: boolean; // ≥1 `ready` material with a non-empty `assignments`
+  checklist: ChecklistItem[];
 }
 
 async function loadData(courseId: string): Promise<DashboardData> {
-  const [tree, preseeding, materials] = await Promise.all([
+  const [tree, preseeding, checklist] = await Promise.all([
     getCourseTree(courseId),
     getPreseeding(courseId),
-    listMaterials(courseId),
+    getPublishChecklist(courseId),
   ]);
-  const materialsReady = materials.some((m) => m.status === 'ready' && m.assignments.length > 0);
-  return { tree, preseeding, materialsReady };
+  return { tree, preseeding, checklist };
 }
 
 function statTiles(data: DashboardData): HTMLElement {
@@ -100,16 +95,17 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
 
   try {
     const data = await loadData(courseId);
-    const { course, themes } = data.tree;
+    const { course } = data.tree;
 
-    const belowTarget = data.preseeding.filter((lo) => lo.approved < 3).length;
-    const questionsChecklistOk = data.preseeding.length > 0 && belowTarget === 0;
+    const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
+    const lifecycleLabel =
+      lifecycle === 'archived' ? 'Archived' : lifecycle === 'published' ? 'Published' : 'Sandbox (not yet published)';
 
     const header = pageHeader(
       course.name,
-      `${course.courseCode} · ${course.term} · ${course.published ? 'Published' : 'Sandbox (not yet published)'}`,
-      {
-        text: 'Publish Course →',
+      `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''} · ${course.term} · ${lifecycleLabel}`,
+      lifecycle === 'archived' ? undefined : {
+        text: lifecycle === 'published' ? 'Return to draft' : 'Publish Course →',
         onClick: () => void publish(),
       },
     );
@@ -117,22 +113,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
     const checklist = el(
       'div',
       { class: 'checklist' },
-      checklistRow('Term Start & End Dates set', Boolean(course.termStart && course.termEnd)),
-      checklistRow('At least 1 Topic and LO configured', hasAtLeastOneTopicAndLo(themes)),
-      checklistRow('Registration code generated', Boolean(course.registrationCode), course.registrationCode
-        ? undefined
-        : { text: 'Generate code →', onClick: () => void generateCode() }),
-      checklistRow('Course materials uploaded and assigned', data.materialsReady),
-      checklistRow(
-        'Minimum 3 approved questions per LO',
-        questionsChecklistOk,
-        questionsChecklistOk
-          ? undefined
-          : {
-              text: `Review queue → (${belowTarget} LO${belowTarget === 1 ? '' : 's'} below threshold)`,
-              onClick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`),
-            },
-      ),
+      ...data.checklist.map((item) => checklistRow(item.item, item.ok)),
     );
 
     const quickActions = el(
@@ -140,6 +121,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       { class: 'quick-action-grid' },
       quickActionCard(courseId, 'Edit Topic/LO Structure', 'Add, rename, reorder Topics and LOs', '/instructor/course/:id/structure'),
       quickActionCard(courseId, 'Upload Materials', 'Add course materials and assign to LOs', '/instructor/course/:id/materials'),
+      quickActionCard(courseId, 'Content Map', 'Inspect material kinds and LO coverage gaps', '/instructor/course/:id/content-map'),
       quickActionCard(courseId, 'Review Queue', 'Review and approve pending questions', '/instructor/course/:id/queue'),
       quickActionCard(
         courseId,
@@ -153,17 +135,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
 
     async function publish(): Promise<void> {
       try {
-        await updateCourse(courseId, { published: true });
-        await renderDashboardInner(outlet, courseId);
-      } catch (error) {
-        const message = error instanceof ApiError ? error.message : (error as Error).message;
-        body.append(errorState(message));
-      }
-    }
-
-    async function generateCode(): Promise<void> {
-      try {
-        await regenerateRegistrationCode(courseId);
+        await updateCourse(courseId, { published: lifecycle !== 'published' });
         await renderDashboardInner(outlet, courseId);
       } catch (error) {
         const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -174,7 +146,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
     body.replaceChildren(
       header,
       statTiles(data),
-      el('h2', { class: 'section-title', text: 'Pre-publish Checklist' }),
+      el('h2', { class: 'section-title', text: 'Authoring Checklist' }),
       checklist,
       el('h2', { class: 'section-title', text: 'Quick Actions' }),
       quickActions,

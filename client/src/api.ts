@@ -724,8 +724,11 @@ export interface InstructorCourse {
   _id: string;
   name: string;
   courseCode: string;
+  section?: string;
   term: string;
   published: boolean;
+  lifecycle?: 'draft' | 'published' | 'archived';
+  archivedAt?: string;
   termStart?: string;
   termEnd?: string;
   registrationCode?: string;
@@ -793,7 +796,12 @@ export async function listInstructorCourses(): Promise<InstructorCourse[]> {
 }
 
 /** POST /api/courses { name, courseCode, term } -> 201 Course. */
-export function createCourse(input: { name: string; courseCode: string; term: string }): Promise<InstructorCourse> {
+export function createCourse(input: {
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+}): Promise<InstructorCourse> {
   return request<InstructorCourse>('/api/courses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -817,6 +825,10 @@ export function updateCourse(
   patch: {
     termStart?: string;
     termEnd?: string;
+    name?: string;
+    courseCode?: string;
+    section?: string | null;
+    term?: string;
     feedbackStrategy?: 'adaptive' | 'strategy-a' | 'strategy-b';
     autoPause?: AutoPauseConfig;
     published?: boolean;
@@ -836,21 +848,23 @@ export function regenerateRegistrationCode(courseId: string): Promise<{ registra
   });
 }
 
-/**
- * No side-effect-free endpoint returns the publish checklist (see the
- * correction note above) — `POST .../publish` and `.../unpublish` both return
- * one, but both also flip `published` as a side effect. This always throws
- * until a read-only `GET /api/courses/:courseId/publish-checklist` route is
- * added server-side (a one-line wrapper around the existing
- * `courses.service.publishChecklist`, which is already side-effect-free).
- */
-export function getPublishChecklist(_courseId: string): Promise<ChecklistItem[]> {
-  return Promise.reject(
-    new Error(
-      'getPublishChecklist: no read-only endpoint exists yet — see the Task A report ' +
-        '(.superpowers/sdd/task-15/task-a-report.md) for the one-line server fix needed before this can be wired up.',
-    ),
+/** Side-effect-free authoritative publish checklist. */
+export function getPublishChecklist(courseId: string): Promise<ChecklistItem[]> {
+  return request<ChecklistItem[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/publish-checklist`,
   );
+}
+
+export function archiveCourse(courseId: string): Promise<InstructorCourse> {
+  return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}/archive`, {
+    method: 'POST',
+  });
+}
+
+export function restoreCourse(courseId: string): Promise<InstructorCourse> {
+  return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}/restore`, {
+    method: 'POST',
+  });
 }
 
 /** POST /api/courses/:courseId/themes { name } -> 201 Theme. */
@@ -938,6 +952,7 @@ export interface Material {
   courseId: string;
   name: string;
   format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
+  kind?: MaterialKind;
   status: 'processing' | 'ready' | 'failed';
   error?: string;
   sourceUrl?: string;
@@ -948,6 +963,15 @@ export interface Material {
   activeRunId?: string;
   uploadedAt: string;
 }
+
+export type MaterialKind =
+  | 'lecture'
+  | 'reading'
+  | 'assignment'
+  | 'assessment'
+  | 'solution'
+  | 'reference'
+  | 'other';
 
 // --- Instructor: durable content runs (Phase 2 P2-0) ------------------------
 
@@ -1005,6 +1029,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
     type: GenerationQuestionType;
     difficulty?: GenerationDifficulty;
     prompt?: string;
+    blueprintId?: string;
+    retryOfRunId?: string;
     models: { embedding: string; generator: string; validator: string; reviewer: string };
   };
   grounding?: { allowedMaterialIds: string[]; retrievedChunkCount: number };
@@ -1046,6 +1072,70 @@ export function listContentRuns(
 export function getContentRun(courseId: string, runId: string): Promise<ContentRunSnapshot> {
   return request<ContentRunSnapshot>(
     `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export function retryContentRun(courseId: string, runId: string): Promise<{ runId: string }> {
+  return request<{ runId: string }>(
+    `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/retry`,
+    { method: 'POST' },
+  );
+}
+
+export interface GenerationBlueprint {
+  _id: string;
+  courseId: string;
+  name: string;
+  loId: string;
+  count: number;
+  type: GenerationQuestionType;
+  difficulty?: GenerationDifficulty;
+  prompt?: string;
+  materialIds?: string[];
+  models: { embedding: string; generator: string; validator: string; reviewer: string };
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRunId?: string;
+}
+
+export interface GenerationBlueprintInput {
+  name: string;
+  loId: string;
+  count: number;
+  type: GenerationQuestionType;
+  difficulty?: GenerationDifficulty;
+  prompt?: string;
+  materialIds?: string[];
+}
+
+export function listGenerationBlueprints(courseId: string): Promise<GenerationBlueprint[]> {
+  return request<GenerationBlueprint[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/generation-blueprints`,
+  );
+}
+
+export function createGenerationBlueprint(
+  courseId: string,
+  input: GenerationBlueprintInput,
+): Promise<GenerationBlueprint> {
+  return request<GenerationBlueprint>(
+    `/api/courses/${encodeURIComponent(courseId)}/generation-blueprints`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function runGenerationBlueprint(
+  courseId: string,
+  blueprintId: string,
+): Promise<{ runId: string }> {
+  return request<{ runId: string }>(
+    `/api/courses/${encodeURIComponent(courseId)}/generation-blueprints/${encodeURIComponent(blueprintId)}/run`,
+    { method: 'POST' },
   );
 }
 
@@ -1109,6 +1199,50 @@ export function assignMaterial(materialId: string, assignments: MaterialAssignme
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assignments }),
   });
+}
+
+export function updateMaterialKind(
+  courseId: string,
+  materialId: string,
+  kind: MaterialKind,
+): Promise<Material> {
+  return request<Material>(
+    `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind }),
+    },
+  );
+}
+
+export interface ContentMapMaterial {
+  materialId: string;
+  name: string;
+  kind: MaterialKind;
+  status: Material['status'];
+  assessmentLike: boolean;
+  latestRun?: { runId: string; status: ContentRunStatus; stage: string };
+}
+
+export interface ContentMapLo {
+  loId: string;
+  name: string;
+  order: number;
+  materials: ContentMapMaterial[];
+  materialCounts: Partial<Record<MaterialKind, number>>;
+  questionCounts: Record<PublicationState, number>;
+  latestGenerationRun?: { runId: string; status: ContentRunStatus; stage: string };
+  gaps: Array<'no-material' | 'no-approved-questions' | 'thin-approved-set'>;
+}
+
+export interface CourseContentMap {
+  themes: Array<{ themeId: string; name: string; order: number; los: ContentMapLo[] }>;
+  unassignedMaterials: ContentMapMaterial[];
+}
+
+export function getCourseContentMap(courseId: string): Promise<CourseContentMap> {
+  return request<CourseContentMap>(`/api/courses/${encodeURIComponent(courseId)}/content-map`);
 }
 
 /** POST /api/materials/:materialId/classification { action } -> Material
@@ -1267,6 +1401,8 @@ export function commitQuestionImport(
   courseId: string,
   input: {
     candidates: ImportCandidate[];
+    format?: ImportFormat;
+    sourceName?: string;
     themeId?: string;
     loId?: string;
   },
@@ -1292,6 +1428,7 @@ export interface ScriptMigrationInput {
   correctKey: string;
   difficulty?: Difficulty;
   script: string;
+  sourceName?: string;
 }
 
 export interface ScriptMigrationResult {
@@ -1385,6 +1522,12 @@ export interface QuestionVersion {
   paramSlots?: Array<{ name: string; min?: number; max?: number; step?: number; values?: number[] }>;
   generateScript?: string;
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
+  provenance?:
+    | { kind: 'manual' }
+    | { kind: 'generated'; runId: string; blueprintId?: string; item: number }
+    | { kind: 'imported'; format: ImportFormat; sourceName?: string; item: number }
+    | { kind: 'script-migration'; sourceName?: string }
+    | { kind: 'edited'; parentVersionId: string };
   /** Content keys patched in the edit that created this version (per-edit, not
    * cumulative) — absent on v1. */
   editedFields?: string[];
@@ -1401,6 +1544,7 @@ export interface QuestionHead {
   state: PublicationState;
   loIds: string[];
   themeIds: string[];
+  templateFamilyId?: string;
   labels: QuestionLabel[];
   agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
   generationPrompt?: string;
@@ -1427,7 +1571,13 @@ export interface BankQuestion {
  * version and lightweight version-history metadata. */
 export interface QuestionDetail extends QuestionHead {
   current: QuestionVersion;
-  versions: Array<{ version: number; createdBy: string; createdAt: string; editedFields?: string[] }>;
+  versions: Array<{
+    version: number;
+    createdBy: string;
+    createdAt: string;
+    editedFields?: string[];
+    provenance?: QuestionVersion['provenance'];
+  }>;
 }
 
 export interface BankFilters {

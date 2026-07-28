@@ -40,6 +40,8 @@ const candidate = z.object({
 });
 const commitBody = z.object({
   candidates: z.array(candidate).min(1).max(1000),
+  format: z.enum(['csv', 'json', 'qti']).optional(),
+  sourceName: z.string().trim().min(1).max(255).optional(),
   themeId: objectId.optional(),
   loId: objectId.optional(),
 });
@@ -58,6 +60,7 @@ const scriptMigrationBody = z.object({
   script: z.string().min(1).max(100_000),
   themeId: objectId.optional(),
   loId: objectId.optional(),
+  sourceName: z.string().trim().min(1).max(255).optional(),
 });
 
 const upload = multer({
@@ -100,11 +103,13 @@ importRouter.post(
   validate({ params: courseParams, body: commitBody }),
   ensureCourseInstructor(),
   async (req, res) => {
-    const { candidates, themeId, loId } = req.body as z.infer<typeof commitBody>;
+    const { candidates, themeId, loId, format, sourceName } = req.body as z.infer<typeof commitBody>;
     res.status(201).json(
       await commitImport(new ObjectId(String(req.params.courseId)), candidates, {
         ...(themeId ? { themeId: new ObjectId(themeId) } : {}),
         ...(loId ? { loId: new ObjectId(loId) } : {}),
+        ...(format ? { format } : {}),
+        ...(sourceName ? { sourceName } : {}),
         byPuid: req.user!.puid,
       }),
     );

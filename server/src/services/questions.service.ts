@@ -56,6 +56,8 @@ export async function createQuestion(input: {
   generateScript?: string;
   agentDecision?: Question['agentDecision'];
   labels?: QuestionLabel[];
+  templateFamilyId?: ObjectId;
+  provenance?: QuestionVersion['provenance'];
 }): Promise<{ questionId: ObjectId; version: WithId<QuestionVersion> }> {
   const options = assertOptionInvariants(input.type, input.options);
 
@@ -71,6 +73,7 @@ export async function createQuestion(input: {
     options,
     difficulty: input.difficulty,
     sourceRefs: input.sourceRefs ?? [],
+    provenance: input.provenance ?? { kind: 'manual' },
     createdBy: input.createdBy,
     createdAt: now,
     ...(input.generateScript !== undefined ? { generateScript: input.generateScript } : {}),
@@ -83,6 +86,7 @@ export async function createQuestion(input: {
     state: 'draft',
     loIds: input.loIds,
     themeIds: input.themeIds,
+    templateFamilyId: input.templateFamilyId ?? questionId,
     labels: input.labels ?? [],
     internalNotes: [],
     createdAt: now,
@@ -181,6 +185,7 @@ export async function editQuestion(
     ...contentPatch,
     version: current.version + 1,
     editedFields,
+    provenance: { kind: 'edited', parentVersionId: current._id },
     createdBy: byPuid,
     createdAt: now,
   };

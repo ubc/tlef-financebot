@@ -14,11 +14,13 @@ import {
   resolveClassification,
   retryMaterial,
   subscribeContentRuns,
+  updateMaterialKind,
   uploadMaterials,
   type ContentRunSummary,
   type CourseTree,
   type Material,
   type MaterialAssignment,
+  type MaterialKind,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, uploadZone } from '../../instructor-ui.js';
@@ -162,6 +164,18 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     }
   }
 
+  async function doKindChange(material: Material, kind: MaterialKind): Promise<void> {
+    uploadErrorSlot.replaceChildren();
+    try {
+      applyMaterialUpdate(await updateMaterialKind(courseId, material._id, kind));
+      refresh();
+    } catch (error) {
+      uploadErrorSlot.replaceChildren(
+        errorState(error instanceof ApiError ? error.message : (error as Error).message),
+      );
+    }
+  }
+
   function materialRun(material: Material): ContentRunSummary | undefined {
     const run = material.activeRunId ? runs.get(material.activeRunId) : undefined;
     return run?.kind === 'material-ingest' ? run : undefined;
@@ -199,6 +213,31 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
             },
             'Assign →',
           );
+    const kinds: MaterialKind[] = [
+      'lecture',
+      'reading',
+      'assignment',
+      'assessment',
+      'solution',
+      'reference',
+      'other',
+    ];
+    const kindSelect = el(
+      'select',
+      {
+        class: 'input input--sm',
+        'aria-label': `Material kind for ${material.name}`,
+        onchange: (event: Event) =>
+          void doKindChange(material, (event.target as HTMLSelectElement).value as MaterialKind),
+      },
+      ...kinds.map((kind) =>
+        el('option', {
+          value: kind,
+          text: kind.charAt(0).toUpperCase() + kind.slice(1),
+          selected: (material.kind ?? 'other') === kind ? 'selected' : undefined,
+        }),
+      ),
+    );
 
     return el(
       'div',
@@ -220,6 +259,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       ),
       el('p', { class: 'material-row__assign', text: material.status === 'ready' ? assignmentSummary(material, tree) : '—' }),
       el('p', { class: 'material-row__class', text: classificationText }),
+      kindSelect,
       action,
     );
   }

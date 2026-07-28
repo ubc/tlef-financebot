@@ -162,6 +162,8 @@ describe('commitImport', () => {
       themeId,
       loId,
       byPuid: 'faculty-puid',
+      format: 'csv',
+      sourceName: 'week-4-bank.csv',
     });
 
     expect(result).toEqual({ imported: 2, autoConverted: 1 });
@@ -172,6 +174,12 @@ describe('commitImport', () => {
         loIds: [loId],
         themeIds: [themeId],
         labels: ['convertible-to-parameterized'],
+        provenance: {
+          kind: 'imported',
+          format: 'csv',
+          sourceName: 'week-4-bank.csv',
+          item: 0,
+        },
       }),
     );
     expect(mockCreateQuestion).toHaveBeenNthCalledWith(
@@ -179,6 +187,12 @@ describe('commitImport', () => {
       expect.objectContaining({
         type: 'mcq',
         labels: ['auto-converted'],
+        provenance: {
+          kind: 'imported',
+          format: 'csv',
+          sourceName: 'week-4-bank.csv',
+          item: 1,
+        },
       }),
     );
   });

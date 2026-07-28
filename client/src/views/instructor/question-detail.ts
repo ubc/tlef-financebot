@@ -46,6 +46,25 @@ export function isFieldEdited(current: unknown, baseline: unknown): boolean {
   return JSON.stringify(current) !== JSON.stringify(baseline);
 }
 
+function provenanceText(provenance: QuestionVersion['provenance']): string {
+  if (!provenance) return 'Legacy question · provenance not recorded';
+  switch (provenance.kind) {
+    case 'generated':
+      return (
+        `Generated · run ${provenance.runId.slice(-8)} · item ${provenance.item + 1}` +
+        (provenance.blueprintId ? ` · blueprint ${provenance.blueprintId.slice(-8)}` : '')
+      );
+    case 'imported':
+      return `Imported from ${provenance.sourceName ?? provenance.format.toUpperCase()} · item ${provenance.item + 1}`;
+    case 'script-migration':
+      return `Parameterized script migration${provenance.sourceName ? ` · ${provenance.sourceName}` : ''}`;
+    case 'edited':
+      return `Edited from version ${provenance.parentVersionId.slice(-8)}`;
+    case 'manual':
+      return 'Manual authoring';
+  }
+}
+
 // Canonical display order for the four option roles (I6) — Correct Answer,
 // Good Confounder, Related but Incorrect, Easy to Eliminate. A true/false
 // question only ever has 'correct' + 'common-misconception' (server coerces
@@ -570,6 +589,14 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // --- AI Agent Report panel ------------------------------------------------
 
   const agentDecision = detail.agentDecision;
+  const provenance = detail.current.provenance;
+  const recordedOrigin = detail.versions
+    .map((version) => version.provenance)
+    .find((candidate) => candidate?.kind !== 'edited');
+  const provenanceLabel =
+    provenance?.kind === 'edited' && recordedOrigin
+      ? `${provenanceText(provenance)} · Original: ${provenanceText(recordedOrigin)}`
+      : provenanceText(provenance);
   const agentPanel = el(
     'div',
     { class: 'agent-report-panel' },
@@ -595,6 +622,15 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           el('p', { class: 'agent-report-block__body', text: agentDecision.roleAssessment }),
         )
       : false,
+    el(
+      'div',
+      { class: 'agent-report-block' },
+      el('div', { class: 'agent-report-block__head' }, el('span', { text: 'Origin & family' })),
+      el('p', { class: 'agent-report-block__body', text: provenanceLabel }),
+      detail.templateFamilyId
+        ? el('p', { class: 'agent-report-block__body mono', text: `Family ${detail.templateFamilyId}` })
+        : false,
+    ),
   );
 
   // --- Assemble --------------------------------------------------------------

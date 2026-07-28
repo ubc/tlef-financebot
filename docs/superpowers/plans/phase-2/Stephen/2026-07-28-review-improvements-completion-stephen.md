@@ -1,8 +1,8 @@
 # Stephen — Phase 2 Review Improvements Completion Plan
 
 **Owner:** Stephen (Dev A)  
-**Status:** authorized by Stephen on 2026-07-28; audit complete; implementation starting  
-**Base:** `origin/main` at `d6e1f4a`  
+**Status:** implementation and automated verification complete; live browser smoke pending
+**Base:** `origin/main` at `4088f15` after pre-work plan sync
 **Branch:** `codex/phase-2-review-improvements`
 
 The required `superpowers:writing-plans` skill is unavailable in this Codex
@@ -63,10 +63,10 @@ Neo4j, second question model, or second job engine is introduced.
 
 ### Work
 
-- [ ] Add domain normalization and legal lifecycle transitions.
-- [ ] Add service/route/client contracts and lifecycle tests.
-- [ ] Replace the client-derived checklist with the server checklist.
-- [ ] Add editable course metadata plus archive/restore controls and state
+- [x] Add domain normalization and legal lifecycle transitions.
+- [x] Add service/route/client contracts and lifecycle tests.
+- [x] Replace the client-derived checklist with the server checklist.
+- [x] Add editable course metadata plus archive/restore controls and state
   labels to Settings/Dashboard/Course list.
 
 ## Slice I2 — Persisted generation blueprints and exact retry
@@ -111,11 +111,11 @@ interface GenerationBlueprint {
 
 ### Work
 
-- [ ] Add collection/types/indexes and blueprint service/route tests.
-- [ ] Extend run creation/worker input without changing the run-only Agenda
+- [x] Add collection/types/indexes and blueprint service/route tests.
+- [x] Extend run creation/worker input without changing the run-only Agenda
   payload invariant.
-- [ ] Add exact terminal-run retry and provenance tests.
-- [ ] Add blueprint selection/save and run-history retry UI.
+- [x] Add exact terminal-run retry and provenance tests.
+- [x] Add blueprint selection/save and run-history retry UI.
 
 ## Slice I3 — Question family and version provenance
 
@@ -142,9 +142,9 @@ interface GenerationBlueprint {
 
 ### Work
 
-- [ ] Extend `createQuestion`/`editQuestion` and focused lineage tests.
-- [ ] Wire generation run/item, import source, and migration provenance.
-- [ ] Expose provenance through bank/detail client types and UI.
+- [x] Extend `createQuestion`/`editQuestion` and focused lineage tests.
+- [x] Wire generation run/item, import source, and migration provenance.
+- [x] Expose provenance through bank/detail client types and UI.
 
 ## Slice I4 — Finite practice rounds
 
@@ -152,7 +152,7 @@ interface GenerationBlueprint {
   treats the first repeat as a round boundary, shows a round summary, and
   requires explicit confirmation before starting repeats.
 - [x] Existing serving and `practice-session` tests pin the behavior.
-- [ ] Re-run those regressions after the other slices; no new persistent
+- [x] Re-run those regressions after the other slices; no new persistent
   session model is added because the pilot requirement is already met.
 
 ## Slice I5 — Material kind and course content map
@@ -180,17 +180,29 @@ interface GenerationBlueprint {
 
 ### Work
 
-- [ ] Add kind inference, metadata patch, compatibility, and route tests.
-- [ ] Add content-map aggregation with course-scoping tests.
-- [ ] Add API types, route/nav wiring, and instructor content-map UI.
+- [x] Add kind inference, metadata patch, compatibility, and route tests.
+- [x] Add content-map aggregation with course-scoping tests.
+- [x] Add API types, route/nav wiring, and instructor content-map UI.
 
 ## Verification and completion
 
-- [ ] Focused Jest suites for every slice.
-- [ ] Full Jest, server/client typecheck, lint, build, and `git diff --check`
-  under a supported Node 22+ runtime.
+- [x] Focused Jest suites for every slice.
+- [x] Full Jest, server/client typecheck, lint, build, and `git diff --check`
+  under the locally supported runtimes.
 - [ ] Live instructor browser smoke for lifecycle, blueprint retry,
   provenance display, and content map when backing services are available.
-- [ ] Update this plan, Stephen `STATUS.md`, the original improvement map,
+- [x] Update this plan, Stephen `STATUS.md`, the original improvement map,
   `docs/api-contract.md`, nearest `AGENTS.md`, and the shared Phase 2 plan.
-- [ ] Run `npm run sync-plans -- Stephen` after implementation.
+- [x] Run `npm run sync-plans -- Stephen` after implementation.
+
+## Automated verification result
+
+- Full Jest: 64 suites / 672 tests passed on Node 20.19 after the final
+  archived-course guard and enrollment-state regression were added.
+- Dedicated blueprint/content-map/material-kind/provenance coverage passed.
+- Lint, server/client typecheck, and build passed on Node 24.3; `git
+  diff --check` passed. Jest 30's resolver did not resolve `ts-jest` under the
+  locally installed Node 24.3 binary, so the full suite used Node 20.19 rather
+  than treating that toolchain issue as an application failure.
+- No separate practice-session model was introduced; Task 7's finite-round
+  behavior remains pinned by its existing regression suite.

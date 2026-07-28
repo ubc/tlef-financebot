@@ -1,4 +1,4 @@
-# FinanceBot API Contract (v1 + Phase 2 P2-0 content runs)
+# FinanceBot API Contract (v1 + Phase 2 authoring workflows)
 
 All endpoints are under `/api`, JSON in/out, session-cookie authenticated
 unless marked public. IDs are Mongo ObjectId hex strings.
@@ -38,12 +38,22 @@ grant attaches to the same PUID-backed User on first SAML login.
 - `GET /api/enrollments` → `[{ courseId, name, courseCode, term, active }]`
 
 ## Courses (instructor)
-- `POST /api/courses { name, courseCode, term }` → 201 Course
+- `POST /api/courses { name, courseCode, section?, term }` → 201 Course
   (platform-Instructor or Admin; faculty affiliation alone is insufficient)
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
-- `PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
+- `PATCH /api/courses/:courseId { name?, courseCode?, section?, term?,
+  termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
+- Course responses expose `lifecycle: 'draft'|'published'|'archived'`,
+  `published`, `updatedAt`, and optional `archivedAt`. Legacy rows derive
+  lifecycle from `published`/`archivedAt`.
+- `GET /api/courses/:courseId/publish-checklist` →
+  `[{ item, ok }]` from the same side-effect-free server check used at publish.
 - `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
 - `POST /api/courses/:courseId/publish` / `POST .../unpublish` → `{ published, checklist: [{ item, ok }] }`
+- `POST /api/courses/:courseId/archive` → archived Course;
+  `POST .../restore` → restored unpublished Draft. Archived courses remain
+  instructor-readable, appear inactive to enrolled students, and reject
+  student practice with `403 course-archived`.
 - Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` → `{ count }`;
   `GET .../roster` → `[{ identifier, extendedUntil? }]`
 
@@ -57,10 +67,21 @@ grant attaches to the same PUID-backed User on first SAML login.
 ## Materials (instructor)
 - `POST /api/courses/:courseId/materials` (multipart, field `files[]`; or JSON `{ url }`) → 201 `[Material]` (successfully queued entries have status `processing` + a unique `activeRunId`; an immediate run-storage/enqueue failure is returned as status `failed` so no row remains stuck)
 - `GET /api/courses/:courseId/materials` → `[Material]`
+- Material responses expose `kind:
+  'lecture'|'reading'|'assignment'|'assessment'|'solution'|'reference'|'other'`.
+  New rows receive a deterministic name-based suggestion; legacy rows normalize
+  to `other`.
+- `PATCH /api/courses/:courseId/materials/:materialId { kind }` → Material
+  (instructor correction; course-scoped)
 - `POST /api/materials/:materialId/retry` → Material with a new `activeRunId` (409 when another retry already won)
 - `PUT /api/materials/:materialId/assignments { assignments: [{ themeId, loId? }] }` → Material
 - `POST /api/materials/:materialId/classification { action: 'accept' | 'reject' }` → Material
 - `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los: [name] }] }` (IN-S06; AI-suggested outline, read-only — apply via the Theme/LO create endpoints above) <!-- ADDED in Task 7 (Saurav); pending two-developer review -->
+- `GET /api/courses/:courseId/content-map` → ordered Theme/LO coverage with
+  assigned material summaries/kind counts, assessment-like markers,
+  question counts by publication state, latest ingest/generation run status,
+  unassigned materials, and gaps (`no-material`,
+  `no-approved-questions`, `thin-approved-set`).
 
 ## Materials (instructor) — implementation note (IN-S06 auto-classification)
 On successful ingest a material may gain a `classificationSuggestion { themeId, loId?, confidence }` (LLM best-fit into the existing hierarchy; only stored when `confidence ≥ 0.5` and the names resolve). Accept via `POST .../classification { action: 'accept' }` (merges it into `assignments`, clears the suggestion); reject clears it. Absent/low-confidence ⇒ material shows "Unclassified" client-side.
@@ -69,7 +90,8 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
   `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion }] }` (IN-Q08)
 - `GET /api/questions/:questionId` → full question + current version +
-  agentDecision + notes + versions list + optional regeneration request history
+  agentDecision + notes + versions list + optional regeneration request
+  history, `templateFamilyId`, and per-version `provenance`
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
 - `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
@@ -86,7 +108,8 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `POST /api/questions/:questionId/transition { to }` → question (validated against PUBLICATION_TRANSITIONS; IN-Q04/Q07)
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
-- `POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?, prompt? }` →
+- `POST /api/courses/:courseId/generate`
+  `{ loId, count?, type?, difficulty?, prompt? }` or `{ blueprintId }` →
   202 `{ runId }` — a unique durable generation run; results land as Draft
   questions (IN-Q10/Q11). A prompt containing `@filename` (or
   `@"filename with spaces"`) restricts retrieval to the exact ready material
@@ -94,6 +117,13 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   falling back to other course material.
 - `GET /api/generation/presets` → four editable `{ label, text }` custom-prompt
   starters; requires an authenticated instructor/admin.
+- `GET /api/courses/:courseId/generation-blueprints` → newest-first saved
+  recipes. `POST` creates and `PATCH /:blueprintId` updates a recipe containing
+  name, LO, count, type, optional difficulty/prompt/ready material IDs, and the
+  pinned generator/validator/reviewer model snapshot.
+- `POST /api/courses/:courseId/generation-blueprints/:blueprintId/run` →
+  202 `{ runId }`. The resulting run records `blueprintId`, copies the saved
+  recipe, and still sends only `{ runId }` to Agenda.
 - `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
   `{ variant: { stem, options, difficulty, sourceRefs, agentDecision } }`.
   Generates a transient side-by-side alternative and appends
@@ -101,6 +131,13 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   a QuestionVersion or replace current content. Replacement is an explicit
   `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
+
+New question heads default `templateFamilyId` to their own ID. Version-one
+provenance is one of `manual`, `generated { runId, blueprintId?, item }`,
+`imported { format, sourceName?, item }`, or
+`script-migration { sourceName? }`; every content edit creates an immutable
+version with `edited { parentVersionId }`. Existing rows without these optional
+fields remain readable.
 
 ## Question import (instructor)
 
@@ -110,7 +147,8 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   [{ line: number|string, reason }] }`. Parsing is partial-success: an invalid
   row/item is reported without removing valid candidates. No question is
   written during preview.
-- `POST /api/courses/:courseId/import/commit { candidates, themeId?, loId? }` →
+- `POST /api/courses/:courseId/import/commit
+  { candidates, format?, sourceName?, themeId?, loId? }` →
   `201 { imported, autoConverted }`. The preview candidates are untrusted
   round-tripped input and are revalidated as one batch before writes.
   Questions always enter as Drafts; missing assignment ids leave them
@@ -125,7 +163,7 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   Nothing is written. A sandbox rejection (including `param-timeout`) is a
   clean `400 script-validation-failed:<reason>`.
 - `POST /api/courses/:courseId/import/script/commit { ...ScriptMigrationInput,
-  themeId?, loId? }` → `201 ScriptMigrationResult` with `questionId` when the
+  sourceName?, themeId?, loId? }` → `201 ScriptMigrationResult` with `questionId` when the
   generated variable names have stem placeholders and every placeholder in
   the stem/options has a generated value. The server repeats the sandbox run
   and template validation; a mismatch returns `200` with the
@@ -154,6 +192,11 @@ request input, result/error/warnings, and timestamps.
 - `GET /api/courses/:courseId/content-runs/:runId` → full snapshot including the
   bounded persisted event log. A run under another course returns
   `404 content-run-not-found`.
+- `POST /api/courses/:courseId/content-runs/:runId/retry` →
+  202 `{ runId }` for a distinct exact retry of a terminal generation run.
+  The new run copies the original request/model/material snapshot and records
+  `retryOfRunId`; the original is never reopened. Material or non-terminal
+  runs return 409.
 - `GET /api/courses/:courseId/content-runs/events` → authenticated
   `text/event-stream`. On connect/reconnect it sends:
 

@@ -13,6 +13,7 @@ import {
   preseedingProgress,
   regenerateQuestion,
 } from '../services/generation.service';
+import { enqueueBlueprintRun } from '../services/generation-blueprints.service';
 
 // Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
 // course-scoped (`:courseId` in the path), so they guard exactly like
@@ -50,11 +51,14 @@ generationRouter.get(
 // unbounded run (each question is 3 LLM calls). Default is a small batch.
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
-  loId: objectIdParam,
+  loId: objectIdParam.optional(),
+  blueprintId: objectIdParam.optional(),
   count: z.number().int().min(1).max(20).optional(),
   type: z.enum(['mcq', 'true-false']).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   prompt: z.string().max(2000).optional(),
+}).refine((body) => Boolean(body.loId) !== Boolean(body.blueprintId), {
+  message: 'Provide exactly one of loId or blueprintId.',
 });
 
 /**
@@ -70,15 +74,17 @@ generationRouter.post(
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const body = req.body as z.infer<typeof generateBody>;
-    const runId = await enqueueGenerationRun({
-      courseId,
-      loId: new ObjectId(body.loId),
-      count: body.count ?? DEFAULT_GENERATION_COUNT,
-      ...(body.type ? { type: body.type } : {}),
-      ...(body.difficulty ? { difficulty: body.difficulty } : {}),
-      ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
-      byPuid: req.user!.puid,
-    });
+    const runId = body.blueprintId
+      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid)
+      : await enqueueGenerationRun({
+          courseId,
+          loId: new ObjectId(body.loId!),
+          count: body.count ?? DEFAULT_GENERATION_COUNT,
+          ...(body.type ? { type: body.type } : {}),
+          ...(body.difficulty ? { difficulty: body.difficulty } : {}),
+          ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
+          byPuid: req.user!.puid,
+        });
     res.status(202).json({ runId: runId.toHexString() });
   },
 );
@@ -137,6 +143,7 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'generation-invalid-options': 422,
   'generation-retrieval-failed': 503,
   'generation-no-grounding': 422,
+  'generation-blueprint-not-found': 404,
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

@@ -155,6 +155,7 @@ describe('durable generation runs (P2-0)', () => {
 
   it('keeps a successful Draft and finishes partial when another item fails validation', async () => {
     const runId = new ObjectId();
+    const blueprintId = new ObjectId();
     const createdQuestionId = new ObjectId();
     jest.mocked(getContentRun).mockResolvedValue({
       _id: runId,
@@ -172,6 +173,7 @@ describe('durable generation runs (P2-0)', () => {
         loId,
         count: 2,
         type: 'mcq',
+        blueprintId,
         models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
       },
       result: { createdQuestionIds: [], failures: [] },
@@ -199,6 +201,12 @@ describe('durable generation runs (P2-0)', () => {
     expect(terminal?.result).toEqual({
       createdQuestionIds: [createdQuestionId],
       failures: [expect.objectContaining({ item: 1, stage: 'validating', code: 'generation-validation-failed' })],
+    });
+    expect(jest.mocked(createQuestion).mock.calls[0][0].provenance).toEqual({
+      kind: 'generated',
+      runId,
+      blueprintId,
+      item: 0,
     });
     const pinnedCallIndex = jest.mocked(updateContentRun).mock.calls.findIndex((call) =>
       Boolean(call[1].grounding && call[1].grounding.retrievedChunkCount === 0),

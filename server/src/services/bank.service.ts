@@ -170,7 +170,13 @@ export async function getDistinctQuestionCourseIds(questionIds: ObjectId[]): Pro
 export interface QuestionDetail {
   question: WithId<Question>;
   current: WithId<QuestionVersion>;
-  versions: Array<{ version: number; createdBy: string; createdAt: Date; editedFields?: string[] }>;
+  versions: Array<{
+    version: number;
+    createdBy: string;
+    createdAt: Date;
+    editedFields?: string[];
+    provenance?: QuestionVersion['provenance'];
+  }>;
 }
 
 /** Full detail view for `GET /api/questions/:questionId`: the head (carrying
@@ -184,7 +190,10 @@ export async function getQuestionDetail(questionId: ObjectId): Promise<QuestionD
   if (!current) throw new Error('version-not-found');
 
   const versions = await questionVersionsCol()
-    .find({ questionId }, { projection: { version: 1, createdBy: 1, createdAt: 1, editedFields: 1 } })
+    .find(
+      { questionId },
+      { projection: { version: 1, createdBy: 1, createdAt: 1, editedFields: 1, provenance: 1 } },
+    )
     .sort({ version: 1 })
     .toArray();
 
@@ -196,6 +205,7 @@ export async function getQuestionDetail(questionId: ObjectId): Promise<QuestionD
       createdBy: v.createdBy,
       createdAt: v.createdAt,
       editedFields: v.editedFields,
+      provenance: v.provenance,
     })),
   };
 }

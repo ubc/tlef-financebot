@@ -82,6 +82,14 @@ commonly need:
   link their newest attempt through `activeRunId`; generation enqueue returns
   `{ runId }`. Startup makes interrupted work explicitly failed/retryable
   rather than leaving an endless processing state.
+- Phase 2 review-derived authoring improvements are implemented: courses have
+  explicit draft/published/archived lifecycle plus archive/restore and one
+  authoritative publish checklist; generation recipes are persisted and
+  terminal runs support exact snapshot retry; question versions carry additive
+  family/origin lineage; materials have instructor-correctable kind metadata;
+  and the Instructor Content Map exposes Theme/LO source, question, run, and
+  coverage gaps. Archived courses remain instructor-readable but reject
+  student practice.
 - Courses (Phase 1 Task 2) are implemented: `services/courses.service.ts` +
   `routes/courses.routes.ts` cover the instructor Courses/Hierarchy/Roster
   surface (creation, term dates, registration code, Theme/LO CRUD, publish

@@ -413,6 +413,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
   }
 
   let preview: ImportPreview | null = null;
+  let previewSourceName: string | null = null;
   let busy = false;
   let committed = false;
 
@@ -462,6 +463,8 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
               : [];
             const result = await commitQuestionImport(courseId, {
               candidates: preview.candidates,
+              format: preview.format,
+              ...(previewSourceName ? { sourceName: previewSourceName } : {}),
               ...(themeId ? { themeId } : {}),
               ...(loId ? { loId } : {}),
             });
@@ -536,8 +539,10 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
     renderPreview();
     try {
       preview = await previewQuestionImport(courseId, file);
+      previewSourceName = file.name;
     } catch (error) {
       preview = null;
+      previewSourceName = null;
       const message = error instanceof ApiError ? error.message : (error as Error).message;
       errorSlot.replaceChildren(errorState(message));
     } finally {

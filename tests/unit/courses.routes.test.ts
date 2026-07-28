@@ -24,6 +24,8 @@ jest.mock('../../server/src/services/courses.service', () => ({
   getCourseTree: jest.fn(),
   publishChecklist: jest.fn(),
   setPublished: jest.fn(),
+  archiveCourse: jest.fn(),
+  restoreCourse: jest.fn(),
   putRoster: jest.fn(),
   getRoster: jest.fn(),
 }));
@@ -33,6 +35,8 @@ import {
   createCourse,
   setPublished,
   publishChecklist,
+  archiveCourse,
+  restoreCourse,
   getThemeCourseId,
   getLoCourseId,
 } from '../../server/src/services/courses.service';
@@ -158,6 +162,41 @@ describe('courses routes (auth + course-instructor gating)', () => {
       ],
     });
     expect(setPublished).toHaveBeenCalledWith(expect.any(ObjectId), true);
+  });
+
+  it('returns the checklist without changing publication state', async () => {
+    jest.mocked(publishChecklist).mockResolvedValue([{ item: 'Term dates set', ok: false }]);
+    const res = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/publish-checklist`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ item: 'Term dates set', ok: false }]);
+    expect(setPublished).not.toHaveBeenCalled();
+  });
+
+  it('archives and restores a course through instructor-only endpoints', async () => {
+    jest.mocked(archiveCourse).mockResolvedValue({
+      _id: courseId,
+      published: false,
+      lifecycle: 'archived',
+    } as never);
+    jest.mocked(restoreCourse).mockResolvedValue({
+      _id: courseId,
+      published: false,
+      lifecycle: 'draft',
+    } as never);
+
+    const archived = await request(makeApp(instructor)).post(
+      `/api/courses/${courseId.toHexString()}/archive`,
+    );
+    const restored = await request(makeApp(instructor)).post(
+      `/api/courses/${courseId.toHexString()}/restore`,
+    );
+
+    expect(archived.status).toBe(200);
+    expect(archived.body.lifecycle).toBe('archived');
+    expect(restored.status).toBe(200);
+    expect(restored.body.lifecycle).toBe('draft');
   });
 });
 
