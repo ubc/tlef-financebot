@@ -69,5 +69,15 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
-  return usersCol().findOne({ puid });
+  const user = await usersCol().findOne({ puid });
+  if (!user) return null;
+
+  // The grant collection is the authorization source of truth. Recomputing
+  // during Passport deserialization makes revoke effective on the next
+  // request even if a login/revoke race left the denormalized User bit stale.
+  const normalizedUid = user.uid.trim().toLowerCase();
+  const grant = normalizedUid
+    ? await platformInstructorGrantsCol().findOne({ uid: normalizedUid })
+    : null;
+  return { ...user, platformInstructor: Boolean(grant) };
 }
