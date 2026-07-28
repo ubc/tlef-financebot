@@ -9,10 +9,10 @@ _Last updated: 2026-07-28_
   rounds.
 - Task 5 parameter serving/config: **complete on PR #34, CI green, awaiting
   review/merge**.
-- Task 2 student Flag control: **in progress with Codex on a stacked branch
-  based on PR #34's final head**.
-- Admin Console v0: **A1 implementation complete and verified; backend pushed,
-  client integration will be transplanted after PR #34 merges**.
+- Task 2 student Flag control: **complete on stacked PR #35**.
+- Admin Console v0: **A1 complete on stacked PR #36**.
+- Task 7 progression/redirect + finite rounds: **next with Codex, stacked on
+  PR #35 so it includes the finished student practice control**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -30,9 +30,10 @@ Codex owns Admin Console v0 and records its paths in
 
 Each agent edits only its own claim file. Both read both files before editing.
 Claude released the final Task 5 shared paths at `210c68f` and opened PR #34.
-Codex now owns Task 2's student surface on top of that final head. Student
-Preview waits for PR #34 and Admin A1 to merge; it will reuse rather than
-duplicate Task 5's parameter echo/substitution behavior.
+Codex completed Task 2 on PR #35 and Admin A1 on PR #36, both stacked directly
+on #34 so neither republishes an older Task 5 state. Student Preview waits for
+PR #34 and Admin A1 to merge; it will reuse rather than duplicate Task 5's
+parameter echo/substitution behavior.
 
 ## Admin v0 decisions
 
@@ -56,5 +57,13 @@ authorized Codex to take a minimal Saurav-owned dependency if it becomes the
 only blocker; Codex will record any such cross-owner takeover here and in
 Saurav's status before implementation, and will not duplicate active work.
 
-Task 5 PR: #34 (`stephen/phase-2-task5-params`, CI green). Codex Task 2 branch:
-`codex/phase-2-task2-student-flag`.
+Current PR chain:
+
+- #34 — Task 5 parameterization, CI green
+- #35 — Task 2 student Flag control; 51 suites / 570 tests and live student
+  browser regression passed
+- #36 — Admin A1; 53 suites / 585 tests and live Admin active/pending/revoke
+  regression passed
+
+Codex begins Task 7 next. Admin browser test mutations were localhost-only and
+fully restored (no leftover test grants; test-user Admin bit returned false).

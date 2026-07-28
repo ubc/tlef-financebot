@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 2 student Flag control active; Admin A1 waits for PR #34 merge
-**Base:** PR #34 head `7fdd2f3` (`stephen/phase-2-task5-params`)
+**State:** Task 7 progression/redirect + finite rounds active
+**Base:** PR #35 head `a685800` (`codex/phase-2-task2-student-flag`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -14,39 +14,45 @@ that agent records `released` plus a commit SHA.
 
 ## Active task
 
-Phase 2 Task 2 — Stephen's student Flag control half.
+Phase 2 Task 7 — progression recommendations, repeated-failure redirect, and
+Stephen's accepted finite-round semantics.
 
-Branch: `codex/phase-2-task2-student-flag`, stacked on PR #34's final head so
-the one-line Task 5 change to `practice-card.ts` is already present rather
-than conflicted.
+Branch: `codex/phase-2-task7-progression`, stacked on PR #35 so it includes the
+finished Task 2 practice-card behavior and PR #34's final parameter echo.
 
-## Task 2 files claimed by Codex
+## Task 7 files claimed by Codex
 
+- create `server/src/services/progression.service.ts`
+- `server/src/services/attempts.service.ts`
+- `server/src/services/serving.service.ts`
 - `client/src/api.ts`
+- `client/src/practice-session.ts`
+- `client/src/views/student/practice.ts`
 - `client/src/views/student/practice-card.ts`
-- focused Task 2 tests or browser evidence
+- create `tests/unit/redirect.test.ts`
+- focused serving/attempt regression tests
 - `docs/superpowers/plans/phase-2/2026-07-11-phase-2-pilot-readiness.md`
 - `docs/superpowers/plans/phase-2/Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`
 - `docs/superpowers/plans/phase-2/Stephen/STATUS.md`
 - `docs/superpowers/plans/phase-2/Stephen/coordination/CODEX.md`
 
-Claude explicitly released `client/src/api.ts` and
-`client/src/views/student/practice-card.ts` at final Task 5 commit `210c68f`;
-Codex does not change Task 5's parameter contracts.
+Task 7 may import `notifyCourseStaff` and read ready materials, but does not
+edit Saurav's notifications/materials services. Preview A2 does not edit these
+paths until Task 7 releases them.
 
-## Admin A1 checkpoint
+## Completed handoffs
 
-The disjoint backend is pushed on `codex/admin-platform-instructor` through
-`e6fc19a`. The verified client integration commit `3bd4b5f` remains local on
-`codex/admin-platform-instructor-integration`, previously stacked on the
-pre-final Task 5 head. After PR #34 merges, Codex will transplant only its
-Admin commits onto latest `main`, rerun the full suite, push, and open the
-complete Admin A1 PR.
+- Task 2: commit `a685800`, stacked PR #35. Live browser verified blank-reason
+  Flag, answer-after-flag, correct feedback, and Strategy-A retry controls;
+  console clean.
+- Admin A1: branch `codex/admin-console-v0`, stacked PR #36. Full 585 tests,
+  typecheck/lint/build, and live active/pending/revoke Admin regression pass.
 
 ## Preview A2 reservation
 
-Student Preview is not active during Task 2. Claude released its Task 5 seams,
-but A2 still waits for PR #34 and Admin A1 to merge. Expected A2 paths remain:
+Student Preview is not active during Task 7. It waits for PR #34 and Admin A1
+to merge, plus Task 7's release of the student-practice seams. Expected A2
+paths remain:
 
 - `server/src/services/preview.service.ts`
 - `server/src/routes/preview.routes.ts`
@@ -57,7 +63,7 @@ but A2 still waits for PR #34 and Admin A1 to merge. Expected A2 paths remain:
 
 ## Handoff
 
-Task 2 starts immediately. Stephen authorized Codex on 2026-07-28 to take a
-minimal Saurav-owned dependency if a later Stephen task is blocked; any such
-cross-owner takeover must be recorded in both developers' status files with
-the exact files and commit, and must not duplicate active Saurav work.
+Stephen authorized Codex on 2026-07-28 to take a minimal Saurav-owned
+dependency if a later Stephen task is blocked; any such cross-owner takeover
+must be recorded in both developers' status files with the exact files and
+commit, and must not duplicate active Saurav work.
