@@ -1,6 +1,14 @@
 # Phase 2 — Pilot Readiness — Stephen (Dev A) Implementation Plan
 
-> **DRAFT — written by Saurav's agent session on 2026-07-23, not by Stephen.**
+> **CONFIRMED BY STEPHEN on 2026-07-27.** This plan was initially drafted by
+> Saurav's agent session on 2026-07-23 and is now Stephen's active personal
+> Phase 2 plan. Current status is in [`STATUS.md`](STATUS.md); Admin staging
+> enablement is planned separately in
+> [`2026-07-27-admin-console-v0-stephen.md`](2026-07-27-admin-console-v0-stephen.md).
+>
+> Historical note: this file was originally introduced with the following
+> draft provenance.
+>
 > Stephen already authored the source material this draws from (the ownership
 > map, the P2-0 contract, and the P2-0 implementation status) — this file only
 > reformats his own proposed scope into the personal-plan structure Gate B of
@@ -35,13 +43,11 @@ match the core document.
 - Task 9 — parameterized-script migration.
 - Task 10 — custom-prompt generation/regeneration.
 
-**Already underway, outside this doc's original 11 tasks:**
+**Completed outside this doc's original 11 tasks:**
 - **P2-0** (persistent content runs + live progress) — Stephen's own
-  cross-owner takeover, code-complete on `codex/phase-2-content-runs`, not yet
-  merged. Full status in
+  cross-owner takeover, merged in PR #32. Full status in
   [`2026-07-22-phase-2-review-improvements-stephen.md`](2026-07-22-phase-2-review-improvements-stephen.md)
-  ("Verification and handoff" section) — the one remaining item there is a
-  live browser smoke test against a running local stack, then opening the PR.
+  ("Verification and handoff" section).
   This plan does not re-litigate P2-0's design; it only notes where it gates
   Task 10 (Saurav's, downstream) and Task 2/7 (Stephen's own, listed below).
 
@@ -68,20 +74,18 @@ is a Node builtin).
 - Parameterized values are fixed for an attempt, never re-rolled mid-question (ST-P03); Review-Book re-practice draws a fresh seed (ST-R04).
 - Contract changes (`docs/api-contract.md`) go through two-developer PR review first — this applies doubly to P2-0, which migrates the generation enqueue response shape.
 
-## Entry gate status (as of 2026-07-23)
+## Entry gate status (updated 2026-07-27)
 
 - [x] Phase 1 S1/S2 merged, PR #25 (Stephen's own stabilization takeover).
 - [x] Phase 1 Task 13 recorded slipped (Stephen's closeout decision).
 - [ ] Phase 1 Task 16 — Stephen's own explicit deferral; not blocking Phase 2 start.
-- [ ] **P2-0 not yet merged** — open the PR after the live smoke test; this also unblocks Saurav's Task 10.
+- [x] **P2-0 merged** — PR #32; Saurav's Task 10 dependency is satisfied.
 
 ## Stephen's task order (Dev A) — proposed
 
-1. **Finish and merge P2-0** — the one remaining checkbox in your own
-   review-improvements doc is the live browser smoke test; then open the PR.
-   Saurav is the async integration reviewer, not a blocker.
-2. **Task 4** (parameterized sandbox) — no dependency; front-load, since it
-   unblocks Task 5 and Saurav's Task 9.
+1. **P2-0 — complete**, merged in PR #32.
+2. **Task 4 — complete**, merged in PR #33 after eight security review
+   rounds; it unblocks Task 5.
 3. **Task 5** (parameterization config + serve-time randomization) — needs
    Task 4.
 4. **Task 2 — student flag control half** — needs Saurav's Task 1 (flag
@@ -138,6 +142,9 @@ honest against `git log`.
 
 **Owner:** Dev A (Stephen) · **Reviewer:** Dev B (Saurav)
 
+**Status:** Merged in PR #33 (`ed71411`) after eight adversarial/security
+review rounds.
+
 **Files:**
 - Create: `server/src/components/param-worker/index.ts`, `server/src/components/param-worker/worker.js`, `server/src/components/param-worker/AGENTS.md`
 - Test: `tests/unit/param-worker.test.ts` (the abuse suite — a phase exit criterion)
@@ -148,9 +155,12 @@ honest against `git log`.
 
 - [x] **Step 1: Write the failing abuse tests** exactly as in the core document, Task 4 Step 1 (deterministic-per-seed, infinite-loop timeout, network block, fs block, process block, missing-`generate()` rejection).
 - [x] **Step 2: Verify FAIL.**
-- [x] **Step 3: Implement** `worker.js` and `index.ts`. **Deviated from the core document's literal Step 3 code**: the identifier-shadowing `new Function(...)` approach it shows was fundamentally insecure (live-verified full RCE via `[].constructor.constructor` property access) — 8 adversarial review rounds drove a rewrite onto `vm.createContext()` for real realm isolation instead. AGENTS.md documents the full threat model and all 8 rounds.
-- [x] **Step 4: Run the abuse suite** — `npx jest tests/unit/param-worker.test.ts` → 24/24 PASS.
-- [x] **Step 5: Commit** — done across 10 commits on `worktree-stephen+phase-2-param-sandbox`.
+- [x] **Step 3: Implement and harden** `worker.js` and `index.ts`; the final
+  design uses a real `vm` context and closes host-boundary escapes found by
+  adversarial review.
+- [x] **Step 4: Run the abuse suite and repository verification** — PASS,
+  recorded in the Task 4 branch/report.
+- [x] **Step 5: Merge** — PR #33.
 
 ---
 
@@ -207,9 +217,8 @@ honest against `git log`.
 
 ---
 
-## Open question for Stephen to resolve, not answered by this draft
+## Resolved sequencing note
 
-This draft assumes P2-0 finishes (live smoke test + PR) before Task 4 starts,
-purely to keep one thread of work moving at a time. If you'd rather run P2-0's
-remaining smoke test and Task 4 in parallel (they don't share files), reorder
-freely — nothing in Task 4 depends on P2-0.
+P2-0 and Task 4 are merged. Claude proceeds with Task 5 while Codex owns the
+separate Admin v0 plan. Their per-file claims are published under
+[`coordination/`](coordination/) before either agent edits shared paths.
