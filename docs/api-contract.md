@@ -71,6 +71,27 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   202 `{ runId }` — a unique durable generation run; results land as Draft questions (IN-Q10/Q11)
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
 
+## Question import (instructor)
+
+- `POST /api/courses/:courseId/import/preview` — multipart field `file`
+  (`.csv`, `.json`, `.xml`, or `.qti`, maximum 5 MB) →
+  `{ format: 'csv'|'json'|'qti', candidates: ImportCandidate[], failures:
+  [{ line: number|string, reason }] }`. Parsing is partial-success: an invalid
+  row/item is reported without removing valid candidates. No question is
+  written during preview.
+- `POST /api/courses/:courseId/import/commit { candidates, themeId?, loId? }` →
+  `201 { imported, autoConverted }`. The preview candidates are untrusted
+  round-tripped input and are revalidated as one batch before writes.
+  Questions always enter as Drafts; missing assignment ids leave them
+  unassigned. `type: 'other'` is converted to MCQ/T-F through the configured
+  LLM and labelled `auto-converted`. Numeric candidates meeting the
+  two-distinct-values plus currency/percent/rate heuristic are labelled
+  `convertible-to-parameterized`.
+
+`ImportCandidate` is `{ type: 'mcq'|'true-false'|'other', stem, options:
+[{ key, text, role?, explanation? }], correctKey, difficulty?,
+parameterizable }`.
+
 ## Content runs (instructor; Phase 2 P2-0)
 
 Mongo `contentRuns` is the recoverable source of truth; Agenda remains the

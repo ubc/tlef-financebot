@@ -62,10 +62,9 @@ new Phase-2 infrastructure not in this doc's original 11 tasks — it replaces
 today's polling/fire-and-forget generation enqueue with a durable Mongo
 `contentRuns` record + course-scoped SSE. Full contract:
 [`Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
-Code-complete on `codex/phase-2-content-runs`, **not yet merged** (no PR opened
-as of 2026-07-23). Task 10 depends on it — the generation UI must consume run
-state, not a second ad hoc polling mechanism, so Task 10 cannot start until
-P2-0 merges and the run/list/SSE endpoints land in `docs/api-contract.md`.
+Merged in PR #32. Task 10 must consume its run state rather than a second ad
+hoc polling mechanism; the run/list/SSE endpoints are now in
+`docs/api-contract.md`, so Task 10 is unblocked.
 
 ## Dependency graph
 
@@ -393,9 +392,9 @@ manual checklist text. Full detail in Saurav's personal plan
   - Redirect rule (ST-P07 + §9.2 precedence): when the window shows ≥ `redirectFailureThreshold` misses **clustered on easy/medium questions** for the LO, the attempt response gains `redirect: { materials: [{ name, materialId }], message }` and a silent `notify(kind: 'redirect')` flag lands on the instructor dashboard; if misses are concentrated on **hard** questions only, the tier step-back (Phase 1) applies instead and no redirect fires.
   - Client: recommendation banner at the natural break after feedback ("LO covered — advance to next LO?" / theme-level variant; decline = keep practicing, ST-P05); redirect as a **non-modal** inline panel with material links and an always-present "Continue practicing" button; never reveals the current answer; never blocks.
 
-- [ ] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
+- [x] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
+- [x] **Step 2–4: FAIL → implement → PASS.** The accepted finite-round extension is included: unseen Approved questions are exhausted before a repeated id becomes a round boundary; the client shows an explicit round summary and only starts repeats on confirmation. Redirect material names point to a real enrolled-student route (URL redirect or uploaded-file download), not a dead client link. Full suite: 53 suites / 583 tests; typecheck/lint/build and live SAML student browser regression passed.
+- [x] **Step 5: Commit** — implementation `689e40e`, stacked PR #37.
 
 ---
 
@@ -403,6 +402,11 @@ manual checklist text. Full detail in Saurav's personal plan
 
 **Owner:** Dev B (Saurav)
 **Reviewer:** Dev A (Stephen)
+
+**Takeover note (2026-07-28):** Stephen authorized Codex to take this
+independent, not-started Saurav task so Phase 2 can continue while the stacked
+Stephen PR chain is awaiting merge. The exact file claim is recorded in both
+developers' status files before implementation; Saurav need not confirm.
 
 **Files:**
 - Create: `server/src/services/import.service.ts`
@@ -421,10 +425,15 @@ manual checklist text. Full detail in Saurav's personal plan
   - Routes: `POST /api/courses/:courseId/import/preview` (multipart single file; format from extension; 400 inline error naming an unsupported format), `POST /api/courses/:courseId/import/commit`.
   - Client: upload → preview table (detected questions, failures with reasons, parameterization flags) → confirm.
 
-- [ ] **Step 1: Create the three fixtures** (5 rows each: 3 valid MCQ, 1 T/F, 1 broken row for the failure list; JSON fixture includes one `type: 'other'` short-answer item to exercise auto-conversion).
-- [ ] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
-- [ ] **Step 3–5: FAIL → implement (service, routes, view) → PASS.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)"`
+- [x] **Step 1: Create the three fixtures** (5 items each: CSV/QTI contain 3 valid MCQ, 1 T/F, and 1 broken row/item; JSON keeps five total by replacing the third MCQ with one `type: 'other'` short-answer item to exercise auto-conversion).
+- [x] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
+- [x] **Step 3–5: FAIL → implement (service, routes, view) → PASS.** Added whole-batch semantic revalidation on commit, cross-course Theme/LO rejection, instructor-route/multipart coverage, and a real SAML browser flow through Import → preview → partial-success confirmation → Question Bank. Focused: 2 suites / 15 tests. Full: 52 suites / 548 tests; typecheck/lint/build passed. Browser: 1/1 passed with zero residual course/question/version/role fixtures.
+- [x] **Step 6: Commit** — `b691de8` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`).
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed the recorded
+takeover without modifying Saurav's Task 6 work. The Import nav item is now a
+real route, all confirmed questions remain Drafts, and QTI was retained rather
+than slipped.
 
 *Slip note (phase doc #2): if the week is tight, drop QTI — delete only the QTI branch and fixture.*
 
@@ -491,21 +500,29 @@ manual checklist text. Full detail in Saurav's personal plan
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
 
-- [ ] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
+- [x] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
 
 Run: `npm run test:e2e -- tests/e2e/flag-loop.spec.ts` → PASS.
 
-- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "test: phase-2 exit — flag -> notify -> auto-pause -> resolve loop e2e"`
+- [x] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS. Full evidence: 53 Jest suites / 583 tests, typecheck/lint/build clean, and 12 Playwright scenarios passed (the existing opt-in live-LLM scenario skipped). The full E2E pass also updated stale Phase-0 shell assertions and made shared-dataset selectors deterministic.
+- [x] **Step 3: Commit** — `4422d20` (`test: phase-2 exit - flag -> notify -> auto-pause -> resolve loop e2e`).
+
+**Implementation note (2026-07-28):** the real browser run found that the
+notification bell synchronously polled before its wrapper was mounted; its
+disconnect cleanup therefore cancelled polling permanently on every normal
+shell construction. The minimal lifecycle fix defers the initial poll by one
+microtask and is covered by the full standard/elevated/resolved notification
+loop. All E2E courses, flags, attempts, notifications, and roles were removed;
+explicit residual counts were zero.
 
 ---
 
 ## Exit criteria checklist (from phase-2-pilot-readiness.md)
 
-- [ ] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
+- [x] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
 - [ ] COMM 298 practice sets + parameterized scripts imported as Drafts (Tasks 8–9 used by the instructor; pre-seeding continues through Phases 3–4).
-- [ ] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4).
-- [ ] supertest coverage on flag state machine and auto-pause thresholds (Task 1).
+- [x] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4; PR #33, 24/24 abuse tests).
+- [x] supertest coverage on flag state machine and auto-pause thresholds (Task 1; PRs #27/#29).
 
 ## Slip order (from the phase doc)
 

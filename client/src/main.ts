@@ -47,6 +47,7 @@ import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
+import { renderImport } from './views/instructor/import.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -85,6 +86,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/bank', render: renderBank },
   { path: '/instructor/course/:id/queue', render: renderReviewQueue },
   { path: '/instructor/course/:id/flags', render: renderFlagQueue },
+  { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];

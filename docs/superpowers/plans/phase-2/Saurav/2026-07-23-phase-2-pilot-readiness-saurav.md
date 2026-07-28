@@ -12,10 +12,9 @@ and integrated into the core document on 2026-07-23. Task numbers match the
 core document.
 
 **Not in this plan** (Stephen's, Dev A):
-- **P2-0** — persistent content runs + live progress (SSE). Code-complete on
-  `codex/phase-2-content-runs`, not yet merged. I am the **review/integration
-  owner**, not the implementer — read the contract, raise concrete objections
-  at PR review, never implement a parallel content-run model.
+- **P2-0** — persistent content runs + live progress (SSE), merged in PR #32.
+  I am the **review/integration owner**, not the implementer — consume its real
+  run/SSE contract and never implement a parallel content-run model.
 - **Task 2 — student flag control half** (practice view "Flag this question"
   button). I own only the instructor resolution-queue half (see Task 2 below).
 - **Task 4** — parameterized execution sandbox (`worker_threads`).
@@ -58,7 +57,7 @@ sandbox/params service, Task 10 consumes his P2-0 run infrastructure.
 - [x] Phase 1 S1 (strict grounding) and S2 (transition CAS) merged, PR #25.
 - [x] Phase 1 Task 13 recorded slipped.
 - [ ] Phase 1 Task 16 — deferred by Stephen, not blocking Phase 2 start, but still owed.
-- [ ] **P2-0 not yet merged** — blocks starting Task 10 (see task order below).
+- [x] **P2-0 merged in PR #32** — Task 10 is unblocked.
 - [ ] Phase 1 S0 docs reconciliation — still owed, tracked in [`../../phase-1/Saurav/STATUS.md`](../../phase-1/Saurav/STATUS.md) "What's left", deliberately deferred until after this planning pass per 2026-07-23 direction.
 
 ## Saurav's task order (Dev B)
@@ -73,20 +72,13 @@ sandbox/params service, Task 10 consumes his P2-0 run infrastructure.
    benefits from Task 3 being live so resolutions can show/trigger
    notifications, but not hard-blocked on it.
 4. **Task 6** (remediation) — needs Task 3's `notify()`.
-5. **Task 8** (question import) — independent of the flag/notification arc;
-   can run in parallel with 1/3 if useful, but sequenced after here to keep
-   one arc at a time.
-6. **Task 9** (script migration) — **blocked on Stephen's Tasks 4 (sandbox)
-   and 5 (params service) merging**, and needs my own Task 8 merged (both
-   touch `import.service.ts`).
-7. **Task 10** (custom-prompt generation/regeneration) — **blocked on P2-0
-   merging** (Stephen, in progress on `codex/phase-2-content-runs`). Do not
-   start early against a guessed contract — the generation UI must consume
-   run state, not a second ad hoc poll.
-8. **Task 11** (phase exit, joint) — last; needs my Tasks 1, 2, 3, 6 merged
-   plus Stephen's Task 2 student-control half. Stephen drives
-   `flag-loop.spec.ts`; I verify the instructor/AI side (queue, resolution,
-   remediation notice) and participate in the run.
+5. **Task 8** (question import) — complete by Stephen/Codex on PR #39.
+6. **Task 9** (script migration) — Task 4 is merged; wait for Task 5 PR #34
+   and Task 8 PR #39 to merge because it extends their files/interfaces.
+7. **Task 10** (custom-prompt generation/regeneration) — unblocked by merged
+   P2-0 PR #32; consume the real durable run/SSE contract.
+8. **Task 11** (phase exit, joint) — complete on PR #38 with the
+   instructor-side queue/notification/resolution path covered.
 
 ## Coordination with Stephen (Dev A)
 
@@ -96,8 +88,8 @@ sandbox/params service, Task 10 consumes his P2-0 run infrastructure.
 |---|---|---|
 | **Task 1 (flags)** | Saurav → Stephen's Task 2 (student flag control) | The student "Flag this question" button posts to `POST /api/questions/:questionId/flag` — merge Task 1 early so Stephen codes against the real route, not a stub. |
 | **Task 3 (notifications)** | Saurav → Stephen's Task 7 (redirect) | Stephen's repeated-failure redirect emits `notify(kind: 'redirect')` — merge Task 3 before he needs it. |
-| **P2-0 (Stephen)** | Stephen → Saurav's Task 10 | Custom generation must be built on run state (`runId`/SSE), not the old `jobId` poll. Do not start Task 10 until P2-0 merges and `docs/api-contract.md` reflects it. |
-| **Task 4 + 5 (Stephen)** | Stephen → Saurav's Task 9 | Script migration validates through Stephen's sandbox and consumes his params service — wait for both merged. |
+| **P2-0 (Stephen)** | Stephen → Saurav's Task 10 | Fulfilled by PR #32: custom generation builds on run state (`runId`/SSE), not the old `jobId` poll. |
+| **Task 4 + 5 (Stephen)** | Stephen → Saurav's Task 9 | Task 4 merged in PR #33; wait for Task 5 PR #34 before script migration. |
 | **`docs/api-contract.md`** | either → both | Any change is a two-developer PR review, never ad hoc. |
 
 **Sync points (pause and involve Stephen):**
@@ -385,10 +377,10 @@ rather than by tests, which is not a repeatable safety net.
 - Produces: `parseImport`, the `parameterizable` heuristic, `commitImport`. Column/shape specs and the auto-conversion rule are in the core document, Task 8 Interfaces.
 - Routes: `POST /api/courses/:courseId/import/preview`, `POST /api/courses/:courseId/import/commit`.
 
-- [ ] **Step 1: Create the three fixtures** per the core document, Task 8 Step 1 (5 rows each; one broken row; one `type: 'other'` item for auto-conversion).
-- [ ] **Step 2: Failing tests** — the five cases in the core document, Task 8 Step 2.
-- [ ] **Step 3–5: FAIL → implement (service, routes, view) → PASS.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)"`
+- [x] **Step 1: Create the three fixtures** per the core document, Task 8 Step 1 (5 items each; one broken item; JSON uses one `type: 'other'` item for auto-conversion).
+- [x] **Step 2: Failing tests** — the five cases in the core document, Task 8 Step 2.
+- [x] **Step 3–5: FAIL → implement (service, routes, view) → PASS.** Completed by Stephen/Codex under the recorded 2026-07-28 takeover. Focused 2 suites / 15 tests, full 52 suites / 548 tests, typecheck/lint/build, and a real SAML instructor browser import all passed; fixture cleanup assertions were zero.
+- [x] **Step 6: Commit** — `b691de8` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`), PR #39.
 
 *Slip note (core doc #2): if the week is tight, drop QTI — delete only the QTI branch and fixture.*
 
@@ -416,7 +408,7 @@ rather than by tests, which is not a repeatable safety net.
 ### Task 10: Custom-prompt generation + regeneration (IN-Q11, IN-Q12) — *first to slip*
 
 **Owner:** Dev B (Saurav) · **Reviewer:** Dev A (Stephen)
-**Depends on:** **P2-0 merged** — do not start before this. Read
+**Depends on:** **P2-0 merged in PR #32**. Read
 [`../Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](../Stephen/2026-07-22-p2-0-content-run-contract-proposal.md)
 in full first; the generation enqueue response and progress model will have
 changed from Phase 1's `{ jobId }` to `{ runId }` + SSE.
@@ -441,18 +433,16 @@ changed from Phase 1's `{ jobId }` to `{ runId }` + SSE.
 **Owner:** Joint — Stephen drives `tests/e2e/flag-loop.spec.ts`; my share is verifying the instructor/AI side of the loop.
 **Depends on:** My Tasks 1, 2, 3, 6 merged; Stephen's Task 2 student-control half merged.
 
-- [ ] **Step 1: Participate in the spec run** — student flags → instructor sees standard notification + flag in queue → auto-pause fires → instructor sees elevated notification → question stops serving → instructor resolves "clear" → question serves again → flagging student sees flag-resolved notification. Verify the instructor-side assertions (queue content, resolution actions, remediation notice path) match what Task 2/6 actually built.
-- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
-- [ ] **Step 3: Confirm commit** — Stephen commits the spec; I confirm the instructor-path assertions before sign-off.
+- [x] **Step 1: Participate in the spec run** — the PR #38 real-SAML flow covers the instructor standard/elevated notifications, grouped flag queue, Clear resolution, serving restoration, and student resolution notice.
+- [x] **Step 2: Full suite green** — 53 Jest suites / 583 tests, typecheck/lint/build, and 12 current Playwright scenarios passed; the existing opt-in live-LLM scenario skipped.
+- [x] **Step 3: Confirm commit** — Stephen/Codex implementation `4422d20`, PR #38; instructor-path evidence recorded in both status files.
 
 ---
 
 ## What's deliberately not started yet
 
-- **Task 10** cannot start until P2-0 merges — do not build against a guessed
-  contract even though the proposal is detailed; Stephen may still change
-  specifics during his own PR review.
-- **Task 9** cannot start until Stephen's Tasks 4/5 merge.
+- **Task 10 is now unblocked** by merged P2-0 PR #32.
+- **Task 9** waits for Task 5 PR #34 and Task 8 PR #39 to merge.
 - **Phase 1 S0** (status-doc reconciliation) is intentionally deferred until
   after this planning pass, per 2026-07-23 direction — tracked separately in
   [`../../phase-1/Saurav/STATUS.md`](../../phase-1/Saurav/STATUS.md).
