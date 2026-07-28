@@ -18,9 +18,8 @@ _Last updated: 2026-07-28_
   “ready to push” status was reconciled on 2026-07-28.
 - Task 10 custom generation/regeneration: **complete on PR #40** (`0870e23`)
   after the recorded cross-owner takeover.
-- Admin Console v0 A2 Student Preview: **implementation and real-browser
-  verification complete on an explicit PR #37 + PR #36 integration stack;
-  PR handoff pending**.
+- Admin Console v0 A2 Student Preview: **complete at `9f68a44` on draft PR
+  #41**, using the explicit PR #37 + PR #36 integration stack.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -217,9 +216,11 @@ was merged to `main`.
   answer feedback, exactly one preview record, zero live-learning records,
   and zero browser errors. Fixture residuals were zero.
 
-The implementation branch is `codex/admin-student-preview`; the exact commit
-and PR URL will be recorded here and in both coordination/status ledgers at
-handoff.
+Implementation commit: `9f68a44`. Draft PR:
+https://github.com/ubc/tlef-financebot/pull/41. It remains draft only because
+its two released dependency lines must merge first; after #34/#35/#37 and #36,
+rebase/retarget #41 and mark it ready. All A2 implementation paths are
+released at this commit.
 
 ## Message for Saurav
 
@@ -244,6 +245,9 @@ Current PRs:
   tests and live instructor upload/preview/commit regression passed
 - #40 — Task 10 custom generation/regeneration; 51 suites / 543 tests plus
   real-session preset/@mention/side-by-side/explicit-Replace regression passed
+- #41 — Admin A2 Instructor Student Preview; draft only for stack order,
+  57 suites / 606 tests plus real-session published/unpublished isolation
+  regression passed
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).

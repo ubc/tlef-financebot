@@ -2,7 +2,7 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Admin A2 implementation/browser verification complete; PR handoff pending
+**State:** Admin A2 released at `9f68a44`; draft PR #41 open
 **Base:** PR #37 head plus PR #36 Admin A1 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
@@ -55,8 +55,11 @@ summaries, notifications, progression, or analytics.
   and zero browser errors.
 - Browser fixture/course role and all fixture documents were removed.
 
-Branch: `codex/admin-student-preview`. Exact commit/PR will be added at
-handoff; paths remain claimed until then.
+Implementation commit: `9f68a44`. Draft PR:
+<https://github.com/ubc/tlef-financebot/pull/41>. It targets PR #37 and includes
+PR #36's Admin A1 integration; merge those dependency lines first, then
+rebase/retarget and mark #41 ready. All Admin A2 paths are released at this
+commit.
 
 ## Released Task 10
 

@@ -252,7 +252,7 @@ dependencies are merged in their documented order.
 
 **Owner:** Codex  
 **Depends on:** Task 5 merged/released and A1 merged
-**Status:** implementation and browser verification complete; PR handoff pending
+**Status:** complete on draft PR #41 (`9f68a44`)
 
 Expected files:
 
@@ -287,7 +287,7 @@ Steps:
 - [x] Verify the published and unpublished course flows in a browser.
 - [x] Run focused tests, the full Jest suite, typecheck, lint, build, and
   relevant Playwright coverage.
-- [ ] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
+- [x] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
   status.
 
 **A2 verification (2026-07-28):** 57 Jest suites / 606 tests, server/client
@@ -298,6 +298,10 @@ while excluding a Draft, removed the flag control, submitted through the real
 question card, wrote exactly one `previewAttemptRecord`, and asserted zero
 live attempt/mastery/Review Book/flag/notification/session-summary records.
 Browser console/page errors and fixture residuals were zero.
+Opened as draft PR #41:
+https://github.com/ubc/tlef-financebot/pull/41. It targets PR #37 for the
+student-practice seam and contains PR #36's Admin A1 integration; merge those
+documented dependencies first, then rebase/retarget and mark #41 ready.
 
 ## Required regression cases
 

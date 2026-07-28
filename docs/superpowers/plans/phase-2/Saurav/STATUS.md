@@ -74,13 +74,15 @@ released PR #37 plus Admin A1 PR #36. It does not claim Saurav generation,
 import, flag, remediation, or notification files. The exact Preview paths are
 in Stephen's `coordination/CODEX.md`; Saurav need not confirm or stop work.
 
-Implementation and real-browser verification are now complete; PR handoff is
-pending. The result adds only Instructor preview routes/service/UI, an isolated
+Implementation and real-browser verification are complete at `9f68a44` on
+draft PR #41 (draft only for the documented #37 + #36 stack order). The result
+adds only Instructor preview routes/service/UI, an isolated
 `previewAttemptRecords` collection, a pure shared grading seam, and focused
 tests/docs. Full verification passed with 57 Jest suites / 606 tests,
 typecheck/lint/Node 24 build, plus published/unpublished Approved-only browser
 preview with one preview record and zero live-learning records. Saurav-owned
-generation/import/flag/remediation/notification paths were not changed.
+generation/import/flag/remediation/notification paths were not changed. A2
+paths are released; Saurav need not act.
 
 ## Stephen/Codex Task 8 takeover — 2026-07-28
 
