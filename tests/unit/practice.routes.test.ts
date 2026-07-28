@@ -30,6 +30,10 @@ jest.mock('../../server/src/services/progression.service', () => ({
   getRedirectMaterialSource: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/courses.service', () => ({
+  getCourse: jest.fn(),
+}));
+
 import { practiceRouter } from '../../server/src/routes/practice.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import { selectNextQuestion, studentCourseHome } from '../../server/src/services/serving.service';
@@ -37,6 +41,7 @@ import { submitAttempt, getCourseIdForQuestionVersion } from '../../server/src/s
 import { recordSkip } from '../../server/src/services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../../server/src/services/review-book.service';
 import { getRedirectMaterialSource } from '../../server/src/services/progression.service';
+import { getCourse } from '../../server/src/services/courses.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -80,6 +85,12 @@ beforeEach(() => {
   jest.mocked(storeDeferredSummary).mockReset();
   jest.mocked(getSessionSummaryForStart).mockReset();
   jest.mocked(getRedirectMaterialSource).mockReset();
+  jest.mocked(getCourse).mockReset();
+  jest.mocked(getCourse).mockResolvedValue({
+    _id: courseId,
+    published: true,
+    lifecycle: 'published',
+  } as never);
 });
 
 // -----------------------------------------------------------------------------
@@ -250,6 +261,25 @@ describe('practice routes — 403 non-enrolled', () => {
 
     expect(res.status).toBe(403);
     expect(getRedirectMaterialSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('practice routes — archived course', () => {
+  it('blocks enrolled-student practice before selecting a question', async () => {
+    jest.mocked(getCourse).mockResolvedValue({
+      _id: courseId,
+      published: false,
+      lifecycle: 'archived',
+      archivedAt: new Date(),
+    } as never);
+
+    const res = await request(makeApp(student))
+      .post(`/api/courses/${courseId.toHexString()}/practice/next`)
+      .send({ loId: loId.toHexString() });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'course-archived' });
+    expect(selectNextQuestion).not.toHaveBeenCalled();
   });
 });
 

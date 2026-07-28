@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { ObjectId, type WithId } from 'mongodb';
 import { z } from 'zod';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
@@ -9,6 +9,7 @@ import {
   listCourseContentRuns,
   subscribeToCourseContentRuns,
 } from '../services/content-runs.service';
+import { retryGenerationRun } from '../services/generation-blueprints.service';
 import type { ContentRun } from '../types/domain';
 
 export const contentRunsRouter = Router();
@@ -51,6 +52,21 @@ contentRunsRouter.get(
     const query = req.query as unknown as z.infer<typeof listQuery>;
     const runs = await listCourseContentRuns(courseId, query);
     res.json(runs.map(toSummary));
+  },
+);
+
+/** Create a distinct exact retry from a terminal generation run. */
+contentRunsRouter.post(
+  '/courses/:courseId/content-runs/:runId/retry',
+  validate({ params: runParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const runId = await retryGenerationRun(
+      new ObjectId(String(req.params.courseId)),
+      new ObjectId(String(req.params.runId)),
+      req.user!.puid,
+    );
+    res.status(202).json({ runId: runId.toHexString() });
   },
 );
 
@@ -108,6 +124,21 @@ contentRunsRouter.get(
     }
   },
 );
+
+const RETRY_ERROR_STATUS: Record<string, number> = {
+  'content-run-not-found': 404,
+  'content-run-not-generation': 409,
+  'content-run-not-terminal': 409,
+  'content-run-enqueue-failed': 503,
+};
+
+contentRunsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof Error && RETRY_ERROR_STATUS[err.message]) {
+    res.status(RETRY_ERROR_STATUS[err.message]).json({ error: err.message });
+    return;
+  }
+  next(err);
+});
 
 /** GET /api/courses/:courseId/content-runs/:runId -> full persisted snapshot. */
 contentRunsRouter.get(

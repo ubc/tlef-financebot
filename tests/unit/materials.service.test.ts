@@ -45,6 +45,8 @@ import {
   retryMaterial,
   listMaterials,
   getMaterialCourseId,
+  inferMaterialKind,
+  updateMaterialKind,
 } from '../../server/src/services/materials.service';
 import { materialsCol } from '../../server/src/components/mongodb/collections';
 import { enqueueJob } from '../../server/src/components/jobs';
@@ -1035,7 +1037,7 @@ describe('retryMaterial', () => {
 });
 
 describe('listMaterials', () => {
-  it('queries by courseId and returns the materials array', async () => {
+  it('queries by courseId and normalizes legacy rows without a kind', async () => {
     const courseId = new ObjectId();
     const materials = [materialFixture(new ObjectId(), courseId, 'a.pdf')];
     sortToArray.mockResolvedValue(materials);
@@ -1043,7 +1045,35 @@ describe('listMaterials', () => {
     const result = await listMaterials(courseId);
 
     expect(find).toHaveBeenCalledWith({ courseId });
-    expect(result).toBe(materials);
+    expect(result).toEqual([{ ...materials[0], kind: 'other' }]);
+  });
+});
+
+describe('material kind metadata', () => {
+  it.each([
+    ['Week 3 lecture slides.pdf', 'lecture'],
+    ['chapter-4-reading.pdf', 'reading'],
+    ['homework_2.docx', 'assignment'],
+    ['final-exam.pdf', 'assessment'],
+    ['midterm answer key.pdf', 'solution'],
+    ['formula-sheet.pdf', 'reference'],
+    ['miscellaneous.txt', 'other'],
+  ])('infers %s as %s', (name, expected) => {
+    expect(inferMaterialKind(name)).toBe(expected);
+  });
+
+  it('persists an instructor correction within the course scope', async () => {
+    const courseId = new ObjectId();
+    const materialId = new ObjectId();
+    const corrected = materialFixture(materialId, courseId, 'notes.pdf', { kind: 'reading' });
+    findOneAndUpdate.mockResolvedValue(corrected);
+
+    await expect(updateMaterialKind(courseId, materialId, 'reading')).resolves.toBe(corrected);
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: materialId, courseId },
+      { $set: { kind: 'reading' } },
+      { returnDocument: 'after' },
+    );
   });
 });
 

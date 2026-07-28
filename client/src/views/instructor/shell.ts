@@ -39,6 +39,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Course Dashboard', path: '/instructor/course/:id' },
       { label: 'Course Structure', path: '/instructor/course/:id/structure' },
       { label: 'Course Materials', path: '/instructor/course/:id/materials' },
+      { label: 'Content Map', path: '/instructor/course/:id/content-map' },
     ],
   },
   {

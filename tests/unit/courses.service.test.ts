@@ -24,6 +24,8 @@ import {
   archiveTheme,
   publishChecklist,
   setPublished,
+  archiveCourse,
+  restoreCourse,
   putRoster,
 } from '../../server/src/services/courses.service';
 
@@ -99,6 +101,8 @@ describe('createCourse (IN-S01)', () => {
 
     const [doc] = coursesInsertOne.mock.calls[0];
     expect(doc.published).toBe(false);
+    expect(doc.lifecycle).toBe('draft');
+    expect(doc.updatedAt).toBeInstanceOf(Date);
     expect(doc.feedbackStrategy).toBe('adaptive');
     expect(doc.autoPause).toEqual({ minAttempts: 5, flagPercent: 30, flagCount: 15 });
     expect(doc.redirectFailureThreshold).toBe(3);
@@ -145,7 +149,33 @@ describe('updateCourse (IN-S02: term dates)', () => {
     await updateCourse(new ObjectId(), { reviewBacklogThreshold: 25 });
 
     const [, update] = coursesUpdateOne.mock.calls[0];
-    expect(update).toEqual({ $set: { reviewBacklogThreshold: 25 } });
+    expect(update.$set).toEqual({
+      reviewBacklogThreshold: 25,
+      updatedAt: expect.any(Date),
+    });
+  });
+
+  it('clears optional section metadata without storing null', async () => {
+    const courseId = new ObjectId();
+    coursesFindOne.mockResolvedValue({
+      _id: courseId,
+      name: 'Intro to Finance',
+      courseCode: 'COMM 298',
+      section: '101',
+      term: '2026W1',
+      published: false,
+    });
+
+    const updated = await updateCourse(courseId, { section: null });
+
+    expect(coursesUpdateOne).toHaveBeenCalledWith(
+      { _id: courseId },
+      {
+        $set: { updatedAt: expect.any(Date) },
+        $unset: { section: '' },
+      },
+    );
+    expect(updated.section).toBeUndefined();
   });
 });
 
@@ -220,8 +250,45 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
     coursesFindOne.mockResolvedValue({ _id: courseId, published: true });
     const course = await setPublished(courseId, true);
 
-    expect(coursesUpdateOne).toHaveBeenCalledWith({ _id: courseId }, { $set: { published: true } });
+    expect(coursesUpdateOne).toHaveBeenCalledWith(
+      { _id: courseId },
+      {
+        $set: {
+          published: true,
+          lifecycle: 'published',
+          updatedAt: expect.any(Date),
+        },
+      },
+    );
     expect(course.published).toBe(true);
+  });
+
+  it('archives and restores through explicit lifecycle states', async () => {
+    const courseId = new ObjectId();
+    coursesFindOne
+      .mockResolvedValueOnce({ _id: courseId, published: true })
+      .mockResolvedValueOnce({ _id: courseId, published: false, lifecycle: 'archived', archivedAt: new Date() })
+      .mockResolvedValueOnce({ _id: courseId, published: false, lifecycle: 'archived', archivedAt: new Date() })
+      .mockResolvedValueOnce({ _id: courseId, published: false, lifecycle: 'draft' });
+
+    const archived = await archiveCourse(courseId);
+    expect(archived.lifecycle).toBe('archived');
+    expect(coursesUpdateOne.mock.calls[0][1].$set).toMatchObject({
+      published: false,
+      lifecycle: 'archived',
+      archivedAt: expect.any(Date),
+    });
+
+    const restored = await restoreCourse(courseId);
+    expect(restored.lifecycle).toBe('draft');
+    expect(coursesUpdateOne.mock.calls[1][1]).toEqual({
+      $set: {
+        published: false,
+        lifecycle: 'draft',
+        updatedAt: expect.any(Date),
+      },
+      $unset: { archivedAt: '' },
+    });
   });
 });
 

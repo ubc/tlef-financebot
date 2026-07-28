@@ -99,11 +99,13 @@ describe('createQuestion (IN-Q03/Q04)', () => {
     expect(headDoc.internalNotes).toEqual([]);
     expect(headDoc.currentVersion).toBe(1);
     expect(headDoc.currentVersionId).toEqual(result.version._id);
+    expect(headDoc.templateFamilyId).toEqual(result.questionId);
 
     const [versionDoc] = versionsInsertOne.mock.calls[0];
     expect(versionDoc.version).toBe(1);
     expect(versionDoc.questionId).toEqual(result.questionId);
     expect(versionDoc.sourceRefs).toEqual([]);
+    expect(versionDoc.provenance).toEqual({ kind: 'manual' });
     expect(result.version.options).toHaveLength(4);
   });
 
@@ -308,6 +310,7 @@ describe('editQuestion (IN-Q03)', () => {
       expect(versionsInsertOne).toHaveBeenCalledTimes(1);
       expect(result.version).toBe(2);
       expect(result.editedFields).toEqual(['difficulty']);
+      expect(result.provenance).toEqual({ kind: 'edited', parentVersionId: versionId });
 
       const [, update] = questionsUpdateOne.mock.calls[0];
       expect(update.$set.loIds).toEqual(newLoIds);

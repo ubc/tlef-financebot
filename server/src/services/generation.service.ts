@@ -6,6 +6,7 @@ import { defineJob, enqueueJob } from '../components/jobs';
 import {
   losCol,
   materialsCol,
+  generationBlueprintsCol,
   questionsCol,
   questionVersionsCol,
 } from '../components/mongodb/collections';
@@ -100,6 +101,9 @@ export interface GenerationInput {
   prompt?: string;
   byPuid: string;
   models?: QuestionGenerationRun['input']['models'];
+  blueprintId?: ObjectId;
+  retryOfRunId?: ObjectId;
+  pinnedMaterialIds?: ObjectId[];
 }
 
 /** Agenda carries only the durable run identity; Mongo owns request details. */
@@ -140,7 +144,7 @@ export interface RegenerationVariant {
   };
 }
 
-function configuredGenerationModels(): QuestionGenerationRun['input']['models'] {
+export function configuredGenerationModels(): QuestionGenerationRun['input']['models'] {
   return {
     embedding: env.embeddingsModel,
     generator: env.llmModelGenerator,
@@ -163,6 +167,16 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     type: input.type ?? 'mcq',
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+    ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
+    ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
+    ...(input.pinnedMaterialIds
+      ? {
+          grounding: {
+            allowedMaterialIds: input.pinnedMaterialIds,
+            retrievedChunkCount: 0,
+          },
+        }
+      : {}),
     models: input.models ?? configuredGenerationModels(),
   });
   try {
@@ -176,6 +190,16 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
       retryable: true,
     }, run.result);
     throw new Error('content-run-enqueue-failed', { cause: error });
+  }
+  if (input.blueprintId) {
+    try {
+      await generationBlueprintsCol().updateOne(
+        { _id: input.blueprintId, courseId: input.courseId },
+        { $set: { lastRunId: run._id, updatedAt: new Date() } },
+      );
+    } catch (error) {
+      console.warn('[generation] run queued but blueprint lastRunId update failed', error);
+    }
   }
   return run._id;
 }
@@ -380,7 +404,8 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     if (!lo) throw new Error('lo-not-found');
     if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
 
-    const allowedMaterialIds = await groundingMaterialIds(courseId, lo, prompt);
+    const allowedMaterialIds = input.pinnedMaterialIds?.map((id) => id.toHexString())
+      ?? (await groundingMaterialIds(courseId, lo, prompt));
     if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
     await updateContentRun(runId, {
       status: 'running',
@@ -510,6 +535,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           difficulty: normalizeDifficulty(input.difficulty ?? candidate.generated.difficulty),
           sourceRefs,
           createdBy: byPuid,
+          provenance: {
+            kind: 'generated',
+            runId,
+            ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
+            item: candidate.item,
+          },
           ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
           agentDecision: {
             decision: normalizeDecision(candidate.review?.decision),
@@ -620,6 +651,11 @@ export function registerGenerationJobs(): void {
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
         models: run.input.models,
+        ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
+        ...(run.input.retryOfRunId ? { retryOfRunId: run.input.retryOfRunId } : {}),
+        ...(run.grounding?.allowedMaterialIds
+          ? { pinnedMaterialIds: run.grounding.allowedMaterialIds }
+          : {}),
       },
       id,
     );

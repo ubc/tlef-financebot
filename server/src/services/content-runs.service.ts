@@ -171,6 +171,9 @@ export async function createQuestionGenerationRun(input: {
   type: QuestionType;
   difficulty?: Difficulty;
   prompt?: string;
+  blueprintId?: ObjectId;
+  retryOfRunId?: ObjectId;
+  grounding?: QuestionGenerationRun['grounding'];
   models: QuestionGenerationRun['input']['models'];
 }): Promise<WithId<QuestionGenerationRun>> {
   const now = new Date();
@@ -191,8 +194,11 @@ export async function createQuestionGenerationRun(input: {
       type: input.type,
       ...(input.difficulty ? { difficulty: input.difficulty } : {}),
       ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+      ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
+      ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
       models: input.models,
     },
+    ...(input.grounding ? { grounding: input.grounding } : {}),
     result: { createdQuestionIds: [], failures: [] },
     createdAt: now,
     updatedAt: now,

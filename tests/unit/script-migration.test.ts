@@ -65,6 +65,7 @@ describe('parameterized-script migration', () => {
     const result = await migrateScript(courseId, {
       ...validInput,
       byPuid: 'faculty-puid',
+      sourceName: 'legacy-generator.js',
     });
 
     expect(preview.mismatches).toEqual([]);
@@ -81,6 +82,10 @@ describe('parameterized-script migration', () => {
         stem: validInput.stem,
         generateScript: script,
         createdBy: 'faculty-puid',
+        provenance: {
+          kind: 'script-migration',
+          sourceName: 'legacy-generator.js',
+        },
       }),
     );
   });

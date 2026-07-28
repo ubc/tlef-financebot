@@ -510,6 +510,13 @@ be rebased.
 - [x] **Step 2–4: FAIL → implement → PASS.** Completed by Stephen/Codex under the recorded takeover: editable presets, material-scoped @mentions, durable custom generation, transient side-by-side regeneration, and explicit replacement only. Focused/full tests, typecheck/lint/build, and real-browser click flow passed.
 - [x] **Step 5: Commit** — `0870e23` (`feat: custom-prompt generation and explicit regeneration (IN-Q11/IN-Q12)`), CI-green PR #40.
 
+**Review-improvement extension (2026-07-28):** Stephen authorized the
+P2-I2/P2-I3 follow-up on `codex/phase-2-review-improvements`. Generation now
+supports persisted reusable blueprints and distinct exact retries of terminal
+durable runs, while generated/imported/script-migrated/edited question versions
+carry additive family and origin provenance. This extends Task 10 without a
+second job engine or question content model.
+
 ---
 
 ### Task 11: Phase exit — flag-loop E2E

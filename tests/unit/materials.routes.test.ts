@@ -23,6 +23,7 @@ jest.mock('../../server/src/services/materials.service', () => ({
   listMaterials: jest.fn(),
   retryMaterial: jest.fn(),
   assignMaterial: jest.fn(),
+  updateMaterialKind: jest.fn(),
   getMaterialCourseId: jest.fn(),
 }));
 jest.mock('../../server/src/services/classification.service', () => ({
@@ -38,6 +39,7 @@ import {
   listMaterials,
   retryMaterial,
   assignMaterial,
+  updateMaterialKind,
   getMaterialCourseId,
 } from '../../server/src/services/materials.service';
 import { resolveClassification, suggestHierarchy } from '../../server/src/services/classification.service';
@@ -95,6 +97,7 @@ beforeEach(() => {
   jest.mocked(listMaterials).mockReset();
   jest.mocked(retryMaterial).mockReset();
   jest.mocked(assignMaterial).mockReset();
+  jest.mocked(updateMaterialKind).mockReset();
   jest.mocked(getMaterialCourseId).mockReset();
   jest.mocked(resolveClassification).mockReset();
   jest.mocked(suggestHierarchy).mockReset();
@@ -238,6 +241,36 @@ describe('GET /api/courses/:courseId/materials', () => {
 
     expect(res.status).toBe(200);
     expect(listMaterials).toHaveBeenCalledWith(expect.any(ObjectId));
+  });
+});
+
+describe('PATCH /api/courses/:courseId/materials/:materialId', () => {
+  it('persists an instructor material-kind correction in the path course', async () => {
+    jest.mocked(updateMaterialKind).mockResolvedValue({
+      _id: materialId,
+      courseId,
+      kind: 'assessment',
+    } as never);
+
+    const res = await request(makeApp(instructor))
+      .patch(`/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}`)
+      .send({ kind: 'assessment' });
+
+    expect(res.status).toBe(200);
+    expect(updateMaterialKind).toHaveBeenCalledWith(
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+      'assessment',
+    );
+  });
+
+  it('rejects a non-instructor before updating metadata', async () => {
+    const res = await request(makeApp(student))
+      .patch(`/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}`)
+      .send({ kind: 'assessment' });
+
+    expect(res.status).toBe(403);
+    expect(updateMaterialKind).not.toHaveBeenCalled();
   });
 });
 
