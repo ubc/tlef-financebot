@@ -220,7 +220,7 @@ Steps:
 - [x] Update auth response/client types so shell selection uses
   `isAdmin || platformInstructor || course instructor role`.
 - [x] Run focused tests, full Jest, typecheck, lint, and build.
-- [ ] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
+- [x] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
   and `STATUS.md`.
 
 **A1 verification (2026-07-28):** rebased as `codex/admin-console-v0` on PR
@@ -230,6 +230,7 @@ verification covered Admin-only navigation, an existing professor shown as
 `Active`, an unknown CWL shown as `Pending first login`, and confirmed revoke
 flows for both; browser console clean. Temporary localhost test grants and
 the temporary test-user Admin bit were restored after verification.
+Opened as stacked PR #36: https://github.com/ubc/tlef-financebot/pull/36.
 
 ### Gate A1.5 — Task 5 handoff
 
