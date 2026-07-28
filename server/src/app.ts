@@ -20,6 +20,7 @@ import { notificationsRouter } from './routes/notifications.routes';
 import { materialsRouter } from './routes/materials.routes';
 import { generationRouter } from './routes/generation.routes';
 import { contentRunsRouter } from './routes/content-runs.routes';
+import { importRouter } from './routes/import.routes';
 import { adminRouter } from './routes/admin.routes';
 import { authRouter } from './routes/auth.routes';
 import { configureAuth } from './components/auth';
@@ -72,7 +73,9 @@ export function createApp(): Express {
   app.use('/api', materialsRouter); // Material upload + async RAG ingestion (IN-S04/S05).
   app.use('/api', generationRouter); // Three-agent question generation pipeline + pre-seeding (§9.1, IN-Q10).
   app.use('/api', contentRunsRouter); // Durable material/generation run history + live course progress (Phase 2 P2-0).
+  app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
+  app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).

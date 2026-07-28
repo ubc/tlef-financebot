@@ -1,0 +1,49 @@
+[
+  {
+    "type": "mcq",
+    "stem": "Which measure discounts all project cash flows to time zero?",
+    "options": [
+      { "key": "A", "text": "Net present value", "explanation": "NPV discounts every incremental cash flow." },
+      { "key": "B", "text": "Payback period", "explanation": "Payback ignores some timing and post-payback flows." },
+      { "key": "C", "text": "Accounting profit", "explanation": "Accounting profit is not a discounted-cash-flow measure." },
+      { "key": "D", "text": "Contribution margin", "explanation": "Contribution margin is an operating measure." }
+    ],
+    "correctKey": "A",
+    "difficulty": "easy"
+  },
+  {
+    "type": "mcq",
+    "stem": "A $200 payment earns 5% for 2 years. Which expression gives its future value?",
+    "options": [
+      { "key": "A", "text": "$200 / 1.05^2" },
+      { "key": "B", "text": "$200 × 1.05^2" },
+      { "key": "C", "text": "$200 × 0.05 × 2" },
+      { "key": "D", "text": "$200 - 0.05^2" }
+    ],
+    "correctKey": "B",
+    "difficulty": "medium"
+  },
+  {
+    "type": "true-false",
+    "stem": "A sunk cost should be included in incremental project cash flow.",
+    "options": [
+      { "key": "T", "text": "True" },
+      { "key": "F", "text": "False" }
+    ],
+    "correctKey": "F",
+    "difficulty": "easy"
+  },
+  {
+    "type": "other",
+    "stem": "In one sentence, explain why an opportunity cost belongs in project analysis.",
+    "options": [],
+    "correctKey": "",
+    "difficulty": "medium"
+  },
+  {
+    "type": "mcq",
+    "stem": "",
+    "options": [],
+    "correctKey": "A"
+  }
+]

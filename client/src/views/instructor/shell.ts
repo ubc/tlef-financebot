@@ -47,7 +47,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Review Queue', path: '/instructor/course/:id/queue' },
       { label: 'Flags', path: '/instructor/course/:id/flags' },
       { label: 'Question Bank', path: '/instructor/course/:id/bank' },
-      { label: 'Import', path: null, disabled: true },
+      { label: 'Import', path: '/instructor/course/:id/import' },
     ],
   },
   {
