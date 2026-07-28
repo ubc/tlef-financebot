@@ -2,8 +2,9 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 9 released at `ae1f0e9`; CI-green draft PR #42 open
-**Base:** PR #34 Task 5 head plus PR #39 Task 8 integration
+**State:** Admin PUID compatibility replacement active on
+`codex/admin-console-puid-compatible`
+**Base:** `origin/main` at `124cdb2`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -11,6 +12,42 @@ narrow plan commits instead of running the current whole-folder `sync-plans`
 script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
+
+## Active Admin PUID compatibility replacement
+
+Stephen requested a clean, main-based Admin PR that works with staging SAML
+assertions where `uid` and name fields may be empty. This branch replaces the
+uid-keyed experimental Admin A1 design from PR #36; it does not include
+Student Preview or any unrelated Phase 2 stack.
+
+Files claimed by Codex:
+
+- `server/src/services/admin.service.ts`
+- `server/src/routes/admin.routes.ts`
+- `server/src/services/users.service.ts`
+- `server/src/types/domain.ts`
+- `server/src/components/mongodb/collections.ts`
+- SAML attribute mapping/request files
+- `client/src/views/admin/accounts.ts`
+- the Admin seams in `client/src/api.ts` and `client/src/main.ts`
+- focused Admin/User/collection tests and Admin E2E
+- Admin/API/nearest AGENTS plan documentation
+- Admin-only scoped styles in `client/public/styles/main.css`
+
+Decisions:
+
+- PUID is the canonical grant key. Pending grants never create placeholder
+  Users and attach to the same PUID on first login.
+- `platformInstructor` grants Instructor shell/course-creation capability only.
+  Admin navigation and `/api/admin/*` remain gated solely by `isAdmin`.
+- Stephen's `ESI5CZY7J307` is a staging-only bootstrap Admin identity; the
+  hardcode is inactive when `SAML_ENVIRONMENT=PRODUCTION`.
+- The Admin directory returns safe persisted identity fields for all Users and
+  pending grants, never raw SAML/session data.
+- PUID grants use their own Mongo collection so the unique PUID index does not
+  collide with old uid-keyed experimental documents.
+
+PR/commit and final verification will be recorded here after publishing.
 
 ## Released Task 9
 

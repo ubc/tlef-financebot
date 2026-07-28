@@ -18,16 +18,18 @@ admin.
 
 ## Admin — platform-Instructor accounts
 
-Every route below is platform-Admin-only. CWL usernames are normalized
-case-insensitively; a grant may remain pending until that username's first SAML
-login creates the real PUID-backed User.
+Every route below is platform-Admin-only. Grants use the UBC PUID as the
+canonical identifier, including when the user has not logged in yet. A pending
+grant attaches to the same PUID-backed User on first SAML login.
 
-- `GET /api/admin/platform-instructors?query=` →
-  `[{ uid, status: 'active' | 'pending', grantedAt, updatedAt, user?: { displayName, email, lastLoginAt } }]`
-- `PUT /api/admin/platform-instructors/:uid` → one active/pending grant
+- `GET /api/admin/users?query=` →
+  `[{ puid, uid, displayName, email, affiliations, isAdmin, platformInstructor, status: 'active' | 'pending', lastLoginAt?, createdAt?, grantedAt?, updatedAt? }]`
+  (all persisted Users plus pending grants; raw SAML/session data is never
+  returned)
+- `PUT /api/admin/platform-instructors/:puid` → one active/pending account
   (idempotent; empty body)
-- `DELETE /api/admin/platform-instructors/:uid` →
-  `{ uid, granted: false, revoked: boolean }` (idempotent)
+- `DELETE /api/admin/platform-instructors/:puid` →
+  `{ puid, granted: false, revoked: boolean }` (idempotent)
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`

@@ -9,8 +9,8 @@ Student Preview A2 complete on draft PR #41 using the explicit #37 + #36 stack
 This is a deliberately small staging-enablement slice, not the full PRD Admin
 surface. It adds two capabilities Stephen needs now:
 
-1. an Admin can grant or revoke a global platform-Instructor capability by CWL
-   username; and
+1. an Admin can list persisted users and grant or revoke a global
+   platform-Instructor capability by UBC PUID; and
 2. a course Instructor can open the real student practice UI in an explicit
    preview mode without enrolling as a student or polluting production learning
    records.
@@ -26,8 +26,8 @@ same files. Both agents must follow the claim protocol in
 
 - `User.platformInstructor?: boolean` is the global grant that exposes the
   Instructor shell and authorizes course creation.
-- `isAdmin` remains controlled only by `ADMIN_CWL_ALLOWLIST`. Admin v0 does not
-  grant or revoke Admin access.
+- `isAdmin` remains a separate capability. Admin v0 does not grant or revoke
+  Admin access, and `platformInstructor` never passes `ensureAdmin()`.
 - `courseRoles[].role === 'instructor'` remains the authority for an existing
   course. A platform Instructor does not automatically gain access to every
   course.
@@ -36,25 +36,19 @@ same files. Both agents must follow the claim protocol in
 - The UI is not the security boundary. Server routes enforce Admin,
   platform-Instructor, and course-Instructor permissions independently.
 
-### CWL username is not PUID
+### PUID is the canonical provisioning identity
 
 The existing `User` collection is uniquely keyed by SAML
-`ubcEduCwlPuid` (`puid`), while the value an Admin normally types is the CWL
-username (`uid`). Admin v0 must not create a fake `User` whose `puid` contains
-a CWL username: the first real SAML login would create a second User and lose
-the grant.
+`ubcEduCwlPuid` (`puid`). Staging assertions may omit `uid` and profile fields,
+so Admin v0 provisions by PUID instead of depending on CWL username release.
 
-Instead:
-
-- normalize the entered CWL username with `trim().toLowerCase()`;
-- store a small pending platform-Instructor grant keyed by normalized CWL
-  username;
-- update an already-existing matching User immediately when one exists; and
-- on first SAML login, apply the pending grant to the real PUID-backed User.
-
-Later SAML refreshes update identity attributes but must preserve an Admin-set
-`platformInstructor` value. Revocation removes the pending grant and clears the
-flag on a matching existing User.
+- Store a small pending platform-Instructor grant keyed by PUID.
+- Update an already-existing matching User immediately when one exists.
+- On first SAML login, apply the pending grant to the same PUID-backed User.
+- Never fabricate a placeholder User for a pending grant.
+- Recompute `platformInstructor` from the grant collection during login and
+  Passport deserialization so revocation is authoritative.
+- Display name falls back through SAML name/email/CWL fields and finally PUID.
 
 ### Student preview
 
@@ -95,15 +89,15 @@ All Admin routes require an authenticated `req.user.isAdmin`.
 
 ### Platform-Instructor grants
 
-- `GET /api/admin/platform-instructors?query=<text>`
-  - returns matching active/pending grants and any linked User identity;
+- `GET /api/admin/users?query=<text>`
+  - returns all matching persisted Users plus pending grants;
   - never returns secrets or raw SAML payloads.
-- `PUT /api/admin/platform-instructors/:uid`
-  - idempotently grants the normalized CWL username;
+- `PUT /api/admin/platform-instructors/:puid`
+  - idempotently grants the PUID;
   - body is empty;
   - records the acting Admin and timestamps;
   - updates an existing User immediately or remains pending until first login.
-- `DELETE /api/admin/platform-instructors/:uid`
+- `DELETE /api/admin/platform-instructors/:puid`
   - idempotently revokes the grant;
   - clears the matching User's `platformInstructor` flag.
 
@@ -132,12 +126,10 @@ visible in routing, tests, and logs.
 - `User.platformInstructor?: boolean`
 - `PlatformInstructorGrant`
   - `_id` supplied by Mongo
-  - `uid: string` — normalized CWL username, unique
+  - `puid: string` — UBC PUID, unique
   - `grantedByPuid: string`
   - `createdAt: Date`
   - `updatedAt: Date`
-  - `appliedToPuid?: string`
-  - `appliedAt?: Date`
 - `PreviewAttemptRecord`
   - the question/version/LO/course/answer snapshot needed to reproduce a
     preview submission
@@ -332,8 +324,8 @@ combined `tests/e2e/global-setup.ts` recorded in `coordination/CODEX.md`.
    platform-Instructor grant.
 2. A faculty affiliation alone does not grant the Instructor shell or server
    authorization.
-3. A pending CWL grant attaches to the real PUID User on first login.
-4. Subsequent SAML logins preserve the Admin-set grant.
+3. A pending PUID grant attaches to the matching User on first login.
+4. Subsequent SAML logins reapply the grant collection's authoritative value.
 5. Revocation removes the Instructor shell and future course-creation access
    but does not silently remove course ownership/history.
 6. A platform Instructor cannot access a course they do not own/teach.

@@ -87,9 +87,11 @@ truth for material-ingest/question-generation progress; mutate it through
 coupled.
 
 Admin Console v0 adds `platformInstructorGrantsCol()`, uniquely keyed by the
-normalized CWL `uid`. A grant can exist before the matching PUID-backed `User`
-logs in; `users.service.ts` links it on first SAML login. Do not create
-placeholder User documents with a CWL username in the `puid` field.
+UBC `puid`. A grant can exist before the matching PUID-backed `User` logs in;
+`users.service.ts` applies it on first SAML login. The accessor uses the
+isolated `platformInstructorPuidGrants` collection so older uid-keyed
+experimental documents cannot collide with the PUID unique index. Do not
+create placeholder User documents for pending grants.
 
 ## Gotchas
 

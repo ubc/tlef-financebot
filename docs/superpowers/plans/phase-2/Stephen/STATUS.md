@@ -234,9 +234,11 @@ errors. Browser fixtures were fully removed.
 
 ## Admin v0 decisions
 
-- Admins grant a global `platformInstructor` capability by CWL username.
-- Pre-login grants are pending records keyed by normalized CWL `uid`; no fake
-  PUID-backed User is created.
+- Admins grant a global `platformInstructor` capability by UBC PUID.
+- Pre-login grants are pending records keyed by PUID; no placeholder User is
+  created.
+- Admin and Instructor are separate capabilities. Granting Instructor does
+  not expose the Admin page and does not pass the Admin API guard.
 - Platform Instructor authorizes the Instructor shell and course creation;
   existing-course access remains course-scoped.
 - Student Preview uses separate Instructor-only endpoints and does not weaken
@@ -349,3 +351,27 @@ Finance-bot review note. Therefore the core exit checkbox for importing real
 COMM 298 content remains honestly open. Synthetic fixtures prove the tooling,
 but are not relabelled as instructor content. No feature PR was merged by
 Codex.
+
+## Admin PUID-compatible replacement — 2026-07-28
+
+Stephen asked Codex to replace the earlier uid-keyed Admin A1 experiment with
+a clean PR based directly on current `main`, because the staging SAML response
+can contain a valid PUID while `uid` and profile fields are empty.
+
+- PUID is now the grant/provisioning key. A grant can remain pending before
+  first login without creating a placeholder User.
+- The Admin page lists every persisted User plus pending grants, with PUID,
+  available CWL/name/email/affiliation metadata, last login, and explicit
+  Admin/Instructor/Pending state.
+- SAML name handling uses released display/name/email/CWL fields with PUID as
+  the final fallback.
+- Stephen's `ESI5CZY7J307` is a staging-only bootstrap Admin; production does
+  not receive this hardcode.
+- Granting `platformInstructor` does **not** grant `isAdmin`: the recipient has
+  no Admin navigation and receives `403` from `/api/admin/*`.
+- The Admin page layout was corrected with a padded card body, contained input,
+  separate search toolbar, and a no-horizontal-overflow mobile layout.
+
+Branch: `codex/admin-console-puid-compatible`. The PR URL, commit, and final
+targeted verification will be appended after publishing. Nothing is merged to
+`main`.

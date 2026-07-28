@@ -85,38 +85,41 @@ export async function getAuthState(): Promise<AuthState> {
 
 // --- Admin: platform-Instructor accounts -----------------------------------
 
-export interface PlatformInstructorAccount {
-  uid: string;
+export interface AdminAccount {
+  puid: string;
   status: 'active' | 'pending';
-  grantedAt: string;
-  updatedAt: string;
-  user?: {
-    displayName: string;
-    email: string;
-    lastLoginAt: string;
-  };
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  platformInstructor: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  grantedAt?: string;
+  updatedAt?: string;
 }
 
-/** GET /api/admin/platform-instructors?query= -> active/pending grants. */
-export function listPlatformInstructors(query = ''): Promise<PlatformInstructorAccount[]> {
+/** GET /api/admin/users?query= -> persisted users plus pending PUID grants. */
+export function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
   const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
-  return request<PlatformInstructorAccount[]>(`/api/admin/platform-instructors${search}`);
+  return request<AdminAccount[]>(`/api/admin/users${search}`);
 }
 
-/** PUT /api/admin/platform-instructors/:uid -> active or pending grant. */
-export function grantPlatformInstructor(uid: string): Promise<PlatformInstructorAccount> {
-  return request<PlatformInstructorAccount>(
-    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+/** PUT /api/admin/platform-instructors/:puid -> active or pending grant. */
+export function grantPlatformInstructor(puid: string): Promise<AdminAccount> {
+  return request<AdminAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
     { method: 'PUT' },
   );
 }
 
-/** DELETE /api/admin/platform-instructors/:uid -> idempotent revocation. */
+/** DELETE /api/admin/platform-instructors/:puid -> idempotent revocation. */
 export function revokePlatformInstructor(
-  uid: string,
-): Promise<{ uid: string; granted: false; revoked: boolean }> {
-  return request<{ uid: string; granted: false; revoked: boolean }>(
-    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+  puid: string,
+): Promise<{ puid: string; granted: false; revoked: boolean }> {
+  return request<{ puid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
     { method: 'DELETE' },
   );
 }

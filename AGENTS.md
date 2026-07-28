@@ -38,12 +38,13 @@ commonly need:
   the wrong role, derived from `eduPersonAffiliation`), and the client shows each
   user only their own role menu.
 - Admin Console v0 account provisioning is implemented: Admins can grant or
-  revoke global `platformInstructor` access by normalized CWL username. A grant
-  may exist before first login and is then linked to the real PUID-backed User;
-  SAML faculty affiliation never grants the capability by itself. The Admin
-  accounts page shows active versus pending-first-login grants. Course creation
-  requires Admin or `platformInstructor`, while access to existing courses
-  remains course-scoped through `ensureCourseInstructor()`.
+  revoke global `platformInstructor` access by PUID. A grant may exist before
+  first login and is then applied to the matching PUID-backed User; SAML faculty
+  affiliation never grants the capability by itself. The Admin accounts page
+  lists persisted Users plus pending-first-login grants. Admin access remains
+  separate from Instructor access. Course creation requires Admin or
+  `platformInstructor`, while access to existing courses remains course-scoped
+  through `ensureCourseInstructor()`.
 - Qdrant (`server/src/components/qdrant`) is implemented: a configured client,
   idempotent `ensureCollection`, and `upsertPoints` / `search` helpers. `GET
   /api/health` reports its reachability.

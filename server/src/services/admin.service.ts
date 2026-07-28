@@ -6,130 +6,153 @@ import {
 } from '../components/mongodb/collections';
 import type { PlatformInstructorGrant, User } from '../types/domain';
 
-export interface PlatformInstructorAccount {
-  uid: string;
+export interface AdminAccount {
+  puid: string;
   status: 'active' | 'pending';
-  grantedAt: string;
-  updatedAt: string;
-  user?: {
-    displayName: string;
-    email: string;
-    lastLoginAt: string;
-  };
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  platformInstructor: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  grantedAt?: string;
+  updatedAt?: string;
 }
 
 export interface PlatformInstructorRevokeResult {
-  uid: string;
+  puid: string;
   granted: false;
   revoked: boolean;
 }
 
-/** CWL usernames are case-insensitive; persistence uses one canonical form. */
-export function normalizeCwlUid(rawUid: string): string {
-  return rawUid.trim().toLowerCase();
+/** PUIDs are opaque identifiers; only trim accidental surrounding whitespace. */
+export function normalizePuid(rawPuid: string): string {
+  return rawPuid.trim();
 }
 
 function escapedRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function exactUid(uid: string): RegExp {
-  return new RegExp(`^${escapedRegex(uid)}$`, 'i');
-}
-
-function accountFrom(
-  grant: WithId<PlatformInstructorGrant>,
-  user?: WithId<User>,
-): PlatformInstructorAccount {
+function accountFromUser(
+  user: WithId<User>,
+  grant?: WithId<PlatformInstructorGrant>,
+): AdminAccount {
   return {
-    uid: grant.uid,
-    status: user ? 'active' : 'pending',
-    grantedAt: grant.createdAt.toISOString(),
-    updatedAt: grant.updatedAt.toISOString(),
-    ...(user
+    puid: user.puid,
+    status: 'active',
+    uid: user.uid,
+    displayName: user.displayName || user.email || user.uid || user.puid,
+    email: user.email,
+    affiliations: user.affiliations,
+    isAdmin: user.isAdmin,
+    platformInstructor: Boolean(grant),
+    lastLoginAt: user.lastLoginAt.toISOString(),
+    createdAt: user.createdAt.toISOString(),
+    ...(grant
       ? {
-          user: {
-            displayName: user.displayName,
-            email: user.email,
-            lastLoginAt: user.lastLoginAt.toISOString(),
-          },
+          grantedAt: grant.createdAt.toISOString(),
+          updatedAt: grant.updatedAt.toISOString(),
         }
       : {}),
   };
 }
 
-export async function listPlatformInstructors(query = ''): Promise<PlatformInstructorAccount[]> {
-  const normalizedQuery = query.trim().toLowerCase();
-  const filter: Filter<PlatformInstructorGrant> = normalizedQuery
-    ? { uid: { $regex: escapedRegex(normalizedQuery), $options: 'i' } }
+function pendingAccount(grant: WithId<PlatformInstructorGrant>): AdminAccount {
+  return {
+    puid: grant.puid,
+    status: 'pending',
+    uid: '',
+    displayName: grant.puid,
+    email: '',
+    affiliations: [],
+    isAdmin: false,
+    platformInstructor: true,
+    grantedAt: grant.createdAt.toISOString(),
+    updatedAt: grant.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Admin-only directory view. It returns safe persisted identity fields, never
+ * the raw SAML assertion/session, and includes PUID grants awaiting first login.
+ */
+export async function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
+  const normalizedQuery = query.trim();
+  const userFilter: Filter<User> = normalizedQuery
+    ? {
+        $or: ['puid', 'uid', 'displayName', 'email'].map((field) => ({
+          [field]: { $regex: escapedRegex(normalizedQuery), $options: 'i' },
+        })),
+      }
     : {};
-  const grants = await platformInstructorGrantsCol()
-    .find(filter)
-    .sort({ uid: 1 })
-    .limit(100)
-    .toArray();
-  if (grants.length === 0) return [];
 
-  const users = await usersCol()
-    .find({ uid: { $in: grants.map((grant) => exactUid(grant.uid)) } })
-    .toArray();
-  const userByUid = new Map(users.map((user) => [normalizeCwlUid(user.uid), user]));
+  const [users, grants] = await Promise.all([
+    usersCol().find(userFilter).sort({ lastLoginAt: -1 }).toArray(),
+    platformInstructorGrantsCol().find({}).sort({ createdAt: -1 }).toArray(),
+  ]);
+  const grantByPuid = new Map(grants.map((grant) => [grant.puid, grant]));
+  const userPuids = new Set(users.map((user) => user.puid));
+  const queryRegex = normalizedQuery
+    ? new RegExp(escapedRegex(normalizedQuery), 'i')
+    : undefined;
 
-  return grants.map((grant) => accountFrom(grant, userByUid.get(grant.uid)));
+  return [
+    ...users.map((user) => accountFromUser(user, grantByPuid.get(user.puid))),
+    ...grants
+      .filter(
+        (grant) =>
+          !userPuids.has(grant.puid) &&
+          (!queryRegex || queryRegex.test(grant.puid)),
+      )
+      .map(pendingAccount),
+  ];
 }
 
 export async function grantPlatformInstructor(
-  rawUid: string,
+  rawPuid: string,
   actorPuid: string,
-): Promise<PlatformInstructorAccount> {
-  const uid = normalizeCwlUid(rawUid);
+): Promise<AdminAccount> {
+  const puid = normalizePuid(rawPuid);
   const now = new Date();
   const grant = await platformInstructorGrantsCol().findOneAndUpdate(
-    { uid },
+    { puid },
     {
       $set: { grantedByPuid: actorPuid, updatedAt: now },
-      $setOnInsert: { uid, createdAt: now },
+      $setOnInsert: { puid, createdAt: now },
     },
     { upsert: true, returnDocument: 'after' },
   );
   if (!grant) throw new Error('platform-instructor-grant-write-failed');
 
   const user = await usersCol().findOneAndUpdate(
-    { uid: exactUid(uid) },
+    { puid },
     { $set: { platformInstructor: true } },
     { returnDocument: 'after' },
   );
-
-  let linkedGrant = grant;
-  if (user) {
-    const appliedAt = new Date();
-    await platformInstructorGrantsCol().updateOne(
-      { _id: grant._id },
-      { $set: { appliedToPuid: user.puid, appliedAt } },
-    );
-    linkedGrant = { ...grant, appliedToPuid: user.puid, appliedAt };
-  }
 
   await auditCol().insertOne({
     actorPuid,
     action: 'role.assign',
     targetType: 'platform-instructor-grant',
     targetId: grant._id,
-    detail: { uid, linkedPuid: user?.puid ?? null },
+    detail: { puid, accountStatus: user ? 'active' : 'pending' },
     createdAt: now,
   });
 
-  return accountFrom(linkedGrant, user ?? undefined);
+  return user ? accountFromUser(user, grant) : pendingAccount(grant);
 }
 
 export async function revokePlatformInstructor(
-  rawUid: string,
+  rawPuid: string,
   actorPuid: string,
 ): Promise<PlatformInstructorRevokeResult> {
-  const uid = normalizeCwlUid(rawUid);
-  const grant = await platformInstructorGrantsCol().findOneAndDelete({ uid });
-  const userUpdate = await usersCol().updateMany(
-    { uid: exactUid(uid) },
+  const puid = normalizePuid(rawPuid);
+  const grant = await platformInstructorGrantsCol().findOneAndDelete({ puid });
+  const userUpdate = await usersCol().updateOne(
+    { puid },
     { $unset: { platformInstructor: '' } },
   );
   const revoked = Boolean(grant) || userUpdate.modifiedCount > 0;
@@ -140,10 +163,10 @@ export async function revokePlatformInstructor(
       action: 'role.revoke',
       targetType: 'platform-instructor-grant',
       targetId: grant._id,
-      detail: { uid, linkedPuid: grant.appliedToPuid ?? null },
+      detail: { puid },
       createdAt: new Date(),
     });
   }
 
-  return { uid, granted: false, revoked };
+  return { puid, granted: false, revoked };
 }

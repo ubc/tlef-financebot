@@ -60,24 +60,20 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     // Admin Console v0 deliberately stopped treating the SAML `faculty`
     // affiliation as a platform-wide Instructor grant. The shared E2E faculty
     // fixture still needs to create isolated courses, so seed the same
-    // admin-managed grant record after login, keyed by the canonical uid the
-    // IdP actually returned (the local fixture's login name and uid differ).
+    // admin-managed grant record after login, keyed by the canonical PUID.
     // This is test-fixture setup only; production authorization remains behind
     // ensurePlatformInstructor() and the Admin API.
     if (username.trim().toLowerCase() === 'faculty') {
       await connectMongo();
       const now = new Date();
-      const uid = state.user.uid.trim().toLowerCase();
       await platformInstructorGrantsCol().updateOne(
-        { uid },
+        { puid: state.user.puid },
         {
           $set: {
             grantedByPuid: state.user.puid,
             updatedAt: now,
-            appliedToPuid: state.user.puid,
-            appliedAt: now,
           },
-          $setOnInsert: { uid, createdAt: now },
+          $setOnInsert: { puid: state.user.puid, createdAt: now },
         },
         { upsert: true },
       );

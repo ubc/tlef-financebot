@@ -130,7 +130,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
     ? [
         {
           label: 'Admin',
-          items: [{ label: 'Instructor Accounts', path: '/admin/accounts' }],
+          items: [{ label: 'User Accounts', path: '/admin/accounts' }],
         },
         ...INSTRUCTOR_NAV,
       ]

@@ -36,9 +36,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `ensureCourseInstructor()`, with Theme/LO routes stashing `res.locals.courseId`
   from the child resource first. See `components/auth/course-guards.ts`.
 - `admin.routes.ts` — Admin Console v0 account provisioning:
-  `GET/PUT/DELETE /api/admin/platform-instructors[/:uid]`. Every route is
-  protected by `ensureAdmin()`; PUT may create a pending CWL-username grant
-  before first SAML login, and DELETE is idempotent.
+  `GET /api/admin/users` plus
+  `PUT/DELETE /api/admin/platform-instructors/:puid`. Every route is protected
+  by `ensureAdmin()`; PUT may create a pending PUID grant before first SAML
+  login, and DELETE is idempotent.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
   (including a courses-spanning bulk transition). All routes are
