@@ -197,6 +197,24 @@ describe('selectNextQuestion', () => {
     expect(result!.degraded).toBe('repeat');
   });
 
+  it('case 4b: exhausts adjacent unseen questions before repeating a served target-tier question', async () => {
+    const servedMedium = new ObjectId();
+    const unseenEasy = new ObjectId();
+    seedBank([
+      { id: servedMedium, difficulty: 'medium', state: 'approved', loIds: [loId] },
+      { id: unseenEasy, difficulty: 'easy', state: 'approved', loIds: [loId] },
+    ]);
+    jest.mocked(getMasteryTier).mockResolvedValue('medium');
+
+    const result = await selectNextQuestion(
+      { puid, courseId, loId, sessionServedIds: [servedMedium] },
+      firstPick,
+    );
+
+    expect(result!.question._id.equals(unseenEasy)).toBe(true);
+    expect(result!.degraded).toBe('adjacent');
+  });
+
   it('case 5: ladder rung 2 — no same-tier at all -> adjacent difficulty unseen (degraded: adjacent)', async () => {
     const easyId = new ObjectId();
     const hardId = new ObjectId();

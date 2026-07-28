@@ -20,6 +20,10 @@ jest.mock('../../server/src/services/serving.service', () => ({
   selectRetryQuestion: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/progression.service', () => ({
+  repeatedFailureRedirect: jest.fn(),
+}));
+
 import {
   questionVersionsCol,
   questionsCol,
@@ -29,6 +33,7 @@ import {
 } from '../../server/src/components/mongodb/collections';
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from '../../server/src/services/mastery.service';
 import { selectRetryQuestion } from '../../server/src/services/serving.service';
+import { repeatedFailureRedirect } from '../../server/src/services/progression.service';
 import { decideStrategy, submitAttempt } from '../../server/src/services/attempts.service';
 
 // -----------------------------------------------------------------------------
@@ -211,8 +216,10 @@ beforeEach(() => {
   jest.mocked(getLoStatuses).mockReset();
   jest.mocked(themeCoverage).mockReset();
   jest.mocked(selectRetryQuestion).mockReset();
+  jest.mocked(repeatedFailureRedirect).mockReset();
 
   jest.mocked(getLoStatuses).mockResolvedValue(new Map());
+  jest.mocked(repeatedFailureRedirect).mockResolvedValue(undefined);
   jest.mocked(recordAttemptInMastery).mockResolvedValue({
     puid,
     courseId,
@@ -657,5 +664,32 @@ describe('submitAttempt: recommendation', () => {
 
     await expect(submitAttempt(baseInput({ selectedKey: 'A' }))).rejects.toThrow('lo-not-found');
     expect(recordAttemptInMastery).not.toHaveBeenCalled();
+  });
+});
+
+// --- Case 12: repeated-failure redirect disclosure boundary -------------------
+
+describe('submitAttempt: repeated-failure redirect', () => {
+  it('case 12: returns the redirect without revealing the correct answer, even under Strategy B', async () => {
+    seedCollections({ feedbackStrategy: 'strategy-b' });
+    jest.mocked(repeatedFailureRedirect).mockResolvedValue({
+      materials: [{ name: 'Week 2 notes', materialId: new ObjectId().toHexString() }],
+      message: 'Review before continuing.',
+    });
+
+    const result = await submitAttempt(baseInput({ selectedKey: 'B' }));
+
+    expect(result.redirect?.message).toBe('Review before continuing.');
+    expect(result.feedback.revealed).toHaveLength(1);
+    expect(result.feedback.revealed[0]).toMatchObject({ key: 'B', correct: false });
+    expect(result.feedback.revealed.some((option) => option.correct)).toBe(false);
+    expect(result.feedback.retry).toBeUndefined();
+    expect(repeatedFailureRedirect).toHaveBeenCalledWith({
+      puid,
+      displayName: user.displayName,
+      courseId,
+      loId,
+      threshold: 3,
+    });
   });
 });

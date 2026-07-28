@@ -25,9 +25,9 @@ _Last updated: 2026-07-28_
   draft PR #42**, integrating the explicit PR #34 + PR #39 heads under Stephen's
   standing cross-owner authorization.
 
-Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
-or stop his own work; this status is the requested informational handoff so
-his agent can avoid claimed files.
+Admin v0 and Task 7 are Stephen-owned staging/pilot enablement. Saurav does not
+need to confirm or stop his own work; this status is the requested
+informational handoff so his agent can avoid claimed files.
 
 ## Two-agent coordination
 

@@ -131,16 +131,30 @@ of remaining indefinitely active.
   only in that case — see params.service.ts's `resolveParamValues`/`substituteParams`, Task 5,
   IN-Q09/ST-P03). A fresh `seed` is drawn on every call, including Review-Book re-practice
   (ST-R04) — there is one serving call site for both. 404 when no approved question exists.
+  Within one client practice round, selection exhausts every unseen Approved
+  question for the LO before returning a repeated id. The client treats that
+  first repeat as the round boundary and asks explicitly before starting a new
+  repeat round.
 - `POST /api/attempts { questionVersionId, loId, selectedKey, mode, sessionServedIds, isRetry?, paramValues? }` →
   `{ correct,
      feedback: { strategy: 'a' | 'b',
                  revealed: [{ key, text, role, explanation, correct }] | chosenOnly (all substituted against the pinned paramValues),
                  retry?: { questionId, questionVersionId, type, stem, options: [{ key, text }], paramValues?, seed? } },
-     mastery: { loStatus, recommendation? }, reviewBook: { added } }` (ST-P04)
+     mastery: { loStatus, recommendation? }, reviewBook: { added },
+     redirect?: { materials: [{ name, materialId }], message } }` (ST-P04, ST-P07)
   — `paramValues` sent back here are trusted verbatim and pinned onto the AttemptRecord (never
   re-derived/re-validated server-side — they don't affect grading, only the student's own
   displayed feedback numbers). A Strategy-A `retry` question that is itself parameterized carries
   its OWN freshly-resolved `paramValues`/`seed`, independent of the just-answered question's.
+  `redirect` appears after the course-configured number of consecutive
+  easy/medium misses for that LO. A hard-tier miss breaks the redirect cluster
+  so mastery tier step-back has precedence. Redirect responses contain only
+  the chosen wrong option (never the current correct answer), do not attach a
+  Strategy-A retry, and never block the next-question action.
+- `GET /api/courses/:courseId/los/:loId/materials/:materialId/source` →
+  `302` to a linked URL material or an authenticated file download. Student
+  guard applies; only a ready material assigned to this exact course/LO
+  resolves, otherwise 404.
 - `POST /api/courses/:courseId/los/:loId/skip { attempted: boolean }` → 204 (ST-P06)
 - `GET /api/courses/:courseId/session-summary` →
   `{ deferred?: SessionEndSummary, welcome: boolean }` — start-of-session payload; `welcome: true`
