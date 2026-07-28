@@ -67,6 +67,13 @@ Stephen's source documents (unedited by me):
 Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
 
+## Stephen/Codex Admin A2 coordination — 2026-07-28
+
+Student Preview A2 is now active on a Stephen-owned integration stack of
+released PR #37 plus Admin A1 PR #36. It does not claim Saurav generation,
+import, flag, remediation, or notification files. The exact Preview paths are
+in Stephen's `coordination/CODEX.md`; Saurav need not confirm or stop work.
+
 ## Stephen/Codex Task 8 takeover — 2026-07-28
 
 Stephen authorized Codex to continue Phase 2 by taking this independent,

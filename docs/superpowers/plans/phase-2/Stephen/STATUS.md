@@ -18,6 +18,9 @@ _Last updated: 2026-07-28_
   “ready to push” status was reconciled on 2026-07-28.
 - Task 10 custom generation/regeneration: **complete on PR #40** (`0870e23`)
   after the recorded cross-owner takeover.
+- Admin Console v0 A2 Student Preview: **active on an explicit stacked
+  integration of PR #37 + PR #36**; all prerequisite paths are released even
+  though Stephen retains control of merging them to `main`.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -40,7 +43,8 @@ Codex completed:
 
 Codex records current paths in
 [`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
-PR #34, Admin A1 PR #36, and Task 7 PR #37 to merge; it will reuse rather than
+PR #34, Admin A1 PR #36, and Task 7 PR #37 at integration time; implementation
+now proceeds on their released stacked code and will reuse rather than
 duplicate Task 5.
 
 ## Task 7 result

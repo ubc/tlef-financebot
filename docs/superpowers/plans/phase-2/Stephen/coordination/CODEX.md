@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 10 released on PR #40
-**Base:** PR #40 head `0870e23` (`codex/phase-2-task10-generation`)
+**State:** Admin A2 Student Preview active
+**Base:** PR #37 head plus PR #36 Admin A1 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -11,6 +11,36 @@ narrow plan commits instead of running the current whole-folder `sync-plans`
 script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
+
+## Active Admin A2
+
+Instructor Student Preview is active on `codex/admin-student-preview`.
+Prerequisite code is released: Task 5 at `210c68f` / PR #34, Task 7 on PR #37,
+and Admin A1 on PR #36. To keep working without merging on Stephen's behalf,
+the implementation branch uses #37 as its stack base and merges #36 once.
+
+### Admin A2 files claimed by Codex
+
+- create `server/src/services/preview.service.ts`
+- create `server/src/routes/preview.routes.ts`
+- create `client/src/views/instructor/student-preview.ts`
+- create focused preview service/route tests and Preview E2E
+- `server/src/types/domain.ts`
+- `server/src/components/mongodb/collections.ts`
+- `server/src/app.ts`
+- `server/src/services/serving.service.ts`
+- `server/src/services/attempts.service.ts` only if a pure grading seam is
+  required; no preview write may enter the live attempt path
+- `client/src/api.ts`
+- `client/src/main.ts`
+- `client/src/views/instructor/dashboard.ts`
+- the smallest reusable student practice-card/session seam only if required
+- `client/public/styles/main.css` only for the persistent Preview banner/layout
+- `docs/api-contract.md`, nearest `AGENTS.md`, Admin plan/status documents
+
+No Admin A2 endpoint weakens `ensureCourseStudent()`. Preview activity uses its
+own collection and cannot enter mastery, Review Book, flags, remediation,
+summaries, notifications, progression, or analytics.
 
 ## Released Task 10
 
