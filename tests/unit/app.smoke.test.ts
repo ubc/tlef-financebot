@@ -55,6 +55,14 @@ jest.mock('../../server/src/components/auth', () => ({
     () =>
     (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
       res.status(403).json({ error: 'Forbidden.' }),
+  ensureAdmin:
+    () =>
+    (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
+      res.status(403).json({ error: 'Admin access required.' }),
+  ensurePlatformInstructor:
+    () =>
+    (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
+      res.status(403).json({ error: 'Platform Instructor access required.' }),
 }));
 
 import { createApp } from '../../server/src/app';
