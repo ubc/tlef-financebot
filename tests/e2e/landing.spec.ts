@@ -20,8 +20,8 @@ test.describe('landing (logged out)', () => {
 
   test('strips the dev affordances the wireframe does not show', async ({ page }) => {
     await page.goto('/');
-    // Health card, local-test-user hint and theme toggle were removed to match
-    // the wireframe; the health card still lives on the signed-in overview.
+    // The health card and the local-test-user hint were removed to match the
+    // wireframe; the health card still lives on the signed-in overview.
     await expect(page.getByRole('heading', { name: /system status/i })).toHaveCount(0);
     await expect(page.getByText(/faculty:faculty/)).toHaveCount(0);
   });
