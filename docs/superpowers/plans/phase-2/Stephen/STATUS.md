@@ -306,3 +306,46 @@ Current PRs:
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).
+
+## Release-readiness continuation — 2026-07-28
+
+Codex re-audited the live GitHub state instead of treating earlier green
+checks as sufficient. PRs #34, #40, and #42 had become `CONFLICTING` only
+because independently published Phase 2 plan/status commits touched the same
+documents. The latest `main` was merged into each feature branch, with the
+newer `main` ledger retained and no production-code conflict:
+
+- #34: `6c61ce2` — mergeable, CI green
+- #40: `a2b20e6` — mergeable, CI green
+- #42: `20fdbe0` — mergeable, CI green; still draft for #34/#39 dependency
+
+Admin A1 now permanently covers its real page controls in
+`tests/e2e/admin-accounts.spec.ts` (`57ee5f3` on #36). The browser test grants
+one pending CWL and one existing-user Active Instructor, exercises Search,
+confirms both Revoke actions, asserts the active User bit is cleared, records
+no browser errors, and restores the shared faculty user's original Admin
+state. #36 was then synchronized with the refreshed #34 base at `56a8ddd`;
+draft #41 carries the same test/base at `04c188a`; both are mergeable and CI
+green.
+
+The regression-only integration branch is refreshed at `27b4b26`. Current
+aggregate evidence is 61/61 Jest suites and 640/640 tests, typecheck, lint,
+Node 24 production build, plus 12 passed real-session Chromium scenarios and
+one intentionally skipped opt-in live-LLM scenario. The click run covers Admin
+grant/search/revoke, Student Preview published/unpublished isolation, CSV
+import, parameterized-script migration, custom generation/regeneration,
+instructor setup/publish, shell, landing, and identity. Exact post-run fixture
+counts were `adminGrants=0`, `adminUsers=0`, and `courses=0`.
+
+`tests/e2e/global-setup.ts` is a mandatory final-stack merge resolution: retain
+Task 11's `E2E_REUSE_AUTH_FILE` validation and Admin A1's
+`ensureE2ePlatformInstructor()` call for both reused and fresh sessions. The
+tested combined file is on the regression branch; accepting only either PR's
+side would drop coverage or break course-creating E2E specs.
+
+The filesystem/content audit found no actual COMM 298 practice-set export or
+parameterized-script source in this repository, `tlef-create`, or Stephen's
+Finance-bot review note. Therefore the core exit checkbox for importing real
+COMM 298 content remains honestly open. Synthetic fixtures prove the tooling,
+but are not relabelled as instructor content. No feature PR was merged by
+Codex.

@@ -311,3 +311,30 @@ Nothing blocking right now. Heads-up items:
    his Task 2 student half reads flag shapes.
 3. When P2-0 opens as a PR, flag it explicitly — Task 10 starts the same day.
 4. When Tasks 4/5 merge, flag it — Task 9 starts the same day.
+
+## Stephen/Codex release-readiness follow-up — 2026-07-28
+
+No Saurav action or confirmation is required. Codex cleared docs-only GitHub
+conflicts on #34 (`6c61ce2`), #40 (`a2b20e6`), and draft #42 (`20fdbe0`);
+all three are mergeable and CI green. No Saurav production implementation was
+changed.
+
+Admin A1 gained a permanent real-session grant/search/revoke browser regression
+at `57ee5f3` on #36 and was base-synchronized at `56a8ddd`. Draft Admin A2 #41
+includes that test and base at `04c188a`; both PRs are mergeable and CI green.
+The refreshed regression-only branch
+`codex/phase-2-admin-integration-regression` at `27b4b26` passed 61 Jest
+suites / 640 tests, typecheck, lint, Node 24 build, and 12 Chromium scenarios
+(one opt-in live-LLM scenario skipped), with zero Admin/course fixture
+residuals.
+
+The final `tests/e2e/global-setup.ts` resolution must keep both Task 11's
+verified saved-session reuse branch and Admin A1's platform-Instructor
+provisioning for fresh/reused sessions. Stephen's coordination ledger contains
+the tested resolution.
+
+The only unchecked Phase 2 exit item is still operational content work: no
+real COMM 298 practice-set or parameterized-script source was found in the
+repo, `tlef-create`, or the supplied review note. Tasks 8–9 are implemented and
+browser-tested with fixtures, but real instructor content must be supplied and
+imported as Drafts before claiming the phase exit.
