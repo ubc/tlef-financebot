@@ -169,7 +169,7 @@ Keep `ensureCourseInstructor()`, `ensureCourseStudent()`, and
 ### Gate A0 — coordination and contract
 
 **Owner:** Codex  
-**Status:** in progress
+**Status:** complete
 
 Files:
 
@@ -180,9 +180,9 @@ Files:
 
 - [x] Record the product/security decisions.
 - [x] Publish per-agent file claims so each agent edits only its own ledger.
-- [ ] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
+- [x] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
   continuing Task 5.
-- [ ] Codex refreshes from `main` after the confirmation and starts A1 on a
+- [x] Codex refreshes from `main` after the confirmation and starts A1 on a
   short-lived `codex/` branch.
 
 ### Slice A1 — Admin accounts and platform-Instructor grant
@@ -208,20 +208,28 @@ Expected files:
 
 Steps:
 
-- [ ] Write failing tests for Admin-only access, grant idempotency, pending
+- [x] Write failing tests for Admin-only access, grant idempotency, pending
   first-login application, SAML refresh preservation, revoke, and
   platform-Instructor-only course creation.
-- [ ] Add the grant document/accessor/unique index and User flag.
-- [ ] Implement grant/revoke/search plus audit writes.
-- [ ] Apply pending grants during SAML upsert without fabricating a User or
+- [x] Add the grant document/accessor/unique index and User flag.
+- [x] Implement grant/revoke/search plus audit writes.
+- [x] Apply pending grants during SAML upsert without fabricating a User or
   replacing its PUID.
-- [ ] Gate course creation with `ensurePlatformInstructor()`.
-- [ ] Add the Admin accounts page and Admin-only navigation.
-- [ ] Update auth response/client types so shell selection uses
+- [x] Gate course creation with `ensurePlatformInstructor()`.
+- [x] Add the Admin accounts page and Admin-only navigation.
+- [x] Update auth response/client types so shell selection uses
   `isAdmin || platformInstructor || course instructor role`.
-- [ ] Run focused tests, full Jest, typecheck, lint, and build.
+- [x] Run focused tests, full Jest, typecheck, lint, and build.
 - [ ] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
   and `STATUS.md`.
+
+**A1 verification (2026-07-28):** rebased as `codex/admin-console-v0` on PR
+#34's final head. The combined tree passes 53 Jest suites / 585 tests,
+server/client typecheck, lint, and the Node 24 build. Live Admin browser
+verification covered Admin-only navigation, an existing professor shown as
+`Active`, an unknown CWL shown as `Pending first login`, and confirmed revoke
+flows for both; browser console clean. Temporary localhost test grants and
+the temporary test-user Admin bit were restored after verification.
 
 ### Gate A1.5 — Task 5 handoff
 
@@ -235,6 +243,11 @@ releases the following paths with a commit SHA:
 
 Codex then rebases Admin work onto the latest `main` and reruns the Phase 1
 serving/attempt regression suites before touching preview integration.
+
+Claude released the final Task 5 shared paths at `210c68f` and opened PR #34.
+Admin A1 is stacked on that final branch state; Preview A2 still waits for A1
+merge so its separate collection/route boundary lands on the stable Admin
+authorization base.
 
 ### Slice A2 — Instructor Student Preview
 
@@ -307,4 +320,3 @@ Steps:
   remains a separate task.
 - Future “impersonate a named student” is explicitly not implied by this
   preview design and requires a separate privacy/security review.
-
