@@ -146,11 +146,11 @@ honest against `git log`.
 - Consumes: `worker_threads`, `env.paramWorkerTimeoutMs`, `env.paramWorkerMemoryMb`.
 - Produces: `executeGenerate(script: string, seed: number): Promise<Record<string, number>>`. Full guarantees (hard timeout, memory cap, no network/fs/process, seeded PRNG), the complete `worker.js`, and the abuse-suite test cases are in the core document, Task 4 Interfaces + Step 1 — copy verbatim, this is a security-critical sandbox and the exact scrubbed-scope evaluator matters.
 
-- [x] **Step 1: Write the failing abuse tests** exactly as in the core document, Task 4 Step 1 (deterministic-per-seed, infinite-loop timeout, network block, fs block, process block, missing-`generate()` rejection).
-- [x] **Step 2: Verify FAIL.**
-- [x] **Step 3: Implement** `worker.js` and `index.ts`. **Deviated from the core document's literal Step 3 code**: the identifier-shadowing `new Function(...)` approach it shows was fundamentally insecure (live-verified full RCE via `[].constructor.constructor` property access) — 8 adversarial review rounds drove a rewrite onto `vm.createContext()` for real realm isolation instead. AGENTS.md documents the full threat model and all 8 rounds.
-- [x] **Step 4: Run the abuse suite** — `npx jest tests/unit/param-worker.test.ts` → 24/24 PASS.
-- [x] **Step 5: Commit** — done across 10 commits on `worktree-stephen+phase-2-param-sandbox`.
+- [ ] **Step 1: Write the failing abuse tests** exactly as in the core document, Task 4 Step 1 (deterministic-per-seed, infinite-loop timeout, network block, fs block, process block, missing-`generate()` rejection).
+- [ ] **Step 2: Verify FAIL.**
+- [ ] **Step 3: Implement** `worker.js` and `index.ts` exactly as in the core document, Task 4 Step 3. Write the AGENTS.md noting the threat model (scripts are instructor-trusted content, not hostile-user content).
+- [ ] **Step 4: Run the abuse suite** — `npx jest tests/unit/param-worker.test.ts` → all PASS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: worker_threads sandbox for parameterized generate() with timeout, memory, network, and fs guards"`
 
 ---
 
