@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Admin PUID compatibility replacement active on
-`codex/admin-console-puid-compatible`
+**State:** Admin PUID compatibility replacement released at `8bd658f`; PR #45
+open
 **Base:** `origin/main` at `124cdb2`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
@@ -13,7 +13,7 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active Admin PUID compatibility replacement
+## Released Admin PUID compatibility replacement
 
 Stephen requested a clean, main-based Admin PR that works with staging SAML
 assertions where `uid` and name fields may be empty. This branch replaces the
@@ -47,7 +47,14 @@ Decisions:
 - PUID grants use their own Mongo collection so the unique PUID index does not
   collide with old uid-keyed experimental documents.
 
-PR/commit and final verification will be recorded here after publishing.
+Implementation commit: `8bd658f`. PR:
+https://github.com/ubc/tlef-financebot/pull/45.
+
+Verification: four focused suites / 21 tests, including an explicit
+platform-Instructor-is-not-Admin 403 regression; server/client typecheck; lint;
+live local SAML Admin directory rendering; desktop and 390px responsive layout
+with no horizontal overflow. All paths are released for review. Nothing was
+merged to `main`.
 
 ## Released Task 9
 

@@ -219,6 +219,14 @@ Steps:
 Completed on PR #36 (`7d76080`); full 53 suites / 585 tests and the live Admin
 active/pending/revoke browser regression passed.
 
+**PUID-compatible replacement (2026-07-28):** PR #45 replaces #36 as the
+clean, current-main Admin A1 merge candidate. It provisions by PUID, lists all
+persisted Users plus pending grants, supports staging assertions with empty
+`uid`/profile fields, and keeps `platformInstructor` strictly separate from
+`isAdmin`. Implementation commit `8bd658f`; four focused suites / 21 tests,
+typecheck, lint, local SAML browser rendering, and desktop/390px layout checks
+passed.
+
 **Aggregate regression follow-up (2026-07-28):** combining Admin A1 with the
 remaining Phase 2 heads exposed a stale test fixture: course creation now
 correctly requires `platformInstructor`, but E2E `faculty` still depended on

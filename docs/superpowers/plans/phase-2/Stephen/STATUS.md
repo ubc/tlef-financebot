@@ -372,6 +372,11 @@ can contain a valid PUID while `uid` and profile fields are empty.
 - The Admin page layout was corrected with a padded card body, contained input,
   separate search toolbar, and a no-horizontal-overflow mobile layout.
 
-Branch: `codex/admin-console-puid-compatible`. The PR URL, commit, and final
-targeted verification will be appended after publishing. Nothing is merged to
-`main`.
+Implementation commit: `8bd658f`. PR:
+https://github.com/ubc/tlef-financebot/pull/45.
+
+Verification passed: four focused suites / 21 tests, including an explicit
+platform-Instructor-is-not-Admin 403 regression; server/client typecheck; lint;
+live local SAML Admin directory rendering; desktop and 390px responsive layout
+with no horizontal overflow. The branch is released for review. Nothing is
+merged to `main`.
