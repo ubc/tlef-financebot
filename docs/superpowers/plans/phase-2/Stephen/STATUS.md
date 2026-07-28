@@ -13,7 +13,7 @@ _Last updated: 2026-07-28_
 - Admin Console v0: **A1 complete on stacked PR #36**.
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 - Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
-- Task 8 question import: **active cross-owner takeover with Codex**.
+- Task 8 question import: **complete on independent PR #39**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -32,6 +32,7 @@ Codex completed:
   practice work includes Task 2 and Task 5's final parameter
   echo/substitution behavior.
 - Task 11 on PR #38 (`codex/phase-2-task11-flag-loop`), stacked on #37.
+- Task 8 on PR #39 (`codex/phase-2-task8-import`), based directly on `main`.
 
 Codex records current paths in
 [`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
@@ -104,12 +105,13 @@ Codex aligned only these E2E files with the current product:
 No production route/service changed for these stale assertions. These paths
 are released at `4422d20`.
 
-## Task 8 cross-owner takeover
+## Task 8 cross-owner result
 
 Admin A2 remains intentionally blocked until PRs #34, #36, and #37 merge.
 Stephen authorized Codex to continue Phase 2 by taking Saurav's independent,
-not-started Task 8. This directly advances the only remaining Phase 2 exit
-criterion: importing existing COMM 298 content as Drafts.
+not-started Task 8. It is complete on PR #39 and directly advances the only
+remaining Phase 2 exit criterion: importing existing COMM 298 content as
+Drafts.
 
 The exact implementation claim is:
 
@@ -124,9 +126,11 @@ The exact implementation claim is:
 - `tests/e2e/import.spec.ts`
 - `docs/api-contract.md` and Task 8 plan/status documents
 
-No Saurav implementation existed to duplicate. Saurav need not confirm or
-pause unrelated work; these paths remain read-only to the other agent until
-Codex records a release commit.
+No Saurav implementation existed to duplicate. The implementation is
+`b691de8`; all listed paths are released. Focused 2 suites / 15 tests, full 52
+suites / 548 tests, typecheck/lint/build, and the real instructor browser
+upload/preview/commit flow passed. Cleanup assertions found zero remaining
+course, question, version, or role fixtures.
 
 ## Admin v0 decisions
 
@@ -150,7 +154,7 @@ authorized Codex to take a minimal Saurav-owned dependency if it becomes the
 only blocker; Codex will record any such cross-owner takeover here and in
 Saurav's status before implementation, and will not duplicate active work.
 
-Current PR chain:
+Current PRs:
 
 - #34 — Task 5 parameterization, CI green
 - #35 — Task 2 student Flag control; 51 suites / 570 tests and live student
@@ -161,6 +165,8 @@ Current PR chain:
   live student browser regression passed
 - #38 — Task 11 flag-loop phase exit; 53 suites / 583 tests, 12 Playwright
   scenarios, typecheck/lint/build, and zero fixture residuals
+- #39 — Task 8 CSV/JSON/QTI import; independent on main, 52 suites / 548
+  tests and live instructor upload/preview/commit regression passed
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).

@@ -62,10 +62,9 @@ new Phase-2 infrastructure not in this doc's original 11 tasks — it replaces
 today's polling/fire-and-forget generation enqueue with a durable Mongo
 `contentRuns` record + course-scoped SSE. Full contract:
 [`Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
-Code-complete on `codex/phase-2-content-runs`, **not yet merged** (no PR opened
-as of 2026-07-23). Task 10 depends on it — the generation UI must consume run
-state, not a second ad hoc polling mechanism, so Task 10 cannot start until
-P2-0 merges and the run/list/SSE endpoints land in `docs/api-contract.md`.
+Merged in PR #32. Task 10 must consume its run state rather than a second ad
+hoc polling mechanism; the run/list/SSE endpoints are now in
+`docs/api-contract.md`, so Task 10 is unblocked.
 
 ## Dependency graph
 
@@ -426,10 +425,15 @@ developers' status files before implementation; Saurav need not confirm.
   - Routes: `POST /api/courses/:courseId/import/preview` (multipart single file; format from extension; 400 inline error naming an unsupported format), `POST /api/courses/:courseId/import/commit`.
   - Client: upload → preview table (detected questions, failures with reasons, parameterization flags) → confirm.
 
-- [ ] **Step 1: Create the three fixtures** (5 rows each: 3 valid MCQ, 1 T/F, 1 broken row for the failure list; JSON fixture includes one `type: 'other'` short-answer item to exercise auto-conversion).
-- [ ] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
-- [ ] **Step 3–5: FAIL → implement (service, routes, view) → PASS.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)"`
+- [x] **Step 1: Create the three fixtures** (5 items each: CSV/QTI contain 3 valid MCQ, 1 T/F, and 1 broken row/item; JSON keeps five total by replacing the third MCQ with one `type: 'other'` short-answer item to exercise auto-conversion).
+- [x] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
+- [x] **Step 3–5: FAIL → implement (service, routes, view) → PASS.** Added whole-batch semantic revalidation on commit, cross-course Theme/LO rejection, instructor-route/multipart coverage, and a real SAML browser flow through Import → preview → partial-success confirmation → Question Bank. Focused: 2 suites / 15 tests. Full: 52 suites / 548 tests; typecheck/lint/build passed. Browser: 1/1 passed with zero residual course/question/version/role fixtures.
+- [x] **Step 6: Commit** — `b691de8` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`).
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed the recorded
+takeover without modifying Saurav's Task 6 work. The Import nav item is now a
+real route, all confirmed questions remain Drafts, and QTI was retained rather
+than slipped.
 
 *Slip note (phase doc #2): if the week is tight, drop QTI — delete only the QTI branch and fixture.*
 

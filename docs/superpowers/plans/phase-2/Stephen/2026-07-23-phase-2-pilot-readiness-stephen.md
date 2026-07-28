@@ -212,16 +212,22 @@ Phase 2 exit criterion while Admin A2 waits for the stacked PR chain to merge.
 - create `tests/e2e/import.spec.ts`
 - `docs/api-contract.md` and the Phase 2 plan/status files
 
-- [ ] **Step 1:** add dependencies and the three five-item fixtures.
-- [ ] **Step 2:** write failing parser, partial-success, parameterization,
+- [x] **Step 1:** add dependencies and the three five-item fixtures.
+- [x] **Step 2:** write failing parser, partial-success, parameterization,
   commit/auto-conversion, route-auth, and multipart tests.
-- [ ] **Step 3:** implement the service and instructor-gated preview/commit
+- [x] **Step 3:** implement the service and instructor-gated preview/commit
   routes; revalidate every client-returned preview candidate on commit.
-- [ ] **Step 4:** implement and wire the Instructor Import page, including a
+- [x] **Step 4:** implement and wire the Instructor Import page, including a
   real upload → preview → confirm flow.
-- [ ] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
+- [x] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
   verification with isolated fixture cleanup.
-- [ ] **Step 6:** commit and open a short-lived PR from current `main`.
+- [x] **Step 6:** implementation commit `b691de8`; PR #39 from current `main`.
+
+**Result:** focused 2 suites / 15 tests and full 52 suites / 548 tests passed;
+typecheck/lint/build passed. The real SAML instructor flow uploaded the CSV
+fixture, previewed four valid rows plus one failure, confirmed four Drafts,
+and opened them in Question Bank. Cleanup assertions verified zero remaining
+course, question, version, or role fixtures.
 
 ---
 

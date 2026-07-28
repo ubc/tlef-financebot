@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 8 question import active as recorded cross-owner takeover
-**Base:** `main` at `3a7ea8d`
+**State:** Task 8 released on PR #39; no Codex implementation path active
+**Base:** PR #39 head `3fa3ff7` (`codex/phase-2-task8-import`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -12,13 +12,14 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active Task 8
+## Released Task 8
 
 Phase 2 Task 8 — CSV/JSON/QTI question import with preview, partial-success
 parsing, parameterization flags, and Draft-only commit. Stephen explicitly
-authorized this takeover; Saurav's status records it before implementation.
+authorized this takeover; complete on independent PR #39.
 
-Planned branch: `codex/phase-2-task8-import`, from current `main`.
+Implementation commit: `b691de8`; plan update: `3fa3ff7`. All paths below are
+released. Task 9 may extend the import files after PR #39 merges.
 
 ### Task 8 files claimed by Codex
 
@@ -40,7 +41,12 @@ Planned branch: `codex/phase-2-task8-import`, from current `main`.
 - Phase 2 Task 8 plan/status documents
 
 No active Saurav code branch or uncommitted work is being reused. Task 9 may
-later extend the three import files only after this claim is released.
+later extend the three import files after PR #39 merges.
+
+Verification: focused 2 suites / 15 tests; full 52 suites / 548 tests;
+typecheck/lint/build; real SAML instructor Import → preview → confirm → bank
+flow. Cleanup assertions found zero residual course/question/version/role
+fixtures.
 
 ## Released Task 11
 
