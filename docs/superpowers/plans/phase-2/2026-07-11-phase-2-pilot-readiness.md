@@ -339,7 +339,7 @@ current threat model, and Stephen's `STATUS.md` for the round-by-round log.
 
 - [x] **Step 1: Failing tests** — slot draw respects min/max/step and is seed-deterministic; substitution hits stem + options + explanations; missing placeholder for a defined slot surfaces a validation warning list; script path delegates to the sandbox; serving pins the same values into the attempt payload round-trip.
 - [x] **Step 2–4: FAIL → implement (service, route, serving/attempt wiring, panel) → PASS.** Also re-run the Phase-1 serving/attempts suites — they must stay green.
-- [x] **Step 5: Commit** — 3 commits on `worktree-stephen-phase-2-task5-params` (implementation + two review-driven fix rounds). Delivered design deviates from the file list above: `serving.service.ts` stayed untouched (kept pure per its own docstring); substitution wiring landed in `practice.routes.ts` instead. See Stephen's personal plan and `STATUS.md` for the full delta, including two integration bugs a final whole-branch review caught and fixed outside this task's original scope (`practice-card.ts` param echo, `review-book.service.ts` substitution).
+- [x] **Step 5: Commit** — 3 commits on `worktree-stephen-phase-2-task5-params` (implementation + two review-driven fix rounds). Delivered design deviates from the file list above: `serving.service.ts` stayed untouched (kept pure per its own docstring); substitution wiring landed in `practice.routes.ts` instead. See Stephen's personal plan and `STATUS.md` for the full delta, including two integration bugs a final whole-branch review caught and fixed outside this task's original scope (`practice-card.ts` param echo, `review-book.service.ts` substitution). Ready to merge: yes.
 
 ---
 
