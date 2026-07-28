@@ -152,14 +152,10 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   }
 
   const user = session.user;
-  // The wireframe's instructor brand mark is literally "FinanceBot" — hardcoded
-  // rather than routed through config.ts's APP.name (the app-wide re-skin
-  // point, see client/AGENTS.md) since renaming that would also rebrand the
-  // still-generic landing/student shell, which is outside this task's scope.
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--instructor' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
     el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
@@ -286,12 +282,10 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
   const practiceContextSlot = el('div', { class: 'practice-context-slot' });
 
   const user = session.user;
-  // Same "hardcode the wireframe's literal brand mark" rationale as
-  // buildInstructorShell above.
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--student' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
     nav,
     practiceContextSlot,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,

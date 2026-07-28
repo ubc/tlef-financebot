@@ -1,11 +1,10 @@
 /* =============================================================================
-   TLEF Starter — app shell styles.
+   FinanceBot — app shell styles.
 
    RE-SKIN HERE: the token block below is the single source of visual identity.
    Change these custom properties (and APP in client/src/config.ts) to rebrand
    the whole app. Light is the default theme; [data-theme="dark"] overrides the
-   same tokens. The deep-navy sidebar is the one brand signature and reads in
-   both themes.
+   same tokens.
    ========================================================================== */
 
 :root {
@@ -17,6 +16,14 @@
   --accent: #0055b7; /* UBC secondary blue */
   --accent-strong: #003a8c;
   --accent-contrast: #ffffff;
+
+  /* Landing / login screen — from Figma "Wireframe v0.2" frame 0 - Login
+     (148:5448). The file defines no Figma Variables, so these hexes are
+     sampled straight from the design. */
+  --login-brand: #2e66db;
+  --login-cta-bg: #1a1a1a;
+  --login-cta-fg: #ffffff;
+  --login-note: #6b6b73;
 
   /* Surfaces + text (light) */
   --bg: #f3f5f9;
@@ -85,6 +92,13 @@
   --accent: #4d9fff;
   --accent-strong: #7db6ff;
   --accent-contrast: #04121f;
+
+  /* Landing / login — the wireframe is light-only; these keep the same intent
+     (bright wordmark, one high-contrast solid CTA) on a dark page. */
+  --login-brand: #7aa5f5;
+  --login-cta-bg: #f2f4f8;
+  --login-cta-fg: #14161a;
+  --login-note: #9aa3b2;
 
   --bg: #0a0f1a;
   --surface: #111a2a;
@@ -411,68 +425,81 @@ a {
 /* ---- Landing (pre-login) ------------------------------------------------- */
 
 .landing {
+  position: relative;
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+/* Not part of Figma frame `0 - Login`; see views/landing.ts for why it exists. */
+.landing__theme-toggle {
+  position: absolute;
+  top: clamp(0.75rem, 3vw, 1.5rem);
+  right: clamp(0.75rem, 3vw, 1.5rem);
+  z-index: 1;
+}
+
+/* The wireframe centers the card horizontally and vertically in the frame;
+   `justify-content: center` reproduces that placement at any viewport height. */
+.landing__main {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-.landing__bar {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 1.1rem clamp(1rem, 5vw, 3rem);
-}
-
-.landing__main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   justify-content: center;
   gap: 1.5rem;
-  padding: clamp(1.5rem, 5vw, 3rem);
-  max-width: 1120px;
-  width: 100%;
-  margin: 0 auto;
+  padding: clamp(1.5rem, 6vw, 3rem);
 }
 
-.landing__grid {
-  display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: clamp(1.5rem, 4vw, 3.5rem);
-  align-items: center;
+.landing__main .banner {
+  width: min(100%, 440px);
 }
 
-.landing__title {
-  font-size: clamp(1.9rem, 4vw, 2.9rem);
-  font-weight: 680;
-  letter-spacing: -0.025em;
-  margin: 0 0 0.9rem;
-}
-
-.landing__intro {
-  color: var(--muted);
-  font-size: 1.05rem;
-  max-width: 34ch;
-  margin: 0 0 1.6rem;
-}
-
-.landing__actions {
+.login-card {
+  width: min(100%, 440px);
   display: flex;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.875rem; /* 14px, per the Figma card's gap */
+  text-align: center;
 }
 
-.landing__actions .btn {
-  padding: 0.7rem 1.4rem;
+.login-card__wordmark {
+  margin: 0 0 1.125rem; /* the wireframe's 18px spacer frame */
+  font-size: clamp(1.75rem, 5vw, 2.125rem); /* 34px at full size */
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--login-brand);
 }
 
-.landing__hint {
-  margin: 1.4rem 0 0;
-  font-size: 0.85rem;
-  color: var(--muted);
+.login-card__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.875rem 1.25rem; /* 14px 20px */
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--login-cta-bg);
+  color: var(--login-cta-fg);
+  font: inherit;
+  font-size: 0.9375rem; /* 15px */
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.05s;
 }
 
-.landing__hint code {
-  color: var(--text);
+.login-card__cta:hover {
+  opacity: 0.88;
+}
+
+.login-card__cta:active {
+  transform: translateY(1px);
+}
+
+.login-card__note {
+  margin: 0;
+  font-size: 0.78125rem; /* 12.5px */
+  color: var(--login-note);
 }
 
 .banner {
@@ -494,22 +521,6 @@ a {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-}
-
-.brand__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2rem;
-  height: 2rem;
-  padding: 0 0.5rem;
-  border-radius: 7px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.02em;
 }
 
 .brand__name {
@@ -1083,10 +1094,6 @@ a {
   .app-shell.is-open .backdrop {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .landing__grid {
-    grid-template-columns: 1fr;
   }
 
   .user {
