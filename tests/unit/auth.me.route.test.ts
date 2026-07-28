@@ -22,12 +22,27 @@ describe('GET /api/auth/me', () => {
 
   it('returns the identity summary when signed in', async () => {
     const res = await request(
-      makeApp({ puid: 'P1', uid: 'u1', displayName: 'U One', isAdmin: false, affiliations: ['faculty'], courseRoles: [], email: 'x@y' }),
+      makeApp({
+        puid: 'P1',
+        uid: 'u1',
+        displayName: 'U One',
+        isAdmin: false,
+        platformInstructor: true,
+        affiliations: ['faculty'],
+        courseRoles: [],
+        email: 'x@y',
+      }),
     ).get('/api/auth/me');
     expect(res.status).toBe(200);
     expect(res.body.authenticated).toBe(true);
     expect(res.body.user).toEqual({
-      puid: 'P1', uid: 'u1', displayName: 'U One', isAdmin: false, affiliations: ['faculty'], courseRoles: [],
+      puid: 'P1',
+      uid: 'u1',
+      displayName: 'U One',
+      isAdmin: false,
+      platformInstructor: true,
+      affiliations: ['faculty'],
+      courseRoles: [],
     });
   });
 });
