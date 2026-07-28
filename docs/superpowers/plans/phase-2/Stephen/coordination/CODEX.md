@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 10 active — recorded cross-owner takeover
-**Base:** `origin/main` at `1ea1647`
+**State:** Task 10 released on PR #40
+**Base:** PR #40 head `0870e23` (`codex/phase-2-task10-generation`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -12,7 +12,7 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active Task 10
+## Released Task 10
 
 Phase 2 Task 10 — custom-prompt generation, material-scoped @-mentions,
 editable presets, and side-by-side question regeneration. Stephen authorized
@@ -20,7 +20,10 @@ this Saurav-owned takeover; it is recorded in both developers' status files
 before implementation. P2-0 is merged, and no Saurav Task 10 implementation
 branch or active claim exists.
 
-### Task 10 files claimed by Codex
+Implementation commit: `0870e23`; PR:
+<https://github.com/ubc/tlef-financebot/pull/40>. All paths below are released.
+
+### Task 10 files claimed and released by Codex
 
 - `server/src/services/generation.service.ts`
 - `server/src/routes/generation.routes.ts`
@@ -29,15 +32,23 @@ branch or active claim exists.
 - `client/src/views/instructor/preseeding.ts`
 - `client/src/views/instructor/question-detail.ts`
 - `client/src/api.ts`
-- focused Task 10 tests
+- `tests/unit/custom-generation.test.ts`
+- `tests/unit/generation.routes.test.ts`
+- `tests/unit/preseeding.test.ts`
+- `tests/e2e/custom-generation.spec.ts`
 - `docs/api-contract.md`
 - Phase 2 Task 10 plan/status documents
 
 The existing pre-seeding view is the canonical generation UI and already
-consumes P2-0 run/SSE state, so Codex will extend it instead of adding the
+consumes P2-0 run/SSE state, so Codex extended it instead of adding the
 duplicate `generate.ts` page named in the older plan. Shared files remain
-append-only/surgical. Final commit, PR, verification, and release state will
-replace this active claim at handoff.
+append-only/surgical.
+
+Verification: 51 Jest suites / 543 tests, typecheck, lint, Node 24 build, and
+one real-session Playwright scenario covering preset fill, material mention
+autocomplete, enqueue payload, side-by-side generation, zero PATCH before
+Replace, exactly one versioned PATCH after Replace, and zero browser errors.
+Fixture residual counts were zero.
 
 ## Released Task 8
 

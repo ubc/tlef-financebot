@@ -16,8 +16,8 @@ _Last updated: 2026-07-28_
 - Task 8 question import: **complete on independent PR #39**.
 - Saurav Task 6 remediation: **already merged on PR #31**; its stale
   “ready to push” status was reconciled on 2026-07-28.
-- Task 10 custom generation/regeneration: **cross-owner takeover in progress
-  by Stephen/Codex**, after recording the exact scope in both status files.
+- Task 10 custom generation/regeneration: **complete on PR #40** (`0870e23`)
+  after the recorded cross-owner takeover.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -136,7 +136,7 @@ suites / 548 tests, typecheck/lint/build, and the real instructor browser
 upload/preview/commit flow passed. Cleanup assertions found zero remaining
 course, question, version, or role fixtures.
 
-## Task 10 cross-owner claim
+## Task 10 cross-owner result
 
 Stephen authorized Codex to help complete unfinished Saurav tasks so Phase 2
 can continue, with status recorded for both developers. The audit found that
@@ -144,7 +144,7 @@ Task 6 was already merged in PR #31 despite Saurav's stale status; Task 10 is
 the next genuinely unstarted and now-unblocked item because P2-0 merged in PR
 #32.
 
-Codex is taking Task 10 without waiting for Saurav confirmation. The claimed
+Codex completed Task 10 without waiting for Saurav confirmation. The released
 implementation paths are:
 
 - `server/src/services/generation.service.ts`
@@ -154,14 +154,25 @@ implementation paths are:
 - `client/src/views/instructor/preseeding.ts`
 - `client/src/views/instructor/question-detail.ts`
 - `client/src/api.ts`
-- focused Task 10 tests
+- `tests/unit/custom-generation.test.ts`,
+  `tests/unit/generation.routes.test.ts`,
+  `tests/unit/preseeding.test.ts`
+- `tests/e2e/custom-generation.spec.ts`
 - `docs/api-contract.md` and Phase 2 plan/status documents
 
 The existing pre-seeding page already owns custom prompt, target LO/type/
-difficulty, and durable run/SSE progress. Task 10 will extend that surface with
+difficulty, and durable run/SSE progress. Task 10 extends that surface with
 presets and material mention selection rather than creating a duplicate
 generation page. Regeneration remains a side-by-side, no-autosave preview;
 only the existing explicit edit/versioning path may replace the original.
+
+The result is `0870e23` on PR #40. Exact, case-insensitive @mentions are
+restricted to ready materials assigned to the selected LO/theme; four presets
+come from the server; custom batches retain P2-0 runId/SSE progress; and
+regeneration appends request provenance without saving content. Verification:
+51 Jest suites / 543 tests, typecheck, lint, Node 24 build, and a real-session
+browser pass for preset/mention/enqueue/preview/Replace with zero browser
+errors. Browser fixtures were fully removed.
 
 ## Admin v0 decisions
 
@@ -198,6 +209,8 @@ Current PRs:
   scenarios, typecheck/lint/build, and zero fixture residuals
 - #39 — Task 8 CSV/JSON/QTI import; independent on main, 52 suites / 548
   tests and live instructor upload/preview/commit regression passed
+- #40 — Task 10 custom generation/regeneration; 51 suites / 543 tests plus
+  real-session preset/@mention/side-by-side/explicit-Replace regression passed
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).

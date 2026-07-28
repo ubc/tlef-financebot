@@ -3,8 +3,8 @@
 _Last updated: 2026-07-28_
 
 **Tasks 1, 2 (instructor half), 3, and 6 merged (PRs #27/#29, #28, #30,
-#31). Task 8 is complete on PR #39 and joint Task 11 is complete on PR #38.
-Stephen/Codex has recorded a cross-owner Task 10 takeover below.**
+#31). Task 8 is complete on PR #39, Task 10 is complete on PR #40, and joint
+Task 11 is complete on PR #38.**
 Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
 Executed with the superpowers `subagent-driven-development` skill; the running
@@ -61,7 +61,7 @@ Stephen's source documents (unedited by me):
 | 6 | Remediation report + checklist | **Merged** (PR #31 — `saurav/task-6-remediation`, CI passed) | nothing |
 | 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
 | 9 | Parameterized-script migration | not started | PRs #34 + #39 merge |
-| 10 | Custom-prompt generation/regeneration | **In progress by Stephen/Codex (recorded cross-owner takeover)** | nothing; P2-0 merged in PR #32 |
+| 10 | Custom-prompt generation/regeneration | **Complete by Stephen/Codex on PR #40** (`0870e23`) | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
@@ -80,22 +80,25 @@ Saurav need not confirm or stop unrelated work. Task 8 is complete on PR #39
 at `2d3313e`; its paths are released. Task 9 can extend the import files after
 PR #39 and its Task 5 dependency PR #34 merge.
 
-## Stephen/Codex Task 10 takeover — 2026-07-28
+## Stephen/Codex Task 10 completion — 2026-07-28
 
 Stephen explicitly authorized Codex to finish uncompleted Saurav tasks when
 that helps unblock Phase 2, provided both status files are updated. P2-0 is
 merged in PR #32 and no Task 10 implementation branch or active file claim was
 found. Codex is therefore taking Task 10 without waiting for confirmation.
 
-The implementation claim is limited to the existing generation authoring
+The completed implementation is limited to the existing generation authoring
 flow: `server/src/services/generation.service.ts`,
 `server/src/routes/generation.routes.ts`, `server/src/types/domain.ts`,
 `server/src/services/questions.service.ts`,
 `client/src/views/instructor/preseeding.ts`,
 `client/src/views/instructor/question-detail.ts`, `client/src/api.ts`, focused
 Task 10 tests, `docs/api-contract.md`, and the Phase 2 plan/status ledger.
-Shared wiring will remain append-only. Codex will record the final commit, PR,
-verification, and released paths here after handoff.
+It is released at `0870e23` on PR #40. Verification passed: 51 Jest suites /
+543 tests, typecheck, lint, Node 24 build, and a real-session Playwright flow
+covering every new click, no PATCH before Replace, one versioned PATCH after
+Replace, and zero browser errors. Test fixtures were removed with zero
+course/material/question residuals.
 
 ## Deviations from the plan
 
