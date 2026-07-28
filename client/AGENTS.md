@@ -52,7 +52,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `dom.ts` | `el()` / `mount()` / `byId()` — minimal DOM helpers. |
 | `views/landing.ts` | Pre-login screen (Figma `0 - Login`, node `148:5448`). |
 | `views/home.ts` | Overview (dashboard): welcome, system status, component map. |
-| `views/health.ts` | Reusable "System status" card (used by landing + home). |
+| `views/health.ts` | Reusable "System status" card (used by the signed-in overview/home only). |
 | `views/notes.ts` | EXAMPLE (mongodb demo). Safe to delete. |
 | `views/rag.ts` | EXAMPLE (genai + qdrant demo). Safe to delete. |
 | `views/members.ts` | The gated members-only area (auth-gating reference). |

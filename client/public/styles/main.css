@@ -438,9 +438,8 @@ a {
   z-index: 1;
 }
 
-/* The wireframe centers the card horizontally and sits its top edge at ~38% of
-   the 900px-tall frame; `justify-content: center` with a slight negative offset
-   reproduces that optical placement at any viewport height. */
+/* The wireframe centers the card horizontally and vertically in the frame;
+   `justify-content: center` reproduces that placement at any viewport height. */
 .landing__main {
   min-height: 100vh;
   display: flex;
@@ -522,22 +521,6 @@ a {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-}
-
-.brand__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2rem;
-  height: 2rem;
-  padding: 0 0.5rem;
-  border-radius: 7px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.02em;
 }
 
 .brand__name {

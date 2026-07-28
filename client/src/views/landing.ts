@@ -35,7 +35,7 @@ export function renderLanding(root: HTMLElement): void {
       'a',
       { class: 'login-card__cta', href: '/auth/ubcshib' },
       'Log in with CWL',
-      el('span', { class: 'login-card__arrow', 'aria-hidden': 'true', text: '→' }),
+      el('span', { 'aria-hidden': 'true', text: '→' }),
     ),
     el('p', {
       class: 'login-card__note',
@@ -52,7 +52,7 @@ export function renderLanding(root: HTMLElement): void {
     el(
       'div',
       { class: 'landing' },
-      el('div', { class: 'landing__theme-toggle' }, createThemeToggle()),
+      el('header', { class: 'landing__theme-toggle' }, createThemeToggle()),
       el('main', { class: 'landing__main' }, loginBanner(), card),
     ),
   );

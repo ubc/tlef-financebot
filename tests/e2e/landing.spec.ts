@@ -41,8 +41,9 @@ test.describe('landing (logged out)', () => {
     await expect(toggle).toBeVisible();
 
     const before = await html.getAttribute('data-theme');
+    const expected = before === 'dark' ? 'light' : 'dark';
     await toggle.click();
-    await expect(html).not.toHaveAttribute('data-theme', before ?? 'light');
+    await expect(html).toHaveAttribute('data-theme', expected);
 
     // The choice persists across a reload, which is the whole point of having
     // the control on the signed-out screen.

@@ -282,8 +282,6 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
   const practiceContextSlot = el('div', { class: 'practice-context-slot' });
 
   const user = session.user;
-  // Same "hardcode the wireframe's literal brand mark" rationale as
-  // buildInstructorShell above.
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--student' },

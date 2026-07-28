@@ -25,7 +25,7 @@ commonly need:
 - Authentication (`server/src/components/auth`) is implemented: SAML/Shibboleth
   login via `passport-ubcshib` against the local docker-simple-saml IdP, with
   sessions stored in MongoDB (`connect-mongo`). The client is an app shell behind
-  login: a public landing screen (health check + "Log in with CWL"), and after
+  login: a public landing screen ("Log in with CWL"), and after
   login a sidebar/top-bar app (Overview, the Notes/RAG demos, and a gated Members
   area) with Log out. See the README "Authentication" section for one-time local
   setup (SP entry + IdP certificate). Auth-gating is demonstrated end-to-end: the
