@@ -335,6 +335,122 @@ describe('submitAttempt: adaptive + clearly-wrong miss', () => {
   });
 });
 
+// -----------------------------------------------------------------------------
+// Task 5 (IN-Q09/ST-P03): a parameterized question's feedback must show the
+// SAME substituted values the student was actually served, not the raw
+// {{slot}} placeholders still sitting on version.stem/options. Uses a
+// paramSlots-carrying version fixture + input.paramValues (the values
+// /practice/next handed out and the client echoed back on submission).
+// params.service.ts is NOT mocked here — substituteParams runs for real.
+// -----------------------------------------------------------------------------
+
+const paramOptions: QuestionOption[] = [
+  { key: 'A', text: 'The rate is {{rate}}%', role: 'correct', explanation: 'Because {{rate}} is correct.' },
+  { key: 'B', text: 'Option B', role: 'clearly-wrong', explanation: 'Because B is wrong.' },
+];
+
+function paramVersion() {
+  return {
+    _id: versionId,
+    questionId,
+    version: 1,
+    type: 'mcq',
+    stem: 'A loan at {{rate}}%.',
+    options: paramOptions,
+    difficulty: 'medium',
+    paramSlots: [{ name: 'rate', min: 5, max: 5, step: 1 }],
+    sourceRefs: [],
+    createdBy: 'seed',
+    createdAt: new Date(),
+  };
+}
+
+function seedParamCollections(feedbackStrategy: string) {
+  jest.mocked(questionVersionsCol).mockReturnValue(makeReadOnlyCol([paramVersion()]) as never);
+  jest.mocked(questionsCol).mockReturnValue(makeReadOnlyCol([questionHead()]) as never);
+  jest.mocked(coursesCol).mockReturnValue(makeReadOnlyCol([courseDoc(feedbackStrategy)]) as never);
+  jest.mocked(losCol).mockReturnValue(makeReadOnlyCol([loDoc(loId, themeId)]) as never);
+  const reviewBookFake = makeReviewBookFake();
+  jest.mocked(reviewBookCol).mockReturnValue(reviewBookFake as never);
+  return reviewBookFake;
+}
+
+describe('submitAttempt: parameterized question — feedback substitution (Task 5)', () => {
+  it('full reveal (correct answer) substitutes {{slot}} in option text AND explanation using the pinned paramValues', async () => {
+    seedParamCollections('adaptive');
+
+    const result = await submitAttempt({ ...baseInput({ selectedKey: 'A' }), paramValues: { rate: 7 } });
+
+    expect(result.correct).toBe(true);
+    expect(result.feedback.revealed).toEqual([
+      { key: 'A', text: 'The rate is 7%', role: 'correct', explanation: 'Because 7 is correct.', correct: true },
+      { key: 'B', text: 'Option B', role: 'clearly-wrong', explanation: 'Because B is wrong.', correct: false },
+    ]);
+  });
+
+  it('Strategy-A miss reveals only the chosen option, substituted against the pinned paramValues', async () => {
+    seedParamCollections('strategy-a');
+    // A retry IS available here so the miss path reveals only the chosen
+    // option instead of degrading to a full reveal (that degradation case
+    // is covered separately below).
+    jest.mocked(selectRetryQuestion).mockResolvedValue({
+      question: { _id: new ObjectId() } as never,
+      version: { _id: new ObjectId(), type: 'mcq', stem: 'q', options: [{ key: 'A', text: 'a', role: 'correct', explanation: 'e' }, { key: 'B', text: 'b', role: 'clearly-wrong', explanation: 'e' }] } as never,
+      degraded: 'none',
+    });
+
+    const missResult = await submitAttempt({ ...baseInput({ selectedKey: 'B' }), paramValues: { rate: 7 } });
+
+    expect(missResult.feedback.revealed).toEqual([
+      { key: 'B', text: 'Option B', role: 'clearly-wrong', explanation: 'Because B is wrong.', correct: false },
+    ]);
+  });
+
+  it('a fresh Strategy-A retry question that is itself parameterized gets its OWN freshly-resolved paramValues + seed (never reuses the just-answered question\'s paramValues)', async () => {
+    seedParamCollections('strategy-a');
+    const retryQuestionId = new ObjectId();
+    const retryVersionId = new ObjectId();
+    jest.mocked(selectRetryQuestion).mockResolvedValue({
+      question: { _id: retryQuestionId } as never,
+      version: {
+        _id: retryVersionId,
+        type: 'mcq',
+        stem: 'Another loan at {{rate}}%.',
+        paramSlots: [{ name: 'rate', min: 9, max: 9, step: 1 }],
+        options: [
+          { key: 'A', text: 'Rate {{rate}}', role: 'correct', explanation: 'x' },
+          { key: 'B', text: 'Wrong', role: 'clearly-wrong', explanation: 'y' },
+        ],
+      } as never,
+      degraded: 'none',
+    });
+
+    const result = await submitAttempt({ ...baseInput({ selectedKey: 'B' }), paramValues: { rate: 7 } });
+
+    expect(result.feedback.retry).toBeDefined();
+    expect(result.feedback.retry!.stem).toBe('Another loan at 9%.');
+    expect(result.feedback.retry!.options).toEqual([
+      { key: 'A', text: 'Rate 9' },
+      { key: 'B', text: 'Wrong' },
+    ]);
+    expect(result.feedback.retry!.paramValues).toEqual({ rate: 9 });
+    expect(typeof result.feedback.retry!.seed).toBe('number');
+  });
+
+  it('degradation-to-full-reveal (no retry available) still substitutes the pinned paramValues', async () => {
+    seedParamCollections('strategy-a');
+    jest.mocked(selectRetryQuestion).mockResolvedValue(null);
+
+    const result = await submitAttempt({ ...baseInput({ selectedKey: 'B' }), paramValues: { rate: 7 } });
+
+    expect(result.feedback.retry).toBeUndefined();
+    expect(result.feedback.revealed).toEqual([
+      { key: 'A', text: 'The rate is 7%', role: 'correct', explanation: 'Because 7 is correct.', correct: true },
+      { key: 'B', text: 'Option B', role: 'clearly-wrong', explanation: 'Because B is wrong.', correct: false },
+    ]);
+  });
+});
+
 // --- Case 6: locked strategy-b wins over role -------------------------------------
 
 describe('submitAttempt: locked strategy-b course', () => {

@@ -3,6 +3,7 @@ import type { WithId } from 'mongodb';
 import { attemptsCol, questionsCol, questionVersionsCol, coursesCol, reviewBookCol, losCol } from '../components/mongodb/collections';
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from './mastery.service';
 import { selectRetryQuestion } from './serving.service';
+import { resolveParamValues, substituteParams, drawSeed } from './params.service';
 import type {
   AppliedStrategy,
   AttemptRecord,
@@ -48,7 +49,15 @@ export interface AttemptResult {
   feedback: {
     strategy: AppliedStrategy;
     revealed: RevealedOption[];
-    retry?: { questionId: string; questionVersionId: string; type: QuestionType; stem: string; options: Array<{ key: string; text: string }> };
+    retry?: {
+      questionId: string;
+      questionVersionId: string;
+      type: QuestionType;
+      stem: string;
+      options: Array<{ key: string; text: string }>;
+      paramValues?: Record<string, number>;
+      seed?: number;
+    };
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
@@ -65,8 +74,21 @@ export interface SubmitAttemptInput {
   paramValues?: Record<string, number>;
 }
 
-function fullReveal(options: Array<{ key: string; text: string; role: OptionRole; explanation: string }>): RevealedOption[] {
-  return options.map((o) => ({ key: o.key, text: o.text, role: o.role, explanation: o.explanation, correct: o.role === 'correct' }));
+/** Full reveal of every option — substituted against `paramValues` when the
+ * served question was parameterized (Task 5 gap: `version.options` carries
+ * raw, unsubstituted `{{slot}}` placeholders; feedback must show the SAME
+ * numbers the student was actually served, never the literal placeholders). */
+function fullReveal(
+  options: Array<{ key: string; text: string; role: OptionRole; explanation: string }>,
+  paramValues?: Record<string, number>,
+): RevealedOption[] {
+  return options.map((o) => ({
+    key: o.key,
+    text: paramValues ? substituteParams(o.text, paramValues) : o.text,
+    role: o.role,
+    explanation: paramValues ? substituteParams(o.explanation, paramValues) : o.explanation,
+    correct: o.role === 'correct',
+  }));
 }
 
 /** Upserts the ReviewBookEntry for a miss: one entry per (puid, courseId,
@@ -188,10 +210,16 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
   }
 
   if (correct || appliedStrategy === 'b') {
-    revealed = fullReveal(version.options);
+    revealed = fullReveal(version.options, input.paramValues);
   } else {
-    // Strategy A miss: only the chosen option, others withheld.
-    revealed = [{ key: selectedOption.key, text: selectedOption.text, role: selectedOption.role, explanation: selectedOption.explanation, correct: false }];
+    // Strategy A miss: only the chosen option, others withheld — substituted
+    // against the SAME paramValues the student was actually served, not the
+    // raw {{slot}} placeholders.
+    const chosenText = input.paramValues ? substituteParams(selectedOption.text, input.paramValues) : selectedOption.text;
+    const chosenExplanation = input.paramValues
+      ? substituteParams(selectedOption.explanation, input.paramValues)
+      : selectedOption.explanation;
+    revealed = [{ key: selectedOption.key, text: chosenText, role: selectedOption.role, explanation: chosenExplanation, correct: false }];
 
     const retryResult = await selectRetryQuestion({
       puid: input.user.puid,
@@ -202,16 +230,26 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
     });
 
     if (retryResult) {
+      // The retry is a DIFFERENT question served fresh — if it's itself
+      // parameterized it needs its own freshly-resolved seed/paramValues,
+      // exactly like /practice/next (never reuses input.paramValues, which
+      // belongs to the just-answered question).
+      const retrySeed = drawSeed();
+      const retryParamValues = await resolveParamValues(retryResult.version, retrySeed);
       retry = {
         questionId: retryResult.question._id.toString(),
         questionVersionId: retryResult.version._id.toString(),
         type: retryResult.version.type,
-        stem: retryResult.version.stem,
-        options: retryResult.version.options.map((o) => ({ key: o.key, text: o.text })),
+        stem: retryParamValues ? substituteParams(retryResult.version.stem, retryParamValues) : retryResult.version.stem,
+        options: retryResult.version.options.map((o) => ({
+          key: o.key,
+          text: retryParamValues ? substituteParams(o.text, retryParamValues) : o.text,
+        })),
+        ...(retryParamValues !== undefined ? { paramValues: retryParamValues, seed: retrySeed } : {}),
       };
     } else {
       // §5.1 degradation: no retry available -> full reveal; strategy stays 'a'.
-      revealed = fullReveal(version.options);
+      revealed = fullReveal(version.options, input.paramValues);
     }
   }
 

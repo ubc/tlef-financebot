@@ -193,6 +193,20 @@ describe('editQuestion (IN-Q03)', () => {
     expect(result.version).toBe(2);
   });
 
+  it('versions a generateScript-only patch (Task 5, IN-Q09), mirroring the paramSlots content-key pattern', async () => {
+    const result = await editQuestion(
+      questionId,
+      { generateScript: 'function generate(random){ return { vars: { rate: 5 } }; }' },
+      'PUID-INSTR-0002',
+    );
+
+    const [versionDoc] = versionsInsertOne.mock.calls[0];
+    expect(versionDoc.generateScript).toBe('function generate(random){ return { vars: { rate: 5 } }; }');
+    expect(versionDoc.editedFields).toEqual(['generateScript']);
+    expect(versionDoc.stem).toBe(currentVersion.stem); // copied, unpatched
+    expect(result.version).toBe(2);
+  });
+
   it('updates the head currentVersionId/currentVersion and adds manually-edited exactly once', async () => {
     const insertedVersionId = new ObjectId();
     versionsInsertOne.mockResolvedValue({ acknowledged: true, insertedId: insertedVersionId });

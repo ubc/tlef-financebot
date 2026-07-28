@@ -53,6 +53,17 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `GET /api/questions/:questionId` → full question + current version + agentDecision + notes + versions list
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
+- `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
+  new/unchanged QuestionVersion (same versioning rules as the generic PATCH above,
+  scoped to just the two parameterization content keys); saves independently of
+  approval state (IN-Q09, Task 5)
+- `POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }` →
+  `{ draws: [{ seed, values, stem? }] x5, warnings: string[] }` — previews an
+  EDIT-IN-PROGRESS candidate (the request body, not the currently-saved version)
+  with 5 independently-drawn sample resolutions; `stem` falls back to the
+  question's currently-saved stem when omitted from the body; `warnings` lists
+  any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
+  stem. Never persists anything. (IN-Q09, Task 5)
 - `POST /api/questions/:questionId/transition { to }` → question (validated against PUBLICATION_TRANSITIONS; IN-Q04/Q07)
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
@@ -97,12 +108,23 @@ of remaining indefinitely active.
 ## Practice (student)
 - `GET /api/courses/:courseId/home` → themes visible to the student (≥1 approved question,
   availableFrom passed, not archived) with per-LO mastery labels (ST-P01/P02)
-- `POST /api/courses/:courseId/practice/next { loId?, themeId?, sessionServedIds: string[] }` →
-  `{ question: { questionId, questionVersionId, type, stem, options: [{ key, text }], loId, themeId, paramValues? }, watermark }`
-  — never includes roles/explanations/correctness. 404 when no approved question exists.
+- `POST /api/courses/:courseId/practice/next { loId, sessionServedIds: string[] }` →
+  `{ questionId, questionVersionId, type, stem, difficulty, degraded, options: [{ key, text }], watermark, paramValues?, seed? }`
+  — never includes roles/explanations/correctness. `stem`/`options` are already substituted
+  against a freshly-drawn `seed` for a parameterized question (`paramValues`/`seed` present
+  only in that case — see params.service.ts's `resolveParamValues`/`substituteParams`, Task 5,
+  IN-Q09/ST-P03). A fresh `seed` is drawn on every call, including Review-Book re-practice
+  (ST-R04) — there is one serving call site for both. 404 when no approved question exists.
 - `POST /api/attempts { questionVersionId, loId, selectedKey, mode, sessionServedIds, isRetry?, paramValues? }` →
-  `{ correct, feedback: { strategy: 'a' | 'b', revealed: [{ key, text, role, explanation }] | chosenOnly, retryAvailable },
+  `{ correct,
+     feedback: { strategy: 'a' | 'b',
+                 revealed: [{ key, text, role, explanation, correct }] | chosenOnly (all substituted against the pinned paramValues),
+                 retry?: { questionId, questionVersionId, type, stem, options: [{ key, text }], paramValues?, seed? } },
      mastery: { loStatus, recommendation? }, reviewBook: { added } }` (ST-P04)
+  — `paramValues` sent back here are trusted verbatim and pinned onto the AttemptRecord (never
+  re-derived/re-validated server-side — they don't affect grading, only the student's own
+  displayed feedback numbers). A Strategy-A `retry` question that is itself parameterized carries
+  its OWN freshly-resolved `paramValues`/`seed`, independent of the just-answered question's.
 - `POST /api/courses/:courseId/los/:loId/skip { attempted: boolean }` → 204 (ST-P06)
 - `GET /api/courses/:courseId/session-summary` →
   `{ deferred?: SessionEndSummary, welcome: boolean }` — start-of-session payload; `welcome: true`

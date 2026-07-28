@@ -14,7 +14,8 @@ import {
   type BankItem,
 } from '../services/bank.service';
 import { editQuestion, transitionQuestion, bulkTransition } from '../services/questions.service';
-import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole } from '../types/domain';
+import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
+import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
 // browse/filter, review-queue, editing, and publication-transition surface,
@@ -112,6 +113,33 @@ const patchQuestionBody = z.object({
   difficulty: z.enum(DIFFICULTIES).optional(),
   loIds: z.array(objectIdParam).optional(),
   themeIds: z.array(objectIdParam).optional(),
+});
+
+// Task 5 (IN-Q09): a ParamSlot's shape as a request body — matches
+// domain.ts's ParamSlot exactly (name required; min/max/step/values all
+// optional, resolveParamValues in params.service.ts tolerates whichever
+// subset is present).
+const paramSlotBody = z.object({
+  name: z.string().min(1),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  values: z.array(z.number()).optional(),
+});
+
+const patchQuestionParamsBody = z.object({
+  paramSlots: z.array(paramSlotBody).optional(),
+  generateScript: z.string().optional(),
+});
+
+// `stem` is optional here (unlike patchQuestionParamsBody, which never
+// carries stem) — the preview endpoint needs it only to render substituted
+// preview text; when omitted it falls back to the question's currently-saved
+// stem (see the route below).
+const previewQuestionParamsBody = z.object({
+  paramSlots: z.array(paramSlotBody).optional(),
+  generateScript: z.string().optional(),
+  stem: z.string().optional(),
 });
 
 const transitionBody = z.object({ to: z.enum(PUBLICATION_STATES) });
@@ -290,6 +318,79 @@ questionsRouter.patch(
       req.user!.puid,
     );
     res.json(version);
+  },
+);
+
+/**
+ * PATCH /api/questions/:questionId/params { paramSlots?, generateScript? } ->
+ * new/unchanged QuestionVersion. Instructor-only. Saves independently of
+ * approval state (IN-Q09) — same guard shape as the generic PATCH above (no
+ * question-state gate), just scoped to the two parameterization content keys.
+ */
+questionsRouter.patch(
+  '/questions/:questionId/params',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCourseInstructor(),
+  validate({ body: patchQuestionParamsBody }),
+  async (req, res) => {
+    const questionId = new ObjectId(String(req.params.questionId));
+    const body = req.body as z.infer<typeof patchQuestionParamsBody>;
+    const version = await editQuestion(
+      questionId,
+      {
+        ...(body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {}),
+        ...(body.generateScript !== undefined ? { generateScript: body.generateScript } : {}),
+      },
+      req.user!.puid,
+    );
+    res.json(version);
+  },
+);
+
+/**
+ * POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }
+ * -> `{ draws: [{ seed, values, stem? }] x5, warnings }`. Instructor-only.
+ * Previews an EDIT-IN-PROGRESS candidate (the request body), never the
+ * currently-saved version — so an instructor can preview draws before
+ * saving. Never persists anything (no editQuestion() call); `stem` falls
+ * back to the question's currently-saved stem when the body omits it, purely
+ * so the response can show substituted preview text.
+ */
+questionsRouter.post(
+  '/questions/:questionId/params/preview',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCourseInstructor(),
+  validate({ body: previewQuestionParamsBody }),
+  async (req, res) => {
+    const questionId = new ObjectId(String(req.params.questionId));
+    const body = req.body as z.infer<typeof previewQuestionParamsBody>;
+
+    let stem = body.stem;
+    if (stem === undefined) {
+      const { current } = await getQuestionDetail(questionId);
+      stem = current.stem;
+    }
+
+    const candidate = { paramSlots: body.paramSlots as ParamSlot[] | undefined, generateScript: body.generateScript };
+
+    const draws = [];
+    for (let i = 0; i < 5; i += 1) {
+      const seed = drawSeed();
+      const values = await resolveParamValues(candidate, seed);
+      draws.push({
+        seed,
+        values: values ?? {},
+        ...(values !== undefined ? { stem: substituteParams(stem, values) } : { stem }),
+      });
+    }
+
+    const warnings = candidate.paramSlots ? findUnusedParamSlots(stem, candidate.paramSlots) : [];
+
+    res.json({ draws, warnings });
   },
 );
 

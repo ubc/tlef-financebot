@@ -288,6 +288,11 @@ export interface PracticeQuestion {
   degraded: 'none' | 'repeat' | 'adjacent' | 'any';
   options: PracticeQuestionOption[];
   watermark: string;
+  /** Present only for a parameterized question — the values drawn for THIS
+   * serve, already substituted into `stem`/`options`. Absent for a
+   * conceptual (non-parameterized) question. */
+  paramValues?: Record<string, number>;
+  seed?: number;
 }
 
 /** POST /api/courses/:courseId/practice/next { loId, sessionServedIds } ->
@@ -326,6 +331,8 @@ export interface AttemptResult {
       type: 'mcq' | 'true-false';
       stem: string;
       options: PracticeQuestionOption[];
+      paramValues?: Record<string, number>;
+      seed?: number;
     };
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
@@ -1127,6 +1134,59 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionIds, to }),
+  });
+}
+
+// --- Instructor: parameterization config (Task 5, IN-Q09) ------------------
+
+export interface ParamSlotInput {
+  name: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  values?: number[];
+}
+
+/** PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }
+ * -> the new/unchanged current QuestionVersion (same versioning rules as
+ * `editQuestion` — saves independently of approval state, IN-Q09).
+ * Instructor-only. */
+export function patchQuestionParams(
+  questionId: string,
+  patch: { paramSlots?: ParamSlotInput[]; generateScript?: string },
+): Promise<QuestionVersion> {
+  return request<QuestionVersion>(`/api/questions/${encodeURIComponent(questionId)}/params`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export interface ParamPreviewDraw {
+  seed: number;
+  values: Record<string, number>;
+  /** Present only when the request body included `stem`. */
+  stem?: string;
+}
+
+export interface ParamPreviewResult {
+  draws: ParamPreviewDraw[];
+  /** Defined paramSlots with no matching {{placeholder}} in the stem. */
+  warnings: string[];
+}
+
+/** POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }
+ * -> 5 independently-drawn sample resolutions of an EDIT-IN-PROGRESS
+ * candidate (never the currently-saved version) — never persists anything.
+ * Instructor-only. */
+export function previewQuestionParams(
+  questionId: string,
+  candidate: { paramSlots?: ParamSlotInput[]; generateScript?: string; stem?: string },
+): Promise<ParamPreviewResult> {
+  return request<ParamPreviewResult>(`/api/questions/${encodeURIComponent(questionId)}/params/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(candidate),
   });
 }
 
