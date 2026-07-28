@@ -193,9 +193,9 @@ flaggable while its inline retry is active.
 - Consumes: Phase 1's `mastery.recommendation` field; `course.redirectFailureThreshold`; materials assigned to the LO; Saurav's `notify()`.
 - Produces: the redirect rule (clustered-on-easy/medium misses → redirect; hard-tier misses → step-back precedence, no redirect) and the recommendation banner / non-modal redirect panel. Full precedence rule and client behavior in the core document, Task 7 Interfaces.
 
-- [ ] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier; response never contains the correct answer alongside a redirect.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
+- [x] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier; response never contains the correct answer alongside a redirect.
+- [x] **Step 2–4: FAIL → implement → PASS.** Added the accepted finite-round semantics (unseen set → round summary → explicit repeat round) without a persistent session id because the pilot has no reload/cross-device requirement. A protected material-source route makes every rendered redirect link actionable. Focused 61 tests and full 53 suites / 583 tests passed; typecheck/lint/build passed. Live SAML student browser verified all buttons and caught two final fixes: redirect transcript wording and immediate sidebar mastery refresh.
+- [x] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
 
 ---
 

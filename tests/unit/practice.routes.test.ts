@@ -26,12 +26,17 @@ jest.mock('../../server/src/services/review-book.service', () => ({
   getSessionSummaryForStart: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/progression.service', () => ({
+  getRedirectMaterialSource: jest.fn(),
+}));
+
 import { practiceRouter } from '../../server/src/routes/practice.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import { selectNextQuestion, studentCourseHome } from '../../server/src/services/serving.service';
 import { submitAttempt, getCourseIdForQuestionVersion } from '../../server/src/services/attempts.service';
 import { recordSkip } from '../../server/src/services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../../server/src/services/review-book.service';
+import { getRedirectMaterialSource } from '../../server/src/services/progression.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -74,6 +79,7 @@ beforeEach(() => {
   jest.mocked(recordSkip).mockReset();
   jest.mocked(storeDeferredSummary).mockReset();
   jest.mocked(getSessionSummaryForStart).mockReset();
+  jest.mocked(getRedirectMaterialSource).mockReset();
 });
 
 // -----------------------------------------------------------------------------
@@ -234,6 +240,51 @@ describe('practice routes — 403 non-enrolled', () => {
   it('403s a non-enrolled student on /home', async () => {
     const res = await request(makeApp(nonEnrolled)).get(`/api/courses/${courseId.toHexString()}/home`);
     expect(res.status).toBe(403);
+  });
+
+  it('403s a non-enrolled student before resolving a redirect material source', async () => {
+    const res = await request(makeApp(nonEnrolled)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${new ObjectId().toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(403);
+    expect(getRedirectMaterialSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET redirect material source', () => {
+  it('redirects an enrolled student to a linked URL material', async () => {
+    const materialId = new ObjectId();
+    jest.mocked(getRedirectMaterialSource).mockResolvedValue({
+      kind: 'url',
+      url: 'https://example.com/week-2',
+    });
+
+    const res = await request(makeApp(student)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${materialId.toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('https://example.com/week-2');
+    expect(getRedirectMaterialSource).toHaveBeenCalledWith(
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+    );
+  });
+
+  it('404s a missing or unassigned redirect material', async () => {
+    jest.mocked(getRedirectMaterialSource).mockResolvedValue(null);
+
+    const res = await request(makeApp(student)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${new ObjectId().toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('material-not-found');
   });
 });
 
