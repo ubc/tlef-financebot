@@ -2,7 +2,7 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Admin A2 Student Preview active
+**State:** Admin A2 released at `9f68a44`; draft PR #41 open
 **Base:** PR #37 head plus PR #36 Admin A1 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
@@ -41,6 +41,25 @@ the implementation branch uses #37 as its stack base and merges #36 once.
 No Admin A2 endpoint weakens `ensureCourseStudent()`. Preview activity uses its
 own collection and cannot enter mastery, Review Book, flags, remediation,
 summaries, notifications, progression, or analytics.
+
+### Admin A2 verification
+
+- 57 Jest suites / 606 tests passed.
+- Server/client typecheck and lint passed.
+- Node 24 vendor + server/client build passed.
+- Real SAML-session Playwright passed on an isolated port while Claude kept
+  its own server: Dashboard → Preview as Student, persistent no-progress
+  banner, published/unpublished course states, Approved served and Draft
+  excluded, Flag omitted, answer submitted, exactly one preview record, zero
+  live attempt/mastery/Review Book/flag/notification/session-summary records,
+  and zero browser errors.
+- Browser fixture/course role and all fixture documents were removed.
+
+Implementation commit: `9f68a44`. Draft PR:
+<https://github.com/ubc/tlef-financebot/pull/41>. It targets PR #37 and includes
+PR #36's Admin A1 integration; merge those dependency lines first, then
+rebase/retarget and mark #41 ready. All Admin A2 paths are released at this
+commit.
 
 ## Released Task 10
 

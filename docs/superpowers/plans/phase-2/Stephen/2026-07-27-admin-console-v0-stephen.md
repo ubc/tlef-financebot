@@ -252,7 +252,7 @@ dependencies are merged in their documented order.
 
 **Owner:** Codex  
 **Depends on:** Task 5 merged/released and A1 merged
-**Status:** active on `codex/admin-student-preview`
+**Status:** complete on draft PR #41 (`9f68a44`)
 
 Expected files:
 
@@ -272,23 +272,36 @@ Expected files:
 
 Steps:
 
-- [ ] Write authorization tests proving students cannot call Instructor
+- [x] Write authorization tests proving students cannot call Instructor
   preview routes and an Instructor cannot preview another Instructor's course.
-- [ ] Write content tests proving unpublished courses are previewable while
+- [x] Write content tests proving unpublished courses are previewable while
   only approved questions serve.
-- [ ] Write isolation tests proving preview answers create no live
+- [x] Write isolation tests proving preview answers create no live
   `attemptRecords`, mastery, Review Book, flags/auto-pause counts,
   remediation recipients, summaries, or notifications.
-- [ ] Extract only the pure grading/response logic required to reuse the real
+- [x] Extract only the pure grading/response logic required to reuse the real
   student experience; keep persistence/context decisions at the route/service
   boundary.
-- [ ] Add the dashboard “Preview as Student” entry and persistent preview
+- [x] Add the dashboard “Preview as Student” entry and persistent preview
   banner.
-- [ ] Verify the published and unpublished course flows in a browser.
-- [ ] Run focused tests, the full Jest suite, typecheck, lint, build, and
+- [x] Verify the published and unpublished course flows in a browser.
+- [x] Run focused tests, the full Jest suite, typecheck, lint, build, and
   relevant Playwright coverage.
-- [ ] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
+- [x] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
   status.
+
+**A2 verification (2026-07-28):** 57 Jest suites / 606 tests, server/client
+typecheck, lint, and Node 24 build passed. The real-session Playwright
+regression clicked Dashboard → Preview as Student on an unpublished course,
+confirmed the persistent no-progress banner, served the Approved question
+while excluding a Draft, removed the flag control, submitted through the real
+question card, wrote exactly one `previewAttemptRecord`, and asserted zero
+live attempt/mastery/Review Book/flag/notification/session-summary records.
+Browser console/page errors and fixture residuals were zero.
+Opened as draft PR #41:
+https://github.com/ubc/tlef-financebot/pull/41. It targets PR #37 for the
+student-practice seam and contains PR #36's Admin A1 integration; merge those
+documented dependencies first, then rebase/retarget and mark #41 ready.
 
 ## Required regression cases
 
