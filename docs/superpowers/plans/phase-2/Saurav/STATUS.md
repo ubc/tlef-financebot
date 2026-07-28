@@ -60,12 +60,30 @@ Stephen's source documents (unedited by me):
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
 | 6 | Remediation report + checklist | **Merged** (PR #31 — `saurav/task-6-remediation`, CI passed) | nothing |
 | 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
-| 9 | Parameterized-script migration | not started | PRs #34 + #39 merge |
+| 9 | Parameterized-script migration | **Active by Stephen/Codex** | released, CI-green PR #34 + #39 heads integrated without merging |
 | 10 | Custom-prompt generation/regeneration | **Complete by Stephen/Codex on PR #40** (`0870e23`) | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
+
+## Stephen/Codex Task 9 takeover — 2026-07-28
+
+Stephen explicitly authorized Codex to finish remaining Saurav work with both
+status ledgers updated and no confirmation pause. Task 9 is the sole remaining
+Phase 2 implementation item: its Task 5 and Task 8 prerequisites are complete,
+released, and CI green on PRs #34/#39, though Stephen still controls their
+merges.
+
+Codex is starting Task 9 on a new integration stack of those exact heads. The
+claim is limited to `server/src/services/import.service.ts`,
+`server/src/routes/import.routes.ts`, the smallest parameterized-create seam
+in `server/src/services/questions.service.ts`,
+`client/src/views/instructor/import.ts`, `client/src/api.ts`, focused
+script-migration unit/route/E2E tests, `docs/api-contract.md`, nearest
+`AGENTS.md`, and Task 9 plan/status documents. No flag, notification,
+remediation, generation, Admin, or student-practice file is claimed. Saurav
+need not confirm or stop unrelated work.
 
 ## Stephen/Codex Admin A2 coordination — 2026-07-28
 

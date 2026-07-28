@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Admin A2 released at `9f68a44`; draft PR #41 open
-**Base:** PR #37 head plus PR #36 Admin A1 integration
+**State:** Task 9 parameterized-script migration active
+**Base:** PR #34 Task 5 head plus PR #39 Task 8 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -12,7 +12,35 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active Admin A2
+## Active Task 9
+
+Stephen authorized Codex to complete remaining Saurav work with status
+recorded for both developers. Task 9 is the only remaining Phase 2
+implementation task. Its dependencies are complete/released/CI-green on PR
+#34 (sandbox-backed params service) and PR #39 (question import); Codex starts
+from those exact heads without merging either PR to `main`.
+
+Branch: `codex/phase-2-task9-script-migration`.
+
+### Task 9 files claimed by Codex
+
+- `server/src/services/import.service.ts`
+- `server/src/routes/import.routes.ts`
+- `server/src/services/questions.service.ts` (small create-time
+  `generateScript` seam only)
+- `client/src/views/instructor/import.ts`
+- `client/src/api.ts`
+- create `tests/unit/script-migration.test.ts`
+- focused import route/questions tests as required
+- create `tests/e2e/script-migration.spec.ts`
+- `docs/api-contract.md`
+- nearest `AGENTS.md`
+- Phase 2 Task 9 core/personal plan checkboxes and Stephen/Saurav status
+
+No flag, notification, remediation, generation, Admin, or student-practice
+file is claimed.
+
+## Released Admin A2
 
 Instructor Student Preview is active on `codex/admin-student-preview`.
 Prerequisite code is released: Task 5 at `210c68f` / PR #34, Task 7 on PR #37,
