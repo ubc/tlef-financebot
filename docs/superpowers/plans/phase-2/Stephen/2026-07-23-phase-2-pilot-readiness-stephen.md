@@ -122,7 +122,8 @@ honest against `git log`.
 **Depends on:** Saurav's Task 1 merged.
 
 **Files:**
-- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/api.ts` (typed student flag request)
 
 **Interfaces:**
 - Consumes: Saurav's Task 1 route, `POST /api/questions/:questionId/flag`.

@@ -142,7 +142,8 @@ applied).
 **Reviewer:** the other developer, per half
 
 **Files:**
-- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/api.ts` (typed student flag request)
 - Create: `client/src/views/instructor/flags.ts`
 - Modify: client router/instructor nav
 
