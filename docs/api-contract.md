@@ -66,7 +66,8 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
   `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion }] }` (IN-Q08)
-- `GET /api/questions/:questionId` → full question + current version + agentDecision + notes + versions list
+- `GET /api/questions/:questionId` → full question + current version +
+  agentDecision + notes + versions list + optional regeneration request history
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
 - `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
@@ -84,7 +85,19 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?, prompt? }` →
-  202 `{ runId }` — a unique durable generation run; results land as Draft questions (IN-Q10/Q11)
+  202 `{ runId }` — a unique durable generation run; results land as Draft
+  questions (IN-Q10/Q11). A prompt containing `@filename` (or
+  `@"filename with spaces"`) restricts retrieval to the exact ready material
+  assigned to the target LO/theme; missing or ambiguous mentions fail without
+  falling back to other course material.
+- `GET /api/generation/presets` → four editable `{ label, text }` custom-prompt
+  starters; requires an authenticated instructor/admin.
+- `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
+  `{ variant: { stem, options, difficulty, sourceRefs, agentDecision } }`.
+  Generates a transient side-by-side alternative and appends
+  `{ prompt, at }` to the question's regeneration history, but does not create
+  a QuestionVersion or replace current content. Replacement is an explicit
+  `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
 
 ## Question import (instructor)

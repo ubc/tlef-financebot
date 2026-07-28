@@ -426,9 +426,17 @@ changed from Phase 1's `{ jobId }` to `{ runId }` + SSE.
 - Consumes: Phase 1 Task 8 pipeline (now running through P2-0's run model); `materialsCol()`.
 - Produces: @-mention resolution, `PRESET_PROMPTS` + `GET /api/generation/presets`, `regenerateQuestion` (side-by-side preview, no autosave). Full signatures in the core document, Task 10 Interfaces — **note the response/progress shape there predates P2-0 and must be reconciled with the merged P2-0 contract before implementing**, not followed verbatim.
 
-- [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [ ] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+- [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
+- [x] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+
+**Cross-owner completion note (2026-07-28):** Stephen/Codex completed Task 10
+after recording the takeover in both status files. The existing
+`preseeding.ts` page was extended rather than duplicating its custom form and
+P2-0 stream in `generate.ts`. Exact ready/assigned material mentions, server
+presets, transient side-by-side regeneration, and explicit versioned Replace
+are covered by focused service/route tests and a real-session browser
+regression. No separate polling/progress model was added.
 
 ---
 
