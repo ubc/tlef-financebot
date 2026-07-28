@@ -464,9 +464,17 @@ than slipped.
   **Draft** with `generateScript` set. This expands the original single-function
   sketch so the required client review step has an explicit no-write endpoint.
 
-- [ ] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)"`
+- [x] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
+- [x] **Step 2–4: FAIL → implement → PASS.** Added explicit no-write preview + revalidating commit endpoints, Draft-only v1 script persistence, Import-page review/mismatch UI, and double-submit protection. Focused: 3 suites / 36 tests.
+- [x] **Step 5: Commit** — `ae1f0e9` (`feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)`), draft PR #42.
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed Task 9 under the
+recorded authorization, integrating the exact released PR #34 + PR #39 heads
+without merging either dependency. Full verification passed: 54 Jest suites /
+594 tests, typecheck, lint, Node 24 build, plus a real SAML-session Chromium
+flow covering sandbox preview, substituted samples, one Draft/version write,
+open-question navigation, zero browser errors, and zero residual fixtures.
+PR #42 remains draft only until #34 and #39 merge and it can be rebased.
 
 ---
 

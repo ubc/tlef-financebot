@@ -2,7 +2,7 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 9 parameterized-script migration active
+**State:** Task 9 released at `ae1f0e9`; draft PR #42 open
 **Base:** PR #34 Task 5 head plus PR #39 Task 8 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
@@ -12,7 +12,7 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active Task 9
+## Released Task 9
 
 Stephen authorized Codex to complete remaining Saurav work with status
 recorded for both developers. Task 9 is the only remaining Phase 2
@@ -39,6 +39,18 @@ Branch: `codex/phase-2-task9-script-migration`.
 
 No flag, notification, remediation, generation, Admin, or student-practice
 file is claimed.
+
+### Task 9 handoff
+
+- Implementation commit: `ae1f0e9`
+- Draft PR: https://github.com/ubc/tlef-financebot/pull/42
+- Dependency order: merge PR #34 and PR #39, then rebase/retarget #42 and
+  mark it ready.
+- Verification: 3 focused suites / 36 tests; full 54 suites / 594 tests;
+  typecheck/lint/Node 24 build; real SAML-session Chromium preview → commit →
+  open-question flow, exactly one Draft/version write, zero browser errors,
+  and zero residual fixtures.
+- All Task 9 paths are released. Codex did not merge either prerequisite.
 
 ## Released Admin A2
 
