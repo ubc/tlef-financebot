@@ -149,26 +149,82 @@ function mulberry32(seed) {
     // inside the vm. Awaiting an already-vm-settled Promise from host scope
     // is the same value-read (not a call) that fix round 4 already
     // established as safe.
+    // Fix round 6: the error/throw path is the mirror of round 5's success
+    // path, and had the exact same bug class. When the vm script threw — a
+    // `generate()` that `throw`s, a malformed return, a syntax-free runtime
+    // error, anything — `runInContext()` propagated the thrown VALUE (which
+    // the instructor script fully controls: `throw { get message() {...} }`)
+    // back into host `worker.js` scope as a real exception. The host `catch`
+    // then did `String(err && err.message ? err.message : err)` — a
+    // HOST-scope property read (`err.message`) of a vm-realm object, plus a
+    // `String(err)` that invokes its `toString`/`Symbol.toPrimitive`. If
+    // `.message` (or `toString`) is a getter, that getter body ran as
+    // vm-realm code with a HOST stack frame (the catch block) live on the
+    // stack — structurally identical to Escape B and the round-5 result-read
+    // bug, just on the throw path. It was live-verified as full RCE (real
+    // `process.pid`, `child_process.execSync('whoami')`, `process.env`
+    // exfiltration), returned disguised as the thrown object's `.message`.
+    //
+    // The fix is the same structural move rounds 4 and 5 made for the
+    // call-in and result-read directions, applied to the throw direction:
+    // NOTHING that a malicious script can influence is ever thrown across the
+    // native `runInContext` boundary. The whole thing — the instructor
+    // script's own evaluation, the `generate(...)` call, result validation,
+    // serialization, AND error-to-string conversion — runs inside one async
+    // IIFE wrapped in a single try/catch. The IIFE ALWAYS resolves to a
+    // plain string: a discriminated JSON envelope, `{ok:true,vars}` on
+    // success or `{ok:false,error}` on failure. The error message is
+    // stringified INSIDE the vm (where any `.message`/`toString` getter fires
+    // with only vm-realm frames on the stack — the same reason round 5's
+    // `__rawVars[__k]` reads are safe), so the only thing crossing back to
+    // host code is, once again, a primitive string that host code
+    // `JSON.parse`s. Host code never reads a property off a vm-realm object
+    // on the throw path any more than it does on the success path.
+    //
+    // The instructor script is spliced INSIDE the try (not at top level
+    // before the IIFE as in rounds 4/5) precisely so that a top-level throw
+    // during the script's own evaluation is caught here too, not propagated
+    // to host scope. `function generate` still hoists and is callable from
+    // the following lines.
     const combinedSource = [
       MULBERRY32_SOURCE,
-      scriptSource,
-      "if (typeof generate !== 'function') { throw new Error('script must define generate()'); }",
       `
       (async () => {
-        var __result = await generate(mulberry32(${seedLiteral}));
-        var __rawVars = __result && typeof __result === 'object' && __result.vars ? __result.vars : null;
-        if (!__rawVars) throw new Error('generate() must return { vars: { ... } }');
-        var __vars = Object.create(null);
-        var __keys = Object.keys(__rawVars);
-        for (var __i = 0; __i < __keys.length; __i++) {
-          var __k = __keys[__i];
-          var __v = __rawVars[__k];
-          if (typeof __v !== 'number' || !Number.isFinite(__v)) {
-            throw new Error('vars.' + __k + ' is not a finite number');
+        try {
+      `,
+      scriptSource,
+      `
+          if (typeof generate !== 'function') { throw new Error('script must define generate()'); }
+          var __result = await generate(mulberry32(${seedLiteral}));
+          var __rawVars = __result && typeof __result === 'object' && __result.vars ? __result.vars : null;
+          if (!__rawVars) throw new Error('generate() must return { vars: { ... } }');
+          var __vars = Object.create(null);
+          var __keys = Object.keys(__rawVars);
+          for (var __i = 0; __i < __keys.length; __i++) {
+            var __k = __keys[__i];
+            var __v = __rawVars[__k];
+            if (typeof __v !== 'number' || !Number.isFinite(__v)) {
+              throw new Error('vars.' + __k + ' is not a finite number');
+            }
+            __vars[__k] = __v;
           }
-          __vars[__k] = __v;
+          return JSON.stringify({ ok: true, vars: __vars });
+        } catch (__e) {
+          // Stringify the (possibly malicious) thrown value entirely inside
+          // the vm, so any getter/toString trap on it runs with only
+          // vm-realm frames live — never a host frame. Only the resulting
+          // plain string leaves the vm.
+          var __msg;
+          try {
+            __msg = (__e && typeof __e === 'object' && typeof __e.message === 'string')
+              ? __e.message
+              : String(__e);
+          } catch (__inner) {
+            __msg = 'generate() script error';
+          }
+          if (typeof __msg !== 'string') __msg = 'generate() script error';
+          return JSON.stringify({ ok: false, error: __msg });
         }
-        return JSON.stringify(__vars);
       })();
       `,
     ].join('\n');
@@ -208,19 +264,42 @@ function mulberry32(seed) {
     const result = await compiled.runInContext(context, { timeout: timeoutMs });
     if (typeof result !== 'string') {
       // Should be unreachable — the vm script's own IIFE always resolves to
-      // a JSON string or throws. Treated as the same class of failure as a
-      // malformed script, not distinguished further.
+      // a JSON string (a `{ok:...}` envelope) or, in the pathological case
+      // of a splice-breakout, could reject; either way host code never reads
+      // a property off a vm-realm object here.
       throw new Error('generate() must return { vars: { ... } }');
     }
-    let vars;
+    // `envelope` is the product of `JSON.parse` on a primitive string — a
+    // brand-new HOST-realm plain object. Reading `.ok`/`.vars`/`.error` off
+    // it is a host-scope read of a host object, not of a vm-realm object, so
+    // no vm-realm getter/trap can fire on a host frame here (fix round 6).
+    let envelope;
     try {
-      vars = JSON.parse(result);
+      envelope = JSON.parse(result);
     } catch (err) {
       throw new Error('generate() must return { vars: { ... } }', { cause: err });
     }
-    if (!vars || typeof vars !== 'object') throw new Error('generate() must return { vars: { ... } }');
-    parentPort.postMessage({ ok: true, vars });
+    if (!envelope || typeof envelope !== 'object') {
+      throw new Error('generate() must return { vars: { ... } }');
+    }
+    if (envelope.ok === true) {
+      const vars = envelope.vars;
+      if (!vars || typeof vars !== 'object') {
+        throw new Error('generate() must return { vars: { ... } }');
+      }
+      parentPort.postMessage({ ok: true, vars });
+    } else {
+      const error = typeof envelope.error === 'string' ? envelope.error : 'generate() script error';
+      parentPort.postMessage({ ok: false, error });
+    }
   } catch (err) {
+    // Reached only for HOST-realm failures: a compile-time SyntaxError from
+    // `new vm.Script(...)`, a `JSON.parse` failure, or one of the host-side
+    // `throw new Error(...)` checks above. All of these are host-created
+    // Error objects with plain-string `.message` (no attacker-controlled
+    // getter), so reading `.message` here is safe — unlike a value thrown
+    // by the sandboxed script, which can no longer reach this catch because
+    // the vm IIFE converts it to a string envelope internally (fix round 6).
     parentPort.postMessage({ ok: false, error: String(err && err.message ? err.message : err) });
   }
 })();

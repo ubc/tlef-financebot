@@ -268,4 +268,70 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
       ),
     ).resolves.toEqual({ rate: 1 });
   });
+
+  // Fix round 6 regressions: the THROW-path mirror of Escape B. Rounds 4 and
+  // 5 closed the call-in and success-result-read paths, but a value THROWN
+  // by the script (which the script fully controls: `throw { get message()
+  // {...} }`) still propagated across the native runInContext boundary into
+  // the host catch, which read `err.message` / `String(err)` on it — a
+  // host-scope read of a vm-realm object, running the getter/toString trap
+  // with a HOST frame live. Live-verified as full RCE before the fix. Fixed
+  // by wrapping the whole script (evaluation + generate() + validation +
+  // error-to-string) in one in-vm try/catch that always resolves to a
+  // discriminated JSON string envelope; the error message is stringified
+  // inside the vm, so nothing script-controlled is thrown to host scope.
+  // See AGENTS.md "Fix round 6".
+
+  it('blocks the Error.prepareStackTrace cross-realm CallSite leak via a getter on a THROWN message (Escape B, throw-path variant)', async () => {
+    const walk = `
+      Error.prepareStackTrace = (e, frames) => frames;
+      for (const f of new Error().stack) {
+        try {
+          const th = f.getThis();
+          if (th && th.constructor && th.constructor.constructor) {
+            const p = th.constructor.constructor("return process")();
+            if (p && p.pid) return 'LEAK pid=' + p.pid;
+          }
+        } catch (e) {}
+        try {
+          const fn = f.getFunction();
+          if (fn && fn.constructor && fn.constructor.constructor) {
+            const p = fn.constructor.constructor("return process")();
+            if (p && p.pid) return 'LEAK pid=' + p.pid;
+          }
+        } catch (e) {}
+      }
+      return 'no-leak';
+    `;
+    // The reported error must be the harmless in-vm 'no-leak' string, never a
+    // real host pid — proving the getter ran with only vm-realm frames live.
+    await expect(
+      executeGenerate(`function generate(){ throw { get message(){ ${walk} } }; }`, 1),
+    ).rejects.toThrow('no-leak');
+  });
+
+  it('blocks the throw-path CallSite leak via a toString trap on a thrown object', async () => {
+    const walk = `
+      Error.prepareStackTrace = (e, frames) => frames;
+      for (const f of new Error().stack) {
+        try {
+          const th = f.getThis();
+          if (th && th.constructor && th.constructor.constructor) {
+            const p = th.constructor.constructor("return process")();
+            if (p && p.pid) return 'LEAK pid=' + p.pid;
+          }
+        } catch (e) {}
+      }
+      return 'no-leak';
+    `;
+    await expect(
+      executeGenerate(`function generate(){ throw { toString(){ ${walk} } }; }`, 1),
+    ).rejects.toThrow('no-leak');
+  });
+
+  it('still surfaces a benign thrown Error message', async () => {
+    await expect(
+      executeGenerate('function generate(){ throw new Error("boom custom"); }', 1),
+    ).rejects.toThrow('boom custom');
+  });
 });

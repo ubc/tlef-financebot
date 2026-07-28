@@ -280,6 +280,64 @@ Re-verified live against both a getter-on-`vars` variant and a
 `task-4-report.md`) — both resolve harmlessly, with no `process`/pid ever
 observed.
 
+### Why the error/throw path is also converted to a string inside the vm (fix round 6)
+
+Rounds 4 and 5 closed the *call-in* and *success-result-read* directions of
+the boundary. **A sixth review round live-verified that a third direction —
+the value a script THROWS — had the exact same bug class, still fully open.**
+
+The round-5 host code, on failure, ran (in `worker.js`'s own catch):
+
+```js
+} catch (err) {
+  parentPort.postMessage({ ok: false, error: String(err && err.message ? err.message : err) });
+}
+```
+
+When the vm script threw, `runInContext()` propagated the thrown VALUE — and
+the instructor script controls that value completely — back into host scope
+as a real exception. `err && err.message` is a **HOST-scope property read of
+a vm-realm object**, and `String(err)` invokes its `toString`/
+`Symbol.toPrimitive`. A script that does `throw { get message() { ... } }`
+(or a thrown object with a `toString`/`Symbol.toPrimitive` trap, or a thrown
+`Proxy`) runs that getter/trap body as vm-realm code *with a HOST stack
+frame (the catch block) live on the stack* — structurally identical to
+Escape B (round 4) and the round-5 result-read bug, just on the throw path.
+**Live-verified as full RCE**: a `.message` getter that installs
+`Error.prepareStackTrace`, walks `new Error().stack`, and calls
+`CallSite.getThis()`/`getFunction()` reached the real host object → host
+`Function` → real `process` → `process.pid`,
+`child_process.execSync('whoami')`, and `process.env` exfiltration, all
+returned disguised as the thrown object's message string. A plain
+`function generate(){ throw { get message(){ ... } } }` — no lexical
+breakout, no exotic input — triggered it.
+
+**The fix**: nothing a malicious script can influence is thrown across the
+native `runInContext` boundary any more. The instructor script's own
+evaluation, the `generate(...)` call, validation, serialization, AND
+error-to-string conversion all run inside one async IIFE wrapped in a single
+`try/catch`, which ALWAYS resolves to a plain **string** — a discriminated
+JSON envelope, `{ok:true,vars}` on success or `{ok:false,error}` on failure.
+The error message is stringified *inside* the vm (any `.message`/`toString`
+getter fires with only vm-realm frames on the stack, the same reason round
+5's `__rawVars[__k]` reads are safe). Host code `JSON.parse`s the string and
+reads `.ok`/`.vars`/`.error` off the resulting HOST-realm plain object —
+never off a vm-realm object. The instructor script is spliced INSIDE the try
+(not at top level before the IIFE), so a top-level throw during the script's
+own evaluation is caught in-vm too. Re-verified live against getter-on-
+`message`, `toString`-trap, `Symbol.toPrimitive`-trap, thrown-`Proxy`,
+top-level-throw, and `Promise.reject`-with-getter variants — all now report
+the harmless in-vm `'no-leak'` string, no host pid ever observed — while a
+benign `throw new Error('boom')` still surfaces its real message.
+
+**Correction to the round-4/round-5 claims below:** statements in the older
+sections that "no direct JS-to-JS call OR property read ever crosses the
+realm boundary in either direction" were describing only the call-in and
+call-out(success) directions; the throw path was a live third direction
+until this fix. Read those claims as "as of round 5, in the two directions
+round 5 knew about." There is, as always, no proof a seventh direction does
+not exist — see the residual-risk bullet.
+
 - **Honest residual risk — this is still not a hardened, zero-trust
   boundary.** Node's own `vm` module documentation is explicit: *"the vm
   module is not a security mechanism. Do not use it to run untrusted code."*
