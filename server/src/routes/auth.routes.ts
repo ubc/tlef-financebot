@@ -49,6 +49,17 @@ authRouter.get('/api/auth/me', (req, res) => {
     res.json({ authenticated: false });
     return;
   }
-  const { puid, uid, displayName, isAdmin, affiliations, courseRoles } = req.user;
-  res.json({ authenticated: true, user: { puid, uid, displayName, isAdmin, affiliations, courseRoles } });
+  const { puid, uid, displayName, isAdmin, platformInstructor, affiliations, courseRoles } = req.user;
+  res.json({
+    authenticated: true,
+    user: {
+      puid,
+      uid,
+      displayName,
+      isAdmin,
+      ...(platformInstructor !== undefined ? { platformInstructor } : {}),
+      affiliations,
+      courseRoles,
+    },
+  });
 });

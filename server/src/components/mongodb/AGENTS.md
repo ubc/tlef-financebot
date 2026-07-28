@@ -86,6 +86,13 @@ truth for material-ingest/question-generation progress; mutate it through
 `content-runs.service.ts` so revision CAS and post-write SSE publication remain
 coupled.
 
+Admin Console v0 adds `platformInstructorGrantsCol()`, uniquely keyed by the
+UBC `puid`. A grant can exist before the matching PUID-backed `User` logs in;
+`users.service.ts` applies it on first SAML login. The accessor uses the
+isolated `platformInstructorPuidGrants` collection so older uid-keyed
+experimental documents cannot collide with the PUID unique index. Do not
+create placeholder User documents for pending grants.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

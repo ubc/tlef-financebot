@@ -2154,6 +2154,67 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--text);
 }
 
+/* ---- Admin accounts -------------------------------------------------------- */
+
+.admin-account-create {
+  max-width: 40rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-account-create__body {
+  gap: 1rem;
+}
+
+.admin-account-create__body .form-field {
+  min-width: 0;
+}
+
+.admin-account-create__help {
+  max-width: 58ch;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.admin-account-create__actions {
+  justify-content: flex-start;
+}
+
+.admin-account-search {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.admin-account-search .form-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-account-search .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .admin-account-create {
+    max-width: none;
+  }
+
+  .admin-account-create__actions .btn,
+  .admin-account-search .btn {
+    width: 100%;
+  }
+
+  .admin-account-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 /* ---- Duplicate-term callout (Create Course, N2) ----------------------------- */
 
 .duplicate-callout {

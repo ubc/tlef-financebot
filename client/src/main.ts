@@ -46,6 +46,7 @@ import { renderQuestionDetail } from './views/instructor/question-detail.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
+import { renderAdminAccounts } from './views/admin/accounts.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -74,6 +75,7 @@ const ROUTES: Route[] = [
 // these patterns never actually shadow one another. All instructor views
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
+  { path: '/admin/accounts', render: renderAdminAccounts },
   { path: '/instructor/courses/new', render: renderCreateCourse },
   { path: '/instructor/courses', render: renderCourses },
   { path: '/instructor/course/:id/structure', render: renderStructure },
@@ -87,8 +89,8 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
 
-/** Instructor chrome shows when the session holds an `instructor` course role
- * or `isAdmin` (Task-15 Global Constraints — "Instructor-only"). */
+/** Instructor chrome shows for an explicit global/course Instructor grant or
+ * Admin. SAML faculty affiliation alone is not authorization. */
 // Who gets the instructor shell. Deliberately keyed on an EXPLICIT grant —
 // `isAdmin` or an instructor `courseRole` — NOT on faculty affiliation.
 //
@@ -100,15 +102,12 @@ const INSTRUCTOR_ROUTES: Route[] = [
 // faculty user intentionally does NOT get this shell — they aren't an
 // instructor until an admin says so.
 //
-// Phase-2 follow-up: a platform-level "instructor" grant on the User, set via
-// an admin management surface (the A1/A2/I11 admin/TA screens), so admins can
-// provision instructors self-serve and an instructor with zero courses still
-// gets the shell without a seeded course-role. Until that lands, keep this
-// check as-is.
 function isInstructor(session: Session): boolean {
   const user = session.user;
   if (!user) return false;
-  return user.isAdmin || user.courseRoles.some((cr) => cr.role === 'instructor');
+  return user.isAdmin
+    || user.platformInstructor === true
+    || user.courseRoles.some((cr) => cr.role === 'instructor');
 }
 
 /**
@@ -124,8 +123,20 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   const shell = el('div', { class: 'app-shell' });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
   const anchors: Array<{ item: InstructorNavItem; link: HTMLAnchorElement }> = [];
+  const routes = session.user?.isAdmin
+    ? INSTRUCTOR_ROUTES
+    : INSTRUCTOR_ROUTES.filter((route) => !route.path.startsWith('/admin/'));
+  const navGroups = session.user?.isAdmin
+    ? [
+        {
+          label: 'Admin',
+          items: [{ label: 'User Accounts', path: '/admin/accounts' }],
+        },
+        ...INSTRUCTOR_NAV,
+      ]
+    : INSTRUCTOR_NAV;
 
-  for (const group of INSTRUCTOR_NAV) {
+  for (const group of navGroups) {
     if (group.label) nav.append(el('p', { class: 'nav__group', text: group.label }));
     for (const item of group.items) {
       const link = el(
@@ -195,9 +206,9 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   mount(root, shell);
 
   startRouter({
-    routes: INSTRUCTOR_ROUTES,
+    routes,
     outlet,
-    fallback: '/instructor/courses',
+    fallback: session.user?.isAdmin ? '/admin/accounts' : '/instructor/courses',
     onNavigate: (path) => {
       const courseId = courseIdFromPath(path);
       for (const { item, link } of anchors) {
@@ -209,7 +220,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
-      document.title = `Instructor · ${APP.name}`;
+      document.title = `${path.startsWith('/admin/') ? 'Admin' : 'Instructor'} · ${APP.name}`;
     },
   });
 }
