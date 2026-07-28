@@ -25,6 +25,8 @@ export class PracticeSession {
   readonly startedAt: Date = new Date();
   private servedIds = new Set<string>();
   private transcriptEntries: TranscriptEntry[] = [];
+  private roundTranscriptStart = 0;
+  private roundNumberValue = 1;
   /** Whether at least one attempt has been submitted on the current LO this
    * session — feeds the skip endpoint's `attempted` flag (ST-P06). */
   private attemptedThisLo = false;
@@ -42,6 +44,18 @@ export class PracticeSession {
     return this.attemptedThisLo;
   }
 
+  get roundNumber(): number {
+    return this.roundNumberValue;
+  }
+
+  get roundTranscript(): readonly TranscriptEntry[] {
+    return this.transcriptEntries.slice(this.roundTranscriptStart);
+  }
+
+  hasServed(questionId: string): boolean {
+    return this.servedIds.has(questionId);
+  }
+
   recordServed(question: PracticeQuestion): void {
     this.servedIds.add(question.questionId);
   }
@@ -51,10 +65,18 @@ export class PracticeSession {
     this.attemptedThisLo = true;
   }
 
-  /** Reset the per-LO "attempted" flag when the student moves to a new LO
-   * (e.g. via theme practice advancing to the next LO), without losing the
-   * served-ids exclusion list or the transcript. */
-  resetAttemptedFlag(): void {
+  /** Begin another finite pass through the current LO's Approved bank. */
+  startNextRound(): void {
+    this.servedIds.clear();
+    this.roundTranscriptStart = this.transcriptEntries.length;
+    this.roundNumberValue += 1;
+  }
+
+  /** Move to another LO without losing the whole-session transcript. */
+  startLo(): void {
+    this.servedIds.clear();
     this.attemptedThisLo = false;
+    this.roundTranscriptStart = this.transcriptEntries.length;
+    this.roundNumberValue = 1;
   }
 }

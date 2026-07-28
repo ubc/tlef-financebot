@@ -396,6 +396,10 @@ export interface AttemptResult {
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
+  redirect?: {
+    materials: Array<{ name: string; materialId: string }>;
+    message: string;
+  };
 }
 
 export interface SubmitAttemptInput {

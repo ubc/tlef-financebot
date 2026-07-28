@@ -81,6 +81,10 @@ export function makeQuestionCard(
         ...(question.paramValues !== undefined ? { paramValues: question.paramValues } : {}),
       });
       session.recordAttempt({ question, selectedKey, result, loId: currentLo(ctx).lo._id });
+      // Keep the persistent sidebar's current-LO badge in sync with the
+      // just-computed mastery response instead of showing the stale status
+      // captured when the practice page first loaded.
+      currentLo(ctx).status = result.mastery.loStatus;
       callbacks.onTranscriptChange();
     } catch (error) {
       submitting = false;
@@ -154,7 +158,10 @@ export function makeQuestionCard(
         : false;
 
     const retry = result?.feedback.retry;
+    const recommendation = result?.mastery.recommendation;
+    const redirect = result?.redirect;
     let retryCard: HTMLElement | false = false;
+    let progressionPanel: HTMLElement | false = false;
     let footer: HTMLElement;
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
@@ -235,17 +242,81 @@ export function makeQuestionCard(
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
       retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true);
+    } else if (redirect) {
+      const materialItems = redirect.materials.map((material) =>
+        el(
+          'li',
+          {},
+          el(
+            'a',
+            {
+              href:
+                `/api/courses/${encodeURIComponent(ctx.courseId)}` +
+                `/los/${encodeURIComponent(currentLo(ctx).lo._id)}` +
+                `/materials/${encodeURIComponent(material.materialId)}/source`,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            material.name,
+          ),
+        ),
+      );
+      progressionPanel = el(
+        'section',
+        { class: 'practice-redirect', 'aria-labelledby': `redirect-${question.questionVersionId}` },
+        el('p', { class: 'eyebrow', text: 'Suggested review' }),
+        el('h3', { id: `redirect-${question.questionVersionId}`, text: 'Pause and reinforce this learning objective' }),
+        el('p', { text: redirect.message }),
+        materialItems.length > 0
+          ? el('ul', { class: 'practice-redirect__materials' }, ...materialItems)
+          : el('p', { class: 'muted', text: 'No course materials are linked to this LO yet.' }),
+        el(
+          'button',
+          { class: 'btn btn--primary', type: 'button', onclick: callbacks.onNext },
+          'Continue practicing',
+        ),
+      );
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
+    } else if (recommendation) {
+      const themeComplete = recommendation === 'advance-theme';
+      const hasNextLo = ctx.isThemeMode && ctx.loIndex + 1 < ctx.los.length;
+      progressionPanel = el(
+        'section',
+        { class: 'practice-recommendation', 'aria-labelledby': `recommendation-${question.questionVersionId}` },
+        el('p', { class: 'eyebrow', text: themeComplete ? 'Theme milestone' : 'LO covered' }),
+        el('h3', {
+          id: `recommendation-${question.questionVersionId}`,
+          text: themeComplete
+            ? 'You covered every learning objective in this theme.'
+            : hasNextLo
+              ? 'Ready to advance to the next learning objective?'
+              : 'You have covered this learning objective.',
+        }),
+        el(
+          'div',
+          { class: 'row' },
+          el(
+            'button',
+            { class: 'btn btn--primary', type: 'button', onclick: callbacks.onAdvanceLo },
+            themeComplete ? 'Finish this theme' : hasNextLo ? 'Advance to next LO' : 'Back to topic',
+          ),
+          el(
+            'button',
+            { class: 'btn btn--ghost', type: 'button', onclick: callbacks.onNext },
+            'Keep practicing',
+          ),
+        ),
+      );
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
     } else {
-      const recommendation = result?.mastery.recommendation;
-      const label = recommendation === 'advance-theme' ? 'Theme complete — continue' : recommendation === 'advance-lo' ? 'Next LO' : 'Next question';
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
         flagControl(),
         el(
           'button',
-          { class: 'btn btn--primary', type: 'button', onclick: () => (recommendation ? callbacks.onAdvanceLo() : callbacks.onNext()) },
-          label,
+          { class: 'btn btn--primary', type: 'button', onclick: callbacks.onNext },
+          'Next question',
         ),
       );
     }
@@ -258,6 +329,7 @@ export function makeQuestionCard(
       el('div', { class: 'practice-card__options' }, ...options),
       feedback,
       explanations,
+      progressionPanel,
       footer,
       retryCard ? el('div', { class: 'practice-card__retry' }, el('p', { class: 'eyebrow', text: 'Try a similar question' }), retryCard) : false,
     );
