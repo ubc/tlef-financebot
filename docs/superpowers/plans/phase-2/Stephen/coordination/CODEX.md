@@ -1,9 +1,10 @@
 # Codex file claim — Stephen work
 
 **Ledger owner:** Codex only  
-**Last updated:** 2026-07-27  
-**State:** planning; waiting for Claude's Task 5 claim before code edits  
-**Base observed on origin/main:** `9f6fea3`
+**Last updated:** 2026-07-28
+**State:** draft PR #46 — awaiting Stephen manual acceptance
+**Base observed on origin/main:** `4088f15`
+**Branch:** `codex/anonymous-student-preview`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file, runs `npm run sync-plans -- Stephen`, and then begins
@@ -57,9 +58,41 @@ Codex will not edit these while Task 5 is active:
 - `server/src/routes/questions.routes.ts`
 - Task 5 parameter files or tests
 
+## Active corrective claim — full Student View
+
+The former Admin/Task-5 coordination wait is released: both work streams are
+merged. For Stephen's tested Preview correction Codex claims:
+
+- `client/src/main.ts`
+- `client/src/api.ts`
+- `client/src/views/home.ts`
+- `client/src/views/student/{course-home,lo-list,practice,review-book,session-summary,shell}.ts`
+- `client/src/views/instructor/{dashboard,student-preview}.ts`
+- new preview-session/client adapter files under `client/src/views/student/`
+- `server/src/routes/preview.routes.ts`
+- `server/src/services/{preview,serving}.service.ts`
+- `server/src/types/domain.ts`
+- `server/src/components/mongodb/collections.ts`
+- `server/src/app.ts` only if an additional preview mount is required
+- preview-focused unit/E2E/a11y tests
+- Preview-related `AGENTS.md`, API contract, and Stephen status/coordination
+  documentation
+
+No live student attempt/mastery/Review Book/flag/notification service is
+claimed for mutation. The Preview implementation must remain on its separate
+route, service, collection, and session boundary.
+
 ## Handoff
 
-None yet. The next Codex action is to sync Claude's confirmed file claim,
-create a short-lived `codex/` Admin A1 branch, and update this ledger with the
-branch/base SHA before editing code.
+The anonymous full Student View follow-up is implemented on
+`codex/anonymous-student-preview` in draft
+[PR #46](https://github.com/ubc/tlef-financebot/pull/46).
 
+- Full Student shell/routes/renderers are reused through a Preview adapter.
+- Attempts, mastery replay, Review Book, flags, summary, skip, and remediation
+  are scoped to an anonymous Preview UUID and separate 24-hour TTL
+  collections.
+- Browser acceptance, focused Preview E2E, **61 suites / 644 Jest tests**,
+  typecheck, lint, and build pass.
+- No Saurav confirmation is required. Keep the active claim until the PR is
+  merged; then mark it released with the merge SHA.
