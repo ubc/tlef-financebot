@@ -4,7 +4,7 @@
 
 **Last updated:** 2026-07-28
 
-**State:** Admin A1 backend checkpoint complete; client wiring waiting on Task 5
+**State:** Admin A1 implementation complete; publication waiting on Task 5 push
 
 **Branch:** `codex/admin-platform-instructor`
 
@@ -42,22 +42,27 @@ Admin Console v0, plan:
 Claude's published Task 5 claim explicitly leaves these server files free.
 Codex will not modify Claude's params/serving/attempt/question files.
 
-## Client/shared wiring — deferred, not claimed
+## Client/shared wiring — locally integrated after Claude's release
 
-Codex must wait for Claude to release its Task 5 use of these paths:
+Claude's local ledger released the shared paths at Task 5 commit `ae55672`.
+Codex has completed and committed its disjoint additions to:
 
 - `client/src/api.ts`
 - `client/src/main.ts`
 - `docs/api-contract.md`
+- `client/src/views/admin/accounts.ts`
+- `client/src/views/home.ts`
+- `client/src/views/instructor/courses.ts`
+- relevant client/root `AGENTS.md`
 
-`server/src/app.ts` is now claimed above because Claude explicitly recorded
-that Task 5 does not touch it. The three client/contract paths remain deferred
-until Claude releases Task 5. `client/src/views/admin/accounts.ts` will start
-with that client slice so the branch stays buildable throughout.
+These changes are committed only on local stacked branch
+`codex/admin-platform-instructor-integration`. Codex will not push that branch
+while its history contains Claude's unpublished Task 5 commit.
 
-## Preview paths — blocked on Task 5
+## Preview paths — released locally, not yet started
 
-Codex will not edit these while Task 5 is active:
+Claude's local claim releases these after `ae55672`, but A2 still waits for
+Task 5 publication and A1 merge:
 
 - `server/src/services/serving.service.ts`
 - `server/src/services/attempts.service.ts`
@@ -77,7 +82,18 @@ Backend checkpoint pushed to `codex/admin-platform-instructor`:
 - `8619ec0` — expose `platformInstructor` in the safe `/api/auth/me` summary.
 - `392fa38` — treat the grant collection as the authorization source of truth
   during Passport deserialization, closing a revoke/first-login race.
+- `1671fed` — re-export the platform guards from the auth component boundary.
+- `e6fc19a` — keep internal PUID/audit identifiers out of Admin account API
+  responses; focused tests updated.
 
-Verification at this checkpoint: 52 Jest suites / 546 tests passed; typecheck
-and lint passed; server/client compilation passed using the bundled Node 24
-runtime. Client wiring and Student Preview remain blocked on Claude's release.
+Local integration commits:
+
+- `92d18dc` — the same identifier-privacy refinement on the Task 5 stack.
+- `3bd4b5f` — Admin account page, Admin-only navigation, explicit Instructor
+  shell selection, course-create UI gate, client contracts, and docs.
+
+Verification on the combined Task 5 + Admin tree: 53 Jest suites / 581 tests,
+typecheck, lint, and server/client compilation using the bundled Node 24
+runtime all passed. Next action: when Claude publishes `ae55672`, rebase the
+client commit onto the published Task 5 branch/main, push the complete Admin
+branch, and open the A1 PR.

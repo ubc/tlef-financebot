@@ -7,9 +7,10 @@ _Last updated: 2026-07-28_
 - P2-0 persistent content runs/SSE: **merged** in PR #32.
 - Task 4 parameter sandbox: **merged** in PR #33 after eight security review
   rounds.
-- Task 5 parameter serving/config: **in progress with Claude**.
-- Admin Console v0: **A1 backend checkpoint complete with Codex; client wiring
-  waits for Task 5's shared-file release**.
+- Task 5 parameter serving/config: **implemented locally by Claude at
+  `ae55672`; not yet pushed/merged**.
+- Admin Console v0: **A1 implementation complete and verified with Codex;
+  backend pushed, client integration waits only for Task 5 publication**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -26,9 +27,11 @@ Codex owns Admin Console v0 and records its paths in
 [`2026-07-27-admin-console-v0-stephen.md`](2026-07-27-admin-console-v0-stephen.md).
 
 Each agent edits only its own claim file. Both read both files before editing.
-Student Preview waits for Task 5 to release `serving.service.ts` and
-`attempts.service.ts`. Codex completed the disjoint Admin backend in parallel
-without modifying Claude's Task 5 files.
+Claude released its shared paths locally at `ae55672`. Codex completed the
+disjoint Admin backend in parallel, then stacked the Admin client integration
+on that exact release without modifying Claude's Task 5 implementation. Codex
+will not push the stacked branch while it would also publish Claude's unpushed
+commit. Student Preview remains next after Task 5 publication and A1 merge.
 
 Because both agents are Stephen worktrees, claim updates are now published as
 narrow commits. Do not run the current whole-folder `sync-plans` script from a
@@ -55,6 +58,10 @@ reserved while their state is active. Task 5 completion remains the unblock
 signal for Saurav's Task 9; Admin v0 does not change the Task 5 parameter
 contract.
 
-Codex's current branch is `codex/admin-platform-instructor`; backend commits
-through `392fa38` are pushed. Verification: 52 Jest suites / 546 tests,
-typecheck, lint, and compilation passed.
+Codex's current remote branch is `codex/admin-platform-instructor`; backend
+commits through `e6fc19a` are pushed. The Admin UI/client commit is `3bd4b5f`
+on local integration branch `codex/admin-platform-instructor-integration`,
+stacked on Claude's `ae55672`.
+
+Combined verification: 53 Jest suites / 581 tests passed; typecheck, lint, and
+the Node 24 server/client build passed. Saurav does not need to take any action.
