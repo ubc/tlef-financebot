@@ -175,7 +175,13 @@ export function createNotificationBell(): HTMLElement {
   }
 
   intervalId = setInterval(() => void poll(), POLL_INTERVAL_MS);
-  void poll(); // populate immediately rather than waiting a full interval
+  // Shell builders call createNotificationBell() while constructing the
+  // topbar, before that topbar is appended to the document. Calling poll()
+  // synchronously here made its `!wrap.isConnected` teardown branch cancel
+  // the interval permanently on every normal page load. A microtask still
+  // populates immediately from the user's perspective, but runs after the
+  // synchronous shell construction/mount has completed.
+  queueMicrotask(() => void poll());
 
   syncBadge();
   renderPanel();

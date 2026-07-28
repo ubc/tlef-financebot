@@ -21,6 +21,30 @@ export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:6118';
+  // Explicit local-parallelism escape hatch: a second agent may need to run
+  // the app on another localhost port while :6118 is already occupied. The
+  // local IdP's SP metadata still posts SAML back to :6118, but its localhost
+  // session cookie is valid on the isolated port too. Reuse is opt-in, never
+  // enabled by CI/default runs, and verifies the stored session against THIS
+  // run's baseURL before trusting it.
+  if (process.env.E2E_REUSE_AUTH_FILE === 'true') {
+    if (!fs.existsSync(AUTH_FILE)) {
+      throw new Error('global-setup: E2E_REUSE_AUTH_FILE=true but no saved auth state exists.');
+    }
+    const reuseBrowser = await chromium.launch();
+    const context = await reuseBrowser.newContext({ storageState: AUTH_FILE });
+    try {
+      const me = await context.request.get(`${baseURL}/api/auth/me`);
+      const state = (await me.json()) as { authenticated: boolean };
+      if (!state.authenticated) {
+        throw new Error('global-setup: saved auth state is not valid for this local app session.');
+      }
+    } finally {
+      await reuseBrowser.close();
+    }
+    return;
+  }
+
   // Test users live in the shared docker-simple-saml IdP
   // (services/docker-simple-saml/config/simplesamlphp/authsources.php).
   // `faculty` carries eduPersonAffiliation=faculty, so the role-gated demo

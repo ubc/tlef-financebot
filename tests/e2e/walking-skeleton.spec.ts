@@ -13,13 +13,12 @@ test.describe('walking skeleton (Phase 0 exit)', () => {
   test('a logged-in user sees a role-appropriate home and survives a reload', async ({ page }) => {
     await page.goto('/');
 
-    // The greeting heading and the role-appropriate section both render.
-    await expect(page.getByRole('heading', { name: /welcome/i })).toBeVisible();
-    await expect(page.getByText(/instructor dashboard/i)).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Instructor' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
 
     // Session persistence: a full reload must not bounce to the landing screen.
     await page.reload();
-    await expect(page.getByText(/instructor dashboard/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
     await expect(page.getByRole('link', { name: /log in with cwl/i })).toHaveCount(0);
   });
 

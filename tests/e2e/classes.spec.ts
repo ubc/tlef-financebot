@@ -21,21 +21,30 @@ async function login(page: Page, username: string): Promise<void> {
 test.describe('classes (faculty)', () => {
   test.use({ storageState: AUTH_FILE }); // global-setup signs in as `faculty`
 
-  test('lists taught classes and opens the class list', async ({ page }) => {
-    await page.goto('/#/classes');
+  test('loads taught classes and the class list through the gated API', async ({ page }) => {
+    // Provisioned instructors use the FinanceBot instructor router, where the
+    // removable Academic API demo page is intentionally not a nav destination.
+    // Keep its real integration/authorization proof at the public API boundary.
+    const classesRes = await page.request.get('/api/classes');
+    expect(classesRes.status()).toBe(200);
+    const classes = (await classesRes.json()) as {
+      teaching: Array<{ classes: Array<{ sectionId: string; courseCode: string }> }>;
+    };
+    const cpsc110 = classes.teaching
+      .flatMap((period) => period.classes)
+      .find((section) => section.courseCode === 'CPSC 110 101');
+    expect(cpsc110).toBeTruthy();
 
-    await expect(page.getByRole('heading', { name: /^teaching$/i })).toBeVisible();
-    const cpsc110 = page.getByRole('button', { name: /CPSC 110 101/ });
-    await expect(cpsc110).toBeVisible();
-
-    await cpsc110.click();
-    await expect(page.getByRole('heading', { name: /CPSC 110 101/ })).toBeVisible();
-    // The `student` test account is on the CPSC 110 roster. (.first() because
-    // the number also appears inside the collapsed raw-JSON <pre> blocks.)
-    await expect(page.getByText('12345678').first()).toBeVisible();
-
-    await page.getByRole('button', { name: /back to classes/i }).click();
-    await expect(page.getByRole('heading', { name: /^teaching$/i })).toBeVisible();
+    const rosterRes = await page.request.get(
+      `/api/classes/${encodeURIComponent(cpsc110!.sectionId)}/students`,
+    );
+    expect(rosterRes.status()).toBe(200);
+    const roster = (await rosterRes.json()) as {
+      courseCode: string;
+      students: Array<{ studentId: string }>;
+    };
+    expect(roster.courseCode).toBe('CPSC 110 101');
+    expect(roster.students.some((student) => student.studentId === '12345678')).toBe(true);
   });
 });
 
@@ -61,7 +70,10 @@ test.describe('classes (staff)', () => {
     await login(page, 'staff');
     await page.goto('/');
 
-    await expect(page.getByRole('navigation', { name: /primary/i })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Student' })).toBeVisible();
     await expect(page.getByRole('link', { name: /^classes$/i })).toHaveCount(0);
+
+    const classesRes = await page.request.get('/api/classes');
+    expect(classesRes.status()).toBe(403);
   });
 });
