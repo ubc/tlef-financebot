@@ -452,7 +452,17 @@ than slipped.
 
 **Interfaces:**
 - Consumes: Task 4 sandbox (validation run), Task 5 params service, `createQuestion`.
-- Produces: `migrateScript(courseId, input: { script: string; stem: string; options: ...; correctKey: string; byPuid }): Promise<{ questionId; sampleValues: Record<string, number> }>` — validates the script in the sandbox (one seeded run; abuse-suite guarantees apply), maps it onto a question template (stem placeholders must cover every `vars` key — mismatches listed back for review), presents for review client-side, then enters as a parameterized **Draft** with `generateScript` set.
+- Produces:
+  `previewScriptMigration(input): Promise<ScriptMigrationResult>` and
+  `migrateScript(courseId, input): Promise<ScriptMigrationResult>`, exposed as
+  `POST .../import/script/{preview,commit}`. `ScriptMigrationResult` is
+  `{ questionId?, sampleValues, sampleStem, sampleOptions, mismatches }`.
+  Preview validates one fixed-seed sandbox run and never writes. Commit repeats
+  sandbox/template validation; stem placeholders must cover every `vars` key,
+  every stem/option placeholder must have a generated value, mismatches return
+  without inserting, and a match enters as a parameterized
+  **Draft** with `generateScript` set. This expands the original single-function
+  sketch so the required client review step has an explicit no-write endpoint.
 
 - [ ] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
 - [ ] **Step 2–4: FAIL → implement → PASS.**

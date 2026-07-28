@@ -1009,6 +1009,61 @@ export function commitQuestionImport(
   );
 }
 
+export interface ScriptMigrationInput {
+  type: QuestionType;
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    explanation?: string;
+  }>;
+  correctKey: string;
+  difficulty?: Difficulty;
+  script: string;
+}
+
+export interface ScriptMigrationResult {
+  questionId?: string;
+  sampleValues: Record<string, number>;
+  sampleStem: string;
+  sampleOptions: Array<{
+    key: string;
+    text: string;
+    explanation: string;
+  }>;
+  mismatches: string[];
+}
+
+/** Runs one deterministic sandbox sample. Nothing is written. */
+export function previewScriptMigration(
+  courseId: string,
+  input: ScriptMigrationInput,
+): Promise<ScriptMigrationResult> {
+  return request<ScriptMigrationResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/script/preview`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Revalidates the reviewed script and creates one parameterized Draft. */
+export function commitScriptMigration(
+  courseId: string,
+  input: ScriptMigrationInput & { themeId?: string; loId?: string },
+): Promise<ScriptMigrationResult> {
+  return request<ScriptMigrationResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/script/commit`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 // --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
 //
 // Added in Task E. Verified against server/src/routes/questions.routes.ts +

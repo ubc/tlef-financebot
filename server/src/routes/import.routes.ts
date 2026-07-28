@@ -7,7 +7,9 @@ import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   commitImport,
+  migrateScript,
   parseImport,
+  previewScriptMigration,
   type ImportFormat,
 } from '../services/import.service';
 
@@ -38,6 +40,22 @@ const candidate = z.object({
 });
 const commitBody = z.object({
   candidates: z.array(candidate).min(1).max(1000),
+  themeId: objectId.optional(),
+  loId: objectId.optional(),
+});
+const scriptOption = z.object({
+  key: z.string().min(1).max(10),
+  text: z.string().min(1).max(20_000),
+  role: optionRole.optional(),
+  explanation: z.string().max(20_000).optional(),
+});
+const scriptMigrationBody = z.object({
+  type: z.enum(['mcq', 'true-false']),
+  stem: z.string().min(1).max(20_000),
+  options: z.array(scriptOption).min(2).max(4),
+  correctKey: z.string().min(1).max(10),
+  difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+  script: z.string().min(1).max(100_000),
   themeId: objectId.optional(),
   loId: objectId.optional(),
 });
@@ -90,6 +108,38 @@ importRouter.post(
         byPuid: req.user!.puid,
       }),
     );
+  },
+);
+
+/** POST /api/courses/:courseId/import/script/preview -> sandboxed review data. */
+importRouter.post(
+  '/courses/:courseId/import/script/preview',
+  validate({ params: courseParams, body: scriptMigrationBody }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(
+      await previewScriptMigration(req.body as z.infer<typeof scriptMigrationBody>),
+    );
+  },
+);
+
+/** POST /api/courses/:courseId/import/script/commit -> one parameterized Draft. */
+importRouter.post(
+  '/courses/:courseId/import/script/commit',
+  validate({ params: courseParams, body: scriptMigrationBody }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const { themeId, loId, ...input } = req.body as z.infer<typeof scriptMigrationBody>;
+    const result = await migrateScript(new ObjectId(String(req.params.courseId)), {
+      ...input,
+      ...(themeId ? { themeId: new ObjectId(themeId) } : {}),
+      ...(loId ? { loId: new ObjectId(loId) } : {}),
+      byPuid: req.user!.puid,
+    });
+    res.status(result.questionId ? 201 : 200).json({
+      ...result,
+      ...(result.questionId ? { questionId: result.questionId.toHexString() } : {}),
+    });
   },
 );
 

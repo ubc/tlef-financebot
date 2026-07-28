@@ -34,6 +34,10 @@ objects directly.
   event/warning history, startup reconciliation, and post-write course
   subscribers. Material/generation services must call this API rather than
   updating `contentRuns` directly.
+- `import.service.ts` — Parses and commits CSV/JSON/QTI questions, and migrates
+  existing `generate(random)` templates through the real parameter worker.
+  Script migration validates one deterministic sample, returns placeholder
+  mismatches without writing, and creates only Draft question versions.
 
 Other services will appear as more components are built up.
 

@@ -397,7 +397,11 @@ rather than by tests, which is not a repeatable safety net.
 
 **Interfaces:**
 - Consumes: Stephen's Task 4 sandbox (`executeGenerate`) and Task 5 params service; `createQuestion`.
-- Produces: `migrateScript` — validates the script in the sandbox, maps it onto a question template, presents for review, then enters as a parameterized Draft with `generateScript` set. Full signature in the core document, Task 9 Interfaces.
+- Produces: explicit no-write `previewScriptMigration` plus revalidating
+  `migrateScript`, served at `.../import/script/{preview,commit}`. Both return
+  sample values/rendered content and a mismatch list; only a matching commit
+  returns `questionId` and creates a parameterized Draft with `generateScript`
+  on v1. Full signature in the core document, Task 9 Interfaces.
 
 - [ ] **Step 1: Failing tests** — valid script yields sampleValues; mismatch list on vars/placeholder mismatch without inserting; sandbox rejection surfaces as a clean 400.
 - [ ] **Step 2–4: FAIL → implement → PASS.**

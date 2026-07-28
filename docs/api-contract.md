@@ -87,10 +87,28 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   LLM and labelled `auto-converted`. Numeric candidates meeting the
   two-distinct-values plus currency/percent/rate heuristic are labelled
   `convertible-to-parameterized`.
+- `POST /api/courses/:courseId/import/script/preview ScriptMigrationInput` →
+  `ScriptMigrationResult`. Runs the instructor-authored `generate(random)`
+  script once with a fixed seed in the parameter worker and returns
+  `sampleValues`, substituted `sampleStem`/`sampleOptions`, and `mismatches`.
+  Nothing is written. A sandbox rejection (including `param-timeout`) is a
+  clean `400 script-validation-failed:<reason>`.
+- `POST /api/courses/:courseId/import/script/commit { ...ScriptMigrationInput,
+  themeId?, loId? }` → `201 ScriptMigrationResult` with `questionId` when the
+  generated variable names have stem placeholders and every placeholder in
+  the stem/options has a generated value. The server repeats the sandbox run
+  and template validation; a mismatch returns `200` with the
+  mismatch list, no `questionId`, and no write. A successful import creates
+  exactly one parameterized Draft whose v1 stores `generateScript`.
 
 `ImportCandidate` is `{ type: 'mcq'|'true-false'|'other', stem, options:
 [{ key, text, role?, explanation? }], correctKey, difficulty?,
 parameterizable }`.
+
+`ScriptMigrationInput` is `{ type: 'mcq'|'true-false', stem, options:
+[{ key, text, explanation? }], correctKey, difficulty?, script }`.
+`ScriptMigrationResult` is `{ questionId?, sampleValues:
+Record<string,number>, sampleStem, sampleOptions, mismatches: string[] }`.
 
 ## Content runs (instructor; Phase 2 P2-0)
 

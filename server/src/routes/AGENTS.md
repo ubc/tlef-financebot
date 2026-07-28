@@ -51,6 +51,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   recent course run history, one full snapshot, and one course-scoped SSE
   stream. Instructor-gated; the stream sends recent persisted state before
   live updates.
+- `import.routes.ts` — Instructor-gated CSV/JSON/QTI preview + Draft commit,
+  plus parameterized-script sandbox preview + revalidated Draft migration.
+  Script/template mismatches return review data without inserting.
 
 ## Auth-gating a route
 
