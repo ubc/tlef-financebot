@@ -466,6 +466,158 @@ not exist — see the residual-risk bullet.
   entirely — vm's native behavior is both stricter (not foolable by string
   concatenation, since it's not a text match) and requires no maintenance.
 
+### Why the harness's own intrinsics are captured before the script runs, and the host catch never reads the caught value (fix round 7)
+
+Round 6's fix made the in-vm code *convert* both success and error into a
+string before crossing back. **A seventh review round found that fix
+incomplete**: the instructor script runs *first*, in the *same* vm realm as
+the harness's own post-`generate()` code — so a script can simply reassign a
+global the harness itself depends on for serialization, e.g.:
+
+```js
+JSON.stringify = function () { throw { get message() { /* CallSite walk */ } }; };
+function generate() { return { vars: { rate: 1 } }; }
+```
+
+Trace: `generate()` succeeds; the harness's success-path
+`JSON.stringify({ok:true,...})` call invokes the *script's* corrupted
+version, which throws. That throw **is** caught by the harness's own
+`catch` (round 6's addition) — reading `.message` there is safe (only vm
+frames live) — but the catch block then built ITS OWN return envelope with
+`JSON.stringify({ok:false,error:__msg})`, which invoked the **still-
+corrupted** function again, and this second throw was not wrapped by any
+further try/catch — it escaped the whole async IIFE as a rejection, crossed
+`runInContext`, and landed in the HOST's outer `catch (err)`, which read
+`err.message` — a host-scope property read with a host frame live — and the
+getter walked `Error.prepareStackTrace`/`CallSite` back to the real
+`process`. **Live-verified as full RCE**: real `process.pid` and
+`child_process.execSync('whoami')` output, both via `JSON.stringify`
+tampering alone — no lexical breakout, no lucky timing.
+
+**The fix has two parts, both required:**
+
+1. **In-vm: capture every intrinsic the harness's own code depends on into
+   local variables at the very top of the combined script — before the
+   instructor's script source is spliced in and before it has had any
+   chance to run.** `JSON.stringify`, `Object.keys`, `Object.create`,
+   `Number.isFinite`, and `String` are all captured this way
+   (`const __origStringify = JSON.stringify;` etc.) and the harness's own
+   serialization/validation code uses *only* these captured references
+   afterward, never the bare global names — which the instructor script may
+   have reassigned by the time that code runs. Even if the script corrupts
+   the realm's `JSON.stringify`, the harness's own calls are bound to the
+   real, original function it grabbed before the script ran.
+2. **Host-side: the outer `catch` around `await runInContext(...)` no
+   longer reads ANY property off the caught value, ever — not `.message`,
+   not `.constructor`, nothing.** It is a bare `catch { return '<fixed
+   generic string>'; }`, returning the identical hardcoded message
+   regardless of what was thrown or why. This is the structural backstop:
+   even if some future intrinsic-tampering trick this review didn't think
+   of gets past part 1, the host still can never be tricked into
+   dereferencing the result — it doesn't matter what shape the rejection
+   takes, because nothing about it is ever inspected. (Host-generated
+   errors that legitimately need their real message preserved — the
+   `param-timeout` rejection from `index.ts`'s outer timeout race, and a
+   compile-time `SyntaxError` from `new vm.Script(...)` failing before any
+   instructor code ever runs — are produced by different, unrelated code
+   paths, not this specific catch, so they're unaffected.)
+
+Re-verified live: the exact `JSON.stringify`-override exploit above, and
+variants tampering with `Object.keys`/`Number.isFinite`, all now resolve to
+the harness's normal envelope (using the captured originals) with no host
+value ever leaked; a genuinely-thrown ordinary `Error` from `generate()`
+still surfaces its real message via the normal in-vm path (this fix changes
+behavior only for the outer, should-be-unreachable-in-normal-operation
+catch, not for the documented in-vm error-conversion path from round 6).
+
+### Why the host re-validates the result instead of trusting the vm's own `ok:true` claim (fix round 8)
+
+An eighth review round found **no new host-access/RCE escape** — the first
+clean round after seven that each found one — but did find a **soundness
+bypass**, distinct from every prior finding in that it does not reach
+`process`/the filesystem/the network at all:
+
+The host `await`s the combined script's own async-IIFE promise, which is a
+**vm-realm** `Promise`. Under the hood, `await` calls `.then()` on that
+promise — and a script can reassign the vm realm's
+`Promise.prototype.then` *before* the harness's own code resolves anything.
+The tampered `then` gets invoked by the host's `await` machinery and can
+resolve the host's await with an **arbitrary value** the script fabricates
+— e.g. `'{"ok":true,"vars":{"evil":"not a number","nested":{"a":[1,2,3]}}}'`
+— completely bypassing every in-vm validation step from rounds 5–7, since
+those only run if the *real* success path executes; a forged resolution
+skips them entirely.
+
+Live-verified: the forged non-numeric/nested/array `vars` reached
+`postMessage({ok:true, vars})` and would have flowed straight to
+`executeGenerate()`'s caller, violating the documented
+`Record<string, number>` return-type guarantee every downstream consumer
+(Phase 2's parameterization/serve-time-randomization work) relies on.
+**This is confirmed NOT a host-access escape** — the resolving functions
+V8 hands the tampered `then` are themselves vm-realm functions (not host
+ones), so `onFulfilled.constructor.constructor("return process")` inside
+the tampered `then` still only reaches the vm's own harmless `Function`,
+and the forged data itself is inert `JSON.parse` output with no getters,
+functions, or prototype pollution (`__proto__` becomes a plain own
+property, not a setter, via `JSON.parse`).
+
+**The fix**: the host no longer trusts an `ok: true` envelope at face
+value. After `JSON.parse`, it independently re-validates every value in
+`vars` (`typeof v === 'number' && Number.isFinite(v)`) itself, in host
+code, on host-realm data — mirroring the exact check the in-vm code is
+*supposed* to have already done, but no longer assuming that it did. A
+forged envelope with a non-numeric, nested, or array value is now rejected
+by `executeGenerate()` rather than silently passed through. This closes the
+gap without needing to "fix" the `Promise.prototype.then` tampering
+itself (which round 8 confirmed cannot reach the host regardless) — the
+correct posture, once you know an `ok: true` claim can be forged, is to
+stop trusting the claim rather than trying to prevent every possible way of
+forging it.
+
+- **Seven escape classes closed across seven review rounds, one soundness
+  bypass closed in an eighth (kept here for the same reason as above — so a
+  future reviewer sees the full pattern, not just "it's fine now").** The
+  first five are listed above; continuing the numbering:
+  6. **Cross-realm `CallSite` via `Error.prepareStackTrace`, throw
+     direction** (round 6) — same bug class as #4/#5, on the direction a
+     script *throws* rather than calls-in or returns. Fixed by converting
+     the error to a string inside the vm as well, as part of one
+     discriminated success/error JSON envelope.
+  7. **Intrinsic tampering redirecting the harness's OWN serialization
+     into an attacker-controlled throw** (round 7) — the instructor script
+     runs first in the shared realm and can reassign globals (`JSON.stringify`,
+     etc.) the harness's post-`generate()` code depends on, redirecting a
+     "safe" internal call into a re-triggered version of escape #6. Fixed by
+     capturing the harness's needed intrinsics into local variables before
+     any instructor code runs, plus hardening the host's outer catch to
+     never read a property off anything it catches, regardless of shape.
+- **What's structurally unreachable now, via ANY route, AS OF fix round 7:**
+  everything stated after round 5 above, PLUS: no value a script throws (not
+  just returns) can ever be read as a property by host code either — the
+  error path now goes through the identical "validate/serialize inside the
+  vm, cross back only as a string" discipline as the success path. Combined
+  with round 7's intrinsic capture, the harness's own internal control flow
+  can no longer be redirected into re-exposing a host frame via a corrupted
+  global. **Still not** a claim that no eighth direct-call route exists —
+  see the residual risk bullet, restated below with one more data point.
+- **Round 8's finding is a reminder of why "no known direct-call route
+  remains" is the right level of confidence, not "the boundary is proven
+  complete."** It found something real (the `then`-tampering data-forgery
+  bypass) on the FIRST round that did NOT find a new host-access escape —
+  i.e., the technical hardening had gotten strong enough that an adversarial
+  reviewer's next-best finding was "make the host trust a lie" rather than
+  "reach the host directly." The response was the same posture the residual-
+  risk framing has argued for all along: harden the specific gap, don't
+  declare victory, keep the honest hedge.
+- **Known, accepted, low-severity residual risk, updated:** same list as
+  after round 5 (timing side-channels, undiscovered vm-level cross-realm
+  bugs), plus the general shape of round 8's finding — any place host code
+  trusts a *claim* the vm makes about itself (rather than independently
+  re-verifying) is a latent soundness gap even where it isn't a host-access
+  escape. If future code is added to this component that trusts vm-supplied
+  metadata without re-checking it host-side, treat that skeptically given
+  this precedent.
+
 ## Public API (`index.ts`)
 
 | Export | Purpose |
