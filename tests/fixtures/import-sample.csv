@@ -1,0 +1,6 @@
+type,stem,optionA,optionB,optionC,optionD,correct,explanationA,explanationB,explanationC,explanationD,difficulty
+mcq,"An investment grows from $100 to $121 at a 10% annual rate. How many years did it grow?",1 year,2 years,3 years,4 years,B,"One year produces $110.","Two years produces $121.","Three years compounds too far.","Four years compounds too far.",medium
+mcq,"Which statement best describes diversification?",It removes every risk,It spreads exposure across assets,It guarantees a profit,It fixes interest rates,B,"Systematic risk remains.","Diversification reduces concentration risk.","No portfolio guarantees profit.","Diversification does not set rates.",easy
+mcq,"Which cash flow belongs in a project's incremental analysis?",A sunk research cost,An opportunity cost of used space,A financing payment,A prior-year tax bill,B,"Sunk costs are excluded.","Foregone alternative use is incremental.","Financing is handled in the discount rate.","Past taxes are not incremental.",medium
+true-false,"A higher discount rate lowers the present value of a fixed future cash flow.",True,False,,,T,"The denominator grows as the discount rate rises.","This reverses the present-value relationship.",,,easy
+mcq,"This row is intentionally broken.",Only one option,,,,A,"It cannot form a four-option MCQ.",,,,hard
