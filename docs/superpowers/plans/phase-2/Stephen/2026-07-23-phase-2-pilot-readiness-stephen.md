@@ -122,15 +122,21 @@ honest against `git log`.
 **Depends on:** Saurav's Task 1 merged.
 
 **Files:**
-- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/api.ts` (typed student flag request)
 
 **Interfaces:**
 - Consumes: Saurav's Task 1 route, `POST /api/questions/:questionId/flag`.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09), per the core document, Task 2.
 
-- [ ] **Step 1: Implement the student surface** (follow the Phase-1 practice-view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow).
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
+- [x] **Step 1: Implement the student surface** (follow the Phase-1 practice-view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow).
+- [x] **Step 2: Verify in browser**; typecheck/lint/full Jest → PASS. Live student verification covered blank-reason submission, answer submission after flagging, correct feedback, and Strategy-A retry with separate original/retry Flag controls; browser console clean.
+- [x] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
+
+**Implementation note (2026-07-28):** the view was factored into
+`practice-card.ts` after this plan was authored. Browser testing also found
+and closed the retry-path footer gap so a wrong original question remains
+flaggable while its inline retry is active.
 
 ---
 

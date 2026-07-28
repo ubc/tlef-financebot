@@ -2,7 +2,15 @@
 // Strategy-A retry-in-place recursion. Factored out of practice.ts (which
 // owns the LO/theme walking loop) to keep each file under the house style's
 // ~200-line guideline — see client/AGENTS.md.
-import { submitAttempt, type AttemptResult, type CourseHomeLo, type CourseHomeTheme, type PracticeMode, type PracticeQuestion } from '../../api.js';
+import {
+  flagPracticeQuestion,
+  submitAttempt,
+  type AttemptResult,
+  type CourseHomeLo,
+  type CourseHomeTheme,
+  type PracticeMode,
+  type PracticeQuestion,
+} from '../../api.js';
 import type { PracticeSession } from '../../practice-session.js';
 import { el, mount } from '../../dom.js';
 import { errorState, optionButton, watermark } from '../../ui.js';
@@ -45,6 +53,9 @@ export function makeQuestionCard(
   let selectedKey: string | undefined;
   let result: AttemptResult | undefined;
   let submitting = false;
+  let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' = 'idle';
+  let flagReason = '';
+  let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
   // into `session.transcript` partway through this card's life, so reading
@@ -77,6 +88,21 @@ export function makeQuestionCard(
       return;
     }
     submitting = false;
+    draw();
+  };
+
+  const submitFlag = async (): Promise<void> => {
+    if (flagState === 'submitting' || flagState === 'flagged') return;
+    flagState = 'submitting';
+    flagError = undefined;
+    draw();
+    try {
+      await flagPracticeQuestion(question.questionId, flagReason);
+      flagState = 'flagged';
+    } catch (error) {
+      flagState = 'editing';
+      flagError = (error as Error).message;
+    }
     draw();
   };
 
@@ -129,27 +155,83 @@ export function makeQuestionCard(
 
     const retry = result?.feedback.retry;
     let retryCard: HTMLElement | false = false;
-    let footer: HTMLElement | false = false;
+    let footer: HTMLElement;
 
-    // The disabled Flag button (Figma 4/5/6) — "coming soon", per the
-    // Global Constraints out-of-scope list: no click handler, no backend
-    // call. Skip moved out of the card into the shell's sidebar context
-    // panel (Task 3), driven by practice.ts's `setPracticeActions()`;
-    // `callbacks.onSkip` is still threaded through for the retry-in-place
-    // recursion below, which reuses these same Callbacks end to end.
-    const flagButton = (): HTMLElement => el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: true }, '🏳 Flag');
+    const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
+    const flagControl = (): HTMLElement => {
+      if (flagState === 'flagged') {
+        return el(
+          'span',
+          { class: 'btn btn--ghost btn--sm', role: 'status', 'aria-live': 'polite' },
+          'Flagged ✓',
+        );
+      }
+
+      const toggle = el(
+        'button',
+        {
+          class: 'btn btn--ghost btn--sm',
+          type: 'button',
+          disabled: flagState === 'submitting',
+          'aria-expanded': flagState === 'editing',
+          'aria-controls': flagState === 'editing' ? flagFormId : undefined,
+          onclick: () => {
+            flagState = flagState === 'editing' ? 'idle' : 'editing';
+            flagError = undefined;
+            draw();
+          },
+        },
+        flagState === 'submitting' ? 'Flagging…' : flagState === 'editing' ? 'Cancel flag' : '🏳 Flag this question',
+      );
+
+      if (flagState !== 'editing') return toggle;
+
+      const reasonInput = el('textarea', {
+        class: 'input input--area',
+        rows: 2,
+        maxlength: 500,
+        placeholder: 'Optional: tell the instructor what looks wrong',
+        value: flagReason,
+        oninput: (event: Event) => {
+          flagReason = (event.target as HTMLTextAreaElement).value;
+        },
+      });
+      reasonInput.value = flagReason;
+
+      const form = el(
+        'form',
+        {
+          id: flagFormId,
+          class: 'stack',
+          onsubmit: (event: Event) => {
+            event.preventDefault();
+            void submitFlag();
+          },
+        },
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Why are you flagging this question? (optional)' }), reasonInput),
+        flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,
+        el(
+          'div',
+          { class: 'row' },
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'submit' }, 'Send flag'),
+        ),
+      );
+
+      return el('div', { class: 'stack' }, toggle, form);
+    };
 
     if (!locked) {
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
-        flagButton(),
+        flagControl(),
         el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the
       // withheld options stay withheld — this recursive card is a fresh
       // question with its own reveal, not a re-render of the original's.
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
       retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true);
@@ -159,7 +241,7 @@ export function makeQuestionCard(
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
-        flagButton(),
+        flagControl(),
         el(
           'button',
           { class: 'btn btn--primary', type: 'button', onclick: () => (recommendation ? callbacks.onAdvanceLo() : callbacks.onNext()) },

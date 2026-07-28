@@ -309,6 +309,23 @@ export function getNextPracticeQuestion(
   });
 }
 
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
+ * Student-only and idempotent for the signed-in student/current version. */
+export function flagPracticeQuestion(
+  questionId: string,
+  reason?: string,
+): Promise<{ flagged: true }> {
+  const normalizedReason = reason?.trim();
+  return request<{ flagged: true }>(
+    `/api/questions/${encodeURIComponent(questionId)}/flag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(normalizedReason ? { reason: normalizedReason } : {}),
+    },
+  );
+}
+
 export type PracticeMode = 'topic-practice' | 'review-book' | 'exam-prep';
 export type OptionRole = 'correct' | 'common-misconception' | 'partially-correct' | 'clearly-wrong';
 
