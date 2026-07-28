@@ -73,7 +73,7 @@ is a Node builtin).
 - [x] Phase 1 S1/S2 merged, PR #25 (Stephen's own stabilization takeover).
 - [x] Phase 1 Task 13 recorded slipped (Stephen's closeout decision).
 - [ ] Phase 1 Task 16 — Stephen's own explicit deferral; not blocking Phase 2 start.
-- [x] **P2-0 merged** — PR #32; durable run/SSE contract unblocked Task 10.
+- [ ] **P2-0 not yet merged** — open the PR after the live smoke test; this also unblocks Saurav's Task 10.
 
 ## Stephen's task order (Dev A) — proposed
 
@@ -122,16 +122,15 @@ honest against `git log`.
 **Depends on:** Saurav's Task 1 merged.
 
 **Files:**
-- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
-- Modify: `client/src/api.ts` (typed student flag request)
+- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
 
 **Interfaces:**
 - Consumes: Saurav's Task 1 route, `POST /api/questions/:questionId/flag`.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09), per the core document, Task 2.
 
-- [x] **Step 1: Implement the student surface** — completed on stacked PR #35 with non-blocking submit and confirmation.
-- [x] **Step 2: Verify in browser** — covered by the real-SAML Task 11 flag-loop; typecheck/lint/build passed.
-- [x] **Step 3: Commit** — implementation `a685800`, stacked PR #35.
+- [ ] **Step 1: Implement the student surface** (follow the Phase-1 practice-view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow).
+- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS.
+- [ ] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
 
 ---
 
@@ -188,47 +187,9 @@ honest against `git log`.
 - Consumes: Phase 1's `mastery.recommendation` field; `course.redirectFailureThreshold`; materials assigned to the LO; Saurav's `notify()`.
 - Produces: the redirect rule (clustered-on-easy/medium misses → redirect; hard-tier misses → step-back precedence, no redirect) and the recommendation banner / non-modal redirect panel. Full precedence rule and client behavior in the core document, Task 7 Interfaces.
 
-- [x] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier; response never contains the correct answer alongside a redirect.
-- [x] **Step 2–4: FAIL → implement → PASS.** Added the accepted finite-round semantics (unseen set → round summary → explicit repeat round) without a persistent session id because the pilot has no reload/cross-device requirement. A protected material-source route makes every rendered redirect link actionable. Focused 61 tests and full 53 suites / 583 tests passed; typecheck/lint/build passed. Live SAML student browser verified all buttons and caught two final fixes: redirect transcript wording and immediate sidebar mastery refresh.
-- [x] **Step 5: Commit** — implementation `689e40e`, stacked PR #37.
-
----
-
-### Task 8 cross-owner takeover: Question import — CSV/JSON/QTI (IN-Q01)
-
-**Original owner:** Dev B (Saurav) · **Implementing for Stephen:** Codex
-**Reason:** independent and not started; it directly supplies the remaining
-Phase 2 exit criterion while Admin A2 waits for the stacked PR chain to merge.
-
-**Claimed files:**
-
-- `package.json`, `package-lock.json`
-- create `server/src/services/import.service.ts`
-- create `server/src/routes/import.routes.ts`
-- `server/src/app.ts`
-- create `client/src/views/instructor/import.ts`
-- `client/src/api.ts`, `client/src/main.ts`, `client/src/views/instructor/shell.ts`
-- create `tests/fixtures/import-sample.{csv,json}`, `tests/fixtures/import-sample-qti.xml`
-- create `tests/unit/import.service.test.ts`, `tests/unit/import.routes.test.ts`
-- create `tests/e2e/import.spec.ts`
-- `docs/api-contract.md` and the Phase 2 plan/status files
-
-- [x] **Step 1:** add dependencies and the three five-item fixtures.
-- [x] **Step 2:** write failing parser, partial-success, parameterization,
-  commit/auto-conversion, route-auth, and multipart tests.
-- [x] **Step 3:** implement the service and instructor-gated preview/commit
-  routes; revalidate every client-returned preview candidate on commit.
-- [x] **Step 4:** implement and wire the Instructor Import page, including a
-  real upload → preview → confirm flow.
-- [x] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
-  verification with isolated fixture cleanup.
-- [x] **Step 6:** implementation commit `2d3313e`; PR #39 from current `main`.
-
-**Result:** focused 2 suites / 15 tests and full 52 suites / 548 tests passed;
-typecheck/lint/build passed. The real SAML instructor flow uploaded the CSV
-fixture, previewed four valid rows plus one failure, confirmed four Drafts,
-and opened them in Question Bank. Cleanup assertions verified zero remaining
-course, question, version, or role fixtures.
+- [ ] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier; response never contains the correct answer alongside a redirect.
+- [ ] **Step 2–4: FAIL → implement → PASS.**
+- [ ] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
 
 ---
 
@@ -240,16 +201,9 @@ course, question, version, or role fixtures.
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
 
-- [x] **Step 1: Write and pass the spec** — student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag → auto-pause fires → instructor sees the elevated notification → question no longer serves to students → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification. Full scenario in the core document, Task 11 Step 1.
-- [x] **Step 2: Full suite green** — 53 Jest suites / 583 tests, typecheck/lint/build, and 12 current Playwright scenarios passed; the opt-in live-LLM scenario remained skipped. The pass also reconciled stale Phase-0 demo-shell E2E expectations and ambiguous shared-dataset selectors.
-- [x] **Step 3: Commit** — `4422d20` (`test: phase-2 exit - flag -> notify -> auto-pause -> resolve loop e2e`).
-
-**Result:** the complete student/instructor loop now runs through real SAML
-sessions and public routes, with only four peer personas seeded directly
-because the local IdP provides one student identity. The run found and fixed
-the merged notification bell's mount-time polling cancellation. Explicit
-post-suite checks found zero residual E2E courses, flags, attempts, or
-notifications.
+- [ ] **Step 1: Write and pass the spec** — student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag → auto-pause fires → instructor sees the elevated notification → question no longer serves to students → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification. Full scenario in the core document, Task 11 Step 1.
+- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
+- [ ] **Step 3: Commit** — `git commit -m "test: phase-2 exit — flag -> notify -> auto-pause -> resolve loop e2e"`
 
 ---
 
