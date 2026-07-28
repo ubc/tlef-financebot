@@ -1008,6 +1008,16 @@ export interface GenerateQuestionsInput {
   prompt?: string;
 }
 
+export interface GenerationPreset {
+  label: string;
+  text: string;
+}
+
+/** GET /api/generation/presets -> four editable instructor prompt starters. */
+export function getGenerationPresets(): Promise<GenerationPreset[]> {
+  return request<GenerationPreset[]>('/api/generation/presets');
+}
+
 /** POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?,
  * prompt? } -> 202 { runId }. Enqueues the async three-agent generation
  * pipeline for one LO. */
@@ -1017,6 +1027,35 @@ export function generateQuestions(courseId: string, input: GenerateQuestionsInpu
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+export interface RegenerationVariant {
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+  sourceRefs: Array<{ materialId: string; chunk?: string }>;
+  agentDecision: {
+    decision: 'pass' | 'flag' | 'reject';
+    reasoning: string;
+    roleAssessment: string;
+  };
+}
+
+/** Generate a transient alternative. It is not saved until editQuestion is
+ * explicitly called with the returned content. */
+export function regenerateQuestion(
+  courseId: string,
+  questionId: string,
+  prompt: string,
+): Promise<{ variant: RegenerationVariant }> {
+  return request<{ variant: RegenerationVariant }>(
+    `/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regenerate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    },
+  );
 }
 
 // --- Instructor: question import (IN-Q01) -----------------------------------
@@ -1140,6 +1179,7 @@ export interface QuestionHead {
   labels: QuestionLabel[];
   agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
   generationPrompt?: string;
+  regenerations?: Array<{ prompt: string; at: string }>;
   internalNotes: Array<{ puid: string; text: string; at: string }>;
   createdAt: string;
   updatedAt: string;
