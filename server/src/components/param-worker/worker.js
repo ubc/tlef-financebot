@@ -10,6 +10,14 @@ const vm = require('vm');
 // top-level (host) scope. They are never passed into the vm sandbox, so the
 // evaluated script can never reach them, even indirectly.
 
+// The mulberry32 PRNG's *source text*, not a host-scope function. It gets
+// spliced into `combinedSource` below and compiled/constructed entirely
+// inside the vm context — see "Fix round 4" in AGENTS.md for why this
+// matters: a host-realm PRNG closure passed as `generate`'s argument was
+// itself an escape route (its `.constructor` chain led back to the host's
+// real `Function`/`process`), so the PRNG must never exist in host scope at
+// all, not even briefly.
+const MULBERRY32_SOURCE = `
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -19,6 +27,7 @@ function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+`;
 
 // The whole body runs inside an async IIFE so that a `generate()` which
 // returns a Promise (e.g. one whose body evaluates a rejected `import(...)`
@@ -41,53 +50,93 @@ function mulberry32(seed) {
     // trick a script tries — `[].constructor.constructor("return
     // process")()`, `({}).constructor.constructor(...)`, `Function(...)`,
     // indirect `eval`, or any other route to "the global Function/eval" — can
-    // only ever reach the sandbox's own harmless intrinsics. There is no
-    // identifier list to maintain and no way to forget one, because nothing
-    // dangerous was ever reachable from inside the realm to begin with.
+    // only ever reach the sandbox's own harmless intrinsics.
     const sandbox = Object.create(null);
     const context = vm.createContext(sandbox);
 
+    // `seed` is caller-controlled (not the instructor's script), and it's
+    // about to be spliced into a string that gets compiled as *code* below.
+    // Coerce and validate it to a definitely-safe numeric literal BEFORE
+    // interpolating: `JSON.stringify` of a finite number always produces a
+    // bare numeric-literal token (e.g. "42", "-3.5"), which cannot contain
+    // any script-injection surface, unlike splicing in a raw string.
+    const safeSeed = Number(seed);
+    if (!Number.isFinite(safeSeed)) {
+      throw new Error('seed must be a finite number');
+    }
+    const seedLiteral = JSON.stringify(safeSeed);
+
+    // Fix round 4: the PRNG's *construction*, the instructor script, AND the
+    // call to `generate(...)` are all concatenated into ONE script and
+    // compiled/run together via a single `vm.Script.runInContext()` call.
+    // This is a deliberate change from fix round 3, which compiled only the
+    // instructor script inside the vm context but then pulled the resulting
+    // `generate` function OUT into host scope and called it FROM HOST CODE,
+    // passing a host-realm `mulberry32` closure as its argument. That was
+    // itself a bug, independent of realm isolation, with two live-verified
+    // escapes:
+    //   (a) `random.constructor(...)` reached the HOST's `Function`, because
+    //       `random` (the PRNG closure) was created in worker.js's own host
+    //       scope, not inside the vm context.
+    //   (b) Calling `generate(...)` FROM A HOST STACK FRAME put host JS
+    //       frames on the live call stack at the moment `generate`'s body
+    //       ran. Installing `Error.prepareStackTrace` and walking
+    //       `new Error().stack` handed the sandboxed script raw `CallSite`
+    //       objects for those host frames; `.getThis()`/`.getFunction()` on
+    //       a frame that is a DIRECT JS-to-JS call across the realm boundary
+    //       returns the real host object, whose constructor chain reaches
+    //       the host `Function` → real `process`. (This works even when
+    //       `generate()` never touches its `random` argument at all.)
+    //
+    // Both routes share one root cause: a direct JS call crossing the realm
+    // boundary, either as an argument or as the call itself. Experimentally
+    // confirmed (throwaway script, see task-4-report.md "Fix round 4"): V8's
+    // `CallSite.getThis()`/`getFunction()` DO leak the real host object when
+    // host code calls a vm-realm function directly — but return `undefined`
+    // for any frame on the far side of the *native* `vm.Script.runInContext`
+    // boundary. So as long as `generate(...)` is invoked by code that is
+    // ITSELF running inside the compiled vm script (never by host code
+    // holding a reference to it, and never with a host-realm object passed
+    // as an argument), no direct JS-to-JS call ever crosses the boundary —
+    // every crossing goes through the native `runInContext` trampoline,
+    // which CallSite cannot see through. This closes both escapes
+    // structurally, not by patching either one individually.
+    const combinedSource = [
+      MULBERRY32_SOURCE,
+      scriptSource,
+      "if (typeof generate !== 'function') { throw new Error('script must define generate()'); }",
+      `generate(mulberry32(${seedLiteral}));`,
+    ].join('\n');
+
     let compiled;
     try {
-      compiled = new vm.Script(scriptSource, { filename: 'generate.js' });
+      compiled = new vm.Script(combinedSource, { filename: 'generate.js' });
     } catch (err) {
       throw new Error(`generate() script has a syntax error: ${err && err.message ? err.message : err}`, { cause: err });
     }
 
-    // vm's own `timeout` guards this synchronous run — e.g. a top-level
-    // infinite loop that runs *while the script text itself is being
-    // evaluated* (before `generate` is even defined) is killed here, cleanly,
-    // without needing to wait for the outer worker-level timeout. It does NOT
-    // cover a later call to the `generate` function retrieved below — that
-    // call happens outside this vm.Script.runInContext invocation entirely, so
-    // a `generate(random) { while(true){} }` body can still hang forever from
-    // vm's point of view. The outer `index.ts` timeout / `worker.terminate()`
-    // is the real backstop for that case: `worker.terminate()` is called from
-    // the parent thread and forcibly kills this worker's isolate regardless of
-    // what this thread is synchronously stuck doing, so it works even though
-    // vm's inner timeout can't see it.
-    compiled.runInContext(context, { timeout: timeoutMs });
-
-    // Top-level `function generate(random) {...}` declarations executed via
-    // `vm.Script.runInContext` attach as properties of the context object,
-    // exactly as they would attach to `globalThis` in a real environment —
-    // verified experimentally, not assumed. `context` and `sandbox` refer to
-    // the same (contextified) object, so either reference works; `context` is
-    // used below for clarity that we're deliberately pulling this out of the
-    // sandboxed realm.
-    const generate = context.generate;
-    if (typeof generate !== 'function') throw new Error('script must define generate()');
-
-    // This call happens in worker.js's own host scope, but `generate`'s BODY
-    // still executes against the vm context's own globals, because that's the
-    // realm it was defined in — this is the whole point of the fix, and it's
-    // exactly what closes the constructor-chain escape: even though the call
-    // site here is host code, `[].constructor` inside the function body still
-    // resolves to the context's own Array.prototype/Function, not the host's.
-    // `await` here also ensures a `generate()` that returns a rejected
-    // Promise (e.g. from a `vm`-caught dynamic `import()`) surfaces as a
-    // clean rejection instead of an unhandled-rejection in this thread.
-    const result = await generate(mulberry32(seed));
+    // vm's own `timeout` now guards the ENTIRE combined script, including the
+    // synchronous portion of the `generate(...)` call itself (an improvement
+    // over fix round 3, where vm's inner timeout covered only the top-level
+    // script evaluation and NOT the later, separately-invoked call to
+    // `generate`). It still cannot cover work that only happens after
+    // `runInContext` has returned (e.g. a `generate()` that returns a Promise
+    // whose `.then` continuation loops forever) — the outer `index.ts`
+    // timeout / `worker.terminate()` remains the real backstop for that case:
+    // `worker.terminate()` is called from the parent thread and forcibly
+    // kills this worker's isolate regardless of what this thread is
+    // synchronously or asynchronously stuck doing.
+    //
+    // The value returned here is the result of `generate(...)`, since it's
+    // the last statement of the combined script and `vm.Script.runInContext`
+    // returns the value of the last evaluated expression. If `generate(...)`
+    // returns a Promise (e.g. from a `vm`-caught dynamic `import()` or any
+    // other async work), `result` here is that Promise, still owned by the
+    // vm context's own realm; `await`-ing it below reads its settled value
+    // as plain data (or propagates its rejection) without ever calling back
+    // into vm-context code from a new host call site — this is a value read,
+    // not a call, so it does not reopen the CallSite/argument routes above.
+    const result = await compiled.runInContext(context, { timeout: timeoutMs });
     const vars = result && typeof result === 'object' && result.vars ? result.vars : null;
     if (!vars) throw new Error('generate() must return { vars: { ... } }');
     for (const [k, v] of Object.entries(vars)) {

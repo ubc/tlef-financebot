@@ -73,50 +73,190 @@ same as any other undeclared free variable would be in a fresh, empty
 global scope. This was re-verified live (see "Fix round 3" in
 `.superpowers/sdd/task-4-report.md`).
 
+### Why `generate()` is called entirely INSIDE the vm context, never from host code (fix round 4)
+
+Round 3's `vm.createContext()` rewrite closed every *lexical* escape route —
+but a **fourth review round live-verified two more independent, full-RCE
+escapes**, both caused by a bug in *how the script's `generate` function was
+invoked*, not by any gap in realm isolation itself. The round-3
+implementation compiled the script inside the vm context, then pulled the
+resulting `generate` function reference OUT into `worker.js`'s own host
+scope and called it FROM THERE, passing a host-realm `mulberry32` PRNG
+closure as its argument:
+
+```js
+// The round-3 pattern — looks safe, was not:
+const generate = context.generate;          // pulled into host scope
+const result = await generate(mulberry32(seed)); // called FROM host scope,
+                                                   // with a HOST object as
+                                                   // the argument
+```
+
+This reopened two escapes:
+
+- **Escape A — host argument's constructor chain.** `mulberry32(seed)` ran
+  in `worker.js`'s own host scope, so the `random` function passed into
+  `generate` was itself a host-realm object. `random.constructor` (or
+  `random.constructor.constructor(...)`) resolved to the HOST's real
+  `Function`, not the vm context's — live-verified full RCE (env
+  exfiltration, arbitrary file read/write via
+  `process.getBuiltinModule('fs')`, shell exec via
+  `child_process.execSync`).
+- **Escape B — `Error.prepareStackTrace` cross-realm `CallSite` leak.**
+  Because `generate(...)` was CALLED from a host stack frame, the live call
+  stack at the moment `generate`'s body ran contained a host JS frame (the
+  one that called it). Installing `Error.prepareStackTrace = (e, frames) =>
+  frames` and reading `.stack` handed the sandboxed script raw `CallSite`
+  objects for that frame; V8's `CallSite.getThis()` / `getFunction()`
+  return the *real* host object for a frame reached by a **direct JS-to-JS
+  call across the realm boundary** — walking its constructor chain reached
+  the host `Function` → real `process`. This worked even for a `generate()`
+  that never touched its `random` argument at all, so fixing Escape A alone
+  would not have closed it.
+
+Both escapes share one root cause: a **direct JS call crossing the realm
+boundary**, either as a call argument (A) or as the call itself (B).
+Live-verified experimentally (throwaway script against `vm.createContext`/
+`vm.Script`, see "Fix round 4" in `.superpowers/sdd/task-4-report.md`): V8's
+`CallSite.getThis()`/`getFunction()` genuinely do leak the real host object
+when host code calls a vm-realm function directly — but return `undefined`
+for any frame on the far side of the *native* `vm.Script.runInContext`
+boundary. In other words, the boundary that blocks cross-realm `CallSite`
+introspection is the native embedder call itself, not "realm-ness" in the
+abstract.
+
+**The fix**: the PRNG's construction, the instructor's script, and the call
+to `generate(...)` are now all concatenated into ONE script string and
+compiled/executed together via a single `vm.Script.runInContext()` call
+(`worker.js`). Concretely:
+
+```js
+const combinedSource = [
+  MULBERRY32_SOURCE,     // PRNG source text, spliced in — never a host-scope closure
+  scriptSource,           // the instructor's script, verbatim
+  "if (typeof generate !== 'function') { throw new Error('script must define generate()'); }",
+  `generate(mulberry32(${seedLiteral}));`, // seedLiteral: a validated, JSON.stringify'd finite number
+].join('\n');
+
+const result = await compiled.runInContext(context, { timeout: timeoutMs });
+```
+
+`generate` is never extracted into host scope, `mulberry32` is never
+constructed in host scope, and no host-realm object is ever passed as an
+argument to sandboxed code. Every crossing of the realm boundary — from the
+moment `runInContext` is called to the moment it returns a plain result
+value — goes through the native `vm.Script.runInContext` trampoline, which
+`CallSite` cannot see through. This closes both Escape A (no host object is
+ever reachable as an argument) and Escape B (no direct JS-to-JS call ever
+crosses the boundary, so no host frame is ever visible on the stack while
+sandboxed code runs) structurally, not by patching either one individually.
+Re-verified live, including an async-`generate()`-that-awaits-before-
+walking-the-stack variant of Escape B (see task-4-report.md) — still
+blocked, because the boundary-crossing property holds regardless of when
+the sandboxed code runs relative to an `await`.
+
+The seed value itself (caller-controlled, not instructor-script-controlled)
+is coerced with `Number(seed)`, validated with `Number.isFinite`, and only
+then spliced into the script text via `JSON.stringify(safeSeed)` — which
+always produces a bare numeric-literal token — specifically to avoid
+opening a *new* script-injection hole via string interpolation while fixing
+the other two.
+
+A secondary benefit: vm's own `timeout` now covers the ENTIRE combined
+script, including the synchronous portion of the `generate(...)` call
+itself — round 3's design left a documented gap where vm's inner timeout
+guarded only the top-level script evaluation, not the later, separately-
+invoked call to `generate`. (The outer `index.ts` timeout /
+`worker.terminate()` remains the real backstop for anything that only hangs
+after `runInContext` has returned, e.g. inside a `.then` continuation.)
+
 - **Honest residual risk — this is still not a hardened, zero-trust
   boundary.** Node's own `vm` module documentation is explicit: *"the vm
   module is not a security mechanism. Do not use it to run untrusted code."*
   There have been historical vm-escape / cross-realm techniques in various
-  JS-engine embeddings (e.g. via `Error.prepareStackTrace` callbacks that
-  execute with access to the invoking realm, or cross-realm `Promise`/
-  `WeakRef`/finalizer callback tricks) that this review has not specifically
-  re-tested against this codebase's Node/V8 version. This component should
-  be understood as a **substantial, industry-standard improvement** — a
-  separate V8 context (this doc), combined with `worker_threads` isolation
-  (a separate OS thread and V8 isolate, so even a full engine-level realm
-  escape still can't touch the main thread's memory directly), a memory cap
-  (`resourceLimits.maxOldGenerationSizeMb`), and a hard timeout (both vm's
-  own and the outer worker-level backstop) — appropriate **defense-in-depth
-  for instructor-trusted-but-possibly-buggy-or-compromised content**. It is
-  explicitly **not** a hardened boundary suitable for arbitrary
-  hostile/internet-sourced code; do not repurpose this component to run
-  untrusted student- or public-submitted code without a real isolation
-  boundary (separate process/container with OS-level sandboxing, not just
-  `vm` + `worker_threads`).
+  JS-engine embeddings, and this task's own review history is itself proof
+  of the pattern: **four review rounds each found a live, working RCE that
+  the previous round's fix did not anticipate.** There is no reason to
+  believe round 4 is the last one. This component should be understood as a
+  **substantial, industry-standard improvement** — a separate V8 context
+  (this doc), never calling from host code into sandboxed code or passing
+  host objects into it (fix round 4), combined with `worker_threads`
+  isolation (a separate OS thread and V8 isolate, so even a full
+  engine-level realm escape still can't touch the main thread's memory
+  directly), a memory cap (`resourceLimits.maxOldGenerationSizeMb`), and a
+  hard timeout (both vm's own and the outer worker-level backstop) —
+  appropriate **defense-in-depth for instructor-trusted-but-possibly-buggy-
+  or-compromised content**. It is explicitly **not** a hardened boundary
+  suitable for arbitrary hostile/internet-sourced code; do not repurpose
+  this component to run untrusted student- or public-submitted code without
+  a real isolation boundary (separate process/container with OS-level
+  sandboxing, not just `vm` + `worker_threads`). **The real security
+  boundary this component relies on is the trust tier of the content, not
+  the technical hardening** — "this is instructor-trusted content, not
+  hostile/internet-sourced input" (see "Threat model" above). Everything in
+  this section is defense-in-depth on top of that trust boundary, not a
+  substitute for it.
+- **Four escape classes closed across four review rounds** (kept here, not
+  just in gitignored scratch reports, so a future reviewer sees the full
+  history and pattern before assuming round 4 is exhaustive):
+  1. **Identifier reference** (rounds 1–2) — `new Function(...)` with
+     dangerous identifiers (`require`, `process`, `fetch`, `eval`, ...)
+     shadowed as parameter names bound to `undefined`. Broken by referencing
+     the same identifiers a different way the shadow didn't cover.
+  2. **Constructor-chain via lexical intrinsics** (round 3) — same-realm
+     `new Function(...)` meant any built-in value's
+     `.constructor.constructor` reached the real, unshadowed `Function`
+     (`[].constructor.constructor("return process")()`), a *property*
+     route no identifier shadow can intercept. Fixed by `vm.createContext()`
+     — a genuinely separate realm whose own intrinsics were never derived
+     from anything with `process`.
+  3. **Host-argument constructor chain** (round 4, Escape A) — `generate`
+     was pulled out of the vm context and called from host scope with a
+     host-realm `mulberry32` closure as its argument; `random.constructor`
+     reached the HOST's real `Function`. Fixed by constructing the PRNG
+     inside the vm context too, never in host scope.
+  4. **Cross-realm `CallSite` via `Error.prepareStackTrace`** (round 4,
+     Escape B) — calling `generate(...)` FROM host code put a host JS frame
+     on the stack at the moment `generate`'s body ran; `CallSite.getThis()`/
+     `getFunction()` on that frame returned the real host object. Fixed by
+     never letting host code directly call sandboxed code — every crossing
+     now goes through the native `vm.Script.runInContext` boundary, which
+     `CallSite` cannot see through.
 - **What's structurally unreachable now, via ANY route (not just named
-  identifiers):** `process`, `require`, `fetch`, the filesystem, the
-  network, `Buffer`, and every other Node platform global — because none of
-  them were ever injected into the vm context's global object, and the
-  context's own intrinsics (`Function`, `eval`, `Array`, `Object`, ...) were
-  never derived from a realm that had them either. This includes the
-  constructor-chain route (`[].constructor.constructor(...)`,
-  `({}).constructor.constructor(...)`, and any other built-in's constructor
-  chain), direct and indirect `eval`, and `new Function(...)` inside the
-  script — all of these still execute, but only ever construct/evaluate
-  code within the same process-less, require-less realm.
+  identifiers), AS OF fix round 4:** `process`, `require`, `fetch`, the
+  filesystem, the network, `Buffer`, and every other Node platform global —
+  because none of them were ever injected into the vm context's global
+  object, the context's own intrinsics (`Function`, `eval`, `Array`,
+  `Object`, ...) were never derived from a realm that had them either, and
+  (as of round 4) no host-realm object — not even the PRNG — is ever passed
+  into sandboxed code as an argument, and no direct JS-to-JS call ever
+  crosses the realm boundary in either direction (closing the
+  `CallSite`/`Error.prepareStackTrace` route alongside the argument route).
+  This includes the constructor-chain route
+  (`[].constructor.constructor(...)`, `({}).constructor.constructor(...)`,
+  and any other built-in's constructor chain, including one reached via a
+  function argument), direct and indirect `eval`, `new Function(...)`
+  inside the script, and cross-realm `CallSite` introspection — all of
+  these still execute, but only ever construct/evaluate code or observe
+  frames within the same process-less, require-less realm. This is stated
+  as what four rounds of live-verified adversarial review have found and
+  closed, **not** as a claim that no fifth route exists — see the residual
+  risk bullet above.
 - **Known, accepted, low-severity residual risk:** timing side-channels
   (a script can call `Date.now()` repeatedly to try to infer host timing
   characteristics — of limited practical value against
   instructor-trusted content) and the general "vm is not a hardened
-  boundary" caveat above (undiscovered V8-level cross-realm bugs). Also
-  residual: `vm`'s own `timeout` option only guards the synchronous
-  `runInContext` call that evaluates the script's top-level code and defines
-  `generate` — it does **not** guard a later call to `generate(random)`
-  itself if that function's *body* loops forever (that call happens outside
-  `runInContext`). The outer `index.ts` timeout / `worker.terminate()` is
-  the real backstop for that case, verified to still work: `worker.terminate()`
-  is called from the parent thread and forcibly kills the worker's isolate
-  regardless of what the worker thread is synchronously stuck doing.
+  boundary" caveat above (undiscovered V8-level cross-realm bugs, or a fifth
+  bug class this review didn't think to test for). Also residual: `vm`'s own
+  `timeout` option guards the entire combined script (PRNG construction +
+  instructor script + the `generate(...)` call, as of fix round 4) but only
+  the *synchronous* portion of it — it does **not** guard work that only
+  happens after `runInContext` has returned, e.g. a `generate()` that
+  returns a Promise whose `.then` continuation loops forever. The outer
+  `index.ts` timeout / `worker.terminate()` is the real backstop for that
+  case, verified to still work: `worker.terminate()` is called from the
+  parent thread and forcibly kills the worker's isolate regardless of what
+  the worker thread is synchronously or asynchronously stuck doing.
 - **Dynamic `import()` is handled natively, not via text-scanning.** Node's
   `vm.Script.runInContext` requires an explicit `importModuleDynamically`
   callback to support dynamic `import()`; this component deliberately does
@@ -149,13 +289,22 @@ Guarantees `executeGenerate` provides:
   `require`, `fetch`, `Buffer`, `module`, `exports`, `__dirname`,
   `__filename`, or `setTimeout` copied into it, so those identifiers are
   simply undeclared free variables inside the script (`ReferenceError`, not
-  a shadowed `undefined`). Crucially, this also closes every
-  constructor-chain route (`[].constructor.constructor("return
-  process")()`, `({}).constructor.constructor(...)`, `Function(...)`,
-  direct/indirect `eval`) because the realm's own `Function`/`eval` were
-  never derived from anything that had `process` either — there is no
-  identifier to shadow because there is nothing to reach, by name or by
-  property access.
+  a shadowed `undefined`). This also closes every constructor-chain route
+  (`[].constructor.constructor("return process")()`,
+  `({}).constructor.constructor(...)`, `Function(...)`, direct/indirect
+  `eval`) because the realm's own `Function`/`eval` were never derived from
+  anything that had `process` either.
+- **No host-boundary crossing, structurally (fix round 4)** — the PRNG's
+  construction, the instructor script, and the call to `generate(...)` all
+  execute together inside a single `vm.Script.runInContext()` call (see
+  "Why `generate()` is called entirely INSIDE the vm context" above).
+  `generate` is never extracted into host scope and called from there, and
+  no host-realm object (not even the PRNG) is ever passed into sandboxed
+  code as an argument. This closes both the host-argument constructor-chain
+  route and the `Error.prepareStackTrace`/cross-realm-`CallSite` route —
+  no direct JS-to-JS call ever crosses the realm boundary in either
+  direction, so no host-realm object is ever reachable from sandboxed code,
+  either as an argument or via the call stack.
 - **No dynamic `import()`, natively** — `vm.Script.runInContext` is called
   without an `importModuleDynamically` callback, so any `import(...)` inside
   the script throws `TypeError: A dynamic import callback was not
@@ -193,7 +342,13 @@ criterion. It spawns **real worker threads, no mocks**, because the sandbox
 covers determinism-per-seed, timeout-kills-infinite-loop, and
 network/fs/process blocking, the "no `generate()`" rejection path, the
 `Function`-constructor and indirect-`eval` regressions from earlier review
-rounds, and the constructor-chain escape (`[].constructor.constructor(...)`,
+rounds, the constructor-chain escape (`[].constructor.constructor(...)`,
 `({}).constructor.constructor(...)`, and a full escalation to
 `process.getBuiltinModule('fs')`) that motivated the `vm.createContext()`
-rewrite in fix round 3.
+rewrite in fix round 3, and — from fix round 4 — the host-argument
+constructor-chain escape (`random.constructor(...)` /
+`random.constructor.constructor(...)`, Escape A) and the
+`Error.prepareStackTrace` cross-realm `CallSite` leak (Escape B), including
+an async-`generate()` variant of Escape B that walks the stack after an
+`await` to confirm the fix holds regardless of timing relative to a
+microtask boundary.

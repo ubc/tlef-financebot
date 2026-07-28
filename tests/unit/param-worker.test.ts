@@ -105,4 +105,87 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
       ),
     ).rejects.toThrow();
   });
+
+  // Fix round 4 regressions: the host-boundary escapes found after round 3's
+  // vm.createContext() rewrite. Both stemmed from calling generate() FROM
+  // HOST SCOPE with a HOST-realm `random` argument, not from any realm-
+  // isolation gap in vm.createContext() itself. See AGENTS.md "Fix round 4".
+
+  it('blocks the host-argument constructor-chain escape via random.constructor (Escape A)', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(random){
+          const p = random.constructor("return process")();
+          return { vars: { leak: p.pid } };
+        }`,
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks the host-argument constructor-chain escape via random.constructor.constructor (Escape A variant)', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(random){
+          const p = random.constructor.constructor("return process")();
+          return { vars: { leak: p.pid } };
+        }`,
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks the Error.prepareStackTrace cross-realm CallSite leak (Escape B)', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(){
+          Error.prepareStackTrace = (e, frames) => frames;
+          let leak = null;
+          for (const f of new Error().stack) {
+            try {
+              const th = f.getThis();
+              if (th && th.constructor && th.constructor.constructor) {
+                const p = th.constructor.constructor("return process")();
+                if (p && p.pid) leak = p.pid;
+              }
+            } catch (e) {}
+            try {
+              const fn = f.getFunction();
+              if (fn && fn.constructor && fn.constructor.constructor) {
+                const p = fn.constructor.constructor("return process")();
+                if (p && p.pid) leak = p.pid;
+              }
+            } catch (e) {}
+          }
+          if (leak) return { vars: { leak } };
+          return { vars: {} };
+        }`,
+        1,
+      ),
+    ).resolves.toEqual({});
+  });
+
+  it('blocks the Error.prepareStackTrace cross-realm CallSite leak even for an async generate() (Escape B, post-await)', async () => {
+    await expect(
+      executeGenerate(
+        `async function generate(){
+          await Promise.resolve();
+          Error.prepareStackTrace = (e, frames) => frames;
+          let leak = null;
+          for (const f of new Error().stack) {
+            try {
+              const th = f.getThis();
+              if (th && th.constructor && th.constructor.constructor) {
+                const p = th.constructor.constructor("return process")();
+                if (p && p.pid) leak = p.pid;
+              }
+            } catch (e) {}
+          }
+          if (leak) return { vars: { leak } };
+          return { vars: {} };
+        }`,
+        1,
+      ),
+    ).resolves.toEqual({});
+  });
 });
