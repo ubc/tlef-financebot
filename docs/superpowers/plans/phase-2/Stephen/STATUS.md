@@ -11,8 +11,7 @@ _Last updated: 2026-07-28_
   review/merge**.
 - Task 2 student Flag control: **complete on stacked PR #35**.
 - Admin Console v0: **A1 complete on stacked PR #36**.
-- Task 7 progression/redirect + finite rounds: **implementation and live
-  browser verification complete; preparing the stacked PR**.
+- Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 
 Admin v0 and Task 7 are Stephen-owned staging/pilot enablement. Saurav does not
 need to confirm or stop his own work; this status is the requested
@@ -27,8 +26,9 @@ Codex completed:
 
 - Task 2 on PR #35, stacked on #34.
 - Admin A1 on PR #36, stacked on #34.
-- Task 7 on `codex/phase-2-task7-progression`, stacked on #35 so the practice
-  work includes Task 2 and Task 5's final parameter echo/substitution behavior.
+- Task 7 on PR #37 (`codex/phase-2-task7-progression`), stacked on #35 so the
+  practice work includes Task 2 and Task 5's final parameter
+  echo/substitution behavior.
 
 Codex records current paths in
 [`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
@@ -59,8 +59,9 @@ seams; it will reuse rather than duplicate Task 5.
   redirect transcript copy incorrectly mentioned a retry, and the sidebar
   retained the pre-attempt mastery label.
 
-All Task 7 browser fixtures and attempts are localhost-only and will be removed
-before the PR handoff.
+All Task 7 browser fixtures, attempts, notifications, and temporary course
+roles were localhost-only and were removed before the PR handoff; every
+fixture collection's residual count was verified as zero.
 
 ## Admin v0 decisions
 
@@ -92,4 +93,5 @@ Current PR chain:
   browser regression passed
 - #36 — Admin A1; 53 suites / 585 tests and live Admin active/pending/revoke
   regression passed
-
+- #37 — Task 7 progression/redirect + finite rounds; 53 suites / 583 tests and
+  live student browser regression passed

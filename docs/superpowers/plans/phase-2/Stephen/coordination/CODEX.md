@@ -2,7 +2,7 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28  
-**State:** Task 7 verified; preparing PR  
+**State:** Task 7 released; PR #37 open  
 **Base:** PR #35 head `a685800` (`codex/phase-2-task2-student-flag`)
 
 Both agents read this file and `CLAUDE.md` before editing. A path claimed by
@@ -16,6 +16,8 @@ Stephen's accepted finite-round semantics.
 
 Branch: `codex/phase-2-task7-progression`, stacked on PR #35 so it includes the
 finished Task 2 practice-card behavior and PR #34's final parameter echo.
+Implementation commit: `689e40e`. PR:
+<https://github.com/ubc/tlef-financebot/pull/37>.
 
 ## Task 7 files claimed by Codex
 
@@ -65,10 +67,10 @@ Saurav's notifications/materials services.
 - Admin A1: branch `codex/admin-console-v0`, stacked PR #36. Full 585 tests,
   typecheck/lint/build, and live active/pending/revoke Admin regression pass.
 
-## Preview paths — waiting
+## Released paths / Preview A2
 
-Student Preview A2 is not active during Task 7. It waits for PR #34 and Admin
-A1 to merge, plus this Task 7 PR's release of:
+The Task 7 claim is released at `689e40e`. Student Preview A2 waits for PR #34,
+Admin A1 PR #36, and Task 7 PR #37 to merge before rebasing and editing:
 
 - `server/src/services/serving.service.ts`
 - `server/src/services/attempts.service.ts`
