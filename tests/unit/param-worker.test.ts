@@ -407,4 +407,42 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
   // test here (no known script currently reaches it); see AGENTS.md
   // "Fix round 7" and worker.js's own comment on that catch block for the
   // full reasoning on why it's still required as defense in depth.
+
+  // Fix round 8: not a host-access/RCE escape (rounds 1-7 all cover that
+  // class) — this is a soundness/type-contract bypass on the RETURN path.
+  // worker.js's outer `result = await compiled.runInContext(...)` awaits
+  // the combined script's own outer async IIFE, which is vm-realm code, so
+  // that IIFE's promise is an instance of the VM REALM's OWN %Promise%
+  // intrinsic, not the host's. Host `await` on a foreign-realm promise does
+  // not take the same-realm "native promise" fast path (that optimization
+  // only applies when the promise's constructor matches the CURRENT
+  // realm's %Promise%); instead it falls through to the general
+  // PromiseResolve() routine, which does `Get(x, "then")` on the vm
+  // promise object — a lookup that walks the vm realm's OWN
+  // `Promise.prototype`. A script that reassigns `Promise.prototype.then`
+  // at its own top level (before generate() is ever called) leaves that
+  // tampered function in place for THIS lookup, which happens only after
+  // the whole script has finished running. The tampered `then` is then
+  // invoked (as a genuine vm-realm function call, not a host-access
+  // escape) with the HOST's own internal resolve/reject callbacks as its
+  // arguments, and can call `resolve(...)` with an entirely forged
+  // string — completely replacing whatever the harness's own in-vm
+  // validation actually produced. The forged data itself is inert
+  // host-realm JSON (no getters/functions/prototypes) once
+  // `JSON.parse`d, so it cannot reach `process` — but, before the round-8
+  // fix, it sailed straight past the in-vm numeric check and out through
+  // `parentPort.postMessage({ ok: true, vars })` with non-numeric/nested/
+  // array values, violating the `Record<string, number>` contract every
+  // downstream consumer relies on. The fix is a host-side re-validation
+  // pass, mirroring the in-vm check, that treats `envelope.ok === true` as
+  // a claim to be independently re-verified rather than trusted outright.
+  it('rejects a forged {ok:true,vars:{...}} envelope produced by reassigning Promise.prototype.then (Escape D, return-path Promise-tampering)', async () => {
+    const script = `
+      Promise.prototype.then = function (resolve) {
+        resolve('{"ok":true,"vars":{"evil":"not a number","nested":{"a":[1,2,3]}}}');
+      };
+      function generate() { return { vars: { rate: 1 } }; }
+    `;
+    await expect(executeGenerate(script, 1)).rejects.toThrow(/vars\.evil is not a finite number/);
+  });
 });

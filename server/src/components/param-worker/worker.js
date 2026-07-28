@@ -339,8 +339,41 @@ function mulberry32(seed) {
     }
     if (envelope.ok === true) {
       const vars = envelope.vars;
-      if (!vars || typeof vars !== 'object') {
+      if (!vars || typeof vars !== 'object' || Array.isArray(vars)) {
         throw new Error('generate() must return { vars: { ... } }');
+      }
+      // Fix round 8: everything above this line established that
+      // `envelope`/`vars` are host-realm plain data produced by
+      // `JSON.parse` on a primitive string, so reading `.ok`/`.vars` here
+      // cannot trigger a vm-realm getter/Proxy trap (fix round 6). But that
+      // does NOT mean `vars`'s CONTENTS were actually validated in-vm the
+      // way the `ok: true` claim implies. `result = await
+      // compiled.runInContext(...)` above awaits the combined script's own
+      // outer async IIFE — a Promise constructed with the VM REALM's own
+      // %Promise% intrinsic, because the IIFE itself is vm-realm code. Per
+      // the AsyncFunctionAwait spec routine, host code `await`ing a
+      // foreign-realm promise still calls `.then()` on it (that's how
+      // non-native thenables get assimilated); a malicious script can
+      // reassign the vm realm's `Promise.prototype.then` — reachable from
+      // ANY promise/async function created inside the vm, including the
+      // harness's own outer IIFE — before that IIFE's promise ever
+      // settles. The tampered `then` then gets invoked by the host's
+      // `await` and is free to call its resolve callback with an entirely
+      // FORGED value, e.g. `{ok:true, vars:{evil:"not a number"}}` built
+      // from ordinary vm-realm JSON, bypassing the in-vm
+      // `__origIsFinite` check above completely. This is inert host-realm
+      // data with no getters/functions/prototypes reaching the host — NOT
+      // a sandbox/host-access escape — but it does mean the host cannot
+      // simply trust "ok: true" as proof the in-vm validation actually
+      // ran on this data. So independently re-verify the exact same
+      // numeric contract here, in host scope, before ever handing `vars`
+      // to executeGenerate()'s caller — never coerce or silently drop a
+      // bad value, and never let a partially-valid `vars` object through.
+      for (const key of Object.keys(vars)) {
+        const v = vars[key];
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          throw new Error('vars.' + key + ' is not a finite number');
+        }
       }
       parentPort.postMessage({ ok: true, vars });
     } else {
