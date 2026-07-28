@@ -20,9 +20,9 @@ _Last updated: 2026-07-28_
   after the recorded cross-owner takeover.
 - Admin Console v0 A2 Student Preview: **complete at `9f68a44` on draft PR
   #41, CI green**, using the explicit PR #37 + PR #36 integration stack.
-- Task 9 parameterized-script migration: **active by Stephen/Codex on an
-  explicit PR #34 + PR #39 integration stack** under Stephen's standing
-  cross-owner authorization.
+- Task 9 parameterized-script migration: **complete at `ae1f0e9` on CI-green
+  draft PR #42**, integrating the explicit PR #34 + PR #39 heads under Stephen's
+  standing cross-owner authorization.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -49,10 +49,24 @@ PR #34, Admin A1 PR #36, and Task 7 PR #37 at integration time; implementation
 now proceeds on their released stacked code and will reuse rather than
 duplicate Task 5.
 
-Task 9 now proceeds without waiting for human-controlled dependency merges:
-Task 5 PR #34 and Task 8 PR #39 are both complete, released, and CI green.
-Codex will integrate those exact heads on a new short-lived stack; it will not
-merge either PR to `main`.
+Task 9 was completed without waiting for human-controlled dependency merges:
+Codex integrated the exact complete, released, CI-green PR #34 + PR #39 heads
+on a short-lived stack and did not merge either PR to `main`.
+
+## Task 9 result
+
+Codex completed the last unimplemented Phase 2 code task on draft PR #42.
+Instructor Import now has an isolated-sandbox review path for existing
+`generate(random)` scripts. A fixed-seed preview shows values and substituted
+stem/options; generated-variable/template mismatches block writes; commit
+repeats validation and creates exactly one Draft with `generateScript` on v1.
+
+Verification: 3 focused suites / 36 tests, full 54 suites / 594 tests,
+typecheck, lint, Node 24 build, and a real SAML-session Chromium UI/DB flow.
+The browser proved preview/commit/open-question clicks, exactly one Draft and
+version write, zero browser errors, and zero residual fixtures. Implementation
+commit: `ae1f0e9`. PR #42 is CI green and remains draft until dependency PRs
+#34/#39 merge; Codex did not merge them.
 
 ## Task 7 result
 
