@@ -190,6 +190,30 @@ function mulberry32(seed) {
       MULBERRY32_SOURCE,
       `
       (async () => {
+        // Fix round 7: capture private references to every intrinsic the
+        // harness's OWN code below depends on for its own control-flow and
+        // serialization, BEFORE the instructor script (spliced in just below
+        // this line) gets any chance to run. The instructor script executes
+        // in this SAME vm realm as the harness's post-generate() code — a
+        // realm whose global \`JSON\`, \`Object\`, \`Number\`, \`String\` etc the
+        // harness itself also reads by their bare global names. A malicious
+        // script can simply reassign \`JSON.stringify = function(){ throw
+        // {get message(){...leak...}} }\` at its own top level, before
+        // \`generate()\` is even called. If the harness later calls the BARE
+        // \`JSON.stringify\` name for its own success/error envelope, it
+        // invokes the SCRIPT's tampered version instead of the real one —
+        // which can throw a value whose \`.message\` getter leaks the host
+        // once that throw escapes far enough (see the outer runInContext
+        // catch below for why that matters even so). Capturing these
+        // references into local variables HERE — before scriptSource has
+        // executed a single statement — means the harness's own code always
+        // uses the ORIGINAL, real intrinsics, no matter what the instructor
+        // script does to the realm's globals afterward.
+        var __origStringify = JSON.stringify;
+        var __origObjectKeys = Object.keys;
+        var __origObjectCreate = Object.create;
+        var __origIsFinite = Number.isFinite;
+        var __origString = String;
         try {
       `,
       scriptSource,
@@ -198,32 +222,33 @@ function mulberry32(seed) {
           var __result = await generate(mulberry32(${seedLiteral}));
           var __rawVars = __result && typeof __result === 'object' && __result.vars ? __result.vars : null;
           if (!__rawVars) throw new Error('generate() must return { vars: { ... } }');
-          var __vars = Object.create(null);
-          var __keys = Object.keys(__rawVars);
+          var __vars = __origObjectCreate(null);
+          var __keys = __origObjectKeys(__rawVars);
           for (var __i = 0; __i < __keys.length; __i++) {
             var __k = __keys[__i];
             var __v = __rawVars[__k];
-            if (typeof __v !== 'number' || !Number.isFinite(__v)) {
+            if (typeof __v !== 'number' || !__origIsFinite(__v)) {
               throw new Error('vars.' + __k + ' is not a finite number');
             }
             __vars[__k] = __v;
           }
-          return JSON.stringify({ ok: true, vars: __vars });
+          return __origStringify({ ok: true, vars: __vars });
         } catch (__e) {
           // Stringify the (possibly malicious) thrown value entirely inside
           // the vm, so any getter/toString trap on it runs with only
           // vm-realm frames live — never a host frame. Only the resulting
-          // plain string leaves the vm.
+          // plain string leaves the vm. Uses the captured __origString, not
+          // the bare (possibly-tampered) global.
           var __msg;
           try {
             __msg = (__e && typeof __e === 'object' && typeof __e.message === 'string')
               ? __e.message
-              : String(__e);
+              : __origString(__e);
           } catch (__inner) {
             __msg = 'generate() script error';
           }
           if (typeof __msg !== 'string') __msg = 'generate() script error';
-          return JSON.stringify({ ok: false, error: __msg });
+          return __origStringify({ ok: false, error: __msg });
         }
       })();
       `,
@@ -261,7 +286,37 @@ function mulberry32(seed) {
     // `Object.entries(vars)`, ...) that a malicious getter/Proxy trap on
     // the sandboxed return value could hijack, because no such property
     // read happens in host scope anymore.
-    const result = await compiled.runInContext(context, { timeout: timeoutMs });
+    let result;
+    try {
+      result = await compiled.runInContext(context, { timeout: timeoutMs });
+    } catch {
+      // Fix round 7 (primary/structural fix): this catch exists only as a
+      // backstop for the case where something got past the vm IIFE's own
+      // internal try/catch above — by design that should never happen once
+      // the in-vm envelope logic (and the captured-intrinsics defense above)
+      // is solid, but "should never happen" is exactly the assumption round
+      // 6's bug violated. If it IS ever reached, the caught value is a value
+      // that crossed the native runInContext boundary as a real
+      // rejection/throw, and an instructor script that corrupted realm
+      // intrinsics (e.g. reassigning JSON.stringify so the vm IIFE's OWN
+      // envelope-building call throws a `{get message(){...}}` trap, which
+      // then escapes because that second throw isn't caught by anything
+      // further) fully controls its shape and its properties. Reading ANY
+      // property off it here — `.message`, `.toString()`, template-literal
+      // coercion, `String(err)`, anything — would run vm-realm getter/trap
+      // code with THIS host catch frame live on the stack, which is exactly
+      // how round 6's fix was defeated (see AGENTS.md "Fix round 7"). So
+      // this catch deliberately does not even bind the caught value to a
+      // name — there is no way to inspect it if there is no reference to
+      // it. It always reports one fixed, hardcoded, generic string,
+      // regardless of what the script managed to make this rejection
+      // contain.
+      parentPort.postMessage({
+        ok: false,
+        error: 'param-worker: script execution failed unexpectedly',
+      });
+      return;
+    }
     if (typeof result !== 'string') {
       // Should be unreachable — the vm script's own IIFE always resolves to
       // a JSON string (a `{ok:...}` envelope) or, in the pathological case

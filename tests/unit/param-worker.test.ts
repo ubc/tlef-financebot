@@ -334,4 +334,77 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
       executeGenerate('function generate(){ throw new Error("boom custom"); }', 1),
     ).rejects.toThrow('boom custom');
   });
+
+  // Fix round 7: round 6's in-vm try/catch runs in the SAME vm realm as the
+  // instructor script, so a script can reassign `JSON.stringify` (a global
+  // intrinsic of that realm) BEFORE `generate()` is even called. The
+  // harness's own success-path envelope call then invokes the tampered
+  // version, which throws a `{get message(){...leak...}}` trap; that throw
+  // is caught by the harness's in-vm catch, but the catch's OWN
+  // `JSON.stringify({ok:false,...})` call also invokes the still-tampered
+  // version, throwing again — and this second throw is not caught by
+  // anything further, so it escapes the vm IIFE as a real rejection that
+  // crosses the native runInContext boundary into host code. Fixed by (a)
+  // capturing the real `JSON.stringify` before the instructor script runs,
+  // so the harness's own envelope-building always uses the untampered
+  // intrinsic, and (b) the host's outer catch around `runInContext` never
+  // reading a property off whatever it catches, so even an escape past (a)
+  // can never reach the host's real `process`. See AGENTS.md "Fix round 7".
+  it('blocks the JSON.stringify-reassignment escape via the harness\'s own envelope serialization (Escape C)', async () => {
+    const walk = `
+      Error.prepareStackTrace = (e, frames) => frames;
+      for (const f of new Error().stack) {
+        try {
+          const th = f.getThis();
+          if (th && th.constructor && th.constructor.constructor) {
+            const p = th.constructor.constructor("return process")();
+            if (p && p.pid) return 'LEAK pid=' + p.pid;
+          }
+        } catch (e) {}
+        try {
+          const fn = f.getFunction();
+          if (fn && fn.constructor && fn.constructor.constructor) {
+            const p = fn.constructor.constructor("return process")();
+            if (p && p.pid) return 'LEAK pid=' + p.pid;
+          }
+        } catch (e) {}
+      }
+      return 'no-leak';
+    `;
+    const script = `
+      JSON.stringify = function () {
+        throw { get message() { ${walk} } };
+      };
+      function generate() { return { vars: { rate: 1 } }; }
+    `;
+    // Because the harness now captures the real JSON.stringify (and
+    // Object.keys/Object.create/Number.isFinite/String) into local variables
+    // BEFORE this script's `JSON.stringify = ...` line ever runs, the
+    // harness's own success-path envelope call never invokes the tampered
+    // version at all — the reassignment is completely inert as far as the
+    // harness's own serialization is concerned. So the previously-fatal
+    // script now just... works normally: `generate()` runs, returns valid
+    // vars, and the harness serializes them with the captured original
+    // JSON.stringify. This is the strongest possible outcome for Escape C —
+    // not merely "fails safely with a generic message" but "the tampering
+    // has zero effect on the harness," proving the getter/CallSite trap
+    // never gets a chance to fire with a host frame live, because the
+    // tampered global is never consulted at all. (The `walk` payload above
+    // is dead code from the script's own perspective in this scenario — it
+    // only runs if something ever DOES call the tampered JSON.stringify,
+    // which no longer happens.)
+    const vars = await executeGenerate(script, 1);
+    expect(vars).toEqual({ rate: 1 });
+  });
+
+  // Part 1 of the round-7 fix (the host's outer catch around runInContext
+  // never reading a property off whatever it catches) is a structural
+  // backstop for cases where something gets past the vm's own in-vm
+  // try/catch and captured-intrinsics defense above — which, by design and
+  // as confirmed by the resolved (not rejected) outcome of the Escape-C test
+  // above, should not happen for any currently-known tampering trick. It is
+  // intentionally not independently exercised by a sandboxed-script-level
+  // test here (no known script currently reaches it); see AGENTS.md
+  // "Fix round 7" and worker.js's own comment on that catch block for the
+  // full reasoning on why it's still required as defense in depth.
 });
