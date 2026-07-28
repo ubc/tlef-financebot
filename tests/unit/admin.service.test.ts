@@ -113,8 +113,10 @@ describe('platform-Instructor administration', () => {
     expect(result).toMatchObject({
       uid: 'financeprof',
       status: 'active',
-      user: { puid: 'PUID-PROF-0001', displayName: 'Fin Professor' },
+      user: { displayName: 'Fin Professor' },
     });
+    expect(JSON.stringify(result)).not.toContain('PUID-PROF-0001');
+    expect(result).not.toHaveProperty('grantedByPuid');
   });
 
   it('revokes idempotently and clears any linked User flag', async () => {

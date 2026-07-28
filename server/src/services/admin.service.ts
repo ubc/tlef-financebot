@@ -11,9 +11,7 @@ export interface PlatformInstructorAccount {
   status: 'active' | 'pending';
   grantedAt: string;
   updatedAt: string;
-  grantedByPuid: string;
   user?: {
-    puid: string;
     displayName: string;
     email: string;
     lastLoginAt: string;
@@ -48,11 +46,9 @@ function accountFrom(
     status: user ? 'active' : 'pending',
     grantedAt: grant.createdAt.toISOString(),
     updatedAt: grant.updatedAt.toISOString(),
-    grantedByPuid: grant.grantedByPuid,
     ...(user
       ? {
           user: {
-            puid: user.puid,
             displayName: user.displayName,
             email: user.email,
             lastLoginAt: user.lastLoginAt.toISOString(),

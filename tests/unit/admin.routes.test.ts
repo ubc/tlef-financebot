@@ -61,7 +61,6 @@ describe('Admin platform-Instructor routes', () => {
         status: 'pending',
         grantedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        grantedByPuid: 'PUID-ADMIN-0001',
       },
     ]);
 
@@ -80,7 +79,6 @@ describe('Admin platform-Instructor routes', () => {
       status: 'pending',
       grantedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      grantedByPuid: 'PUID-ADMIN-0001',
     });
     jest.mocked(revokePlatformInstructor).mockResolvedValue({
       uid: 'financeprof',
