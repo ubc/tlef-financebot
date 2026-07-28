@@ -1,5 +1,7 @@
 import {
   findUserByPuid,
+  isPlatformAdminPuid,
+  STAGING_BOOTSTRAP_ADMIN_PUID,
   upsertUserFromSaml,
 } from '../../server/src/services/users.service';
 import {
@@ -12,19 +14,20 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   usersCol: jest.fn(),
 }));
 jest.mock('../../server/src/config/env', () => ({
-  env: { adminCwlAllowlist: ['PUID-ADMIN-0001'] },
+  env: {
+    adminCwlAllowlist: ['PUID-ADMIN-0001'],
+    samlEnvironment: 'STAGING',
+  },
   isProduction: false,
 }));
 
 const findOneAndUpdate = jest.fn();
 const findUser = jest.fn();
 const findGrant = jest.fn();
-const updateGrant = jest.fn();
 beforeEach(() => {
   findOneAndUpdate.mockReset();
   findUser.mockReset();
   findGrant.mockReset();
-  updateGrant.mockReset();
   findGrant.mockResolvedValue(null);
   jest.mocked(usersCol).mockReturnValue({
     findOne: findUser,
@@ -32,7 +35,6 @@ beforeEach(() => {
   } as never);
   jest.mocked(platformInstructorGrantsCol).mockReturnValue({
     findOne: findGrant,
-    updateOne: updateGrant,
   } as never);
 });
 
@@ -58,6 +60,7 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
       displayName: 'Sam Student',
       affiliations: ['student'],
       isAdmin: false,
+      platformInstructor: false,
     });
     expect(update.$set.lastLoginAt).toBeInstanceOf(Date);
     expect(update.$setOnInsert).toMatchObject({ courseRoles: [] });
@@ -70,29 +73,35 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
     expect(findOneAndUpdate.mock.calls[0][1].$set.isAdmin).toBe(true);
   });
 
-  it('applies a pending platform-Instructor grant to the real PUID on first login', async () => {
-    const grantId = 'grant-id';
-    findGrant.mockResolvedValue({ _id: grantId, uid: 'financeprof' });
+  it('hard-codes Stephen as an Admin in STAGING only', async () => {
+    findOneAndUpdate.mockResolvedValue({});
+    await upsertUserFromSaml(samlAttrs({ ubcEduCwlPuid: STAGING_BOOTSTRAP_ADMIN_PUID }));
+    expect(findOneAndUpdate.mock.calls[0][1].$set.isAdmin).toBe(true);
+    expect(isPlatformAdminPuid(STAGING_BOOTSTRAP_ADMIN_PUID, 'PRODUCTION')).toBe(false);
+  });
+
+  it('applies a PUID Instructor grant when the real IdP releases an empty uid', async () => {
+    findGrant.mockResolvedValue({ _id: 'grant-id', puid: 'ESIPROF00001' });
     findOneAndUpdate.mockResolvedValue({ puid: 'PUID-PROF-0001' });
 
     await upsertUserFromSaml(samlAttrs({
-      ubcEduCwlPuid: 'PUID-PROF-0001',
-      uid: 'FinanceProf',
+      ubcEduCwlPuid: 'ESIPROF00001',
+      uid: '',
+      givenName: '',
+      sn: '',
+      displayName: 'Finance Professor',
       eduPersonAffiliation: ['faculty'],
     }));
 
-    expect(findGrant).toHaveBeenCalledWith({ uid: 'financeprof' });
+    expect(findGrant).toHaveBeenCalledWith({ puid: 'ESIPROF00001' });
     expect(findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({
-      uid: 'FinanceProf',
+      uid: '',
+      displayName: 'Finance Professor',
       platformInstructor: true,
     });
-    expect(updateGrant).toHaveBeenCalledWith(
-      { _id: grantId },
-      { $set: expect.objectContaining({ appliedToPuid: 'PUID-PROF-0001' }) },
-    );
   });
 
-  it('does not overwrite an existing platform-Instructor value when no grant is pending', async () => {
+  it('clears a stale denormalized Instructor bit when no PUID grant exists', async () => {
     findOneAndUpdate.mockResolvedValue({ puid: 'PUID-PROF-0001', platformInstructor: true });
 
     await upsertUserFromSaml(samlAttrs({
@@ -100,7 +109,25 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
       uid: 'financeprof',
     }));
 
-    expect(findOneAndUpdate.mock.calls[0][1].$set).not.toHaveProperty('platformInstructor');
+    expect(findOneAndUpdate.mock.calls[0][1].$set.platformInstructor).toBe(false);
+  });
+
+  it('uses cwlLoginName and the tlef-create display-name fallback chain when released', async () => {
+    findOneAndUpdate.mockResolvedValue({ puid: 'PUID-PROF-0001' });
+
+    await upsertUserFromSaml(samlAttrs({
+      uid: '',
+      cwlLoginName: 'financeprof',
+      givenName: '',
+      sn: '',
+      displayName: '',
+      cn: 'Finance Professor',
+    }));
+
+    expect(findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({
+      uid: 'financeprof',
+      displayName: 'Finance Professor',
+    });
   });
 
   it('rejects a profile with no PUID (no partial session, ST-E01)', async () => {
@@ -112,7 +139,7 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
 describe('findUserByPuid platform authorization refresh', () => {
   const storedUser = {
     puid: 'PUID-PROF-0001',
-    uid: 'FinanceProf',
+    uid: '',
     displayName: 'Fin Professor',
     email: 'fin.prof@example.ubc.ca',
     affiliations: ['faculty'],
@@ -133,14 +160,14 @@ describe('findUserByPuid platform authorization refresh', () => {
     });
   });
 
-  it('restores the capability from an active normalized-CWL grant', async () => {
+  it('restores the capability from an active PUID grant even with an empty uid', async () => {
     findUser.mockResolvedValue({ ...storedUser, platformInstructor: undefined });
-    findGrant.mockResolvedValue({ uid: 'financeprof' });
+    findGrant.mockResolvedValue({ puid: 'PUID-PROF-0001' });
 
     await expect(findUserByPuid('PUID-PROF-0001')).resolves.toMatchObject({
       puid: 'PUID-PROF-0001',
       platformInstructor: true,
     });
-    expect(findGrant).toHaveBeenCalledWith({ uid: 'financeprof' });
+    expect(findGrant).toHaveBeenCalledWith({ puid: 'PUID-PROF-0001' });
   });
 });

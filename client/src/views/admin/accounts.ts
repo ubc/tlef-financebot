@@ -1,9 +1,9 @@
 import {
   ApiError,
   grantPlatformInstructor,
-  listPlatformInstructors,
+  listAdminAccounts,
   revokePlatformInstructor,
-  type PlatformInstructorAccount,
+  type AdminAccount,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
@@ -15,18 +15,22 @@ function errorMessage(error: unknown): string {
 }
 
 function accountCard(
-  account: PlatformInstructorAccount,
-  onRevoke: (account: PlatformInstructorAccount, button: HTMLButtonElement) => void,
+  account: AdminAccount,
+  onGrant: (account: AdminAccount, button: HTMLButtonElement) => void,
+  onRevoke: (account: AdminAccount, button: HTMLButtonElement) => void,
 ): HTMLElement {
-  const revokeButton = el(
+  const actionButton = el(
     'button',
     {
-      class: 'btn btn--ghost btn--sm',
+      class: account.platformInstructor ? 'btn btn--ghost btn--sm' : 'btn btn--instr-primary btn--sm',
       type: 'button',
-      onclick: () => onRevoke(account, revokeButton),
     },
-    'Revoke Instructor',
+    account.platformInstructor ? 'Revoke Instructor' : 'Grant Instructor',
   ) as HTMLButtonElement;
+  actionButton.onclick = () =>
+    account.platformInstructor
+      ? onRevoke(account, actionButton)
+      : onGrant(account, actionButton);
 
   return el(
     'article',
@@ -34,80 +38,101 @@ function accountCard(
     el(
       'div',
       { class: 'card__head' },
-      el('h3', { class: 'card__title', text: account.user?.displayName || account.uid }),
-      statusBadge(
-        account.status === 'active' ? 'Active' : 'Pending first login',
-        account.status === 'active' ? 'approved' : 'pending',
+      el('h3', { class: 'card__title', text: account.displayName || account.puid }),
+      el(
+        'div',
+        { class: 'row' },
+        account.isAdmin ? statusBadge('Admin', 'approved') : false,
+        account.platformInstructor ? statusBadge('Instructor', 'approved') : false,
+        account.status === 'pending' ? statusBadge('Pending first login', 'pending') : false,
       ),
     ),
     el(
       'div',
       { class: 'card__body stack' },
-      el('p', { class: 'mono', text: `CWL: ${account.uid}` }),
-      account.user?.email
-        ? el('p', { text: account.user.email })
-        : el('p', { text: 'The grant will attach to the real account on first CWL login.' }),
-      el('p', {
-        class: 'muted',
-        text: `Granted ${new Date(account.grantedAt).toLocaleString()}`,
-      }),
-      el('div', { class: 'row' }, revokeButton),
+      el('p', { class: 'mono', text: `PUID: ${account.puid}` }),
+      account.uid
+        ? el('p', { class: 'mono', text: `CWL: ${account.uid}` })
+        : el('p', { class: 'muted', text: 'CWL username was not released by SAML.' }),
+      account.email ? el('p', { text: account.email }) : false,
+      account.affiliations.length
+        ? el('p', { class: 'muted', text: `Affiliations: ${account.affiliations.join(', ')}` })
+        : false,
+      account.lastLoginAt
+        ? el('p', {
+            class: 'muted',
+            text: `Last login: ${new Date(account.lastLoginAt).toLocaleString()}`,
+          })
+        : el('p', {
+            class: 'muted',
+            text: 'This PUID is pre-provisioned and will attach on first login.',
+          }),
+      el('div', { class: 'row' }, actionButton),
     ),
   );
 }
 
 async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
-  const listSlot = el('div', {}, loadingState('Loading Instructor accounts…'));
+  const listSlot = el('div', {}, loadingState('Loading users…'));
   const feedbackSlot = el('div', { 'aria-live': 'polite' });
   const searchInput = el('input', {
     class: 'input',
     type: 'search',
-    id: 'admin-instructor-search',
-    placeholder: 'Search granted CWL usernames',
+    id: 'admin-user-search',
+    placeholder: 'Search by PUID, name, email, or CWL',
   }) as HTMLInputElement;
-  const uidInput = el('input', {
+  const puidInput = el('input', {
     class: 'input',
     type: 'text',
-    id: 'admin-instructor-cwl',
+    id: 'admin-instructor-puid',
     autocomplete: 'off',
     required: 'required',
-    placeholder: 'e.g. financeprof',
+    placeholder: 'e.g. ESI5CZY7J307',
+    pattern: '[A-Za-z0-9._-]+',
   }) as HTMLInputElement;
   const grantButton = el(
     'button',
     { class: 'btn btn--instr-primary', type: 'submit' },
-    'Grant Instructor',
+    'Add as Instructor',
   ) as HTMLButtonElement;
 
   const load = async (): Promise<void> => {
-    listSlot.replaceChildren(loadingState('Loading Instructor accounts…'));
+    listSlot.replaceChildren(loadingState('Loading users…'));
     try {
-      const accounts = await listPlatformInstructors(searchInput.value);
+      const accounts = await listAdminAccounts(searchInput.value);
       listSlot.replaceChildren(
         accounts.length
           ? el(
               'div',
               { class: 'stack' },
-              ...accounts.map((account) => accountCard(account, (item, button) => void revoke(item, button))),
+              ...accounts.map((account) =>
+                accountCard(
+                  account,
+                  (item, button) => void grantExisting(item, button),
+                  (item, button) => void revoke(item, button),
+                ),
+              ),
             )
-          : emptyState('No platform-Instructor grants match this search.'),
+          : emptyState('No users or pending Instructor grants match this search.'),
       );
     } catch (error) {
       listSlot.replaceChildren(errorState(errorMessage(error), () => void load()));
     }
   };
 
-  const revoke = async (
-    account: PlatformInstructorAccount,
-    button: HTMLButtonElement,
-  ): Promise<void> => {
-    if (!window.confirm(`Revoke platform-Instructor access for ${account.uid}?`)) return;
+  const grantPuid = async (puid: string, button: HTMLButtonElement): Promise<void> => {
     button.disabled = true;
     feedbackSlot.replaceChildren();
     try {
-      await revokePlatformInstructor(account.uid);
+      const account = await grantPlatformInstructor(puid);
       feedbackSlot.replaceChildren(
-        el('p', { role: 'status', text: `Instructor access revoked for ${account.uid}.` }),
+        el('p', {
+          role: 'status',
+          text:
+            account.status === 'active'
+              ? `Instructor access granted to ${account.displayName}.`
+              : `Grant saved for ${account.puid}; it will activate on first login.`,
+        }),
       );
       await load();
     } catch (error) {
@@ -116,29 +141,40 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     }
   };
 
-  const grant = async (event: Event): Promise<void> => {
-    event.preventDefault();
-    const uid = uidInput.value.trim();
-    if (!uid) return;
-    grantButton.disabled = true;
+  const grantExisting = async (
+    account: AdminAccount,
+    button: HTMLButtonElement,
+  ): Promise<void> => {
+    await grantPuid(account.puid, button);
+  };
+
+  const revoke = async (
+    account: AdminAccount,
+    button: HTMLButtonElement,
+  ): Promise<void> => {
+    if (!window.confirm(`Revoke platform-Instructor access for ${account.displayName}?`)) return;
+    button.disabled = true;
     feedbackSlot.replaceChildren();
     try {
-      const account = await grantPlatformInstructor(uid);
-      uidInput.value = '';
+      await revokePlatformInstructor(account.puid);
       feedbackSlot.replaceChildren(
-        el('p', {
-          role: 'status',
-          text: account.status === 'active'
-            ? `Instructor access granted to ${account.uid}.`
-            : `Grant saved for ${account.uid}; it will activate on first CWL login.`,
-        }),
+        el('p', { role: 'status', text: `Instructor access revoked for ${account.displayName}.` }),
       );
       await load();
     } catch (error) {
+      button.disabled = false;
       feedbackSlot.replaceChildren(errorState(errorMessage(error)));
-    } finally {
-      grantButton.disabled = false;
     }
+  };
+
+  const grantNew = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    const puid = puidInput.value.trim();
+    if (!puid) return;
+    await grantPuid(puid, grantButton);
+    if (!grantButton.disabled) return;
+    puidInput.value = '';
+    grantButton.disabled = false;
   };
 
   const search = (event: Event): void => {
@@ -152,33 +188,44 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
       'div',
       { class: 'view' },
       pageHeader(
-        'Instructor Accounts',
-        'Grant explicit FinanceBot Instructor access by CWL username. Faculty affiliation alone does not grant access.',
+        'User Accounts',
+        'View every user who has logged in and grant or revoke global Instructor access by PUID.',
       ),
       el(
         'form',
-        { class: 'card form stack', onsubmit: (event: Event) => void grant(event) },
+        {
+          class: 'card admin-account-create',
+          onsubmit: (event: Event) => void grantNew(event),
+        },
         el(
           'div',
           { class: 'card__head' },
           el('h2', { class: 'card__title', text: 'Add professor' }),
         ),
         el(
-          'label',
-          { class: 'form-field' },
-          el('span', { class: 'form-field__label', text: 'CWL username' }),
-          uidInput,
+          'div',
+          { class: 'card__body admin-account-create__body' },
+          el(
+            'label',
+            { class: 'form-field' },
+            el('span', { class: 'form-field__label', text: 'UBC PUID' }),
+            puidInput,
+          ),
+          el('p', {
+            class: 'muted admin-account-create__help',
+            text: 'If the user has not logged in yet, the grant remains pending until that PUID signs in.',
+          }),
+          el('div', { class: 'row admin-account-create__actions' }, grantButton),
         ),
-        el('div', { class: 'row' }, grantButton),
       ),
       feedbackSlot,
       el(
         'form',
-        { class: 'row', onsubmit: search },
+        { class: 'admin-account-search', onsubmit: search },
         el(
           'label',
           { class: 'form-field' },
-          el('span', { class: 'form-field__label', text: 'Search grants' }),
+          el('span', { class: 'form-field__label', text: 'Search users' }),
           searchInput,
         ),
         el('button', { class: 'btn btn--ghost', type: 'submit' }, 'Search'),

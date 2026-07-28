@@ -34,10 +34,15 @@ objects directly.
   event/warning history, startup reconciliation, and post-write course
   subscribers. Material/generation services must call this API rather than
   updating `contentRuns` directly.
+- `import.service.ts` — Parses and commits CSV/JSON/QTI questions, and migrates
+  existing `generate(random)` templates through the real parameter worker.
+  Script migration validates one deterministic sample, returns placeholder
+  mismatches without writing, and creates only Draft question versions.
 - `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
-  Normalizes CWL usernames, links an existing User when present, leaves a
-  pending grant otherwise, and writes role assignment/revocation audit events.
-  Raw SAML assertions never enter its response shapes.
+  Uses PUID as the canonical identity, updates an existing matching User when
+  present, leaves a pending grant otherwise, lists safe persisted User fields,
+  and writes role assignment/revocation audit events. Raw SAML assertions never
+  enter its response shapes.
 - `preview.service.ts` — Instructor-only student preview orchestration. It
   exposes the currently released Approved-question hierarchy, serves
   parameterized questions through the neutral preview selector, and writes

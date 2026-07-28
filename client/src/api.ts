@@ -85,38 +85,41 @@ export async function getAuthState(): Promise<AuthState> {
 
 // --- Admin: platform-Instructor accounts -----------------------------------
 
-export interface PlatformInstructorAccount {
-  uid: string;
+export interface AdminAccount {
+  puid: string;
   status: 'active' | 'pending';
-  grantedAt: string;
-  updatedAt: string;
-  user?: {
-    displayName: string;
-    email: string;
-    lastLoginAt: string;
-  };
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  platformInstructor: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  grantedAt?: string;
+  updatedAt?: string;
 }
 
-/** GET /api/admin/platform-instructors?query= -> active/pending grants. */
-export function listPlatformInstructors(query = ''): Promise<PlatformInstructorAccount[]> {
+/** GET /api/admin/users?query= -> persisted users plus pending PUID grants. */
+export function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
   const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
-  return request<PlatformInstructorAccount[]>(`/api/admin/platform-instructors${search}`);
+  return request<AdminAccount[]>(`/api/admin/users${search}`);
 }
 
-/** PUT /api/admin/platform-instructors/:uid -> active or pending grant. */
-export function grantPlatformInstructor(uid: string): Promise<PlatformInstructorAccount> {
-  return request<PlatformInstructorAccount>(
-    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+/** PUT /api/admin/platform-instructors/:puid -> active or pending grant. */
+export function grantPlatformInstructor(puid: string): Promise<AdminAccount> {
+  return request<AdminAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
     { method: 'PUT' },
   );
 }
 
-/** DELETE /api/admin/platform-instructors/:uid -> idempotent revocation. */
+/** DELETE /api/admin/platform-instructors/:puid -> idempotent revocation. */
 export function revokePlatformInstructor(
-  uid: string,
-): Promise<{ uid: string; granted: false; revoked: boolean }> {
-  return request<{ uid: string; granted: false; revoked: boolean }>(
-    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+  puid: string,
+): Promise<{ puid: string; granted: false; revoked: boolean }> {
+  return request<{ puid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
     { method: 'DELETE' },
   );
 }
@@ -1061,6 +1064,16 @@ export interface GenerateQuestionsInput {
   prompt?: string;
 }
 
+export interface GenerationPreset {
+  label: string;
+  text: string;
+}
+
+/** GET /api/generation/presets -> four editable instructor prompt starters. */
+export function getGenerationPresets(): Promise<GenerationPreset[]> {
+  return request<GenerationPreset[]>('/api/generation/presets');
+}
+
 /** POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?,
  * prompt? } -> 202 { runId }. Enqueues the async three-agent generation
  * pipeline for one LO. */
@@ -1070,6 +1083,143 @@ export function generateQuestions(courseId: string, input: GenerateQuestionsInpu
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+export interface RegenerationVariant {
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+  sourceRefs: Array<{ materialId: string; chunk?: string }>;
+  agentDecision: {
+    decision: 'pass' | 'flag' | 'reject';
+    reasoning: string;
+    roleAssessment: string;
+  };
+}
+
+/** Generate a transient alternative. It is not saved until editQuestion is
+ * explicitly called with the returned content. */
+export function regenerateQuestion(
+  courseId: string,
+  questionId: string,
+  prompt: string,
+): Promise<{ variant: RegenerationVariant }> {
+  return request<{ variant: RegenerationVariant }>(
+    `/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regenerate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    },
+  );
+}
+
+// --- Instructor: question import (IN-Q01) -----------------------------------
+
+export type ImportFormat = 'csv' | 'json' | 'qti';
+
+export interface ImportCandidate {
+  type: QuestionType | 'other';
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    role?: OptionRole;
+    explanation?: string;
+  }>;
+  correctKey: string;
+  difficulty?: Difficulty;
+  parameterizable: boolean;
+}
+
+export interface ImportPreview {
+  format: ImportFormat;
+  candidates: ImportCandidate[];
+  failures: Array<{ line: number | string; reason: string }>;
+}
+
+/** Multipart upload -> parsed preview. No questions are written. */
+export function previewQuestionImport(courseId: string, file: File): Promise<ImportPreview> {
+  const form = new FormData();
+  form.append('file', file);
+  return request<ImportPreview>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/preview`,
+    { method: 'POST', body: form },
+  );
+}
+
+/** Confirm a preview -> Draft questions. The server revalidates every row. */
+export function commitQuestionImport(
+  courseId: string,
+  input: {
+    candidates: ImportCandidate[];
+    themeId?: string;
+    loId?: string;
+  },
+): Promise<{ imported: number; autoConverted: number }> {
+  return request<{ imported: number; autoConverted: number }>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/commit`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export interface ScriptMigrationInput {
+  type: QuestionType;
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    explanation?: string;
+  }>;
+  correctKey: string;
+  difficulty?: Difficulty;
+  script: string;
+}
+
+export interface ScriptMigrationResult {
+  questionId?: string;
+  sampleValues: Record<string, number>;
+  sampleStem: string;
+  sampleOptions: Array<{
+    key: string;
+    text: string;
+    explanation: string;
+  }>;
+  mismatches: string[];
+}
+
+/** Runs one deterministic sandbox sample. Nothing is written. */
+export function previewScriptMigration(
+  courseId: string,
+  input: ScriptMigrationInput,
+): Promise<ScriptMigrationResult> {
+  return request<ScriptMigrationResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/script/preview`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Revalidates the reviewed script and creates one parameterized Draft. */
+export function commitScriptMigration(
+  courseId: string,
+  input: ScriptMigrationInput & { themeId?: string; loId?: string },
+): Promise<ScriptMigrationResult> {
+  return request<ScriptMigrationResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/script/commit`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 // --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
@@ -1140,6 +1290,7 @@ export interface QuestionHead {
   labels: QuestionLabel[];
   agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
   generationPrompt?: string;
+  regenerations?: Array<{ prompt: string; at: string }>;
   internalNotes: Array<{ puid: string; text: string; at: string }>;
   createdAt: string;
   updatedAt: string;

@@ -18,16 +18,18 @@ admin.
 
 ## Admin — platform-Instructor accounts
 
-Every route below is platform-Admin-only. CWL usernames are normalized
-case-insensitively; a grant may remain pending until that username's first SAML
-login creates the real PUID-backed User.
+Every route below is platform-Admin-only. Grants use the UBC PUID as the
+canonical identifier, including when the user has not logged in yet. A pending
+grant attaches to the same PUID-backed User on first SAML login.
 
-- `GET /api/admin/platform-instructors?query=` →
-  `[{ uid, status: 'active' | 'pending', grantedAt, updatedAt, user?: { displayName, email, lastLoginAt } }]`
-- `PUT /api/admin/platform-instructors/:uid` → one active/pending grant
+- `GET /api/admin/users?query=` →
+  `[{ puid, uid, displayName, email, affiliations, isAdmin, platformInstructor, status: 'active' | 'pending', lastLoginAt?, createdAt?, grantedAt?, updatedAt? }]`
+  (all persisted Users plus pending grants; raw SAML/session data is never
+  returned)
+- `PUT /api/admin/platform-instructors/:puid` → one active/pending account
   (idempotent; empty body)
-- `DELETE /api/admin/platform-instructors/:uid` →
-  `{ uid, granted: false, revoked: boolean }` (idempotent)
+- `DELETE /api/admin/platform-instructors/:puid` →
+  `{ puid, granted: false, revoked: boolean }` (idempotent)
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`
@@ -66,7 +68,8 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
   `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion }] }` (IN-Q08)
-- `GET /api/questions/:questionId` → full question + current version + agentDecision + notes + versions list
+- `GET /api/questions/:questionId` → full question + current version +
+  agentDecision + notes + versions list + optional regeneration request history
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
 - `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
@@ -84,8 +87,59 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate { loId, count?, type?, difficulty?, prompt? }` →
-  202 `{ runId }` — a unique durable generation run; results land as Draft questions (IN-Q10/Q11)
+  202 `{ runId }` — a unique durable generation run; results land as Draft
+  questions (IN-Q10/Q11). A prompt containing `@filename` (or
+  `@"filename with spaces"`) restricts retrieval to the exact ready material
+  assigned to the target LO/theme; missing or ambiguous mentions fail without
+  falling back to other course material.
+- `GET /api/generation/presets` → four editable `{ label, text }` custom-prompt
+  starters; requires an authenticated instructor/admin.
+- `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
+  `{ variant: { stem, options, difficulty, sourceRefs, agentDecision } }`.
+  Generates a transient side-by-side alternative and appends
+  `{ prompt, at }` to the question's regeneration history, but does not create
+  a QuestionVersion or replace current content. Replacement is an explicit
+  `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
+
+## Question import (instructor)
+
+- `POST /api/courses/:courseId/import/preview` — multipart field `file`
+  (`.csv`, `.json`, `.xml`, or `.qti`, maximum 5 MB) →
+  `{ format: 'csv'|'json'|'qti', candidates: ImportCandidate[], failures:
+  [{ line: number|string, reason }] }`. Parsing is partial-success: an invalid
+  row/item is reported without removing valid candidates. No question is
+  written during preview.
+- `POST /api/courses/:courseId/import/commit { candidates, themeId?, loId? }` →
+  `201 { imported, autoConverted }`. The preview candidates are untrusted
+  round-tripped input and are revalidated as one batch before writes.
+  Questions always enter as Drafts; missing assignment ids leave them
+  unassigned. `type: 'other'` is converted to MCQ/T-F through the configured
+  LLM and labelled `auto-converted`. Numeric candidates meeting the
+  two-distinct-values plus currency/percent/rate heuristic are labelled
+  `convertible-to-parameterized`.
+- `POST /api/courses/:courseId/import/script/preview ScriptMigrationInput` →
+  `ScriptMigrationResult`. Runs the instructor-authored `generate(random)`
+  script once with a fixed seed in the parameter worker and returns
+  `sampleValues`, substituted `sampleStem`/`sampleOptions`, and `mismatches`.
+  Nothing is written. A sandbox rejection (including `param-timeout`) is a
+  clean `400 script-validation-failed:<reason>`.
+- `POST /api/courses/:courseId/import/script/commit { ...ScriptMigrationInput,
+  themeId?, loId? }` → `201 ScriptMigrationResult` with `questionId` when the
+  generated variable names have stem placeholders and every placeholder in
+  the stem/options has a generated value. The server repeats the sandbox run
+  and template validation; a mismatch returns `200` with the
+  mismatch list, no `questionId`, and no write. A successful import creates
+  exactly one parameterized Draft whose v1 stores `generateScript`.
+
+`ImportCandidate` is `{ type: 'mcq'|'true-false'|'other', stem, options:
+[{ key, text, role?, explanation? }], correctKey, difficulty?,
+parameterizable }`.
+
+`ScriptMigrationInput` is `{ type: 'mcq'|'true-false', stem, options:
+[{ key, text, explanation? }], correctKey, difficulty?, script }`.
+`ScriptMigrationResult` is `{ questionId?, sampleValues:
+Record<string,number>, sampleStem, sampleOptions, mismatches: string[] }`.
 
 ## Content runs (instructor; Phase 2 P2-0)
 

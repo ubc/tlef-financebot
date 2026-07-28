@@ -11,11 +11,22 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
+  regenerateQuestion: jest.fn(),
+  PRESET_PROMPTS: [
+    { label: 'Calculation question', text: 'Write a calculation question.' },
+    { label: 'Concept check', text: 'Write a concept check.' },
+    { label: 'Common-misconception probe', text: 'Probe a misconception.' },
+    { label: 'Applied scenario', text: 'Write an applied scenario.' },
+  ],
 }));
 
 import { generationRouter } from '../../server/src/routes/generation.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
-import { enqueueGenerationRun, preseedingProgress } from '../../server/src/services/generation.service';
+import {
+  enqueueGenerationRun,
+  preseedingProgress,
+  regenerateQuestion,
+} from '../../server/src/services/generation.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -53,6 +64,50 @@ beforeEach(() => {
   jest.mocked(enqueueGenerationRun).mockReset();
   jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
+  jest.mocked(regenerateQuestion).mockReset();
+});
+
+describe('Task 10 presets and regeneration', () => {
+  it('returns presets only to an instructor', async () => {
+    const denied = await request(makeApp(student)).get('/api/generation/presets');
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(makeApp(instructor)).get('/api/generation/presets');
+    expect(allowed.status).toBe(200);
+    expect(allowed.body).toHaveLength(4);
+  });
+
+  it('regenerates through a course-scoped instructor route without saving', async () => {
+    jest.mocked(regenerateQuestion).mockResolvedValue({
+      variant: { stem: 'Alternative', options: [], difficulty: 'medium' },
+    } as never);
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/courses/${courseId.toHexString()}/questions/${loId.toHexString()}/regenerate`)
+      .send({ prompt: 'Change the scenario.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.variant.stem).toBe('Alternative');
+    expect(regenerateQuestion).toHaveBeenCalledWith(
+      loId,
+      'Change the scenario.',
+      'PUID-INSTR-0001',
+      courseId,
+    );
+  });
+
+  it('rejects non-instructors and empty regeneration prompts', async () => {
+    const denied = await request(makeApp(student))
+      .post(`/api/courses/${courseId.toHexString()}/questions/${loId.toHexString()}/regenerate`)
+      .send({ prompt: 'Change it.' });
+    expect(denied.status).toBe(403);
+
+    const invalid = await request(makeApp(instructor))
+      .post(`/api/courses/${courseId.toHexString()}/questions/${loId.toHexString()}/regenerate`)
+      .send({ prompt: '   ' });
+    expect(invalid.status).toBe(400);
+    expect(regenerateQuestion).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {

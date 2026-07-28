@@ -4,23 +4,23 @@ import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/admin.service', () => ({
   grantPlatformInstructor: jest.fn(),
-  listPlatformInstructors: jest.fn(),
+  listAdminAccounts: jest.fn(),
   revokePlatformInstructor: jest.fn(),
 }));
 
 import { adminRouter } from '../../server/src/routes/admin.routes';
 import {
   grantPlatformInstructor,
-  listPlatformInstructors,
+  listAdminAccounts,
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
 
 function userFixture(isAdmin: boolean): User {
   return {
-    puid: isAdmin ? 'PUID-ADMIN-0001' : 'PUID-STUDENT-0001',
-    uid: isAdmin ? 'admin1' : 'student1',
-    displayName: isAdmin ? 'Admin One' : 'Student One',
-    email: isAdmin ? 'admin1@example.ubc.ca' : 'student1@example.ubc.ca',
+    puid: isAdmin ? 'ESI5CZY7J307' : 'ESISTUDENT001',
+    uid: '',
+    displayName: isAdmin ? 'Stephen' : 'Student One',
+    email: '',
     affiliations: isAdmin ? ['staff'] : ['student'],
     isAdmin,
     courseRoles: [],
@@ -41,64 +41,80 @@ function makeApp(user?: User): Express {
   return app;
 }
 
-describe('Admin platform-Instructor routes', () => {
+describe('Admin user-account routes', () => {
   beforeEach(() => {
     jest.mocked(grantPlatformInstructor).mockReset();
-    jest.mocked(listPlatformInstructors).mockReset();
+    jest.mocked(listAdminAccounts).mockReset();
     jest.mocked(revokePlatformInstructor).mockReset();
   });
 
-  it('returns 401 signed out and 403 for a signed-in non-Admin', async () => {
-    expect((await request(makeApp()).get('/api/admin/platform-instructors')).status).toBe(401);
-    expect((await request(makeApp(userFixture(false))).get('/api/admin/platform-instructors')).status).toBe(403);
-    expect(listPlatformInstructors).not.toHaveBeenCalled();
+  it('returns 401 signed out and 403 for students and platform Instructors', async () => {
+    const platformInstructor = {
+      ...userFixture(false),
+      platformInstructor: true,
+    };
+
+    expect((await request(makeApp()).get('/api/admin/users')).status).toBe(401);
+    expect((await request(makeApp(userFixture(false))).get('/api/admin/users')).status).toBe(403);
+    expect((await request(makeApp(platformInstructor)).get('/api/admin/users')).status).toBe(403);
+    expect(listAdminAccounts).not.toHaveBeenCalled();
   });
 
-  it('lists grants for an Admin with the validated query', async () => {
-    jest.mocked(listPlatformInstructors).mockResolvedValue([
+  it('lists all matching users for an Admin', async () => {
+    jest.mocked(listAdminAccounts).mockResolvedValue([
       {
-        uid: 'financeprof',
-        status: 'pending',
-        grantedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        puid: 'ESIPROF00001',
+        uid: '',
+        displayName: 'Finance Professor',
+        email: '',
+        affiliations: ['faculty'],
+        isAdmin: false,
+        platformInstructor: false,
+        status: 'active',
       },
     ]);
 
     const res = await request(makeApp(userFixture(true)))
-      .get('/api/admin/platform-instructors')
+      .get('/api/admin/users')
       .query({ query: 'finance' });
 
     expect(res.status).toBe(200);
-    expect(listPlatformInstructors).toHaveBeenCalledWith('finance');
-    expect(res.body).toEqual([expect.objectContaining({ uid: 'financeprof', status: 'pending' })]);
+    expect(listAdminAccounts).toHaveBeenCalledWith('finance');
+    expect(res.body).toEqual([
+      expect.objectContaining({ puid: 'ESIPROF00001', displayName: 'Finance Professor' }),
+    ]);
   });
 
-  it('grants and revokes by CWL username as the session Admin', async () => {
+  it('grants and revokes by PUID as the session Admin', async () => {
     jest.mocked(grantPlatformInstructor).mockResolvedValue({
-      uid: 'financeprof',
+      puid: 'ESIPROF00001',
+      uid: '',
+      displayName: 'ESIPROF00001',
+      email: '',
+      affiliations: [],
+      isAdmin: false,
+      platformInstructor: true,
       status: 'pending',
-      grantedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     });
     jest.mocked(revokePlatformInstructor).mockResolvedValue({
-      uid: 'financeprof',
+      puid: 'ESIPROF00001',
       granted: false,
       revoked: true,
     });
     const app = makeApp(userFixture(true));
 
-    const grantRes = await request(app).put('/api/admin/platform-instructors/FinanceProf');
-    const revokeRes = await request(app).delete('/api/admin/platform-instructors/FinanceProf');
+    const grantRes = await request(app).put('/api/admin/platform-instructors/ESIPROF00001');
+    const revokeRes = await request(app).delete('/api/admin/platform-instructors/ESIPROF00001');
 
     expect(grantRes.status).toBe(200);
     expect(revokeRes.status).toBe(200);
-    expect(grantPlatformInstructor).toHaveBeenCalledWith('FinanceProf', 'PUID-ADMIN-0001');
-    expect(revokePlatformInstructor).toHaveBeenCalledWith('FinanceProf', 'PUID-ADMIN-0001');
+    expect(grantPlatformInstructor).toHaveBeenCalledWith('ESIPROF00001', 'ESI5CZY7J307');
+    expect(revokePlatformInstructor).toHaveBeenCalledWith('ESIPROF00001', 'ESI5CZY7J307');
   });
 
-  it('rejects malformed CWL usernames before calling the service', async () => {
+  it('rejects malformed PUIDs before calling the service', async () => {
     const res = await request(makeApp(userFixture(true)))
-      .put('/api/admin/platform-instructors/not%20a%20cwl');
+      .put('/api/admin/platform-instructors/not%20a%20puid');
 
     expect(res.status).toBe(400);
     expect(grantPlatformInstructor).not.toHaveBeenCalled();

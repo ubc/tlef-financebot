@@ -36,9 +36,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `ensureCourseInstructor()`, with Theme/LO routes stashing `res.locals.courseId`
   from the child resource first. See `components/auth/course-guards.ts`.
 - `admin.routes.ts` — Admin Console v0 account provisioning:
-  `GET/PUT/DELETE /api/admin/platform-instructors[/:uid]`. Every route is
-  protected by `ensureAdmin()`; PUT may create a pending CWL-username grant
-  before first SAML login, and DELETE is idempotent.
+  `GET /api/admin/users` plus
+  `PUT/DELETE /api/admin/platform-instructors/:puid`. Every route is protected
+  by `ensureAdmin()`; PUT may create a pending PUID grant before first SAML
+  login, and DELETE is idempotent.
 - `preview.routes.ts` — explicit course-Instructor-only student preview:
   `GET .../preview/home`, `POST .../preview/practice/next`, and
   `POST .../preview/attempts`. These routes intentionally do not reuse or
@@ -61,6 +62,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   recent course run history, one full snapshot, and one course-scoped SSE
   stream. Instructor-gated; the stream sends recent persisted state before
   live updates.
+- `import.routes.ts` — Instructor-gated CSV/JSON/QTI preview + Draft commit,
+  plus parameterized-script sandbox preview + revalidated Draft migration.
+  Script/template mismatches return review data without inserting.
 
 ## Auth-gating a route
 

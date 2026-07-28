@@ -7,9 +7,8 @@ import {
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 
-const ACTIVE_UID = 'e2e-admin-active-prof';
 const ACTIVE_PUID = 'PUID-E2E-ADMIN-ACTIVE-PROF';
-const PENDING_UID = 'e2e-admin-pending-prof';
+const PENDING_PUID = 'PUID-E2E-ADMIN-PENDING-PROF';
 
 let adminPuid = '';
 let originalIsAdmin = false;
@@ -17,22 +16,19 @@ let originalIsAdmin = false;
 async function cleanAdminFixtures(): Promise<void> {
   await Promise.all([
     platformInstructorGrantsCol().deleteMany({
-      uid: { $in: [ACTIVE_UID, PENDING_UID] },
+      puid: { $in: [ACTIVE_PUID, PENDING_PUID] },
     }),
     usersCol().deleteMany({
-      $or: [
-        { puid: ACTIVE_PUID },
-        { uid: { $in: [ACTIVE_UID, PENDING_UID] } },
-      ],
+      puid: { $in: [ACTIVE_PUID, PENDING_PUID] },
     }),
     auditCol().deleteMany({
       action: { $in: ['role.assign', 'role.revoke'] },
-      'detail.uid': { $in: [ACTIVE_UID, PENDING_UID] },
+      'detail.puid': { $in: [ACTIVE_PUID, PENDING_PUID] },
     }),
   ]);
 }
 
-test.describe('Admin Instructor accounts', () => {
+test.describe('Admin user accounts', () => {
   test.use({ storageState: AUTH_FILE });
 
   test.beforeAll(async ({ browser }) => {
@@ -56,9 +52,9 @@ test.describe('Admin Instructor accounts', () => {
     await cleanAdminFixtures();
     await usersCol().insertOne({
       puid: ACTIVE_PUID,
-      uid: ACTIVE_UID,
+      uid: '',
       displayName: 'E2E Active Professor',
-      email: 'e2e-active-prof@example.test',
+      email: '',
       affiliations: ['faculty'],
       isAdmin: false,
       courseRoles: [],
@@ -82,7 +78,7 @@ test.describe('Admin Instructor accounts', () => {
     }
   });
 
-  test('grants, searches, and revokes pending and active Instructor accounts', async ({ page }) => {
+  test('lists every user and grants/searches/revokes by PUID with empty uid', async ({ page }) => {
     const browserErrors: string[] = [];
     page.on('pageerror', (error) => browserErrors.push(error.message));
     page.on('console', (message) => {
@@ -90,35 +86,46 @@ test.describe('Admin Instructor accounts', () => {
     });
 
     await page.goto('/#/admin/accounts');
-    await expect(page.getByRole('heading', { name: 'Instructor Accounts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'User Accounts' })).toBeVisible();
+    await expect(page.getByText('E2E Active Professor')).toBeVisible();
 
-    const cwlInput = page.locator('#admin-instructor-cwl');
-    await cwlInput.fill(`  ${PENDING_UID.toUpperCase()}  `);
-    await page.getByRole('button', { name: 'Grant Instructor' }).click();
+    const puidInput = page.locator('#admin-instructor-puid');
+    await puidInput.fill(`  ${PENDING_PUID}  `);
+    await page.getByRole('button', { name: 'Add as Instructor' }).click();
     await expect(
       page.getByRole('status').filter({
-        hasText: `Grant saved for ${PENDING_UID}; it will activate on first CWL login.`,
+        hasText: `Grant saved for ${PENDING_PUID}; it will activate on first login.`,
       }),
     ).toBeVisible();
-    const pendingCard = page.locator('article.card').filter({ hasText: `CWL: ${PENDING_UID}` });
+    const pendingCard = page.locator('article.card').filter({
+      hasText: `PUID: ${PENDING_PUID}`,
+    });
     await expect(pendingCard).toContainText('Pending first login');
 
-    await cwlInput.fill(ACTIVE_UID.toUpperCase());
-    await page.getByRole('button', { name: 'Grant Instructor' }).click();
+    await puidInput.fill(ACTIVE_PUID);
+    await page.getByRole('button', { name: 'Add as Instructor' }).click();
     await expect(
       page.getByRole('status').filter({
-        hasText: `Instructor access granted to ${ACTIVE_UID}.`,
+        hasText: 'Instructor access granted to E2E Active Professor.',
       }),
     ).toBeVisible();
-    const activeCard = page.locator('article.card').filter({ hasText: `CWL: ${ACTIVE_UID}` });
+    const activeCard = page.locator('article.card').filter({
+      hasText: `PUID: ${ACTIVE_PUID}`,
+    });
     await expect(activeCard).toContainText('E2E Active Professor');
-    await expect(activeCard).toContainText('Active');
+    await expect(activeCard).toContainText('CWL username was not released by SAML.');
+    await expect(activeCard).toContainText('Instructor');
 
-    const searchInput = page.locator('#admin-instructor-search');
-    await searchInput.fill('pending-prof');
+    const searchInput = page.locator('#admin-user-search');
+    await searchInput.fill('PENDING-PROF');
     await page.getByRole('button', { name: 'Search' }).click();
     await expect(pendingCard).toBeVisible();
     await expect(activeCard).toHaveCount(0);
+
+    await searchInput.fill('Active Professor');
+    await page.getByRole('button', { name: 'Search' }).click();
+    await expect(activeCard).toBeVisible();
+    await expect(pendingCard).toHaveCount(0);
 
     await searchInput.fill('');
     await page.getByRole('button', { name: 'Search' }).click();
@@ -129,7 +136,7 @@ test.describe('Admin Instructor accounts', () => {
     await pendingCard.getByRole('button', { name: 'Revoke Instructor' }).click();
     await expect(
       page.getByRole('status').filter({
-        hasText: `Instructor access revoked for ${PENDING_UID}.`,
+        hasText: `Instructor access revoked for ${PENDING_PUID}.`,
       }),
     ).toBeVisible();
     await expect(pendingCard).toHaveCount(0);
@@ -138,15 +145,16 @@ test.describe('Admin Instructor accounts', () => {
     await activeCard.getByRole('button', { name: 'Revoke Instructor' }).click();
     await expect(
       page.getByRole('status').filter({
-        hasText: `Instructor access revoked for ${ACTIVE_UID}.`,
+        hasText: 'Instructor access revoked for E2E Active Professor.',
       }),
     ).toBeVisible();
-    await expect(activeCard).toHaveCount(0);
+    await expect(activeCard).toBeVisible();
+    await expect(activeCard.getByRole('button', { name: 'Grant Instructor' })).toBeVisible();
 
     await expect.poll(async () => {
       const [grants, user] = await Promise.all([
         platformInstructorGrantsCol().countDocuments({
-          uid: { $in: [ACTIVE_UID, PENDING_UID] },
+          puid: { $in: [ACTIVE_PUID, PENDING_PUID] },
         }),
         usersCol().findOne({ puid: ACTIVE_PUID }),
       ]);

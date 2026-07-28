@@ -266,9 +266,11 @@ one of the required roles.
 
 Admin Console v0 adds another authorization layer: a faculty affiliation does
 not make a User a FinanceBot Instructor. Admins grant `platformInstructor` by
-CWL username through `/api/admin/platform-instructors`; the grant may be
-pending before first login and is applied to the real PUID-backed User by
-`upsertUserFromSaml()`. `ensurePlatformInstructor()` protects course creation.
+PUID through `/api/admin/platform-instructors`; the grant may be pending before
+first login and is applied to the same PUID-backed User by
+`upsertUserFromSaml()`. Admin access remains a separate `isAdmin` capability:
+an Instructor grant never passes `ensureAdmin()`.
+`ensurePlatformInstructor()` protects course creation.
 Access to an existing course continues to use `ensureCourseInstructor()` from
 `course-guards.ts`, so a platform Instructor cannot inspect every course.
 

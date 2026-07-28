@@ -6,7 +6,7 @@ import {
 } from '../../server/src/components/mongodb/collections';
 import {
   grantPlatformInstructor,
-  listPlatformInstructors,
+  listAdminAccounts,
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
 
@@ -18,33 +18,34 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 
 const grantId = new ObjectId();
 const findGrantAfterUpdate = jest.fn();
-const updateGrant = jest.fn();
 const findGrantAndDelete = jest.fn();
 const findGrants = jest.fn();
 const findUserAfterUpdate = jest.fn();
-const updateUsers = jest.fn();
+const updateUser = jest.fn();
 const findUsers = jest.fn();
 const insertAudit = jest.fn();
 
 beforeEach(() => {
-  findGrantAfterUpdate.mockReset();
-  updateGrant.mockReset();
-  findGrantAndDelete.mockReset();
-  findGrants.mockReset();
-  findUserAfterUpdate.mockReset();
-  updateUsers.mockReset();
-  findUsers.mockReset();
-  insertAudit.mockReset();
+  for (const mock of [
+    findGrantAfterUpdate,
+    findGrantAndDelete,
+    findGrants,
+    findUserAfterUpdate,
+    updateUser,
+    findUsers,
+    insertAudit,
+  ]) {
+    mock.mockReset();
+  }
 
   jest.mocked(platformInstructorGrantsCol).mockReturnValue({
     findOneAndUpdate: findGrantAfterUpdate,
-    updateOne: updateGrant,
     findOneAndDelete: findGrantAndDelete,
     find: findGrants,
   } as never);
   jest.mocked(usersCol).mockReturnValue({
     findOneAndUpdate: findUserAfterUpdate,
-    updateMany: updateUsers,
+    updateOne: updateUser,
     find: findUsers,
   } as never);
   jest.mocked(auditCol).mockReturnValue({ insertOne: insertAudit } as never);
@@ -53,118 +54,140 @@ beforeEach(() => {
 function grantDoc(over: Record<string, unknown> = {}) {
   return {
     _id: grantId,
-    uid: 'financeprof',
-    grantedByPuid: 'PUID-ADMIN-0001',
+    puid: 'ESIPROF00001',
+    grantedByPuid: 'ESI5CZY7J307',
     createdAt: new Date('2026-07-28T00:00:00Z'),
     updatedAt: new Date('2026-07-28T00:00:00Z'),
     ...over,
   };
 }
 
-describe('platform-Instructor administration', () => {
-  it('normalizes a CWL username and leaves a grant pending before first login', async () => {
+function userDoc(over: Record<string, unknown> = {}) {
+  return {
+    _id: new ObjectId(),
+    puid: 'ESIPROF00001',
+    uid: '',
+    displayName: 'Finance Professor',
+    email: '',
+    affiliations: ['faculty'],
+    isAdmin: false,
+    courseRoles: [],
+    createdAt: new Date('2026-07-27T19:00:00Z'),
+    lastLoginAt: new Date('2026-07-27T20:00:00Z'),
+    ...over,
+  };
+}
+
+function cursorResult<T>(value: T[]) {
+  return {
+    sort: jest.fn().mockReturnValue({
+      toArray: jest.fn().mockResolvedValue(value),
+    }),
+  };
+}
+
+describe('PUID-backed Admin account management', () => {
+  it('pre-provisions a PUID grant before the user first logs in', async () => {
     findGrantAfterUpdate.mockResolvedValue(grantDoc());
     findUserAfterUpdate.mockResolvedValue(null);
     insertAudit.mockResolvedValue({ acknowledged: true });
 
-    const result = await grantPlatformInstructor('  FinanceProf  ', 'PUID-ADMIN-0001');
+    const result = await grantPlatformInstructor('  ESIPROF00001  ', 'ESI5CZY7J307');
 
     expect(findGrantAfterUpdate).toHaveBeenCalledWith(
-      { uid: 'financeprof' },
+      { puid: 'ESIPROF00001' },
       expect.objectContaining({
-        $set: expect.objectContaining({ grantedByPuid: 'PUID-ADMIN-0001' }),
-        $setOnInsert: expect.objectContaining({ uid: 'financeprof' }),
+        $set: expect.objectContaining({ grantedByPuid: 'ESI5CZY7J307' }),
+        $setOnInsert: expect.objectContaining({ puid: 'ESIPROF00001' }),
       }),
       { upsert: true, returnDocument: 'after' },
     );
-    expect(result).toMatchObject({ uid: 'financeprof', status: 'pending' });
+    expect(result).toMatchObject({
+      puid: 'ESIPROF00001',
+      status: 'pending',
+      platformInstructor: true,
+    });
     expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'role.assign',
-      targetType: 'platform-instructor-grant',
-      targetId: grantId,
-      detail: { uid: 'financeprof', linkedPuid: null },
+      detail: { puid: 'ESIPROF00001', accountStatus: 'pending' },
     }));
   });
 
-  it('activates the grant immediately when the CWL User already exists', async () => {
+  it('activates an existing real-IdP user even when uid and email are empty', async () => {
     findGrantAfterUpdate.mockResolvedValue(grantDoc());
-    findUserAfterUpdate.mockResolvedValue({
-      _id: new ObjectId(),
-      puid: 'PUID-PROF-0001',
-      uid: 'FinanceProf',
-      displayName: 'Fin Professor',
-      email: 'fin.prof@example.ubc.ca',
-      lastLoginAt: new Date('2026-07-27T20:00:00Z'),
-      platformInstructor: true,
-    });
+    findUserAfterUpdate.mockResolvedValue(userDoc({ platformInstructor: true }));
     insertAudit.mockResolvedValue({ acknowledged: true });
 
-    const result = await grantPlatformInstructor('financeprof', 'PUID-ADMIN-0001');
+    const result = await grantPlatformInstructor('ESIPROF00001', 'ESI5CZY7J307');
 
     expect(findUserAfterUpdate).toHaveBeenCalledWith(
-      { uid: /^financeprof$/i },
+      { puid: 'ESIPROF00001' },
       { $set: { platformInstructor: true } },
       { returnDocument: 'after' },
     );
-    expect(updateGrant).toHaveBeenCalledWith(
-      { _id: grantId },
-      { $set: expect.objectContaining({ appliedToPuid: 'PUID-PROF-0001' }) },
-    );
     expect(result).toMatchObject({
-      uid: 'financeprof',
+      puid: 'ESIPROF00001',
+      uid: '',
+      displayName: 'Finance Professor',
       status: 'active',
-      user: { displayName: 'Fin Professor' },
+      platformInstructor: true,
     });
-    expect(JSON.stringify(result)).not.toContain('PUID-PROF-0001');
-    expect(result).not.toHaveProperty('grantedByPuid');
   });
 
-  it('revokes idempotently and clears any linked User flag', async () => {
-    findGrantAndDelete.mockResolvedValue(grantDoc({ appliedToPuid: 'PUID-PROF-0001' }));
-    updateUsers.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+  it('revokes idempotently and clears the matching PUID User flag', async () => {
+    findGrantAndDelete.mockResolvedValue(grantDoc());
+    updateUser.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
     insertAudit.mockResolvedValue({ acknowledged: true });
 
-    const result = await revokePlatformInstructor('FINANCEPROF', 'PUID-ADMIN-0001');
+    const result = await revokePlatformInstructor('ESIPROF00001', 'ESI5CZY7J307');
 
-    expect(findGrantAndDelete).toHaveBeenCalledWith({ uid: 'financeprof' });
-    expect(updateUsers).toHaveBeenCalledWith(
-      { uid: /^financeprof$/i },
+    expect(findGrantAndDelete).toHaveBeenCalledWith({ puid: 'ESIPROF00001' });
+    expect(updateUser).toHaveBeenCalledWith(
+      { puid: 'ESIPROF00001' },
       { $unset: { platformInstructor: '' } },
     );
-    expect(result).toEqual({ uid: 'financeprof', granted: false, revoked: true });
-    expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'role.revoke',
-      targetId: grantId,
-    }));
+    expect(result).toEqual({
+      puid: 'ESIPROF00001',
+      granted: false,
+      revoked: true,
+    });
   });
 
-  it('lists active and pending grants without exposing raw SAML data', async () => {
-    const activeGrant = grantDoc({ appliedToPuid: 'PUID-PROF-0001' });
-    const pendingGrant = grantDoc({ _id: new ObjectId(), uid: 'newprof' });
-    findGrants.mockReturnValue({
-      sort: jest.fn().mockReturnValue({
-        limit: jest.fn().mockReturnValue({
-          toArray: jest.fn().mockResolvedValue([activeGrant, pendingGrant]),
-        }),
-      }),
-    });
-    findUsers.mockReturnValue({
-      toArray: jest.fn().mockResolvedValue([{
-        puid: 'PUID-PROF-0001',
-        uid: 'financeprof',
-        displayName: 'Fin Professor',
-        email: 'fin.prof@example.ubc.ca',
-        lastLoginAt: new Date('2026-07-27T20:00:00Z'),
-      }]),
-    });
+  it('lists every matching user plus a pending PUID grant without raw SAML data', async () => {
+    const activeGrant = grantDoc();
+    const pendingGrant = grantDoc({ _id: new ObjectId(), puid: 'ESIPENDING01' });
+    findUsers.mockReturnValue(cursorResult([userDoc()]));
+    findGrants.mockReturnValue(cursorResult([activeGrant, pendingGrant]));
 
-    const result = await listPlatformInstructors('prof');
+    const result = await listAdminAccounts('finance');
 
-    expect(findGrants).toHaveBeenCalledWith({ uid: { $regex: 'prof', $options: 'i' } });
+    expect(findUsers).toHaveBeenCalledWith({
+      $or: expect.arrayContaining([
+        { displayName: { $regex: 'finance', $options: 'i' } },
+      ]),
+    });
     expect(result).toEqual([
-      expect.objectContaining({ uid: 'financeprof', status: 'active' }),
-      expect.objectContaining({ uid: 'newprof', status: 'pending' }),
+      expect.objectContaining({
+        puid: 'ESIPROF00001',
+        displayName: 'Finance Professor',
+        platformInstructor: true,
+      }),
     ]);
     expect(JSON.stringify(result)).not.toContain('attributes');
+  });
+
+  it('shows a matching pending PUID even before a User document exists', async () => {
+    findUsers.mockReturnValue(cursorResult([]));
+    findGrants.mockReturnValue(cursorResult([
+      grantDoc({ puid: 'ESIPENDING01' }),
+    ]));
+
+    await expect(listAdminAccounts('pending')).resolves.toEqual([
+      expect.objectContaining({
+        puid: 'ESIPENDING01',
+        status: 'pending',
+        platformInstructor: true,
+      }),
+    ]);
   });
 });

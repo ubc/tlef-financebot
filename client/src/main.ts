@@ -47,8 +47,9 @@ import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
-import { renderAdminAccounts } from './views/admin/accounts.js';
 import { renderStudentPreview } from './views/instructor/student-preview.js';
+import { renderImport } from './views/instructor/import.js';
+import { renderAdminAccounts } from './views/admin/accounts.js';
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -89,6 +90,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/bank', render: renderBank },
   { path: '/instructor/course/:id/queue', render: renderReviewQueue },
   { path: '/instructor/course/:id/flags', render: renderFlagQueue },
+  { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
@@ -134,7 +136,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
     ? [
         {
           label: 'Admin',
-          items: [{ label: 'Instructor Accounts', path: '/admin/accounts' }],
+          items: [{ label: 'User Accounts', path: '/admin/accounts' }],
         },
         ...INSTRUCTOR_NAV,
       ]
@@ -167,14 +169,10 @@ function buildInstructorShell(root: HTMLElement, session: Session): void {
   }
 
   const user = session.user;
-  // The wireframe's instructor brand mark is literally "FinanceBot" — hardcoded
-  // rather than routed through config.ts's APP.name (the app-wide re-skin
-  // point, see client/AGENTS.md) since renaming that would also rebrand the
-  // still-generic landing/student shell, which is outside this task's scope.
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--instructor' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
     el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
@@ -301,12 +299,10 @@ function buildStudentShell(root: HTMLElement, session: Session): void {
   const practiceContextSlot = el('div', { class: 'practice-context-slot' });
 
   const user = session.user;
-  // Same "hardcode the wireframe's literal brand mark" rationale as
-  // buildInstructorShell above.
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--student' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: 'FinanceBot' })),
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
     nav,
     practiceContextSlot,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
