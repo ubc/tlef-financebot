@@ -10,6 +10,7 @@ import {
   type CourseHomeTheme,
   type PracticeMode,
   type PracticeQuestion,
+  type SubmitAttemptInput,
 } from '../../api.js';
 import type { PracticeSession } from '../../practice-session.js';
 import { el, mount } from '../../dom.js';
@@ -32,6 +33,18 @@ export interface Callbacks {
   onSkip: () => void;
 }
 
+export interface PracticeCardAdapter {
+  submit: (input: SubmitAttemptInput) => Promise<AttemptResult>;
+  flag?: (questionId: string, reason?: string) => Promise<{ flagged: true }>;
+  updatesMastery: boolean;
+}
+
+const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
+  submit: submitAttempt,
+  flag: flagPracticeQuestion,
+  updatesMastery: true,
+};
+
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
 
 function retryAsQuestion(retry: NonNullable<AttemptResult['feedback']['retry']>, watermarkUid: string, difficulty: PracticeQuestion['difficulty']): PracticeQuestion {
@@ -48,6 +61,7 @@ export function makeQuestionCard(
   question: PracticeQuestion,
   callbacks: Callbacks,
   isRetry = false,
+  adapter: PracticeCardAdapter = LIVE_PRACTICE_ADAPTER,
 ): HTMLElement {
   const card = el('div', { class: 'practice-card' });
   let selectedKey: string | undefined;
@@ -71,7 +85,7 @@ export function makeQuestionCard(
     submitting = true;
     draw();
     try {
-      result = await submitAttempt({
+      result = await adapter.submit({
         questionVersionId: question.questionVersionId,
         loId: currentLo(ctx).lo._id,
         selectedKey,
@@ -84,7 +98,7 @@ export function makeQuestionCard(
       // Keep the persistent sidebar's current-LO badge in sync with the
       // just-computed mastery response instead of showing the stale status
       // captured when the practice page first loaded.
-      currentLo(ctx).status = result.mastery.loStatus;
+      if (adapter.updatesMastery) currentLo(ctx).status = result.mastery.loStatus;
       callbacks.onTranscriptChange();
     } catch (error) {
       submitting = false;
@@ -96,12 +110,12 @@ export function makeQuestionCard(
   };
 
   const submitFlag = async (): Promise<void> => {
-    if (flagState === 'submitting' || flagState === 'flagged') return;
+    if (!adapter.flag || flagState === 'submitting' || flagState === 'flagged') return;
     flagState = 'submitting';
     flagError = undefined;
     draw();
     try {
-      await flagPracticeQuestion(question.questionId, flagReason);
+      await adapter.flag(question.questionId, flagReason);
       flagState = 'flagged';
     } catch (error) {
       flagState = 'editing';
@@ -165,7 +179,8 @@ export function makeQuestionCard(
     let footer: HTMLElement;
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
-    const flagControl = (): HTMLElement => {
+    const flagControl = (): HTMLElement | false => {
+      if (!adapter.flag) return false;
       if (flagState === 'flagged') {
         return el(
           'span',
@@ -241,7 +256,7 @@ export function makeQuestionCard(
       footer = el('div', { class: 'row practice-card__footer' }, flagControl());
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
-      retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true);
+      retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true, adapter);
     } else if (redirect) {
       const materialItems = redirect.materials.map((material) =>
         el(

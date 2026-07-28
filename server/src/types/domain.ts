@@ -198,6 +198,37 @@ export interface AttemptRecord {
   createdAt: Date;
 }
 
+/**
+ * Instructor-only student-preview submission. Kept in its own collection so
+ * no live-attempt consumer can accidentally count it as student activity.
+ * `versionSnapshot` pins exactly what was graded even if a future migration
+ * changes how immutable QuestionVersions are stored.
+ */
+export interface PreviewAttemptRecord {
+  instructorPuid: string;
+  preview: true;
+  courseId: ObjectId;
+  questionId: ObjectId;
+  questionVersionId: ObjectId;
+  loId: ObjectId;
+  themeId: ObjectId;
+  strategy: AppliedStrategy;
+  selectedKey: string;
+  correct: boolean;
+  selectedRole: OptionRole;
+  difficulty: Difficulty;
+  paramValues?: Record<string, number>;
+  isRetry: boolean;
+  versionSnapshot: {
+    version: number;
+    type: QuestionType;
+    stem: string;
+    options: QuestionOption[];
+    difficulty: Difficulty;
+  };
+  createdAt: Date;
+}
+
 export interface Material {
   courseId: ObjectId;
   name: string;

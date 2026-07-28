@@ -200,6 +200,31 @@ of remaining indefinitely active.
   — computes the summary since `since` and stores (upserts) it as the student's deferred
   end-of-session summary for this course, to be surfaced by `GET .../session-summary` next time (ST-P10)
 
+## Instructor student preview
+
+All preview routes require the signed-in user to be an Instructor for the
+target course (or Admin). They do not require student enrollment and
+intentionally ignore `Course.published`, so an unpublished course can be
+tested before release. Theme archival/progressive release and the
+Approved-question gate still match the real student experience.
+
+- `GET /api/courses/:courseId/preview/home` → the student-visible hierarchy
+  shape from `GET .../home`, with neutral `not-attempted` statuses.
+- `POST /api/courses/:courseId/preview/practice/next { loId, sessionServedIds }`
+  → the same sanitized/substituted question shape as student
+  `POST .../practice/next`.
+- `POST /api/courses/:courseId/preview/attempts { questionVersionId, loId,
+  selectedKey, sessionServedIds, isRetry?, paramValues? }` → the same feedback
+  shape as `POST /api/attempts`, with neutral mastery and
+  `reviewBook: { added: false }`.
+
+Preview submissions write only `previewAttemptRecords`, which pin the
+Instructor, course/question/version/LO, answer, strategy, parameter values, and
+version snapshot. They never enter `attemptRecords`, mastery, Review Book,
+flags/auto-pause, remediation, summaries, progression, notifications, or
+student analytics. There is no client-controlled `preview` switch on the live
+student attempt endpoint.
+
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)
 - `POST /api/questions/:questionId/bookmark` / `DELETE .../bookmark` → entry (ST-R02)

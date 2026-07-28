@@ -147,6 +147,30 @@ export async function selectRetryQuestion(
   return selectFromCandidates(candidates, tier, input.sessionServedIds, rand);
 }
 
+/**
+ * Instructor preview deliberately has no student mastery profile to target.
+ * It uses the neutral medium tier while preserving the same approved-only,
+ * finite-round degradation ladder as real practice.
+ */
+export async function selectPreviewQuestion(
+  input: { courseId: ObjectId; loId: ObjectId; sessionServedIds: ObjectId[] },
+  rand: () => number = Math.random,
+): Promise<SelectResult | null> {
+  const candidates = await approvedCandidatesForLo(input.courseId, input.loId);
+  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
+}
+
+/** Strategy-A retry selection for preview, without consulting live mastery. */
+export async function selectPreviewRetryQuestion(
+  input: { courseId: ObjectId; loId: ObjectId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] },
+  rand: () => number = Math.random,
+): Promise<SelectResult | null> {
+  const candidates = (await approvedCandidatesForLo(input.courseId, input.loId)).filter(
+    (candidate) => !candidate.question._id.equals(input.excludeQuestionId),
+  );
+  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
+}
+
 export interface StudentCourseHomeLo {
   lo: WithId<LearningObjective>;
   status: MasteryStatus;

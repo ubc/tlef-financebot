@@ -418,6 +418,62 @@ export function submitAttempt(input: SubmitAttemptInput): Promise<AttemptResult>
   });
 }
 
+/** Instructor-only hierarchy for explicit student preview. */
+export function getPreviewCourseHome(courseId: string): Promise<CourseHomeTheme[]> {
+  return request<CourseHomeTheme[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/home`,
+  );
+}
+
+/** Instructor-only approved-question serving; never requires student enrollment. */
+export function getNextPreviewQuestion(
+  courseId: string,
+  input: { loId: string; sessionServedIds: string[] },
+): Promise<PracticeQuestion> {
+  return request<PracticeQuestion>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/practice/next`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/**
+ * Instructor preview submission. The server derives preview context from the
+ * route/session; this helper intentionally sends no client-controlled
+ * `preview` boolean and omits the live-only practice mode.
+ */
+export function submitPreviewAttempt(
+  courseId: string,
+  input: SubmitAttemptInput,
+): Promise<AttemptResult> {
+  const {
+    questionVersionId,
+    loId,
+    selectedKey,
+    sessionServedIds,
+    isRetry,
+    paramValues,
+  } = input;
+  return request<AttemptResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/attempts`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        questionVersionId,
+        loId,
+        selectedKey,
+        sessionServedIds,
+        ...(isRetry !== undefined ? { isRetry } : {}),
+        ...(paramValues !== undefined ? { paramValues } : {}),
+      }),
+    },
+  );
+}
+
 /** POST /api/courses/:courseId/los/:loId/skip { attempted } -> 204 (ST-P06). */
 export async function skipLo(courseId: string, loId: string, attempted: boolean): Promise<void> {
   await request<void>(`/api/courses/${encodeURIComponent(courseId)}/los/${encodeURIComponent(loId)}/skip`, {
