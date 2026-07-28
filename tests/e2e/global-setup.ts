@@ -1,11 +1,48 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { connectMongo } from '../../server/src/components/mongodb';
+import {
+  platformInstructorGrantsCol,
+  usersCol,
+} from '../../server/src/components/mongodb/collections';
 
 // Where the authenticated browser state (cookies) is saved. Authenticated specs
 // reuse it via `test.use({ storageState: AUTH_FILE })` so they don't each repeat
 // the login. Git-ignored.
 export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
+
+interface AuthState {
+  authenticated: boolean;
+  user?: { puid: string; uid: string };
+}
+
+async function ensureE2ePlatformInstructor(
+  username: string,
+  state: AuthState,
+): Promise<void> {
+  if (username.trim().toLowerCase() !== 'faculty' || !state.user) return;
+  await connectMongo();
+  const now = new Date();
+  const uid = state.user.uid.trim().toLowerCase();
+  await platformInstructorGrantsCol().updateOne(
+    { uid },
+    {
+      $set: {
+        grantedByPuid: state.user.puid,
+        updatedAt: now,
+        appliedToPuid: state.user.puid,
+        appliedAt: now,
+      },
+      $setOnInsert: { uid, createdAt: now },
+    },
+    { upsert: true },
+  );
+  await usersCol().updateOne(
+    { puid: state.user.puid },
+    { $set: { platformInstructor: true } },
+  );
+}
 
 /**
  * Global setup: perform a REAL SAML/CWL login once and save the session.
@@ -16,6 +53,8 @@ export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:6118';
+  const username = process.env.E2E_USERNAME ?? 'faculty';
+  const password = process.env.E2E_PASSWORD ?? 'faculty';
   // Explicit local-parallelism escape hatch: a second agent may need to run
   // the app on another localhost port while :6118 is already occupied. The
   // local IdP's SP metadata still posts SAML back to :6118, but its localhost
@@ -30,10 +69,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     const context = await reuseBrowser.newContext({ storageState: AUTH_FILE });
     try {
       const me = await context.request.get(`${baseURL}/api/auth/me`);
-      const state = (await me.json()) as { authenticated: boolean };
-      if (!state.authenticated) {
+      const state = (await me.json()) as AuthState;
+      if (!state.authenticated || !state.user) {
         throw new Error('global-setup: saved auth state is not valid for this local app session.');
       }
+      await ensureE2ePlatformInstructor(username, state);
     } finally {
       await reuseBrowser.close();
     }
@@ -45,9 +85,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   // `faculty` carries eduPersonAffiliation=faculty, so the role-gated demo
   // (faculty area) and the instructor home both exercise real role logic.
   // Password equals the username for every user in that IdP.
-  const username = process.env.E2E_USERNAME ?? 'faculty';
-  const password = process.env.E2E_PASSWORD ?? 'faculty';
-
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
 
   const browser = await chromium.launch();
@@ -65,14 +102,15 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
     // Fail loudly if the session was not actually established.
     const me = await page.request.get(`${baseURL}/api/auth/me`);
-    const state = (await me.json()) as { authenticated: boolean };
-    if (!state.authenticated) {
+    const state = (await me.json()) as AuthState;
+    if (!state.authenticated || !state.user) {
       throw new Error(
         'global-setup: SAML login did not establish a session. Is the IdP running ' +
           'and the SP entry / certificate configured? See README "Authentication".',
       );
     }
 
+    await ensureE2ePlatformInstructor(username, state);
     await page.context().storageState({ path: AUTH_FILE });
   } finally {
     await browser.close();
