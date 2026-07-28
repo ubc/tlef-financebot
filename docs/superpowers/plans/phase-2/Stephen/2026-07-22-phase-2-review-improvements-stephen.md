@@ -1,7 +1,8 @@
 # Stephen — Phase 2 Review-Derived Improvements
 
 _Authorizing developer: Stephen (Dev A)_  
-_Status: P2-0 implementation and automated verification complete; live smoke/PR pending; Saurav informed asynchronously_
+_Status: P2-I0 merged; P2-I1–I5 implementation complete on
+`codex/phase-2-review-improvements`; final live smoke pending_
 
 _Branch: `codex/phase-2-content-runs`_  
 _Phase 1 Task 16: intentionally deferred, not completed_
@@ -35,18 +36,19 @@ adding more fire-and-forget endpoints.
 
 ## Improvement map
 
-| Order | Improvement | Why it belongs here | Relationship to core Phase 2 |
+| Order | Improvement | Relationship to core Phase 2 | Status |
 |---|---|---|---|
-| P2-I0 | Persistent content runs + live progress | Fixes invisible ingest/generation hangs and makes recovery/test evidence possible | New prerequisite for core Task 10 |
-| P2-I1 | Course lifecycle and authoring checklist | Course code/section, UBC term dates, archive, and explicit workflow state | Additive course/admin work; not part of P2-I0 |
-| P2-I2 | Generation blueprint + run history | Pins prompt, LO, allowed materials, counts, model decisions, failures, and retry provenance | Reframes core Task 10 |
-| P2-I3 | Template/family provenance | Connects generated/imported questions and parameterized variants without a second content model | Extends core Tasks 5, 8, and 9 |
-| P2-I4 | Finite practice rounds + history | Replaces endless question flow with unseen-set completion and explicit repeat rounds | Extends core Task 7 |
-| P2-I5 | Content map and material-kind metadata | Makes source coverage and assessment detection visible to instructors | Follow-up after durable ingest runs |
+| P2-I0 | Persistent content runs + live progress | New prerequisite for core Task 10 | Merged in PR #32 |
+| P2-I1 | Course lifecycle and authoring checklist | Additive course/admin work | Implemented; automated verification complete |
+| P2-I2 | Generation blueprint + run history | Extends core Task 10 | Implemented; reusable recipes + exact retry |
+| P2-I3 | Template/family provenance | Extends core Tasks 5, 8, and 9 | Implemented additively on Question/QuestionVersion |
+| P2-I4 | Finite practice rounds + history | Extends core Task 7 | Already merged in PR #37 |
+| P2-I5 | Content map and material-kind metadata | Follows durable ingest runs | Implemented; automated verification complete |
 
-Only P2-I0 is authorized for implementation in this plan. The remaining rows
-are backlog inputs to future personal plans after P2-I0 and the Phase 2 owner
-map are reviewed.
+Stephen authorized completing every still-missing row on 2026-07-28,
+including the recorded P2-I2/P2-I3 cross-owner extensions. The detailed
+contract and verification ledger is
+[`2026-07-28-review-improvements-completion-stephen.md`](2026-07-28-review-improvements-completion-stephen.md).
 
 ---
 
