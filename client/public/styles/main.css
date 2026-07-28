@@ -2857,6 +2857,12 @@ button.class-row--link:focus-visible .class-row__title {
   opacity: 0.72;
 }
 
+.suggestion-panel__sources {
+  flex: 0 0 auto;
+  align-self: center;
+  white-space: nowrap;
+}
+
 .suggestion-panel__actions {
   padding-top: 0.25rem;
 }

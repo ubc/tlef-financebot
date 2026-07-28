@@ -16,15 +16,21 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
 }));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
+jest.mock('../../server/src/services/courses.service', () => ({
+  addTheme: jest.fn(),
+  addLo: jest.fn(),
+}));
 
 import { ObjectId } from 'mongodb';
 import {
+  applySuggestedHierarchy,
   classifyMaterial,
   suggestHierarchy,
   resolveClassification,
 } from '../../server/src/services/classification.service';
 import { materialsCol, themesCol, losCol } from '../../server/src/components/mongodb/collections';
 import { completeJson } from '../../server/src/components/genai/llm';
+import { addLo, addTheme } from '../../server/src/services/courses.service';
 
 const materialFindOne = jest.fn();
 const materialUpdateOne = jest.fn();
@@ -45,6 +51,8 @@ beforeEach(() => {
   themeToArray.mockReset();
   loToArray.mockReset();
   jest.mocked(completeJson).mockReset();
+  jest.mocked(addTheme).mockReset();
+  jest.mocked(addLo).mockReset();
 
   // A real `find(...).toArray()` always resolves to an array; default the mocks
   // to [] so tests only set the ones they care about (individual tests override).
@@ -156,14 +164,34 @@ describe('classifyMaterial (IN-S06)', () => {
 describe('suggestHierarchy (IN-S06, slip candidate #3)', () => {
   it('shapes the LLM JSON into the return type and never writes the DB', async () => {
     const courseId = new ObjectId();
+    const material1Id = new ObjectId();
+    const material2Id = new ObjectId();
     materialToArray.mockResolvedValue([
-      { _id: new ObjectId(), courseId, status: 'ready', excerpt: 'Chapter 1: discounting…' },
-      { _id: new ObjectId(), courseId, status: 'ready', excerpt: 'Chapter 2: bonds…' },
+      {
+        _id: material1Id,
+        courseId,
+        name: 'chapter-1.pdf',
+        status: 'ready',
+        excerpt: 'Chapter 1: discounting…',
+      },
+      {
+        _id: material2Id,
+        courseId,
+        name: 'chapter-2.pdf',
+        status: 'ready',
+        excerpt: 'Chapter 2: bonds…',
+      },
     ]);
     jest.mocked(completeJson).mockResolvedValue({
       themes: [
-        { name: 'Time Value of Money', los: ['Compute NPV', 'Compute IRR'] },
-        { name: 'Bonds', los: ['Price a bond'] },
+        {
+          name: 'Time Value of Money',
+          los: [
+            { name: 'Compute NPV', materialNumbers: [1, 2, 2, 99] },
+            { name: 'Compute IRR', materialNumbers: [1] },
+          ],
+        },
+        { name: 'Bonds', los: [{ name: 'Price a bond', materialNumbers: [2] }] },
       ],
     });
 
@@ -174,7 +202,17 @@ describe('suggestHierarchy (IN-S06, slip candidate #3)', () => {
         { name: 'Time Value of Money', los: ['Compute NPV', 'Compute IRR'] },
         { name: 'Bonds', los: ['Price a bond'] },
       ],
+      assignments: [
+        {
+          themeIndex: 0,
+          loIndex: 0,
+          materialIds: [material1Id.toHexString(), material2Id.toHexString()],
+        },
+        { themeIndex: 0, loIndex: 1, materialIds: [material1Id.toHexString()] },
+        { themeIndex: 1, loIndex: 0, materialIds: [material2Id.toHexString()] },
+      ],
     });
+    expect(jest.mocked(completeJson).mock.calls[0][0]).toContain('Material 1: chapter-1.pdf');
     // Never writes: no insert/update on any collection.
     expect(materialUpdateOne).not.toHaveBeenCalled();
     expect(materialFindOneAndUpdate).not.toHaveBeenCalled();
@@ -185,15 +223,21 @@ describe('suggestHierarchy (IN-S06, slip candidate #3)', () => {
 
     const result = await suggestHierarchy(new ObjectId());
 
-    expect(result).toEqual({ themes: [] });
+    expect(result).toEqual({ themes: [], assignments: [] });
     expect(completeJson).not.toHaveBeenCalled();
   });
 
   it('drops malformed entries from the LLM (missing/blank names, non-array los)', async () => {
-    materialToArray.mockResolvedValue([{ _id: new ObjectId(), status: 'ready', excerpt: 'text' }]);
+    const materialId = new ObjectId();
+    materialToArray.mockResolvedValue([
+      { _id: materialId, name: 'notes.pdf', status: 'ready', excerpt: 'text' },
+    ]);
     jest.mocked(completeJson).mockResolvedValue({
       themes: [
-        { name: 'Valid', los: ['A', '', 123, 'B'] },
+        {
+          name: 'Valid',
+          los: ['A', '', 123, { name: 'B', materialNumbers: ['bad', 1] }],
+        },
         { name: '', los: ['x'] },
         { los: ['y'] },
         { name: 'NoLos' },
@@ -207,7 +251,125 @@ describe('suggestHierarchy (IN-S06, slip candidate #3)', () => {
         { name: 'Valid', los: ['A', 'B'] },
         { name: 'NoLos', los: [] },
       ],
+      assignments: [
+        {
+          themeIndex: 0,
+          loIndex: 1,
+          materialIds: [materialId.toHexString()],
+        },
+      ],
     });
+  });
+});
+
+describe('applySuggestedHierarchy', () => {
+  it('creates the reviewed hierarchy and merges multi-LO material assignments', async () => {
+    const courseId = new ObjectId();
+    const material1Id = new ObjectId();
+    const material2Id = new ObjectId();
+    const existingThemeId = new ObjectId();
+    const existingLoId = new ObjectId();
+    const createdThemeId = new ObjectId();
+    const createdLo1Id = new ObjectId();
+    const createdLo2Id = new ObjectId();
+    materialToArray.mockResolvedValue([
+      {
+        _id: material1Id,
+        courseId,
+        status: 'ready',
+        assignments: [{ themeId: existingThemeId, loId: existingLoId }],
+      },
+      { _id: material2Id, courseId, status: 'ready', assignments: [] },
+    ]);
+    jest.mocked(addTheme).mockResolvedValue({
+      _id: createdThemeId,
+      courseId,
+      name: 'Forces',
+      order: 1,
+    });
+    jest
+      .mocked(addLo)
+      .mockResolvedValueOnce({
+        _id: createdLo1Id,
+        courseId,
+        themeId: createdThemeId,
+        name: 'Net force',
+        order: 1,
+      })
+      .mockResolvedValueOnce({
+        _id: createdLo2Id,
+        courseId,
+        themeId: createdThemeId,
+        name: 'Friction',
+        order: 2,
+      });
+
+    const result = await applySuggestedHierarchy(courseId, {
+      themes: [
+        {
+          name: ' Forces ',
+          los: [
+            { name: 'Net force', materialIds: [material1Id.toHexString(), material2Id.toHexString()] },
+            { name: 'Friction', materialIds: [material1Id.toHexString()] },
+          ],
+        },
+      ],
+    });
+
+    expect(addTheme).toHaveBeenCalledWith(courseId, { name: 'Forces' });
+    expect(addLo).toHaveBeenNthCalledWith(1, courseId, createdThemeId, { name: 'Net force' });
+    expect(addLo).toHaveBeenNthCalledWith(2, courseId, createdThemeId, { name: 'Friction' });
+    expect(materialUpdateOne).toHaveBeenNthCalledWith(
+      1,
+      { _id: material1Id, courseId },
+      {
+        $addToSet: {
+          assignments: {
+            $each: [
+              { themeId: createdThemeId, loId: createdLo1Id },
+              { themeId: createdThemeId, loId: createdLo2Id },
+            ],
+          },
+        },
+        $unset: { classificationSuggestion: '' },
+      },
+    );
+    expect(materialUpdateOne).toHaveBeenNthCalledWith(
+      2,
+      { _id: material2Id, courseId },
+      {
+        $addToSet: {
+          assignments: { $each: [{ themeId: createdThemeId, loId: createdLo1Id }] },
+        },
+        $unset: { classificationSuggestion: '' },
+      },
+    );
+    expect(result).toEqual({
+      themesCreated: 1,
+      losCreated: 2,
+      materialsAssigned: 2,
+      assignmentsCreated: 3,
+    });
+  });
+
+  it('rejects a stale or cross-course material before creating hierarchy rows', async () => {
+    const courseId = new ObjectId();
+    materialToArray.mockResolvedValue([]);
+
+    await expect(
+      applySuggestedHierarchy(courseId, {
+        themes: [
+          {
+            name: 'Forces',
+            los: [{ name: 'Friction', materialIds: [new ObjectId().toHexString()] }],
+          },
+        ],
+      }),
+    ).rejects.toThrow('suggested-hierarchy-material-not-found');
+
+    expect(addTheme).not.toHaveBeenCalled();
+    expect(addLo).not.toHaveBeenCalled();
+    expect(materialUpdateOne).not.toHaveBeenCalled();
   });
 });
 

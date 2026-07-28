@@ -57,7 +57,8 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
 - `materials.routes.ts` — Material upload + async RAG ingestion (IN-S04/S05):
   `POST/GET /api/courses/:courseId/materials` (multipart `files[]` or JSON
   `{ url }`), `POST /api/materials/:materialId/retry`,
-  `PUT /api/materials/:materialId/assignments`. All routes are
+  `PUT /api/materials/:materialId/assignments`, and AI hierarchy suggestion +
+  reviewed apply with automatic per-LO material assignments. All routes are
   **instructor-gated**; materialId-scoped routes stash `res.locals.courseId`
   from the target material first, the same pattern as `questions.routes.ts`.
 - `content-runs.routes.ts` — Phase 2 P2-0 durable material/generation progress:

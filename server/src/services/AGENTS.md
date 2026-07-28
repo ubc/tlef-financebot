@@ -41,6 +41,10 @@ objects directly.
 - `content-map.service.ts` — instructor coverage read model joining the ordered
   hierarchy, material kinds/assignments, question publication counts, and
   recent content-run status. It is informational and never edits assignments.
+- `classification.service.ts` — existing-hierarchy material classification plus
+  AI hierarchy suggestion. Suggestions carry per-LO source mappings; reviewed
+  apply creates the selected Topics/LOs and merges those mappings into material
+  assignments without replacing existing links.
 - `import.service.ts` — Parses and commits CSV/JSON/QTI questions, and migrates
   existing `generate(random)` templates through the real parameter worker.
   Script migration validates one deterministic sample, returns placeholder

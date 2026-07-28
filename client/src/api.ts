@@ -1260,16 +1260,47 @@ export function resolveClassification(materialId: string, action: 'accept' | 're
 
 export interface SuggestedHierarchy {
   themes: Array<{ name: string; los: string[] }>;
+  assignments: Array<{
+    themeIndex: number;
+    loIndex: number;
+    materialIds: string[];
+  }>;
 }
 
-/** GET /api/courses/:courseId/suggest-hierarchy -> { themes: [{ name, los }] }
- * (IN-S06; read-only AI-suggested Topic/LO outline computed from ingested
- * materials — apply via addTheme/addLo, this endpoint never writes). Added
- * per the Task D brief; no apply-UI is wired up this task (see the Task D
- * report — kept out to avoid scope creep on top of the upload/classify/
- * assign flow). */
+/** GET /api/courses/:courseId/suggest-hierarchy returns a read-only
+ * AI-suggested Topic/LO outline plus source-material mappings. */
 export function getSuggestedHierarchy(courseId: string): Promise<SuggestedHierarchy> {
   return request<SuggestedHierarchy>(`/api/courses/${encodeURIComponent(courseId)}/suggest-hierarchy`);
+}
+
+export interface SuggestedHierarchyApplyInput {
+  themes: Array<{
+    name: string;
+    los: Array<{ name: string; materialIds: string[] }>;
+  }>;
+}
+
+export interface SuggestedHierarchyApplyResult {
+  themesCreated: number;
+  losCreated: number;
+  materialsAssigned: number;
+  assignmentsCreated: number;
+}
+
+/** Apply a reviewed AI hierarchy and automatically assign its source materials
+ * to the newly created LOs while preserving existing assignments. */
+export function applySuggestedHierarchy(
+  courseId: string,
+  input: SuggestedHierarchyApplyInput,
+): Promise<SuggestedHierarchyApplyResult> {
+  return request<SuggestedHierarchyApplyResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/apply-suggested-hierarchy`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 // --- Instructor: pre-seeding coverage (IN-Q10) --------------------------------
