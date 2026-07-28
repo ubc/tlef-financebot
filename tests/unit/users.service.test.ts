@@ -1,4 +1,7 @@
-import { upsertUserFromSaml } from '../../server/src/services/users.service';
+import {
+  findUserByPuid,
+  upsertUserFromSaml,
+} from '../../server/src/services/users.service';
 import {
   platformInstructorGrantsCol,
   usersCol,
@@ -14,14 +17,19 @@ jest.mock('../../server/src/config/env', () => ({
 }));
 
 const findOneAndUpdate = jest.fn();
+const findUser = jest.fn();
 const findGrant = jest.fn();
 const updateGrant = jest.fn();
 beforeEach(() => {
   findOneAndUpdate.mockReset();
+  findUser.mockReset();
   findGrant.mockReset();
   updateGrant.mockReset();
   findGrant.mockResolvedValue(null);
-  jest.mocked(usersCol).mockReturnValue({ findOneAndUpdate } as never);
+  jest.mocked(usersCol).mockReturnValue({
+    findOne: findUser,
+    findOneAndUpdate,
+  } as never);
   jest.mocked(platformInstructorGrantsCol).mockReturnValue({
     findOne: findGrant,
     updateOne: updateGrant,
@@ -98,5 +106,41 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
   it('rejects a profile with no PUID (no partial session, ST-E01)', async () => {
     await expect(upsertUserFromSaml(samlAttrs({ ubcEduCwlPuid: undefined }))).rejects.toThrow(/PUID/);
     expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('findUserByPuid platform authorization refresh', () => {
+  const storedUser = {
+    puid: 'PUID-PROF-0001',
+    uid: 'FinanceProf',
+    displayName: 'Fin Professor',
+    email: 'fin.prof@example.ubc.ca',
+    affiliations: ['faculty'],
+    isAdmin: false,
+    platformInstructor: true,
+    courseRoles: [],
+    createdAt: new Date(),
+    lastLoginAt: new Date(),
+  };
+
+  it('treats the grant collection as truth after a revoke, even if the User bit is stale', async () => {
+    findUser.mockResolvedValue(storedUser);
+    findGrant.mockResolvedValue(null);
+
+    await expect(findUserByPuid('PUID-PROF-0001')).resolves.toMatchObject({
+      puid: 'PUID-PROF-0001',
+      platformInstructor: false,
+    });
+  });
+
+  it('restores the capability from an active normalized-CWL grant', async () => {
+    findUser.mockResolvedValue({ ...storedUser, platformInstructor: undefined });
+    findGrant.mockResolvedValue({ uid: 'financeprof' });
+
+    await expect(findUserByPuid('PUID-PROF-0001')).resolves.toMatchObject({
+      puid: 'PUID-PROF-0001',
+      platformInstructor: true,
+    });
+    expect(findGrant).toHaveBeenCalledWith({ uid: 'financeprof' });
   });
 });
