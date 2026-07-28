@@ -7,6 +7,7 @@
 // live here still exists on the signed-in overview (views/home.ts).
 import { APP } from '../config.js';
 import { el, mount } from '../dom.js';
+import { createThemeToggle } from '../theme.js';
 
 /** Show a banner if the IdP bounced us back with ?login=failed. */
 function loginBanner(): HTMLElement | false {
@@ -42,11 +43,16 @@ export function renderLanding(root: HTMLElement): void {
     }),
   );
 
+  // Not in the wireframe (frame 0 - Login draws no chrome at all), but without
+  // it a signed-out visitor cannot switch themes — the only other toggle lives
+  // in the signed-in shell's topbar. Parked in the corner so it stays clear of
+  // the card's composition.
   mount(
     root,
     el(
       'div',
       { class: 'landing' },
+      el('div', { class: 'landing__theme-toggle' }, createThemeToggle()),
       el('main', { class: 'landing__main' }, loginBanner(), card),
     ),
   );

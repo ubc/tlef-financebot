@@ -34,7 +34,9 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 - **Logged out → the landing screen** (`views/landing.ts`): the FinanceBot
   wordmark, a "Log in with CWL" button, and a redirect note — mirroring the
   team's Figma wireframe frame `0 - Login` (`148:5448`). Nothing else is
-  reachable; the rest of the app is behind login.
+  reachable; the rest of the app is behind login. The theme toggle in the corner
+  is a deliberate addition — the wireframe draws no chrome, but signed-out
+  visitors would otherwise have no way to switch themes.
 - **Logged in → the app shell** (`main.ts`): a navy sidebar + top bar with a hash
   router swapping views in the main outlet.
 

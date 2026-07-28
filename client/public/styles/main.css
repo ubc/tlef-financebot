@@ -425,8 +425,17 @@ a {
 /* ---- Landing (pre-login) ------------------------------------------------- */
 
 .landing {
+  position: relative;
   min-height: 100vh;
   background: var(--surface);
+}
+
+/* Not part of Figma frame `0 - Login`; see views/landing.ts for why it exists. */
+.landing__theme-toggle {
+  position: absolute;
+  top: clamp(0.75rem, 3vw, 1.5rem);
+  right: clamp(0.75rem, 3vw, 1.5rem);
+  z-index: 1;
 }
 
 /* The wireframe centers the card horizontally and sits its top edge at ~38% of

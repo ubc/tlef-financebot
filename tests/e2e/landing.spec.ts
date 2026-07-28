@@ -32,4 +32,22 @@ test.describe('landing (logged out)', () => {
     await expect(page.getByRole('navigation', { name: /primary/i })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /members area/i })).toHaveCount(0);
   });
+
+  test('offers a theme toggle even though the wireframe omits one', async ({ page }) => {
+    await page.goto('/');
+
+    const html = page.locator('html');
+    const toggle = page.getByRole('button', { name: /toggle light or dark theme/i });
+    await expect(toggle).toBeVisible();
+
+    const before = await html.getAttribute('data-theme');
+    await toggle.click();
+    await expect(html).not.toHaveAttribute('data-theme', before ?? 'light');
+
+    // The choice persists across a reload, which is the whole point of having
+    // the control on the signed-out screen.
+    const after = await html.getAttribute('data-theme');
+    await page.reload();
+    await expect(html).toHaveAttribute('data-theme', after ?? 'dark');
+  });
 });
