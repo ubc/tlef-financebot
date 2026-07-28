@@ -4,16 +4,18 @@
 
 **Last updated:** 2026-07-28
 
-**State:** claimed — Admin A1 backend in progress
+**State:** Admin A1 backend checkpoint complete; client wiring waiting on Task 5
 
 **Branch:** `codex/admin-platform-instructor`
 
 **Base:** `f179d1f` (`origin/main`, including Claude's restored Task 5 claim)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
-only its own claim file, runs `npm run sync-plans -- Stephen`, and then begins
-work. A path claimed by the other agent is read-only until that agent records
-`released` plus a commit SHA.
+only its own claim file. While two Stephen worktrees are active, publish claim
+updates as narrow commits instead of running the current whole-folder
+`sync-plans` script from a stale worktree; it can overwrite the other agent's
+newer ledger. A path claimed by the other agent is read-only until that agent
+records `released` plus a commit SHA.
 
 ## Active task
 
@@ -32,6 +34,7 @@ Admin Console v0, plan:
 - `server/src/types/domain.ts`
 - `server/src/components/mongodb/collections.ts`
 - `server/src/services/users.service.ts`
+- `server/src/routes/auth.routes.ts`
 - `server/src/routes/courses.routes.ts`
 - `server/src/app.ts`
 - relevant Admin/auth `AGENTS.md`
@@ -64,5 +67,17 @@ Codex will not edit these while Task 5 is active:
 ## Handoff
 
 Claude claim confirmed from commit `79387cc`; an accidental stale-plan publish
-was precisely reverted by `f179d1f`. Codex is starting the disjoint Admin A1
-backend. Client wiring and Student Preview remain blocked on Claude's release.
+was precisely reverted by `f179d1f`.
+
+Backend checkpoint pushed to `codex/admin-platform-instructor`:
+
+- `5e32b5e` — grant collection/service/routes, Admin and platform-Instructor
+  guards, first-login grant application, course-creation gate, audit writes,
+  and focused tests.
+- `8619ec0` — expose `platformInstructor` in the safe `/api/auth/me` summary.
+- `392fa38` — treat the grant collection as the authorization source of truth
+  during Passport deserialization, closing a revoke/first-login race.
+
+Verification at this checkpoint: 52 Jest suites / 546 tests passed; typecheck
+and lint passed; server/client compilation passed using the bundled Node 24
+runtime. Client wiring and Student Preview remain blocked on Claude's release.

@@ -1,14 +1,15 @@
 # Stephen — Phase 2 progress
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-07-28_
 
 ## Current state
 
 - P2-0 persistent content runs/SSE: **merged** in PR #32.
 - Task 4 parameter sandbox: **merged** in PR #33 after eight security review
   rounds.
-- Task 5 parameter serving/config: **next, assigned to Claude**.
-- Admin Console v0: **planned, assigned to Codex**.
+- Task 5 parameter serving/config: **in progress with Claude**.
+- Admin Console v0: **A1 backend checkpoint complete with Codex; client wiring
+  waits for Task 5's shared-file release**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -26,8 +27,12 @@ Codex owns Admin Console v0 and records its paths in
 
 Each agent edits only its own claim file. Both read both files before editing.
 Student Preview waits for Task 5 to release `serving.service.ts` and
-`attempts.service.ts`; the Admin account/provisioning slice may proceed in
-parallel once Claude publishes an exact, non-overlapping claim.
+`attempts.service.ts`. Codex completed the disjoint Admin backend in parallel
+without modifying Claude's Task 5 files.
+
+Because both agents are Stephen worktrees, claim updates are now published as
+narrow commits. Do not run the current whole-folder `sync-plans` script from a
+stale parallel worktree: it can overwrite the other agent's newer ledger.
 
 ## Admin v0 decisions
 
@@ -50,3 +55,6 @@ reserved while their state is active. Task 5 completion remains the unblock
 signal for Saurav's Task 9; Admin v0 does not change the Task 5 parameter
 contract.
 
+Codex's current branch is `codex/admin-platform-instructor`; backend commits
+through `392fa38` are pushed. Verification: 52 Jest suites / 546 tests,
+typecheck, lint, and compilation passed.
