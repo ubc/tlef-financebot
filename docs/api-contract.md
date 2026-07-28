@@ -76,7 +76,13 @@ grant attaches to the same PUID-backed User on first SAML login.
 - `POST /api/materials/:materialId/retry` → Material with a new `activeRunId` (409 when another retry already won)
 - `PUT /api/materials/:materialId/assignments { assignments: [{ themeId, loId? }] }` → Material
 - `POST /api/materials/:materialId/classification { action: 'accept' | 'reject' }` → Material
-- `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los: [name] }] }` (IN-S06; AI-suggested outline, read-only — apply via the Theme/LO create endpoints above) <!-- ADDED in Task 7 (Saurav); pending two-developer review -->
+- `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los:
+  [name] }], assignments: [{ themeIndex, loIndex, materialIds }] }` (IN-S06;
+  read-only AI-suggested outline plus per-LO source mappings)
+- `POST /api/courses/:courseId/apply-suggested-hierarchy { themes: [{ name, los:
+  [{ name, materialIds }] }] }` → `{ themesCreated, losCreated,
+  materialsAssigned, assignmentsCreated }` (creates the reviewed Topic/LO
+  subset and merges its source mappings into material assignments)
 - `GET /api/courses/:courseId/content-map` → ordered Theme/LO coverage with
   assigned material summaries/kind counts, assessment-like markers,
   question counts by publication state, latest ingest/generation run status,
@@ -85,6 +91,12 @@ grant attaches to the same PUID-backed User on first SAML login.
 
 ## Materials (instructor) — implementation note (IN-S06 auto-classification)
 On successful ingest a material may gain a `classificationSuggestion { themeId, loId?, confidence }` (LLM best-fit into the existing hierarchy; only stored when `confidence ≥ 0.5` and the names resolve). Accept via `POST .../classification { action: 'accept' }` (merges it into `assignments`, clears the suggestion); reject clears it. Absent/low-confidence ⇒ material shows "Unclassified" client-side.
+
+When the hierarchy itself is AI-generated after materials were uploaded, each
+suggested LO carries the material ids that support it. Applying the reviewed
+suggestion creates the selected hierarchy and persists those assignments
+automatically; existing assignments are preserved and cross-course/non-ready
+material ids are rejected before hierarchy creation begins.
 
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →

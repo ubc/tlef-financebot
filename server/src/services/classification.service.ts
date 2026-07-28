@@ -1,8 +1,9 @@
-import type { ObjectId, WithId } from 'mongodb';
+import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import type { LearningObjective, Material, Theme } from '../types/domain';
+import { addLo, addTheme } from './courses.service';
 
 // -----------------------------------------------------------------------------
 // Classification service (IN-S06): LLM-assisted material auto-classification and
@@ -19,9 +20,13 @@ import type { LearningObjective, Material, Theme } from '../types/domain';
 //    failure here must never flip a successfully-ingested material to `failed`.
 //
 //  - suggestHierarchy(courseId): from the ingested materials' text, propose a
-//    whole Theme -> LO outline. Pure read: it NEVER writes the DB. Acceptance
-//    is the instructor calling the existing addTheme/addLo endpoints (Task 2)
-//    with the names returned here. Slip candidate #3.
+//    whole Theme -> LO outline plus the ready materials relevant to each LO.
+//    Pure read: it NEVER writes the DB.
+//
+//  - applySuggestedHierarchy(courseId, input): creates the instructor-reviewed
+//    subset and atomically merges each suggested material link into the new
+//    LO's assignments from the application's point of view. Existing material
+//    assignments are preserved.
 // -----------------------------------------------------------------------------
 
 // Below this the model is telling us it isn't sure; per the brief a low-
@@ -42,6 +47,11 @@ interface ClassificationResult {
 
 interface HierarchyResult {
   themes?: Array<{ name?: unknown; los?: unknown }>;
+}
+
+interface HierarchyResultLo {
+  name?: unknown;
+  materialNumbers?: unknown;
 }
 
 /** Case-insensitive, whitespace-insensitive name match — the LLM echoes the
@@ -103,29 +113,147 @@ export async function suggestHierarchy(courseId: ObjectId): Promise<SuggestedHie
   const materials = await materialsCol()
     .find({ courseId, status: 'ready' })
     .toArray();
-  const excerpts = materials
-    .map((m) => m.excerpt?.trim())
-    .filter((e): e is string => Boolean(e))
+  const sourceMaterials = materials
+    .filter((material) => Boolean(material.excerpt?.trim()))
     .slice(0, MAX_HIERARCHY_MATERIALS);
-  if (excerpts.length === 0) return { themes: [] };
+  if (sourceMaterials.length === 0) return { themes: [], assignments: [] };
 
   const existing = await themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray();
-  const raw = await completeJson<HierarchyResult>(buildHierarchyPrompt(excerpts, existing), {
+  const raw = await completeJson<HierarchyResult>(buildHierarchyPrompt(sourceMaterials, existing), {
     model: env.llmDefaultModel,
     temperature: 0,
   });
 
-  // Shape the (untrusted) LLM JSON into the return type: keep only entries with
-  // a non-blank theme name, and only string LO names within each.
-  const themes = (Array.isArray(raw.themes) ? raw.themes : [])
-    .filter((t): t is { name: string; los?: unknown } => typeof t?.name === 'string' && t.name.trim() !== '')
-    .map((t) => ({
-      name: t.name.trim(),
-      los: (Array.isArray(t.los) ? t.los : [])
-        .filter((l): l is string => typeof l === 'string' && l.trim() !== '')
-        .map((l) => l.trim()),
-    }));
-  return { themes };
+  // Shape the untrusted LLM JSON into the public contract. Material numbers
+  // are one-based positions from the prompt; translate them to real ids here
+  // so the client can never invent a link from model output.
+  const themes: SuggestedHierarchy['themes'] = [];
+  const assignments: SuggestedHierarchy['assignments'] = [];
+  for (const rawTheme of Array.isArray(raw.themes) ? raw.themes : []) {
+    if (typeof rawTheme?.name !== 'string' || rawTheme.name.trim() === '') continue;
+    const themeIndex = themes.length;
+    const los: string[] = [];
+    for (const rawLo of Array.isArray(rawTheme.los) ? rawTheme.los : []) {
+      // Accept the old string-only shape as a safe no-assignment fallback if a
+      // provider ignores the new response instructions.
+      const lo: HierarchyResultLo =
+        typeof rawLo === 'string' ? { name: rawLo, materialNumbers: [] } : (rawLo as HierarchyResultLo);
+      if (typeof lo?.name !== 'string' || lo.name.trim() === '') continue;
+      const loIndex = los.length;
+      los.push(lo.name.trim());
+      const materialIds = [
+        ...new Set(
+          (Array.isArray(lo.materialNumbers) ? lo.materialNumbers : [])
+            .filter((number): number is number => Number.isInteger(number))
+            .map((number) => sourceMaterials[number - 1]?._id.toHexString())
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      if (materialIds.length > 0) assignments.push({ themeIndex, loIndex, materialIds });
+    }
+    themes.push({ name: rawTheme.name.trim(), los });
+  }
+  return { themes, assignments };
+}
+
+export interface ApplySuggestedHierarchyInput {
+  themes: Array<{
+    name: string;
+    los: Array<{ name: string; materialIds: string[] }>;
+  }>;
+}
+
+export interface ApplySuggestedHierarchyResult {
+  themesCreated: number;
+  losCreated: number;
+  materialsAssigned: number;
+  assignmentsCreated: number;
+}
+
+/**
+ * Applies an instructor-reviewed AI hierarchy and its source mappings. All
+ * referenced materials are validated before the first hierarchy write so a
+ * stale or cross-course material id cannot leave a partially-created outline.
+ */
+export async function applySuggestedHierarchy(
+  courseId: ObjectId,
+  input: ApplySuggestedHierarchyInput,
+): Promise<ApplySuggestedHierarchyResult> {
+  const normalized = input.themes.map((theme) => ({
+    name: theme.name.trim(),
+    los: theme.los.map((lo) => ({
+      name: lo.name.trim(),
+      materialIds: [...new Set(lo.materialIds)],
+    })),
+  }));
+  if (
+    normalized.length === 0 ||
+    normalized.some((theme) => theme.name === '' || theme.los.some((lo) => lo.name === ''))
+  ) {
+    throw new Error('suggested-hierarchy-invalid');
+  }
+
+  const materialIdStrings = [
+    ...new Set(normalized.flatMap((theme) => theme.los.flatMap((lo) => lo.materialIds))),
+  ];
+  if (materialIdStrings.some((id) => !ObjectId.isValid(id))) {
+    throw new Error('suggested-hierarchy-material-not-found');
+  }
+  const materialIds = materialIdStrings.map((id) => new ObjectId(id));
+  const materials =
+    materialIds.length === 0
+      ? []
+      : await materialsCol()
+          .find({ _id: { $in: materialIds }, courseId, status: 'ready' })
+          .toArray();
+  if (materials.length !== materialIds.length) {
+    throw new Error('suggested-hierarchy-material-not-found');
+  }
+
+  const assignmentsByMaterial = new Map<string, Array<{ themeId: ObjectId; loId: ObjectId }>>();
+  let losCreated = 0;
+  for (const theme of normalized) {
+    const createdTheme = await addTheme(courseId, { name: theme.name });
+    for (const lo of theme.los) {
+      const createdLo = await addLo(courseId, createdTheme._id, { name: lo.name });
+      losCreated += 1;
+      for (const materialId of lo.materialIds) {
+        const bucket = assignmentsByMaterial.get(materialId) ?? [];
+        bucket.push({ themeId: createdTheme._id, loId: createdLo._id });
+        assignmentsByMaterial.set(materialId, bucket);
+      }
+    }
+  }
+
+  let assignmentsCreated = 0;
+  for (const material of materials) {
+    const additions = assignmentsByMaterial.get(material._id.toHexString()) ?? [];
+    const existing = material.assignments ?? [];
+    const novel = additions.filter(
+      (addition) =>
+        !existing.some(
+          (assignment) =>
+            assignment.themeId.equals(addition.themeId) &&
+            assignment.loId?.equals(addition.loId) === true,
+        ),
+    );
+    if (novel.length === 0) continue;
+    assignmentsCreated += novel.length;
+    await materialsCol().updateOne(
+      { _id: material._id, courseId },
+      {
+        $addToSet: { assignments: { $each: novel } },
+        $unset: { classificationSuggestion: '' },
+      },
+    );
+  }
+
+  return {
+    themesCreated: normalized.length,
+    losCreated,
+    materialsAssigned: assignmentsByMaterial.size,
+    assignmentsCreated,
+  };
 }
 
 /**
@@ -184,6 +312,11 @@ export async function resolveClassification(
 /** The shape suggestHierarchy returns and the endpoint serializes. */
 export interface SuggestedHierarchy {
   themes: Array<{ name: string; los: string[] }>;
+  assignments: Array<{
+    themeIndex: number;
+    loIndex: number;
+    materialIds: string[];
+  }>;
 }
 
 // --- Prompts (inline, one-shot few-shot, temperature 0) ----------------------
@@ -228,21 +361,29 @@ function buildClassificationPrompt(
   ].join('\n');
 }
 
-function buildHierarchyPrompt(excerpts: string[], existing: WithId<Theme>[]): string {
+function buildHierarchyPrompt(materials: Array<WithId<Material>>, existing: WithId<Theme>[]): string {
   const existingLine =
     existing.length > 0
       ? `The course already has these Themes (avoid duplicating them): ${existing.map((t) => t.name).join(', ')}.`
       : 'The course has no Themes yet.';
-  const corpus = excerpts.map((e, i) => `--- Material ${i + 1} ---\n${e}`).join('\n\n');
+  const corpus = materials
+    .map((material, index) => `--- Material ${index + 1}: ${material.name} ---\n${material.excerpt?.trim() ?? ''}`)
+    .join('\n\n');
 
   return [
     'You are helping an instructor draft a course outline from their uploaded',
     'materials. Propose a hierarchy of Themes, each with a short list of Learning',
-    'Objectives (LOs), covering the material below.',
+    'Objectives (LOs), covering the material below. For every LO, identify every',
+    'source material that substantively supports it. A material may support',
+    'multiple LOs, and an LO may use multiple materials.',
     existingLine,
     '',
     'Respond with ONLY a JSON object of this shape:',
-    '{ "themes": [ { "name": string, "los": string[] } ] }',
+    '{ "themes": [ { "name": string, "los": [',
+    '  { "name": string, "materialNumbers": number[] }',
+    '] } ] }',
+    'materialNumbers are the one-based Material numbers shown below. Use only',
+    'numbers that appear below; do not invent sources.',
     'Keep names concise (a few words). Prefer 3-8 Themes with 2-5 LOs each.',
     '',
     'Materials:',

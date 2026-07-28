@@ -27,6 +27,7 @@ jest.mock('../../server/src/services/materials.service', () => ({
   getMaterialCourseId: jest.fn(),
 }));
 jest.mock('../../server/src/services/classification.service', () => ({
+  applySuggestedHierarchy: jest.fn(),
   resolveClassification: jest.fn(),
   suggestHierarchy: jest.fn(),
 }));
@@ -42,7 +43,11 @@ import {
   updateMaterialKind,
   getMaterialCourseId,
 } from '../../server/src/services/materials.service';
-import { resolveClassification, suggestHierarchy } from '../../server/src/services/classification.service';
+import {
+  applySuggestedHierarchy,
+  resolveClassification,
+  suggestHierarchy,
+} from '../../server/src/services/classification.service';
 
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
@@ -99,6 +104,7 @@ beforeEach(() => {
   jest.mocked(assignMaterial).mockReset();
   jest.mocked(updateMaterialKind).mockReset();
   jest.mocked(getMaterialCourseId).mockReset();
+  jest.mocked(applySuggestedHierarchy).mockReset();
   jest.mocked(resolveClassification).mockReset();
   jest.mocked(suggestHierarchy).mockReset();
 });
@@ -415,12 +421,83 @@ describe('GET /api/courses/:courseId/suggest-hierarchy (IN-S06)', () => {
   });
 
   it('200s an instructor and returns the suggested hierarchy', async () => {
-    jest.mocked(suggestHierarchy).mockResolvedValue({ themes: [{ name: 'Bonds', los: ['Price a bond'] }] });
+    jest.mocked(suggestHierarchy).mockResolvedValue({
+      themes: [{ name: 'Bonds', los: ['Price a bond'] }],
+      assignments: [
+        {
+          themeIndex: 0,
+          loIndex: 0,
+          materialIds: [materialId.toHexString()],
+        },
+      ],
+    });
 
     const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/suggest-hierarchy`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ themes: [{ name: 'Bonds', los: ['Price a bond'] }] });
+    expect(res.body).toEqual({
+      themes: [{ name: 'Bonds', los: ['Price a bond'] }],
+      assignments: [
+        {
+          themeIndex: 0,
+          loIndex: 0,
+          materialIds: [materialId.toHexString()],
+        },
+      ],
+    });
     expect(suggestHierarchy).toHaveBeenCalledWith(expect.any(ObjectId));
+  });
+});
+
+describe('POST /api/courses/:courseId/apply-suggested-hierarchy', () => {
+  const body = {
+    themes: [
+      {
+        name: 'Forces',
+        los: [{ name: 'Friction', materialIds: [materialId.toHexString()] }],
+      },
+    ],
+  };
+
+  it('403s a non-instructor before applying anything', async () => {
+    const res = await request(makeApp(student))
+      .post(`/api/courses/${courseId.toHexString()}/apply-suggested-hierarchy`)
+      .send(body);
+
+    expect(res.status).toBe(403);
+    expect(applySuggestedHierarchy).not.toHaveBeenCalled();
+  });
+
+  it('creates the reviewed hierarchy and assignments for an instructor', async () => {
+    jest.mocked(applySuggestedHierarchy).mockResolvedValue({
+      themesCreated: 1,
+      losCreated: 1,
+      materialsAssigned: 1,
+      assignmentsCreated: 1,
+    });
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/courses/${courseId.toHexString()}/apply-suggested-hierarchy`)
+      .send(body);
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({
+      themesCreated: 1,
+      losCreated: 1,
+      materialsAssigned: 1,
+      assignmentsCreated: 1,
+    });
+    expect(applySuggestedHierarchy).toHaveBeenCalledWith(expect.any(ObjectId), body);
+  });
+
+  it('400s malformed material ids before calling the service', async () => {
+    const res = await request(makeApp(instructor))
+      .post(`/api/courses/${courseId.toHexString()}/apply-suggested-hierarchy`)
+      .send({
+        themes: [{ name: 'Forces', los: [{ name: 'Friction', materialIds: ['bad-id'] }] }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(applySuggestedHierarchy).not.toHaveBeenCalled();
   });
 });

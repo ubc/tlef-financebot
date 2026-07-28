@@ -6,6 +6,7 @@ import {
   ApiError,
   addLo,
   addTheme,
+  applySuggestedHierarchy,
   archiveLo,
   archiveTheme,
   assignMaterial,
@@ -208,10 +209,17 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       );
     }
 
-    const themeDrafts = hierarchy.themes.map((theme) => ({
+    const themeDrafts = hierarchy.themes.map((theme, themeIndex) => ({
       checked: true,
       name: theme.name,
-      los: theme.los.map((name) => ({ checked: true, name })),
+      los: theme.los.map((name, loIndex) => ({
+        checked: true,
+        name,
+        materialIds:
+          hierarchy.assignments.find(
+            (assignment) => assignment.themeIndex === themeIndex && assignment.loIndex === loIndex,
+          )?.materialIds ?? [],
+      })),
     }));
 
     const panel = el('div', { class: 'assign-checklist suggestion-panel' });
@@ -219,7 +227,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     const renderRows = (): void => {
       mount(
         panel,
-        el('p', { class: 'materials-placeholder__text', text: 'Review and edit the AI-suggested Topics and Learning Objectives below, uncheck anything you don’t want, then apply.' }),
+        el('p', {
+          class: 'materials-placeholder__text',
+          text: 'Review and edit the AI-suggested Topics and Learning Objectives below. Applying creates the selected structure and automatically assigns each LO’s supporting materials.',
+        }),
         el(
           'div',
           { class: 'suggestion-panel__grid' },
@@ -276,6 +287,13 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
                       lo.name = (e.target as HTMLInputElement).value;
                     },
                   }),
+                  el('span', {
+                    class: 'materials-placeholder__text suggestion-panel__sources',
+                    text:
+                      lo.materialIds.length > 0
+                        ? `${lo.materialIds.length} material${lo.materialIds.length === 1 ? '' : 's'}`
+                        : 'No matched material',
+                  }),
                 ),
               ),
             ),
@@ -293,7 +311,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
               disabled: applyingSuggestion ? 'disabled' : undefined,
               onclick: () => void applySelected(),
             },
-            applyingSuggestion ? 'Applying…' : 'Apply Selected',
+            applyingSuggestion ? 'Applying…' : 'Apply & auto-assign',
           ),
           el(
             'button',
@@ -325,19 +343,21 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           const selectedLos = suggested.los.filter((lo) => lo.checked);
           const blankLo = selectedLos.some((lo) => !lo.name.trim());
           if (blankLo) throw new Error(`Every selected LO under "${themeName}" needs a name.`);
-
-          const createdTheme = await addTheme(courseId, themeName);
-          themes.push({ ...createdTheme, los: createdTheme.los ?? [] });
-          expanded.add(createdTheme._id);
-          for (const lo of selectedLos) {
-            const createdLo = await addLo(createdTheme._id, lo.name.trim());
-            const theme = findTheme(createdTheme._id);
-            if (theme) theme.los = [...(theme.los ?? []), createdLo];
-          }
         }
-        suggestState = 'idle';
+
+        await applySuggestedHierarchy(courseId, {
+          themes: selectedThemes.map((theme) => ({
+            name: theme.name.trim(),
+            los: theme.los
+              .filter((lo) => lo.checked)
+              .map((lo) => ({
+                name: lo.name.trim(),
+                materialIds: lo.materialIds,
+              })),
+          })),
+        });
         applyingSuggestion = false;
-        refresh();
+        await renderStructureInner(outlet, courseId);
       } catch (error) {
         applyingSuggestion = false;
         applyError = error instanceof ApiError ? error.message : (error as Error).message;

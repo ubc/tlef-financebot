@@ -18,7 +18,11 @@ import {
   getMaterialCourseId,
   updateMaterialKind,
 } from '../services/materials.service';
-import { resolveClassification, suggestHierarchy } from '../services/classification.service';
+import {
+  applySuggestedHierarchy,
+  resolveClassification,
+  suggestHierarchy,
+} from '../services/classification.service';
 
 // Material upload + async RAG ingestion endpoints (IN-S04/S05), plus Task 7's
 // IN-S06 classification accept/reject (`POST .../classification`, in the
@@ -57,6 +61,21 @@ const assignmentsBody = z.object({
 });
 
 const classificationBody = z.object({ action: z.enum(['accept', 'reject']) });
+const applySuggestedHierarchyBody = z.object({
+  themes: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1),
+        los: z.array(
+          z.object({
+            name: z.string().trim().min(1),
+            materialIds: z.array(objectIdParam),
+          }),
+        ),
+      }),
+    )
+    .min(1),
+});
 
 // Disk storage under uploads/ (gitignored), capped at 50MB per the contract.
 // The filename callback preserves the original extension: document-parsing's
@@ -257,13 +276,11 @@ materialsRouter.post(
 );
 
 /**
- * GET /api/courses/:courseId/suggest-hierarchy -> { themes: [{ name, los }] }
+ * GET /api/courses/:courseId/suggest-hierarchy
+ * -> { themes: [{ name, los }], assignments: [...] }
  * (IN-S06, slip candidate #3). Instructor-only. Read-only: computes an
- * AI-suggested Theme/LO outline from the course's ingested materials and never
- * writes the DB — the instructor applies it via the existing addTheme/addLo
- * endpoints. NOTE: this endpoint is a Task 7 ADDITION to docs/api-contract.md
- * (the contract had no suggest-hierarchy route) — flagged for two-developer
- * review at PR time.
+ * AI-suggested Theme/LO outline and per-LO source mappings from the course's
+ * ingested materials. It never writes the DB.
  */
 materialsRouter.get(
   '/courses/:courseId/suggest-hierarchy',
@@ -271,6 +288,26 @@ materialsRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await suggestHierarchy(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/**
+ * POST /api/courses/:courseId/apply-suggested-hierarchy
+ * Creates the reviewed Topic/LO subset and automatically merges the AI source
+ * mappings into each material's assignments. Existing assignments are kept.
+ */
+materialsRouter.post(
+  '/courses/:courseId/apply-suggested-hierarchy',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  validate({ body: applySuggestedHierarchyBody }),
+  async (req, res) => {
+    res.status(201).json(
+      await applySuggestedHierarchy(
+        new ObjectId(String(req.params.courseId)),
+        req.body as z.infer<typeof applySuggestedHierarchyBody>,
+      ),
+    );
   },
 );
 
@@ -283,6 +320,8 @@ const MATERIAL_ERROR_STATUS: Record<string, number> = {
   'material-not-found': 404,
   'material-retry-conflict': 409,
   'no-classification-suggestion': 400, // accept with nothing to accept (IN-S06)
+  'suggested-hierarchy-invalid': 400,
+  'suggested-hierarchy-material-not-found': 409,
 };
 
 materialsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
