@@ -47,6 +47,7 @@ import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
+import { renderStudentPreview } from './views/instructor/student-preview.js';
 import { renderImport } from './views/instructor/import.js';
 import { renderAdminAccounts } from './views/admin/accounts.js';
 
@@ -83,6 +84,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/structure', render: renderStructure },
   { path: '/instructor/course/:id/materials', render: renderMaterials },
   { path: '/instructor/course/:id/settings', render: renderSettings },
+  { path: '/instructor/course/:id/preview', render: renderStudentPreview },
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
   { path: '/instructor/course/:id/bank', render: renderBank },

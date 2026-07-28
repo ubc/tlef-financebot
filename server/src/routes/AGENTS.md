@@ -40,6 +40,11 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `PUT/DELETE /api/admin/platform-instructors/:puid`. Every route is protected
   by `ensureAdmin()`; PUT may create a pending PUID grant before first SAML
   login, and DELETE is idempotent.
+- `preview.routes.ts` — explicit course-Instructor-only student preview:
+  `GET .../preview/home`, `POST .../preview/practice/next`, and
+  `POST .../preview/attempts`. These routes intentionally do not reuse or
+  weaken `ensureCourseStudent()`; the separate URL/service/collection boundary
+  prevents preview submissions from entering live learning records.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
   (including a courses-spanning bulk transition). All routes are

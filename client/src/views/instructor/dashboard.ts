@@ -129,6 +129,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       quickActionCard(courseId, 'Edit Topic/LO Structure', 'Add, rename, reorder Topics and LOs', '/instructor/course/:id/structure'),
       quickActionCard(courseId, 'Upload Materials', 'Add course materials and assign to LOs', '/instructor/course/:id/materials'),
       quickActionCard(courseId, 'Review Queue', 'Review and approve pending questions', '/instructor/course/:id/queue'),
+      quickActionCard(courseId, 'Preview as Student', 'Test the approved student experience without saving progress', '/instructor/course/:id/preview'),
       quickActionCard(courseId, 'Student Analytics', 'View class performance and engagement', null),
     );
 

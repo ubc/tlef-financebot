@@ -93,6 +93,11 @@ isolated `platformInstructorPuidGrants` collection so older uid-keyed
 experimental documents cannot collide with the PUID unique index. Do not
 create placeholder User documents for pending grants.
 
+Instructor student preview adds `previewAttemptsCol()` backed by
+`previewAttemptRecords`. It is intentionally separate from `attemptRecords`;
+do not merge the collections or make live-learning queries depend on a
+remembered `{ preview: { $ne: true } }` filter.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

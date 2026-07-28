@@ -45,6 +45,12 @@ commonly need:
   separate from Instructor access. Course creation requires Admin or
   `platformInstructor`, while access to existing courses remains course-scoped
   through `ensureCourseInstructor()`.
+- Admin Console v0 student preview is implemented: a course Instructor can
+  open an unpublished course's currently released, Approved-only student
+  practice experience without enrolling. Preview uses explicit
+  Instructor-only routes and a separate `previewAttemptRecords` collection,
+  so it cannot change student mastery, Review Book, flags, remediation,
+  summaries, notifications, progression, or analytics.
 - Qdrant (`server/src/components/qdrant`) is implemented: a configured client,
   idempotent `ensureCollection`, and `upsertPoints` / `search` helpers. `GET
   /api/health` reports its reachability.
