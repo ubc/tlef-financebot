@@ -1,6 +1,30 @@
 # Stephen — Phase 2 progress
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-07-28_
+
+## Update (2026-07-28): P2-I1 through P2-I5 completion authorized
+
+Stephen asked Codex to implement the rows that remained backlog-only in
+`2026-07-22-phase-2-review-improvements-stephen.md`. Codex synced plans,
+audited `origin/main` at `d6e1f4a`, and recorded the exact missing contracts in
+[`2026-07-28-review-improvements-completion-stephen.md`](2026-07-28-review-improvements-completion-stephen.md).
+
+- P2-I4 finite practice rounds is already complete in Task 7 / PR #37 and will
+  only receive regression verification.
+- P2-I1 still needs explicit lifecycle/archive/restore and a read-only
+  authoritative publish checklist.
+- P2-I2 still needs persisted reusable blueprints and exact run retry
+  provenance; existing P2-0 run history and Task 10 generation are reused.
+- P2-I3 still needs additive family/version lineage across generation, import,
+  script migration, and edits; the existing Question/QuestionVersion model is
+  retained.
+- P2-I5 still needs material-kind metadata and a unified instructor content
+  map.
+
+Stephen explicitly authorized the P2-I2/P2-I3 cross-owner extension. Saurav's
+previous Tasks 8–10 implementations are not being replaced; this branch only
+adds the provenance/history contracts that the original improvement map left
+for later. No active Saurav file claim overlaps this work.
 
 ## Current state
 
@@ -49,4 +73,3 @@ No action is required. Please treat the paths in both coordination ledgers as
 reserved while their state is active. Task 5 completion remains the unblock
 signal for Saurav's Task 9; Admin v0 does not change the Task 5 parameter
 contract.
-
