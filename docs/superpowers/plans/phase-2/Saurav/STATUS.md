@@ -59,7 +59,7 @@ Stephen's source documents (unedited by me):
 | 2 (my half) | Instructor flag-resolution queue | **Merged** (PR #28 — `saurav/task-2-flag-queue`) | nothing |
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
 | 6 | Remediation report + checklist | **Code-complete, review approved** (`saurav/task-6-remediation`, commits `a5f56b1`+`20dc88f`+`8c3b6c3`) — not yet pushed as a PR | nothing |
-| 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`b691de8`) | nothing |
+| 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
 | 9 | Parameterized-script migration | not started | PRs #34 + #39 merge |
 | 10 | Custom-prompt generation/regeneration | not started | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
@@ -77,7 +77,7 @@ the new import service/routes/view and fixtures/tests, append-only app/router
 wiring, `client/src/api.ts`, `docs/api-contract.md`, and Task 8 status docs.
 
 Saurav need not confirm or stop unrelated work. Task 8 is complete on PR #39
-at `b691de8`; its paths are released. Task 9 can extend the import files after
+at `2d3313e`; its paths are released. Task 9 can extend the import files after
 PR #39 and its Task 5 dependency PR #34 merge.
 
 ## Deviations from the plan

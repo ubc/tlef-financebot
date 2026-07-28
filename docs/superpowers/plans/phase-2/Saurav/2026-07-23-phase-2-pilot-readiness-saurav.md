@@ -380,7 +380,7 @@ rather than by tests, which is not a repeatable safety net.
 - [x] **Step 1: Create the three fixtures** per the core document, Task 8 Step 1 (5 items each; one broken item; JSON uses one `type: 'other'` item for auto-conversion).
 - [x] **Step 2: Failing tests** — the five cases in the core document, Task 8 Step 2.
 - [x] **Step 3–5: FAIL → implement (service, routes, view) → PASS.** Completed by Stephen/Codex under the recorded 2026-07-28 takeover. Focused 2 suites / 15 tests, full 52 suites / 548 tests, typecheck/lint/build, and a real SAML instructor browser import all passed; fixture cleanup assertions were zero.
-- [x] **Step 6: Commit** — `b691de8` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`), PR #39.
+- [x] **Step 6: Commit** — `2d3313e` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`), PR #39.
 
 *Slip note (core doc #2): if the week is tight, drop QTI — delete only the QTI branch and fixture.*
 

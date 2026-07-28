@@ -127,7 +127,7 @@ The exact implementation claim is:
 - `docs/api-contract.md` and Task 8 plan/status documents
 
 No Saurav implementation existed to duplicate. The implementation is
-`b691de8`; all listed paths are released. Focused 2 suites / 15 tests, full 52
+`2d3313e`; all listed paths are released. Focused 2 suites / 15 tests, full 52
 suites / 548 tests, typecheck/lint/build, and the real instructor browser
 upload/preview/commit flow passed. Cleanup assertions found zero remaining
 course, question, version, or role fixtures.

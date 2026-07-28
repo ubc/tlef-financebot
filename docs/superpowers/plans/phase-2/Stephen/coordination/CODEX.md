@@ -3,7 +3,7 @@
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
 **State:** Task 8 released on PR #39; no Codex implementation path active
-**Base:** PR #39 head `3fa3ff7` (`codex/phase-2-task8-import`)
+**Base:** PR #39 head `2d3313e` (`codex/phase-2-task8-import`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -18,7 +18,7 @@ Phase 2 Task 8 — CSV/JSON/QTI question import with preview, partial-success
 parsing, parameterization flags, and Draft-only commit. Stephen explicitly
 authorized this takeover; complete on independent PR #39.
 
-Implementation commit: `b691de8`; plan update: `3fa3ff7`. All paths below are
+Implementation commit: `2d3313e`; plan/status publish: `46bf30b`. All paths below are
 released. Task 9 may extend the import files after PR #39 merges.
 
 ### Task 8 files claimed by Codex
