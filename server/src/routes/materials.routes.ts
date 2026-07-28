@@ -16,6 +16,7 @@ import {
   retryMaterial,
   assignMaterial,
   getMaterialCourseId,
+  updateMaterialKind,
 } from '../services/materials.service';
 import { resolveClassification, suggestHierarchy } from '../services/classification.service';
 
@@ -37,6 +38,17 @@ export const materialsRouter = Router();
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const materialIdParams = z.object({ materialId: objectIdParam });
+const courseMaterialParams = z.object({ courseId: objectIdParam, materialId: objectIdParam });
+const materialKind = z.enum([
+  'lecture',
+  'reading',
+  'assignment',
+  'assessment',
+  'solution',
+  'reference',
+  'other',
+]);
+const materialMetadataBody = z.object({ kind: materialKind });
 
 const urlMaterialBody = z.object({ url: z.string().url() });
 
@@ -167,6 +179,23 @@ materialsRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await listMaterials(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/** PATCH course-scoped material metadata so cross-course intent is explicit. */
+materialsRouter.patch(
+  '/courses/:courseId/materials/:materialId',
+  validate({ params: courseMaterialParams }),
+  ensureCourseInstructor(),
+  validate({ body: materialMetadataBody }),
+  async (req, res) => {
+    res.json(
+      await updateMaterialKind(
+        new ObjectId(String(req.params.courseId)),
+        new ObjectId(String(req.params.materialId)),
+        (req.body as z.infer<typeof materialMetadataBody>).kind,
+      ),
+    );
   },
 );
 

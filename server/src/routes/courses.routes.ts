@@ -20,6 +20,8 @@ import {
   getCourseTree,
   publishChecklist,
   setPublished,
+  archiveCourse,
+  restoreCourse,
   putRoster,
   getRoster,
 } from '../services/courses.service';
@@ -39,6 +41,7 @@ const loIdParams = z.object({ loId: objectIdParam });
 const createCourseBody = z.object({
   name: z.string().min(1),
   courseCode: z.string().min(1),
+  section: z.string().trim().min(1).max(40).optional(),
   term: z.string().min(1),
 });
 
@@ -49,6 +52,10 @@ const autoPauseBody = z.object({
 });
 
 const updateCourseBody = z.object({
+  name: z.string().trim().min(1).optional(),
+  courseCode: z.string().trim().min(1).optional(),
+  section: z.string().trim().max(40).nullable().optional(),
+  term: z.string().trim().min(1).optional(),
   termStart: z.coerce.date().optional(),
   termEnd: z.coerce.date().optional(),
   feedbackStrategy: z.enum(['adaptive', 'strategy-a', 'strategy-b']).optional(),
@@ -130,6 +137,16 @@ coursesRouter.post(
   },
 );
 
+/** GET /api/courses/:courseId/publish-checklist -> ChecklistItem[]. */
+coursesRouter.get(
+  '/courses/:courseId/publish-checklist',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await publishChecklist(new ObjectId(String(req.params.courseId))));
+  },
+);
+
 /** GET /api/courses/:courseId -> Course + themes: [Theme & { los }]. Instructor-only. */
 coursesRouter.get(
   '/courses/:courseId',
@@ -196,6 +213,26 @@ coursesRouter.post(
     const course = await setPublished(courseId, false);
     const checklist = await publishChecklist(courseId);
     res.json({ published: course.published, checklist });
+  },
+);
+
+/** POST /api/courses/:courseId/archive -> Course. Historical instructor access remains. */
+coursesRouter.post(
+  '/courses/:courseId/archive',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await archiveCourse(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/** POST /api/courses/:courseId/restore -> draft Course. */
+coursesRouter.post(
+  '/courses/:courseId/restore',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await restoreCourse(new ObjectId(String(req.params.courseId))));
   },
 );
 
@@ -313,6 +350,8 @@ const COURSE_ERROR_STATUS: Record<string, number> = {
   'theme-not-found': 404,
   'lo-not-found': 404,
   'term-end-before-start': 400,
+  'course-archived': 409,
+  'course-not-archived': 409,
 };
 
 coursesRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

@@ -8,7 +8,13 @@ import {
   rosterCol,
   usersCol,
 } from '../components/mongodb/collections';
-import type { Course, Theme, LearningObjective, RosterEntry } from '../types/domain';
+import type {
+  Course,
+  CourseLifecycle,
+  Theme,
+  LearningObjective,
+  RosterEntry,
+} from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Courses service (IN-S01/S02/S03, IN-L06): course creation, Theme/LO hierarchy
@@ -21,10 +27,20 @@ import type { Course, Theme, LearningObjective, RosterEntry } from '../types/dom
 const registrationCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
 /** Fetch a course or throw 'course-not-found' (404 at the route layer). */
+export function courseLifecycle(course: Pick<Course, 'published' | 'lifecycle' | 'archivedAt'>): CourseLifecycle {
+  if (course.lifecycle) return course.lifecycle;
+  if (course.archivedAt) return 'archived';
+  return course.published ? 'published' : 'draft';
+}
+
+function normalizeCourse(course: WithId<Course>): WithId<Course> {
+  return { ...course, lifecycle: courseLifecycle(course) };
+}
+
 export async function getCourse(courseId: ObjectId): Promise<WithId<Course>> {
   const course = await coursesCol().findOne({ _id: courseId });
   if (!course) throw new Error('course-not-found');
-  return course;
+  return normalizeCourse(course);
 }
 
 /**
@@ -34,18 +50,21 @@ export async function getCourse(courseId: ObjectId): Promise<WithId<Course>> {
  */
 export async function createCourse(
   ownerPuid: string,
-  input: { name: string; courseCode: string; term: string },
+  input: { name: string; courseCode: string; section?: string; term: string },
 ): Promise<WithId<Course>> {
+  const now = new Date();
   const course: Course = {
     ...input,
     ownerPuid,
     registrationCode: registrationCode(),
     published: false,
+    lifecycle: 'draft',
     feedbackStrategy: 'adaptive',
     autoPause: { minAttempts: 5, flagPercent: 30, flagCount: 15 },
     redirectFailureThreshold: 3,
     reviewBacklogThreshold: 10, // §9.1 default
-    createdAt: new Date(),
+    createdAt: now,
+    updatedAt: now,
   };
   const { insertedId } = await coursesCol().insertOne(course);
   await usersCol().updateOne(
@@ -62,7 +81,19 @@ export async function createCourse(
  */
 export async function updateCourse(
   courseId: ObjectId,
-  patch: Partial<Pick<Course, 'termStart' | 'termEnd' | 'feedbackStrategy' | 'autoPause' | 'reviewBacklogThreshold'>>,
+  patch: Partial<
+    Pick<
+      Course,
+      | 'name'
+      | 'courseCode'
+      | 'term'
+      | 'termStart'
+      | 'termEnd'
+      | 'feedbackStrategy'
+      | 'autoPause'
+      | 'reviewBacklogThreshold'
+    >
+  > & { section?: string | null },
 ): Promise<WithId<Course>> {
   const course = await getCourse(courseId);
   const termStart = patch.termStart ?? course.termStart;
@@ -70,8 +101,25 @@ export async function updateCourse(
   if (termStart && termEnd && termEnd <= termStart) {
     throw new Error('term-end-before-start');
   }
-  await coursesCol().updateOne({ _id: courseId }, { $set: patch });
-  return { ...course, ...patch };
+  const updatedAt = new Date();
+  const { section, ...setPatch } = patch;
+  await coursesCol().updateOne(
+    { _id: courseId },
+    {
+      $set: {
+        ...setPatch,
+        ...(section !== undefined && section !== null ? { section } : {}),
+        updatedAt,
+      },
+      ...(section === null ? { $unset: { section: '' } } : {}),
+    },
+  );
+  return {
+    ...course,
+    ...setPatch,
+    ...(section === null ? { section: undefined } : section !== undefined ? { section } : {}),
+    updatedAt,
+  };
 }
 
 /** IN-S03: regenerate the course's registration code. */
@@ -253,7 +301,50 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
 
 /** Publish is allowed even with checklist warnings (thin LOs) — IN-L06. */
 export async function setPublished(courseId: ObjectId, published: boolean): Promise<WithId<Course>> {
-  await coursesCol().updateOne({ _id: courseId }, { $set: { published } });
+  const course = await getCourse(courseId);
+  if (course.lifecycle === 'archived') throw new Error('course-archived');
+  await coursesCol().updateOne(
+    { _id: courseId },
+    {
+      $set: {
+        published,
+        lifecycle: published ? 'published' : 'draft',
+        updatedAt: new Date(),
+      },
+    },
+  );
+  return getCourse(courseId);
+}
+
+/** Archive is reversible, but restoration always returns to an unpublished draft. */
+export async function archiveCourse(courseId: ObjectId): Promise<WithId<Course>> {
+  await getCourse(courseId);
+  const now = new Date();
+  await coursesCol().updateOne(
+    { _id: courseId },
+    {
+      $set: {
+        published: false,
+        lifecycle: 'archived',
+        archivedAt: now,
+        updatedAt: now,
+      },
+    },
+  );
+  return getCourse(courseId);
+}
+
+export async function restoreCourse(courseId: ObjectId): Promise<WithId<Course>> {
+  const course = await getCourse(courseId);
+  if (course.lifecycle !== 'archived') throw new Error('course-not-archived');
+  const updatedAt = new Date();
+  await coursesCol().updateOne(
+    { _id: courseId },
+    {
+      $set: { published: false, lifecycle: 'draft', updatedAt },
+      $unset: { archivedAt: '' },
+    },
+  );
   return getCourse(courseId);
 }
 

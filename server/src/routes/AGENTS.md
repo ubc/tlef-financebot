@@ -28,8 +28,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   All **public** (they establish/report the session). The `/auth/*` paths are
   intentionally NOT under `/api` (their URLs must match the ACS/SLO registered in
   the IdP). See `components/auth/AGENTS.md`.
-- `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, publish
-  checklist and publish toggle, Theme and LO CRUD/archive, and roster
+- `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, explicit
+  draft/published/archived lifecycle, read-only publish checklist,
+  archive/restore, Theme and LO CRUD/archive, and roster
   put/get. `POST /api/courses` requires an explicit platform-Instructor grant
   (or Admin); every other
   route is **instructor-gated** for the course it targets via
@@ -59,9 +60,13 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   **instructor-gated**; materialId-scoped routes stash `res.locals.courseId`
   from the target material first, the same pattern as `questions.routes.ts`.
 - `content-runs.routes.ts` — Phase 2 P2-0 durable material/generation progress:
-  recent course run history, one full snapshot, and one course-scoped SSE
-  stream. Instructor-gated; the stream sends recent persisted state before
-  live updates.
+  recent course run history, one full snapshot, exact terminal generation
+  retry, and one course-scoped SSE stream. Instructor-gated; the stream sends
+  recent persisted state before live updates.
+- `generation-blueprints.routes.ts` — Instructor-gated saved generation recipe
+  list/create/update/run endpoints.
+- `content-map.routes.ts` — Instructor-gated, course-scoped hierarchy/source/
+  question/run coverage snapshot.
 - `import.routes.ts` — Instructor-gated CSV/JSON/QTI preview + Draft commit,
   plus parameterized-script sandbox preview + revalidated Draft migration.
   Script/template mismatches return review data without inserting.

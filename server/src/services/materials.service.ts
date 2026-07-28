@@ -16,7 +16,12 @@ import {
   getContentRun,
   updateContentRun,
 } from './content-runs.service';
-import type { Material, MaterialIngestResult, MaterialIngestStage } from '../types/domain';
+import type {
+  Material,
+  MaterialIngestResult,
+  MaterialIngestStage,
+  MaterialKind,
+} from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Materials service (IN-S04/S05): instructor course-material upload + async RAG
@@ -132,6 +137,18 @@ function detectUploadFormat(filename: string): UploadFormat | undefined {
   return (UPLOAD_FORMATS as readonly string[]).includes(ext) ? (ext as UploadFormat) : undefined;
 }
 
+/** Deterministic, instructor-correctable metadata suggestion from the source name. */
+export function inferMaterialKind(name: string): MaterialKind {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  if (/\b(solution|answer[-_ ]?key|worked[-_ ]?answer)\b/.test(normalized)) return 'solution';
+  if (/\b(midterm|final|exam|quiz|test|assessment)\b/.test(normalized)) return 'assessment';
+  if (/\b(assignment|homework|problem[-_ ]?set|case[-_ ]?study)\b/.test(normalized)) return 'assignment';
+  if (/\b(lecture|slides?|deck|week[-_ ]?\d+)\b/.test(normalized)) return 'lecture';
+  if (/\b(reading|chapter|article|paper|textbook)\b/.test(normalized)) return 'reading';
+  if (/\b(reference|formula|cheat[-_ ]?sheet|glossary)\b/.test(normalized)) return 'reference';
+  return 'other';
+}
+
 /**
  * Insert one `processing` Material doc per file and enqueue its ingest job
  * independently (IN-S04). Format is validated for every file BEFORE any doc
@@ -157,6 +174,7 @@ export async function createMaterials(
       courseId,
       name: file.originalname,
       format: format as UploadFormat,
+      kind: inferMaterialKind(file.originalname),
       status: 'processing',
       storagePath: file.path,
       assignments: [],
@@ -178,6 +196,7 @@ export async function createUrlMaterial(
     courseId,
     name: url,
     format: 'url',
+    kind: inferMaterialKind(url),
     status: 'processing',
     sourceUrl: url,
     assignments: [],
@@ -188,7 +207,8 @@ export async function createUrlMaterial(
 }
 
 export async function listMaterials(courseId: ObjectId): Promise<WithId<Material>[]> {
-  return materialsCol().find({ courseId }).sort({ uploadedAt: -1 }).toArray();
+  const materials = await materialsCol().find({ courseId }).sort({ uploadedAt: -1 }).toArray();
+  return materials.map((material) => ({ ...material, kind: material.kind ?? 'other' }));
 }
 
 /** Re-enqueue a failed material for ingestion. */
@@ -306,6 +326,20 @@ export async function assignMaterial(
   const material = await materialsCol().findOneAndUpdate(
     { _id: materialId },
     { $set: { assignments } },
+    { returnDocument: 'after' },
+  );
+  if (!material) throw new Error('material-not-found');
+  return material;
+}
+
+export async function updateMaterialKind(
+  courseId: ObjectId,
+  materialId: ObjectId,
+  kind: MaterialKind,
+): Promise<WithId<Material>> {
+  const material = await materialsCol().findOneAndUpdate(
+    { _id: materialId, courseId },
+    { $set: { kind } },
     { returnDocument: 'after' },
   );
   if (!material) throw new Error('material-not-found');

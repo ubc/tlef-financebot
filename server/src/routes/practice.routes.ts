@@ -9,6 +9,7 @@ import { resolveParamValues, substituteParams, drawSeed } from '../services/para
 import { recordSkip } from '../services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../services/review-book.service';
 import { getRedirectMaterialSource } from '../services/progression.service';
+import { getCourse } from '../services/courses.service';
 import type { PracticeMode } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -79,6 +80,32 @@ function stashCourseIdFromQuestionVersion(): (req: Request, res: Response, next:
   };
 }
 
+/** Archived courses remain instructor-readable, but cannot serve or record
+ * student practice. This runs after the course-role guard, so it never exposes
+ * lifecycle state to a caller without course access. */
+function ensureCoursePracticeAvailable(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const rawCourseId =
+    (req.params as { courseId?: string }).courseId ??
+    (res.locals.courseId as string | undefined);
+  if (!rawCourseId) {
+    next(new Error('course-not-found'));
+    return;
+  }
+  getCourse(new ObjectId(rawCourseId))
+    .then((course) => {
+      if (course.lifecycle === 'archived') {
+        res.status(403).json({ error: 'course-archived' });
+        return;
+      }
+      next();
+    })
+    .catch(next);
+}
+
 // --- Serving --------------------------------------------------------------------
 
 /** POST /api/courses/:courseId/practice/next { loId, sessionServedIds? } ->
@@ -87,6 +114,7 @@ practiceRouter.post(
   '/courses/:courseId/practice/next',
   validate({ params: courseIdParams }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   validate({ body: practiceNextBody }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
@@ -138,6 +166,7 @@ practiceRouter.get(
   '/courses/:courseId/los/:loId/materials/:materialId/source',
   validate({ params: courseIdLoIdMaterialIdParams }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   async (req, res, next) => {
     const source = await getRedirectMaterialSource(
       new ObjectId(String(req.params.courseId)),
@@ -167,6 +196,7 @@ practiceRouter.post(
   validate({ body: submitAttemptBody }),
   stashCourseIdFromQuestionVersion(),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   async (req, res) => {
     const body = req.body as z.infer<typeof submitAttemptBody>;
     const result = await submitAttempt({
@@ -190,6 +220,7 @@ practiceRouter.post(
   '/courses/:courseId/los/:loId/skip',
   validate({ params: courseIdLoIdParams }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   validate({ body: skipBody }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
@@ -207,6 +238,7 @@ practiceRouter.get(
   '/courses/:courseId/home',
   validate({ params: courseIdParams }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const home = await studentCourseHome(req.user!.puid, courseId);
@@ -222,6 +254,7 @@ practiceRouter.get(
   '/courses/:courseId/session-summary',
   validate({ params: courseIdParams }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const summary = await getSessionSummaryForStart(req.user!.puid, courseId);
@@ -237,6 +270,7 @@ practiceRouter.put(
   '/courses/:courseId/deferred-summary',
   validate({ params: courseIdParams, body: deferredSummaryBody }),
   ensureCourseStudent(),
+  ensureCoursePracticeAvailable,
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const { since } = req.body as z.infer<typeof deferredSummaryBody>;

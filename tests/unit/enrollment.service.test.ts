@@ -100,4 +100,22 @@ describe('listEnrollments (ST-E03)', () => {
       { courseId, name: 'Intro Finance', courseCode: 'COMM 298', term: '2026W1', active: true },
     ]);
   });
+
+  it('marks an archived course inactive even when the student has an extension', async () => {
+    coursesFindOne.mockResolvedValue({
+      ...activeCourse,
+      lifecycle: 'archived',
+      archivedAt: new Date(),
+    });
+    rosterFindOne.mockResolvedValue({
+      courseId,
+      identifier: 'student1',
+      extendedUntil: new Date(Date.now() + 86_400_000),
+    });
+    const enrolledStudent: User = { ...student, courseRoles: [{ courseId, role: 'student' }] };
+
+    await expect(listEnrollments(enrolledStudent)).resolves.toEqual([
+      { courseId, name: 'Intro Finance', courseCode: 'COMM 298', term: undefined, active: false },
+    ]);
+  });
 });

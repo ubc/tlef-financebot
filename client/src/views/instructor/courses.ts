@@ -45,6 +45,8 @@ function courseHref(courseId: string): string {
 }
 
 function courseCard(course: InstructorCourse): HTMLElement {
+  const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
+  const label = lifecycle === 'archived' ? 'Archived' : lifecycle === 'published' ? 'Published' : 'Sandbox';
   return el(
     'a',
     { class: 'course-card', href: courseHref(course._id) },
@@ -52,9 +54,12 @@ function courseCard(course: InstructorCourse): HTMLElement {
       'div',
       { class: 'course-card__main' },
       el('h3', { class: 'course-card__title', text: `${course.courseCode} — ${course.name}` }),
-      el('p', { class: 'course-card__meta', text: course.term }),
+      el('p', {
+        class: 'course-card__meta',
+        text: [course.term, course.section ? `Section ${course.section}` : ''].filter(Boolean).join(' · '),
+      }),
     ),
-    statusBadge(course.published ? 'Published' : 'Sandbox', course.published ? 'approved' : 'neutral'),
+    statusBadge(label, lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral'),
   );
 }
 
@@ -128,6 +133,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
 
   const nameInput = el('input', { class: 'input', type: 'text', id: 'course-name', required: 'required' }) as HTMLInputElement;
   const codeInput = el('input', { class: 'input', type: 'text', id: 'course-code', required: 'required' }) as HTMLInputElement;
+  const sectionInput = el('input', { class: 'input', type: 'text', id: 'course-section' }) as HTMLInputElement;
   const termInput = el('input', { class: 'input', type: 'text', id: 'course-term', required: 'required' }) as HTMLInputElement;
   const errorSlot = el('div', {});
   const duplicateSlot = el('div', {});
@@ -181,13 +187,14 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     errorSlot.replaceChildren();
     const name = nameInput.value.trim();
     const courseCode = codeInput.value.trim();
+    const section = sectionInput.value.trim();
     const term = termInput.value.trim();
     if (!name || !courseCode || !term) {
       errorSlot.replaceChildren(errorState('Course name, code, and term are all required.'));
       return;
     }
     try {
-      const created = await createCourse({ name, courseCode, term });
+      const created = await createCourse({ name, courseCode, ...(section ? { section } : {}), term });
       navigate(`/instructor/course/${encodeURIComponent(created._id)}`);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -201,6 +208,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       { class: 'form stack', onsubmit: (e: Event) => void submit(e) },
       el('div', { class: 'form-field' }, fieldLabel('Course name *'), nameInput),
       el('div', { class: 'form-field' }, fieldLabel('Course code *'), codeInput),
+      el('div', { class: 'form-field' }, fieldLabel('Section'), sectionInput),
       el('div', { class: 'form-field' }, fieldLabel('Term *'), termInput),
       duplicateSlot,
       errorSlot,

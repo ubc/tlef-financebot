@@ -70,7 +70,8 @@ export async function listEnrollments(
       const identifiers = [user.uid, user.email].filter(Boolean).map((s) => s.toLowerCase());
       const rosterHit = await rosterCol().findOne({ courseId, identifier: { $in: identifiers } });
       const ends = rosterHit?.extendedUntil ?? course.termEnd;
-      const active = !ends || ends >= new Date();
+      const archived = course.lifecycle === 'archived' || Boolean(course.archivedAt);
+      const active = !archived && (!ends || ends >= new Date());
 
       return { courseId, name: course.name, courseCode: course.courseCode, term: course.term, active };
     }),

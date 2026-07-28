@@ -16,6 +16,11 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['masteryProfiles:{"puid":1,"courseId":1,"loId":1}'].options?.unique).toBe(true);
   });
 
+  it('enforces one saved generation blueprint name per course', () => {
+    expect(byCollection['generationBlueprints:{"courseId":1,"name":1}'].options?.unique).toBe(true);
+    expect(byCollection['generationBlueprints:{"courseId":1,"updatedAt":-1}']).toBeDefined();
+  });
+
   it('indexes the hot attempt-record and serving paths', () => {
     expect(byCollection['attemptRecords:{"puid":1,"courseId":1,"loId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['attemptRecords:{"questionVersionId":1}']).toBeDefined();

@@ -59,6 +59,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/role.ts` | Role-gated area (Faculty/Student/Staff), one factory per role. |
 | `views/admin/accounts.ts` | Admin Console v0: list persisted Users and grant/revoke global platform-Instructor access by PUID, including pending-first-login state. |
 | `views/instructor/student-preview.ts` | Persistent-banner Instructor preview of the Approved student practice experience; reuses the question card through a preview-only API adapter. |
+| `views/instructor/content-map.ts` | Instructor-only Theme/LO coverage map joining material kinds, question states, run status, and authoring gaps. |
 
 ## Adding a page
 

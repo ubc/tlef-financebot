@@ -37,16 +37,21 @@
 // screenshot don't show.
 import {
   ApiError,
+  createGenerationBlueprint,
   generateQuestions,
   getCourseTree,
   getGenerationPresets,
   getPreseeding,
   listMaterials,
   listContentRuns,
+  listGenerationBlueprints,
+  retryContentRun,
+  runGenerationBlueprint,
   subscribeContentRuns,
   type ContentRunSummary,
   type CourseTree,
   type GenerationDifficulty,
+  type GenerationBlueprint,
   type GenerationPreset,
   type GenerationQuestionType,
   type Material,
@@ -191,8 +196,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let recentRuns: ContentRunSummary[];
   let materials: Material[];
   let generationPresets: GenerationPreset[];
+  let blueprints: GenerationBlueprint[];
   try {
-    [preseeding, tree, recentRuns, materials, generationPresets] = await Promise.all([
+    [preseeding, tree, recentRuns, materials, generationPresets, blueprints] = await Promise.all([
       getPreseeding(courseId),
       getCourseTree(courseId),
       listContentRuns(courseId, { kind: 'question-generation', limit: 25 }),
@@ -200,6 +206,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       getGenerationPresets().catch(() =>
         PRESET_TEMPLATES.map(({ label, text }) => ({ label, text })),
       ),
+      listGenerationBlueprints(courseId),
     ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -229,6 +236,13 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let formQueuedMessage: string | null = null;
   let formBusy = false;
   let activeFormRunId: string | null = null;
+  let selectedBlueprintId = '';
+  const retryingRuns = new Set<string>();
+  const blueprintNameInput = el('input', {
+    class: 'input',
+    type: 'text',
+    placeholder: 'Blueprint name',
+  }) as HTMLInputElement;
 
   // Persistent — never recreated by `renderForm`, so typing in it doesn't get
   // interrupted the way rebuilding the whole form on every keystroke would
@@ -314,6 +328,77 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     renderForm();
   }
 
+  async function saveBlueprint(): Promise<void> {
+    const name = blueprintNameInput.value.trim();
+    if (!name || !formLoId) {
+      formError = 'Blueprint name and Target LO are required.';
+      renderForm();
+      return;
+    }
+    formBusy = true;
+    formError = null;
+    renderForm();
+    try {
+      const prompt = promptTextarea.value.trim();
+      const eligibleMaterials = materialsForSelectedLo();
+      const mentionedMaterials = eligibleMaterials.filter((material) =>
+        prompt.includes(materialMentionToken(material.name)),
+      );
+      const pinnedMaterials = mentionedMaterials.length > 0 ? mentionedMaterials : eligibleMaterials;
+      const created = await createGenerationBlueprint(courseId, {
+        name,
+        loId: formLoId,
+        count: 3,
+        type: formType,
+        difficulty: formDifficulty,
+        prompt: prompt || undefined,
+        materialIds: pinnedMaterials.length > 0
+          ? pinnedMaterials.map((material) => material._id)
+          : undefined,
+      });
+      blueprints = [created, ...blueprints];
+      selectedBlueprintId = created._id;
+      formQueuedMessage = `Saved blueprint “${created.name}”.`;
+    } catch (error) {
+      formError = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    formBusy = false;
+    renderForm();
+  }
+
+  async function runSelectedBlueprint(): Promise<void> {
+    if (!selectedBlueprintId) return;
+    formBusy = true;
+    formError = null;
+    renderForm();
+    try {
+      const queued = await runGenerationBlueprint(courseId, selectedBlueprintId);
+      activeFormRunId = queued.runId;
+      formQueuedMessage = `Blueprint run queued as ${queued.runId.slice(-8)}.`;
+    } catch (error) {
+      formError = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    formBusy = false;
+    renderForm();
+  }
+
+  async function retryRun(run: ContentRunSummary): Promise<void> {
+    retryingRuns.add(run._id);
+    renderRuns();
+    try {
+      const queued = await retryContentRun(courseId, run._id);
+      activeFormRunId = queued.runId;
+      formQueuedMessage = `Retry queued as run ${queued.runId.slice(-8)}.`;
+      renderForm();
+    } catch (error) {
+      formError = error instanceof ApiError ? error.message : (error as Error).message;
+      renderForm();
+    } finally {
+      retryingRuns.delete(run._id);
+      renderRuns();
+    }
+  }
+
   function runStatusText(run: ContentRunSummary): string {
     const stage = run.stage.charAt(0).toUpperCase() + run.stage.slice(1);
     const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
@@ -343,10 +428,48 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
           )
         : false,
       run.error ? el('p', { class: 'material-row__error', text: run.error.message }) : false,
+      run.kind === 'question-generation' && ['completed', 'partial', 'failed'].includes(run.status)
+        ? el(
+            'button',
+            {
+              class: 'btn btn--ghost btn--sm',
+              type: 'button',
+              disabled: retryingRuns.has(run._id) ? 'disabled' : undefined,
+              onclick: () => void retryRun(run),
+            },
+            retryingRuns.has(run._id) ? 'Retrying…' : 'Run exact retry',
+          )
+        : false,
     );
   }
 
   function renderForm(): void {
+    const blueprintSelect = el(
+      'select',
+      {
+        class: 'input',
+        onchange: (event: Event) => {
+          selectedBlueprintId = (event.target as HTMLSelectElement).value;
+          const selected = blueprints.find((blueprint) => blueprint._id === selectedBlueprintId);
+          if (selected) {
+            formLoId = selected.loId;
+            formType = selected.type;
+            formDifficulty = selected.difficulty ?? 'medium';
+            promptTextarea.value = selected.prompt ?? '';
+            blueprintNameInput.value = selected.name;
+          }
+          renderForm();
+        },
+      },
+      el('option', { value: '', text: 'Custom request', selected: selectedBlueprintId ? undefined : 'selected' }),
+      ...blueprints.map((blueprint) =>
+        el('option', {
+          value: blueprint._id,
+          text: blueprint.name,
+          selected: selectedBlueprintId === blueprint._id ? 'selected' : undefined,
+        }),
+      ),
+    ) as HTMLSelectElement;
     const loSelect = el(
       'select',
       {
@@ -393,6 +516,34 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         class: 'preseeding-form__hint',
         text: 'Guide question generation: specify LO, type, difficulty, and use @mentions to reference specific materials.',
       }),
+      el(
+        'div',
+        { class: 'preseeding-form__row' },
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Saved blueprint' }), blueprintSelect),
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Blueprint name' }), blueprintNameInput),
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost btn--sm',
+            type: 'button',
+            disabled: formBusy ? 'disabled' : undefined,
+            onclick: () => void saveBlueprint(),
+          },
+          'Save blueprint',
+        ),
+        selectedBlueprintId
+          ? el(
+              'button',
+              {
+                class: 'btn btn--ghost btn--sm',
+                type: 'button',
+                disabled: formBusy ? 'disabled' : undefined,
+                onclick: () => void runSelectedBlueprint(),
+              },
+              'Run blueprint',
+            )
+          : false,
+      ),
       el(
         'div',
         { class: 'preseeding-presets' },

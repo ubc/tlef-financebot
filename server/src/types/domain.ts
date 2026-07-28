@@ -42,6 +42,7 @@ export type PracticeMode = 'topic-practice' | 'review-book' | 'exam-prep';
 
 /** Course-level feedback configuration (IN-S10). */
 export type FeedbackStrategy = 'adaptive' | 'strategy-a' | 'strategy-b';
+export type CourseLifecycle = 'draft' | 'published' | 'archived';
 
 /** The strategy actually applied on a single attempt (pinned on AttemptRecord). */
 export type AppliedStrategy = 'a' | 'b';
@@ -51,6 +52,14 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 export type CourseRole = 'student' | 'instructor' | 'ta';
 
 export type ContentRunKind = 'material-ingest' | 'question-generation';
+export type MaterialKind =
+  | 'lecture'
+  | 'reading'
+  | 'assignment'
+  | 'assessment'
+  | 'solution'
+  | 'reference'
+  | 'other';
 export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 export type MaterialIngestStage = 'queued' | 'parsing' | 'chunking' | 'embedding' | 'indexing' | 'classifying';
 export type QuestionGenerationStage =
@@ -90,18 +99,23 @@ export interface PlatformInstructorGrant {
 export interface Course {
   name: string;
   courseCode: string; // e.g. "COMM 298"
+  section?: string; // e.g. "101"; separate from the catalog course code
   term: string; // e.g. "2026W1"
   ownerPuid: string;
   registrationCode: string; // unique; regenerable (IN-S03)
   termStart?: Date;
   termEnd?: Date; // reaching it auto-revokes student access (IN-S02)
   published: boolean; // sandbox until published (IN-L06)
+  /** Explicit authoring lifecycle. Legacy rows normalize from published/archivedAt. */
+  lifecycle?: CourseLifecycle;
+  archivedAt?: Date;
   feedbackStrategy: FeedbackStrategy; // default 'adaptive' (IN-S10)
   autoPause: { minAttempts: number; flagPercent: number; flagCount: number }; // §4.3 defaults 5/30/15
   redirectFailureThreshold: number; // ST-P07, default 3
   reviewBacklogThreshold: number; // §9.1, default 10 -- pending-review count that triggers a 'review-backlog' notification
   lastBacklogNotifiedAt?: Date; // §9.1 -- written by notifications.service's checkReviewBacklog, at most once per 24h
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Theme {
@@ -147,6 +161,12 @@ export interface QuestionVersion {
   paramSlots?: ParamSlot[];
   generateScript?: string; // instructor-authored generate() source (PrairieLearn convention)
   sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>; // question reference view (§10)
+  provenance?:
+    | { kind: 'manual' }
+    | { kind: 'generated'; runId: ObjectId; blueprintId?: ObjectId; item: number }
+    | { kind: 'imported'; format: 'csv' | 'json' | 'qti'; sourceName?: string; item: number }
+    | { kind: 'script-migration'; sourceName?: string }
+    | { kind: 'edited'; parentVersionId: ObjectId };
   // Content keys patched in THIS edit only (per-edit, not cumulative) —
   // IN-Q03. The set of fields that diverge from the generated original across
   // the whole version chain is the union of editedFields over every version
@@ -164,6 +184,8 @@ export interface Question {
   state: PublicationState;
   loIds: ObjectId[]; // many-to-many (IN-Q13)
   themeIds: ObjectId[];
+  /** Additive lineage grouping; new standalone questions use their own id. */
+  templateFamilyId?: ObjectId;
   labels: QuestionLabel[];
   agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
@@ -228,6 +250,7 @@ export interface Material {
   courseId: ObjectId;
   name: string;
   format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
+  kind?: MaterialKind;
   status: 'processing' | 'ready' | 'failed';
   error?: string;
   sourceUrl?: string; // format === 'url'
@@ -327,6 +350,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
     type: QuestionType;
     difficulty?: Difficulty;
     prompt?: string;
+    blueprintId?: ObjectId;
+    retryOfRunId?: ObjectId;
     models: {
       embedding: string;
       generator: string;
@@ -342,6 +367,22 @@ export interface QuestionGenerationRun extends ContentRunBase {
 }
 
 export type ContentRun = MaterialIngestRun | QuestionGenerationRun;
+
+export interface GenerationBlueprint {
+  courseId: ObjectId;
+  name: string;
+  loId: ObjectId;
+  count: number;
+  type: QuestionType;
+  difficulty?: Difficulty;
+  prompt?: string;
+  materialIds?: ObjectId[];
+  models: QuestionGenerationRun['input']['models'];
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  lastRunId?: ObjectId;
+}
 
 /** (User, LO) rollup computed from AttemptRecords — never raw judgments. */
 export interface MasteryProfile {
