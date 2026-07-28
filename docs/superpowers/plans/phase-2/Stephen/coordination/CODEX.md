@@ -91,6 +91,29 @@ The remaining core exit checkbox is not a code claim: actual COMM 298
 practice-set/script sources are absent from the searched workspace, so they
 cannot yet be imported as real Draft content.
 
+### Current-head release candidate
+
+Branch `codex/phase-2-release-candidate-20260728` replays every exact live
+#34–#42 head onto `main@ac7bd0d`; integration merge `834f149`. It is pushed
+for inspection only and has no PR.
+
+Required final-tree resolutions, all verified on that branch:
+
+- `client/src/main.ts`: keep Admin Accounts, Import, and Student Preview
+  imports/routes.
+- `server/src/app.ts`: keep `adminRouter`, `importRouter`, and
+  `previewRouter` imports/mounts.
+- `client/src/api.ts`: keep Import, Regeneration, and Script Migration API
+  blocks.
+- `client/src/views/instructor/question-detail.ts`: keep the working
+  Regenerate button, Parameters link, and regeneration panel.
+- `server/src/services/AGENTS.md`: keep Admin, Preview, and Import service
+  entries.
+
+Exact-tree evidence: 61/61 Jest suites and 640/640 tests; typecheck; lint; Node
+24 build; 12 passed real-session Chromium scenarios with one opt-in live-LLM
+skip; `adminGrants=0`, `adminUsers=0`, and `courses=0` after cleanup.
+
 ## Released Admin A2
 
 Instructor Student Preview is active on `codex/admin-student-preview`.

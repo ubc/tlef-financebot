@@ -349,3 +349,35 @@ Finance-bot review note. Therefore the core exit checkbox for importing real
 COMM 298 content remains honestly open. Synthetic fixtures prove the tooling,
 but are not relabelled as instructor content. No feature PR was merged by
 Codex.
+
+## Current-head release candidate — 2026-07-28
+
+Codex replayed the exact live heads of #34–#42, in documented dependency
+order, onto `main@ac7bd0d`. All nine feature heads are ancestors of
+`codex/phase-2-release-candidate-20260728`; the final integration merge is
+`834f149`. This branch is a release reference only: it has no PR and was not
+merged to `main`.
+
+The replay found conflicts that individual PR-to-current-main mergeability
+could not reveal:
+
+- #39 after the Task 5/Admin chain: retain both Admin and Import imports,
+  routes, and router mounts in `client/src/main.ts` / `server/src/app.ts`.
+- #40 after Import: retain both the Import API block and Regeneration API;
+  question detail must keep the real Regenerate control, Parameters link, and
+  regeneration panel.
+- #41 after Import: retain Admin, Import, and Student Preview routes/mounts.
+- #42 last: retain both Regeneration and Script Migration APIs, plus all
+  Admin/Preview/Import entries in the services guide.
+
+The exact resolved current-head tree passed 61/61 Jest suites (640/640 tests),
+server/client typecheck, lint, Node 24 production build, and 12 real-session
+Chromium scenarios; the one opt-in live-LLM scenario remained intentionally
+skipped. The browser run covered Admin grant/search/revoke, published and
+unpublished Student Preview isolation, CSV import, script migration,
+generation/regeneration, instructor setup/publish, shell, landing, and
+identity. Post-run counts were `adminGrants=0`, `adminUsers=0`, `courses=0`.
+
+Do not merge the individual PRs sequentially without either applying these
+resolutions or using this RC as the final integration source. Real COMM 298
+content is still absent, so that operational exit checkbox remains open.

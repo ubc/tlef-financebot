@@ -338,3 +338,21 @@ real COMM 298 practice-set or parameterized-script source was found in the
 repo, `tlef-create`, or the supplied review note. Tasks 8–9 are implemented and
 browser-tested with fixtures, but real instructor content must be supplied and
 imported as Drafts before claiming the phase exit.
+
+## Current-head release candidate follow-up — 2026-07-28
+
+No Saurav action is required. Codex replayed the exact live #34–#42 heads onto
+`main@ac7bd0d` and published the tested result as
+`codex/phase-2-release-candidate-20260728` (`834f149` integration merge). No PR
+or feature merge to `main` was made.
+
+The rehearsal found four final-stack conflicts invisible when each PR was
+checked only against its current base: Admin/Import/Preview route wiring,
+Import plus Regeneration API blocks, Regenerate plus Parameters UI, and
+Regeneration plus Script Migration API blocks. The RC retains all sides and
+is the authoritative conflict-resolution reference.
+
+Verification on that exact tree: 61 Jest suites / 640 tests, typecheck, lint,
+Node 24 build, 12 real-session Chromium scenarios passed, one opt-in live-LLM
+scenario skipped, and zero Admin/User/course fixture residuals. The only
+remaining Phase 2 exit item is still real COMM 298 content import.
