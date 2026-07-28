@@ -9,6 +9,7 @@ import {
   sessionSummariesCol,
 } from '../components/mongodb/collections';
 import { getLoStatuses } from './mastery.service';
+import { substituteParams } from './params.service';
 import type { ReviewBookEntry, Theme } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -116,6 +117,13 @@ export async function listReviewBook(puid: string, courseId: ObjectId, sort: Rev
   const versionIds = [...new Map(questions.map((q) => [q.currentVersionId.toString(), q.currentVersionId])).values()];
   const versions = await questionVersionsCol().find({ _id: { $in: versionIds } }).toArray();
 
+  // Preview stems must show substituted values, not raw `{{slot}}`
+  // placeholders, for a parameterized question — the same values the
+  // student was actually served, pinned on the triggering attempt (ST-P03).
+  const triggeringAttemptIds = [...new Map(entries.map((e) => [e.triggeringAttemptId.toString(), e.triggeringAttemptId])).values()];
+  const triggeringAttempts = await attemptsCol().find({ _id: { $in: triggeringAttemptIds } }).toArray();
+  const paramValuesByAttemptId = new Map(triggeringAttempts.map((a) => [a._id.toString(), a.paramValues]));
+
   const questionById = new Map(questions.map((q) => [q._id.toString(), q]));
   const versionById = new Map(versions.map((v) => [v._id.toString(), v]));
   const themeById = new Map(themes.map((t) => [t._id.toString(), t]));
@@ -135,10 +143,12 @@ export async function listReviewBook(puid: string, courseId: ObjectId, sort: Rev
       group = { theme, entries: [] };
       groupsByTheme.set(key, group);
     }
+    const paramValues = paramValuesByAttemptId.get(entry.triggeringAttemptId.toString());
+    const stem = version?.stem ?? '';
     group.entries.push({
       ...entry,
       question: {
-        stem: version?.stem ?? '',
+        stem: paramValues ? substituteParams(stem, paramValues) : stem,
         type: version?.type ?? '',
         difficulty: version?.difficulty ?? '',
       },

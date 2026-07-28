@@ -305,6 +305,38 @@ describe('POST /api/attempts', () => {
     expect(res.status).toBe(200);
     expect(res.body.correct).toBe(true);
   });
+
+  // Final whole-branch review I1: the client (practice-card.ts) now echoes
+  // `question.paramValues` back in the `POST /api/attempts` body when the
+  // served question was parameterized. This proves the server side of that
+  // contract — a `paramValues` field in the request body reaches
+  // `submitAttempt`'s input unchanged — so paired with practice.routes.test's
+  // "parameterized question" describe above (proving `/practice/next` returns
+  // `paramValues` for the client to echo) and attempts.service.test.ts's
+  // paramValues-substitution coverage, the full round trip is exercised.
+  it('forwards a parameterized submission\'s paramValues from the request body to submitAttempt (I1 client echo contract)', async () => {
+    const questionVersionId = new ObjectId();
+    jest.mocked(getCourseIdForQuestionVersion).mockResolvedValue(courseId);
+    jest.mocked(submitAttempt).mockResolvedValue({
+      correct: true,
+      feedback: { strategy: 'b', revealed: [] },
+      mastery: { loStatus: 'in-progress' },
+      reviewBook: { added: false },
+    } as never);
+
+    const res = await request(makeApp(student))
+      .post('/api/attempts')
+      .send({
+        questionVersionId: questionVersionId.toHexString(),
+        loId: loId.toHexString(),
+        mode: 'topic-practice',
+        selectedKey: 'A',
+        paramValues: { principal: 1000, rate: 5 },
+      });
+
+    expect(res.status).toBe(200);
+    expect(submitAttempt).toHaveBeenCalledWith(expect.objectContaining({ paramValues: { principal: 1000, rate: 5 } }));
+  });
 });
 
 describe('GET /api/courses/:courseId/home', () => {
