@@ -193,7 +193,7 @@ interface GenerationBlueprint {
   provenance display, and content map when backing services are available.
 - [x] Update this plan, Stephen `STATUS.md`, the original improvement map,
   `docs/api-contract.md`, nearest `AGENTS.md`, and the shared Phase 2 plan.
-- [ ] Run `npm run sync-plans -- Stephen` after implementation.
+- [x] Run `npm run sync-plans -- Stephen` after implementation.
 
 ## Automated verification result
 
