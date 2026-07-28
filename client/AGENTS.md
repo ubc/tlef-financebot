@@ -31,15 +31,16 @@ Omitting the extension will compile but fail to load in the browser.
 
 Two top-level states, chosen at startup from `GET /api/auth/me`:
 
-- **Logged out → the landing screen** (`views/landing.ts`): brand, a short
-  intro, the public health check, and the "Log in with CWL" button. Nothing else
-  is reachable — the rest of the app is behind login.
+- **Logged out → the landing screen** (`views/landing.ts`): the FinanceBot
+  wordmark, a "Log in with CWL" button, and a redirect note — mirroring the
+  team's Figma wireframe frame `0 - Login` (`148:5448`). Nothing else is
+  reachable; the rest of the app is behind login.
 - **Logged in → the app shell** (`main.ts`): a navy sidebar + top bar with a hash
   router swapping views in the main outlet.
 
 | File | Role |
 | --- | --- |
-| `config.ts` | **The re-skin point.** App name/tagline (`APP`) and the sidebar `NAV` table. |
+| `config.ts` | **The re-skin point.** App name (`APP`) and the sidebar `NAV` table. |
 | `main.ts` | Bootstrap: picks landing vs shell, builds the sidebar/top bar, starts the router, initializes the theme. |
 | `router.ts` | Tiny hash router (`#/`, `#/notes`, …). No server SPA fallback needed. |
 | `auth.ts` | Caches the session from `/api/auth/me`; derives a display name. |
@@ -47,7 +48,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `theme.ts` | Light/dark theme (persisted; `data-theme` on `<html>`). |
 | `ui.ts` | Shared UI kit: loading/empty/error states, badges, status dots. |
 | `dom.ts` | `el()` / `mount()` / `byId()` — minimal DOM helpers. |
-| `views/landing.ts` | Pre-login screen. |
+| `views/landing.ts` | Pre-login screen (Figma `0 - Login`, node `148:5448`). |
 | `views/home.ts` | Overview (dashboard): welcome, system status, component map. |
 | `views/health.ts` | Reusable "System status" card (used by landing + home). |
 | `views/notes.ts` | EXAMPLE (mongodb demo). Safe to delete. |
@@ -80,9 +81,10 @@ a friendly state (a `403` is left in-app; only `401` drops to the landing screen
 ## Re-skinning
 
 Two places: `APP` + `NAV` in `src/config.ts`, and the `:root` token block at the
-top of `public/styles/main.css` (colors, radius, sidebar width). The deep-navy
-sidebar and the monospace treatment for technical data are the visual signature;
-both are token-driven.
+top of `public/styles/main.css` (colors, radius, sidebar width). The persona
+sidebars (green instructor, blue student), the FinanceBot-blue login wordmark,
+and the monospace treatment for technical data are the visual signature; all are
+token-driven.
 
 ## Conventions
 
