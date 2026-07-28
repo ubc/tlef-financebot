@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ensureAdmin } from '../components/auth/platform-guards';
+import { ensureAdmin } from '../components/auth';
 import { validate } from '../middleware/validate';
 import {
   grantPlatformInstructor,
