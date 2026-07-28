@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 11 flag-loop E2E active; Task 7 released on PR #37
-**Base:** PR #37 head `d2d3ef1` (`codex/phase-2-task7-progression`)
+**State:** Task 11 released on PR #38; no Codex implementation path active
+**Base:** PR #38 head `8c029c2` (`codex/phase-2-task11-flag-loop`)
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -12,12 +12,14 @@ script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
 
-## Active task
+## Released Task 11
 
-Phase 2 Task 11 — joint flag-loop exit proof, driven by Stephen/Codex without
-waiting for Saurav confirmation.
+Phase 2 Task 11 — joint flag-loop exit proof, driven by Stephen/Codex and
+complete on stacked PR #38.
 
-Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
+Implementation commit: `4422d20`; plan update: `8c029c2`. All paths listed
+below are released. Student Preview A2 remains deliberately unstarted until
+PRs #34, #36, and #37 merge.
 
 ### Task 11 files claimed by Codex
 
@@ -46,6 +48,10 @@ suite: the new flag loop passes, while those specs still assert the retired
 Phase 0 demo shell or use selectors that are ambiguous against a real shared
 Mongo dataset. This is test stabilization only; no additional production file
 is claimed.
+
+Verification: 53 Jest suites / 583 tests, typecheck/lint/build, and 12
+Playwright scenarios passed; one existing opt-in live-LLM scenario skipped.
+Post-run E2E course/flag/attempt/notification counts were all zero.
 
 ## Released Task 7
 

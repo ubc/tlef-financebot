@@ -20,16 +20,18 @@ attached to the document; `poll()` treats that normal construction state as a
 teardown, clears its interval, and exits permanently. Stored standard/elevated
 notifications therefore never appear in either shell.
 
-Codex is taking only `client/src/notifications-bell.ts` to defer the first poll
-until the wrapper has had a chance to connect. The new
-`tests/e2e/flag-loop.spec.ts` is the regression proof. No notification service,
-route, data contract, or other Saurav file is being modified; no confirmation
-is required.
+Codex completed only `client/src/notifications-bell.ts` at `4422d20`, deferring
+the first poll until the wrapper can connect. The new
+`tests/e2e/flag-loop.spec.ts` is the regression proof on PR #38. No
+notification service, route, data contract, or other Saurav file changed; all
+paths are released.
 
 The Task 11 full-suite pass also showed five stale/ambiguous E2E specs.
-Stephen/Codex has claimed `tests/e2e/{app,classes,instructor-pipeline,practice-loop,walking-skeleton}.spec.ts`
-in its coordination ledger for test-only stabilization. Saurav need not act
-or stop other work; no additional Saurav-owned production file is involved.
+Stephen/Codex stabilized `tests/e2e/{app,classes,instructor-pipeline,practice-loop,walking-skeleton}.spec.ts`
+for the current product. Full result: 53 Jest suites / 583 tests,
+typecheck/lint/build, and 12 Playwright scenarios passed; the existing opt-in
+live-LLM scenario skipped. Saurav need not act; no additional Saurav-owned
+production file was involved.
 
 ## How the Phase 2 split happened
 

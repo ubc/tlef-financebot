@@ -12,7 +12,7 @@ _Last updated: 2026-07-28_
 - Task 2 student Flag control: **complete on stacked PR #35**.
 - Admin Console v0: **A1 complete on stacked PR #36**.
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
-- Task 11 flag-loop phase exit E2E: **active with Codex, stacked on PR #37**.
+- Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -30,6 +30,7 @@ Codex completed:
 - Task 7 on PR #37 (`codex/phase-2-task7-progression`), stacked on #35 so the
   practice work includes Task 2 and Task 5's final parameter
   echo/substitution behavior.
+- Task 11 on PR #38 (`codex/phase-2-task11-flag-loop`), stacked on #37.
 
 Codex records current paths in
 [`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
@@ -61,35 +62,37 @@ All Task 7 browser fixtures, attempts, notifications, and temporary course
 roles were localhost-only and removed before handoff; residual fixture counts
 were verified as zero.
 
-## Task 11 claim
+## Task 11 result
 
-Codex is driving the joint Phase 2 flag-loop exit spec on a short-lived branch
-stacked on PR #37. The scope is the E2E proof and its isolated fixture cleanup:
+Codex completed the joint Phase 2 flag-loop exit spec on PR #38, stacked on
+PR #37. The E2E proof covers:
 student flag → instructor standard notification and queue → four additional
 student flags/attempts → elevated auto-pause → Approved-only serving exclusion
 → instructor Clear → serving restored → student resolution notification.
-Saurav verification is informational, not a start blocker per Stephen's
-standing instruction.
+
+The focused spec passed. Full verification passed with 53 Jest suites / 583
+tests, typecheck/lint/build, and 12 current Playwright scenarios; the existing
+opt-in live-LLM scenario was skipped. Explicit post-run counts for E2E courses,
+flags, attempts, and notifications were all zero.
 
 ### Recorded cross-owner unblock
 
-Task 11's first real browser run found a merged Task 3 client lifecycle bug:
+Task 11's first real browser run found and fixed a merged Task 3 client lifecycle bug:
 `createNotificationBell()` starts `poll()` before its wrapper is attached, so
 the `isConnected` teardown branch cancels polling permanently and both shells
 show “No notifications yet” despite stored notifications. Stephen's standing
-authorization applies: Codex is taking the minimal Saurav-owned fix in
-`client/src/notifications-bell.ts`, covered by the Task 11 E2E. No other Task
-3 file is claimed.
+authorization applied: commit `4422d20` contains the minimal Saurav-owned fix
+in `client/src/notifications-bell.ts`, covered by the Task 11 E2E. No other
+Task 3 file changed.
 
 ### Full-E2E stabilization claim
 
-Task 11 itself passes on the isolated branch. Its required full-suite run
-exposed stale Phase 0/example assertions that still expect the deleted
+Task 11's required full-suite run exposed stale Phase 0/example assertions
+that still expected the deleted
 boilerplate shell (`Welcome`, `Members Area`, Notes, Faculty Area) after the
 FinanceBot instructor/student shells replaced it, plus two strict Playwright
 selectors that break when real local data contains more than one course.
-Codex is claiming only these E2E files to align the checks with the current
-product and make the Phase 2 exit gate truthful:
+Codex aligned only these E2E files with the current product:
 
 - `tests/e2e/app.spec.ts`
 - `tests/e2e/classes.spec.ts`
@@ -97,7 +100,8 @@ product and make the Phase 2 exit gate truthful:
 - `tests/e2e/practice-loop.spec.ts`
 - `tests/e2e/walking-skeleton.spec.ts`
 
-No production route/service is being changed for these stale assertions.
+No production route/service changed for these stale assertions. These paths
+are released at `4422d20`.
 
 ## Admin v0 decisions
 
@@ -130,6 +134,8 @@ Current PR chain:
   regression passed
 - #37 — Task 7 progression/redirect + finite rounds; 53 suites / 583 tests and
   live student browser regression passed
+- #38 — Task 11 flag-loop phase exit; 53 suites / 583 tests, 12 Playwright
+  scenarios, typecheck/lint/build, and zero fixture residuals
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).
