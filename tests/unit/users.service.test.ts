@@ -1,7 +1,11 @@
 import { upsertUserFromSaml } from '../../server/src/services/users.service';
-import { usersCol } from '../../server/src/components/mongodb/collections';
+import {
+  platformInstructorGrantsCol,
+  usersCol,
+} from '../../server/src/components/mongodb/collections';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  platformInstructorGrantsCol: jest.fn(),
   usersCol: jest.fn(),
 }));
 jest.mock('../../server/src/config/env', () => ({
@@ -10,9 +14,18 @@ jest.mock('../../server/src/config/env', () => ({
 }));
 
 const findOneAndUpdate = jest.fn();
+const findGrant = jest.fn();
+const updateGrant = jest.fn();
 beforeEach(() => {
   findOneAndUpdate.mockReset();
+  findGrant.mockReset();
+  updateGrant.mockReset();
+  findGrant.mockResolvedValue(null);
   jest.mocked(usersCol).mockReturnValue({ findOneAndUpdate } as never);
+  jest.mocked(platformInstructorGrantsCol).mockReturnValue({
+    findOne: findGrant,
+    updateOne: updateGrant,
+  } as never);
 });
 
 const samlAttrs = (over: Record<string, unknown> = {}) => ({
@@ -47,6 +60,39 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
     findOneAndUpdate.mockResolvedValue({});
     await upsertUserFromSaml(samlAttrs({ ubcEduCwlPuid: 'PUID-ADMIN-0001' }));
     expect(findOneAndUpdate.mock.calls[0][1].$set.isAdmin).toBe(true);
+  });
+
+  it('applies a pending platform-Instructor grant to the real PUID on first login', async () => {
+    const grantId = 'grant-id';
+    findGrant.mockResolvedValue({ _id: grantId, uid: 'financeprof' });
+    findOneAndUpdate.mockResolvedValue({ puid: 'PUID-PROF-0001' });
+
+    await upsertUserFromSaml(samlAttrs({
+      ubcEduCwlPuid: 'PUID-PROF-0001',
+      uid: 'FinanceProf',
+      eduPersonAffiliation: ['faculty'],
+    }));
+
+    expect(findGrant).toHaveBeenCalledWith({ uid: 'financeprof' });
+    expect(findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({
+      uid: 'FinanceProf',
+      platformInstructor: true,
+    });
+    expect(updateGrant).toHaveBeenCalledWith(
+      { _id: grantId },
+      { $set: expect.objectContaining({ appliedToPuid: 'PUID-PROF-0001' }) },
+    );
+  });
+
+  it('does not overwrite an existing platform-Instructor value when no grant is pending', async () => {
+    findOneAndUpdate.mockResolvedValue({ puid: 'PUID-PROF-0001', platformInstructor: true });
+
+    await upsertUserFromSaml(samlAttrs({
+      ubcEduCwlPuid: 'PUID-PROF-0001',
+      uid: 'financeprof',
+    }));
+
+    expect(findOneAndUpdate.mock.calls[0][1].$set).not.toHaveProperty('platformInstructor');
   });
 
   it('rejects a profile with no PUID (no partial session, ST-E01)', async () => {
