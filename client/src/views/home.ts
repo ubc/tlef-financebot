@@ -19,11 +19,16 @@ import { renderMyCourses } from './instructor/courses.js';
 import { pageHeader, copyrightFooter } from '../student-ui.js';
 
 /** The user's primary role, used to route to a role-appropriate home (ST-E01).
- * Admin wins, then instructor (faculty affiliation), else student. Phase 1
- * replaces the stub sections below with real views; this split stays. */
+ * Admin wins, then an explicit global/course Instructor grant, else student.
+ * SAML faculty affiliation alone is identity metadata, not authorization. */
 export function primaryRole(user: AuthUser): 'admin' | 'instructor' | 'student' {
   if (user.isAdmin) return 'admin';
-  if (user.affiliations.includes('faculty')) return 'instructor';
+  if (
+    user.platformInstructor === true
+    || user.courseRoles.some((courseRole) => courseRole.role === 'instructor')
+  ) {
+    return 'instructor';
+  }
   return 'student';
 }
 
@@ -201,13 +206,8 @@ export function renderHome(outlet: HTMLElement): void {
     return;
   }
 
-  // A `faculty`-affiliated user who doesn't (yet) qualify for the full green
-  // instructor shell (main.ts's `isInstructor` needs `isAdmin` or an
-  // `instructor` courseRole) still lands here with `role === 'instructor'`
-  // (see `primaryRole` above). Render My Courses directly rather than the
-  // generic "Phase 1 builds this view out" stub — it already owns its own
-  // header/empty-state, so it replaces the intro rather than following it
-  // (Task 15, Task B).
+  // Keep this direct-rendering branch aligned with main.ts's shell selection:
+  // Admin, platform Instructor, or an existing instructor courseRole.
   if (role === 'instructor') {
     void renderMyCourses(outlet);
     return;

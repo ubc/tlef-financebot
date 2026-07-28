@@ -4,6 +4,7 @@
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-ids `194:2` / `198:2`).
 import { ApiError, createCourse, listInstructorCourses, type InstructorCourse } from '../../api.js';
+import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
@@ -62,14 +63,24 @@ function courseCard(course: InstructorCourse): HTMLElement {
  * an admin with no explicit courseRoles legitimately sees an empty list
  * here). */
 export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
+  const user = getSession().user;
+  const canCreateCourse = Boolean(user?.isAdmin || user?.platformInstructor);
   const body = el('div', {}, loadingState('Loading your courses…'));
   const root = el(
     'div',
     { class: 'view' },
-    pageHeader('My Courses', "Select a course to manage, or create a new one.", {
-      text: '+ Create course',
-      onClick: () => navigate('/instructor/courses/new'),
-    }),
+    pageHeader(
+      'My Courses',
+      canCreateCourse
+        ? 'Select a course to manage, or create a new one.'
+        : 'Select a course you have been assigned to manage.',
+      canCreateCourse
+        ? {
+            text: '+ Create course',
+            onClick: () => navigate('/instructor/courses/new'),
+          }
+        : undefined,
+    ),
     body,
   );
   mount(outlet, root);
@@ -94,6 +105,20 @@ function fieldLabel(text: string): HTMLElement {
 /** Create Course (N2): name/code/term form, with a non-blocking client-side
  * duplicate-term callout (see `findDuplicateCourse`). */
 export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
+  const user = getSession().user;
+  if (!user?.isAdmin && !user?.platformInstructor) {
+    mount(
+      outlet,
+      el(
+        'div',
+        { class: 'view' },
+        pageHeader('Create Course', ''),
+        errorState('Platform Instructor access is required to create a course.'),
+      ),
+    );
+    return;
+  }
+
   const root = el(
     'div',
     { class: 'view' },
