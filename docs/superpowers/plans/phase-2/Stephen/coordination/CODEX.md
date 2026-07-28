@@ -347,3 +347,11 @@ Stephen authorized Codex on 2026-07-28 to take a minimal Saurav-owned
 dependency if a later Stephen task is blocked; any such cross-owner takeover
 must be recorded in both developers' status files with the exact files and
 commit, and must not duplicate active Saurav work.
+
+## Phase 2 current-head release candidate
+
+Draft PR #44 is open from `codex/phase-2-release-candidate-20260728` to `main`
+for Stephen's manual acceptance:
+<https://github.com/ubc/tlef-financebot/pull/44>. It integrates the exact live
+heads of PRs #34–#42 and the tested cross-branch conflict resolutions. Do not
+merge it until Stephen explicitly approves the merge.

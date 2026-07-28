@@ -355,8 +355,9 @@ Codex.
 Codex replayed the exact live heads of #34–#42, in documented dependency
 order, onto `main@ac7bd0d`. All nine feature heads are ancestors of
 `codex/phase-2-release-candidate-20260728`; the final integration merge is
-`834f149`. This branch is a release reference only: it has no PR and was not
-merged to `main`.
+`834f149`. Draft PR #44 is open for Stephen's manual acceptance:
+<https://github.com/ubc/tlef-financebot/pull/44>. It must not be merged until
+Stephen explicitly approves the merge.
 
 The replay found conflicts that individual PR-to-current-main mergeability
 could not reveal:
