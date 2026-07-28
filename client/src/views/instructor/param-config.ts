@@ -214,9 +214,12 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
 
   function currentPatch(): { paramSlots?: ParamSlotInput[]; generateScript?: string } {
     const paramSlots = draftSlots.map(slotToInput).filter((s): s is ParamSlotInput => s !== null);
-    const patch: { paramSlots?: ParamSlotInput[]; generateScript?: string } = { paramSlots };
-    if (draftGenerateScript.trim().length > 0) patch.generateScript = draftGenerateScript;
-    return patch;
+    // generateScript is always included (even '') so that blanking a
+    // previously-saved script and clicking Save explicitly clears it
+    // server-side — editQuestion() treats `patch.generateScript !== undefined`
+    // as "set this field," and an omitted key would leave the stale script
+    // active (and still preferred over paramSlots by resolveParamValues).
+    return { paramSlots, generateScript: draftGenerateScript };
   }
 
   function renderDraws(result: ParamPreviewResult): void {

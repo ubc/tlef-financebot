@@ -110,6 +110,9 @@ export function substituteParams(text: string, values: Record<string, number>): 
  */
 export function findUnusedParamSlots(stem: string, paramSlots: ParamSlot[]): string[] {
   return paramSlots
-    .filter((slot) => !new RegExp(`\\{\\{\\s*${slot.name}\\s*\\}\\}`).test(stem))
+    .filter((slot) => {
+      const escapedName = slot.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return !new RegExp(`\\{\\{\\s*${escapedName}\\s*\\}\\}`).test(stem);
+    })
     .map((slot) => `paramSlots.${slot.name} has no matching {{${slot.name}}} placeholder in the stem`);
 }
