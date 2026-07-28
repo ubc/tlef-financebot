@@ -294,7 +294,7 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
     { item: 'Registration code generated', ok: Boolean(course.registrationCode) },
     {
       item: `Every LO has ≥3 Approved questions${thinLos.length ? ` (thin: ${thinLos.join(', ')})` : ''}`,
-      ok: thinLos.length === 0,
+      ok: los.length > 0 && thinLos.length === 0,
     },
   ];
 }
