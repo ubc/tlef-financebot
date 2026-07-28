@@ -26,6 +26,11 @@ Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
   so parallel agents can run isolated app ports without changing normal CI)
 - `client/src/notifications-bell.ts` (minimal recorded cross-owner Task 3
   lifecycle fix: defer first poll until the wrapper can be connected)
+- `tests/e2e/app.spec.ts` (replace deleted boilerplate-shell expectations)
+- `tests/e2e/classes.spec.ts` (current-shell role checks)
+- `tests/e2e/instructor-pipeline.spec.ts` (strict heading selector)
+- `tests/e2e/practice-loop.spec.ts` (scope Open to the created course card)
+- `tests/e2e/walking-skeleton.spec.ts` (current instructor home/reload proof)
 - `docs/superpowers/plans/phase-2/2026-07-11-phase-2-pilot-readiness.md`
 - `docs/superpowers/plans/phase-2/Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`
 - `docs/superpowers/plans/phase-2/Stephen/STATUS.md`
@@ -35,6 +40,12 @@ Task 11 reads Saurav's flag/notification/queue implementation through public
 routes and direct E2E fixture queries. It does not claim or edit those service
 or client source files except the notification-bell blocker now recorded in
 both developers' status files.
+
+The five pre-existing E2E specs above were added after Task 11's first full
+suite: the new flag loop passes, while those specs still assert the retired
+Phase 0 demo shell or use selectors that are ambiguous against a real shared
+Mongo dataset. This is test stabilization only; no additional production file
+is claimed.
 
 ## Released Task 7
 

@@ -26,6 +26,11 @@ until the wrapper has had a chance to connect. The new
 route, data contract, or other Saurav file is being modified; no confirmation
 is required.
 
+The Task 11 full-suite pass also showed five stale/ambiguous E2E specs.
+Stephen/Codex has claimed `tests/e2e/{app,classes,instructor-pipeline,practice-loop,walking-skeleton}.spec.ts`
+in its coordination ledger for test-only stabilization. Saurav need not act
+or stop other work; no additional Saurav-owned production file is involved.
+
 ## How the Phase 2 split happened
 
 Stephen proposed an ownership/dependency map and a P2-0 (persistent content

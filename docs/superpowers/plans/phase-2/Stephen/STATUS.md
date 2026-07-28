@@ -81,6 +81,24 @@ authorization applies: Codex is taking the minimal Saurav-owned fix in
 `client/src/notifications-bell.ts`, covered by the Task 11 E2E. No other Task
 3 file is claimed.
 
+### Full-E2E stabilization claim
+
+Task 11 itself passes on the isolated branch. Its required full-suite run
+exposed stale Phase 0/example assertions that still expect the deleted
+boilerplate shell (`Welcome`, `Members Area`, Notes, Faculty Area) after the
+FinanceBot instructor/student shells replaced it, plus two strict Playwright
+selectors that break when real local data contains more than one course.
+Codex is claiming only these E2E files to align the checks with the current
+product and make the Phase 2 exit gate truthful:
+
+- `tests/e2e/app.spec.ts`
+- `tests/e2e/classes.spec.ts`
+- `tests/e2e/instructor-pipeline.spec.ts`
+- `tests/e2e/practice-loop.spec.ts`
+- `tests/e2e/walking-skeleton.spec.ts`
+
+No production route/service is being changed for these stale assertions.
+
 ## Admin v0 decisions
 
 - Admins grant a global `platformInstructor` capability by CWL username.
