@@ -13,7 +13,12 @@ import {
   getQuestionDetail,
   type BankItem,
 } from '../services/bank.service';
-import { editQuestion, transitionQuestion, bulkTransition } from '../services/questions.service';
+import {
+  addQuestionInternalNote,
+  editQuestion,
+  transitionQuestion,
+  bulkTransition,
+} from '../services/questions.service';
 import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
 import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot } from '../types/domain';
 
@@ -143,6 +148,7 @@ const previewQuestionParamsBody = z.object({
 });
 
 const transitionBody = z.object({ to: z.enum(PUBLICATION_STATES) });
+const internalNoteBody = z.object({ text: z.string().trim().min(1).max(2000) });
 
 const bulkTransitionBody = z.object({
   questionIds: z.array(objectIdParam).min(1),
@@ -318,6 +324,22 @@ questionsRouter.patch(
       req.user!.puid,
     );
     res.json(version);
+  },
+);
+
+/** POST /api/questions/:questionId/internal-notes { text } -> appended
+ * teaching-team-only note. Notes are append-only and never student-visible. */
+questionsRouter.post(
+  '/questions/:questionId/internal-notes',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCourseInstructor(),
+  validate({ body: internalNoteBody }),
+  async (req, res) => {
+    const questionId = new ObjectId(String(req.params.questionId));
+    const { text } = req.body as z.infer<typeof internalNoteBody>;
+    res.status(201).json(await addQuestionInternalNote(questionId, text, req.user!.puid));
   },
 );
 

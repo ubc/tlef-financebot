@@ -484,6 +484,7 @@ export interface Flag {
   questionId: ObjectId;
   questionVersionId: ObjectId; // flags attach to the specific version (§6.2)
   puid: string; // flagging student
+  source?: 'student' | 'instructor-preview-test';
   reason?: string;
   state: FlagState;
   taRecommendation?: { action: 'correct' | 'archive' | 'clear'; note?: string; puid: string; at: Date };
@@ -505,6 +506,7 @@ export interface Flag {
     action: 'correct' | 'archive' | 'clear';
     puid: string;
     at: Date;
+    comment?: string;
     correctnessAffecting?: boolean;
     notifiedAt?: Date;
     notifiedCount?: number;
@@ -567,7 +569,7 @@ export interface SessionSummaryRecord {
 /** Allowed transitions (PRD §6.2). 'archived' is reachable from every state;
  * restore from 'archived' returns to 'draft' (re-approval required, IN-Q07). */
 export const PUBLICATION_TRANSITIONS: Record<PublicationState, PublicationState[]> = {
-  draft: ['pending-review', 'archived'],
+  draft: ['pending-review', 'approved', 'archived'],
   'pending-review': ['reviewed', 'approved', 'draft', 'archived'],
   reviewed: ['approved', 'draft', 'archived'],
   approved: ['paused', 'archived'],

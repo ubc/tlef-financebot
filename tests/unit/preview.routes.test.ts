@@ -20,6 +20,7 @@ jest.mock('../../server/src/services/preview.service', () => ({
 import { previewRouter } from '../../server/src/routes/preview.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import {
+  flagPreviewQuestion,
   getPreviewHome,
   getNextPreviewQuestion,
   submitPreviewAttempt,
@@ -62,6 +63,7 @@ beforeEach(() => {
   jest.mocked(getPreviewHome).mockReset();
   jest.mocked(getNextPreviewQuestion).mockReset();
   jest.mocked(submitPreviewAttempt).mockReset();
+  jest.mocked(flagPreviewQuestion).mockReset();
 });
 
 describe('Instructor student-preview routes', () => {
@@ -156,5 +158,27 @@ describe('Instructor student-preview routes', () => {
       selectedKey: 'A',
       sessionServedIds: [],
     });
+  });
+
+  it('passes the explicit TEST queue option through to the preview service', async () => {
+    jest.mocked(flagPreviewQuestion).mockResolvedValue({ flagged: true, testQueued: true });
+
+    const response = await request(makeApp(userFixture(courseId, 'instructor')))
+      .post(`/api/courses/${courseId.toHexString()}/preview/questions/${new ObjectId().toHexString()}/flag`)
+      .send({
+        previewSessionId,
+        reason: 'Test the instructor workflow.',
+        sendToInstructorQueue: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ flagged: true, testQueued: true });
+    expect(flagPreviewQuestion).toHaveBeenCalledWith(
+      courseId,
+      { instructorPuid: 'PUID-INSTRUCTOR-0001', previewSessionId },
+      expect.any(ObjectId),
+      'Test the instructor workflow.',
+      true,
+    );
   });
 });

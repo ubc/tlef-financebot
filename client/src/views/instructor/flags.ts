@@ -1,9 +1,7 @@
-// Flag Queue (Task 2, instructor half) — the instructor's flag-resolution
-// worklist: one row per (question, version) group, with Correct / Archive /
-// Clear actions that resolve every open/escalated flag in the group. See
-// server/src/services/flags.service.ts (Task 1) for the flag state machine
-// this consumes, and .superpowers/sdd/p2-task-2-brief.md for the resolved
-// UI-ambiguity decisions this view follows.
+// Instructor Flag Queue — one row per (question, version) group. An
+// instructor can open the real question editor, return the unchanged
+// question to students, or review it before Reject & Archive. There is no
+// Approve/Reject publication workflow in the queue itself.
 //
 // Data-shape note (verified against server/src/routes/flags.routes.ts's
 // GET /courses/:courseId/flags + services/flags.service.ts's listFlags, see
@@ -17,61 +15,9 @@
 // returns; `staleVersionNote` below flags the mismatch when the two ids
 // differ rather than silently presenting stale content as current.
 //
-// Grouping vs. resolving (resolved ambiguities #1/#2): every action
-// (Correct/Archive/Clear) resolves ALL still-open/escalated flags in the
-// clicked group via a sequential loop over `resolveFlag` (no bulk-resolve
-// endpoint exists). The loop stops at the first failure. One known edge case
-// inherited from the service (see resolveFlag's doc comment): archiving a
-// group with 2+ open flags on the SAME question succeeds for the first flag
-// (question -> archived) but the second `resolveFlag('archive')` call then
-// throws `invalid-transition:archived->archived` — by design, so a flag never
-// reports "resolved" while its consequence silently failed. That second flag
-// is left `open` (the question is already archived either way); the row
-// reappears after reload so the instructor can `Clear` the leftover flag.
-//
-// Task 6 (§6.2 remediation): a "Correctness-affecting" checkbox next to the
-// resolve actions threads `correctnessAffecting` through to every
-// resolveFlagApi call in the group. Per the resolved grouping ambiguity, a
-// correctness-affecting group resolve produces one IDENTICAL remediation
-// report per flag in the group (same questionVersionId) — this view keeps
-// only the first one it sees per group and renders the checklist panel ONCE,
-// not once per flag. "Notify affected students" likewise fires once per
-// group (any one flag id in the group — the server resolves the notify
-// target from that flag's questionVersionId, shared by the whole group).
-//
-// Task 6 review fix (Finding 3): the resolve response's `remediation` field
-// is one-shot and flags are terminal, so a reload used to permanently lose
-// both the report and the "Notify affected students" button. The server now
-// persists `resolution.correctnessAffecting` on the flag and exposes
-// `GET /api/flags/:flagId/remediation` to regenerate the (pure read-only)
-// report. `groupHasCorrectnessAffectingResolution` reads the persisted bit so
-// the panel renders for a group on a fresh load too; `remediationReports`
-// (below) still takes precedence when already populated — from either an
-// in-session resolve or an earlier fetch — so a reload triggered by a resolve
-// action never redundantly refetches what it already has.
-//
-// Task 6 re-review (second round, findings A–F): (A) the fix above had a
-// latent bug — reading only the LATEST resolved flag's bit meant a later,
-// non-correctness-affecting Clear on a group (e.g. clearing the flag(s) left
-// over from the archived->archived edge case above, without re-ticking the
-// box) could re-hide an already-shown panel after reload.
-// `groupHasCorrectnessAffectingResolution` (renamed from
-// `latestResolutionIsCorrectnessAffecting`) now checks ANY resolved flag in
-// the group instead of just the latest. (B) "Notify affected students" gets
-// the same persisted-marker treatment `correctnessAffecting` got above —
-// `resolution.notifiedAt`/`notifiedCount`, stamped by flags.service.ts's
-// `notifyRemediation` on every correctness-affecting flag in the group — so a
-// reload can't re-arm the button into double-notifying the same students. (C)
-// the "Correctness-affecting" checkbox now survives a re-render (see
-// `correctnessChecked` below) — `ensureRemediationReport`'s fetch settling
-// and `handleNotify` both trigger one, so a render is no longer guaranteed to
-// follow only a user action. (D) the notify button's total-failure error
-// (`remediation-notify-failed`) is translated to an actionable message
-// client-side, the same way the `archived->archived` resolve error is. (E) a
-// failed report fetch now offers a "Try again" retry rather than requiring a
-// full page reload. (F) `ensureRemediationReport`'s settle-triggered
-// re-renders are coalesced via `scheduleRender` to avoid O(M²) DOM churn on a
-// queue with many correctness-affecting groups.
+// Content edits use the question editor and automatically mark the resolution
+// correctness-affecting. Its remediation notification runs by default.
+// Historical remediation reports remain reloadable for older resolutions.
 import {
   ApiError,
   getCourseTree,
@@ -85,6 +31,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -290,16 +237,6 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   // the view.
   const remediationFetchErrors = new Map<string, string>();
   const remediationFetchAttempted = new Set<string>();
-  // Task 6 re-review (Finding C): the "Correctness-affecting" checkbox's
-  // ticked/unticked state, keyed the same way as the maps above. Needed
-  // because a render is no longer guaranteed to follow only a user action —
-  // `ensureRemediationReport`'s fetch settling and `handleNotify` both call
-  // `renderResults()` on their own — so without this, an in-flight settle
-  // landing while the box is ticked would silently untick it right before a
-  // Correct/Archive/Clear click resolves without remediation. See
-  // `groupRow`'s construction of `correctnessCheckbox` below.
-  const correctnessChecked = new Map<string, boolean>();
-
   function recordRemediation(group: FlagGroup, remediation: RemediationReport | undefined): void {
     if (!remediation) return;
     remediationReports.set(group.questionVersionId, remediation);
@@ -402,13 +339,19 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     group: FlagGroup,
     action: ResolveAction,
     correctnessAffecting: boolean,
+    comment?: string,
   ): Promise<{ ok: boolean; error?: string; remediation?: RemediationReport }> {
     const targets = openFlags(group);
     let resolvedCount = 0;
     let remediation: RemediationReport | undefined;
     for (const flag of targets) {
       try {
-        const resolved = await resolveFlagApi(flag.id, action, correctnessAffecting || undefined);
+        const resolved = await resolveFlagApi(
+          flag.id,
+          action,
+          correctnessAffecting || undefined,
+          comment,
+        );
         if (!remediation && resolved.remediation) remediation = resolved.remediation;
         resolvedCount++;
       } catch (error) {
@@ -437,10 +380,18 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     renderResults();
   }
 
-  async function handleClear(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
+  async function handleClear(group: FlagGroup): Promise<void> {
+    const comment = await textPromptDialog({
+      title: 'Return this question to students?',
+      message: 'The open flags will be closed. If the question was paused and no longer exceeds the flag threshold, it will return to student practice.',
+      fieldLabel: 'Reply to flagging student(s) (optional)',
+      placeholder: 'Explain why the existing question is being kept.',
+      confirmLabel: 'Return to Students',
+    });
+    if (comment === null) return;
     actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'clear', correctnessAffecting);
-    if (!result.ok) actionErrorMessage = result.error ?? 'Failed to clear flag(s).';
+    const result = await resolveGroupFlags(group, 'clear', false, comment);
+    if (!result.ok) actionErrorMessage = result.error ?? 'Failed to return the question.';
     // Task 6 review fix (Finding 1): recorded unconditionally — `remediation`
     // is valid for every flag that DID resolve even when the group's overall
     // result is a failure. `recordRemediation` itself no-ops when undefined.
@@ -448,47 +399,15 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     await reload();
   }
 
-  async function handleArchive(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
-    const count = openFlags(group).length;
-    if (!window.confirm(`Archive this question? This resolves ${count} flag${count === 1 ? '' : 's'} and removes it from student practice.`)) return;
-    actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'archive', correctnessAffecting);
-    if (!result.ok) actionErrorMessage = result.error ?? 'Failed to archive question.';
-    // See handleClear's comment above — recorded unconditionally (Finding 1).
-    // This is the concrete headline case: flag 1 archives and returns the
-    // report, flag 2 throws the deterministic archived->archived error and
-    // `ok` is false, but the report from flag 1 must not be discarded.
-    recordRemediation(group, result.remediation);
-    await reload();
-  }
-
-  async function handleCorrect(group: FlagGroup, correctnessAffecting: boolean): Promise<void> {
-    const count = openFlags(group).length;
-    const confirmText = correctnessAffecting
-      ? `Resolve ${count} flag${count === 1 ? '' : 's'} as corrected?`
-      : `Resolve ${count} flag${count === 1 ? '' : 's'} as corrected and open the question editor?`;
-    if (!window.confirm(confirmText)) return;
-    actionErrorMessage = null;
-    const result = await resolveGroupFlags(group, 'correct', correctnessAffecting);
-    // See handleClear's comment above — recorded unconditionally (Finding 1).
-    recordRemediation(group, result.remediation);
-    if (!result.ok) {
-      actionErrorMessage = result.error ?? 'Failed to resolve flag(s); question editor not opened.';
-      await reload();
-      return;
-    }
-    if (correctnessAffecting) {
-      // A correctness-affecting resolve surfaces the remediation checklist
-      // (§6.2, Task 6) — stay on this view instead of the usual
-      // navigate-to-editor shortcut, so the instructor sees the blast-radius
-      // report and the "Notify affected students" action. The panel itself
-      // carries an "Open question editor" link (Finding 2) so the editor is
-      // still one click away rather than requiring a manual hunt through the
-      // bank.
-      await reload();
-      return;
-    }
-    navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(group.questionId)}`);
+  function handleEdit(group: FlagGroup, intent: 'edit' | 'archive' = 'edit'): void {
+    const query = new URLSearchParams({
+      from: 'flags',
+      flagVersionId: group.questionVersionId,
+      intent,
+    });
+    navigate(
+      `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(group.questionId)}?${query.toString()}`,
+    );
   }
 
   /** "Notify affected students" (§6.2, Task 6) — fires once per group, using
@@ -654,46 +573,30 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       ? flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
 
-    // Task 6 (§6.2 remediation): the checkbox (and this whole row) is rebuilt
-    // on every `renderResults()`. Task 6 re-review (Finding C): a render is
-    // no longer guaranteed to follow only a user action —
-    // `ensureRemediationReport`'s fetch settling and `handleNotify` both call
-    // `renderResults()` on their own — so an unticked-by-default rebuild
-    // would silently discard a tick made while one of those was in flight,
-    // right before a Correct/Archive/Clear resolves without remediation
-    // (unrecoverable, since flags are terminal). State now lives in
-    // `correctnessChecked`, keyed by `questionVersionId` like this view's
-    // other per-group maps (see their declarations above), read here to seed
-    // the checkbox and written on every `change`.
-    const correctnessCheckbox = el('input', {
-      type: 'checkbox',
-      'aria-label': 'Correctness-affecting',
-      checked: correctnessChecked.get(group.questionVersionId) ?? false,
-      onchange: (e: Event) => {
-        correctnessChecked.set(group.questionVersionId, (e.target as HTMLInputElement).checked);
-      },
-    }) as HTMLInputElement;
-
     const actions = open
       ? el(
           'div',
           { class: 'flag-row__actions' },
-          el(
-            'label',
-            { class: 'flag-row__correctness', title: 'Mark this resolution as correctness-affecting to see the remediation checklist.' },
-            correctnessCheckbox,
-            el('span', { text: 'Correctness-affecting' }),
-          ),
-          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void handleCorrect(group, correctnessCheckbox.checked) }, 'Correct'),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleArchive(group, correctnessCheckbox.checked) }, 'Archive'),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClear(group, correctnessCheckbox.checked) }, 'Clear'),
+          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => handleEdit(group) }, 'Edit'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClear(group) }, 'Return to Students'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => handleEdit(group, 'archive') }, 'Reject & Archive'),
         )
       : false;
 
     const row = el(
       'div',
       { class: 'flag-row' },
-      el('div', {}, stemCell, el('p', { class: 'flag-row__topic', text: topicLo }), reasonsSummary(group), staleVersionNote(group)),
+      el(
+        'div',
+        {},
+        group.flags.some((flag) => flag.source === 'instructor-preview-test')
+          ? el('span', { class: 'badge badge--muted flag-test-badge', text: 'TEST · Instructor Preview' })
+          : false,
+        stemCell,
+        el('p', { class: 'flag-row__topic', text: topicLo }),
+        reasonsSummary(group),
+        staleVersionNote(group),
+      ),
       badge,
       actions,
     );

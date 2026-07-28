@@ -35,7 +35,12 @@ export interface Callbacks {
 
 export interface PracticeCardAdapter {
   submit: (input: SubmitAttemptInput) => Promise<AttemptResult>;
-  flag?: (questionId: string, reason?: string) => Promise<{ flagged: true }>;
+  flag?: (
+    questionId: string,
+    reason?: string,
+    options?: { sendToInstructorQueue?: boolean },
+  ) => Promise<{ flagged: true }>;
+  allowsInstructorTestFlag?: boolean;
   updatesMastery: boolean;
   materialHref?: (courseId: string, loId: string, materialId: string) => string;
 }
@@ -74,6 +79,7 @@ export function makeQuestionCard(
   let submitting = false;
   let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' = 'idle';
   let flagReason = '';
+  let sendToInstructorQueue = false;
   let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
@@ -120,7 +126,7 @@ export function makeQuestionCard(
     flagError = undefined;
     draw();
     try {
-      await adapter.flag(question.questionId, flagReason);
+      await adapter.flag(question.questionId, flagReason, { sendToInstructorQueue });
       flagState = 'flagged';
     } catch (error) {
       flagState = 'editing';
@@ -236,6 +242,25 @@ export function makeQuestionCard(
           },
         },
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Why are you flagging this question? (optional)' }), reasonInput),
+        adapter.allowsInstructorTestFlag
+          ? el(
+              'label',
+              { class: 'flag-test-option' },
+              el('input', {
+                type: 'checkbox',
+                checked: sendToInstructorQueue ? 'checked' : undefined,
+                onchange: (event: Event) => {
+                  sendToInstructorQueue = (event.target as HTMLInputElement).checked;
+                },
+              }),
+              el(
+                'span',
+                {},
+                el('strong', { text: 'Send as a test flag to Instructor Queue' }),
+                el('small', { text: ' This is marked TEST and does not count toward student analytics or notify real students.' }),
+              ),
+            )
+          : false,
         flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,
         el(
           'div',

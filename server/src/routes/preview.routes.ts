@@ -49,6 +49,7 @@ const attemptBody = z.object({
 const flagBody = z.object({
   previewSessionId,
   reason: z.string().trim().max(500).optional(),
+  sendToInstructorQueue: z.boolean().optional().default(false),
 });
 const bookmarkBody = z.object({ previewSessionId });
 const reviewBookQuery = z.object({
@@ -131,6 +132,7 @@ previewRouter.post(
       context(req, body.previewSessionId),
       new ObjectId(String(req.params.questionId)),
       body.reason,
+      body.sendToInstructorQueue,
     ));
   },
 );

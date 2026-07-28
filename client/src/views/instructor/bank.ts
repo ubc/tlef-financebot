@@ -17,6 +17,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -190,11 +191,37 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
   }
 
   async function archive(question: BankQuestion): Promise<void> {
-    if (!window.confirm('Archive this question? It will no longer be served to students.')) return;
+    if (!await confirmDialog({
+      title: 'Archive this question?',
+      message: 'It will no longer be served to students. You can restore it to Draft from the Question Bank later.',
+      confirmLabel: 'Archive question',
+      tone: 'danger',
+    })) return;
     try {
       await transitionQuestion(question.id, 'archived');
       listQuestions = listQuestions.map((q) => (q.id === question.id ? { ...q, state: 'archived' } : q));
       if (filters.status !== 'archived') {
+        listQuestions = listQuestions.filter((q) => q.id !== question.id);
+        listTotal = Math.max(0, listTotal - 1);
+      }
+      renderResults();
+      void loadSummary().then(renderResults);
+    } catch (error) {
+      loadErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
+      renderResults();
+    }
+  }
+
+  async function restore(question: BankQuestion): Promise<void> {
+    if (!await confirmDialog({
+      title: 'Restore this question?',
+      message: 'The question will return as Draft and must be approved again before students can receive it.',
+      confirmLabel: 'Restore to Draft',
+    })) return;
+    try {
+      await transitionQuestion(question.id, 'draft');
+      listQuestions = listQuestions.map((q) => (q.id === question.id ? { ...q, state: 'draft' } : q));
+      if (filters.status === 'archived') {
         listQuestions = listQuestions.filter((q) => q.id !== question.id);
         listTotal = Math.max(0, listTotal - 1);
       }
@@ -354,7 +381,11 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
           'Edit',
         ),
         q.state === 'archived'
-          ? false
+          ? el(
+              'button',
+              { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void restore(q) },
+              'Restore to Draft',
+            )
           : el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void archive(q) }, 'Archive'),
       ),
       sourceChanged ? el('span', { class: 'bank-row__source-changed', text: 'Source changed' }) : el('span', {}),

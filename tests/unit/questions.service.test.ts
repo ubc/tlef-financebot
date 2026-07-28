@@ -11,6 +11,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 import {
   createQuestion,
   editQuestion,
+  addQuestionInternalNote,
   transitionQuestion,
   bulkTransition,
 } from '../../server/src/services/questions.service';
@@ -355,14 +356,19 @@ describe('transitionQuestion (IN-Q07)', () => {
     expect(auditDoc.createdAt).toEqual(update.$set.updatedAt);
   });
 
-  it('rejects draft -> approved without writing anything', async () => {
-    questionsFindOne.mockResolvedValue({ _id: questionId, state: 'draft' });
+  it('allows one-click draft -> approved for an instructor', async () => {
+    const courseId = new ObjectId();
+    questionsFindOne.mockResolvedValue({ _id: questionId, courseId, state: 'draft' });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
 
-    await expect(transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001')).rejects.toThrow(
-      'invalid-transition:draft->approved',
+    await expect(transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001')).resolves.toMatchObject({
+      state: 'approved',
+    });
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'draft' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
     );
-    expect(questionsUpdateOne).not.toHaveBeenCalled();
-    expect(auditInsertOne).not.toHaveBeenCalled();
+    expect(auditInsertOne).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a stale concurrent transition without writing a contradictory audit', async () => {
@@ -402,6 +408,35 @@ describe('transitionQuestion (IN-Q07)', () => {
   });
 });
 
+describe('addQuestionInternalNote', () => {
+  it('trims and appends a teaching-team-only note with an audit entry', async () => {
+    const questionId = new ObjectId();
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
+
+    const note = await addQuestionInternalNote(questionId, '  Needs another example.  ', 'PUID-INSTR-0001');
+
+    expect(note).toMatchObject({ puid: 'PUID-INSTR-0001', text: 'Needs another example.' });
+    expect(note.at).toBeInstanceOf(Date);
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId },
+      {
+        $push: { internalNotes: note },
+        $set: { updatedAt: note.at },
+      },
+    );
+    expect(auditInsertOne).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'question.internal-note.add',
+      targetId: questionId,
+    }));
+  });
+
+  it('rejects blank notes without writing', async () => {
+    await expect(addQuestionInternalNote(new ObjectId(), '   ', 'PUID-INSTR-0001'))
+      .rejects.toThrow('internal-note-required');
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
 // --- bulkTransition -----------------------------------------------------------
 
 describe('bulkTransition (IN-Q07)', () => {
@@ -410,7 +445,7 @@ describe('bulkTransition (IN-Q07)', () => {
     const invalidId = new ObjectId();
     questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => {
       if (_id.equals(validId)) return { _id: validId, state: 'pending-review' };
-      return { _id: invalidId, state: 'draft' };
+      return { _id: invalidId, state: 'archived' };
     });
     questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
     auditInsertOne.mockResolvedValue({ acknowledged: true });

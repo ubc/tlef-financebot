@@ -489,9 +489,10 @@ export function flagPreviewQuestion(
   previewSessionId: string,
   questionId: string,
   reason?: string,
-): Promise<{ flagged: true }> {
+  sendToInstructorQueue = false,
+): Promise<{ flagged: true; testQueued: boolean }> {
   const normalizedReason = reason?.trim();
-  return request<{ flagged: true }>(
+  return request<{ flagged: true; testQueued: boolean }>(
     `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/flag`,
     {
       method: 'POST',
@@ -499,6 +500,7 @@ export function flagPreviewQuestion(
       body: JSON.stringify({
         previewSessionId,
         ...(normalizedReason ? { reason: normalizedReason } : {}),
+        ...(sendToInstructorQueue ? { sendToInstructorQueue: true } : {}),
       }),
     },
   );
@@ -1645,6 +1647,20 @@ export function editQuestion(
   });
 }
 
+export function addQuestionInternalNote(
+  questionId: string,
+  text: string,
+): Promise<{ puid: string; text: string; at: string }> {
+  return request<{ puid: string; text: string; at: string }>(
+    `/api/questions/${encodeURIComponent(questionId)}/internal-notes`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    },
+  );
+}
+
 /** POST /api/questions/:questionId/transition { to } -> the updated question
  * head (validated against PUBLICATION_TRANSITIONS; 409 on an invalid move).
  * Instructor-only. (IN-Q04/Q07) */
@@ -1797,6 +1813,7 @@ export interface Flag {
   questionId: string;
   questionVersionId: string; // the version this flag was raised against (§6.2) — may differ from question.currentVersionId after a later edit
   puid: string;
+  source?: 'student' | 'instructor-preview-test';
   reason?: string;
   state: FlagState;
   // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
@@ -1811,6 +1828,7 @@ export interface Flag {
     action: 'correct' | 'archive' | 'clear';
     puid: string;
     at: string;
+    comment?: string;
     correctnessAffecting?: boolean;
     notifiedAt?: string;
     notifiedCount?: number;
@@ -1839,11 +1857,17 @@ export function resolveFlag(
   flagId: string,
   action: 'correct' | 'archive' | 'clear',
   correctnessAffecting?: boolean,
+  comment?: string,
 ): Promise<Flag> {
+  const normalizedComment = comment?.trim();
   return request<Flag>(`/api/flags/${encodeURIComponent(flagId)}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}) }),
+    body: JSON.stringify({
+      action,
+      ...(correctnessAffecting !== undefined ? { correctnessAffecting } : {}),
+      ...(normalizedComment ? { comment: normalizedComment } : {}),
+    }),
   });
 }
 

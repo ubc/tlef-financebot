@@ -100,6 +100,7 @@ export async function flagQuestion(input: {
   puid: string;
   questionId: ObjectId;
   reason?: string;
+  source?: Flag['source'];
 }): Promise<{ flagged: true; duplicate: boolean }> {
   const question = await questionsCol().findOne({ _id: input.questionId });
   if (!question) throw new Error('question-not-found');
@@ -113,14 +114,16 @@ export async function flagQuestion(input: {
     questionId: input.questionId,
     questionVersionId: question.currentVersionId,
     puid: input.puid,
+    ...(input.source ? { source: input.source } : {}),
     state: 'open',
     createdAt: new Date(),
     ...(input.reason !== undefined ? { reason: input.reason } : {}),
   };
   await flagsCol().insertOne({ _id: flagId, ...flag });
-  await questionsCol().updateOne({ _id: input.questionId }, { $addToSet: { labels: 'student-flagged' } });
-
-  await checkAutoPause(input.questionId);
+  if (input.source !== 'instructor-preview-test') {
+    await questionsCol().updateOne({ _id: input.questionId }, { $addToSet: { labels: 'student-flagged' } });
+    await checkAutoPause(input.questionId);
+  }
 
   // Task 3: notify(course staff, kind: 'flag') — standard-priority, one per
   // new (non-duplicate) flag. Notifications are advisory: a failure here must
@@ -131,7 +134,11 @@ export async function flagQuestion(input: {
     await notifyCourseStaff(question.courseId, {
       kind: 'flag',
       priority: 'standard',
-      body: input.reason ? `A question was flagged: "${input.reason}"` : 'A question was flagged.',
+      body: input.source === 'instructor-preview-test'
+        ? `Test flag from Instructor Preview${input.reason ? `: "${input.reason}"` : '.'}`
+        : input.reason
+          ? `A question was flagged: "${input.reason}"`
+          : 'A question was flagged.',
       refType: 'flag',
       refId: flagId,
     });
@@ -186,12 +193,9 @@ export async function checkAutoPause(questionId: ObjectId): Promise<boolean> {
  * §6.2: records the instructor's resolution, applies the question-side
  * consequence, then closes the flag. The question-side consequence (if any)
  * is applied FIRST and must succeed (or determine there's nothing to do)
- * BEFORE the flag document is written to its terminal state. This ordering
- * is deliberate: `transitionQuestion` can throw a domain error (e.g.
- * `invalid-transition:archived->archived` if two open flags on the same
- * question are both resolved with `archive`) and we must never leave a flag
- * "resolved" while its stated consequence silently failed to apply — so any
- * such error propagates before `flagsCol()` is touched at all. The 'clear'
+ * BEFORE the flag document is written to its terminal state. Repeated
+ * archive resolution for flags in the same group is idempotent once their
+ * shared question is archived. The 'clear'
  * re-evaluation excludes this flag from its own open-flag recount via an
  * explicit `_id: {$ne}` in the query (see `countOpenFlags`), not via write
  * ordering, so this reordering doesn't change its result.
@@ -205,7 +209,7 @@ export async function resolveFlag(
   flagId: ObjectId,
   action: 'correct' | 'archive' | 'clear',
   byPuid: string,
-  opts?: { correctnessAffecting?: boolean },
+  opts?: { correctnessAffecting?: boolean; comment?: string },
 ): Promise<WithId<Flag> & { remediation?: RemediationReport }> {
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
@@ -222,14 +226,15 @@ export async function resolveFlag(
       await transitionQuestion(flag.questionId, 'approved', byPuid);
     }
   } else if (action === 'archive') {
-    // Both paused->archived and approved->archived are valid transitions
-    // (PUBLICATION_TRANSITIONS) — always apply, regardless of current state.
-    // If the question is already archived (e.g. a second open flag on the
-    // same question being resolved after the first archived it),
-    // transitionQuestion throws `invalid-transition:archived->archived`
-    // BEFORE this flag is ever written — it stays in its prior state rather
-    // than getting stuck "resolved" with no consequence applied.
-    await transitionQuestion(flag.questionId, 'archived', byPuid);
+    // A group may contain several flags against the same question version.
+    // The first resolve archives the question; later resolves in that same
+    // group still need to close their own flag records without attempting an
+    // invalid archived->archived transition.
+    const question = await questionsCol().findOne({ _id: flag.questionId });
+    if (!question) throw new Error('question-not-found');
+    if (question.state !== 'archived') {
+      await transitionQuestion(flag.questionId, 'archived', byPuid);
+    }
   } else {
     // clear: leave the question untouched unless it was paused, in which
     // case re-run the same threshold formula (now excluding this
@@ -261,6 +266,7 @@ export async function resolveFlag(
     action,
     puid: byPuid,
     at: resolvedAt,
+    ...(opts?.comment?.trim() ? { comment: opts.comment.trim() } : {}),
     ...(opts?.correctnessAffecting ? { correctnessAffecting: true as const } : {}),
   };
   await flagsCol().updateOne({ _id: flagId }, { $set: { state: target, resolution } });
@@ -280,18 +286,22 @@ export async function resolveFlag(
   // a notification failure here must not turn this into a 500 — a retry
   // would otherwise hit invalid-flag-transition since the resolution already
   // landed, leaving the instructor believing a successful action failed.
-  try {
-    await notify({
-      recipientPuid: flag.puid,
-      courseId: flag.courseId,
-      kind: 'flag-resolved',
-      priority: 'standard',
-      body: `Your flag was resolved (${action}).`,
-      refType: 'flag',
-      refId: flagId,
-    });
-  } catch (err) {
-    console.error('notifications: failed to emit flag-resolved notification', err);
+  if (flag.source !== 'instructor-preview-test') {
+    try {
+      await notify({
+        recipientPuid: flag.puid,
+        courseId: flag.courseId,
+        kind: 'flag-resolved',
+        priority: 'standard',
+        body: opts?.comment?.trim()
+          ? `Your flag was resolved (${action}). Instructor reply: ${opts.comment.trim()}`
+          : `Your flag was resolved (${action}).`,
+        refType: 'flag',
+        refId: flagId,
+      });
+    } catch (err) {
+      console.error('notifications: failed to emit flag-resolved notification', err);
+    }
   }
   // §6.2 remediation (Task 6): the flag write + audit entry above have
   // ALREADY committed, so — mirroring the notify() try/catches above — a
@@ -335,6 +345,7 @@ export async function resolveFlag(
 export async function notifyRemediation(flagId: ObjectId): Promise<{ notified: number }> {
   const flag = await flagsCol().findOne({ _id: flagId });
   if (!flag) throw new Error('flag-not-found');
+  if (flag.source === 'instructor-preview-test') return { notified: 0 };
   const result = await notifyAffectedStudents(flag.questionVersionId, flag.courseId);
   // §6.2 remediation (Task 6): the notify call above has ALREADY sent the
   // correction notices to every affected student, so — mirroring the notify()

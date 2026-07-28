@@ -36,6 +36,7 @@ import {
   type SessionSummaryForStart,
   type SubmitAttemptInput,
 } from '../../api.js';
+import { broadcastNotificationsChanged } from '../../notification-sync.js';
 
 export interface StudentRoutes {
   courses(courseId?: string): string;
@@ -58,7 +59,12 @@ export interface StudentExperience {
     input: { loId: string; sessionServedIds: string[] },
   ): Promise<PracticeQuestion>;
   submit(courseId: string, input: SubmitAttemptInput): Promise<AttemptResult>;
-  flag(courseId: string, questionId: string, reason?: string): Promise<{ flagged: true }>;
+  flag(
+    courseId: string,
+    questionId: string,
+    reason?: string,
+    options?: { sendToInstructorQueue?: boolean },
+  ): Promise<{ flagged: true }>;
   skip(courseId: string, loId: string, attempted: boolean): Promise<void>;
   getSessionStart(courseId: string): Promise<SessionSummaryForStart>;
   endSession(courseId: string, since: Date): Promise<SessionEndSummary>;
@@ -153,8 +159,17 @@ export function createPreviewStudentExperience(
       getNextPreviewQuestion(courseId, previewSessionId, input),
     submit: (courseId, input) =>
       submitPreviewAttempt(courseId, previewSessionId, input),
-    flag: (courseId, questionId, reason) =>
-      flagPreviewQuestion(courseId, previewSessionId, questionId, reason),
+    flag: async (courseId, questionId, reason, options) => {
+      const result = await flagPreviewQuestion(
+        courseId,
+        previewSessionId,
+        questionId,
+        reason,
+        options?.sendToInstructorQueue,
+      );
+      if (result.testQueued) broadcastNotificationsChanged();
+      return result;
+    },
     skip: (courseId, loId, attempted) =>
       skipPreviewLo(courseId, previewSessionId, loId, attempted),
     getSessionStart: (courseId) =>

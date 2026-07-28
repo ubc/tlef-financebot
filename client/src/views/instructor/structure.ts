@@ -23,6 +23,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { addAssignment, removeAssignment } from './material-assign.js';
@@ -112,10 +113,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   let addingLoForTheme: string | null = null;
   let treeErrorMessage: string | null = null;
 
-  // AI-suggested hierarchy (IN-S06, wireframe N10): a read-only suggestion
-  // fetched on demand; applying it is just repeated addTheme/addLo calls, the
-  // same mutation path the manual Add Topic/Add LO forms already use — this
-  // never writes anything the instructor hasn't explicitly kept checked.
+  // AI-suggested hierarchy (IN-S06, wireframe N10): a reviewable suggestion
+  // fetched on demand. Instructors can rename generated Topics/LOs before
+  // applying them; applying still uses the same addTheme/addLo mutation path
+  // as the manual forms.
   let suggestState: 'idle' | 'loading' | { hierarchy: SuggestedHierarchy } | { error: string } = 'idle';
   let applyingSuggestion = false;
   let applyError: string | null = null;
@@ -207,11 +208,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       );
     }
 
-    // themeIndex -> { checked, loChecked[] } — a topic unchecked skips all its
-    // LOs too, regardless of their own checkbox state (simple parent/child rule).
-    const themeChecks = hierarchy.themes.map((theme) => ({
+    const themeDrafts = hierarchy.themes.map((theme) => ({
       checked: true,
-      loChecked: theme.los.map(() => true),
+      name: theme.name,
+      los: theme.los.map((name) => ({ checked: true, name })),
     }));
 
     const panel = el('div', { class: 'assign-checklist suggestion-panel' });
@@ -219,11 +219,11 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     const renderRows = (): void => {
       mount(
         panel,
-        el('p', { class: 'materials-placeholder__text', text: 'Review the AI-suggested Topics and Learning Objectives below, uncheck anything you don’t want, then apply.' }),
+        el('p', { class: 'materials-placeholder__text', text: 'Review and edit the AI-suggested Topics and Learning Objectives below, uncheck anything you don’t want, then apply.' }),
         el(
           'div',
           { class: 'suggestion-panel__grid' },
-          ...hierarchy.themes.map((theme, ti) =>
+          ...themeDrafts.map((theme, ti) =>
             el(
               'div',
               { class: 'assign-checklist__theme suggestion-panel__theme' },
@@ -232,25 +232,50 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
                 { class: 'assign-checklist__lo suggestion-panel__topic' },
                 el('input', {
                   type: 'checkbox',
-                  checked: themeChecks[ti].checked ? 'checked' : undefined,
+                  checked: theme.checked ? 'checked' : undefined,
                   onchange: (e: Event) => {
-                    themeChecks[ti].checked = (e.target as HTMLInputElement).checked;
+                    theme.checked = (e.target as HTMLInputElement).checked;
+                    if (!theme.checked) {
+                      theme.los.forEach((lo) => {
+                        lo.checked = false;
+                      });
+                    }
+                    renderRows();
                   },
                 }),
-                el('span', { class: 'assign-checklist__theme-name', text: theme.name }),
+                el('input', {
+                  class: 'input suggestion-panel__name suggestion-panel__topic-name',
+                  type: 'text',
+                  value: theme.name,
+                  disabled: theme.checked ? undefined : 'disabled',
+                  'aria-label': `Suggested Topic ${ti + 1} name`,
+                  oninput: (e: Event) => {
+                    theme.name = (e.target as HTMLInputElement).value;
+                  },
+                }),
               ),
-              ...theme.los.map((loName, li) =>
+              ...theme.los.map((lo, li) =>
                 el(
                   'label',
                   { class: 'assign-checklist__lo suggestion-panel__lo' },
                   el('input', {
                     type: 'checkbox',
-                    checked: themeChecks[ti].loChecked[li] ? 'checked' : undefined,
+                    checked: lo.checked ? 'checked' : undefined,
+                    disabled: theme.checked ? undefined : 'disabled',
                     onchange: (e: Event) => {
-                      themeChecks[ti].loChecked[li] = (e.target as HTMLInputElement).checked;
+                      lo.checked = (e.target as HTMLInputElement).checked;
                     },
                   }),
-                  el('span', { text: loName }),
+                  el('input', {
+                    class: 'input suggestion-panel__name',
+                    type: 'text',
+                    value: lo.name,
+                    disabled: theme.checked && lo.checked ? undefined : 'disabled',
+                    'aria-label': `Suggested Topic ${ti + 1} LO ${li + 1} name`,
+                    oninput: (e: Event) => {
+                      lo.name = (e.target as HTMLInputElement).value;
+                    },
+                  }),
                 ),
               ),
             ),
@@ -292,15 +317,20 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       applyError = null;
       renderRows();
       try {
-        for (let ti = 0; ti < hierarchy.themes.length; ti++) {
-          if (!themeChecks[ti].checked) continue;
-          const suggested = hierarchy.themes[ti];
-          const createdTheme = await addTheme(courseId, suggested.name);
+        const selectedThemes = themeDrafts.filter((theme) => theme.checked);
+        if (selectedThemes.length === 0) throw new Error('Select at least one Topic to apply.');
+        for (const suggested of selectedThemes) {
+          const themeName = suggested.name.trim();
+          if (!themeName) throw new Error('Every selected Topic needs a name.');
+          const selectedLos = suggested.los.filter((lo) => lo.checked);
+          const blankLo = selectedLos.some((lo) => !lo.name.trim());
+          if (blankLo) throw new Error(`Every selected LO under "${themeName}" needs a name.`);
+
+          const createdTheme = await addTheme(courseId, themeName);
           themes.push({ ...createdTheme, los: createdTheme.los ?? [] });
           expanded.add(createdTheme._id);
-          for (let li = 0; li < suggested.los.length; li++) {
-            if (!themeChecks[ti].loChecked[li]) continue;
-            const createdLo = await addLo(createdTheme._id, suggested.los[li]);
+          for (const lo of selectedLos) {
+            const createdLo = await addLo(createdTheme._id, lo.name.trim());
             const theme = findTheme(createdTheme._id);
             if (theme) theme.los = [...(theme.los ?? []), createdLo];
           }
@@ -507,7 +537,12 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     };
 
     const archive = async (): Promise<void> => {
-      if (!window.confirm(`Archive Topic "${theme.name}" and all its Learning Objectives?`)) return;
+      if (!await confirmDialog({
+        title: 'Archive this Topic?',
+        message: `"${theme.name}" and all of its Learning Objectives will be removed from the active course structure.`,
+        confirmLabel: 'Archive Topic',
+        tone: 'danger',
+      })) return;
       try {
         await archiveTheme(theme._id);
         themes.splice(themes.indexOf(theme), 1);
@@ -650,7 +685,12 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     };
 
     const archive = async (): Promise<void> => {
-      if (!window.confirm(`Archive Learning Objective "${lo.name}"?`)) return;
+      if (!await confirmDialog({
+        title: 'Archive this Learning Objective?',
+        message: `"${lo.name}" will be removed from the active course structure.`,
+        confirmLabel: 'Archive LO',
+        tone: 'danger',
+      })) return;
       try {
         await archiveLo(lo._id);
         theme.los = (theme.los ?? []).filter((l) => l._id !== lo._id);

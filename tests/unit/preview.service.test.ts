@@ -30,6 +30,10 @@ jest.mock('../../server/src/services/serving.service', () => ({
   selectPreviewRetryQuestion: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/flags.service', () => ({
+  flagQuestion: jest.fn(),
+}));
+
 import {
   coursesCol,
   themesCol,
@@ -50,6 +54,7 @@ import {
   selectPreviewQuestion,
   selectPreviewRetryQuestion,
 } from '../../server/src/services/serving.service';
+import { flagQuestion } from '../../server/src/services/flags.service';
 import {
   flagPreviewQuestion,
   getPreviewSessionSummary,
@@ -230,6 +235,7 @@ beforeEach(() => {
     sessionSummariesCol,
     selectPreviewQuestion,
     selectPreviewRetryQuestion,
+    flagQuestion,
   ]) {
     jest.mocked(mock).mockReset();
   }
@@ -383,12 +389,13 @@ describe('Instructor student preview service', () => {
     expect(result.correct).toBe(false);
     expect(result.reviewBook).toEqual({ added: true });
 
-    await flagPreviewQuestion(
+    await expect(flagPreviewQuestion(
       courseId,
       { instructorPuid, previewSessionId },
       questionId,
       'The wording is unclear.',
-    );
+    )).resolves.toEqual({ flagged: true, testQueued: false });
+    expect(flagQuestion).not.toHaveBeenCalled();
 
     let groups = await listPreviewReviewBook(
       courseId,
@@ -448,5 +455,24 @@ describe('Instructor student preview service', () => {
     ]) {
       expect(liveCollection).not.toHaveBeenCalled();
     }
+  });
+
+  it('optionally mirrors an isolated Preview flag into the Instructor Queue as TEST', async () => {
+    jest.mocked(flagQuestion).mockResolvedValue({ flagged: true, duplicate: false });
+
+    await expect(flagPreviewQuestion(
+      courseId,
+      { instructorPuid, previewSessionId },
+      questionId,
+      'Exercise the workflow.',
+      true,
+    )).resolves.toEqual({ flagged: true, testQueued: true });
+
+    expect(flagQuestion).toHaveBeenCalledWith({
+      puid: instructorPuid,
+      questionId,
+      source: 'instructor-preview-test',
+      reason: 'Exercise the workflow.',
+    });
   });
 });

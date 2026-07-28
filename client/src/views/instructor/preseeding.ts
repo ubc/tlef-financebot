@@ -59,6 +59,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
@@ -648,7 +649,11 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   async function generateForAllThin(): Promise<void> {
     const thin = thinLos(preseeding);
     if (thin.length === 0) return;
-    if (!window.confirm(`Generate questions for ${thin.length} below-target LO${thin.length === 1 ? '' : 's'}?`)) return;
+    if (!await confirmDialog({
+      title: 'Generate questions?',
+      message: `Start generation for ${thin.length} below-target Learning Objective${thin.length === 1 ? '' : 's'}?`,
+      confirmLabel: 'Start generation',
+    })) return;
     bulkBusy = true;
     bulkError = null;
     bulkMessage = null;

@@ -21,6 +21,7 @@ import type {
   Theme,
 } from '../types/domain';
 import { gradeAnswer, type AttemptResult } from './attempts.service';
+import { flagQuestion } from './flags.service';
 import { computeProfile } from './mastery.service';
 import { drawSeed, resolveParamValues, substituteParams } from './params.service';
 import { getRedirectMaterialSource, hasRepeatedFailureCluster } from './progression.service';
@@ -498,7 +499,8 @@ export async function flagPreviewQuestion(
   context: PreviewContext,
   questionId: ObjectId,
   reason?: string,
-): Promise<{ flagged: true }> {
+  sendToInstructorQueue = false,
+): Promise<{ flagged: true; testQueued: boolean }> {
   await ensurePreviewSession(courseId, context);
   const question = await questionsCol().findOne({ _id: questionId, courseId, state: 'approved' });
   if (!question) throw new Error('question-not-servable');
@@ -518,7 +520,15 @@ export async function flagPreviewQuestion(
       },
     );
   }
-  return { flagged: true };
+  if (sendToInstructorQueue) {
+    await flagQuestion({
+      puid: context.instructorPuid,
+      questionId,
+      source: 'instructor-preview-test',
+      ...(reason?.trim() ? { reason: reason.trim() } : {}),
+    });
+  }
+  return { flagged: true, testQueued: sendToInstructorQueue };
 }
 
 export async function listPreviewReviewBook(

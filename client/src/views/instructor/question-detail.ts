@@ -11,14 +11,19 @@
 // which also isn't available here — replaced with a plain "Back to Question
 // Bank" link.
 import {
+  addQuestionInternalNote,
   ApiError,
   editQuestion,
   getCourseTree,
   getQuestion,
+  listCourseFlags,
+  notifyRemediation,
   regenerateQuestion as requestQuestionRegeneration,
+  resolveFlag,
   transitionQuestion,
   type CourseTree,
   type Difficulty,
+  type Flag,
   type OptionRole,
   type PublicationState,
   type QuestionDetail,
@@ -28,8 +33,9 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { STATUS_LABEL, TYPE_LABEL } from './bank.js';
 
 function navigate(path: string): void {
@@ -72,23 +78,17 @@ function provenanceText(provenance: QuestionVersion['provenance']): string {
 // so this list is filtered down to the roles actually present.
 const ROLE_ORDER: OptionRole[] = ['correct', 'common-misconception', 'partially-correct', 'clearly-wrong'];
 
-/** Approve always moves toward 'approved' one step at a time, per
- * PUBLICATION_TRANSITIONS (server/src/types/domain.ts): a Draft question
- * can't jump straight to Approved (only pending-review/archived are legal
- * from draft), so Approve sends it to pending-review first; from
- * pending-review/reviewed/paused it goes straight to approved. `null` means
- * there's no forward action (already approved, or archived). */
+/** Instructor approval is deliberately one click, including Draft ->
+ * Approved. `null` means there is no forward action. */
 function approveTarget(state: PublicationState): PublicationState | null {
-  if (state === 'draft') return 'pending-review';
-  if (state === 'pending-review' || state === 'reviewed' || state === 'paused') return 'approved';
+  if (state === 'draft' || state === 'pending-review' || state === 'reviewed' || state === 'paused') return 'approved';
   return null;
 }
 
-/** Reject sends a question back to Draft for rework — only legal from
- * pending-review/reviewed (PUBLICATION_TRANSITIONS has no approved->draft or
- * draft->draft edge). `null` means there's nothing to reject. */
+/** Reject & Archive removes the question from practice. Archived questions
+ * are recoverable through the separate Restore to Draft action. */
 function rejectTarget(state: PublicationState): PublicationState | null {
-  if (state === 'pending-review' || state === 'reviewed') return 'draft';
+  if (state !== 'archived') return 'archived';
   return null;
 }
 
@@ -135,6 +135,23 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   const courseId = detail.courseId || fallbackCourseId;
+  const query = currentQuery();
+  const fromFlags = query.get('from') === 'flags';
+  const flagVersionId = query.get('flagVersionId');
+  let flagContext: Flag[] = [];
+  if (fromFlags && flagVersionId) {
+    try {
+      flagContext = (await listCourseFlags(courseId)).filter(
+        (flag) =>
+          flag.questionVersionId === flagVersionId &&
+          (flag.state === 'open' || flag.state === 'escalated'),
+      );
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : (error as Error).message;
+      body.replaceChildren(errorState(message));
+      return;
+    }
+  }
   let state: PublicationState = detail.state;
   let loIds: string[] = [...detail.loIds];
   let themeIds: string[] = [...detail.themeIds];
@@ -149,6 +166,11 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   let draftDifficulty: Difficulty = baseline.difficulty;
 
   const errorSlot = el('div', {});
+  const flagUpdateButton = el(
+    'button',
+    { class: 'btn btn--instr-primary', type: 'button', disabled: 'disabled' },
+    'Save & Update Question Bank',
+  ) as HTMLButtonElement;
 
   // --- Persistent form controls (built once; typing/selecting never
   // rebuilds the DOM subtree they live in, so focus is never dropped — see
@@ -166,6 +188,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     );
     const anyEdited = isFieldEdited(draftStem, baseline.stem) || isFieldEdited(draftDifficulty, baseline.difficulty) || optionsChanged;
     saveButton.disabled = !anyEdited;
+    flagUpdateButton.disabled = !anyEdited;
   }
 
   const stemTextarea = el('textarea', {
@@ -264,7 +287,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     updateSaveButton();
   }
 
-  async function save(): Promise<void> {
+  async function save(): Promise<{ ok: boolean; changed: boolean }> {
     errorSlot.replaceChildren();
     const patch: { stem?: string; options?: QuestionOption[]; difficulty?: Difficulty } = {};
     if (isFieldEdited(draftStem, baseline.stem)) patch.stem = draftStem;
@@ -275,15 +298,17 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       patch.options = draftOptions.map((o) => ({ key: o.key, text: o.text, role: o.role, explanation: o.explanation }));
     }
     if (isFieldEdited(draftDifficulty, baseline.difficulty)) patch.difficulty = draftDifficulty;
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) return { ok: true, changed: false };
 
     try {
       const saved = await editQuestion(questionId, patch);
       // The saved version becomes the new edited-comparison baseline
       // (Task-15 Task E: "Reset after a successful save").
       applySavedVersion(saved);
+      return { ok: true, changed: true };
     } catch (error) {
       errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      return { ok: false, changed: false };
     }
   }
   saveButton.addEventListener('click', () => void save());
@@ -296,10 +321,71 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     metaLabel.textContent = `${TYPE_LABEL[detail.current.type]} · ${STATUS_LABEL[state]}`;
   }
 
+  const internalNotes = [...detail.internalNotes];
+  const internalNoteInput = el('textarea', {
+    class: 'input input--area',
+    rows: '3',
+    maxlength: '2000',
+    placeholder: 'Optional note for instructors and TAs. Students cannot see this.',
+  }) as HTMLTextAreaElement;
+  const studentReplyInput = el('textarea', {
+    class: 'input input--area',
+    rows: '3',
+    maxlength: '2000',
+    placeholder: 'Optional response sent to each student who flagged this question.',
+  }) as HTMLTextAreaElement;
+  const notesList = el('div', { class: 'question-notes__list' });
+  const addInternalNoteButton = el(
+    'button',
+    { class: 'btn btn--ghost btn--sm', type: 'button' },
+    'Add Internal Comment',
+  ) as HTMLButtonElement;
+
+  function renderInternalNotes(): void {
+    mount(
+      notesList,
+      ...(internalNotes.length
+        ? internalNotes
+            .slice()
+            .reverse()
+            .map((note) =>
+              el(
+                'article',
+                { class: 'question-note' },
+                el('p', { class: 'question-note__meta', text: `${note.puid} · ${new Date(note.at).toLocaleString()}` }),
+                el('p', { class: 'question-note__text', text: note.text }),
+              ),
+            )
+        : [el('p', { class: 'muted', text: 'No internal review notes yet.' })]),
+    );
+  }
+
+  async function appendInternalNote(): Promise<boolean> {
+    const text = internalNoteInput.value.trim();
+    if (!text) return true;
+    try {
+      const note = await addQuestionInternalNote(questionId, text);
+      internalNotes.push(note);
+      internalNoteInput.value = '';
+      renderInternalNotes();
+      return true;
+    } catch (error) {
+      errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      return false;
+    }
+  }
+  addInternalNoteButton.addEventListener('click', () => void appendInternalNote());
+
   // --- Approve / Reject / Regenerate ---------------------------------------
 
-  const approveButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, '✓ Approve') as HTMLButtonElement;
-  const rejectButton = el('button', { class: 'btn btn--ghost', type: 'button' }, '✕ Reject') as HTMLButtonElement;
+  const approveButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, 'Approve') as HTMLButtonElement;
+  const rejectButton = el('button', { class: 'btn btn--ghost', type: 'button' }, 'Reject & Archive') as HTMLButtonElement;
+  const restoreButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, 'Restore to Draft') as HTMLButtonElement;
+  const flagArchiveButton = el(
+    'button',
+    { class: 'btn btn--danger', type: 'button' },
+    'Reject & Archive',
+  ) as HTMLButtonElement;
 
   function renderActionButtons(): void {
     const approveTo = approveTarget(state);
@@ -307,7 +393,26 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     approveButton.disabled = approveTo === null;
     approveButton.title = approveTo ? `Move to ${STATUS_LABEL[approveTo]}` : 'No further approval step from this state';
     rejectButton.disabled = rejectTo === null;
-    rejectButton.title = rejectTo ? `Send back to ${STATUS_LABEL[rejectTo]}` : 'Cannot reject from this state';
+    rejectButton.title = rejectTo ? 'Archive this question after review' : 'This question is already archived';
+    restoreButton.hidden = state !== 'archived';
+    approveButton.hidden = state === 'archived';
+    rejectButton.hidden = state === 'archived';
+  }
+
+  async function resolveFlagContext(
+    action: 'correct' | 'archive',
+    correctnessAffecting: boolean,
+  ): Promise<boolean> {
+    const reply = studentReplyInput.value.trim();
+    for (const flag of flagContext) {
+      try {
+        await resolveFlag(flag.id, action, correctnessAffecting || undefined, reply || undefined);
+      } catch (error) {
+        errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+        return false;
+      }
+    }
+    return true;
   }
 
   async function doTransition(to: PublicationState): Promise<void> {
@@ -324,12 +429,71 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     }
   }
   approveButton.addEventListener('click', () => {
-    const to = approveTarget(state);
-    if (to) void doTransition(to);
+    void (async () => {
+      const saved = await save();
+      if (!saved.ok || !await appendInternalNote()) return;
+      const to = approveTarget(state);
+      if (to) await doTransition(to);
+    })();
   });
   rejectButton.addEventListener('click', () => {
-    const to = rejectTarget(state);
-    if (to) void doTransition(to);
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: 'Reject and archive this question?',
+        message: 'The question will be removed from student practice. It can later be restored to Draft from Question Bank.',
+        confirmLabel: 'Reject & Archive',
+        tone: 'danger',
+      });
+      if (!confirmed || !await appendInternalNote()) return;
+      const to = rejectTarget(state);
+      if (to) await doTransition(to);
+    })();
+  });
+  restoreButton.addEventListener('click', () => void doTransition('draft'));
+  flagUpdateButton.addEventListener('click', () => {
+    void (async () => {
+      const saved = await save();
+      if (!saved.ok) return;
+      if (!saved.changed) {
+        errorSlot.replaceChildren(errorState('Edit the question before updating the Question Bank.'));
+        return;
+      }
+      if (!await appendInternalNote()) return;
+      if (!await resolveFlagContext('correct', true)) return;
+
+      // A Test Flag never notifies real students. If a real student flag is
+      // also present for this version, use that flag as the remediation
+      // notification anchor so affected students are notified by default.
+      const notificationAnchor = flagContext.find((flag) => flag.source !== 'instructor-preview-test');
+      if (notificationAnchor) {
+        try {
+          await notifyRemediation(notificationAnchor.id);
+        } catch (error) {
+          errorSlot.replaceChildren(
+            errorState(
+              `The question and flags were updated, but affected-student notification failed: ${
+                error instanceof ApiError ? error.message : (error as Error).message
+              }`,
+            ),
+          );
+          return;
+        }
+      }
+      navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
+    })();
+  });
+  flagArchiveButton.addEventListener('click', () => {
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: 'Reject and archive this question?',
+        message: 'This resolves the open flags and removes the real question from student practice. It can later be restored to Draft.',
+        confirmLabel: 'Reject & Archive',
+        tone: 'danger',
+      });
+      if (!confirmed || !await appendInternalNote()) return;
+      if (!await resolveFlagContext('archive', false)) return;
+      navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
+    })();
   });
   renderActionButtons();
 
@@ -635,20 +799,53 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   // --- Assemble --------------------------------------------------------------
 
+  const backPath = fromFlags
+    ? `/instructor/course/${encodeURIComponent(courseId)}/flags`
+    : `/instructor/course/${encodeURIComponent(courseId)}/bank`;
+  const containsTestFlags = flagContext.some((flag) => flag.source === 'instructor-preview-test');
+  const containsRealFlags = flagContext.some((flag) => flag.source !== 'instructor-preview-test');
+  const flagBanner = fromFlags
+    ? el(
+        'section',
+        { class: `flag-editor-banner${containsTestFlags ? ' flag-editor-banner--test' : ''}` },
+        el('h2', {
+          class: 'flag-editor-banner__title',
+          text: containsTestFlags ? 'Instructor Preview Test Flag' : 'Student Flag Review',
+        }),
+        el('p', {
+          text: containsTestFlags
+            ? 'This flag came from Instructor Preview. Saving here changes the real Question Bank, but no real students will be notified for the test flag.'
+            : 'Saving an edited question resolves these flags and notifies affected students by default.',
+        }),
+        containsTestFlags && containsRealFlags
+          ? el('p', { text: 'Real student flags also exist for this version; those students will receive the response and affected-content notification.' })
+          : false,
+        ...flagContext.map((flag) =>
+          el(
+            'p',
+            { class: 'flag-editor-banner__reason' },
+            el('strong', { text: flag.source === 'instructor-preview-test' ? 'TEST: ' : 'Student: ' }),
+            el('span', { text: flag.reason?.trim() || 'No reason supplied.' }),
+          ),
+        ),
+      )
+    : false;
+
   body.replaceChildren(
     el(
       'a',
       {
         class: 'breadcrumb-back',
-        href: `#/instructor/course/${encodeURIComponent(courseId)}/bank`,
+        href: `#${backPath}`,
         onclick: (e: Event) => {
           e.preventDefault();
-          navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank`);
+          navigate(backPath);
         },
       },
-      '← Back to Question Bank',
+      fromFlags ? '← Back to Flag Queue' : '← Back to Question Bank',
     ),
     pageHeader('Question', ''),
+    ...(flagBanner ? [flagBanner] : []),
     el(
       'div',
       { class: 'question-detail-layout' },
@@ -663,10 +860,34 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         optionsSection,
         errorSlot,
         el(
+          'section',
+          { class: 'question-notes' },
+          el('h3', { class: 'detail-section-title', text: 'Internal review comment' }),
+          el('p', { class: 'muted', text: 'Optional. Visible only to instructors and TAs.' }),
+          internalNoteInput,
+          addInternalNoteButton,
+          notesList,
+        ),
+        fromFlags
+          ? el(
+              'section',
+              { class: 'question-student-reply' },
+              el('h3', { class: 'detail-section-title', text: 'Reply to flagging student(s)' }),
+              el('p', {
+                class: 'muted',
+                text: containsRealFlags
+                  ? 'Optional. This text is sent to students whose flags are resolved.'
+                  : 'This is a Test Flag, so no message will be sent to a real student.',
+              }),
+              studentReplyInput,
+            )
+          : false,
+        el(
           'div',
           { class: 'question-actions' },
-          approveButton,
-          rejectButton,
+          fromFlags ? flagUpdateButton : approveButton,
+          fromFlags ? flagArchiveButton : rejectButton,
+          !fromFlags ? restoreButton : false,
           regenerateButton,
           el(
             'a',
@@ -682,12 +903,13 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           ),
         ),
         regenerationPanel,
-        el('div', { class: 'question-save-row' }, saveButton),
+        !fromFlags ? el('div', { class: 'question-save-row' }, saveButton) : false,
       ),
       agentPanel,
     ),
   );
   updateSaveButton();
+  renderInternalNotes();
 }
 
 export function renderQuestionDetail(outlet: HTMLElement, params: RouteParams): void {

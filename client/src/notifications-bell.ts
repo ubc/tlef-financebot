@@ -8,6 +8,7 @@
 // widget's own wrapper element instead of a per-view root.
 import { el, mount } from './dom.js';
 import { listNotifications, markNotificationRead, markAllNotificationsRead, type AppNotification } from './api.js';
+import { broadcastNotificationsChanged, subscribeNotificationsChanged } from './notification-sync.js';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -42,7 +43,7 @@ export function createNotificationBell(): HTMLElement {
   const button = el(
     'button',
     { class: 'icon-btn notif-bell', type: 'button', 'aria-label': 'Notifications', title: 'Notifications' },
-    '🔔',
+    el('span', { class: 'notif-bell__icon', 'aria-hidden': 'true' }),
   );
   const badge = el('span', { class: 'notif-bell__badge' });
   const panel = el('div', { class: 'notif-panel' });
@@ -51,6 +52,7 @@ export function createNotificationBell(): HTMLElement {
   let notifications: AppNotification[] = [];
   let open = false;
   let intervalId: ReturnType<typeof setInterval> | undefined;
+  const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll());
 
   function syncBadge(): void {
     const count = unreadCount(notifications);
@@ -73,7 +75,10 @@ export function createNotificationBell(): HTMLElement {
         type: 'button',
         onclick: () => void handleOpenItem(n),
       },
-      el('span', { class: 'notif-item__icon', 'aria-hidden': 'true', text: n.priority === 'elevated' ? '⚠' : '●' }),
+      el('span', {
+        class: `notif-item__icon${n.priority === 'elevated' ? ' notif-item__icon--elevated' : ''}`,
+        'aria-hidden': 'true',
+      }),
       el(
         'div',
         { class: 'notif-item__body' },
@@ -112,6 +117,7 @@ export function createNotificationBell(): HTMLElement {
     try {
       const updated = await markNotificationRead(n.id);
       notifications = notifications.map((x) => (x.id === n.id ? updated : x));
+      broadcastNotificationsChanged();
     } catch {
       // Transient failure -- leave local state as-is; the next poll reconciles.
     }
@@ -124,6 +130,7 @@ export function createNotificationBell(): HTMLElement {
       await markAllNotificationsRead();
       const now = new Date().toISOString();
       notifications = notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+      broadcastNotificationsChanged();
     } catch {
       // Transient failure -- leave local state as-is; the next poll reconciles.
     }
@@ -147,7 +154,7 @@ export function createNotificationBell(): HTMLElement {
   // isConnected self-teardown below.
   function onDocumentClick(e: MouseEvent): void {
     if (!wrap.isConnected) {
-      document.removeEventListener('click', onDocumentClick);
+      removeGlobalListeners();
       return;
     }
     if (open && !wrap.contains(e.target as Node)) {
@@ -157,12 +164,30 @@ export function createNotificationBell(): HTMLElement {
   }
   document.addEventListener('click', onDocumentClick);
 
+  function refreshWhenVisible(): void {
+    if (document.visibilityState === 'visible') void poll();
+  }
+
+  function removeGlobalListeners(): void {
+    document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('visibilitychange', refreshWhenVisible);
+    window.removeEventListener('focus', refreshWhenVisible);
+    unsubscribeNotificationsChanged();
+  }
+
+  // An Instructor commonly keeps this shell open beside a Student Preview
+  // tab. Refresh immediately when they return instead of making that
+  // two-tab workflow wait for the next 30-second poll.
+  document.addEventListener('visibilitychange', refreshWhenVisible);
+  window.addEventListener('focus', refreshWhenVisible);
+
   async function poll(): Promise<void> {
     if (!wrap.isConnected) {
       if (intervalId !== undefined) {
         clearInterval(intervalId);
         intervalId = undefined;
       }
+      removeGlobalListeners();
       return;
     }
     try {
@@ -201,7 +226,7 @@ export function createAnonymousNotificationBell(): HTMLElement {
       title: 'Notifications',
       'aria-expanded': 'false',
     },
-    '🔔',
+    el('span', { class: 'notif-bell__icon', 'aria-hidden': 'true' }),
   );
   const badge = el('span', { class: 'notif-bell__badge', hidden: true });
   const panel = el(
