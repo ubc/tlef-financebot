@@ -31,7 +31,7 @@ _Integrated 2026-07-23 from Stephen's [`phase-2-ownership-dependency-proposal.md
 - [ ] Phase 1 Task 16 (exit demo + Approved-only proof) — **not required to start Phase 2**; Stephen explicitly deferred it on 2026-07-22. Still owed before either developer claims the Phase 1 exit gate passed.
 - [x] Task 13 (Layer-2 mastery evaluator) recorded as **slipped** (Stephen's 2026-07-22 closeout decision), not silently absent.
 - [x] This shared plan carries the owner map below.
-- [ ] Each developer's personal Phase 2 plan is written and synced (Saurav's: `Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`).
+- [x] Each developer's personal Phase 2 plan is written and synced (Saurav's: `Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`; Stephen's: `Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`).
 
 ## Owner map
 
@@ -62,10 +62,9 @@ new Phase-2 infrastructure not in this doc's original 11 tasks — it replaces
 today's polling/fire-and-forget generation enqueue with a durable Mongo
 `contentRuns` record + course-scoped SSE. Full contract:
 [`Stephen/2026-07-22-p2-0-content-run-contract-proposal.md`](Stephen/2026-07-22-p2-0-content-run-contract-proposal.md).
-Code-complete on `codex/phase-2-content-runs`, **not yet merged** (no PR opened
-as of 2026-07-23). Task 10 depends on it — the generation UI must consume run
-state, not a second ad hoc polling mechanism, so Task 10 cannot start until
-P2-0 merges and the run/list/SSE endpoints land in `docs/api-contract.md`.
+Merged in PR #32. Task 10 must consume its run state rather than a second ad
+hoc polling mechanism; the run/list/SSE endpoints are now in
+`docs/api-contract.md`, so Task 10 is unblocked.
 
 ## Dependency graph
 
@@ -152,16 +151,9 @@ applied).
 - Consumes: Task 1 routes.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09); instructor flag queue showing question content, reason, date, flag count per version, with Correct / Archive / Clear actions — Correct opens the existing question editor first, then resolves.
 
-- [x] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow). **Instructor half done** (Saurav, `saurav/task-2-flag-queue`, commits `ca6ef9f`+`bd76b53`, review clean); **student half done** (Stephen/Codex, `codex/phase-2-task2-student-flag`). See [`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-2-my-half-instructor-flag-resolution-queue) for the instructor half's post-implementation note.
-- [x] **Step 2: Verify in browser**; typecheck/lint/full Jest → PASS. Student live-browser verification covered empty-reason submission, `Flagged ✓`, continued answer submission, correct feedback, and the Strategy-A wrong-answer/retry path with independent controls on both original and retry questions; browser console had no warning/error.
-- [x] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
-
-**Student-half implementation note (2026-07-28):** the practice UI had been
-factored into `practice-card.ts` after this plan was written, so the control
-landed there rather than in `practice.ts`. The live browser pass found and
-fixed an extra retry-path gap: when Strategy A produced an inline retry, the
-original question's feedback footer previously disappeared; it now retains
-its own Flag control while the retry card has a separate one.
+- [x] **Step 1: Implement both surfaces.** Instructor queue merged in PR #28; Stephen/Codex completed the student non-blocking Flag control on stacked PR #35.
+- [x] **Step 2: Verify in browser** — the Task 11 real-SAML flag loop exercised student submit/confirmation plus instructor queue/resolution; full typecheck/lint/build passed.
+- [x] **Step 3: Commit** — instructor commits `ca6ef9f` + `bd76b53`; student implementation `a685800` on PR #35.
 
 ---
 
@@ -218,9 +210,9 @@ notification-row markup was fixed to be keyboard-operable.
 
 **Interfaces:**
 - Consumes: `worker_threads`, `env.paramWorkerTimeoutMs`, `env.paramWorkerMemoryMb`.
-- Produces: `executeGenerate(script: string, seed: number): Promise<Record<string, number>>` — runs an instructor-authored `generate()` (PrairieLearn convention: the script defines `function generate(random) { return { vars: {...} } }`; we surface `result.vars`). Guarantees: hard timeout (`env.paramWorkerTimeoutMs`, terminate on expiry → `Error('param-timeout')`); memory cap via `resourceLimits: { maxOldGenerationSizeMb: env.paramWorkerMemoryMb }`; **no network / no fs / no process** — the worker evaluates the script via `new Function` with a scrubbed scope (shadow `require`, `process`, `globalThis.fetch`, `import` as `undefined`) and runs with a seeded PRNG (mulberry32 over the passed seed) as the `random` argument so identical seeds reproduce identical values.
+- Produces: `executeGenerate(script: string, seed: number): Promise<Record<string, number>>` — runs an instructor-authored `generate()` in a fresh worker and a separate `vm.createContext()` realm with a seeded in-context PRNG. Guarantees: hard terminate-on-timeout, worker memory cap, no injected Node/network/fs/process globals, no host object passed into sandbox code, and only validated serialized primitives crossing the realm boundary. Identical seeds reproduce identical numeric values. The original identifier-shadowing sketch below is historical and explicitly superseded by the delivered-design note after Step 5.
 
-- [ ] **Step 1: Write the failing abuse tests** (real worker, no mocks — this is the security net):
+- [x] **Step 1: Write the failing abuse tests** (real worker, no mocks — this is the security net):
 
 ```ts
 import { executeGenerate } from '../../server/src/components/param-worker';
@@ -268,8 +260,8 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
 });
 ```
 
-- [ ] **Step 2: Verify FAIL.**
-- [ ] **Step 3: Implement.** `worker.js` (checked in as plain JS next to the component, resolved via `path.join(__dirname, 'worker.js')` — confirm it is copied to `dist` by adding it to the server tsconfig's build via a `copyfiles` step in `build:server`, or reference it from `server/src` at runtime since `__dirname` differs between tsx and dist; use `path.resolve(process.cwd(), 'server/src/components/param-worker/worker.js')` to keep one canonical path):
+- [x] **Step 2: Verify FAIL.**
+- [x] **Step 3: Implement.** The following original sketch is retained only as planning history; the secure delivered implementation is the `vm.createContext()` architecture described after Step 5 and in the component `AGENTS.md`.
 
 ```js
 // Sandbox worker: evaluates an instructor generate() script with a scrubbed
@@ -401,9 +393,9 @@ manual checklist text. Full detail in Saurav's personal plan
   - Redirect rule (ST-P07 + §9.2 precedence): when the window shows ≥ `redirectFailureThreshold` misses **clustered on easy/medium questions** for the LO, the attempt response gains `redirect: { materials: [{ name, materialId }], message }` and a silent `notify(kind: 'redirect')` flag lands on the instructor dashboard; if misses are concentrated on **hard** questions only, the tier step-back (Phase 1) applies instead and no redirect fires.
   - Client: recommendation banner at the natural break after feedback ("LO covered — advance to next LO?" / theme-level variant; decline = keep practicing, ST-P05); redirect as a **non-modal** inline panel with material links and an always-present "Continue practicing" button; never reveals the current answer; never blocks.
 
-- [ ] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
+- [x] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
+- [x] **Step 2–4: FAIL → implement → PASS.** The accepted finite-round extension is included: unseen Approved questions are exhausted before a repeated id becomes a round boundary; the client shows an explicit round summary and only starts repeats on confirmation. Redirect material names point to a real enrolled-student route (URL redirect or uploaded-file download), not a dead client link. Full suite: 53 suites / 583 tests; typecheck/lint/build and live SAML student browser regression passed.
+- [x] **Step 5: Commit** — implementation `689e40e`, stacked PR #37.
 
 ---
 
@@ -411,6 +403,11 @@ manual checklist text. Full detail in Saurav's personal plan
 
 **Owner:** Dev B (Saurav)
 **Reviewer:** Dev A (Stephen)
+
+**Takeover note (2026-07-28):** Stephen authorized Codex to take this
+independent, not-started Saurav task so Phase 2 can continue while the stacked
+Stephen PR chain is awaiting merge. The exact file claim is recorded in both
+developers' status files before implementation; Saurav need not confirm.
 
 **Files:**
 - Create: `server/src/services/import.service.ts`
@@ -429,10 +426,15 @@ manual checklist text. Full detail in Saurav's personal plan
   - Routes: `POST /api/courses/:courseId/import/preview` (multipart single file; format from extension; 400 inline error naming an unsupported format), `POST /api/courses/:courseId/import/commit`.
   - Client: upload → preview table (detected questions, failures with reasons, parameterization flags) → confirm.
 
-- [ ] **Step 1: Create the three fixtures** (5 rows each: 3 valid MCQ, 1 T/F, 1 broken row for the failure list; JSON fixture includes one `type: 'other'` short-answer item to exercise auto-conversion).
-- [ ] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
-- [ ] **Step 3–5: FAIL → implement (service, routes, view) → PASS.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)"`
+- [x] **Step 1: Create the three fixtures** (5 items each: CSV/QTI contain 3 valid MCQ, 1 T/F, and 1 broken row/item; JSON keeps five total by replacing the third MCQ with one `type: 'other'` short-answer item to exercise auto-conversion).
+- [x] **Step 2: Failing tests** — CSV parse produces 4 candidates + 1 failure with its line number; unknown format rejected; commit inserts Drafts and labels auto-converted items; the broken row never blocks the valid ones; parameterizable heuristic flags a numeric stem and not a conceptual one.
+- [x] **Step 3–5: FAIL → implement (service, routes, view) → PASS.** Added whole-batch semantic revalidation on commit, cross-course Theme/LO rejection, instructor-route/multipart coverage, and a real SAML browser flow through Import → preview → partial-success confirmation → Question Bank. Focused: 2 suites / 15 tests. Full: 52 suites / 548 tests; typecheck/lint/build passed. Browser: 1/1 passed with zero residual course/question/version/role fixtures.
+- [x] **Step 6: Commit** — `2d3313e` (`feat: CSV/JSON/QTI import with preview, partial success, auto-conversion, and parameterization flags (IN-Q01)`).
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed the recorded
+takeover without modifying Saurav's Task 6 work. The Import nav item is now a
+real route, all confirmed questions remain Drafts, and QTI was retained rather
+than slipped.
 
 *Slip note (phase doc #2): if the week is tight, drop QTI — delete only the QTI branch and fixture.*
 
@@ -451,11 +453,30 @@ manual checklist text. Full detail in Saurav's personal plan
 
 **Interfaces:**
 - Consumes: Task 4 sandbox (validation run), Task 5 params service, `createQuestion`.
-- Produces: `migrateScript(courseId, input: { script: string; stem: string; options: ...; correctKey: string; byPuid }): Promise<{ questionId; sampleValues: Record<string, number> }>` — validates the script in the sandbox (one seeded run; abuse-suite guarantees apply), maps it onto a question template (stem placeholders must cover every `vars` key — mismatches listed back for review), presents for review client-side, then enters as a parameterized **Draft** with `generateScript` set.
+- Produces:
+  `previewScriptMigration(input): Promise<ScriptMigrationResult>` and
+  `migrateScript(courseId, input): Promise<ScriptMigrationResult>`, exposed as
+  `POST .../import/script/{preview,commit}`. `ScriptMigrationResult` is
+  `{ questionId?, sampleValues, sampleStem, sampleOptions, mismatches }`.
+  Preview validates one fixed-seed sandbox run and never writes. Commit repeats
+  sandbox/template validation; stem placeholders must cover every `vars` key,
+  every stem/option placeholder must have a generated value, mismatches return
+  without inserting, and a match enters as a parameterized
+  **Draft** with `generateScript` set. This expands the original single-function
+  sketch so the required client review step has an explicit no-write endpoint.
 
-- [ ] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)"`
+- [x] **Step 1: Failing tests** — valid script yields sampleValues; script whose vars don't match stem placeholders returns the mismatch list without inserting; sandbox rejection (infinite loop fixture) surfaces as a clean 400.
+- [x] **Step 2–4: FAIL → implement → PASS.** Added explicit no-write preview + revalidating commit endpoints, Draft-only v1 script persistence, Import-page review/mismatch UI, and double-submit protection. Focused: 3 suites / 36 tests.
+- [x] **Step 5: Commit** — `ae1f0e9` (`feat: existing parameterized-script migration into parameterized Drafts (IN-Q10)`), draft PR #42.
+
+**Cross-owner result (2026-07-28):** Stephen/Codex completed Task 9 under the
+recorded authorization, integrating the exact released PR #34 + PR #39 heads
+without merging either dependency. Full verification passed: 54 Jest suites /
+594 tests, typecheck, lint, Node 24 build, plus a real SAML-session Chromium
+flow covering sandbox preview, substituted samples, one Draft/version write,
+open-question navigation, zero browser errors, and zero residual fixtures.
+PR #42 is CI green and remains draft only until #34 and #39 merge and it can
+be rebased.
 
 ---
 
@@ -485,9 +506,9 @@ manual checklist text. Full detail in Saurav's personal plan
     the same PR; do not restore the constant Agenda `jobId` response or add a
     separate client-only progress tracker.
 
-- [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+- [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
+- [x] **Step 2–4: FAIL → implement → PASS.** Completed by Stephen/Codex under the recorded takeover: editable presets, material-scoped @mentions, durable custom generation, transient side-by-side regeneration, and explicit replacement only. Focused/full tests, typecheck/lint/build, and real-browser click flow passed.
+- [x] **Step 5: Commit** — `0870e23` (`feat: custom-prompt generation and explicit regeneration (IN-Q11/IN-Q12)`), CI-green PR #40.
 
 ---
 
@@ -499,21 +520,29 @@ manual checklist text. Full detail in Saurav's personal plan
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
 
-- [ ] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
+- [x] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
 
 Run: `npm run test:e2e -- tests/e2e/flag-loop.spec.ts` → PASS.
 
-- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "test: phase-2 exit — flag -> notify -> auto-pause -> resolve loop e2e"`
+- [x] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS. Full evidence: 53 Jest suites / 583 tests, typecheck/lint/build clean, and 12 Playwright scenarios passed (the existing opt-in live-LLM scenario skipped). The full E2E pass also updated stale Phase-0 shell assertions and made shared-dataset selectors deterministic.
+- [x] **Step 3: Commit** — `4422d20` (`test: phase-2 exit - flag -> notify -> auto-pause -> resolve loop e2e`).
+
+**Implementation note (2026-07-28):** the real browser run found that the
+notification bell synchronously polled before its wrapper was mounted; its
+disconnect cleanup therefore cancelled polling permanently on every normal
+shell construction. The minimal lifecycle fix defers the initial poll by one
+microtask and is covered by the full standard/elevated/resolved notification
+loop. All E2E courses, flags, attempts, notifications, and roles were removed;
+explicit residual counts were zero.
 
 ---
 
 ## Exit criteria checklist (from phase-2-pilot-readiness.md)
 
-- [ ] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
+- [x] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
 - [ ] COMM 298 practice sets + parameterized scripts imported as Drafts (Tasks 8–9 used by the instructor; pre-seeding continues through Phases 3–4).
-- [ ] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4).
-- [ ] supertest coverage on flag state machine and auto-pause thresholds (Task 1).
+- [x] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4; PR #33, 24/24 abuse tests).
+- [x] supertest coverage on flag state machine and auto-pause thresholds (Task 1; PRs #27/#29).
 
 ## Slip order (from the phase doc)
 

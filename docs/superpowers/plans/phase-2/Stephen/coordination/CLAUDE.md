@@ -80,10 +80,9 @@ Read this version, not any cached copy of the first one.)
   round, `210c68f` final-whole-branch-review fix round). Went through
   implementer -> task review (spec ✅, quality Approved after 1 fix round)
   -> final whole-branch review (2 Important integration gaps found and
-  fixed) -> re-verified **Ready to merge: Yes**. Not yet pushed to remote or
-  opened as a PR as of this note — pending the human's push/PR decision via
-  `finishing-a-development-branch`; will update this file again once that
-  happens with the PR URL.
+  fixed) -> re-verified **Ready to merge: Yes**. Pushed as
+  `stephen/phase-2-task5-params`, **PR #34 open**:
+  https://github.com/ubc/tlef-financebot/pull/34
 - Exact shared paths released to Codex, all three original ones plus two
   more discovered during the final review's cross-cutting check:
   - `client/src/api.ts` — see the diff summary above (unchanged from the
