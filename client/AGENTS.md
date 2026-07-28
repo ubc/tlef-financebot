@@ -55,6 +55,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/members.ts` | The gated members-only area (auth-gating reference). |
 | `views/role.ts` | Role-gated area (Faculty/Student/Staff), one factory per role. |
 | `views/admin/accounts.ts` | Admin Console v0: grant/revoke global platform-Instructor access by CWL username and show active/pending-first-login state. |
+| `views/instructor/student-preview.ts` | Persistent-banner Instructor preview of the Approved student practice experience; reuses the question card through a preview-only API adapter. |
 
 ## Adding a page
 
@@ -83,6 +84,11 @@ FinanceBot's real Instructor shell is stricter than the generic role demo:
 Admin, `platformInstructor`, or an existing course Instructor role. Admins get
 an additional `/admin/accounts` navigation entry; the server's `ensureAdmin()`
 remains the actual gate.
+
+The Instructor dashboard's **Preview as Student** action stays in the
+Instructor shell and calls only `/preview/*` APIs. The shared practice card is
+dependency-injected: live practice supplies submit + flag + mastery updates,
+while preview supplies only its isolated submit endpoint.
 
 ## Re-skinning
 

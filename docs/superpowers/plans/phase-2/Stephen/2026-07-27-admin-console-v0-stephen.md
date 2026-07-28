@@ -3,7 +3,8 @@
 **Owner:** Stephen  
 **Implementing agent:** Codex  
 **Status:** Approved for planning and implementation by Stephen on 2026-07-27  
-**Concurrent work:** Claude continues Phase 2 Task 5 (parameter serving/config)
+**Concurrent work:** Task 5 released on PR #34; Admin A1 complete on PR #36;
+Student Preview A2 active on an explicit #37 + #36 integration stack
 
 This is a deliberately small staging-enablement slice, not the full PRD Admin
 surface. It adds two capabilities Stephen needs now:
@@ -223,14 +224,8 @@ Steps:
 - [x] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
   and `STATUS.md`.
 
-**A1 verification (2026-07-28):** rebased as `codex/admin-console-v0` on PR
-#34's final head. The combined tree passes 53 Jest suites / 585 tests,
-server/client typecheck, lint, and the Node 24 build. Live Admin browser
-verification covered Admin-only navigation, an existing professor shown as
-`Active`, an unknown CWL shown as `Pending first login`, and confirmed revoke
-flows for both; browser console clean. Temporary localhost test grants and
-the temporary test-user Admin bit were restored after verification.
-Opened as stacked PR #36: https://github.com/ubc/tlef-financebot/pull/36.
+Completed on PR #36 (`7d76080`); full 53 suites / 585 tests and the live Admin
+active/pending/revoke browser regression passed.
 
 ### Gate A1.5 — Task 5 handoff
 
@@ -245,15 +240,19 @@ releases the following paths with a commit SHA:
 Codex then rebases Admin work onto the latest `main` and reruns the Phase 1
 serving/attempt regression suites before touching preview integration.
 
-Claude released the final Task 5 shared paths at `210c68f` and opened PR #34.
-Admin A1 is stacked on that final branch state; Preview A2 still waits for A1
-merge so its separate collection/route boundary lands on the stable Admin
-authorization base.
+**Gate satisfied 2026-07-28:** Claude released Task 5 at `210c68f` on PR #34,
+including the final `paramValues` echo fix. Task 7 and Admin A1 are also
+complete and released on PRs #37/#36. Because Stephen requested continuous
+work while merges remain human-controlled, A2 starts on an explicit stacked
+integration branch: #37 is the base and #36 is merged into that branch. This
+does not merge any PR to `main`; its diff will shrink naturally as the
+dependencies are merged in their documented order.
 
 ### Slice A2 — Instructor Student Preview
 
 **Owner:** Codex  
 **Depends on:** Task 5 merged/released and A1 merged
+**Status:** implementation and browser verification complete; PR handoff pending
 
 Expected files:
 
@@ -273,23 +272,32 @@ Expected files:
 
 Steps:
 
-- [ ] Write authorization tests proving students cannot call Instructor
+- [x] Write authorization tests proving students cannot call Instructor
   preview routes and an Instructor cannot preview another Instructor's course.
-- [ ] Write content tests proving unpublished courses are previewable while
+- [x] Write content tests proving unpublished courses are previewable while
   only approved questions serve.
-- [ ] Write isolation tests proving preview answers create no live
+- [x] Write isolation tests proving preview answers create no live
   `attemptRecords`, mastery, Review Book, flags/auto-pause counts,
   remediation recipients, summaries, or notifications.
-- [ ] Extract only the pure grading/response logic required to reuse the real
+- [x] Extract only the pure grading/response logic required to reuse the real
   student experience; keep persistence/context decisions at the route/service
   boundary.
-- [ ] Add the dashboard “Preview as Student” entry and persistent preview
+- [x] Add the dashboard “Preview as Student” entry and persistent preview
   banner.
-- [ ] Verify the published and unpublished course flows in a browser.
-- [ ] Run focused tests, the full Jest suite, typecheck, lint, build, and
+- [x] Verify the published and unpublished course flows in a browser.
+- [x] Run focused tests, the full Jest suite, typecheck, lint, build, and
   relevant Playwright coverage.
 - [ ] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
   status.
+
+**A2 verification (2026-07-28):** 57 Jest suites / 606 tests, server/client
+typecheck, lint, and Node 24 build passed. The real-session Playwright
+regression clicked Dashboard → Preview as Student on an unpublished course,
+confirmed the persistent no-progress banner, served the Approved question
+while excluding a Draft, removed the flag control, submitted through the real
+question card, wrote exactly one `previewAttemptRecord`, and asserted zero
+live attempt/mastery/Review Book/flag/notification/session-summary records.
+Browser console/page errors and fixture residuals were zero.
 
 ## Required regression cases
 
