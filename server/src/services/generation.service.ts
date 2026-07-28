@@ -3,7 +3,12 @@ import { completeJson } from '../components/genai/llm';
 import { embedOne } from '../components/genai/embeddings';
 import { search } from '../components/qdrant';
 import { defineJob, enqueueJob } from '../components/jobs';
-import { losCol, materialsCol, questionsCol } from '../components/mongodb/collections';
+import {
+  losCol,
+  materialsCol,
+  questionsCol,
+  questionVersionsCol,
+} from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
 import { courseCollection } from './materials.service';
@@ -58,6 +63,25 @@ const GENERATOR_MAX_ATTEMPTS = 2;
  * completeJson default). */
 const GENERATOR_TEMPERATURE = 0.7;
 
+export const PRESET_PROMPTS: ReadonlyArray<{ label: string; text: string }> = [
+  {
+    label: 'Calculation question',
+    text: 'Create a calculation question that requires students to select and apply the correct finance formula, showing enough information for one unambiguous answer.',
+  },
+  {
+    label: 'Concept check',
+    text: 'Create a concise concept check that distinguishes genuine understanding from memorizing a definition.',
+  },
+  {
+    label: 'Common-misconception probe',
+    text: 'Create a question whose most plausible distractor exposes a common student misconception, and explain that misconception clearly.',
+  },
+  {
+    label: 'Applied scenario',
+    text: 'Create an applied business scenario in which the student must use this learning objective to make or justify a finance decision.',
+  },
+];
+
 const OPTION_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
   'correct',
   'common-misconception',
@@ -102,6 +126,18 @@ interface ValidatorOutput {
 interface ReviewerOutput {
   decision: string;
   reasoning: string;
+}
+
+export interface RegenerationVariant {
+  stem: string;
+  options: QuestionOption[];
+  difficulty: Difficulty;
+  sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>;
+  agentDecision: {
+    decision: 'pass' | 'flag' | 'reject';
+    reasoning: string;
+    roleAssessment: string;
+  };
 }
 
 function configuredGenerationModels(): QuestionGenerationRun['input']['models'] {
@@ -228,6 +264,85 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   return created;
 }
 
+/**
+ * Generate one alternative for an existing question without creating a
+ * QuestionVersion or changing the current version pointer. The only persisted
+ * mutation is append-only request provenance on the Question head. The caller
+ * must explicitly use editQuestion() to replace content after reviewing the
+ * returned side-by-side variant.
+ */
+export async function regenerateQuestion(
+  questionId: ObjectId,
+  prompt: string,
+  _byPuid: string,
+  expectedCourseId?: ObjectId,
+): Promise<{ variant: RegenerationVariant }> {
+  const question = await questionsCol().findOne({ _id: questionId });
+  if (!question) throw new Error('question-not-found');
+  if (expectedCourseId && !question.courseId.equals(expectedCourseId)) {
+    throw new Error('question-not-found');
+  }
+  const current = await questionVersionsCol().findOne({ _id: question.currentVersionId });
+  if (!current) throw new Error('version-not-found');
+  const loId = question.loIds[0];
+  if (!loId) throw new Error('question-has-no-lo');
+  const lo = await losCol().findOne({ _id: loId });
+  if (!lo || !lo.courseId.equals(question.courseId)) throw new Error('lo-not-in-course');
+
+  const grounding = await retrieveChunks(
+    courseCollection(question.courseId),
+    question.courseId,
+    lo,
+    prompt,
+  );
+  const generationInstruction = [
+    prompt,
+    'Create a distinct alternative to the existing question below. Preserve the learning objective but do not merely paraphrase.',
+    `Existing question: ${JSON.stringify({ stem: current.stem, options: current.options })}`,
+  ].join('\n\n');
+  const generated = await generateValidQuestion(
+    current.type,
+    lo.name,
+    current.difficulty,
+    generationInstruction,
+    grounding.chunks,
+  );
+  if (!generated) throw new Error('generation-invalid-options');
+
+  const validation = await completeJson<ValidatorOutput>(
+    VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
+    { model: env.llmModelValidator },
+  );
+  const review = await completeJson<ReviewerOutput>(
+    REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+    { model: env.llmModelReviewer },
+  );
+  const variant: RegenerationVariant = {
+    stem: generated.stem,
+    options: generated.options,
+    difficulty: normalizeDifficulty(generated.difficulty ?? current.difficulty),
+    sourceRefs: grounding.chunks
+      .filter((chunk) => chunk.materialId)
+      .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text })),
+    agentDecision: {
+      decision: normalizeDecision(review.decision),
+      reasoning: String(review.reasoning ?? ''),
+      roleAssessment: String(validation.roleAssessment ?? ''),
+    },
+  };
+
+  const now = new Date();
+  const update = await questionsCol().updateOne(
+    { _id: questionId, currentVersionId: question.currentVersionId },
+    {
+      $push: { regenerations: { prompt, at: now } },
+      $set: { updatedAt: now },
+    },
+  );
+  if (update.matchedCount !== 1) throw new Error('question-changed-during-regeneration');
+  return { variant };
+}
+
 interface TrackedCandidate {
   item: number;
   generated: GeneratorOutput;
@@ -265,7 +380,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     if (!lo) throw new Error('lo-not-found');
     if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
 
-    const allowedMaterialIds = await groundingMaterialIds(courseId, lo);
+    const allowedMaterialIds = await groundingMaterialIds(courseId, lo, prompt);
     if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
     await updateContentRun(runId, {
       status: 'running',
@@ -519,17 +634,46 @@ export function registerGenerationJobs(): void {
 async function groundingMaterialIds(
   courseId: ObjectId,
   lo: { _id: ObjectId; themeId: ObjectId },
+  prompt?: string,
 ): Promise<string[]> {
   const materials = await materialsCol().find({ courseId, status: 'ready' }).toArray();
-  return materials
-    .filter((material) =>
-      material.assignments.some(
-        (assignment) =>
-          assignment.loId?.equals(lo._id) === true ||
-          (assignment.loId === undefined && assignment.themeId.equals(lo.themeId)),
-      ),
-    )
-    .map((material) => material._id.toHexString());
+  const assigned = materials.filter((material) =>
+    material.assignments.some(
+      (assignment) =>
+        assignment.loId?.equals(lo._id) === true ||
+        (assignment.loId === undefined && assignment.themeId.equals(lo.themeId)),
+    ),
+  );
+  const mentions = extractMaterialMentions(prompt);
+  if (mentions.length === 0) return assigned.map((material) => material._id.toHexString());
+
+  const selected: string[] = [];
+  for (const mention of mentions) {
+    const matches = assigned.filter(
+      (material) => normalizeMaterialName(material.name) === normalizeMaterialName(mention),
+    );
+    if (matches.length === 0) throw new Error('generation-material-mention-not-found');
+    if (matches.length > 1) throw new Error('generation-material-mention-ambiguous');
+    const id = matches[0]._id.toHexString();
+    if (!selected.includes(id)) selected.push(id);
+  }
+  return selected;
+}
+
+function normalizeMaterialName(value: string): string {
+  return value.normalize('NFKC').trim().toLocaleLowerCase('en-CA');
+}
+
+/** Supports @lecture-3.pdf and quoted names such as @"Lecture 3.pdf". */
+function extractMaterialMentions(prompt?: string): string[] {
+  if (!prompt) return [];
+  const mentions: string[] = [];
+  const pattern = /@"([^"\r\n]+)"|@([^\s@"']+)/g;
+  for (const match of prompt.matchAll(pattern)) {
+    const name = (match[1] ?? match[2] ?? '').replace(/[),;:!?\]}]+$/u, '');
+    if (name && !mentions.includes(name)) mentions.push(name);
+  }
+  return mentions;
 }
 
 /** Retrieve strictly assigned grounding chunks. Missing assignments, a Qdrant
@@ -542,7 +686,7 @@ async function retrieveChunks(
   prompt?: string,
   pinnedMaterialIds?: string[],
 ): Promise<RetrievedGrounding> {
-  const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo));
+  const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo, prompt));
   if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
 
   const query = prompt ? `${lo.name}\n${prompt}` : lo.name;

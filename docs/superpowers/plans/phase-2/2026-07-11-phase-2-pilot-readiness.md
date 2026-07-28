@@ -486,9 +486,21 @@ than slipped.
     the same PR; do not restore the constant Agenda `jobId` response or add a
     separate client-only progress tracker.
 
-- [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+- [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
+- [x] **Step 2–4: FAIL → implement → PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+
+**Completed 2026-07-28 by Stephen/Codex under the recorded cross-owner
+authorization.** The Phase 1 pre-seeding page already contained the target
+LO/type/difficulty form and P2-0 run/SSE history, so Task 10 extended that
+canonical page instead of creating the older plan's duplicate `generate.ts`.
+Server-side mention resolution is exact, case-insensitive, and restricted to
+ready materials already assigned to the selected LO/theme. Regeneration is
+synchronous and transient: only request provenance is appended until the
+instructor explicitly chooses Replace, which uses the existing versioned edit
+path. Verification: 51 Jest suites / 543 tests, typecheck, lint, Node 24 build,
+and a real-session Playwright flow covering every new click and the
+no-PATCH-before-Replace invariant.
 
 ---
 

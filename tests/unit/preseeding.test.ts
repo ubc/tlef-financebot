@@ -7,6 +7,7 @@
 // client/src/views/instructor/preseeding.ts.
 import {
   coverageStatus,
+  materialMentionToken,
   presetPrompt,
   thinLos,
   PRESET_TEMPLATES,
@@ -36,6 +37,16 @@ describe('coverageStatus', () => {
 
   it('never goes negative — a negative approved count still reads "empty"', () => {
     expect(coverageStatus(-1, 3)).toBe('empty');
+  });
+});
+
+describe('materialMentionToken', () => {
+  it('uses the plain @filename form when the material name has no spaces', () => {
+    expect(materialMentionToken('lecture-3.pdf')).toBe('@lecture-3.pdf');
+  });
+
+  it('quotes material names containing spaces for exact server resolution', () => {
+    expect(materialMentionToken('Lecture 3.pdf')).toBe('@"Lecture 3.pdf"');
   });
 });
 

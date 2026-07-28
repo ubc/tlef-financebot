@@ -15,6 +15,7 @@ import {
   editQuestion,
   getCourseTree,
   getQuestion,
+  regenerateQuestion as requestQuestionRegeneration,
   transitionQuestion,
   type CourseTree,
   type Difficulty,
@@ -22,6 +23,8 @@ import {
   type PublicationState,
   type QuestionDetail,
   type QuestionOption,
+  type QuestionVersion,
+  type RegenerationVariant,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
@@ -216,6 +219,32 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     }),
   );
 
+  function applySavedVersion(saved: QuestionVersion): void {
+    baseline.stem = saved.stem;
+    baseline.difficulty = saved.difficulty;
+    baseline.options = saved.options.map((option) => ({ ...option }));
+    draftStem = saved.stem;
+    draftDifficulty = saved.difficulty;
+
+    stemTextarea.value = draftStem;
+    stemTextarea.classList.remove('edited');
+    difficultySelect.value = draftDifficulty;
+    difficultySelect.classList.remove('edited');
+    for (const input of optionInputs) {
+      const savedOption = saved.options.find((option) => option.role === input.role);
+      const draft = draftOptions.find((option) => option.role === input.role);
+      if (savedOption && draft) {
+        draft.text = savedOption.text;
+        draft.explanation = savedOption.explanation;
+        input.textInput.value = savedOption.text;
+        input.textInput.classList.remove('edited');
+        input.explInput.value = savedOption.explanation;
+        input.explInput.classList.remove('edited');
+      }
+    }
+    updateSaveButton();
+  }
+
   async function save(): Promise<void> {
     errorSlot.replaceChildren();
     const patch: { stem?: string; options?: QuestionOption[]; difficulty?: Difficulty } = {};
@@ -233,29 +262,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       const saved = await editQuestion(questionId, patch);
       // The saved version becomes the new edited-comparison baseline
       // (Task-15 Task E: "Reset after a successful save").
-      baseline.stem = saved.stem;
-      baseline.difficulty = saved.difficulty;
-      baseline.options = saved.options.map((o) => ({ ...o }));
-      draftStem = saved.stem;
-      draftDifficulty = saved.difficulty;
-
-      stemTextarea.value = draftStem;
-      stemTextarea.classList.remove('edited');
-      difficultySelect.value = draftDifficulty;
-      difficultySelect.classList.remove('edited');
-      for (const input of optionInputs) {
-        const savedOption = saved.options.find((o) => o.role === input.role);
-        const draft = draftOptions.find((o) => o.role === input.role);
-        if (savedOption && draft) {
-          draft.text = savedOption.text;
-          draft.explanation = savedOption.explanation;
-          input.textInput.value = savedOption.text;
-          input.textInput.classList.remove('edited');
-          input.explInput.value = savedOption.explanation;
-          input.explInput.classList.remove('edited');
-        }
-      }
-      updateSaveButton();
+      applySavedVersion(saved);
     } catch (error) {
       errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
     }
@@ -306,6 +313,176 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     if (to) void doTransition(to);
   });
   renderActionButtons();
+
+  // --- Side-by-side regeneration (IN-Q12) ----------------------------------
+
+  const regenerateButton = el(
+    'button',
+    { class: 'btn btn--ghost', type: 'button' },
+    '↻ Regenerate',
+  ) as HTMLButtonElement;
+  const regenerationPanel = el('section', {});
+  const regenerationPrompt = el('textarea', {
+    class: 'input input--area',
+    rows: '3',
+    text: 'Create a distinct alternative that tests the same learning objective with a different scenario.',
+  }) as HTMLTextAreaElement;
+  let regenerationOpen = false;
+  let regenerationBusy = false;
+  let regenerationError: string | null = null;
+  let regenerationMessage: string | null = null;
+  let regenerationVariant: RegenerationVariant | null = null;
+
+  function previewQuestion(
+    title: string,
+    question: { stem: string; difficulty: Difficulty; options: QuestionOption[] },
+  ): HTMLElement {
+    return el(
+      'article',
+      { class: 'agent-report-panel' },
+      el('h4', { class: 'agent-report-panel__title', text: title }),
+      el('p', { text: question.stem }),
+      el('p', { class: 'question-meta__label', text: `Difficulty: ${question.difficulty}` }),
+      el(
+        'ol',
+        {},
+        ...question.options.map((option) =>
+          el('li', { text: `${option.key}. ${option.text}` }),
+        ),
+      ),
+    );
+  }
+
+  function renderRegenerationPanel(): void {
+    if (!regenerationOpen) {
+      regenerationPanel.replaceChildren();
+      return;
+    }
+    mount(
+      regenerationPanel,
+      el('h3', { class: 'detail-section-title', text: 'Regenerate side by side' }),
+      el('p', {
+        text: 'The alternative is only a preview. The current question stays unchanged until you choose Replace with variant.',
+      }),
+      el(
+        'label',
+        { class: 'form-field' },
+        el('span', { class: 'form-field__label', text: 'Regeneration prompt' }),
+        regenerationPrompt,
+      ),
+      regenerationError ? errorState(regenerationError) : false,
+      regenerationMessage
+        ? el('p', { class: 'preseeding-queued-message', role: 'status', text: regenerationMessage })
+        : false,
+      el(
+        'div',
+        { class: 'question-actions' },
+        el(
+          'button',
+          {
+            class: 'btn btn--instr-primary',
+            type: 'button',
+            disabled: regenerationBusy ? 'disabled' : undefined,
+            onclick: () => void generateVariant(),
+          },
+          regenerationBusy ? 'Generating alternative…' : 'Generate alternative',
+        ),
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost',
+            type: 'button',
+            disabled: regenerationBusy ? 'disabled' : undefined,
+            onclick: () => {
+              regenerationOpen = false;
+              renderRegenerationPanel();
+            },
+          },
+          'Close',
+        ),
+      ),
+      regenerationVariant
+        ? el(
+            'div',
+            { class: 'question-detail-layout' },
+            previewQuestion('Current question', {
+              stem: baseline.stem,
+              difficulty: baseline.difficulty,
+              options: baseline.options,
+            }),
+            previewQuestion('Generated variant', regenerationVariant),
+          )
+        : false,
+      regenerationVariant
+        ? el(
+            'button',
+            {
+              class: 'btn btn--instr-primary',
+              type: 'button',
+              disabled: regenerationBusy ? 'disabled' : undefined,
+              onclick: () => void replaceWithVariant(),
+            },
+            'Replace with variant',
+          )
+        : false,
+    );
+  }
+
+  async function generateVariant(): Promise<void> {
+    const prompt = regenerationPrompt.value.trim();
+    if (!prompt) {
+      regenerationError = 'Enter a regeneration prompt.';
+      renderRegenerationPanel();
+      return;
+    }
+    regenerationBusy = true;
+    regenerationError = null;
+    regenerationMessage = null;
+    regenerationVariant = null;
+    renderRegenerationPanel();
+    try {
+      const response = await requestQuestionRegeneration(courseId, questionId, prompt);
+      regenerationVariant = response.variant;
+      regenerationMessage = 'Alternative generated. Compare both versions before replacing.';
+    } catch (error) {
+      regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    regenerationBusy = false;
+    renderRegenerationPanel();
+  }
+
+  async function replaceWithVariant(): Promise<void> {
+    if (!regenerationVariant) return;
+    regenerationBusy = true;
+    regenerationError = null;
+    regenerationMessage = null;
+    renderRegenerationPanel();
+    try {
+      const saved = await editQuestion(questionId, {
+        stem: regenerationVariant.stem,
+        options: regenerationVariant.options,
+        difficulty: regenerationVariant.difficulty,
+      });
+      applySavedVersion(saved);
+      regenerationVariant = null;
+      regenerationMessage = `Variant saved explicitly as question version ${saved.version}.`;
+    } catch (error) {
+      regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    regenerationBusy = false;
+    renderRegenerationPanel();
+  }
+
+  regenerateButton.addEventListener('click', () => {
+    if (!saveButton.disabled) {
+      errorSlot.replaceChildren(errorState('Save or discard your current edits before regenerating.'));
+      return;
+    }
+    regenerationOpen = true;
+    regenerationError = null;
+    regenerationMessage = null;
+    renderRegenerationPanel();
+  });
 
   // --- Topics & LOs chips ----------------------------------------------------
 
@@ -390,8 +567,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
   renderChips();
 
-  // --- AI Agent Report panel (static — no live updates; Regenerate is out
-  // of scope, N8) ------------------------------------------------------------
+  // --- AI Agent Report panel ------------------------------------------------
 
   const agentDecision = detail.agentDecision;
   const agentPanel = el(
@@ -450,7 +626,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         stemTextarea,
         optionsSection,
         errorSlot,
-        el('div', { class: 'question-actions' }, approveButton, rejectButton, el('button', { class: 'btn btn--ghost', type: 'button', disabled: 'disabled', title: 'Coming soon' }, '↻ Regenerate')),
+        el('div', { class: 'question-actions' }, approveButton, rejectButton, regenerateButton),
+        regenerationPanel,
         el('div', { class: 'question-save-row' }, saveButton),
       ),
       agentPanel,

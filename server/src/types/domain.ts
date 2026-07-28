@@ -158,6 +158,7 @@ export interface Question {
   labels: QuestionLabel[];
   agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
+  regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
   internalNotes: Array<{ puid: string; text: string; at: Date }>; // teaching-team-only (§6.2)
   createdAt: Date;
   updatedAt: Date;
