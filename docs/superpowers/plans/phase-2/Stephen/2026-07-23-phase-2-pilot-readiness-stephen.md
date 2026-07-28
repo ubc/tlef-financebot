@@ -207,9 +207,16 @@ flaggable while its inline retry is active.
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
 
-- [ ] **Step 1: Write and pass the spec** — student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag → auto-pause fires → instructor sees the elevated notification → question no longer serves to students → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification. Full scenario in the core document, Task 11 Step 1.
-- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "test: phase-2 exit — flag -> notify -> auto-pause -> resolve loop e2e"`
+- [x] **Step 1: Write and pass the spec** — student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag → auto-pause fires → instructor sees the elevated notification → question no longer serves to students → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification. Full scenario in the core document, Task 11 Step 1.
+- [x] **Step 2: Full suite green** — 53 Jest suites / 583 tests, typecheck/lint/build, and 12 current Playwright scenarios passed; the opt-in live-LLM scenario remained skipped. The pass also reconciled stale Phase-0 demo-shell E2E expectations and ambiguous shared-dataset selectors.
+- [x] **Step 3: Commit** — `4422d20` (`test: phase-2 exit - flag -> notify -> auto-pause -> resolve loop e2e`).
+
+**Result:** the complete student/instructor loop now runs through real SAML
+sessions and public routes, with only four peer personas seeded directly
+because the local IdP provides one student identity. The run found and fixed
+the merged notification bell's mount-time polling cancellation. Explicit
+post-suite checks found zero residual E2E courses, flags, attempts, or
+notifications.
 
 ---
 

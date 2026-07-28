@@ -499,21 +499,29 @@ manual checklist text. Full detail in Saurav's personal plan
 **Files:**
 - Create: `tests/e2e/flag-loop.spec.ts`
 
-- [ ] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
+- [x] **Step 1: Write and pass the spec:** student flags an approved question → instructor sees the standard notification and the flag in the queue → four more students flag (seeded via API sessions or direct DB seeding in the spec) → auto-pause fires → instructor sees the elevated notification → question no longer serves to students (practice/next skips it) → instructor resolves "clear" → question serves again; flagging student sees the flag-resolved notification.
 
 Run: `npm run test:e2e -- tests/e2e/flag-loop.spec.ts` → PASS.
 
-- [ ] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
-- [ ] **Step 3: Commit** — `git commit -m "test: phase-2 exit — flag -> notify -> auto-pause -> resolve loop e2e"`
+- [x] **Step 2: Full suite green** — `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS. Full evidence: 53 Jest suites / 583 tests, typecheck/lint/build clean, and 12 Playwright scenarios passed (the existing opt-in live-LLM scenario skipped). The full E2E pass also updated stale Phase-0 shell assertions and made shared-dataset selectors deterministic.
+- [x] **Step 3: Commit** — `4422d20` (`test: phase-2 exit - flag -> notify -> auto-pause -> resolve loop e2e`).
+
+**Implementation note (2026-07-28):** the real browser run found that the
+notification bell synchronously polled before its wrapper was mounted; its
+disconnect cleanup therefore cancelled polling permanently on every normal
+shell construction. The minimal lifecycle fix defers the initial poll by one
+microtask and is covered by the full standard/elevated/resolved notification
+loop. All E2E courses, flags, attempts, notifications, and roles were removed;
+explicit residual counts were zero.
 
 ---
 
 ## Exit criteria checklist (from phase-2-pilot-readiness.md)
 
-- [ ] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
+- [x] Flag → notify → auto-pause → resolve loop demonstrated end to end (Task 11).
 - [ ] COMM 298 practice sets + parameterized scripts imported as Drafts (Tasks 8–9 used by the instructor; pre-seeding continues through Phases 3–4).
-- [ ] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4).
-- [ ] supertest coverage on flag state machine and auto-pause thresholds (Task 1).
+- [x] Sandboxed `generate()` passes abuse tests: infinite loop, network attempt, fs write (Task 4; PR #33, 24/24 abuse tests).
+- [x] supertest coverage on flag state machine and auto-pause thresholds (Task 1; PRs #27/#29).
 
 ## Slip order (from the phase doc)
 
