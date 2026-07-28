@@ -16,32 +16,119 @@ course-authoring access, not an arbitrary untrusted internet user. This is
 - **Defense-in-depth against a compromised/malicious instructor account.**
   Course-authoring access is a real privilege boundary (SAML-authenticated,
   role-gated), but it's still a lower trust tier than server-operator code.
-  The scrubbed scope (`require`, `process`, `fetch`, `globalThis`, `module`,
-  `exports`, `__dirname`, `__filename`, `Function`, and `eval` all shadowed
-  to `undefined`/`{}` inside `new Function(...)`) means even a deliberately
-  malicious script can't read files, make outbound requests, touch the
-  process, mint a fresh `Function` bound to the real global scope, or reach
-  the real `eval` — directly or indirectly — but this is one layer, not a
-  complete isolation guarantee (it does not stop e.g. CPU/timing side
-  channels or Node/V8 engine bugs). Do not repurpose this component to run
+
+### Why this is `vm.createContext()`, not identifier shadowing (fix round 3)
+
+Two earlier rounds of this component evaluated the script via `new
+Function(...)`, passing `require`, `process`, `fetch`, `globalThis`,
+`module`, `exports`, `Function`, and `eval` as parameter names bound to
+`undefined`, hoping to shadow every dangerous identifier the script's
+top-level code could reference. **A third review round live-verified this
+was fully broken as a security boundary**, independent of which identifiers
+got shadowed: `new Function(...)` runs the compiled function in the *same JS
+realm* as the worker thread. Any built-in value reachable from the
+script — `[]`, `{}`, a string literal, `Math`, anything — has a
+`.constructor` (its constructor function) whose own `.constructor` is that
+realm's real, unshadowed `Function` constructor, reachable purely through
+*property access*, which no identifier shadow can intercept:
+
+```js
+[].constructor.constructor("return process")()
+```
+
+This is not a variant of the `Function`/`eval` escapes those rounds already
+fixed — it never references the identifiers `Function` or `eval` at all, so
+shadowing them (correctly, exhaustively) does nothing. It was live-verified
+as full RCE: arbitrary file read/write via
+`process.getBuiltinModule('fs')`, command execution via
+`child_process.execSync`, and environment-variable exfiltration. Identifier
+shadowing cannot structurally close this bug class, because the escape
+route is a value, not a name — no matter how many dangerous identifiers get
+enumerated and shadowed, the *same-realm* `Function` constructor stays
+reachable through any object's prototype chain.
+
+**The fix is `vm.createContext()`**, which runs the script in a genuinely
+separate V8 context — its own realm, with its own freshly-created
+`Object`/`Array`/`Function`/`Math`/`JSON`/`Date`/`RegExp`/`Promise`/etc.,
+distinct from the worker thread's. None of Node's platform additions
+(`process`, `require`, `fetch`, `Buffer`, `setTimeout`, `module`, `exports`,
+`__dirname`, `__filename`, or a `globalThis` pointing at the real global)
+are copied into the sandbox object passed to `vm.createContext()`. This
+closes the bug class **structurally**, not by enumeration: `[].constructor`
+inside the vm context is the *context's own* `Array.prototype.constructor`,
+so `.constructor.constructor` resolves to the context's own `Function` —
+which has never seen `process`, `require`, or anything else Node-specific,
+because those were never in this realm to begin with. There is no
+identifier list to get right, forget an entry from, or have a future
+reviewer find a fourth bypass of, because nothing dangerous is reachable
+from inside the realm in the first place — not by name, and not by
+property access.
+
+Concretely, inside the vm context, `[].constructor.constructor("return
+process")()` still runs (it's a self-contained expression, not blocked
+syntactically) — but the `Function` it constructs and the code it evaluates
+are of the vm context's own realm, so `process` inside that returned
+function is simply not defined (`ReferenceError: process is not defined`),
+same as any other undeclared free variable would be in a fresh, empty
+global scope. This was re-verified live (see "Fix round 3" in
+`.superpowers/sdd/task-4-report.md`).
+
+- **Honest residual risk — this is still not a hardened, zero-trust
+  boundary.** Node's own `vm` module documentation is explicit: *"the vm
+  module is not a security mechanism. Do not use it to run untrusted code."*
+  There have been historical vm-escape / cross-realm techniques in various
+  JS-engine embeddings (e.g. via `Error.prepareStackTrace` callbacks that
+  execute with access to the invoking realm, or cross-realm `Promise`/
+  `WeakRef`/finalizer callback tricks) that this review has not specifically
+  re-tested against this codebase's Node/V8 version. This component should
+  be understood as a **substantial, industry-standard improvement** — a
+  separate V8 context (this doc), combined with `worker_threads` isolation
+  (a separate OS thread and V8 isolate, so even a full engine-level realm
+  escape still can't touch the main thread's memory directly), a memory cap
+  (`resourceLimits.maxOldGenerationSizeMb`), and a hard timeout (both vm's
+  own and the outer worker-level backstop) — appropriate **defense-in-depth
+  for instructor-trusted-but-possibly-buggy-or-compromised content**. It is
+  explicitly **not** a hardened boundary suitable for arbitrary
+  hostile/internet-sourced code; do not repurpose this component to run
   untrusted student- or public-submitted code without a real isolation
-  boundary (separate process/container, not just `worker_threads`).
-- **Residual limitation — the `import()` static scan is a text match, not a
-  parser.** `executeGenerate` rejects any script whose source contains the
-  literal substring `import(` before it ever spawns a worker. This catches
-  the straightforward case, but a determined obfuscator could still build an
-  equivalent call at runtime through some other string-concatenation or
-  reflection trick the scan doesn't recognize as text (note: routing it
-  through direct or indirect `eval` no longer works as a bypass, since
-  `eval` itself is shadowed inside the worker — see below). Per the threat
-  model above, this is defense-in-depth against accidental or casual misuse
-  by an instructor-trusted script, not a guarantee against a deliberately
-  adversarial one. More generally, shadowing known-dangerous identifiers
-  (`Function`, `eval`, `require`, `process`, `fetch`, `globalThis`, ...) is a
-  pragmatic, enumerable defense against real, known techniques for reaching
-  the global scope from inside `new Function(...)` — it is not, and cannot
-  be, an exhaustive list of every possible way a fully adversarial,
-  obfuscated script might reach outside the sandbox at the JS-engine level.
+  boundary (separate process/container with OS-level sandboxing, not just
+  `vm` + `worker_threads`).
+- **What's structurally unreachable now, via ANY route (not just named
+  identifiers):** `process`, `require`, `fetch`, the filesystem, the
+  network, `Buffer`, and every other Node platform global — because none of
+  them were ever injected into the vm context's global object, and the
+  context's own intrinsics (`Function`, `eval`, `Array`, `Object`, ...) were
+  never derived from a realm that had them either. This includes the
+  constructor-chain route (`[].constructor.constructor(...)`,
+  `({}).constructor.constructor(...)`, and any other built-in's constructor
+  chain), direct and indirect `eval`, and `new Function(...)` inside the
+  script — all of these still execute, but only ever construct/evaluate
+  code within the same process-less, require-less realm.
+- **Known, accepted, low-severity residual risk:** timing side-channels
+  (a script can call `Date.now()` repeatedly to try to infer host timing
+  characteristics — of limited practical value against
+  instructor-trusted content) and the general "vm is not a hardened
+  boundary" caveat above (undiscovered V8-level cross-realm bugs). Also
+  residual: `vm`'s own `timeout` option only guards the synchronous
+  `runInContext` call that evaluates the script's top-level code and defines
+  `generate` — it does **not** guard a later call to `generate(random)`
+  itself if that function's *body* loops forever (that call happens outside
+  `runInContext`). The outer `index.ts` timeout / `worker.terminate()` is
+  the real backstop for that case, verified to still work: `worker.terminate()`
+  is called from the parent thread and forcibly kills the worker's isolate
+  regardless of what the worker thread is synchronously stuck doing.
+- **Dynamic `import()` is handled natively, not via text-scanning.** Node's
+  `vm.Script.runInContext` requires an explicit `importModuleDynamically`
+  callback to support dynamic `import()`; this component deliberately does
+  not provide one. Verified live: calling `import(...)` inside a
+  vm-evaluated script throws cleanly (`TypeError: A dynamic import callback
+  was not specified.`), caught the same way any other script error is,
+  surfaced as a normal rejection. This replaces the previous approach's
+  fragile `script.includes('import(')` substring scan in `index.ts` (a
+  documented stopgap for the old same-realm `new Function(...)` approach,
+  which had no other way to block dynamic import), which has been removed
+  entirely — vm's native behavior is both stricter (not foolable by string
+  concatenation, since it's not a text match) and requires no maintenance.
 
 ## Public API (`index.ts`)
 
@@ -55,41 +142,25 @@ Guarantees `executeGenerate` provides:
   the worker is terminated and the promise rejects with `Error('param-timeout')`.
 - **Memory cap** — `resourceLimits: { maxOldGenerationSizeMb: env.paramWorkerMemoryMb }`
   (default 64MB) on the worker's old-generation heap.
-- **No network / fs / process** — the worker evaluates the script via
-  `new Function(...)` with `require`, `process`, `fetch`, `globalThis`,
-  `module`, `exports`, `__dirname`, `__filename`, `Function`, and `eval` all
-  passed as parameters bound to `undefined` (or `{}` for `globalThis`),
-  shadowing any same-named binding the script's top-level code could
-  otherwise reach. A script that calls `require('fs')`, `process.exit()`, or
-  `fetch(...)` throws a `TypeError` (calling `undefined`), which is caught
-  and surfaced as a rejection, not a crash. `Function` is shadowed too —
-  without it, a script could do `Function('return process')()` to mint a
-  fresh `Function` whose body runs in the worker's real global scope,
-  bypassing every other shadow (since none of the parameter names are
-  referenced inside that new function body). `eval` is shadowed too, and for
-  a subtler reason: a *direct* `eval("process")` call would already resolve
-  to the shadowed local (direct eval uses the calling scope's bindings), but
-  per the ECMAScript spec any *indirect* call — `const g = eval; g("process")`,
-  `(0, eval)("process")`, etc. — always executes in the real global scope
-  regardless of strict mode, and no amount of lexical shadowing of anything
-  else stops that. The only fix is to shadow the `eval` identifier itself,
-  same as `Function`, so a script can never obtain a reference to the real
-  global `eval` in the first place. One structural wrinkle: `eval` (like
-  `arguments`) can never be a parameter name of a function whose own body is
-  strict — that's an ECMAScript syntax restriction — so `worker.js` can't
-  put `"use strict"` at the top of the outer `new Function(...)` body the
-  way it could when only `Function` needed shadowing. Instead the outer
-  (sloppy) function immediately returns an inner IIFE that opts into
-  `"use strict"` and contains the actual script; referencing (not binding)
-  `eval` from strict code is legal, so the script's lookup of `eval` still
-  resolves to the outer shadowed parameter, and the inner IIFE gets its own
-  `arguments` object rather than exposing the outer function's.
-- **No dynamic `import()`** — `executeGenerate` rejects (before spawning a
-  worker) any script whose source text contains the literal substring
-  `import(`, since dynamic import is a language construct that can reach the
-  real `node:fs` / `node:http` / etc. modules and can't be shadowed via
-  `new Function(...)` parameters the way identifiers can. See the threat
-  model above for this check's residual limitation.
+- **No network / fs / process, structurally** — the worker evaluates the
+  script inside a separate V8 realm via `vm.createContext()` +
+  `vm.Script.runInContext()` (see "Why this is `vm.createContext()`" above).
+  The sandbox object passed to `vm.createContext()` never has `process`,
+  `require`, `fetch`, `Buffer`, `module`, `exports`, `__dirname`,
+  `__filename`, or `setTimeout` copied into it, so those identifiers are
+  simply undeclared free variables inside the script (`ReferenceError`, not
+  a shadowed `undefined`). Crucially, this also closes every
+  constructor-chain route (`[].constructor.constructor("return
+  process")()`, `({}).constructor.constructor(...)`, `Function(...)`,
+  direct/indirect `eval`) because the realm's own `Function`/`eval` were
+  never derived from anything that had `process` either — there is no
+  identifier to shadow because there is nothing to reach, by name or by
+  property access.
+- **No dynamic `import()`, natively** — `vm.Script.runInContext` is called
+  without an `importModuleDynamically` callback, so any `import(...)` inside
+  the script throws `TypeError: A dynamic import callback was not
+  specified.`, caught the same way any other script error is. No text-scan
+  in `index.ts` is needed or present.
 - **Every exit path cleans up** — resolve, reject, or timeout all funnel
   through one `settle()` that clears the timeout timer, removes the
   worker's listeners, and terminates the worker, so a call never leaks a
@@ -110,8 +181,9 @@ path resolves correctly whether the server is running via `tsx` in dev (no
 through the TS pipeline would require it to end up in `dist` at a predictable
 path, which is exactly the "build gymnastics" this setup avoids). Keeping the
 worker file plain, small, and dependency-free also keeps the sandboxed
-surface easy to audit — it does one thing (evaluate a script with a scrubbed
-scope) and has no imports beyond the `worker_threads` builtin.
+surface easy to audit — it does one thing (evaluate a script in an isolated
+`vm` context) and has no imports beyond the `worker_threads` and `vm`
+builtins.
 
 ## Testing
 
@@ -119,4 +191,9 @@ scope) and has no imports beyond the `worker_threads` builtin.
 criterion. It spawns **real worker threads, no mocks**, because the sandbox
 *is* the security boundary under test: mocking it would test nothing. It
 covers determinism-per-seed, timeout-kills-infinite-loop, and
-network/fs/process blocking, plus the "no `generate()`" rejection path.
+network/fs/process blocking, the "no `generate()`" rejection path, the
+`Function`-constructor and indirect-`eval` regressions from earlier review
+rounds, and the constructor-chain escape (`[].constructor.constructor(...)`,
+`({}).constructor.constructor(...)`, and a full escalation to
+`process.getBuiltinModule('fs')`) that motivated the `vm.createContext()`
+rewrite in fix round 3.

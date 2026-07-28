@@ -21,19 +21,8 @@ type WorkerMessage = { ok: true; vars: Record<string, number> } | { ok: false; e
  */
 export function executeGenerate(script: string, seed: number): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
-    // Dynamic import() is a syntax construct, not an identifier, so it can't
-    // be shadowed like require/process/fetch/Function are inside the worker.
-    // A static text scan is a pragmatic, documented limitation (defense-in-
-    // depth against accidental/casual misuse, not a zero-trust boundary —
-    // see AGENTS.md) that rejects the obvious case before we even spawn a
-    // worker thread.
-    if (script.includes('import(')) {
-      reject(new Error('generate() script must not use import()'));
-      return;
-    }
-
     const worker = new Worker(WORKER_PATH, {
-      workerData: { script, seed },
+      workerData: { script, seed, timeoutMs: env.paramWorkerTimeoutMs },
       resourceLimits: { maxOldGenerationSizeMb: env.paramWorkerMemoryMb },
     });
 

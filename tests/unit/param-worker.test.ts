@@ -71,6 +71,38 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
         'function generate(){ return import("node:fs").then(fs => ({ vars: {} })); }',
         1,
       ),
-    ).rejects.toThrow('generate() script must not use import()');
+    ).rejects.toThrow(/dynamic import/i);
+  });
+
+  it('blocks the [].constructor.constructor("return process") escape', async () => {
+    await expect(
+      executeGenerate(
+        'function generate(){ const p = [].constructor.constructor("return process")(); return { vars: { leak: p.pid } }; }',
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks the ({}).constructor.constructor("return process") escape', async () => {
+    await expect(
+      executeGenerate(
+        'function generate(){ const p = ({}).constructor.constructor("return process")(); return { vars: { leak: p.pid } }; }',
+        1,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('blocks the full constructor-chain escalation to reading the filesystem', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(){
+          const p = [].constructor.constructor("return process")();
+          const fs = p.getBuiltinModule('fs');
+          const contents = fs.readFileSync('/etc/hosts', 'utf8');
+          return { vars: { leakLength: contents.length } };
+        }`,
+        1,
+      ),
+    ).rejects.toThrow();
   });
 });
