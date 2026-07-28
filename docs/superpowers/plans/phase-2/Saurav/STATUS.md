@@ -10,6 +10,22 @@ Executed with the superpowers `subagent-driven-development` skill; the running
 ledger (commit ranges, review verdicts) is in the gitignored
 `.superpowers/sdd/progress.md`.
 
+## Stephen/Codex cross-owner Task 11 unblock — 2026-07-28
+
+Stephen authorized Codex to take a minimal Saurav-owned dependency when it is
+the only blocker, with status recorded before implementation. The first real
+Task 11 flag-loop browser run found one such blocker in merged Task 3:
+`createNotificationBell()` invokes its initial `poll()` before the wrapper is
+attached to the document; `poll()` treats that normal construction state as a
+teardown, clears its interval, and exits permanently. Stored standard/elevated
+notifications therefore never appear in either shell.
+
+Codex is taking only `client/src/notifications-bell.ts` to defer the first poll
+until the wrapper has had a chance to connect. The new
+`tests/e2e/flag-loop.spec.ts` is the regression proof. No notification service,
+route, data contract, or other Saurav file is being modified; no confirmation
+is required.
+
 ## How the Phase 2 split happened
 
 Stephen proposed an ownership/dependency map and a P2-0 (persistent content

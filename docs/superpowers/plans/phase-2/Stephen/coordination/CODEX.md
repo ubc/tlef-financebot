@@ -24,6 +24,8 @@ Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
 - create `tests/e2e/flag-loop.spec.ts`
 - `tests/e2e/global-setup.ts` (explicit opt-in reuse of an existing auth state
   so parallel agents can run isolated app ports without changing normal CI)
+- `client/src/notifications-bell.ts` (minimal recorded cross-owner Task 3
+  lifecycle fix: defer first poll until the wrapper can be connected)
 - `docs/superpowers/plans/phase-2/2026-07-11-phase-2-pilot-readiness.md`
 - `docs/superpowers/plans/phase-2/Stephen/2026-07-23-phase-2-pilot-readiness-stephen.md`
 - `docs/superpowers/plans/phase-2/Stephen/STATUS.md`
@@ -31,8 +33,8 @@ Planned branch: `codex/phase-2-task11-flag-loop`, stacked on PR #37.
 
 Task 11 reads Saurav's flag/notification/queue implementation through public
 routes and direct E2E fixture queries. It does not claim or edit those service
-or client source files unless a real blocker is first recorded in both
-developers' status files.
+or client source files except the notification-bell blocker now recorded in
+both developers' status files.
 
 ## Released Task 7
 

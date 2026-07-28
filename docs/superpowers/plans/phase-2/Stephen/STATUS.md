@@ -71,6 +71,16 @@ student flags/attempts → elevated auto-pause → Approved-only serving exclusi
 Saurav verification is informational, not a start blocker per Stephen's
 standing instruction.
 
+### Recorded cross-owner unblock
+
+Task 11's first real browser run found a merged Task 3 client lifecycle bug:
+`createNotificationBell()` starts `poll()` before its wrapper is attached, so
+the `isConnected` teardown branch cancels polling permanently and both shells
+show “No notifications yet” despite stored notifications. Stephen's standing
+authorization applies: Codex is taking the minimal Saurav-owned fix in
+`client/src/notifications-bell.ts`, covered by the Task 11 E2E. No other Task
+3 file is claimed.
+
 ## Admin v0 decisions
 
 - Admins grant a global `platformInstructor` capability by CWL username.
