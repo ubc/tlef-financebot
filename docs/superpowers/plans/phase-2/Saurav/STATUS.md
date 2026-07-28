@@ -60,7 +60,7 @@ Stephen's source documents (unedited by me):
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
 | 6 | Remediation report + checklist | **Merged** (PR #31 — `saurav/task-6-remediation`, CI passed) | nothing |
 | 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
-| 9 | Parameterized-script migration | **Complete by Stephen/Codex on draft PR #42** (`ae1f0e9`) | merge PR #34 + #39, then rebase/ready #42 |
+| 9 | Parameterized-script migration | **Complete by Stephen/Codex on CI-green draft PR #42** (`ae1f0e9`) | merge PR #34 + #39, then rebase/ready #42 |
 | 10 | Custom-prompt generation/regeneration | **Complete by Stephen/Codex on PR #40** (`0870e23`) | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
 
@@ -91,8 +91,8 @@ Draft creation, the Import-page review flow, and focused unit/route/E2E tests.
 Full verification passed with 54 Jest suites / 594 tests, typecheck, lint,
 Node 24 build, plus a real SAML-session Chromium flow with exactly one
 Draft/version write, working navigation, zero browser errors, and zero
-residual fixtures. PR #42 stays draft only until PRs #34/#39 merge; Saurav
-need not act.
+residual fixtures. PR #42 is CI green and stays draft only until PRs #34/#39
+merge; Saurav need not act.
 
 ## Stephen/Codex Admin A2 coordination — 2026-07-28
 

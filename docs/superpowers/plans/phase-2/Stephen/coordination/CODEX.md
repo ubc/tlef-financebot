@@ -2,7 +2,7 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 9 released at `ae1f0e9`; draft PR #42 open
+**State:** Task 9 released at `ae1f0e9`; CI-green draft PR #42 open
 **Base:** PR #34 Task 5 head plus PR #39 Task 8 integration
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates

@@ -20,8 +20,8 @@ _Last updated: 2026-07-28_
   after the recorded cross-owner takeover.
 - Admin Console v0 A2 Student Preview: **complete at `9f68a44` on draft PR
   #41, CI green**, using the explicit PR #37 + PR #36 integration stack.
-- Task 9 parameterized-script migration: **complete at `ae1f0e9` on draft PR
-  #42**, integrating the explicit PR #34 + PR #39 heads under Stephen's
+- Task 9 parameterized-script migration: **complete at `ae1f0e9` on CI-green
+  draft PR #42**, integrating the explicit PR #34 + PR #39 heads under Stephen's
   standing cross-owner authorization.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
@@ -65,8 +65,8 @@ Verification: 3 focused suites / 36 tests, full 54 suites / 594 tests,
 typecheck, lint, Node 24 build, and a real SAML-session Chromium UI/DB flow.
 The browser proved preview/commit/open-question clicks, exactly one Draft and
 version write, zero browser errors, and zero residual fixtures. Implementation
-commit: `ae1f0e9`. PR #42 remains draft until dependency PRs #34/#39 merge;
-Codex did not merge them.
+commit: `ae1f0e9`. PR #42 is CI green and remains draft until dependency PRs
+#34/#39 merge; Codex did not merge them.
 
 ## Task 7 result
 

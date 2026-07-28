@@ -474,7 +474,8 @@ without merging either dependency. Full verification passed: 54 Jest suites /
 594 tests, typecheck, lint, Node 24 build, plus a real SAML-session Chromium
 flow covering sandbox preview, substituted samples, one Draft/version write,
 open-question navigation, zero browser errors, and zero residual fixtures.
-PR #42 remains draft only until #34 and #39 merge and it can be rebased.
+PR #42 is CI green and remains draft only until #34 and #39 merge and it can
+be rebased.
 
 ---
 
