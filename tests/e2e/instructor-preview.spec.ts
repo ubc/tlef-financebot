@@ -177,6 +177,15 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: /^B\s+5$/ }).click();
     await page.getByRole('button', { name: 'Submit', exact: true }).click();
     await expect(page.getByText(/Not quite/i)).toBeVisible();
+    const storedPreviewBeforeReload = await page.evaluate(
+      () => sessionStorage.getItem('financebot-anonymous-preview'),
+    );
+    expect(storedPreviewBeforeReload).not.toBeNull();
+    await page.reload();
+    await expect(page.locator('.practice-card')).toBeVisible();
+    await expect(page.evaluate(
+      () => sessionStorage.getItem('financebot-anonymous-preview'),
+    )).resolves.toBe(storedPreviewBeforeReload);
     await page.getByRole('link', { name: 'End Session & Return', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Session Summary' })).toBeVisible();
     await expect(page.getByText('Review Book Added')).toBeVisible();
