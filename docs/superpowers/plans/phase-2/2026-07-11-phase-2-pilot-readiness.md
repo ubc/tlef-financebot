@@ -393,9 +393,9 @@ manual checklist text. Full detail in Saurav's personal plan
   - Redirect rule (ST-P07 + §9.2 precedence): when the window shows ≥ `redirectFailureThreshold` misses **clustered on easy/medium questions** for the LO, the attempt response gains `redirect: { materials: [{ name, materialId }], message }` and a silent `notify(kind: 'redirect')` flag lands on the instructor dashboard; if misses are concentrated on **hard** questions only, the tier step-back (Phase 1) applies instead and no redirect fires.
   - Client: recommendation banner at the natural break after feedback ("LO covered — advance to next LO?" / theme-level variant; decline = keep practicing, ST-P05); redirect as a **non-modal** inline panel with material links and an always-present "Continue practicing" button; never reveals the current answer; never blocks.
 
-- [ ] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: progression recommendation and repeated-failure redirect surfaces (ST-P05, ST-P07)"`
+- [x] **Step 1: Failing tests** — redirect fires on 3 easy-tier misses; does NOT fire when the same misses are all hard-tier (step-back precedence); response never contains the correct answer alongside a redirect.
+- [x] **Step 2–4: FAIL → implement → PASS.** The accepted finite-round extension is included: unseen Approved questions are exhausted before a repeated id becomes a round boundary; the client shows an explicit round summary and only starts repeats on confirmation. Redirect material names point to a real enrolled-student route (URL redirect or uploaded-file download), not a dead client link. Full suite: 53 suites / 583 tests; typecheck/lint/build and live SAML student browser regression passed.
+- [x] **Step 5: Commit** — implementation `689e40e`, stacked PR #37.
 
 ---
 

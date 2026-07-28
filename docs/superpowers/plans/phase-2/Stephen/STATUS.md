@@ -11,29 +11,54 @@ _Last updated: 2026-07-28_
   review/merge**.
 - Task 2 student Flag control: **complete on stacked PR #35**.
 - Admin Console v0: **A1 complete on stacked PR #36**.
-- Task 7 progression/redirect + finite rounds: **next with Codex, stacked on
-  PR #35 so it includes the finished student practice control**.
+- Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
 his agent can avoid claimed files.
 
-## Two-agent split
+## Two-agent coordination
 
-Claude continues Phase 2 Task 5 and owns the parameterization paths it records
-in
-[`coordination/CLAUDE.md`](coordination/CLAUDE.md).
+Claude completed Phase 2 Task 5 and released the shared parameterization paths
+at `210c68f`; PR #34 is the base of Stephen's current stacked PR chain.
 
-Codex owns Admin Console v0 and records its paths in
-[`coordination/CODEX.md`](coordination/CODEX.md). The implementation plan is
-[`2026-07-27-admin-console-v0-stephen.md`](2026-07-27-admin-console-v0-stephen.md).
+Codex completed:
 
-Each agent edits only its own claim file. Both read both files before editing.
-Claude released the final Task 5 shared paths at `210c68f` and opened PR #34.
-Codex completed Task 2 on PR #35 and Admin A1 on PR #36, both stacked directly
-on #34 so neither republishes an older Task 5 state. Student Preview waits for
-PR #34 and Admin A1 to merge; it will reuse rather than duplicate Task 5's
-parameter echo/substitution behavior.
+- Task 2 on PR #35, stacked on #34.
+- Admin A1 on PR #36, stacked on #34.
+- Task 7 on PR #37 (`codex/phase-2-task7-progression`), stacked on #35 so the
+  practice work includes Task 2 and Task 5's final parameter
+  echo/substitution behavior.
+
+Codex records current paths in
+[`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
+PR #34, Admin A1 PR #36, and Task 7 PR #37 to merge; it will reuse rather than
+duplicate Task 5.
+
+## Task 7 result
+
+- Serving exhausts every unseen Approved question for an LO before the first
+  repeat becomes an explicit round summary.
+- Mastery recommendations offer real advance/finish and keep-practicing
+  actions.
+- The course-configured consecutive easy/medium miss threshold returns an
+  inline non-blocking material redirect; hard-tier misses retain mastery
+  step-back precedence.
+- Redirect feedback never includes the current correct answer. Ready material
+  links resolve through an enrolled-student route restricted to the exact
+  course/LO.
+- Focused 61 tests and full 53 suites / 583 tests passed; typecheck, lint, and
+  build passed.
+- Live SAML student browser regression passed for round completion, repeat
+  confirmation, third-miss redirect, real material target, non-blocking
+  continue, both recommendation decisions, and immediate Covered sidebar
+  state. Browser logs were empty.
+- Browser review caught and fixed stale retry wording in redirect transcripts
+  and a stale sidebar mastery label.
+
+All Task 7 browser fixtures, attempts, notifications, and temporary course
+roles were localhost-only and removed before handoff; residual fixture counts
+were verified as zero.
 
 ## Admin v0 decisions
 
@@ -64,6 +89,8 @@ Current PR chain:
   browser regression passed
 - #36 — Admin A1; 53 suites / 585 tests and live Admin active/pending/revoke
   regression passed
+- #37 — Task 7 progression/redirect + finite rounds; 53 suites / 583 tests and
+  live student browser regression passed
 
-Codex begins Task 7 next. Admin browser test mutations were localhost-only and
-fully restored (no leftover test grants; test-user Admin bit returned false).
+Admin browser test mutations were localhost-only and fully restored (no
+leftover test grants; test-user Admin bit returned false).
