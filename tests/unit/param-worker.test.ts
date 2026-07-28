@@ -188,4 +188,84 @@ describe('param worker sandbox (abuse suite — phase exit criterion)', () => {
       ),
     ).resolves.toEqual({});
   });
+
+  // Fix round 5 regressions: the result-READ mirror of Escape B. Round 4
+  // closed the call-IN path (host code calling generate() directly); this
+  // is the call-OUT path — host code reading `result.vars` off the
+  // vm-realm return value after runInContext() resolves. A getter or Proxy
+  // trap on that return value runs as vm-realm code, but (before this fix)
+  // with a HOST stack frame live at the moment it ran, letting it walk
+  // Error.prepareStackTrace/CallSite back to the real process. See
+  // AGENTS.md "Fix round 5" and task-4-report.md.
+
+  it('blocks the Error.prepareStackTrace cross-realm CallSite leak via a getter on the returned vars (Escape B, result-read variant)', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(){
+          return {
+            vars: {
+              get leak() {
+                Error.prepareStackTrace = (e, frames) => frames;
+                let leak = 0;
+                for (const f of new Error().stack) {
+                  try {
+                    const th = f.getThis();
+                    if (th && th.constructor && th.constructor.constructor) {
+                      const p = th.constructor.constructor("return process")();
+                      if (p && p.pid) leak = p.pid;
+                    }
+                  } catch (e) {}
+                  try {
+                    const fn = f.getFunction();
+                    if (fn && fn.constructor && fn.constructor.constructor) {
+                      const p = fn.constructor.constructor("return process")();
+                      if (p && p.pid) leak = p.pid;
+                    }
+                  } catch (e) {}
+                }
+                return leak;
+              }
+            }
+          };
+        }`,
+        1,
+      ),
+    ).resolves.toEqual({ leak: 0 });
+  });
+
+  it('blocks the Error.prepareStackTrace cross-realm CallSite leak via a Proxy-wrapped result (Escape B, Proxy variant)', async () => {
+    await expect(
+      executeGenerate(
+        `function generate(){
+          let trapped = false;
+          const varsTarget = { rate: 1 };
+          const varsProxy = new Proxy(varsTarget, {
+            get(target, prop, receiver) {
+              if (!trapped) {
+                trapped = true;
+                Error.prepareStackTrace = (e, frames) => frames;
+                for (const f of new Error().stack) {
+                  try {
+                    const th = f.getThis();
+                    if (th && th.constructor && th.constructor.constructor) {
+                      th.constructor.constructor("return process")();
+                    }
+                  } catch (e) {}
+                }
+              }
+              return Reflect.get(target, prop, receiver);
+            }
+          });
+          const resultProxy = new Proxy({}, {
+            get(target, prop, receiver) {
+              if (prop === 'vars') return varsProxy;
+              return Reflect.get(target, prop, receiver);
+            }
+          });
+          return resultProxy;
+        }`,
+        1,
+      ),
+    ).resolves.toEqual({ rate: 1 });
+  });
 });

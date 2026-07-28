@@ -101,11 +101,76 @@ function mulberry32(seed) {
     // every crossing goes through the native `runInContext` trampoline,
     // which CallSite cannot see through. This closes both escapes
     // structurally, not by patching either one individually.
+    //
+    // Fix round 5: everything from here down — reading `result.vars`,
+    // validating each value is a finite number, and turning the validated
+    // data into the thing that ultimately crosses back to host code — used
+    // to happen in `worker.js`'s HOST scope, immediately after
+    // `runInContext()` returned. That reopened the exact bug class fix
+    // round 4 closed, just on the RETURN path instead of the CALL-IN path:
+    // `result.vars` and `Object.entries(vars)` are direct host-scope
+    // property reads on a vm-realm object. If `generate()` returns an
+    // object whose `vars` (or a property/getter on it) is an accessor or a
+    // Proxy trap, that getter/trap body runs as VM-REALM CODE — but with a
+    // HOST stack frame (the frame doing `result.vars`) live on the call
+    // stack at the moment it runs. Exactly like Escape B, that getter can
+    // install `Error.prepareStackTrace`, walk `.stack`, and get a real
+    // `CallSite` for the host frame, whose `.getThis()`/`.getFunction()`
+    // hands back the actual host object — full RCE again, just triggered by
+    // a property READ instead of a CALL.
+    //
+    // The fix is the same structural move as round 4, applied to the other
+    // direction: do the validation and serialization *inside* the vm
+    // script, so any getter/Proxy trap on a malicious `vars` fires while
+    // only vm-realm frames are on the stack, and have the script's last
+    // expression be a plain **string** (`JSON.stringify(...)`). A string is
+    // a primitive, not an object — there is no property to read on it that
+    // could trigger sandboxed code, so the crossing back to host scope is
+    // no longer a property read on a vm-realm object at all.
+    //
+    // The freshly-copied-object step (iterating `Object.keys(rawVars)` and
+    // copying each value into a brand-new `Object.create(null)` object
+    // BEFORE stringifying) matters too: `JSON.stringify` run directly on a
+    // malicious object can itself trigger a `toJSON`/getter/Proxy trap
+    // during its own internal enumeration. Stringifying a fresh, known-
+    // plain object instead means `JSON.stringify` only ever walks data this
+    // script itself just built.
+    // The whole validation/serialization step is wrapped in its own async
+    // IIFE, still spliced into the SAME combined script (still vm-realm
+    // code, still inside the one `runInContext` call): `generate(...)` may
+    // itself be async or return a Promise (see the pre-existing
+    // "async generate()" test), so its result must be `await`-ed BEFORE
+    // validating — and that `await` must happen from a vm-realm stack
+    // frame, not a host one, for the same reason the call to `generate`
+    // itself must. `runInContext` then returns this IIFE's own Promise
+    // (still a vm-realm object at that instant); by the time host code
+    // `await`s it below, it has already settled to a plain string, because
+    // every step that touches `__result`/`__rawVars` ran to completion
+    // inside the vm. Awaiting an already-vm-settled Promise from host scope
+    // is the same value-read (not a call) that fix round 4 already
+    // established as safe.
     const combinedSource = [
       MULBERRY32_SOURCE,
       scriptSource,
       "if (typeof generate !== 'function') { throw new Error('script must define generate()'); }",
-      `generate(mulberry32(${seedLiteral}));`,
+      `
+      (async () => {
+        var __result = await generate(mulberry32(${seedLiteral}));
+        var __rawVars = __result && typeof __result === 'object' && __result.vars ? __result.vars : null;
+        if (!__rawVars) throw new Error('generate() must return { vars: { ... } }');
+        var __vars = Object.create(null);
+        var __keys = Object.keys(__rawVars);
+        for (var __i = 0; __i < __keys.length; __i++) {
+          var __k = __keys[__i];
+          var __v = __rawVars[__k];
+          if (typeof __v !== 'number' || !Number.isFinite(__v)) {
+            throw new Error('vars.' + __k + ' is not a finite number');
+          }
+          __vars[__k] = __v;
+        }
+        return JSON.stringify(__vars);
+      })();
+      `,
     ].join('\n');
 
     let compiled;
@@ -127,21 +192,33 @@ function mulberry32(seed) {
     // kills this worker's isolate regardless of what this thread is
     // synchronously or asynchronously stuck doing.
     //
-    // The value returned here is the result of `generate(...)`, since it's
-    // the last statement of the combined script and `vm.Script.runInContext`
-    // returns the value of the last evaluated expression. If `generate(...)`
-    // returns a Promise (e.g. from a `vm`-caught dynamic `import()` or any
-    // other async work), `result` here is that Promise, still owned by the
-    // vm context's own realm; `await`-ing it below reads its settled value
-    // as plain data (or propagates its rejection) without ever calling back
-    // into vm-context code from a new host call site — this is a value read,
-    // not a call, so it does not reopen the CallSite/argument routes above.
+    // `result` here is whatever the combined script's async IIFE resolves
+    // to. Fix round 5: that is now ALWAYS a plain string primitive (the
+    // JSON-serialized, validated `vars`), never a vm-realm object — the
+    // IIFE above did the `result.vars` read, the per-value numeric
+    // validation, and the `JSON.stringify` entirely inside the vm, with
+    // only vm-realm frames on the stack. Host code below therefore never
+    // reads a property off a vm-realm object; it only ever touches a
+    // primitive string (via `JSON.parse`) and the plain data that parses
+    // out of it. This closes the read-back mirror of Escape B: there is no
+    // longer any host-scope property read (`result.vars`,
+    // `Object.entries(vars)`, ...) that a malicious getter/Proxy trap on
+    // the sandboxed return value could hijack, because no such property
+    // read happens in host scope anymore.
     const result = await compiled.runInContext(context, { timeout: timeoutMs });
-    const vars = result && typeof result === 'object' && result.vars ? result.vars : null;
-    if (!vars) throw new Error('generate() must return { vars: { ... } }');
-    for (const [k, v] of Object.entries(vars)) {
-      if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`vars.${k} is not a finite number`);
+    if (typeof result !== 'string') {
+      // Should be unreachable — the vm script's own IIFE always resolves to
+      // a JSON string or throws. Treated as the same class of failure as a
+      // malformed script, not distinguished further.
+      throw new Error('generate() must return { vars: { ... } }');
     }
+    let vars;
+    try {
+      vars = JSON.parse(result);
+    } catch (err) {
+      throw new Error('generate() must return { vars: { ... } }', { cause: err });
+    }
+    if (!vars || typeof vars !== 'object') throw new Error('generate() must return { vars: { ... } }');
     parentPort.postMessage({ ok: true, vars });
   } catch (err) {
     parentPort.postMessage({ ok: false, error: String(err && err.message ? err.message : err) });
