@@ -7,9 +7,6 @@ import { badge, emptyState, errorState, eyebrow, loadingState } from '../ui.js';
 import { getSession, displayName } from '../auth.js';
 import {
   ApiError,
-  enrollInCourse,
-  getCourseHome,
-  listEnrollments,
   type AuthUser,
   type CourseHomeTheme,
   type Enrollment,
@@ -17,6 +14,10 @@ import {
 import { healthCard } from './health.js';
 import { renderMyCourses } from './instructor/courses.js';
 import { pageHeader, copyrightFooter } from '../student-ui.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './student/experience.js';
 
 /** The user's primary role, used to route to a role-appropriate home (ST-E01).
  * Admin wins, then an explicit global/course Instructor grant, else student.
@@ -79,7 +80,11 @@ function courseCoverage(home: CourseHomeTheme[]): { covered: number; total: numb
 /** A single "My Courses" card (Figma screen 1): name, code · term, an
  * Active/Ended badge, an LO-coverage progress bar, and a primary action that
  * reads "Open →" for active courses or "View" for ended ones. */
-function courseCard(enrollment: Enrollment, coverage: { covered: number; total: number } | null): HTMLElement {
+function courseCard(
+  enrollment: Enrollment,
+  coverage: { covered: number; total: number } | null,
+  experience: StudentExperience,
+): HTMLElement {
   const { covered, total } = coverage ?? { covered: 0, total: 0 };
   return el(
     'article',
@@ -101,7 +106,7 @@ function courseCard(enrollment: Enrollment, coverage: { covered: number; total: 
       'a',
       {
         class: `btn btn--sm ${enrollment.active ? 'btn--instr-primary' : 'btn--ghost'}`,
-        href: `#/course/${encodeURIComponent(enrollment.courseId)}`,
+        href: experience.routes.course(enrollment.courseId),
       },
       enrollment.active ? 'Open →' : 'View',
     ),
@@ -110,7 +115,10 @@ function courseCard(enrollment: Enrollment, coverage: { covered: number; total: 
 
 /** "My courses" (ST-E02/E03, Figma screen 1): a card grid of the student's
  * enrolled courses plus a dashed-border join-by-registration-code box. */
-function myCoursesSection(): HTMLElement {
+function myCoursesSection(
+  experience: StudentExperience,
+  previewCourseId?: string,
+): HTMLElement {
   const body = el('div', {}, loadingState('Loading your courses…'));
   const codeInput = el('input', { class: 'input', type: 'text', placeholder: 'Enter registration code', 'aria-label': 'Registration code' }) as HTMLInputElement;
   const joinError = el('p', {});
@@ -143,19 +151,23 @@ function myCoursesSection(): HTMLElement {
   const load = async (): Promise<void> => {
     body.replaceChildren(loadingState('Loading your courses…'));
     try {
-      const enrollments = await listEnrollments();
+      const enrollments = await experience.listEnrollments(previewCourseId);
       if (enrollments.length === 0) {
         body.replaceChildren(emptyState('You are not enrolled in any courses yet — add one with a registration code below.'));
         return;
       }
       const homes = await Promise.all(
-        enrollments.map((e) => getCourseHome(e.courseId).catch(() => null)),
+        enrollments.map((e) => experience.getHome(e.courseId).catch(() => null)),
       );
       body.replaceChildren(
         el(
           'div',
           { class: 'theme-grid' },
-          ...enrollments.map((enrollment, i) => courseCard(enrollment, homes[i] ? courseCoverage(homes[i] as CourseHomeTheme[]) : null)),
+          ...enrollments.map((enrollment, i) => courseCard(
+            enrollment,
+            homes[i] ? courseCoverage(homes[i] as CourseHomeTheme[]) : null,
+            experience,
+          )),
         ),
       );
     } catch (error) {
@@ -168,7 +180,7 @@ function myCoursesSection(): HTMLElement {
     if (!code) return;
     joinError.replaceChildren();
     try {
-      await enrollInCourse(code);
+      await experience.enroll(code, previewCourseId);
       codeInput.value = '';
       void load();
     } catch (error) {
@@ -179,6 +191,14 @@ function myCoursesSection(): HTMLElement {
 
   void load();
   return section;
+}
+
+export function renderStudentCourses(
+  outlet: HTMLElement,
+  experience: StudentExperience = LIVE_STUDENT_EXPERIENCE,
+  previewCourseId?: string,
+): void {
+  outlet.append(myCoursesSection(experience, previewCourseId));
 }
 
 export function renderHome(outlet: HTMLElement): void {
@@ -202,7 +222,7 @@ export function renderHome(outlet: HTMLElement): void {
   );
 
   if (role === 'student') {
-    outlet.append(myCoursesSection());
+    renderStudentCourses(outlet);
     return;
   }
 

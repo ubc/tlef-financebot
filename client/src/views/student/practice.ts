@@ -16,10 +16,6 @@
 // previous session's topic/LO/counts showing in the sidebar panel until
 // the new `setPracticeActions()` call lands.
 import {
-  getCourseHome,
-  getNextPracticeQuestion,
-  listEnrollments,
-  skipLo,
   type CourseHomeLo,
   type CourseHomeTheme,
   type PracticeMode,
@@ -31,7 +27,16 @@ import { currentQuery } from '../../router.js';
 import type { RouteParams } from '../../router.js';
 import { breadcrumb, copyrightFooter } from '../../student-ui.js';
 import { clearPracticeActions, setPracticeActions } from '../../practice-actions.js';
-import { currentLo, makeQuestionCard, type PracticeCtx } from './practice-card.js';
+import {
+  currentLo,
+  makeQuestionCard,
+  type PracticeCardAdapter,
+  type PracticeCtx,
+} from './practice-card.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './experience.js';
 
 const STATUS_LABELS: Record<string, string> = {
   'not-attempted': 'Not attempted',
@@ -40,9 +45,21 @@ const STATUS_LABELS: Record<string, string> = {
   struggling: 'Struggling',
 };
 
-function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx, session: PracticeSession): void {
-  const backHref = `#/course/${encodeURIComponent(ctx.courseId)}/theme/${encodeURIComponent(ctx.theme._id)}`;
-  const endSessionHref = `#/course/${encodeURIComponent(ctx.courseId)}/summary?since=${encodeURIComponent(session.startedAt.toISOString())}`;
+function runPracticeLoop(
+  root: HTMLElement,
+  courseName: string,
+  ctx: PracticeCtx,
+  session: PracticeSession,
+  experience: StudentExperience,
+): void {
+  const backHref = experience.routes.theme(ctx.courseId, ctx.theme._id);
+  const endSessionHref = experience.routes.summary(ctx.courseId, session.startedAt);
+  const cardAdapter: PracticeCardAdapter = {
+    submit: (input) => experience.submit(ctx.courseId, input),
+    flag: (questionId, reason) => experience.flag(ctx.courseId, questionId, reason),
+    updatesMastery: true,
+    materialHref: experience.materialHref,
+  };
 
   const breadcrumbSlot = el('div', {});
   const title = el('h1', { class: 'view__title', text: currentLo(ctx).lo.name });
@@ -56,7 +73,7 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
       title,
       el(
         'a',
-        { class: 'btn btn--ghost btn--sm', href: `#/course/${encodeURIComponent(ctx.courseId)}/summary` },
+        { class: 'btn btn--ghost btn--sm', href: experience.routes.summary(ctx.courseId) },
         'Session Summary →',
       ),
     ),
@@ -116,7 +133,7 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
             'a',
             {
               class: 'btn btn--ghost btn--sm',
-              href: `#/course/${encodeURIComponent(ctx.courseId)}/practice/${encodeURIComponent(entry.loId)}`,
+              href: experience.routes.practice(ctx.courseId, entry.loId),
             },
             'Practice this LO more',
           ),
@@ -181,7 +198,11 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
 
   const doSkip = async (): Promise<void> => {
     try {
-      await skipLo(ctx.courseId, currentLo(ctx).lo._id, session.hasAttemptedCurrentLo);
+      await experience.skip(
+        ctx.courseId,
+        currentLo(ctx).lo._id,
+        session.hasAttemptedCurrentLo,
+      );
       advanceLo();
     } catch (error) {
       questionSlot.replaceChildren(errorState((error as Error).message, () => void doSkip()));
@@ -191,7 +212,7 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
   const loadQuestion = async (): Promise<void> => {
     questionSlot.replaceChildren(loadingState('Loading next question…'));
     try {
-      const question = await getNextPracticeQuestion(ctx.courseId, {
+      const question = await experience.getNextQuestion(ctx.courseId, {
         loId: currentLo(ctx).lo._id,
         sessionServedIds: session.sessionServedIds,
       });
@@ -204,12 +225,19 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
       }
       session.recordServed(question);
       questionSlot.replaceChildren(
-        makeQuestionCard(ctx, session, question, {
-          onTranscriptChange: refreshTranscript,
-          onNext: () => void loadQuestion(),
-          onAdvanceLo: advanceLo,
-          onSkip: () => void doSkip(),
-        }),
+        makeQuestionCard(
+          ctx,
+          session,
+          question,
+          {
+            onTranscriptChange: refreshTranscript,
+            onNext: () => void loadQuestion(),
+            onAdvanceLo: advanceLo,
+            onSkip: () => void doSkip(),
+          },
+          false,
+          cardAdapter,
+        ),
       );
     } catch (error) {
       questionSlot.replaceChildren(errorState((error as Error).message, () => void loadQuestion()));
@@ -221,7 +249,11 @@ function runPracticeLoop(root: HTMLElement, courseName: string, ctx: PracticeCtx
   void loadQuestion();
 }
 
-export async function renderPractice(outlet: HTMLElement, params: RouteParams): Promise<void> {
+export async function renderPracticeWithExperience(
+  outlet: HTMLElement,
+  params: RouteParams,
+  experience: StudentExperience,
+): Promise<void> {
   clearPracticeActions();
 
   const courseId = params.id;
@@ -232,7 +264,10 @@ export async function renderPractice(outlet: HTMLElement, params: RouteParams): 
   outlet.append(root);
 
   try {
-    const [home, enrollments] = await Promise.all([getCourseHome(courseId), listEnrollments()]);
+    const [home, enrollments] = await Promise.all([
+      experience.getHome(courseId),
+      experience.listEnrollments(courseId),
+    ]);
     const courseName = enrollments.find((e) => e.courseId === courseId)?.name ?? 'Course';
 
     if (isThemeMode) {
@@ -244,7 +279,7 @@ export async function renderPractice(outlet: HTMLElement, params: RouteParams): 
       const los = [...group.los].sort((a, b) => a.lo.order - b.lo.order);
       const startIdx = los.findIndex((l) => l.status !== 'covered');
       const ctx: PracticeCtx = { courseId, theme: group.theme, los, loIndex: startIdx === -1 ? 0 : startIdx, isThemeMode: true, mode };
-      runPracticeLoop(root, courseName, ctx, new PracticeSession());
+      runPracticeLoop(root, courseName, ctx, new PracticeSession(), experience);
       return;
     }
 
@@ -261,8 +296,15 @@ export async function renderPractice(outlet: HTMLElement, params: RouteParams): 
       return;
     }
     const ctx: PracticeCtx = { courseId, theme: found.theme, los: [found.lo], loIndex: 0, isThemeMode: false, mode };
-    runPracticeLoop(root, courseName, ctx, new PracticeSession());
+    runPracticeLoop(root, courseName, ctx, new PracticeSession(), experience);
   } catch (error) {
-    root.replaceChildren(errorState((error as Error).message, () => void renderPractice(outlet, params)));
+    root.replaceChildren(errorState(
+      (error as Error).message,
+      () => void renderPracticeWithExperience(outlet, params, experience),
+    ));
   }
+}
+
+export function renderPractice(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  return renderPracticeWithExperience(outlet, params, LIVE_STUDENT_EXPERIENCE);
 }

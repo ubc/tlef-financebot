@@ -188,3 +188,32 @@ export function createNotificationBell(): HTMLElement {
 
   return wrap;
 }
+
+/** The exact student-shell bell treatment with an intentionally empty,
+ * non-persisting inbox for a fresh anonymous Preview session. */
+export function createAnonymousNotificationBell(): HTMLElement {
+  const button = el(
+    'button',
+    {
+      class: 'icon-btn notif-bell',
+      type: 'button',
+      'aria-label': 'Notifications',
+      title: 'Notifications',
+      'aria-expanded': 'false',
+    },
+    '🔔',
+  );
+  const badge = el('span', { class: 'notif-bell__badge', hidden: true });
+  const panel = el(
+    'div',
+    { class: 'notif-panel', hidden: true },
+    el('p', { class: 'notif-panel__empty', text: 'No notifications yet.' }),
+  );
+  const wrap = el('div', { class: 'notif-bell-wrap' }, button, badge, panel);
+  button.addEventListener('click', () => {
+    const open = button.getAttribute('aria-expanded') === 'true';
+    button.setAttribute('aria-expanded', String(!open));
+    panel.hidden = open;
+  });
+  return wrap;
+}

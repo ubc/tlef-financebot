@@ -93,10 +93,13 @@ isolated `platformInstructorPuidGrants` collection so older uid-keyed
 experimental documents cannot collide with the PUID unique index. Do not
 create placeholder User documents for pending grants.
 
-Instructor student preview adds `previewAttemptsCol()` backed by
-`previewAttemptRecords`. It is intentionally separate from `attemptRecords`;
-do not merge the collections or make live-learning queries depend on a
-remembered `{ preview: { $ne: true } }` filter.
+Instructor Student Preview adds `previewAttemptsCol()` backed by
+`previewAttemptRecords` and `previewStudentSessionsCol()` backed by
+`previewStudentSessions`. Attempts are keyed by Instructor, course, and
+browser-generated Preview session; the session document owns isolated Review
+Book and flag state. Both collections expire after 24 hours and are
+intentionally separate from every live-learning collection. Do not merge them
+or make live-learning queries depend on a remembered preview exclusion filter.
 
 ## Gotchas
 

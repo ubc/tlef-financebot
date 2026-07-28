@@ -81,10 +81,12 @@ Notes:
 - The suite is serial and shares one session, and some tests write to the real
   database (e.g. adding a note) — keep tests independent of each other's data.
 - `instructor-preview.spec.ts` seeds an unpublished owned course with one
-  Approved and one Draft question, clicks the dashboard preview action,
-  submits through the real card, and asserts one `previewAttemptRecord` with
-  zero live attempt/mastery/Review Book/flag/notification/summary records.
-  Its fixture and temporary course role are removed in `afterAll`.
+  Approved and one Draft question, switches from the Instructor shell into the
+  full Student shell, flags and misses an Approved question, visits the
+  Session Summary and Review Book, then exits back to Instructor. It asserts
+  Preview-only attempt/session state and zero live attempt/mastery/Review
+  Book/flag/notification/summary records. The fixture and temporary course role
+  are removed in `afterAll`.
 
 ## Writing a11y tests (`tests/a11y/*.spec.ts`)
 

@@ -8,11 +8,6 @@
 // session without continuing, which the wireframe's three-button row
 // doesn't cover.
 import {
-  deferSessionSummary,
-  getCourseHome,
-  getReviewBook,
-  getSessionSummary,
-  listEnrollments,
   type CourseHomeLo,
   type CourseHomeTheme,
   type SessionEndSummary,
@@ -22,6 +17,10 @@ import { emptyState, errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery } from '../../router.js';
 import type { RouteParams } from '../../router.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './experience.js';
 import { copyrightFooter, pageHeader, statTile } from '../../student-ui.js';
 
 interface LoMeta {
@@ -171,6 +170,7 @@ function missedList(
   courseId: string,
   additions: SessionEndSummary['reviewBookAdditions'],
   stems: Map<string, string>,
+  experience: StudentExperience,
 ): HTMLElement {
   return el(
     'section',
@@ -190,7 +190,7 @@ function missedList(
           stemEl,
           el(
             'a',
-            { class: 'summary-missed__link', href: `#/course/${encodeURIComponent(courseId)}/review-book` },
+            { class: 'summary-missed__link', href: experience.routes.reviewBook(courseId) },
             'Review →',
           ),
         );
@@ -206,10 +206,11 @@ function missedList(
 async function loadMissedStems(
   courseId: string,
   additions: SessionEndSummary['reviewBookAdditions'],
+  experience: StudentExperience,
 ): Promise<Map<string, string>> {
   if (additions.length === 0) return new Map();
   try {
-    const groups = await getReviewBook(courseId, 'date');
+    const groups = await experience.getReviewBook(courseId, 'date');
     const map = new Map<string, string>();
     for (const group of groups) for (const entry of group.entries) map.set(entry.questionId, entry.question.stem);
     return map;
@@ -235,6 +236,7 @@ function summaryBody(
   summary: SessionEndSummary,
   home: CourseHomeTheme[],
   stems: Map<string, string>,
+  experience: StudentExperience,
 ): HTMLElement {
   const loMeta = buildLoMeta(home);
   const topics = groupByTopic(summary.accuracyByLo, loMeta, home);
@@ -260,7 +262,9 @@ function summaryBody(
         ? el('div', { class: 'summary-topics' }, ...topics.map(topicAccordion))
         : emptyState('No topics were touched this session.'),
     ),
-    summary.reviewBookAdditions.length > 0 ? missedList(courseId, summary.reviewBookAdditions, stems) : false,
+    summary.reviewBookAdditions.length > 0
+      ? missedList(courseId, summary.reviewBookAdditions, stems, experience)
+      : false,
     el(
       'div',
       { class: 'banner' },
@@ -274,7 +278,11 @@ function summaryBody(
   );
 }
 
-export async function renderSessionSummary(outlet: HTMLElement, params: RouteParams): Promise<void> {
+export async function renderSessionSummaryWithExperience(
+  outlet: HTMLElement,
+  params: RouteParams,
+  experience: StudentExperience,
+): Promise<void> {
   const courseId = params.id;
   const sessionStart = new Date();
   // "End session" (practice.ts) navigates here with `?since=<ISO timestamp>`
@@ -290,12 +298,18 @@ export async function renderSessionSummary(outlet: HTMLElement, params: RoutePar
   outlet.append(root);
 
   try {
-    const [home, enrollments] = await Promise.all([getCourseHome(courseId), listEnrollments()]);
+    const [home, enrollments] = await Promise.all([
+      experience.getHome(courseId),
+      experience.listEnrollments(courseId),
+    ]);
     const courseName = enrollments.find((e) => e.courseId === courseId)?.name ?? 'Course';
 
     const state = endingSession
-      ? { welcome: false, deferred: await deferSessionSummary(courseId, new Date(sinceParam as string)) }
-      : await getSessionSummary(courseId);
+      ? {
+          welcome: false,
+          deferred: await experience.endSession(courseId, new Date(sinceParam as string)),
+        }
+      : await experience.getSessionStart(courseId);
 
     const subtitle = `${courseName} · ${endingSession ? 'Session ended' : state.welcome ? 'Get started' : 'Previous session'}`;
     const header = pageHeader('Session Summary', subtitle);
@@ -310,13 +324,17 @@ export async function renderSessionSummary(outlet: HTMLElement, params: RoutePar
     }
 
     const summary = state.deferred;
-    const stems = await loadMissedStems(courseId, summary.reviewBookAdditions);
-    const body = summaryBody(courseId, summary, home, stems);
+    const stems = await loadMissedStems(
+      courseId,
+      summary.reviewBookAdditions,
+      experience,
+    );
+    const body = summaryBody(courseId, summary, home, stems, experience);
 
     const next = findNextUncovered(home);
     const continueHref = next
-      ? `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(next.lo.lo._id)}`
-      : `#/course/${encodeURIComponent(courseId)}`;
+      ? experience.routes.practice(courseId, next.lo.lo._id)
+      : experience.routes.course(courseId);
 
     const deferSlot = el('div', { class: 'summary-defer' });
     if (endingSession) {
@@ -332,7 +350,7 @@ export async function renderSessionSummary(outlet: HTMLElement, params: RoutePar
               const btn = deferSlot.firstElementChild as HTMLButtonElement;
               btn.disabled = true;
               try {
-                await deferSessionSummary(courseId, sessionStart);
+                await experience.endSession(courseId, sessionStart);
                 deferSlot.replaceChildren(el('p', { class: 'state__text', text: 'Saved — this will greet you next time.' }));
               } catch (error) {
                 deferSlot.replaceChildren(errorState((error as Error).message));
@@ -353,16 +371,27 @@ export async function renderSessionSummary(outlet: HTMLElement, params: RoutePar
         el('a', { class: 'btn btn--instr-primary', href: continueHref }, 'Continue Practice'),
         el(
           'a',
-          { class: 'btn btn--ghost', href: `#/course/${encodeURIComponent(courseId)}/review-book` },
+          { class: 'btn btn--ghost', href: experience.routes.reviewBook(courseId) },
           'Go to Review Book',
         ),
-        el('a', { class: 'btn btn--ghost', href: `#/course/${encodeURIComponent(courseId)}` }, 'Back to Course'),
+        el(
+          'a',
+          { class: 'btn btn--ghost', href: experience.routes.course(courseId) },
+          'Back to Course',
+        ),
       ),
       deferSlot,
     );
 
     root.replaceChildren(header, body, actions, copyrightFooter());
   } catch (error) {
-    root.replaceChildren(errorState((error as Error).message, () => void renderSessionSummary(outlet, params)));
+    root.replaceChildren(errorState(
+      (error as Error).message,
+      () => void renderSessionSummaryWithExperience(outlet, params, experience),
+    ));
   }
+}
+
+export function renderSessionSummary(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  return renderSessionSummaryWithExperience(outlet, params, LIVE_STUDENT_EXPERIENCE);
 }

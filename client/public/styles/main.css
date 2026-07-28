@@ -1099,6 +1099,10 @@ a {
   .user {
     display: none;
   }
+
+  .preview-mode-label {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3560,6 +3564,26 @@ button.class-row--link:focus-visible .class-row__title {
 .sidebar--student .brand__name {
   color: #ffffff;
   font-size: 1.15rem;
+}
+
+.student-preview-pill {
+  align-self: flex-start;
+  margin: 0 0.5rem 1rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.preview-mode-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 /* ---- Practice context panel (sidebar, in-session only) -------------------- */

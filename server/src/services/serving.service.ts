@@ -148,27 +148,38 @@ export async function selectRetryQuestion(
 }
 
 /**
- * Instructor preview deliberately has no student mastery profile to target.
- * It uses the neutral medium tier while preserving the same approved-only,
- * finite-round degradation ladder as real practice.
+ * Instructor Preview passes the current tier replayed from its isolated
+ * attempt history (or falls back to medium for direct callers), preserving
+ * the same approved-only finite-round degradation ladder as real practice.
  */
 export async function selectPreviewQuestion(
-  input: { courseId: ObjectId; loId: ObjectId; sessionServedIds: ObjectId[] },
+  input: {
+    courseId: ObjectId;
+    loId: ObjectId;
+    sessionServedIds: ObjectId[];
+    tier?: Difficulty;
+  },
   rand: () => number = Math.random,
 ): Promise<SelectResult | null> {
   const candidates = await approvedCandidatesForLo(input.courseId, input.loId);
-  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
+  return selectFromCandidates(candidates, input.tier ?? 'medium', input.sessionServedIds, rand);
 }
 
-/** Strategy-A retry selection for preview, without consulting live mastery. */
+/** Strategy-A retry selection for Preview, without consulting live mastery. */
 export async function selectPreviewRetryQuestion(
-  input: { courseId: ObjectId; loId: ObjectId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] },
+  input: {
+    courseId: ObjectId;
+    loId: ObjectId;
+    excludeQuestionId: ObjectId;
+    sessionServedIds: ObjectId[];
+    tier?: Difficulty;
+  },
   rand: () => number = Math.random,
 ): Promise<SelectResult | null> {
   const candidates = (await approvedCandidatesForLo(input.courseId, input.loId)).filter(
     (candidate) => !candidate.question._id.equals(input.excludeQuestionId),
   );
-  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
+  return selectFromCandidates(candidates, input.tier ?? 'medium', input.sessionServedIds, rand);
 }
 
 export interface StudentCourseHomeLo {

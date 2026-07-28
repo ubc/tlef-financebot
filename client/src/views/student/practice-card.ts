@@ -37,12 +37,17 @@ export interface PracticeCardAdapter {
   submit: (input: SubmitAttemptInput) => Promise<AttemptResult>;
   flag?: (questionId: string, reason?: string) => Promise<{ flagged: true }>;
   updatesMastery: boolean;
+  materialHref?: (courseId: string, loId: string, materialId: string) => string;
 }
 
 const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
   submit: submitAttempt,
   flag: flagPracticeQuestion,
   updatesMastery: true,
+  materialHref: (courseId, loId, materialId) =>
+    `/api/courses/${encodeURIComponent(courseId)}` +
+    `/los/${encodeURIComponent(loId)}` +
+    `/materials/${encodeURIComponent(materialId)}/source`,
 };
 
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
@@ -265,10 +270,11 @@ export function makeQuestionCard(
           el(
             'a',
             {
-              href:
-                `/api/courses/${encodeURIComponent(ctx.courseId)}` +
-                `/los/${encodeURIComponent(currentLo(ctx).lo._id)}` +
-                `/materials/${encodeURIComponent(material.materialId)}/source`,
+              href: adapter.materialHref?.(
+                ctx.courseId,
+                currentLo(ctx).lo._id,
+                material.materialId,
+              ) ?? '#',
               target: '_blank',
               rel: 'noopener noreferrer',
             },

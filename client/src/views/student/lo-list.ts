@@ -4,11 +4,15 @@
 // the header's action area, a lead line, and ordered progressRows per LO —
 // each linking to its own practice route. The in-progress row additionally
 // shows a "Continue here" sub-line.
-import { getCourseHome, listEnrollments, type CourseHomeLo, type CourseHomeTheme } from '../../api.js';
+import { type CourseHomeLo, type CourseHomeTheme } from '../../api.js';
 import { el } from '../../dom.js';
 import { emptyState, errorState, loadingState, masteryBadge } from '../../ui.js';
 import { progressRow, copyrightFooter, breadcrumb } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './experience.js';
 
 function coverage(group: CourseHomeTheme): { covered: number; total: number } {
   const total = group.los.length;
@@ -24,6 +28,7 @@ function loListHeader(
   coverageLabel: string,
   courseId: string,
   firstUncovered: CourseHomeLo | undefined,
+  experience: StudentExperience,
 ): HTMLElement {
   return el(
     'div',
@@ -39,7 +44,7 @@ function loListHeader(
       { class: 'row', style: 'flex-shrink:0' },
       el(
         'a',
-        { class: 'btn btn--ghost btn--sm', href: `#/course/${encodeURIComponent(courseId)}/summary` },
+        { class: 'btn btn--ghost btn--sm', href: experience.routes.summary(courseId) },
         'Session Summary →',
       ),
       firstUncovered
@@ -47,7 +52,7 @@ function loListHeader(
             'a',
             {
               class: 'btn btn--instr-primary btn--sm',
-              href: `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(firstUncovered.lo._id)}`,
+              href: experience.routes.practice(courseId, firstUncovered.lo._id),
             },
             'Start Practice →',
           )
@@ -56,8 +61,13 @@ function loListHeader(
   );
 }
 
-function loRow(courseId: string, entry: CourseHomeLo, index: number): HTMLElement {
-  const href = `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(entry.lo._id)}`;
+function loRow(
+  courseId: string,
+  entry: CourseHomeLo,
+  index: number,
+  experience: StudentExperience,
+): HTMLElement {
+  const href = experience.routes.practice(courseId, entry.lo._id);
   const row = progressRow(
     index,
     entry.lo.name,
@@ -77,14 +87,21 @@ function loRow(courseId: string, entry: CourseHomeLo, index: number): HTMLElemen
   return row;
 }
 
-export async function renderLoList(outlet: HTMLElement, params: RouteParams): Promise<void> {
+export async function renderLoListWithExperience(
+  outlet: HTMLElement,
+  params: RouteParams,
+  experience: StudentExperience,
+): Promise<void> {
   const courseId = params.id;
   const themeId = params.themeId;
   const root = el('div', { class: 'view' }, loadingState('Loading learning objectives…'));
   outlet.append(root);
 
   try {
-    const [home, enrollments] = await Promise.all([getCourseHome(courseId), listEnrollments()]);
+    const [home, enrollments] = await Promise.all([
+      experience.getHome(courseId),
+      experience.listEnrollments(courseId),
+    ]);
     const group = home.find((g) => g.theme._id === themeId);
     if (!group) {
       root.replaceChildren(errorState('This topic is not available.'));
@@ -98,17 +115,34 @@ export async function renderLoList(outlet: HTMLElement, params: RouteParams): Pr
 
     root.replaceChildren(
       breadcrumb([courseName, group.theme.name]),
-      loListHeader(group.theme.name, `${covered}/${total} LOs covered`, courseId, firstUncovered),
+      loListHeader(
+        group.theme.name,
+        `${covered}/${total} LOs covered`,
+        courseId,
+        firstUncovered,
+        experience,
+      ),
       el('p', {
         class: 'view__lead',
         text: "Select a LO to jump directly to practice, or click ‘Start Practice’ to begin with the first uncovered LO.",
       }),
       los.length
-        ? el('div', { class: 'stack' }, ...los.map((entry, i) => loRow(courseId, entry, i + 1)))
+        ? el(
+            'div',
+            { class: 'stack' },
+            ...los.map((entry, i) => loRow(courseId, entry, i + 1, experience)),
+          )
         : emptyState('No learning objectives are available in this topic yet.'),
       copyrightFooter(),
     );
   } catch (error) {
-    root.replaceChildren(errorState((error as Error).message, () => void renderLoList(outlet, params)));
+    root.replaceChildren(errorState(
+      (error as Error).message,
+      () => void renderLoListWithExperience(outlet, params, experience),
+    ));
   }
+}
+
+export function renderLoList(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  return renderLoListWithExperience(outlet, params, LIVE_STUDENT_EXPERIENCE);
 }

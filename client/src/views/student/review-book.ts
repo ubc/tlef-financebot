@@ -12,11 +12,6 @@
 // since `getReviewBook`'s entries only carry `loId` — this is an existing
 // API call, not a new endpoint, used purely to label the per-LO rows.
 import {
-  bookmarkQuestion,
-  getCourseHome,
-  getReviewBook,
-  removeReviewBookEntry,
-  unbookmarkQuestion,
   type CourseHomeTheme,
   type ReviewBookEntry,
   type ReviewBookGroup,
@@ -27,6 +22,10 @@ import { badge, emptyState, errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { copyrightFooter, pageHeader } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
+import {
+  LIVE_STUDENT_EXPERIENCE,
+  type StudentExperience,
+} from './experience.js';
 
 interface LoMeta {
   name: string;
@@ -80,11 +79,16 @@ function entryRow(
   entry: ReviewBookEntry,
   onToggleBookmark: () => void,
   onRemove: () => void,
+  experience: StudentExperience,
 ): HTMLElement {
   const stem = el('p', { class: 'review-entry__stem' });
   renderRichText(stem, entry.question.stem.slice(0, 180));
   const isBookmarked = entry.sources.includes('bookmark');
-  const practiceHref = `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(entry.loId)}?mode=review-book&questionId=${encodeURIComponent(entry.questionId)}`;
+  const practiceHref = experience.routes.practice(
+    courseId,
+    entry.loId,
+    `mode=review-book&questionId=${encodeURIComponent(entry.questionId)}`,
+  );
 
   return el(
     'div',
@@ -132,16 +136,23 @@ function loGroupRow(
   index: number,
   onToggleBookmark: (entry: ReviewBookEntry) => void,
   onRemove: (entryId: string) => void,
+  experience: StudentExperience,
 ): HTMLElement {
   const { auto, bookmark } = sourceCounts(sub.entries);
-  const reviewHref = `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(sub.loId)}?mode=review-book`;
-  const practiceAgainHref = `#/course/${encodeURIComponent(courseId)}/practice/${encodeURIComponent(sub.loId)}`;
+  const reviewHref = experience.routes.practice(courseId, sub.loId, 'mode=review-book');
+  const practiceAgainHref = experience.routes.practice(courseId, sub.loId);
 
   const entriesPanel = el(
     'div',
     { class: 'review-lo__entries', hidden: true },
     ...sub.entries.map((entry) =>
-      entryRow(courseId, entry, () => onToggleBookmark(entry), () => onRemove(entry._id)),
+      entryRow(
+        courseId,
+        entry,
+        () => onToggleBookmark(entry),
+        () => onRemove(entry._id),
+        experience,
+      ),
     ),
   );
   const caret = el(
@@ -200,10 +211,15 @@ function topicGroup(
   loNames: Map<string, LoMeta>,
   onToggleBookmark: (entry: ReviewBookEntry) => void,
   onRemove: (entryId: string) => void,
+  experience: StudentExperience,
 ): HTMLElement {
   const subgroups = groupByLo(group.entries, loNames);
-  const topicPracticeHref = `#/course/${encodeURIComponent(courseId)}/practice-theme/${encodeURIComponent(group.theme._id)}`;
-  const practiceAllHref = `${topicPracticeHref}?mode=review-book`;
+  const topicPracticeHref = experience.routes.practiceTheme(courseId, group.theme._id);
+  const practiceAllHref = experience.routes.practiceTheme(
+    courseId,
+    group.theme._id,
+    'review-book',
+  );
 
   return el(
     'div',
@@ -227,12 +243,23 @@ function topicGroup(
     el(
       'div',
       { class: 'review-topic__los' },
-      ...subgroups.map((sub, i) => loGroupRow(courseId, sub, i + 1, onToggleBookmark, onRemove)),
+      ...subgroups.map((sub, i) => loGroupRow(
+        courseId,
+        sub,
+        i + 1,
+        onToggleBookmark,
+        onRemove,
+        experience,
+      )),
     ),
   );
 }
 
-export async function renderReviewBook(outlet: HTMLElement, params: RouteParams): Promise<void> {
+export async function renderReviewBookWithExperience(
+  outlet: HTMLElement,
+  params: RouteParams,
+  experience: StudentExperience,
+): Promise<void> {
   const courseId = params.id;
   let sort: ReviewBookSort = 'theme';
 
@@ -265,7 +292,10 @@ export async function renderReviewBook(outlet: HTMLElement, params: RouteParams)
   const load = async (): Promise<void> => {
     body.replaceChildren(loadingState('Loading your Review Book…'));
     try {
-      const [groups, home] = await Promise.all([getReviewBook(courseId, sort), getCourseHome(courseId)]);
+      const [groups, home] = await Promise.all([
+        experience.getReviewBook(courseId, sort),
+        experience.getHome(courseId),
+      ]);
       if (groups.length === 0) {
         body.replaceChildren(emptyState('Nothing in your Review Book yet — missed questions and bookmarks land here.'));
         return;
@@ -273,12 +303,15 @@ export async function renderReviewBook(outlet: HTMLElement, params: RouteParams)
       const loNames = buildLoNameMap(home);
 
       const onToggleBookmark = async (entry: ReviewBookEntry): Promise<void> => {
-        if (entry.sources.includes('bookmark')) await unbookmarkQuestion(entry.questionId);
-        else await bookmarkQuestion(entry.questionId);
+        if (entry.sources.includes('bookmark')) {
+          await experience.unbookmark(courseId, entry.questionId);
+        } else {
+          await experience.bookmark(courseId, entry.questionId);
+        }
         void load();
       };
       const onRemove = async (entryId: string): Promise<void> => {
-        await removeReviewBookEntry(entryId);
+        await experience.removeReviewEntry(courseId, entryId);
         void load();
       };
 
@@ -287,7 +320,14 @@ export async function renderReviewBook(outlet: HTMLElement, params: RouteParams)
           'div',
           { class: 'review-groups' },
           ...groups.map((g) =>
-            topicGroup(courseId, g, loNames, (entry) => void onToggleBookmark(entry), (id) => void onRemove(id)),
+            topicGroup(
+              courseId,
+              g,
+              loNames,
+              (entry) => void onToggleBookmark(entry),
+              (id) => void onRemove(id),
+              experience,
+            ),
           ),
         ),
       );
@@ -297,4 +337,8 @@ export async function renderReviewBook(outlet: HTMLElement, params: RouteParams)
   };
 
   void load();
+}
+
+export function renderReviewBook(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  return renderReviewBookWithExperience(outlet, params, LIVE_STUDENT_EXPERIENCE);
 }

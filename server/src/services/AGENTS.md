@@ -43,12 +43,14 @@ objects directly.
   present, leaves a pending grant otherwise, lists safe persisted User fields,
   and writes role assignment/revocation audit events. Raw SAML assertions never
   enter its response shapes.
-- `preview.service.ts` — Instructor-only student preview orchestration. It
-  exposes the currently released Approved-question hierarchy, serves
-  parameterized questions through the neutral preview selector, and writes
-  submissions only to `previewAttemptRecords`. It reuses the pure
-  `attempts.service.ts` grading seam but never calls live attempt/mastery,
-  Review Book, flag, notification, summary, or progression workflows.
+- `preview.service.ts` — Instructor-only anonymous Student Preview
+  orchestration. It exposes the currently released Approved-question
+  hierarchy and reuses the production grading, mastery, strategy, Review Book,
+  flag, summary, skip, remediation, and material-source behaviours against a
+  short-lived `previewSessionId`. Attempts go only to `previewAttemptRecords`;
+  mutable Preview Review Book and flag state goes only to
+  `previewStudentSessions`. It never calls or writes the corresponding live
+  student collections, notifications, or analytics.
 
 Other services will appear as more components are built up.
 

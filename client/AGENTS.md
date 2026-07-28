@@ -58,7 +58,9 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/members.ts` | The gated members-only area (auth-gating reference). |
 | `views/role.ts` | Role-gated area (Faculty/Student/Staff), one factory per role. |
 | `views/admin/accounts.ts` | Admin Console v0: list persisted Users and grant/revoke global platform-Instructor access by PUID, including pending-first-login state. |
-| `views/instructor/student-preview.ts` | Persistent-banner Instructor preview of the Approved student practice experience; reuses the question card through a preview-only API adapter. |
+| `views/student/experience.ts` | Injection boundary shared by live Student and Preview modes: routes plus course/practice/flag/Review Book/session APIs. |
+| `views/instructor/student-preview.ts` | Route table that renders the real Student pages with the anonymous Preview adapter. Preview swaps the entire Instructor shell for Student chrome rather than maintaining a second UI. |
+| `preview-session.ts` | Browser-scoped UUID for one fresh anonymous Preview student. Exit clears it; refresh keeps the current walkthrough. |
 
 ## Adding a page
 
