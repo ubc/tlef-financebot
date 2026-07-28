@@ -2,6 +2,7 @@ import { canTransition, PUBLICATION_TRANSITIONS } from '../../server/src/types/d
 
 describe('publication state machine (PRD §6.2)', () => {
   it('allows the forward pipeline path', () => {
+    expect(canTransition('draft', 'approved')).toBe(true); // one-click instructor approval
     expect(canTransition('draft', 'pending-review')).toBe(true);
     expect(canTransition('pending-review', 'reviewed')).toBe(true);
     expect(canTransition('reviewed', 'approved')).toBe(true);
@@ -29,7 +30,6 @@ describe('publication state machine (PRD §6.2)', () => {
   it('restore from archived goes to draft only, and forbids nonsense moves', () => {
     expect(canTransition('archived', 'draft')).toBe(true);
     expect(canTransition('archived', 'approved')).toBe(false);
-    expect(canTransition('draft', 'approved')).toBe(false); // must be reviewed first
     expect(canTransition('draft', 'paused')).toBe(false);
   });
 });

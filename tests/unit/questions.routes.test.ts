@@ -16,6 +16,7 @@ jest.mock('../../server/src/services/bank.service', () => ({
 }));
 
 jest.mock('../../server/src/services/questions.service', () => ({
+  addQuestionInternalNote: jest.fn(),
   editQuestion: jest.fn(),
   transitionQuestion: jest.fn(),
   bulkTransition: jest.fn(),
@@ -30,7 +31,7 @@ import {
   getDistinctQuestionCourseIds,
   getQuestionDetail,
 } from '../../server/src/services/bank.service';
-import { editQuestion, transitionQuestion, bulkTransition } from '../../server/src/services/questions.service';
+import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransition } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
@@ -81,8 +82,49 @@ beforeEach(() => {
   jest.mocked(reviewQueue).mockReset();
   jest.mocked(getQuestionDetail).mockReset();
   jest.mocked(editQuestion).mockReset();
+  jest.mocked(addQuestionInternalNote).mockReset();
   jest.mocked(transitionQuestion).mockReset();
   jest.mocked(bulkTransition).mockReset();
+});
+
+describe('POST /api/questions/:questionId/internal-notes', () => {
+  beforeEach(() => {
+    jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+  });
+
+  it('appends an instructor-only note and trims its input', async () => {
+    const at = new Date();
+    jest.mocked(addQuestionInternalNote).mockResolvedValue({
+      puid: instructor.puid,
+      text: 'Review again next term.',
+      at,
+    });
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/internal-notes`)
+      .send({ text: '  Review again next term.  ' });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({
+      puid: instructor.puid,
+      text: 'Review again next term.',
+      at: at.toISOString(),
+    });
+    expect(addQuestionInternalNote).toHaveBeenCalledWith(
+      questionId,
+      'Review again next term.',
+      instructor.puid,
+    );
+  });
+
+  it('rejects a student before calling the note service', async () => {
+    const res = await request(makeApp(student))
+      .post(`/api/questions/${questionId.toHexString()}/internal-notes`)
+      .send({ text: 'Student note' });
+
+    expect(res.status).toBe(403);
+    expect(addQuestionInternalNote).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/courses/:courseId/questions (browse, IN-Q08)', () => {
@@ -481,14 +523,14 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
   });
 
   it('409s with the service\'s invalid-transition message', async () => {
-    jest.mocked(transitionQuestion).mockRejectedValue(new Error('invalid-transition:draft->approved'));
+    jest.mocked(transitionQuestion).mockRejectedValue(new Error('invalid-transition:archived->approved'));
 
     const res = await request(makeApp(instructor))
       .post(`/api/questions/${questionId.toHexString()}/transition`)
       .send({ to: 'approved' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('invalid-transition:draft->approved');
+    expect(res.body.error).toBe('invalid-transition:archived->approved');
   });
 
   it('409s when another reviewer already changed the expected state', async () => {

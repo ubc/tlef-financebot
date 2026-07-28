@@ -94,6 +94,9 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   history, `templateFamilyId`, and per-version `provenance`
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
+- `POST /api/questions/:questionId/internal-notes { text }` → appended
+  `{ puid, text, at }` teaching-team-only note. Notes are append-only and are
+  excluded from student and bank-list response shapes.
 - `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
   new/unchanged QuestionVersion (same versioning rules as the generic PATCH above,
   scoped to just the two parameterization content keys); saves independently of
@@ -105,7 +108,9 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   question's currently-saved stem when omitted from the body; `warnings` lists
   any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
   stem. Never persists anything. (IN-Q09, Task 5)
-- `POST /api/questions/:questionId/transition { to }` → question (validated against PUBLICATION_TRANSITIONS; IN-Q04/Q07)
+- `POST /api/questions/:questionId/transition { to }` → question (validated
+  against `PUBLICATION_TRANSITIONS`; Instructor `draft → approved` is a legal
+  one-click approval, and `archived → draft` is the only restore path)
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate`
@@ -131,6 +136,23 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   a QuestionVersion or replace current content. Replacement is an explicit
   `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
+
+## Instructor flag resolution
+
+- `GET /api/courses/:courseId/flags?state=` → flags joined with their question
+  head and current version. `source: 'instructor-preview-test'` identifies a
+  TEST case that does not affect student analytics or auto-pause.
+- `POST /api/flags/:flagId/resolve`
+  `{ action: 'correct' | 'archive' | 'clear', correctnessAffecting?, comment? }`
+  → resolved flag. `comment` is the optional student-facing reply; internal
+  teaching-team comments use the question internal-notes endpoint.
+- `GET /api/flags/:flagId/remediation` → correctness-impact report.
+- `POST /api/flags/:flagId/remediation/notify` → `{ notified }`. TEST flags
+  always return zero and never notify real students.
+- In the Instructor UI, editing from the Flag Queue saves the real question,
+  resolves all open flags for that version as corrected, and invokes affected
+  student notification by default. Return-to-students leaves content
+  unchanged; Reject & Archive is idempotent across grouped flags.
 
 New question heads default `templateFamilyId` to their own ID. Version-one
 provenance is one of `manual`, `generated { runId, blueprintId?, item }`,
@@ -283,7 +305,10 @@ Every stateful Preview request carries `previewSessionId` (UUID):
   `{ previewSessionId, questionVersionId, loId, mode, selectedKey,
      sessionServedIds, isRetry?, paramValues? }`
 - `POST /api/courses/:courseId/preview/questions/:questionId/flag`
-  `{ previewSessionId, reason? }`
+  `{ previewSessionId, reason?, sendToInstructorQueue? }` →
+  `{ flagged: true, testQueued }`. The option defaults to false; when true it
+  additionally creates a live queue item sourced as
+  `instructor-preview-test`.
 - `GET /api/courses/:courseId/preview/review-book?previewSessionId=...&sort=theme|date`
 - `POST /api/courses/:courseId/preview/questions/:questionId/bookmark`
   `{ previewSessionId }`
@@ -306,8 +331,10 @@ Isolation is structural rather than a client-controlled `preview` flag:
 submissions write only `previewAttemptRecords`, while mutable Review Book and
 flag state lives only in `previewStudentSessions`. Both are keyed by Instructor,
 course, and Preview session and expire after 24 hours. Preview never writes live
-attempt, mastery, Review Book, flag/auto-pause, summary, notification,
-progression, or analytics collections.
+attempt, mastery, Review Book, summary, progression, or analytics collections.
+The explicit `sendToInstructorQueue` TEST option is the sole exception: it
+writes a live instructor-queue flag and staff notification, but never adds a
+student-flag label, contributes to auto-pause, or notifies a real student.
 
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)

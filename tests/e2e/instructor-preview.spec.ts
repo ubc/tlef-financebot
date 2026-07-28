@@ -225,4 +225,61 @@ test.describe('Instructor student preview', () => {
     await expect(previewAttemptsCol().countDocuments({ courseId })).resolves.toBe(1);
     expect(pageErrors).toEqual([]);
   });
+
+  test('broadcasts a TEST flag across open tabs and lets the instructor process it without student side effects', async ({ page, context }) => {
+    if (!approvedQuestionId) throw new Error('Approved Preview fixture was not created.');
+    const instructorPage = await context.newPage();
+    await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}`);
+    await expect(instructorPage.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+
+    await page.goto(`/#/instructor/course/${courseId.toHexString()}`);
+    await page.getByRole('button', { name: /Preview as Student/i }).click();
+    await page.getByRole('button', { name: 'Start →', exact: true }).click();
+    await expect(page.getByText(APPROVED_STEM)).toBeVisible();
+
+    await page.getByRole('button', { name: /Flag this question/i }).click();
+    await page.getByRole('textbox', { name: /Why are you flagging/i })
+      .fill('Cross-tab test flag');
+    await page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i }).check();
+    await page.getByRole('button', { name: 'Send flag', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Flagged');
+
+    // BroadcastChannel invalidates the other tab immediately; this assertion
+    // intentionally completes well inside the 30-second polling fallback.
+    await expect(instructorPage.locator('.notif-bell__badge')).toBeVisible({ timeout: 5_000 });
+    await instructorPage.getByRole('button', { name: /Notifications/ }).click();
+    await expect(instructorPage.getByText(/Test flag from Instructor Preview/)).toBeVisible();
+
+    await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}/flags`);
+    await expect(instructorPage.getByText('TEST · Instructor Preview')).toBeVisible();
+    await expect(instructorPage.locator('.flag-row__reason').filter({ hasText: 'Cross-tab test flag' })).toBeVisible();
+    await instructorPage.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(instructorPage.getByRole('heading', { name: 'Instructor Preview Test Flag' })).toBeVisible();
+    await expect(instructorPage.getByText(/changes the real Question Bank/)).toBeVisible();
+
+    const editedStem = `${APPROVED_STEM} (verified)`;
+    await instructorPage.locator('.question-stem-input').fill(editedStem);
+    await instructorPage.getByRole('button', { name: 'Save & Update Question Bank' }).click();
+    await expect(instructorPage).toHaveURL(new RegExp(`/flags$`));
+
+    const [storedFlag, storedQuestion, storedVersion] = await Promise.all([
+      flagsCol().findOne({
+        courseId,
+        questionId: approvedQuestionId,
+        source: 'instructor-preview-test',
+      }),
+      questionsCol().findOne({ _id: approvedQuestionId }),
+      questionVersionsCol().findOne({ questionId: approvedQuestionId }, { sort: { version: -1 } }),
+    ]);
+    expect(storedFlag?.state).toBe('resolved-corrected');
+    expect(storedQuestion?.state).toBe('approved');
+    expect(storedVersion?.stem).toBe(editedStem);
+
+    const recipients = await notificationsCol()
+      .find({ courseId })
+      .project({ recipientPuid: 1 })
+      .toArray();
+    expect(recipients.length).toBeGreaterThan(0);
+    expect(recipients.every((notification) => notification.recipientPuid === instructorPuid)).toBe(true);
+  });
 });

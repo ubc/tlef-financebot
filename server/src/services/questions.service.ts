@@ -230,6 +230,32 @@ export async function transitionQuestion(
   return { ...question, state: to, updatedAt: now };
 }
 
+/** Append-only teaching-team note. Notes never create content versions and
+ * are never exposed by browse/student response shapes. */
+export async function addQuestionInternalNote(
+  questionId: ObjectId,
+  text: string,
+  byPuid: string,
+): Promise<{ puid: string; text: string; at: Date }> {
+  const normalized = text.trim();
+  if (!normalized) throw new Error('internal-note-required');
+  const note = { puid: byPuid, text: normalized, at: new Date() };
+  const result = await questionsCol().updateOne(
+    { _id: questionId },
+    { $push: { internalNotes: note }, $set: { updatedAt: note.at } },
+  );
+  if (result.matchedCount !== 1) throw new Error('question-not-found');
+  await auditCol().insertOne({
+    actorPuid: byPuid,
+    action: 'question.internal-note.add',
+    targetType: 'question',
+    targetId: questionId,
+    detail: { length: normalized.length },
+    createdAt: note.at,
+  });
+  return note;
+}
+
 /**
  * Applies transitionQuestion to each id; only the expected domain
  * errors — a missing question, a transition `canTransition` rejects, or an

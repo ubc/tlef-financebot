@@ -7,6 +7,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import type { RouteParams } from '../../router.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 
@@ -152,7 +153,12 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     account: AdminAccount,
     button: HTMLButtonElement,
   ): Promise<void> => {
-    if (!window.confirm(`Revoke platform-Instructor access for ${account.displayName}?`)) return;
+    if (!await confirmDialog({
+      title: 'Revoke Instructor access?',
+      message: `${account.displayName} will no longer be able to create new courses.`,
+      confirmLabel: 'Revoke access',
+      tone: 'danger',
+    })) return;
     button.disabled = true;
     feedbackSlot.replaceChildren();
     try {

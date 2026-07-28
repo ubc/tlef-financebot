@@ -38,6 +38,7 @@ const flagQuestionBody = z.object({ reason: z.string().optional() });
 const resolveFlagBody = z.object({
   action: z.enum(['correct', 'archive', 'clear']),
   correctnessAffecting: z.boolean().optional(),
+  comment: z.string().trim().max(2000).optional(),
 });
 
 /** Resolve `res.locals.courseId` from the target question, before
@@ -136,8 +137,8 @@ flagsRouter.post(
   validate({ body: resolveFlagBody }),
   async (req, res) => {
     const flagId = new ObjectId(String(req.params.flagId));
-    const { action, correctnessAffecting } = req.body as z.infer<typeof resolveFlagBody>;
-    const flag = await resolveFlag(flagId, action, req.user!.puid, { correctnessAffecting });
+    const { action, correctnessAffecting, comment } = req.body as z.infer<typeof resolveFlagBody>;
+    const flag = await resolveFlag(flagId, action, req.user!.puid, { correctnessAffecting, comment });
     res.json(toFlagResponse(flag));
   },
 );
@@ -188,11 +189,9 @@ flagsRouter.get(
 // pattern. 'question-conflict' can bubble up from transitionQuestion's own
 // CAS check inside resolveFlag/checkAutoPause — it must NOT be swallowed
 // here as anything other than a straight passthrough to 409. The
-// `invalid-transition:` prefix also bubbles up from transitionQuestion (e.g.
-// `invalid-transition:archived->archived` when a question's second open flag
-// is resolved with `archive` after the first already archived it) — matched
-// the same way questions.routes.ts's own normalizer does, so it maps to 409
-// instead of falling through to an unmapped 500.
+// `invalid-transition:` prefix also bubbles up from transitionQuestion and is
+// matched the same way questions.routes.ts's own normalizer does, so it maps
+// to 409 instead of falling through to an unmapped 500.
 const FLAG_ERROR_STATUS: Record<string, number> = {
   'question-not-found': 404,
   'course-not-found': 404,

@@ -56,8 +56,11 @@ objects directly.
   flag, summary, skip, remediation, and material-source behaviours against a
   short-lived `previewSessionId`. Attempts go only to `previewAttemptRecords`;
   mutable Preview Review Book and flag state goes only to
-  `previewStudentSessions`. It never calls or writes the corresponding live
-  student collections, notifications, or analytics.
+  `previewStudentSessions`. It never writes live student attempts, Review
+  Book, mastery, or analytics. An explicit “send as TEST” option is the sole
+  exception: it creates a clearly sourced live instructor-queue flag and a
+  staff notification, while still skipping student labels, auto-pause, and
+  all real-student notifications.
 
 Other services will appear as more components are built up.
 

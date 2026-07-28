@@ -52,6 +52,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -131,8 +132,7 @@ const AGENT_BADGE_VARIANT: Record<AgentDecisionInfo['decision'], BadgeVariant> =
  * pending-review/reviewed/paused go straight to approved. `null` means no
  * further approval step applies (already approved, or archived). */
 function approveTarget(state: PublicationState): PublicationState | null {
-  if (state === 'draft') return 'pending-review';
-  if (state === 'pending-review' || state === 'reviewed' || state === 'paused') return 'approved';
+  if (state === 'draft' || state === 'pending-review' || state === 'reviewed' || state === 'paused') return 'approved';
   return null;
 }
 
@@ -255,7 +255,11 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   async function bulkApprove(): Promise<void> {
     if (selected.size === 0) return;
     const ids = [...selected];
-    if (!window.confirm(`Approve ${ids.length} question${ids.length === 1 ? '' : 's'}?`)) return;
+    if (!await confirmDialog({
+      title: 'Approve selected questions?',
+      message: `${ids.length} question${ids.length === 1 ? '' : 's'} will become available for student practice.`,
+      confirmLabel: 'Approve questions',
+    })) return;
     actionErrorMessage = null;
     bulkMessage = null;
     try {

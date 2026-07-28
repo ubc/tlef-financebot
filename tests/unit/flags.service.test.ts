@@ -218,6 +218,31 @@ describe('flagQuestion (ST-P09)', () => {
     expect(flagsInsertOne.mock.calls[0][0].puid).toBe('PUID-STU-0001');
     expect(flagsInsertOne.mock.calls[1][0].puid).toBe('PUID-STU-0002');
   });
+
+  it('3b. Instructor Preview TEST flag is queued but does not label or auto-pause the real question', async () => {
+    const question = baseQuestion({ state: 'approved' });
+    questionsFindOne.mockResolvedValue(question);
+    flagsFindOne.mockResolvedValue(null);
+
+    await flagQuestion({
+      puid: 'PUID-INSTR-0001',
+      questionId: question._id,
+      reason: 'Preview test',
+      source: 'instructor-preview-test',
+    });
+
+    expect(flagsInsertOne.mock.calls[0][0]).toMatchObject({
+      puid: 'PUID-INSTR-0001',
+      source: 'instructor-preview-test',
+      reason: 'Preview test',
+    });
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+    expect(attemptsDistinct).not.toHaveBeenCalled();
+    expect(notifyCourseStaff).toHaveBeenCalledWith(
+      question.courseId,
+      expect.objectContaining({ kind: 'flag', body: expect.stringContaining('Test flag') }),
+    );
+  });
 });
 
 // --- checkAutoPause (§4.3) ----------------------------------------------------
@@ -435,25 +460,22 @@ describe('resolveFlag (§6.2)', () => {
     expect(auditInsertOne).not.toHaveBeenCalled();
   });
 
-  it('10b. resolveFlag(\'archive\') on a question already archived (e.g. a second flag on the same question) propagates the domain error WITHOUT writing the flag to a terminal state', async () => {
-    // Reproduces the deterministic (non-concurrent) two-open-flags-on-one-
-    // question scenario: the question is already 'archived' by the time
-    // this second flag's resolution runs. PUBLICATION_TRANSITIONS['archived']
-    // = ['draft'], so transitionQuestion throws
-    // invalid-transition:archived->archived -- and this flag must NOT be
-    // left "resolved" with the consequence never having happened.
+  it('10b. resolves a second flag when the shared question is already archived', async () => {
     const questionId = new ObjectId();
     const flag = baseFlag({ questionId, state: 'open' });
     const question = baseQuestion({ _id: questionId, state: 'archived' });
     flagsFindOne.mockResolvedValue(flag);
     questionsFindOne.mockResolvedValue(question);
 
-    await expect(resolveFlag(flag._id, 'archive', 'PUID-INSTR-0001')).rejects.toThrow(
-      'invalid-transition:archived->archived',
-    );
+    await expect(resolveFlag(flag._id, 'archive', 'PUID-INSTR-0001')).resolves.toMatchObject({
+      state: 'resolved-archived',
+    });
 
-    expect(flagsUpdateOne).not.toHaveBeenCalled();
-    expect(auditInsertOne).not.toHaveBeenCalled();
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+    expect(flagsUpdateOne).toHaveBeenCalledWith(
+      { _id: flag._id },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'resolved-archived' }) }),
+    );
   });
 });
 
@@ -541,6 +563,34 @@ describe('Task 3: notification wiring', () => {
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ recipientPuid: 'PUID-STU-0007', kind: 'flag-resolved', priority: 'standard' }),
     );
+  });
+
+  it('stores an optional resolution comment, includes it in the student reply, and never notifies for a TEST flag', async () => {
+    const questionId = new ObjectId();
+    const realFlag = baseFlag({ questionId, puid: 'PUID-STU-0007' });
+    const question = baseQuestion({ _id: questionId, state: 'approved' });
+    flagsFindOne.mockResolvedValueOnce(realFlag);
+    questionsFindOne.mockResolvedValue(question);
+
+    await resolveFlag(realFlag._id, 'clear', 'PUID-INSTR-0001', { comment: '  Thanks; this is intentional.  ' });
+
+    expect(flagsUpdateOne).toHaveBeenCalledWith(
+      { _id: realFlag._id },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          resolution: expect.objectContaining({ comment: 'Thanks; this is intentional.' }),
+        }),
+      }),
+    );
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.stringContaining('Thanks; this is intentional.') }),
+    );
+
+    jest.mocked(notify).mockClear();
+    const testFlag = baseFlag({ questionId, source: 'instructor-preview-test' });
+    flagsFindOne.mockResolvedValueOnce(testFlag);
+    await resolveFlag(testFlag._id, 'clear', 'PUID-INSTR-0001', { comment: 'Test only' });
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('resolveFlag does NOT notify when the transition is invalid (no state change happened)', async () => {
