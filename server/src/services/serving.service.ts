@@ -61,12 +61,14 @@ async function approvedCandidatesForLo(courseId: ObjectId, loId: ObjectId): Prom
 }
 
 /**
- * Runs the tier-targeting + degradation ladder over an already-fetched
- * candidate pool. Ideal case: an unseen question at the target tier
- * (`degraded: 'none'`). Otherwise, in order:
- *   1. same tier, already served this session -> repeat (`degraded: 'repeat'`)
- *   2. adjacent tier (one step up or down), unseen -> `degraded: 'adjacent'`
- *   3. anything else Approved for the LO -> `degraded: 'any'`
+ * Runs the tier-targeting + finite-round degradation ladder over an already-
+ * fetched candidate pool. Every Approved question is offered at most once in
+ * a round before a repeat is returned:
+ *   1. unseen at the target tier (`degraded: 'none'`)
+ *   2. unseen at an adjacent tier (`degraded: 'adjacent'`)
+ *   3. any other unseen question (`degraded: 'any'`)
+ *   4. only after all candidates are exhausted, repeat a target-tier
+ *      question (`degraded: 'repeat'`) or any remaining candidate.
  * `null` only when `candidates` is empty (zero Approved for the LO).
  */
 function selectFromCandidates(
@@ -85,11 +87,6 @@ function selectFromCandidates(
     return { ...pickRandom(sameTierUnseen, rand), degraded: 'none' };
   }
 
-  const sameTierServed = candidates.filter((c) => c.version.difficulty === tier && isServed(c));
-  if (sameTierServed.length > 0) {
-    return { ...pickRandom(sameTierServed, rand), degraded: 'repeat' };
-  }
-
   const tierIdx = TIER_ORDER.indexOf(tier);
   const adjacentTiers = [TIER_ORDER[tierIdx - 1], TIER_ORDER[tierIdx + 1]].filter((t): t is Difficulty => Boolean(t));
   const adjacentUnseen = candidates.filter((c) => adjacentTiers.includes(c.version.difficulty) && !isServed(c));
@@ -97,10 +94,17 @@ function selectFromCandidates(
     return { ...pickRandom(adjacentUnseen, rand), degraded: 'adjacent' };
   }
 
-  // Rung 3: whatever's left (served adjacent, or non-adjacent tier
-  // regardless of served state) — every candidate not already exhausted by
-  // rungs above, which by construction is every remaining candidate since
-  // rungs 1 and 2 both came up empty.
+  const anyUnseen = candidates.filter((c) => !isServed(c));
+  if (anyUnseen.length > 0) {
+    return { ...pickRandom(anyUnseen, rand), degraded: 'any' };
+  }
+
+  const sameTierServed = candidates.filter((c) => c.version.difficulty === tier);
+  if (sameTierServed.length > 0) {
+    return { ...pickRandom(sameTierServed, rand), degraded: 'repeat' };
+  }
+
+  // All candidates were served this round and none match the current tier.
   return { ...pickRandom(candidates, rand), degraded: 'any' };
 }
 
@@ -141,6 +145,30 @@ export async function selectRetryQuestion(
 
   const tier = await getMasteryTier(input.puid, input.courseId, input.loId);
   return selectFromCandidates(candidates, tier, input.sessionServedIds, rand);
+}
+
+/**
+ * Instructor preview deliberately has no student mastery profile to target.
+ * It uses the neutral medium tier while preserving the same approved-only,
+ * finite-round degradation ladder as real practice.
+ */
+export async function selectPreviewQuestion(
+  input: { courseId: ObjectId; loId: ObjectId; sessionServedIds: ObjectId[] },
+  rand: () => number = Math.random,
+): Promise<SelectResult | null> {
+  const candidates = await approvedCandidatesForLo(input.courseId, input.loId);
+  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
+}
+
+/** Strategy-A retry selection for preview, without consulting live mastery. */
+export async function selectPreviewRetryQuestion(
+  input: { courseId: ObjectId; loId: ObjectId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] },
+  rand: () => number = Math.random,
+): Promise<SelectResult | null> {
+  const candidates = (await approvedCandidatesForLo(input.courseId, input.loId)).filter(
+    (candidate) => !candidate.question._id.equals(input.excludeQuestionId),
+  );
+  return selectFromCandidates(candidates, 'medium', input.sessionServedIds, rand);
 }
 
 export interface StudentCourseHomeLo {

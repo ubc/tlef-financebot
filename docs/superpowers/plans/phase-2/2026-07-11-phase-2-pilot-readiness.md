@@ -142,7 +142,8 @@ applied).
 **Reviewer:** the other developer, per half
 
 **Files:**
-- Modify: `client/src/views/student/practice.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/views/student/practice-card.ts` ("Flag this question" on question and feedback views)
+- Modify: `client/src/api.ts` (typed student flag request)
 - Create: `client/src/views/instructor/flags.ts`
 - Modify: client router/instructor nav
 
@@ -150,9 +151,16 @@ applied).
 - Consumes: Task 1 routes.
 - Produces: one-click non-blocking flag control with an optional reason popover (submittable blank) + brief confirmation (ST-P09); instructor flag queue showing question content, reason, date, flag count per version, with Correct / Archive / Clear actions — Correct opens the existing question editor first, then resolves.
 
-- [ ] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow). **Instructor half done** (Saurav, `saurav/task-2-flag-queue`, commits `ca6ef9f`+`bd76b53`, review clean) — student-control half (Stephen) still open; leaving this box unchecked until both halves land, per the split-task convention. See [`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-2-my-half-instructor-flag-resolution-queue) for the instructor half's post-implementation note.
-- [ ] **Step 2: Verify in browser**; `npm run typecheck && npm run lint` → PASS. (Instructor half: typecheck/lint clean, no live stack available to browser-verify.)
-- [ ] **Step 3: Commit** — `git commit -m "feat: flag controls in practice view and instructor flag-resolution queue"`
+- [x] **Step 1: Implement both surfaces** (follow the Phase-1 view patterns; the flag button posts and swaps to a "Flagged ✓" state without interrupting the question flow). **Instructor half done** (Saurav, `saurav/task-2-flag-queue`, commits `ca6ef9f`+`bd76b53`, review clean); **student half done** (Stephen/Codex, `codex/phase-2-task2-student-flag`). See [`Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md`](Saurav/2026-07-23-phase-2-pilot-readiness-saurav.md#task-2-my-half-instructor-flag-resolution-queue) for the instructor half's post-implementation note.
+- [x] **Step 2: Verify in browser**; typecheck/lint/full Jest → PASS. Student live-browser verification covered empty-reason submission, `Flagged ✓`, continued answer submission, correct feedback, and the Strategy-A wrong-answer/retry path with independent controls on both original and retry questions; browser console had no warning/error.
+- [x] **Step 3: Commit** — `git commit -m "feat: flag control in practice view (ST-P09)"`
+
+**Student-half implementation note (2026-07-28):** the practice UI had been
+factored into `practice-card.ts` after this plan was written, so the control
+landed there rather than in `practice.ts`. The live browser pass found and
+fixed an extra retry-path gap: when Strategy A produced an inline retry, the
+original question's feedback footer previously disappeared; it now retains
+its own Flag control while the retry card has a separate one.
 
 ---
 

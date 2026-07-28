@@ -38,6 +38,16 @@ objects directly.
   existing `generate(random)` templates through the real parameter worker.
   Script migration validates one deterministic sample, returns placeholder
   mismatches without writing, and creates only Draft question versions.
+- `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
+  Normalizes CWL usernames, links an existing User when present, leaves a
+  pending grant otherwise, and writes role assignment/revocation audit events.
+  Raw SAML assertions never enter its response shapes.
+- `preview.service.ts` — Instructor-only student preview orchestration. It
+  exposes the currently released Approved-question hierarchy, serves
+  parameterized questions through the neutral preview selector, and writes
+  submissions only to `previewAttemptRecords`. It reuses the pure
+  `attempts.service.ts` grading seam but never calls live attempt/mastery,
+  Review Book, flag, notification, summary, or progression workflows.
 
 Other services will appear as more components are built up.
 

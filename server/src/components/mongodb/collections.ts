@@ -1,7 +1,8 @@
 import type { Collection, Document, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
-  User, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
+  User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
+  PreviewAttemptRecord,
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
@@ -11,12 +12,16 @@ import type {
 // import these accessors instead of calling getDb().collection() with strings.
 
 export const usersCol = (): Collection<User> => getDb().collection<User>('users');
+export const platformInstructorGrantsCol = (): Collection<PlatformInstructorGrant> =>
+  getDb().collection<PlatformInstructorGrant>('platformInstructorGrants');
 export const coursesCol = (): Collection<Course> => getDb().collection<Course>('courses');
 export const themesCol = (): Collection<Theme> => getDb().collection<Theme>('themes');
 export const losCol = (): Collection<LearningObjective> => getDb().collection<LearningObjective>('learningObjectives');
 export const questionsCol = (): Collection<Question> => getDb().collection<Question>('questions');
 export const questionVersionsCol = (): Collection<QuestionVersion> => getDb().collection<QuestionVersion>('questionVersions');
 export const attemptsCol = (): Collection<AttemptRecord> => getDb().collection<AttemptRecord>('attemptRecords');
+export const previewAttemptsCol = (): Collection<PreviewAttemptRecord> =>
+  getDb().collection<PreviewAttemptRecord>('previewAttemptRecords');
 export const materialsCol = (): Collection<Material> => getDb().collection<Material>('materials');
 export const masteryCol = (): Collection<MasteryProfile> => getDb().collection<MasteryProfile>('masteryProfiles');
 export const reviewBookCol = (): Collection<ReviewBookEntry> => getDb().collection<ReviewBookEntry>('reviewBookEntries');
@@ -38,6 +43,7 @@ export interface IndexSpec {
 /** Exported for tests; applied by ensureIndexes(). */
 export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
+  { collection: 'platformInstructorGrants', keys: { uid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },
   { collection: 'themes', keys: { courseId: 1, order: 1 } },
   { collection: 'learningObjectives', keys: { courseId: 1, themeId: 1, order: 1 } },
@@ -46,6 +52,8 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'questionVersions', keys: { questionId: 1, version: 1 }, options: { unique: true } },
   { collection: 'attemptRecords', keys: { puid: 1, courseId: 1, loId: 1, createdAt: -1 } },
   { collection: 'attemptRecords', keys: { questionVersionId: 1 } },
+  { collection: 'previewAttemptRecords', keys: { instructorPuid: 1, courseId: 1, createdAt: -1 } },
+  { collection: 'previewAttemptRecords', keys: { questionVersionId: 1 } },
   { collection: 'materials', keys: { courseId: 1, uploadedAt: -1 } },
   { collection: 'masteryProfiles', keys: { puid: 1, courseId: 1, loId: 1 }, options: { unique: true } },
   { collection: 'reviewBookEntries', keys: { puid: 1, courseId: 1, questionId: 1 }, options: { unique: true } },

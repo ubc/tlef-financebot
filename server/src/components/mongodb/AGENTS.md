@@ -86,6 +86,16 @@ truth for material-ingest/question-generation progress; mutate it through
 `content-runs.service.ts` so revision CAS and post-write SSE publication remain
 coupled.
 
+Admin Console v0 adds `platformInstructorGrantsCol()`, uniquely keyed by the
+normalized CWL `uid`. A grant can exist before the matching PUID-backed `User`
+logs in; `users.service.ts` links it on first SAML login. Do not create
+placeholder User documents with a CWL username in the `puid` field.
+
+Instructor student preview adds `previewAttemptsCol()` backed by
+`previewAttemptRecords`. It is intentionally separate from `attemptRecords`;
+do not merge the collections or make live-learning queries depend on a
+remembered `{ preview: { $ne: true } }` filter.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

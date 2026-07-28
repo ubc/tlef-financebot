@@ -5,6 +5,7 @@ describe('collection index specs (PRD §2 data model)', () => {
 
   it('enforces identity and enrollment uniqueness', () => {
     expect(byCollection['users:{"puid":1}'].options?.unique).toBe(true);
+    expect(byCollection['platformInstructorGrants:{"uid":1}'].options?.unique).toBe(true);
     expect(byCollection['courses:{"registrationCode":1}'].options?.unique).toBe(true);
     expect(byCollection['rosterEntries:{"courseId":1,"identifier":1}'].options?.unique).toBe(true);
   });
@@ -18,6 +19,8 @@ describe('collection index specs (PRD §2 data model)', () => {
   it('indexes the hot attempt-record and serving paths', () => {
     expect(byCollection['attemptRecords:{"puid":1,"courseId":1,"loId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['attemptRecords:{"questionVersionId":1}']).toBeDefined();
+    expect(byCollection['previewAttemptRecords:{"instructorPuid":1,"courseId":1,"createdAt":-1}']).toBeDefined();
+    expect(byCollection['previewAttemptRecords:{"questionVersionId":1}']).toBeDefined();
     expect(byCollection['questions:{"courseId":1,"state":1}']).toBeDefined();
     expect(byCollection['questions:{"loIds":1}']).toBeDefined();
     expect(byCollection['notifications:{"recipientPuid":1,"createdAt":-1}']).toBeDefined();

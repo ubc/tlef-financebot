@@ -30,10 +30,20 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   the IdP). See `components/auth/AGENTS.md`.
 - `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, publish
   checklist and publish toggle, Theme and LO CRUD/archive, and roster
-  put/get. `POST /api/courses` is open to any authenticated user; every other
+  put/get. `POST /api/courses` requires an explicit platform-Instructor grant
+  (or Admin); every other
   route is **instructor-gated** for the course it targets via
   `ensureCourseInstructor()`, with Theme/LO routes stashing `res.locals.courseId`
   from the child resource first. See `components/auth/course-guards.ts`.
+- `admin.routes.ts` — Admin Console v0 account provisioning:
+  `GET/PUT/DELETE /api/admin/platform-instructors[/:uid]`. Every route is
+  protected by `ensureAdmin()`; PUT may create a pending CWL-username grant
+  before first SAML login, and DELETE is idempotent.
+- `preview.routes.ts` — explicit course-Instructor-only student preview:
+  `GET .../preview/home`, `POST .../preview/practice/next`, and
+  `POST .../preview/attempts`. These routes intentionally do not reuse or
+  weaken `ensureCourseStudent()`; the separate URL/service/collection boundary
+  prevents preview submissions from entering live learning records.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
   (including a courses-spanning bulk transition). All routes are

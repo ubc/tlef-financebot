@@ -16,7 +16,12 @@ jest.mock('../../server/src/services/mastery.service', () => ({
 
 import { questionsCol, questionVersionsCol, themesCol, losCol } from '../../server/src/components/mongodb/collections';
 import { getMasteryTier, getLoStatuses } from '../../server/src/services/mastery.service';
-import { selectNextQuestion, selectRetryQuestion, studentCourseHome } from '../../server/src/services/serving.service';
+import {
+  selectNextQuestion,
+  selectPreviewQuestion,
+  selectRetryQuestion,
+  studentCourseHome,
+} from '../../server/src/services/serving.service';
 
 // -----------------------------------------------------------------------------
 // Fake collections. `serving.service.ts` fetches its candidate list once per
@@ -197,6 +202,24 @@ describe('selectNextQuestion', () => {
     expect(result!.degraded).toBe('repeat');
   });
 
+  it('case 4b: exhausts adjacent unseen questions before repeating a served target-tier question', async () => {
+    const servedMedium = new ObjectId();
+    const unseenEasy = new ObjectId();
+    seedBank([
+      { id: servedMedium, difficulty: 'medium', state: 'approved', loIds: [loId] },
+      { id: unseenEasy, difficulty: 'easy', state: 'approved', loIds: [loId] },
+    ]);
+    jest.mocked(getMasteryTier).mockResolvedValue('medium');
+
+    const result = await selectNextQuestion(
+      { puid, courseId, loId, sessionServedIds: [servedMedium] },
+      firstPick,
+    );
+
+    expect(result!.question._id.equals(unseenEasy)).toBe(true);
+    expect(result!.degraded).toBe('adjacent');
+  });
+
   it('case 5: ladder rung 2 — no same-tier at all -> adjacent difficulty unseen (degraded: adjacent)', async () => {
     const easyId = new ObjectId();
     const hardId = new ObjectId();
@@ -259,6 +282,26 @@ describe('selectRetryQuestion', () => {
     expect(result).not.toBeNull();
     expect(result!.question._id.equals(other)).toBe(true);
     expect(result!.question._id.equals(onlyQuestion)).toBe(false);
+  });
+});
+
+describe('selectPreviewQuestion', () => {
+  it('uses the approved-only bank at a neutral medium tier without reading student mastery', async () => {
+    const approvedMedium = new ObjectId();
+    seedBank([
+      { difficulty: 'easy', state: 'draft', loIds: [loId] },
+      { id: approvedMedium, difficulty: 'medium', state: 'approved', loIds: [loId] },
+      { difficulty: 'hard', state: 'paused', loIds: [loId] },
+    ]);
+
+    const result = await selectPreviewQuestion(
+      { courseId, loId, sessionServedIds: [] },
+      firstPick,
+    );
+
+    expect(result?.question._id.equals(approvedMedium)).toBe(true);
+    expect(result?.degraded).toBe('none');
+    expect(getMasteryTier).not.toHaveBeenCalled();
   });
 });
 

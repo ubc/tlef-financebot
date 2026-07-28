@@ -64,6 +64,7 @@ export interface AuthUser {
   uid: string;
   displayName: string;
   isAdmin: boolean;
+  platformInstructor?: boolean;
   affiliations: string[];
   courseRoles: Array<{ courseId: string; role: string }>;
 }
@@ -80,6 +81,44 @@ export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
+}
+
+// --- Admin: platform-Instructor accounts -----------------------------------
+
+export interface PlatformInstructorAccount {
+  uid: string;
+  status: 'active' | 'pending';
+  grantedAt: string;
+  updatedAt: string;
+  user?: {
+    displayName: string;
+    email: string;
+    lastLoginAt: string;
+  };
+}
+
+/** GET /api/admin/platform-instructors?query= -> active/pending grants. */
+export function listPlatformInstructors(query = ''): Promise<PlatformInstructorAccount[]> {
+  const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
+  return request<PlatformInstructorAccount[]>(`/api/admin/platform-instructors${search}`);
+}
+
+/** PUT /api/admin/platform-instructors/:uid -> active or pending grant. */
+export function grantPlatformInstructor(uid: string): Promise<PlatformInstructorAccount> {
+  return request<PlatformInstructorAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+    { method: 'PUT' },
+  );
+}
+
+/** DELETE /api/admin/platform-instructors/:uid -> idempotent revocation. */
+export function revokePlatformInstructor(
+  uid: string,
+): Promise<{ uid: string; granted: false; revoked: boolean }> {
+  return request<{ uid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(uid.trim())}`,
+    { method: 'DELETE' },
+  );
 }
 
 // --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
@@ -309,6 +348,23 @@ export function getNextPracticeQuestion(
   });
 }
 
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
+ * Student-only and idempotent for the signed-in student/current version. */
+export function flagPracticeQuestion(
+  questionId: string,
+  reason?: string,
+): Promise<{ flagged: true }> {
+  const normalizedReason = reason?.trim();
+  return request<{ flagged: true }>(
+    `/api/questions/${encodeURIComponent(questionId)}/flag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(normalizedReason ? { reason: normalizedReason } : {}),
+    },
+  );
+}
+
 export type PracticeMode = 'topic-practice' | 'review-book' | 'exam-prep';
 export type OptionRole = 'correct' | 'common-misconception' | 'partially-correct' | 'clearly-wrong';
 
@@ -337,6 +393,10 @@ export interface AttemptResult {
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
+  redirect?: {
+    materials: Array<{ name: string; materialId: string }>;
+    message: string;
+  };
 }
 
 export interface SubmitAttemptInput {
@@ -356,6 +416,62 @@ export function submitAttempt(input: SubmitAttemptInput): Promise<AttemptResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+/** Instructor-only hierarchy for explicit student preview. */
+export function getPreviewCourseHome(courseId: string): Promise<CourseHomeTheme[]> {
+  return request<CourseHomeTheme[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/home`,
+  );
+}
+
+/** Instructor-only approved-question serving; never requires student enrollment. */
+export function getNextPreviewQuestion(
+  courseId: string,
+  input: { loId: string; sessionServedIds: string[] },
+): Promise<PracticeQuestion> {
+  return request<PracticeQuestion>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/practice/next`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/**
+ * Instructor preview submission. The server derives preview context from the
+ * route/session; this helper intentionally sends no client-controlled
+ * `preview` boolean and omits the live-only practice mode.
+ */
+export function submitPreviewAttempt(
+  courseId: string,
+  input: SubmitAttemptInput,
+): Promise<AttemptResult> {
+  const {
+    questionVersionId,
+    loId,
+    selectedKey,
+    sessionServedIds,
+    isRetry,
+    paramValues,
+  } = input;
+  return request<AttemptResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/preview/attempts`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        questionVersionId,
+        loId,
+        selectedKey,
+        sessionServedIds,
+        ...(isRetry !== undefined ? { isRetry } : {}),
+        ...(paramValues !== undefined ? { paramValues } : {}),
+      }),
+    },
+  );
 }
 
 /** POST /api/courses/:courseId/los/:loId/skip { attempted } -> 204 (ST-P06). */

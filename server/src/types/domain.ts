@@ -71,11 +71,25 @@ export interface User {
   email: string;
   affiliations: string[]; // raw eduPersonAffiliation values, lower-cased
   isAdmin: boolean; // from ADMIN_CWL_ALLOWLIST at login time
+  platformInstructor?: boolean; // explicit global grant; never derived from SAML affiliation
   courseRoles: Array<{ courseId: ObjectId; role: CourseRole }>;
   onboardingAcknowledgedAt?: Date; // mandatory service-use + copyright ack (§4.1)
   researchExportConsent?: boolean; // optional, declinable (§4.1)
   createdAt: Date;
   lastLoginAt: Date;
+}
+
+/**
+ * Admin-managed global Instructor grant keyed by normalized CWL username.
+ * It may exist before the matching PUID-backed User's first SAML login.
+ */
+export interface PlatformInstructorGrant {
+  uid: string;
+  grantedByPuid: string;
+  createdAt: Date;
+  updatedAt: Date;
+  appliedToPuid?: string;
+  appliedAt?: Date;
 }
 
 export interface Course {
@@ -180,6 +194,37 @@ export interface AttemptRecord {
   paramValues?: Record<string, number>; // randomized values shown (if parameterized)
   isRetry: boolean; // Strategy A retry attempts are independent, full-weight attempts
   examAttemptId?: ObjectId; // set when mode === 'exam-prep'
+  createdAt: Date;
+}
+
+/**
+ * Instructor-only student-preview submission. Kept in its own collection so
+ * no live-attempt consumer can accidentally count it as student activity.
+ * `versionSnapshot` pins exactly what was graded even if a future migration
+ * changes how immutable QuestionVersions are stored.
+ */
+export interface PreviewAttemptRecord {
+  instructorPuid: string;
+  preview: true;
+  courseId: ObjectId;
+  questionId: ObjectId;
+  questionVersionId: ObjectId;
+  loId: ObjectId;
+  themeId: ObjectId;
+  strategy: AppliedStrategy;
+  selectedKey: string;
+  correct: boolean;
+  selectedRole: OptionRole;
+  difficulty: Difficulty;
+  paramValues?: Record<string, number>;
+  isRetry: boolean;
+  versionSnapshot: {
+    version: number;
+    type: QuestionType;
+    stem: string;
+    options: QuestionOption[];
+    difficulty: Difficulty;
+  };
   createdAt: Date;
 }
 

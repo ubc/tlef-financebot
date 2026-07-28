@@ -9,10 +9,25 @@ Status codes: 400 validation, 401 unauthenticated, 403 wrong role/course,
 404 not found, 409 conflict (e.g. duplicate enrollment), 503 background queue unavailable.
 
 **Auth guards:** `student` = enrolled in the course; `instructor` = course
-instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
+instructor (owner/co-instructor); `platform instructor` = explicit global grant
+for Instructor shell/course creation; `ta` = course TA; `admin` = platform
+admin.
 
 ## Auth
-- `GET /api/auth/me` (public) → `{ authenticated, user?: { puid, uid, displayName, isAdmin, affiliations, courseRoles } }`
+- `GET /api/auth/me` (public) → `{ authenticated, user?: { puid, uid, displayName, isAdmin, platformInstructor?, affiliations, courseRoles } }`
+
+## Admin — platform-Instructor accounts
+
+Every route below is platform-Admin-only. CWL usernames are normalized
+case-insensitively; a grant may remain pending until that username's first SAML
+login creates the real PUID-backed User.
+
+- `GET /api/admin/platform-instructors?query=` →
+  `[{ uid, status: 'active' | 'pending', grantedAt, updatedAt, user?: { displayName, email, lastLoginAt } }]`
+- `PUT /api/admin/platform-instructors/:uid` → one active/pending grant
+  (idempotent; empty body)
+- `DELETE /api/admin/platform-instructors/:uid` →
+  `{ uid, granted: false, revoked: boolean }` (idempotent)
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`
@@ -22,6 +37,7 @@ instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
 
 ## Courses (instructor)
 - `POST /api/courses { name, courseCode, term }` → 201 Course
+  (platform-Instructor or Admin; faculty affiliation alone is insufficient)
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
 - `PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
 - `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
@@ -154,16 +170,30 @@ of remaining indefinitely active.
   only in that case — see params.service.ts's `resolveParamValues`/`substituteParams`, Task 5,
   IN-Q09/ST-P03). A fresh `seed` is drawn on every call, including Review-Book re-practice
   (ST-R04) — there is one serving call site for both. 404 when no approved question exists.
+  Within one client practice round, selection exhausts every unseen Approved
+  question for the LO before returning a repeated id. The client treats that
+  first repeat as the round boundary and asks explicitly before starting a new
+  repeat round.
 - `POST /api/attempts { questionVersionId, loId, selectedKey, mode, sessionServedIds, isRetry?, paramValues? }` →
   `{ correct,
      feedback: { strategy: 'a' | 'b',
                  revealed: [{ key, text, role, explanation, correct }] | chosenOnly (all substituted against the pinned paramValues),
                  retry?: { questionId, questionVersionId, type, stem, options: [{ key, text }], paramValues?, seed? } },
-     mastery: { loStatus, recommendation? }, reviewBook: { added } }` (ST-P04)
+     mastery: { loStatus, recommendation? }, reviewBook: { added },
+     redirect?: { materials: [{ name, materialId }], message } }` (ST-P04, ST-P07)
   — `paramValues` sent back here are trusted verbatim and pinned onto the AttemptRecord (never
   re-derived/re-validated server-side — they don't affect grading, only the student's own
   displayed feedback numbers). A Strategy-A `retry` question that is itself parameterized carries
   its OWN freshly-resolved `paramValues`/`seed`, independent of the just-answered question's.
+  `redirect` appears after the course-configured number of consecutive
+  easy/medium misses for that LO. A hard-tier miss breaks the redirect cluster
+  so mastery tier step-back has precedence. Redirect responses contain only
+  the chosen wrong option (never the current correct answer), do not attach a
+  Strategy-A retry, and never block the next-question action.
+- `GET /api/courses/:courseId/los/:loId/materials/:materialId/source` →
+  `302` to a linked URL material or an authenticated file download. Student
+  guard applies; only a ready material assigned to this exact course/LO
+  resolves, otherwise 404.
 - `POST /api/courses/:courseId/los/:loId/skip { attempted: boolean }` → 204 (ST-P06)
 - `GET /api/courses/:courseId/session-summary` →
   `{ deferred?: SessionEndSummary, welcome: boolean }` — start-of-session payload; `welcome: true`
@@ -174,6 +204,31 @@ of remaining indefinitely active.
      reviewBookAdditions: [{ entryId, questionId, loId, themeId }], missedQuestions: string[] }`
   — computes the summary since `since` and stores (upserts) it as the student's deferred
   end-of-session summary for this course, to be surfaced by `GET .../session-summary` next time (ST-P10)
+
+## Instructor student preview
+
+All preview routes require the signed-in user to be an Instructor for the
+target course (or Admin). They do not require student enrollment and
+intentionally ignore `Course.published`, so an unpublished course can be
+tested before release. Theme archival/progressive release and the
+Approved-question gate still match the real student experience.
+
+- `GET /api/courses/:courseId/preview/home` → the student-visible hierarchy
+  shape from `GET .../home`, with neutral `not-attempted` statuses.
+- `POST /api/courses/:courseId/preview/practice/next { loId, sessionServedIds }`
+  → the same sanitized/substituted question shape as student
+  `POST .../practice/next`.
+- `POST /api/courses/:courseId/preview/attempts { questionVersionId, loId,
+  selectedKey, sessionServedIds, isRetry?, paramValues? }` → the same feedback
+  shape as `POST /api/attempts`, with neutral mastery and
+  `reviewBook: { added: false }`.
+
+Preview submissions write only `previewAttemptRecords`, which pin the
+Instructor, course/question/version/LO, answer, strategy, parameter values, and
+version snapshot. They never enter `attemptRecords`, mastery, Review Book,
+flags/auto-pause, remediation, summaries, progression, notifications, or
+student analytics. There is no client-controlled `preview` switch on the live
+student attempt endpoint.
 
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)

@@ -4,6 +4,7 @@ import { attemptsCol, questionsCol, questionVersionsCol, coursesCol, reviewBookC
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from './mastery.service';
 import { selectRetryQuestion } from './serving.service';
 import { resolveParamValues, substituteParams, drawSeed } from './params.service';
+import { repeatedFailureRedirect, type RedirectPayload } from './progression.service';
 import type {
   AppliedStrategy,
   AttemptRecord,
@@ -61,6 +62,7 @@ export interface AttemptResult {
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
+  redirect?: RedirectPayload;
 }
 
 export interface SubmitAttemptInput {
@@ -89,6 +91,58 @@ function fullReveal(
     explanation: paramValues ? substituteParams(o.explanation, paramValues) : o.explanation,
     correct: o.role === 'correct',
   }));
+}
+
+/** Chosen-only reveal used by Strategy A and by the repeated-failure redirect.
+ * A redirect is a learning-resource nudge, never an alternate answer-reveal
+ * path, even when the course's normal strategy is Strategy B. */
+function chosenReveal(
+  option: { key: string; text: string; role: OptionRole; explanation: string },
+  paramValues?: Record<string, number>,
+): RevealedOption[] {
+  return [{
+    key: option.key,
+    text: paramValues ? substituteParams(option.text, paramValues) : option.text,
+    role: option.role,
+    explanation: paramValues ? substituteParams(option.explanation, paramValues) : option.explanation,
+    correct: false,
+  }];
+}
+
+export interface GradedAnswer {
+  correct: boolean;
+  appliedStrategy: AppliedStrategy;
+  selectedOption: {
+    key: string;
+    text: string;
+    role: OptionRole;
+    explanation: string;
+  };
+  fullReveal: RevealedOption[];
+  chosenReveal: RevealedOption[];
+}
+
+/**
+ * Pure answer grading shared by live attempts and isolated Instructor
+ * preview. It has no database or user-context access; callers decide which
+ * collection and follow-on workflows are appropriate.
+ */
+export function gradeAnswer(
+  options: Array<{ key: string; text: string; role: OptionRole; explanation: string }>,
+  selectedKey: string,
+  courseStrategy: FeedbackStrategy,
+  paramValues?: Record<string, number>,
+): GradedAnswer {
+  const selectedOption = options.find((option) => option.key === selectedKey);
+  if (!selectedOption) throw new Error('invalid-selected-key');
+  const correct = selectedOption.role === 'correct';
+  return {
+    correct,
+    appliedStrategy: decideStrategy(courseStrategy, selectedOption.role),
+    selectedOption,
+    fullReveal: fullReveal(options, paramValues),
+    chosenReveal: chosenReveal(selectedOption, paramValues),
+  };
 }
 
 /** Upserts the ReviewBookEntry for a miss: one entry per (puid, courseId,
@@ -142,11 +196,10 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
   const question = await questionsCol().findOne({ _id: version.questionId });
   if (!question || question.state !== 'approved') throw new Error('question-not-servable');
 
-  const selectedOption = version.options.find((o) => o.key === input.selectedKey);
-  if (!selectedOption) throw new Error('invalid-selected-key');
-
   const course = await coursesCol().findOne({ _id: question.courseId });
   if (!course) throw new Error('question-not-servable');
+  const graded = gradeAnswer(version.options, input.selectedKey, course.feedbackStrategy, input.paramValues);
+  const { selectedOption, correct, appliedStrategy } = graded;
 
   // themeId is derived from the LO actually served (input.loId), not from
   // question.themeIds[0] — Question.loIds/themeIds are independently-
@@ -157,9 +210,6 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
   const lo = await losCol().findOne({ _id: input.loId });
   if (!lo) throw new Error('lo-not-found');
   const themeId = lo.themeId;
-
-  const correct = selectedOption.role === 'correct';
-  const appliedStrategy = decideStrategy(course.feedbackStrategy, selectedOption.role);
 
   const attemptId = new ObjectId();
   const attemptRecord: AttemptRecord & { _id: ObjectId } = {
@@ -197,6 +247,7 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
   let revealed: RevealedOption[];
   let retry: AttemptResult['feedback']['retry'];
   let reviewBookAdded = false;
+  let redirect: RedirectPayload | undefined;
 
   if (!correct) {
     reviewBookAdded = await upsertReviewBookEntry({
@@ -207,19 +258,26 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
       themeId,
       attemptId,
     });
+    redirect = await repeatedFailureRedirect({
+      puid: input.user.puid,
+      displayName: input.user.displayName,
+      courseId: question.courseId,
+      loId: input.loId,
+      threshold: course.redirectFailureThreshold ?? 3,
+    });
   }
 
-  if (correct || appliedStrategy === 'b') {
-    revealed = fullReveal(version.options, input.paramValues);
+  if (redirect) {
+    // Never include the current answer alongside a redirect. The student may
+    // continue normally from the inline panel; no blocking retry is attached.
+    revealed = graded.chosenReveal;
+  } else if (correct || appliedStrategy === 'b') {
+    revealed = graded.fullReveal;
   } else {
     // Strategy A miss: only the chosen option, others withheld — substituted
     // against the SAME paramValues the student was actually served, not the
     // raw {{slot}} placeholders.
-    const chosenText = input.paramValues ? substituteParams(selectedOption.text, input.paramValues) : selectedOption.text;
-    const chosenExplanation = input.paramValues
-      ? substituteParams(selectedOption.explanation, input.paramValues)
-      : selectedOption.explanation;
-    revealed = [{ key: selectedOption.key, text: chosenText, role: selectedOption.role, explanation: chosenExplanation, correct: false }];
+    revealed = graded.chosenReveal;
 
     const retryResult = await selectRetryQuestion({
       puid: input.user.puid,
@@ -249,7 +307,7 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
       };
     } else {
       // §5.1 degradation: no retry available -> full reveal; strategy stays 'a'.
-      revealed = fullReveal(version.options, input.paramValues);
+      revealed = graded.fullReveal;
     }
   }
 
@@ -258,6 +316,7 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
     feedback: { strategy: appliedStrategy, revealed, ...(retry ? { retry } : {}) },
     mastery: { loStatus: profile.status, ...(recommendation ? { recommendation } : {}) },
     reviewBook: { added: reviewBookAdded },
+    ...(redirect ? { redirect } : {}),
   };
 }
 

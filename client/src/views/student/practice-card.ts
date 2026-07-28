@@ -2,7 +2,16 @@
 // Strategy-A retry-in-place recursion. Factored out of practice.ts (which
 // owns the LO/theme walking loop) to keep each file under the house style's
 // ~200-line guideline — see client/AGENTS.md.
-import { submitAttempt, type AttemptResult, type CourseHomeLo, type CourseHomeTheme, type PracticeMode, type PracticeQuestion } from '../../api.js';
+import {
+  flagPracticeQuestion,
+  submitAttempt,
+  type AttemptResult,
+  type CourseHomeLo,
+  type CourseHomeTheme,
+  type PracticeMode,
+  type PracticeQuestion,
+  type SubmitAttemptInput,
+} from '../../api.js';
 import type { PracticeSession } from '../../practice-session.js';
 import { el, mount } from '../../dom.js';
 import { errorState, optionButton, watermark } from '../../ui.js';
@@ -24,6 +33,18 @@ export interface Callbacks {
   onSkip: () => void;
 }
 
+export interface PracticeCardAdapter {
+  submit: (input: SubmitAttemptInput) => Promise<AttemptResult>;
+  flag?: (questionId: string, reason?: string) => Promise<{ flagged: true }>;
+  updatesMastery: boolean;
+}
+
+const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
+  submit: submitAttempt,
+  flag: flagPracticeQuestion,
+  updatesMastery: true,
+};
+
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
 
 function retryAsQuestion(retry: NonNullable<AttemptResult['feedback']['retry']>, watermarkUid: string, difficulty: PracticeQuestion['difficulty']): PracticeQuestion {
@@ -40,11 +61,15 @@ export function makeQuestionCard(
   question: PracticeQuestion,
   callbacks: Callbacks,
   isRetry = false,
+  adapter: PracticeCardAdapter = LIVE_PRACTICE_ADAPTER,
 ): HTMLElement {
   const card = el('div', { class: 'practice-card' });
   let selectedKey: string | undefined;
   let result: AttemptResult | undefined;
   let submitting = false;
+  let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' = 'idle';
+  let flagReason = '';
+  let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
   // into `session.transcript` partway through this card's life, so reading
@@ -60,7 +85,7 @@ export function makeQuestionCard(
     submitting = true;
     draw();
     try {
-      result = await submitAttempt({
+      result = await adapter.submit({
         questionVersionId: question.questionVersionId,
         loId: currentLo(ctx).lo._id,
         selectedKey,
@@ -70,6 +95,10 @@ export function makeQuestionCard(
         ...(question.paramValues !== undefined ? { paramValues: question.paramValues } : {}),
       });
       session.recordAttempt({ question, selectedKey, result, loId: currentLo(ctx).lo._id });
+      // Keep the persistent sidebar's current-LO badge in sync with the
+      // just-computed mastery response instead of showing the stale status
+      // captured when the practice page first loaded.
+      if (adapter.updatesMastery) currentLo(ctx).status = result.mastery.loStatus;
       callbacks.onTranscriptChange();
     } catch (error) {
       submitting = false;
@@ -77,6 +106,21 @@ export function makeQuestionCard(
       return;
     }
     submitting = false;
+    draw();
+  };
+
+  const submitFlag = async (): Promise<void> => {
+    if (!adapter.flag || flagState === 'submitting' || flagState === 'flagged') return;
+    flagState = 'submitting';
+    flagError = undefined;
+    draw();
+    try {
+      await adapter.flag(question.questionId, flagReason);
+      flagState = 'flagged';
+    } catch (error) {
+      flagState = 'editing';
+      flagError = (error as Error).message;
+    }
     draw();
   };
 
@@ -128,42 +172,166 @@ export function makeQuestionCard(
         : false;
 
     const retry = result?.feedback.retry;
+    const recommendation = result?.mastery.recommendation;
+    const redirect = result?.redirect;
     let retryCard: HTMLElement | false = false;
-    let footer: HTMLElement | false = false;
+    let progressionPanel: HTMLElement | false = false;
+    let footer: HTMLElement;
 
-    // The disabled Flag button (Figma 4/5/6) — "coming soon", per the
-    // Global Constraints out-of-scope list: no click handler, no backend
-    // call. Skip moved out of the card into the shell's sidebar context
-    // panel (Task 3), driven by practice.ts's `setPracticeActions()`;
-    // `callbacks.onSkip` is still threaded through for the retry-in-place
-    // recursion below, which reuses these same Callbacks end to end.
-    const flagButton = (): HTMLElement => el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: true }, '🏳 Flag');
+    const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
+    const flagControl = (): HTMLElement | false => {
+      if (!adapter.flag) return false;
+      if (flagState === 'flagged') {
+        return el(
+          'span',
+          { class: 'btn btn--ghost btn--sm', role: 'status', 'aria-live': 'polite' },
+          'Flagged ✓',
+        );
+      }
+
+      const toggle = el(
+        'button',
+        {
+          class: 'btn btn--ghost btn--sm',
+          type: 'button',
+          disabled: flagState === 'submitting',
+          'aria-expanded': flagState === 'editing',
+          'aria-controls': flagState === 'editing' ? flagFormId : undefined,
+          onclick: () => {
+            flagState = flagState === 'editing' ? 'idle' : 'editing';
+            flagError = undefined;
+            draw();
+          },
+        },
+        flagState === 'submitting' ? 'Flagging…' : flagState === 'editing' ? 'Cancel flag' : '🏳 Flag this question',
+      );
+
+      if (flagState !== 'editing') return toggle;
+
+      const reasonInput = el('textarea', {
+        class: 'input input--area',
+        rows: 2,
+        maxlength: 500,
+        placeholder: 'Optional: tell the instructor what looks wrong',
+        value: flagReason,
+        oninput: (event: Event) => {
+          flagReason = (event.target as HTMLTextAreaElement).value;
+        },
+      });
+      reasonInput.value = flagReason;
+
+      const form = el(
+        'form',
+        {
+          id: flagFormId,
+          class: 'stack',
+          onsubmit: (event: Event) => {
+            event.preventDefault();
+            void submitFlag();
+          },
+        },
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Why are you flagging this question? (optional)' }), reasonInput),
+        flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,
+        el(
+          'div',
+          { class: 'row' },
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'submit' }, 'Send flag'),
+        ),
+      );
+
+      return el('div', { class: 'stack' }, toggle, form);
+    };
 
     if (!locked) {
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
-        flagButton(),
+        flagControl(),
         el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the
       // withheld options stay withheld — this recursive card is a fresh
       // question with its own reveal, not a re-render of the original's.
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
-      retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true);
+      retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true, adapter);
+    } else if (redirect) {
+      const materialItems = redirect.materials.map((material) =>
+        el(
+          'li',
+          {},
+          el(
+            'a',
+            {
+              href:
+                `/api/courses/${encodeURIComponent(ctx.courseId)}` +
+                `/los/${encodeURIComponent(currentLo(ctx).lo._id)}` +
+                `/materials/${encodeURIComponent(material.materialId)}/source`,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            material.name,
+          ),
+        ),
+      );
+      progressionPanel = el(
+        'section',
+        { class: 'practice-redirect', 'aria-labelledby': `redirect-${question.questionVersionId}` },
+        el('p', { class: 'eyebrow', text: 'Suggested review' }),
+        el('h3', { id: `redirect-${question.questionVersionId}`, text: 'Pause and reinforce this learning objective' }),
+        el('p', { text: redirect.message }),
+        materialItems.length > 0
+          ? el('ul', { class: 'practice-redirect__materials' }, ...materialItems)
+          : el('p', { class: 'muted', text: 'No course materials are linked to this LO yet.' }),
+        el(
+          'button',
+          { class: 'btn btn--primary', type: 'button', onclick: callbacks.onNext },
+          'Continue practicing',
+        ),
+      );
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
+    } else if (recommendation) {
+      const themeComplete = recommendation === 'advance-theme';
+      const hasNextLo = ctx.isThemeMode && ctx.loIndex + 1 < ctx.los.length;
+      progressionPanel = el(
+        'section',
+        { class: 'practice-recommendation', 'aria-labelledby': `recommendation-${question.questionVersionId}` },
+        el('p', { class: 'eyebrow', text: themeComplete ? 'Theme milestone' : 'LO covered' }),
+        el('h3', {
+          id: `recommendation-${question.questionVersionId}`,
+          text: themeComplete
+            ? 'You covered every learning objective in this theme.'
+            : hasNextLo
+              ? 'Ready to advance to the next learning objective?'
+              : 'You have covered this learning objective.',
+        }),
+        el(
+          'div',
+          { class: 'row' },
+          el(
+            'button',
+            { class: 'btn btn--primary', type: 'button', onclick: callbacks.onAdvanceLo },
+            themeComplete ? 'Finish this theme' : hasNextLo ? 'Advance to next LO' : 'Back to topic',
+          ),
+          el(
+            'button',
+            { class: 'btn btn--ghost', type: 'button', onclick: callbacks.onNext },
+            'Keep practicing',
+          ),
+        ),
+      );
+      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
     } else {
-      const recommendation = result?.mastery.recommendation;
-      const label = recommendation === 'advance-theme' ? 'Theme complete — continue' : recommendation === 'advance-lo' ? 'Next LO' : 'Next question';
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
-        flagButton(),
+        flagControl(),
         el(
           'button',
-          { class: 'btn btn--primary', type: 'button', onclick: () => (recommendation ? callbacks.onAdvanceLo() : callbacks.onNext()) },
-          label,
+          { class: 'btn btn--primary', type: 'button', onclick: callbacks.onNext },
+          'Next question',
         ),
       );
     }
@@ -176,6 +344,7 @@ export function makeQuestionCard(
       el('div', { class: 'practice-card__options' }, ...options),
       feedback,
       explanations,
+      progressionPanel,
       footer,
       retryCard ? el('div', { class: 'practice-card__retry' }, el('p', { class: 'eyebrow', text: 'Try a similar question' }), retryCard) : false,
     );
