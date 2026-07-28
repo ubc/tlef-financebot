@@ -14,6 +14,10 @@ _Last updated: 2026-07-28_
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 - Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
 - Task 8 question import: **complete on independent PR #39**.
+- Saurav Task 6 remediation: **already merged on PR #31**; its stale
+  “ready to push” status was reconciled on 2026-07-28.
+- Task 10 custom generation/regeneration: **cross-owner takeover in progress
+  by Stephen/Codex**, after recording the exact scope in both status files.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -131,6 +135,33 @@ No Saurav implementation existed to duplicate. The implementation is
 suites / 548 tests, typecheck/lint/build, and the real instructor browser
 upload/preview/commit flow passed. Cleanup assertions found zero remaining
 course, question, version, or role fixtures.
+
+## Task 10 cross-owner claim
+
+Stephen authorized Codex to help complete unfinished Saurav tasks so Phase 2
+can continue, with status recorded for both developers. The audit found that
+Task 6 was already merged in PR #31 despite Saurav's stale status; Task 10 is
+the next genuinely unstarted and now-unblocked item because P2-0 merged in PR
+#32.
+
+Codex is taking Task 10 without waiting for Saurav confirmation. The claimed
+implementation paths are:
+
+- `server/src/services/generation.service.ts`
+- `server/src/routes/generation.routes.ts`
+- `server/src/types/domain.ts`
+- `server/src/services/questions.service.ts`
+- `client/src/views/instructor/preseeding.ts`
+- `client/src/views/instructor/question-detail.ts`
+- `client/src/api.ts`
+- focused Task 10 tests
+- `docs/api-contract.md` and Phase 2 plan/status documents
+
+The existing pre-seeding page already owns custom prompt, target LO/type/
+difficulty, and durable run/SSE progress. Task 10 will extend that surface with
+presets and material mention selection rather than creating a duplicate
+generation page. Regeneration remains a side-by-side, no-autosave preview;
+only the existing explicit edit/versioning path may replace the original.
 
 ## Admin v0 decisions
 

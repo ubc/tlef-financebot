@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 8 released on PR #39; no Codex implementation path active
-**Base:** PR #39 head `2d3313e` (`codex/phase-2-task8-import`)
+**State:** Task 10 active — recorded cross-owner takeover
+**Base:** `origin/main` at `1ea1647`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -11,6 +11,33 @@ narrow plan commits instead of running the current whole-folder `sync-plans`
 script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
+
+## Active Task 10
+
+Phase 2 Task 10 — custom-prompt generation, material-scoped @-mentions,
+editable presets, and side-by-side question regeneration. Stephen authorized
+this Saurav-owned takeover; it is recorded in both developers' status files
+before implementation. P2-0 is merged, and no Saurav Task 10 implementation
+branch or active claim exists.
+
+### Task 10 files claimed by Codex
+
+- `server/src/services/generation.service.ts`
+- `server/src/routes/generation.routes.ts`
+- `server/src/types/domain.ts`
+- `server/src/services/questions.service.ts`
+- `client/src/views/instructor/preseeding.ts`
+- `client/src/views/instructor/question-detail.ts`
+- `client/src/api.ts`
+- focused Task 10 tests
+- `docs/api-contract.md`
+- Phase 2 Task 10 plan/status documents
+
+The existing pre-seeding view is the canonical generation UI and already
+consumes P2-0 run/SSE state, so Codex will extend it instead of adding the
+duplicate `generate.ts` page named in the older plan. Shared files remain
+append-only/surgical. Final commit, PR, verification, and release state will
+replace this active claim at handoff.
 
 ## Released Task 8
 

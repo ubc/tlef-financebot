@@ -2,9 +2,9 @@
 
 _Last updated: 2026-07-28_
 
-**Tasks 1, 2 (instructor half), and 3 merged (PRs #27/#29, #28, #30). Task 6
-code-complete and ready to push; Task 8 is complete on PR #39 and joint Task
-11 is complete on PR #38.**
+**Tasks 1, 2 (instructor half), 3, and 6 merged (PRs #27/#29, #28, #30,
+#31). Task 8 is complete on PR #39 and joint Task 11 is complete on PR #38.
+Stephen/Codex has recorded a cross-owner Task 10 takeover below.**
 Personal plan:
 [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-2-pilot-readiness-saurav.md).
 Executed with the superpowers `subagent-driven-development` skill; the running
@@ -58,10 +58,10 @@ Stephen's source documents (unedited by me):
 | 1 | Flag service — state machine, auto-pause | **Merged** (PRs #27, #29 — `saurav/task-1-flag-service`) | nothing |
 | 2 (my half) | Instructor flag-resolution queue | **Merged** (PR #28 — `saurav/task-2-flag-queue`) | nothing |
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
-| 6 | Remediation report + checklist | **Code-complete, review approved** (`saurav/task-6-remediation`, commits `a5f56b1`+`20dc88f`+`8c3b6c3`) — not yet pushed as a PR | nothing |
+| 6 | Remediation report + checklist | **Merged** (PR #31 — `saurav/task-6-remediation`, CI passed) | nothing |
 | 8 | Question import (CSV/JSON/QTI) | **Complete by Stephen/Codex on PR #39** (`2d3313e`) | nothing |
 | 9 | Parameterized-script migration | not started | PRs #34 + #39 merge |
-| 10 | Custom-prompt generation/regeneration | not started | nothing; P2-0 merged in PR #32 |
+| 10 | Custom-prompt generation/regeneration | **In progress by Stephen/Codex (recorded cross-owner takeover)** | nothing; P2-0 merged in PR #32 |
 | 11 | Phase exit — flag-loop E2E | **Complete on PR #38** | Joint verification recorded |
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
@@ -79,6 +79,23 @@ wiring, `client/src/api.ts`, `docs/api-contract.md`, and Task 8 status docs.
 Saurav need not confirm or stop unrelated work. Task 8 is complete on PR #39
 at `2d3313e`; its paths are released. Task 9 can extend the import files after
 PR #39 and its Task 5 dependency PR #34 merge.
+
+## Stephen/Codex Task 10 takeover — 2026-07-28
+
+Stephen explicitly authorized Codex to finish uncompleted Saurav tasks when
+that helps unblock Phase 2, provided both status files are updated. P2-0 is
+merged in PR #32 and no Task 10 implementation branch or active file claim was
+found. Codex is therefore taking Task 10 without waiting for confirmation.
+
+The implementation claim is limited to the existing generation authoring
+flow: `server/src/services/generation.service.ts`,
+`server/src/routes/generation.routes.ts`, `server/src/types/domain.ts`,
+`server/src/services/questions.service.ts`,
+`client/src/views/instructor/preseeding.ts`,
+`client/src/views/instructor/question-detail.ts`, `client/src/api.ts`, focused
+Task 10 tests, `docs/api-contract.md`, and the Phase 2 plan/status ledger.
+Shared wiring will remain append-only. Codex will record the final commit, PR,
+verification, and released paths here after handoff.
 
 ## Deviations from the plan
 
@@ -210,9 +227,8 @@ before merging PR for Task 2.
 
 ## What's left
 
-- Push **Task 6** as a PR (`saurav/task-6-remediation`).
 - Merge/review **Task 8** PR #39; Task 9 shares its import files.
-- **Task 10 is unblocked** by merged P2-0 PR #32.
+- Review/merge Codex's recorded cross-owner **Task 10** PR after handoff.
 - Watch for Stephen's Task 5 PR #34 and Task 8 PR #39 merging; both unblock
   Task 9.
 - Still owe: Phase 1 S0 reconciliation (see above).
