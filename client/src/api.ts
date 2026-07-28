@@ -64,6 +64,7 @@ export interface AuthUser {
   uid: string;
   displayName: string;
   isAdmin: boolean;
+  platformInstructor?: boolean;
   affiliations: string[];
   courseRoles: Array<{ courseId: string; role: string }>;
 }
@@ -80,6 +81,47 @@ export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
+}
+
+// --- Admin: platform-Instructor accounts -----------------------------------
+
+export interface AdminAccount {
+  puid: string;
+  status: 'active' | 'pending';
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  platformInstructor: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  grantedAt?: string;
+  updatedAt?: string;
+}
+
+/** GET /api/admin/users?query= -> persisted users plus pending PUID grants. */
+export function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
+  const search = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
+  return request<AdminAccount[]>(`/api/admin/users${search}`);
+}
+
+/** PUT /api/admin/platform-instructors/:puid -> active or pending grant. */
+export function grantPlatformInstructor(puid: string): Promise<AdminAccount> {
+  return request<AdminAccount>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
+    { method: 'PUT' },
+  );
+}
+
+/** DELETE /api/admin/platform-instructors/:puid -> idempotent revocation. */
+export function revokePlatformInstructor(
+  puid: string,
+): Promise<{ puid: string; granted: false; revoked: boolean }> {
+  return request<{ puid: string; granted: false; revoked: boolean }>(
+    `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
+    { method: 'DELETE' },
+  );
 }
 
 // --- Role areas (role-gated). See server/src/routes/roles.routes.ts. ---------
@@ -288,6 +330,11 @@ export interface PracticeQuestion {
   degraded: 'none' | 'repeat' | 'adjacent' | 'any';
   options: PracticeQuestionOption[];
   watermark: string;
+  /** Present only for a parameterized question — the values drawn for THIS
+   * serve, already substituted into `stem`/`options`. Absent for a
+   * conceptual (non-parameterized) question. */
+  paramValues?: Record<string, number>;
+  seed?: number;
 }
 
 /** POST /api/courses/:courseId/practice/next { loId, sessionServedIds } ->
@@ -302,6 +349,23 @@ export function getNextPracticeQuestion(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
+ * Student-only and idempotent for the signed-in student/current version. */
+export function flagPracticeQuestion(
+  questionId: string,
+  reason?: string,
+): Promise<{ flagged: true }> {
+  const normalizedReason = reason?.trim();
+  return request<{ flagged: true }>(
+    `/api/questions/${encodeURIComponent(questionId)}/flag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(normalizedReason ? { reason: normalizedReason } : {}),
+    },
+  );
 }
 
 export type PracticeMode = 'topic-practice' | 'review-book' | 'exam-prep';
@@ -326,10 +390,16 @@ export interface AttemptResult {
       type: 'mcq' | 'true-false';
       stem: string;
       options: PracticeQuestionOption[];
+      paramValues?: Record<string, number>;
+      seed?: number;
     };
   };
   mastery: { loStatus: MasteryStatus; recommendation?: 'advance-lo' | 'advance-theme' };
   reviewBook: { added: boolean };
+  redirect?: {
+    materials: Array<{ name: string; materialId: string }>;
+    message: string;
+  };
 }
 
 export interface SubmitAttemptInput {
@@ -988,6 +1058,59 @@ export function regenerateQuestion(
   );
 }
 
+// --- Instructor: question import (IN-Q01) -----------------------------------
+
+export type ImportFormat = 'csv' | 'json' | 'qti';
+
+export interface ImportCandidate {
+  type: QuestionType | 'other';
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    role?: OptionRole;
+    explanation?: string;
+  }>;
+  correctKey: string;
+  difficulty?: Difficulty;
+  parameterizable: boolean;
+}
+
+export interface ImportPreview {
+  format: ImportFormat;
+  candidates: ImportCandidate[];
+  failures: Array<{ line: number | string; reason: string }>;
+}
+
+/** Multipart upload -> parsed preview. No questions are written. */
+export function previewQuestionImport(courseId: string, file: File): Promise<ImportPreview> {
+  const form = new FormData();
+  form.append('file', file);
+  return request<ImportPreview>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/preview`,
+    { method: 'POST', body: form },
+  );
+}
+
+/** Confirm a preview -> Draft questions. The server revalidates every row. */
+export function commitQuestionImport(
+  courseId: string,
+  input: {
+    candidates: ImportCandidate[];
+    themeId?: string;
+    loId?: string;
+  },
+): Promise<{ imported: number; autoConverted: number }> {
+  return request<{ imported: number; autoConverted: number }>(
+    `/api/courses/${encodeURIComponent(courseId)}/import/commit`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 // --- Instructor: question bank (IN-Q02/Q03/Q04/Q05/Q07/Q08) ------------------
 //
 // Added in Task E. Verified against server/src/routes/questions.routes.ts +
@@ -1167,6 +1290,59 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionIds, to }),
+  });
+}
+
+// --- Instructor: parameterization config (Task 5, IN-Q09) ------------------
+
+export interface ParamSlotInput {
+  name: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  values?: number[];
+}
+
+/** PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }
+ * -> the new/unchanged current QuestionVersion (same versioning rules as
+ * `editQuestion` — saves independently of approval state, IN-Q09).
+ * Instructor-only. */
+export function patchQuestionParams(
+  questionId: string,
+  patch: { paramSlots?: ParamSlotInput[]; generateScript?: string },
+): Promise<QuestionVersion> {
+  return request<QuestionVersion>(`/api/questions/${encodeURIComponent(questionId)}/params`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export interface ParamPreviewDraw {
+  seed: number;
+  values: Record<string, number>;
+  /** Present only when the request body included `stem`. */
+  stem?: string;
+}
+
+export interface ParamPreviewResult {
+  draws: ParamPreviewDraw[];
+  /** Defined paramSlots with no matching {{placeholder}} in the stem. */
+  warnings: string[];
+}
+
+/** POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }
+ * -> 5 independently-drawn sample resolutions of an EDIT-IN-PROGRESS
+ * candidate (never the currently-saved version) — never persists anything.
+ * Instructor-only. */
+export function previewQuestionParams(
+  questionId: string,
+  candidate: { paramSlots?: ParamSlotInput[]; generateScript?: string; stem?: string },
+): Promise<ParamPreviewResult> {
+  return request<ParamPreviewResult>(`/api/questions/${encodeURIComponent(questionId)}/params/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(candidate),
   });
 }
 

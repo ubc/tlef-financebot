@@ -626,7 +626,25 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         stemTextarea,
         optionsSection,
         errorSlot,
-        el('div', { class: 'question-actions' }, approveButton, rejectButton, regenerateButton),
+        el(
+          'div',
+          { class: 'question-actions' },
+          approveButton,
+          rejectButton,
+          regenerateButton,
+          el(
+            'a',
+            {
+              class: 'btn btn--ghost',
+              href: `#/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(questionId)}/params`,
+              onclick: (e: Event) => {
+                e.preventDefault();
+                navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(questionId)}/params`);
+              },
+            },
+            '⚙ Parameters',
+          ),
+        ),
         regenerationPanel,
         el('div', { class: 'question-save-row' }, saveButton),
       ),

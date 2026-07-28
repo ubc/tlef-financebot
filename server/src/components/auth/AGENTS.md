@@ -46,6 +46,12 @@ Two one-time local setup steps are required (documented in the root README):
   `rolesOf(user)` (lower-cased role array), `hasRole(user, ...roles)`, and the
   `ensureRole(...roles)` guard (`401` signed out, `403` wrong role). See
   "Role-based authorization" below.
+- `platform-guards.ts` — explicit platform capability guards:
+  `ensureAdmin()` reads the persisted `isAdmin` bit (still sourced from
+  `ADMIN_CWL_ALLOWLIST` at login), while `ensurePlatformInstructor()` accepts
+  Admins or a persisted Admin-managed `platformInstructor` grant. These are
+  deliberately separate from both SAML affiliation roles and per-course
+  `courseRoles`.
 - `index.ts` — `configureAuth()`: registers the strategy + serialize/deserialize
   and returns `{ passport, sessionMiddleware }` for `app.ts` to install. Also
   re-exports the guards (`ensureAuthenticated` / `conditionalAuth` from
@@ -257,6 +263,16 @@ do?". `roles.ts` derives roles from the SAML `eduPersonAffiliation` attribute
 (the local IdP issues `faculty` / `student` / `staff`) and provides an
 `ensureRole(...roles)` guard: `401` when signed out, `403` when signed in without
 one of the required roles.
+
+Admin Console v0 adds another authorization layer: a faculty affiliation does
+not make a User a FinanceBot Instructor. Admins grant `platformInstructor` by
+PUID through `/api/admin/platform-instructors`; the grant may be pending before
+first login and is applied to the same PUID-backed User by
+`upsertUserFromSaml()`. Admin access remains a separate `isAdmin` capability:
+an Instructor grant never passes `ensureAdmin()`.
+`ensurePlatformInstructor()` protects course creation.
+Access to an existing course continues to use `ensureCourseInstructor()` from
+`course-guards.ts`, so a platform Instructor cannot inspect every course.
 
 ```ts
 import { ensureRole } from '../components/auth';

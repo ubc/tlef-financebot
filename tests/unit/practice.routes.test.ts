@@ -26,12 +26,17 @@ jest.mock('../../server/src/services/review-book.service', () => ({
   getSessionSummaryForStart: jest.fn(),
 }));
 
+jest.mock('../../server/src/services/progression.service', () => ({
+  getRedirectMaterialSource: jest.fn(),
+}));
+
 import { practiceRouter } from '../../server/src/routes/practice.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import { selectNextQuestion, studentCourseHome } from '../../server/src/services/serving.service';
 import { submitAttempt, getCourseIdForQuestionVersion } from '../../server/src/services/attempts.service';
 import { recordSkip } from '../../server/src/services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../../server/src/services/review-book.service';
+import { getRedirectMaterialSource } from '../../server/src/services/progression.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -74,6 +79,7 @@ beforeEach(() => {
   jest.mocked(recordSkip).mockReset();
   jest.mocked(storeDeferredSummary).mockReset();
   jest.mocked(getSessionSummaryForStart).mockReset();
+  jest.mocked(getRedirectMaterialSource).mockReset();
 });
 
 // -----------------------------------------------------------------------------
@@ -148,6 +154,79 @@ describe('POST /api/courses/:courseId/practice/next — serving-response no-leak
   });
 });
 
+// -----------------------------------------------------------------------------
+// Task 5 (IN-Q09/ST-P03): a parameterized question's `/practice/next`
+// response substitutes the {{slot}} stem/option placeholders with a freshly
+// drawn seed's values, and returns both `paramValues` and `seed` so the
+// client can echo them back on submission. resolveParamValues/substituteParams
+// (params.service.ts) run for real here — not mocked — over a fixed
+// `paramSlots` version, so this also exercises the seeded-draw path
+// end-to-end through the route.
+// -----------------------------------------------------------------------------
+describe('POST /api/courses/:courseId/practice/next — parameterized question', () => {
+  it('substitutes stem/options and returns paramValues + seed for a paramSlots version', async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    jest.mocked(selectNextQuestion).mockResolvedValue({
+      question: { _id: questionId } as never,
+      version: {
+        _id: versionId,
+        type: 'mcq',
+        stem: 'A loan of {{principal}} at {{rate}}%.',
+        difficulty: 'medium',
+        paramSlots: [
+          { name: 'principal', min: 1000, max: 1000, step: 1 },
+          { name: 'rate', min: 5, max: 5, step: 1 },
+        ],
+        options: [
+          { key: 'A', text: 'The rate is {{rate}}%', role: 'correct', explanation: 'e' },
+          { key: 'B', text: 'Option B', role: 'common-misconception', explanation: 'e' },
+          { key: 'C', text: 'Option C', role: 'partially-correct', explanation: 'e' },
+          { key: 'D', text: 'Option D', role: 'clearly-wrong', explanation: 'e' },
+        ],
+      } as never,
+      degraded: 'none',
+    });
+
+    const res = await request(makeApp(student))
+      .post(`/api/courses/${courseId.toHexString()}/practice/next`)
+      .send({ loId: loId.toHexString(), sessionServedIds: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.stem).toBe('A loan of 1000 at 5%.');
+    expect(res.body.options[0]).toEqual({ key: 'A', text: 'The rate is 5%' });
+    expect(res.body.paramValues).toEqual({ principal: 1000, rate: 5 });
+    expect(typeof res.body.seed).toBe('number');
+  });
+
+  it('omits paramValues/seed entirely for a non-parameterized question', async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    jest.mocked(selectNextQuestion).mockResolvedValue({
+      question: { _id: questionId } as never,
+      version: {
+        _id: versionId,
+        type: 'true-false',
+        stem: 'Is this true?',
+        difficulty: 'easy',
+        options: [
+          { key: 'T', text: 'True', role: 'correct', explanation: 'e' },
+          { key: 'F', text: 'False', role: 'common-misconception', explanation: 'e' },
+        ],
+      } as never,
+      degraded: 'none',
+    });
+
+    const res = await request(makeApp(student))
+      .post(`/api/courses/${courseId.toHexString()}/practice/next`)
+      .send({ loId: loId.toHexString(), sessionServedIds: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('paramValues');
+    expect(res.body).not.toHaveProperty('seed');
+  });
+});
+
 describe('practice routes — 403 non-enrolled', () => {
   it('403s a non-enrolled student on /practice/next', async () => {
     const res = await request(makeApp(nonEnrolled))
@@ -161,6 +240,51 @@ describe('practice routes — 403 non-enrolled', () => {
   it('403s a non-enrolled student on /home', async () => {
     const res = await request(makeApp(nonEnrolled)).get(`/api/courses/${courseId.toHexString()}/home`);
     expect(res.status).toBe(403);
+  });
+
+  it('403s a non-enrolled student before resolving a redirect material source', async () => {
+    const res = await request(makeApp(nonEnrolled)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${new ObjectId().toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(403);
+    expect(getRedirectMaterialSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET redirect material source', () => {
+  it('redirects an enrolled student to a linked URL material', async () => {
+    const materialId = new ObjectId();
+    jest.mocked(getRedirectMaterialSource).mockResolvedValue({
+      kind: 'url',
+      url: 'https://example.com/week-2',
+    });
+
+    const res = await request(makeApp(student)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${materialId.toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('https://example.com/week-2');
+    expect(getRedirectMaterialSource).toHaveBeenCalledWith(
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+    );
+  });
+
+  it('404s a missing or unassigned redirect material', async () => {
+    jest.mocked(getRedirectMaterialSource).mockResolvedValue(null);
+
+    const res = await request(makeApp(student)).get(
+      `/api/courses/${courseId.toHexString()}/los/${loId.toHexString()}` +
+      `/materials/${new ObjectId().toHexString()}/source`,
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('material-not-found');
   });
 });
 
@@ -231,6 +355,38 @@ describe('POST /api/attempts', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.correct).toBe(true);
+  });
+
+  // Final whole-branch review I1: the client (practice-card.ts) now echoes
+  // `question.paramValues` back in the `POST /api/attempts` body when the
+  // served question was parameterized. This proves the server side of that
+  // contract — a `paramValues` field in the request body reaches
+  // `submitAttempt`'s input unchanged — so paired with practice.routes.test's
+  // "parameterized question" describe above (proving `/practice/next` returns
+  // `paramValues` for the client to echo) and attempts.service.test.ts's
+  // paramValues-substitution coverage, the full round trip is exercised.
+  it('forwards a parameterized submission\'s paramValues from the request body to submitAttempt (I1 client echo contract)', async () => {
+    const questionVersionId = new ObjectId();
+    jest.mocked(getCourseIdForQuestionVersion).mockResolvedValue(courseId);
+    jest.mocked(submitAttempt).mockResolvedValue({
+      correct: true,
+      feedback: { strategy: 'b', revealed: [] },
+      mastery: { loStatus: 'in-progress' },
+      reviewBook: { added: false },
+    } as never);
+
+    const res = await request(makeApp(student))
+      .post('/api/attempts')
+      .send({
+        questionVersionId: questionVersionId.toHexString(),
+        loId: loId.toHexString(),
+        mode: 'topic-practice',
+        selectedKey: 'A',
+        paramValues: { principal: 1000, rate: 5 },
+      });
+
+    expect(res.status).toBe(200);
+    expect(submitAttempt).toHaveBeenCalledWith(expect.objectContaining({ paramValues: { principal: 1000, rate: 5 } }));
   });
 });
 

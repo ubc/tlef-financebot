@@ -25,11 +25,14 @@ export interface AppUser {
  */
 const ATTRIBUTES = [
   'uid',
+  'cwlLoginName',
   'ubcEduCwlPuid',
   'mail',
   'eduPersonAffiliation',
   'givenName',
   'sn',
+  'displayName',
+  'cn',
   'eduPersonPrincipalName',
 ];
 

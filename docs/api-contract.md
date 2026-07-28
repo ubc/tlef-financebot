@@ -9,10 +9,27 @@ Status codes: 400 validation, 401 unauthenticated, 403 wrong role/course,
 404 not found, 409 conflict (e.g. duplicate enrollment), 503 background queue unavailable.
 
 **Auth guards:** `student` = enrolled in the course; `instructor` = course
-instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
+instructor (owner/co-instructor); `platform instructor` = explicit global grant
+for Instructor shell/course creation; `ta` = course TA; `admin` = platform
+admin.
 
 ## Auth
-- `GET /api/auth/me` (public) → `{ authenticated, user?: { puid, uid, displayName, isAdmin, affiliations, courseRoles } }`
+- `GET /api/auth/me` (public) → `{ authenticated, user?: { puid, uid, displayName, isAdmin, platformInstructor?, affiliations, courseRoles } }`
+
+## Admin — platform-Instructor accounts
+
+Every route below is platform-Admin-only. Grants use the UBC PUID as the
+canonical identifier, including when the user has not logged in yet. A pending
+grant attaches to the same PUID-backed User on first SAML login.
+
+- `GET /api/admin/users?query=` →
+  `[{ puid, uid, displayName, email, affiliations, isAdmin, platformInstructor, status: 'active' | 'pending', lastLoginAt?, createdAt?, grantedAt?, updatedAt? }]`
+  (all persisted Users plus pending grants; raw SAML/session data is never
+  returned)
+- `PUT /api/admin/platform-instructors/:puid` → one active/pending account
+  (idempotent; empty body)
+- `DELETE /api/admin/platform-instructors/:puid` →
+  `{ puid, granted: false, revoked: boolean }` (idempotent)
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`
@@ -22,6 +39,7 @@ instructor (owner/co-instructor); `ta` = course TA; `admin` = platform admin.
 
 ## Courses (instructor)
 - `POST /api/courses { name, courseCode, term }` → 201 Course
+  (platform-Instructor or Admin; faculty affiliation alone is insufficient)
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
 - `PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
 - `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
@@ -54,6 +72,17 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   agentDecision + notes + versions list + optional regeneration request history
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
   creates a new QuestionVersion; response includes it (IN-Q03)
+- `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
+  new/unchanged QuestionVersion (same versioning rules as the generic PATCH above,
+  scoped to just the two parameterization content keys); saves independently of
+  approval state (IN-Q09, Task 5)
+- `POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }` →
+  `{ draws: [{ seed, values, stem? }] x5, warnings: string[] }` — previews an
+  EDIT-IN-PROGRESS candidate (the request body, not the currently-saved version)
+  with 5 independently-drawn sample resolutions; `stem` falls back to the
+  question's currently-saved stem when omitted from the body; `warnings` lists
+  any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
+  stem. Never persists anything. (IN-Q09, Task 5)
 - `POST /api/questions/:questionId/transition { to }` → question (validated against PUBLICATION_TRANSITIONS; IN-Q04/Q07)
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
@@ -72,6 +101,27 @@ On successful ingest a material may gain a `classificationSuggestion { themeId, 
   a QuestionVersion or replace current content. Replacement is an explicit
   `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
+
+## Question import (instructor)
+
+- `POST /api/courses/:courseId/import/preview` — multipart field `file`
+  (`.csv`, `.json`, `.xml`, or `.qti`, maximum 5 MB) →
+  `{ format: 'csv'|'json'|'qti', candidates: ImportCandidate[], failures:
+  [{ line: number|string, reason }] }`. Parsing is partial-success: an invalid
+  row/item is reported without removing valid candidates. No question is
+  written during preview.
+- `POST /api/courses/:courseId/import/commit { candidates, themeId?, loId? }` →
+  `201 { imported, autoConverted }`. The preview candidates are untrusted
+  round-tripped input and are revalidated as one batch before writes.
+  Questions always enter as Drafts; missing assignment ids leave them
+  unassigned. `type: 'other'` is converted to MCQ/T-F through the configured
+  LLM and labelled `auto-converted`. Numeric candidates meeting the
+  two-distinct-values plus currency/percent/rate heuristic are labelled
+  `convertible-to-parameterized`.
+
+`ImportCandidate` is `{ type: 'mcq'|'true-false'|'other', stem, options:
+[{ key, text, role?, explanation? }], correctKey, difficulty?,
+parameterizable }`.
 
 ## Content runs (instructor; Phase 2 P2-0)
 
@@ -110,12 +160,37 @@ of remaining indefinitely active.
 ## Practice (student)
 - `GET /api/courses/:courseId/home` → themes visible to the student (≥1 approved question,
   availableFrom passed, not archived) with per-LO mastery labels (ST-P01/P02)
-- `POST /api/courses/:courseId/practice/next { loId?, themeId?, sessionServedIds: string[] }` →
-  `{ question: { questionId, questionVersionId, type, stem, options: [{ key, text }], loId, themeId, paramValues? }, watermark }`
-  — never includes roles/explanations/correctness. 404 when no approved question exists.
+- `POST /api/courses/:courseId/practice/next { loId, sessionServedIds: string[] }` →
+  `{ questionId, questionVersionId, type, stem, difficulty, degraded, options: [{ key, text }], watermark, paramValues?, seed? }`
+  — never includes roles/explanations/correctness. `stem`/`options` are already substituted
+  against a freshly-drawn `seed` for a parameterized question (`paramValues`/`seed` present
+  only in that case — see params.service.ts's `resolveParamValues`/`substituteParams`, Task 5,
+  IN-Q09/ST-P03). A fresh `seed` is drawn on every call, including Review-Book re-practice
+  (ST-R04) — there is one serving call site for both. 404 when no approved question exists.
+  Within one client practice round, selection exhausts every unseen Approved
+  question for the LO before returning a repeated id. The client treats that
+  first repeat as the round boundary and asks explicitly before starting a new
+  repeat round.
 - `POST /api/attempts { questionVersionId, loId, selectedKey, mode, sessionServedIds, isRetry?, paramValues? }` →
-  `{ correct, feedback: { strategy: 'a' | 'b', revealed: [{ key, text, role, explanation }] | chosenOnly, retryAvailable },
-     mastery: { loStatus, recommendation? }, reviewBook: { added } }` (ST-P04)
+  `{ correct,
+     feedback: { strategy: 'a' | 'b',
+                 revealed: [{ key, text, role, explanation, correct }] | chosenOnly (all substituted against the pinned paramValues),
+                 retry?: { questionId, questionVersionId, type, stem, options: [{ key, text }], paramValues?, seed? } },
+     mastery: { loStatus, recommendation? }, reviewBook: { added },
+     redirect?: { materials: [{ name, materialId }], message } }` (ST-P04, ST-P07)
+  — `paramValues` sent back here are trusted verbatim and pinned onto the AttemptRecord (never
+  re-derived/re-validated server-side — they don't affect grading, only the student's own
+  displayed feedback numbers). A Strategy-A `retry` question that is itself parameterized carries
+  its OWN freshly-resolved `paramValues`/`seed`, independent of the just-answered question's.
+  `redirect` appears after the course-configured number of consecutive
+  easy/medium misses for that LO. A hard-tier miss breaks the redirect cluster
+  so mastery tier step-back has precedence. Redirect responses contain only
+  the chosen wrong option (never the current correct answer), do not attach a
+  Strategy-A retry, and never block the next-question action.
+- `GET /api/courses/:courseId/los/:loId/materials/:materialId/source` →
+  `302` to a linked URL material or an authenticated file download. Student
+  guard applies; only a ready material assigned to this exact course/LO
+  resolves, otherwise 404.
 - `POST /api/courses/:courseId/los/:loId/skip { attempted: boolean }` → 204 (ST-P06)
 - `GET /api/courses/:courseId/session-summary` →
   `{ deferred?: SessionEndSummary, welcome: boolean }` — start-of-session payload; `welcome: true`

@@ -70,12 +70,21 @@ export interface User {
   displayName: string;
   email: string;
   affiliations: string[]; // raw eduPersonAffiliation values, lower-cased
-  isAdmin: boolean; // from ADMIN_CWL_ALLOWLIST at login time
+  isAdmin: boolean; // from ADMIN_CWL_ALLOWLIST or the staging bootstrap PUID at login
+  platformInstructor?: boolean; // explicit global grant; never derived from SAML affiliation
   courseRoles: Array<{ courseId: ObjectId; role: CourseRole }>;
   onboardingAcknowledgedAt?: Date; // mandatory service-use + copyright ack (§4.1)
   researchExportConsent?: boolean; // optional, declinable (§4.1)
   createdAt: Date;
   lastLoginAt: Date;
+}
+
+/** Admin-managed global Instructor grant keyed by the canonical SAML PUID. */
+export interface PlatformInstructorGrant {
+  puid: string;
+  grantedByPuid: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Course {

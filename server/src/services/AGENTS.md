@@ -34,6 +34,11 @@ objects directly.
   event/warning history, startup reconciliation, and post-write course
   subscribers. Material/generation services must call this API rather than
   updating `contentRuns` directly.
+- `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
+  Uses PUID as the canonical identity, updates an existing matching User when
+  present, leaves a pending grant otherwise, lists safe persisted User fields,
+  and writes role assignment/revocation audit events. Raw SAML assertions never
+  enter its response shapes.
 
 Other services will appear as more components are built up.
 

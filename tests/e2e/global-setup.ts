@@ -1,6 +1,11 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { connectMongo } from '../../server/src/components/mongodb';
+import {
+  platformInstructorGrantsCol,
+  usersCol,
+} from '../../server/src/components/mongodb/collections';
 
 // Where the authenticated browser state (cookies) is saved. Authenticated specs
 // reuse it via `test.use({ storageState: AUTH_FILE })` so they don't each repeat
@@ -16,6 +21,30 @@ export const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:6118';
+  // Explicit local-parallelism escape hatch: a second agent may need to run
+  // the app on another localhost port while :6118 is already occupied. The
+  // local IdP's SP metadata still posts SAML back to :6118, but its localhost
+  // session cookie is valid on the isolated port too. Reuse is opt-in, never
+  // enabled by CI/default runs, and verifies the stored session against THIS
+  // run's baseURL before trusting it.
+  if (process.env.E2E_REUSE_AUTH_FILE === 'true') {
+    if (!fs.existsSync(AUTH_FILE)) {
+      throw new Error('global-setup: E2E_REUSE_AUTH_FILE=true but no saved auth state exists.');
+    }
+    const reuseBrowser = await chromium.launch();
+    const context = await reuseBrowser.newContext({ storageState: AUTH_FILE });
+    try {
+      const me = await context.request.get(`${baseURL}/api/auth/me`);
+      const state = (await me.json()) as { authenticated: boolean };
+      if (!state.authenticated) {
+        throw new Error('global-setup: saved auth state is not valid for this local app session.');
+      }
+    } finally {
+      await reuseBrowser.close();
+    }
+    return;
+  }
+
   // Test users live in the shared docker-simple-saml IdP
   // (services/docker-simple-saml/config/simplesamlphp/authsources.php).
   // `faculty` carries eduPersonAffiliation=faculty, so the role-gated demo
@@ -41,11 +70,40 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
     // Fail loudly if the session was not actually established.
     const me = await page.request.get(`${baseURL}/api/auth/me`);
-    const state = (await me.json()) as { authenticated: boolean };
-    if (!state.authenticated) {
+    const state = (await me.json()) as {
+      authenticated: boolean;
+      user?: { puid: string; uid: string };
+    };
+    if (!state.authenticated || !state.user) {
       throw new Error(
         'global-setup: SAML login did not establish a session. Is the IdP running ' +
           'and the SP entry / certificate configured? See README "Authentication".',
+      );
+    }
+
+    // Admin Console v0 deliberately stopped treating the SAML `faculty`
+    // affiliation as a platform-wide Instructor grant. The shared E2E faculty
+    // fixture still needs to create isolated courses, so seed the same
+    // admin-managed grant record after login, keyed by the canonical PUID.
+    // This is test-fixture setup only; production authorization remains behind
+    // ensurePlatformInstructor() and the Admin API.
+    if (username.trim().toLowerCase() === 'faculty') {
+      await connectMongo();
+      const now = new Date();
+      await platformInstructorGrantsCol().updateOne(
+        { puid: state.user.puid },
+        {
+          $set: {
+            grantedByPuid: state.user.puid,
+            updatedAt: now,
+          },
+          $setOnInsert: { puid: state.user.puid, createdAt: now },
+        },
+        { upsert: true },
+      );
+      await usersCol().updateOne(
+        { puid: state.user.puid },
+        { $set: { platformInstructor: true } },
       );
     }
 

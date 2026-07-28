@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<assessmentTest xmlns="http://www.imsglobal.org/xsd/imsqti_v2p1">
+  <testPart identifier="part-1">
+    <assessmentSection identifier="section-1">
+      <assessmentItem identifier="qti-mcq-1" title="NPV" adaptive="false" timeDependent="false">
+        <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier">
+          <correctResponse><value>A</value></correctResponse>
+        </responseDeclaration>
+        <itemBody>
+          <choiceInteraction responseIdentifier="RESPONSE" maxChoices="1">
+            <prompt>Which rule accepts a project when it creates value?</prompt>
+            <simpleChoice identifier="A">Accept when NPV is positive.</simpleChoice>
+            <simpleChoice identifier="B">Accept when payback is longest.</simpleChoice>
+            <simpleChoice identifier="C">Accept every project with revenue.</simpleChoice>
+            <simpleChoice identifier="D">Accept only when the discount rate is zero.</simpleChoice>
+          </choiceInteraction>
+        </itemBody>
+      </assessmentItem>
+      <assessmentItem identifier="qti-mcq-2" title="Bonds" adaptive="false" timeDependent="false">
+        <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier">
+          <correctResponse><value>C</value></correctResponse>
+        </responseDeclaration>
+        <itemBody>
+          <choiceInteraction responseIdentifier="RESPONSE" maxChoices="1">
+            <prompt>What happens to a fixed-rate bond price when market yields rise?</prompt>
+            <simpleChoice identifier="A">It always stays unchanged.</simpleChoice>
+            <simpleChoice identifier="B">It becomes zero.</simpleChoice>
+            <simpleChoice identifier="C">It falls.</simpleChoice>
+            <simpleChoice identifier="D">It rises by the coupon rate.</simpleChoice>
+          </choiceInteraction>
+        </itemBody>
+      </assessmentItem>
+      <assessmentItem identifier="qti-mcq-3" title="Risk" adaptive="false" timeDependent="false">
+        <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier">
+          <correctResponse><value>B</value></correctResponse>
+        </responseDeclaration>
+        <itemBody>
+          <choiceInteraction responseIdentifier="RESPONSE" maxChoices="1">
+            <prompt>Which risk can diversification reduce most directly?</prompt>
+            <simpleChoice identifier="A">Market-wide risk.</simpleChoice>
+            <simpleChoice identifier="B">Firm-specific risk.</simpleChoice>
+            <simpleChoice identifier="C">Inflation for every asset.</simpleChoice>
+            <simpleChoice identifier="D">The risk-free rate.</simpleChoice>
+          </choiceInteraction>
+        </itemBody>
+      </assessmentItem>
+      <assessmentItem identifier="qti-tf-1" title="Present value" adaptive="false" timeDependent="false">
+        <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier">
+          <correctResponse><value>T</value></correctResponse>
+        </responseDeclaration>
+        <itemBody>
+          <choiceInteraction responseIdentifier="RESPONSE" maxChoices="1">
+            <prompt>Present value accounts for the time value of money.</prompt>
+            <simpleChoice identifier="T">True</simpleChoice>
+            <simpleChoice identifier="F">False</simpleChoice>
+          </choiceInteraction>
+        </itemBody>
+      </assessmentItem>
+      <assessmentItem identifier="qti-broken" title="Broken" adaptive="false" timeDependent="false">
+        <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier" />
+        <itemBody>
+          <choiceInteraction responseIdentifier="RESPONSE" maxChoices="1">
+            <prompt>This item intentionally has no correct response.</prompt>
+            <simpleChoice identifier="A">One</simpleChoice>
+            <simpleChoice identifier="B">Two</simpleChoice>
+            <simpleChoice identifier="C">Three</simpleChoice>
+            <simpleChoice identifier="D">Four</simpleChoice>
+          </choiceInteraction>
+        </itemBody>
+      </assessmentItem>
+    </assessmentSection>
+  </testPart>
+</assessmentTest>

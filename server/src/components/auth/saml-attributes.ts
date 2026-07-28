@@ -35,6 +35,7 @@ export const SAML_ATTRIBUTE_ALIASES: Record<string, readonly string[]> = {
     'urn:mace:dir:attribute-def:ubcEduCwlPuid',
   ],
   uid: ['urn:oid:0.9.2342.19200300.100.1.1', 'urn:mace:dir:attribute-def:uid'],
+  cwlLoginName: [],
   mail: ['urn:oid:0.9.2342.19200300.100.1.3', 'urn:mace:dir:attribute-def:mail'],
   eduPersonAffiliation: [
     'urn:oid:1.3.6.1.4.1.5923.1.1.1.1',
