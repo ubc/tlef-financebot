@@ -1,6 +1,69 @@
 # Stephen — Phase 1 progress
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-07-27 (later)_
+
+## Update (2026-07-27, later): Phase 2 Task 4 (param sandbox) — in progress, NOT merged, mid security review
+
+**Branch:** `worktree-stephen+phase-2-param-sandbox` (worktree
+`stephen+phase-2-param-sandbox`), 7 commits ahead of `main` (`50c669a`).
+**Not pushed, no PR yet — do not treat this as done.**
+
+Started as Phase 2 Task 4 per Stephen's own task order (next up after P2-0
+merged, PR #32): a `worker_threads` sandbox for instructor-authored
+`generate()` parameterized-question scripts. The plan's own spec gave literal
+code for this (identifier-shadowing a `new Function(...)` call to block
+`require`/`process`/`fetch`/etc.) — that code turned out to be fundamentally
+insecure, and six consecutive adversarial review rounds each found and fixed
+a real, live-verified full-RCE sandbox escape:
+
+1. **Round 1** — `Function('return process')()` and dynamic `import()`
+   bypassed identifier shadowing entirely.
+2. **Round 2** — indirect `eval` (`(0,eval)('process')`) bypassed it too.
+3. **Round 3** — `[].constructor.constructor(...)` (property access, not an
+   identifier) reached the real `Function` constructor — live RCE (arbitrary
+   file read/write, `child_process.execSync`, `process.env` exfiltration).
+   **Forced an architectural rewrite** from identifier-shadowing to Node's
+   `vm.createContext()` (a genuinely separate JS realm) — this is the real
+   fix, not another shadow.
+4. **Round 4** — the vm rewrite still called `generate()` FROM host scope
+   with a host-realm `random` PRNG argument, and separately via
+   `Error.prepareStackTrace`/`CallSite` walking a live host stack frame —
+   both live-verified RCE. Fixed by concatenating PRNG + script + the
+   `generate(...)` call into ONE script executed via a single
+   `runInContext()` call, so no host object/frame is ever reachable
+   call-**in**.
+5. **Round 5** — same `CallSite` technique, but on the call-**out** (return
+   value) path: host code read `result.vars`/`Object.entries(vars)` directly
+   off a vm-realm object, so a getter/Proxy on the returned `vars` could
+   still leak `process`. Fixed by validating and `JSON.stringify`-ing
+   entirely inside the vm; host only ever `JSON.parse()`s a primitive
+   string.
+6. **Round 6** — same technique again, on the **throw** path: the host catch
+   block read `err.message` directly off a vm-realm thrown value. Fixed the
+   same way — error-to-string conversion now happens inside the vm too, as
+   part of one discriminated JSON envelope covering both success and error.
+
+**Current state:** all three directions a value can cross a function
+boundary (arguments in, return value out, exception thrown) now funnel
+through primitive-only JSON messaging with zero direct host↔vm property
+reads/calls in either direction. `tests/unit/param-worker.test.ts` is at
+22/22 (real worker threads, no mocks — each round's exploit is a permanent
+regression test). Full suite 50 suites / 531 tests, typecheck/lint/build all
+clean.
+
+**Not yet done:** a 7th, independent review round (someone who didn't write
+the round-6 fix, checking it fresh) was about to start and was paused by the
+user mid-dispatch — **this has not run yet**. Given the pattern (6/6 prior
+rounds each found something real), do not skip this before merging. After
+that: push the branch and open a PR — this one should probably get read
+closely given the history, not rubber-stamped.
+
+**Also still owed on `AGENTS.md`** (should already be mostly current from
+round 6, but verify in the final pass): an honest accounting of all 6 escape
+classes closed, the "vm is not a security mechanism" (Node's own words)
+disclaimer, and the instructor-trusted (not zero-trust) threat model framing
+— do not let this doc overclaim completeness again, it has been wrong about
+that in every round so far.
 
 ## Update (2026-07-27): P2-0 live smoke test passed, PR opened
 
