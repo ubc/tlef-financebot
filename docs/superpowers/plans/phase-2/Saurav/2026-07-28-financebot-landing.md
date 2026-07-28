@@ -546,6 +546,170 @@ git commit -m "feat(client): style the landing screen to match the Figma login c
 
 ---
 
+### Task 3: Restore the theme toggle on the landing screen
+
+**Added 2026-07-28, after reviewing the implemented screen.** Tasks 1 and 2
+stripped the theme toggle because Figma frame `0 - Login` does not draw one.
+That left a signed-out visitor with no way to switch themes at all — the toggle
+otherwise lives only in the signed-in shell's topbar
+(`client/src/main.ts:186`, `client/src/main.ts:318`). This is a deliberate,
+documented **deviation from the wireframe on functional grounds**: the control
+goes back, placed in the top-right corner so it stays out of the centered card's
+composition.
+
+**Files:**
+- Modify: `client/src/views/landing.ts` (re-add the import and one DOM node)
+- Modify: `client/public/styles/main.css` (the `.landing` rule and one new rule)
+- Test: `tests/e2e/landing.spec.ts` (add one test), `tests/a11y/a11y.spec.ts` (existing, must still pass)
+
+**Interfaces:**
+- Consumes: `createThemeToggle(): HTMLButtonElement` from `client/src/theme.ts` —
+  returns a fully self-contained `<button class="icon-btn" type="button">` that
+  already carries `title="Toggle light/dark theme"`,
+  `aria-label="Toggle light or dark theme"`, its own click handler, and a
+  sun/moon glyph (`☀` / `☾`) it keeps in sync. It persists to `localStorage`
+  under `tlef-theme` and stamps `data-theme` on `<html>`. **Do not modify
+  `theme.ts`** — call it and position the result.
+- Produces: one new CSS class, `.landing__theme-toggle`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append this test inside the existing `test.describe('landing (logged out)')`
+block in `tests/e2e/landing.spec.ts`:
+
+```ts
+  test('offers a theme toggle even though the wireframe omits one', async ({ page }) => {
+    await page.goto('/');
+
+    const html = page.locator('html');
+    const toggle = page.getByRole('button', { name: /toggle light or dark theme/i });
+    await expect(toggle).toBeVisible();
+
+    const before = await html.getAttribute('data-theme');
+    await toggle.click();
+    await expect(html).not.toHaveAttribute('data-theme', before ?? 'light');
+
+    // The choice persists across a reload, which is the whole point of having
+    // the control on the signed-out screen.
+    const after = await html.getAttribute('data-theme');
+    await page.reload();
+    await expect(html).toHaveAttribute('data-theme', after ?? 'dark');
+  });
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `npm run build:client && npx playwright test tests/e2e/landing.spec.ts`
+
+Expected: the new test FAILS (no toggle button on the page); the other three
+still pass.
+
+- [ ] **Step 3: Add the toggle to the view**
+
+In `client/src/views/landing.ts`, add the import beside the existing ones:
+
+```ts
+import { createThemeToggle } from '../theme.js';
+```
+
+Then change the `mount(...)` call at the bottom of `renderLanding` to place the
+toggle as a sibling of `main`, before it:
+
+```ts
+  // Not in the wireframe (frame 0 - Login draws no chrome at all), but without
+  // it a signed-out visitor cannot switch themes — the only other toggle lives
+  // in the signed-in shell's topbar. Parked in the corner so it stays clear of
+  // the card's composition.
+  mount(
+    root,
+    el(
+      'div',
+      { class: 'landing' },
+      el('div', { class: 'landing__theme-toggle' }, createThemeToggle()),
+      el('main', { class: 'landing__main' }, loginBanner(), card),
+    ),
+  );
+```
+
+- [ ] **Step 4: Position it**
+
+In `client/public/styles/main.css`, add `position: relative;` to the existing
+`.landing` rule so the toggle anchors to the page rather than the viewport:
+
+```css
+.landing {
+  position: relative;
+  min-height: 100vh;
+  background: var(--surface);
+}
+```
+
+Then add this rule directly after `.landing`, before the `.landing__main`
+comment block:
+
+```css
+/* Not part of Figma frame `0 - Login`; see views/landing.ts for why it exists. */
+.landing__theme-toggle {
+  position: absolute;
+  top: clamp(0.75rem, 3vw, 1.5rem);
+  right: clamp(0.75rem, 3vw, 1.5rem);
+  z-index: 1;
+}
+```
+
+`.icon-btn` already styles the button itself (`color: inherit`, transparent
+background), so it reads correctly against `var(--surface)` in both themes
+without any new color tokens.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npm run build:client && npx playwright test tests/e2e/landing.spec.ts`
+
+Expected: PASS, 4/4.
+
+- [ ] **Step 6: Re-run the a11y scan**
+
+Run: `npx playwright test -c playwright.a11y.config.ts`
+
+Expected: the landing test passes with zero violations. The toggle's
+`aria-label` comes from `theme.ts` and its glyph is a text node, so no new
+labelling work is needed — but the scan is what proves the corner placement did
+not introduce a contrast or target-size violation.
+
+> Two signed-in tests in this config fail on `main` already (confirmed
+> pre-existing during Task 2). Only the landing test's result is yours to own;
+> report the others as pre-existing if they appear.
+
+- [ ] **Step 7: Confirm both themes by eye**
+
+Re-capture the two screenshots and confirm the toggle is visible and legible in
+each:
+
+```
+/private/tmp/claude-501/-Users-sauravroy-Documents-tlef-financebot/f90a8c7e-e5dc-46b3-b494-b60d879d1533/scratchpad/landing-light.png
+/private/tmp/claude-501/-Users-sauravroy-Documents-tlef-financebot/f90a8c7e-e5dc-46b3-b494-b60d879d1533/scratchpad/landing-dark.png
+```
+
+- [ ] **Step 8: Update the docs**
+
+In `client/AGENTS.md`, the logged-out bullet rewritten in Task 2 gains one
+sentence so the deviation is recorded where the next reader will look:
+
+```markdown
+  reachable; the rest of the app is behind login. The theme toggle in the corner
+  is a deliberate addition — the wireframe draws no chrome, but signed-out
+  visitors would otherwise have no way to switch themes.
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add client/src/views/landing.ts client/public/styles/main.css client/AGENTS.md tests/e2e/landing.spec.ts
+git commit -m "feat(client): put the theme toggle back on the landing screen"
+```
+
+---
+
 ## Verification (whole plan)
 
 - [ ] `npm run typecheck` — passes
