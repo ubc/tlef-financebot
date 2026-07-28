@@ -221,7 +221,7 @@ Phase 2 exit criterion while Admin A2 waits for the stacked PR chain to merge.
   real upload → preview → confirm flow.
 - [x] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
   verification with isolated fixture cleanup.
-- [x] **Step 6:** implementation commit `b691de8`; PR #39 from current `main`.
+- [x] **Step 6:** implementation commit `2d3313e`; PR #39 from current `main`.
 
 **Result:** focused 2 suites / 15 tests and full 52 suites / 548 tests passed;
 typecheck/lint/build passed. The real SAML instructor flow uploaded the CSV

@@ -14,6 +14,15 @@ _Last updated: 2026-07-28_
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 - Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
 - Task 8 question import: **complete on independent PR #39**.
+- Saurav Task 6 remediation: **already merged on PR #31**; its stale
+  “ready to push” status was reconciled on 2026-07-28.
+- Task 10 custom generation/regeneration: **complete on PR #40** (`0870e23`)
+  after the recorded cross-owner takeover.
+- Admin Console v0 A2 Student Preview: **complete at `9f68a44` on draft PR
+  #41, CI green**, using the explicit PR #37 + PR #36 integration stack.
+- Task 9 parameterized-script migration: **active by Stephen/Codex on an
+  explicit PR #34 + PR #39 integration stack** under Stephen's standing
+  cross-owner authorization.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -36,8 +45,14 @@ Codex completed:
 
 Codex records current paths in
 [`coordination/CODEX.md`](coordination/CODEX.md). Student Preview A2 waits for
-PR #34, Admin A1 PR #36, and Task 7 PR #37 to merge; it will reuse rather than
+PR #34, Admin A1 PR #36, and Task 7 PR #37 at integration time; implementation
+now proceeds on their released stacked code and will reuse rather than
 duplicate Task 5.
+
+Task 9 now proceeds without waiting for human-controlled dependency merges:
+Task 5 PR #34 and Task 8 PR #39 are both complete, released, and CI green.
+Codex will integrate those exact heads on a new short-lived stack; it will not
+merge either PR to `main`.
 
 ## Task 7 result
 
@@ -127,10 +142,48 @@ The exact implementation claim is:
 - `docs/api-contract.md` and Task 8 plan/status documents
 
 No Saurav implementation existed to duplicate. The implementation is
-`b691de8`; all listed paths are released. Focused 2 suites / 15 tests, full 52
+`2d3313e`; all listed paths are released. Focused 2 suites / 15 tests, full 52
 suites / 548 tests, typecheck/lint/build, and the real instructor browser
 upload/preview/commit flow passed. Cleanup assertions found zero remaining
 course, question, version, or role fixtures.
+
+## Task 10 cross-owner result
+
+Stephen authorized Codex to help complete unfinished Saurav tasks so Phase 2
+can continue, with status recorded for both developers. The audit found that
+Task 6 was already merged in PR #31 despite Saurav's stale status; Task 10 is
+the next genuinely unstarted and now-unblocked item because P2-0 merged in PR
+#32.
+
+Codex completed Task 10 without waiting for Saurav confirmation. The released
+implementation paths are:
+
+- `server/src/services/generation.service.ts`
+- `server/src/routes/generation.routes.ts`
+- `server/src/types/domain.ts`
+- `server/src/services/questions.service.ts`
+- `client/src/views/instructor/preseeding.ts`
+- `client/src/views/instructor/question-detail.ts`
+- `client/src/api.ts`
+- `tests/unit/custom-generation.test.ts`,
+  `tests/unit/generation.routes.test.ts`,
+  `tests/unit/preseeding.test.ts`
+- `tests/e2e/custom-generation.spec.ts`
+- `docs/api-contract.md` and Phase 2 plan/status documents
+
+The existing pre-seeding page already owns custom prompt, target LO/type/
+difficulty, and durable run/SSE progress. Task 10 extends that surface with
+presets and material mention selection rather than creating a duplicate
+generation page. Regeneration remains a side-by-side, no-autosave preview;
+only the existing explicit edit/versioning path may replace the original.
+
+The result is `0870e23` on PR #40. Exact, case-insensitive @mentions are
+restricted to ready materials assigned to the selected LO/theme; four presets
+come from the server; custom batches retain P2-0 runId/SSE progress; and
+regeneration appends request provenance without saving content. Verification:
+51 Jest suites / 543 tests, typecheck, lint, Node 24 build, and a real-session
+browser pass for preset/mention/enqueue/preview/Replace with zero browser
+errors. Browser fixtures were fully removed.
 
 ## Admin v0 decisions
 
@@ -145,6 +198,37 @@ course, question, version, or role fixtures.
 - Preview records are structurally separate from live attempts and cannot
   affect mastery, Review Book, flags, remediation, summaries, notifications,
   or analytics.
+
+## Admin A2 Student Preview result
+
+Codex completed the Stephen-owned preview slice without waiting for dependency
+merges, using the previously recorded PR #37 + PR #36 integration stack. No PR
+was merged to `main`.
+
+- Added course-Instructor-only preview home/serve/submit endpoints. Student
+  enrollment and course publication are bypassed only on these explicit
+  routes; archived/future themes and non-Approved questions remain hidden.
+- Added `previewAttemptRecords` with an Instructor/question-version/answer
+  snapshot. Live `attemptRecords`, mastery, Review Book, flags/auto-pause,
+  remediation, summaries, progression, notifications, and analytics are not
+  called.
+- Extracted a pure grading seam from `attempts.service.ts`; the existing live
+  path and preview share grading/feedback but not persistence or follow-on
+  workflows.
+- The Instructor dashboard now has a working **Preview as Student** action.
+  The view reuses the real question card through a preview-only adapter,
+  omits Flag, and keeps a persistent no-progress banner.
+- Verification passed: 57 Jest suites / 606 tests, server/client typecheck,
+  lint, Node 24 build, and a real SAML-session Playwright scenario covering
+  published + unpublished preview, Approved-only exclusion of a Draft,
+  answer feedback, exactly one preview record, zero live-learning records,
+  and zero browser errors. Fixture residuals were zero.
+
+Implementation commit: `9f68a44`. Draft PR:
+https://github.com/ubc/tlef-financebot/pull/41. It remains draft only because
+its two released dependency lines must merge first; after #34/#35/#37 and #36,
+rebase/retarget #41 and mark it ready. All A2 implementation paths are
+released at this commit.
 
 ## Message for Saurav
 
@@ -167,6 +251,11 @@ Current PRs:
   scenarios, typecheck/lint/build, and zero fixture residuals
 - #39 — Task 8 CSV/JSON/QTI import; independent on main, 52 suites / 548
   tests and live instructor upload/preview/commit regression passed
+- #40 — Task 10 custom generation/regeneration; 51 suites / 543 tests plus
+  real-session preset/@mention/side-by-side/explicit-Replace regression passed
+- #41 — Admin A2 Instructor Student Preview; draft only for stack order,
+  57 suites / 606 tests plus real-session published/unpublished isolation
+  regression passed
 
 Admin browser test mutations were localhost-only and fully restored (no
 leftover test grants; test-user Admin bit returned false).

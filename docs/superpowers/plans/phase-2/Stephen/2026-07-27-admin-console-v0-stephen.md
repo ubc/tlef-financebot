@@ -3,7 +3,8 @@
 **Owner:** Stephen  
 **Implementing agent:** Codex  
 **Status:** Approved for planning and implementation by Stephen on 2026-07-27  
-**Concurrent work:** Claude continues Phase 2 Task 5 (parameter serving/config)
+**Concurrent work:** Task 5 released on PR #34; Admin A1 complete on PR #36;
+Student Preview A2 active on an explicit #37 + #36 integration stack
 
 This is a deliberately small staging-enablement slice, not the full PRD Admin
 surface. It adds two capabilities Stephen needs now:
@@ -169,7 +170,7 @@ Keep `ensureCourseInstructor()`, `ensureCourseStudent()`, and
 ### Gate A0 — coordination and contract
 
 **Owner:** Codex  
-**Status:** in progress
+**Status:** complete
 
 Files:
 
@@ -180,9 +181,9 @@ Files:
 
 - [x] Record the product/security decisions.
 - [x] Publish per-agent file claims so each agent edits only its own ledger.
-- [ ] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
+- [x] Claude confirms its Task 5 paths in `coordination/CLAUDE.md` before
   continuing Task 5.
-- [ ] Codex refreshes from `main` after the confirmation and starts A1 on a
+- [x] Codex refreshes from `main` after the confirmation and starts A1 on a
   short-lived `codex/` branch.
 
 ### Slice A1 — Admin accounts and platform-Instructor grant
@@ -208,20 +209,23 @@ Expected files:
 
 Steps:
 
-- [ ] Write failing tests for Admin-only access, grant idempotency, pending
+- [x] Write failing tests for Admin-only access, grant idempotency, pending
   first-login application, SAML refresh preservation, revoke, and
   platform-Instructor-only course creation.
-- [ ] Add the grant document/accessor/unique index and User flag.
-- [ ] Implement grant/revoke/search plus audit writes.
-- [ ] Apply pending grants during SAML upsert without fabricating a User or
+- [x] Add the grant document/accessor/unique index and User flag.
+- [x] Implement grant/revoke/search plus audit writes.
+- [x] Apply pending grants during SAML upsert without fabricating a User or
   replacing its PUID.
-- [ ] Gate course creation with `ensurePlatformInstructor()`.
-- [ ] Add the Admin accounts page and Admin-only navigation.
-- [ ] Update auth response/client types so shell selection uses
+- [x] Gate course creation with `ensurePlatformInstructor()`.
+- [x] Add the Admin accounts page and Admin-only navigation.
+- [x] Update auth response/client types so shell selection uses
   `isAdmin || platformInstructor || course instructor role`.
-- [ ] Run focused tests, full Jest, typecheck, lint, and build.
-- [ ] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
+- [x] Run focused tests, full Jest, typecheck, lint, and build.
+- [x] Open a short-lived PR and record its SHA/URL in `coordination/CODEX.md`
   and `STATUS.md`.
+
+Completed on PR #36 (`7d76080`); full 53 suites / 585 tests and the live Admin
+active/pending/revoke browser regression passed.
 
 ### Gate A1.5 — Task 5 handoff
 
@@ -236,10 +240,19 @@ releases the following paths with a commit SHA:
 Codex then rebases Admin work onto the latest `main` and reruns the Phase 1
 serving/attempt regression suites before touching preview integration.
 
+**Gate satisfied 2026-07-28:** Claude released Task 5 at `210c68f` on PR #34,
+including the final `paramValues` echo fix. Task 7 and Admin A1 are also
+complete and released on PRs #37/#36. Because Stephen requested continuous
+work while merges remain human-controlled, A2 starts on an explicit stacked
+integration branch: #37 is the base and #36 is merged into that branch. This
+does not merge any PR to `main`; its diff will shrink naturally as the
+dependencies are merged in their documented order.
+
 ### Slice A2 — Instructor Student Preview
 
 **Owner:** Codex  
 **Depends on:** Task 5 merged/released and A1 merged
+**Status:** complete on draft PR #41 (`9f68a44`)
 
 Expected files:
 
@@ -259,23 +272,36 @@ Expected files:
 
 Steps:
 
-- [ ] Write authorization tests proving students cannot call Instructor
+- [x] Write authorization tests proving students cannot call Instructor
   preview routes and an Instructor cannot preview another Instructor's course.
-- [ ] Write content tests proving unpublished courses are previewable while
+- [x] Write content tests proving unpublished courses are previewable while
   only approved questions serve.
-- [ ] Write isolation tests proving preview answers create no live
+- [x] Write isolation tests proving preview answers create no live
   `attemptRecords`, mastery, Review Book, flags/auto-pause counts,
   remediation recipients, summaries, or notifications.
-- [ ] Extract only the pure grading/response logic required to reuse the real
+- [x] Extract only the pure grading/response logic required to reuse the real
   student experience; keep persistence/context decisions at the route/service
   boundary.
-- [ ] Add the dashboard “Preview as Student” entry and persistent preview
+- [x] Add the dashboard “Preview as Student” entry and persistent preview
   banner.
-- [ ] Verify the published and unpublished course flows in a browser.
-- [ ] Run focused tests, the full Jest suite, typecheck, lint, build, and
+- [x] Verify the published and unpublished course flows in a browser.
+- [x] Run focused tests, the full Jest suite, typecheck, lint, build, and
   relevant Playwright coverage.
-- [ ] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
+- [x] Open a separate PR and record its SHA/URL in the Codex claim and Stephen
   status.
+
+**A2 verification (2026-07-28):** 57 Jest suites / 606 tests, server/client
+typecheck, lint, and Node 24 build passed. The real-session Playwright
+regression clicked Dashboard → Preview as Student on an unpublished course,
+confirmed the persistent no-progress banner, served the Approved question
+while excluding a Draft, removed the flag control, submitted through the real
+question card, wrote exactly one `previewAttemptRecord`, and asserted zero
+live attempt/mastery/Review Book/flag/notification/session-summary records.
+Browser console/page errors and fixture residuals were zero.
+Opened as draft PR #41:
+https://github.com/ubc/tlef-financebot/pull/41. It targets PR #37 for the
+student-practice seam and contains PR #36's Admin A1 integration; merge those
+documented dependencies first, then rebase/retarget and mark #41 ready.
 
 ## Required regression cases
 
@@ -307,4 +333,3 @@ Steps:
   remains a separate task.
 - Future “impersonate a named student” is explicitly not implied by this
   preview design and requires a separate privacy/security review.
-
