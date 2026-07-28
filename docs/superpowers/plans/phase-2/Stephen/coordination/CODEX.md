@@ -54,15 +54,16 @@ file is claimed.
 
 ## Released aggregate regression reference
 
-Branch `codex/phase-2-admin-integration-regression`, commit `c4def83`, is a
+Branch `codex/phase-2-admin-integration-regression`, commit `27b4b26`, is a
 regression-only aggregation of current `main` plus PR #42, PR #41, PR #38,
 and PR #40 heads. It is pushed only so both agents can inspect the tested
 conflict resolutions; do not merge it as a task PR.
 
 Verification: 61 Jest suites / 640 tests, typecheck, lint, Node 24 build, and
-10 real-SAML-session browser scenarios passed; the opt-in live-LLM case was
-skipped. Admin A1's E2E faculty provisioning fix is separately published on
-PR #36 at `51b43c4` (CI green).
+12 real-SAML-session browser scenarios passed; the opt-in live-LLM case was
+skipped. The expanded run includes a permanent Admin Accounts
+grant/search/revoke spec (`57ee5f3` on #36), and exact post-run fixture counts
+were zero for Admin grants, Admin fixture Users, and E2E courses.
 
 Shared-file resolution map:
 
@@ -77,6 +78,18 @@ Shared-file resolution map:
 - `tests/e2e/global-setup.ts`: preserve Task 11's auth-reuse branch and call
   Admin A1 platform-Instructor provisioning for both fresh/reused sessions,
   keyed by `/api/auth/me`'s canonical uid.
+
+### Release-readiness branch refresh
+
+- #34 main-sync: `6c61ce2` (docs-only conflict resolution; mergeable/CI green)
+- #36 Admin E2E + refreshed #34 base: `56a8ddd`
+- #40 main-sync: `a2b20e6` (docs-only conflict resolution; mergeable/CI green)
+- #41 latest Admin A1 test/base sync: `04c188a`
+- #42 main-sync: `20fdbe0` (docs-only conflict resolution; mergeable/CI green)
+
+The remaining core exit checkbox is not a code claim: actual COMM 298
+practice-set/script sources are absent from the searched workspace, so they
+cannot yet be imported as real Draft content.
 
 ## Released Admin A2
 
