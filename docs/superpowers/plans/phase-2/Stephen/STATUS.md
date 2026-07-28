@@ -10,7 +10,8 @@ _Last updated: 2026-07-28_
 - Task 5 parameter serving/config: **complete on PR #34, CI green, awaiting
   review/merge**.
 - Task 2 student Flag control: **complete on stacked PR #35**.
-- Admin Console v0: **A1 complete on stacked PR #36**.
+- Admin Console v0: **A1 complete on stacked PR #36**; aggregate-regression
+  E2E fixture fix `51b43c4` is CI green.
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 - Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
 - Task 8 question import: **complete on independent PR #39**.
@@ -67,6 +68,38 @@ The browser proved preview/commit/open-question clicks, exactly one Draft and
 version write, zero browser errors, and zero residual fixtures. Implementation
 commit: `ae1f0e9`. PR #42 is CI green and remains draft until dependency PRs
 #34/#39 merge; Codex did not merge them.
+
+## Phase 2 + Admin aggregate regression
+
+Codex assembled the exact released heads behind PRs #42, #41, #38, and #40
+(therefore including their Task 5/2/7/8/9/Admin dependencies) with current
+`main` on regression-only branch
+`codex/phase-2-admin-integration-regression` at `c4def83`. This branch is a
+tested conflict-resolution reference, not a merge PR.
+
+The aggregate tree passes 61 Jest suites / 640 tests, typecheck, lint, and the
+Node 24 server/client build. Real SAML-session browser regression passed 10
+scenarios (1 opt-in live-LLM scenario skipped): app shell, custom generation
+and explicit regeneration, full instructor pipeline/publish, published and
+unpublished Student Preview isolation, landing, parameterized-script
+preview/import/open, and reload/identity walking skeleton.
+
+The first aggregate browser run correctly exposed one stale E2E fixture:
+Admin A1 requires the global platform-Instructor grant for course creation,
+while the shared `faculty` test user still relied on SAML affiliation. The
+production guard was not relaxed. PR #36 now seeds an admin-style grant keyed
+by the IdP-returned canonical uid in E2E global setup (`51b43c4`, CI green).
+The corrected aggregate run passed.
+
+Merge/rebase hotspots proved and preserved in `c4def83`:
+
+- `server/src/app.ts`: keep Import, Admin, and Preview routers.
+- `client/src/main.ts`: keep Import, Admin Accounts, and Student Preview views.
+- Question Detail/API: keep both Regenerate and Parameters, plus both
+  import/script-migration and regeneration client contracts.
+- When PR #36 meets PR #38, keep PR #38's `E2E_REUSE_AUTH_FILE` path and run
+  platform-Instructor fixture provisioning after both fresh and reused
+  `/api/auth/me` responses.
 
 ## Task 7 result
 

@@ -52,6 +52,32 @@ file is claimed.
   and zero residual fixtures.
 - All Task 9 paths are released. Codex did not merge either prerequisite.
 
+## Released aggregate regression reference
+
+Branch `codex/phase-2-admin-integration-regression`, commit `c4def83`, is a
+regression-only aggregation of current `main` plus PR #42, PR #41, PR #38,
+and PR #40 heads. It is pushed only so both agents can inspect the tested
+conflict resolutions; do not merge it as a task PR.
+
+Verification: 61 Jest suites / 640 tests, typecheck, lint, Node 24 build, and
+10 real-SAML-session browser scenarios passed; the opt-in live-LLM case was
+skipped. Admin A1's E2E faculty provisioning fix is separately published on
+PR #36 at `51b43c4` (CI green).
+
+Shared-file resolution map:
+
+- `server/src/app.ts`: preserve `importRouter`, `adminRouter`, and
+  `previewRouter` imports/mounts.
+- `client/src/main.ts`: preserve `renderImport`, `renderAdminAccounts`, and
+  `renderStudentPreview` imports/routes.
+- `client/src/views/instructor/question-detail.ts`: render the real
+  `regenerateButton`, the Parameters link, and `regenerationPanel`.
+- `client/src/api.ts`: preserve the Import/ScriptMigration block and the
+  RegenerationVariant/regenerateQuestion block.
+- `tests/e2e/global-setup.ts`: preserve Task 11's auth-reuse branch and call
+  Admin A1 platform-Instructor provisioning for both fresh/reused sessions,
+  keyed by `/api/auth/me`'s canonical uid.
+
 ## Released Admin A2
 
 Instructor Student Preview is active on `codex/admin-student-preview`.

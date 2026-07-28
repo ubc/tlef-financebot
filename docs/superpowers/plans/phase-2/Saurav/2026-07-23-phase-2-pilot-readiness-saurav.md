@@ -426,9 +426,9 @@ changed from Phase 1's `{ jobId }` to `{ runId }` + SSE.
 - Consumes: Phase 1 Task 8 pipeline (now running through P2-0's run model); `materialsCol()`.
 - Produces: @-mention resolution, `PRESET_PROMPTS` + `GET /api/generation/presets`, `regenerateQuestion` (side-by-side preview, no autosave). Full signatures in the core document, Task 10 Interfaces — **note the response/progress shape there predates P2-0 and must be reconciled with the merged P2-0 contract before implementing**, not followed verbatim.
 
-- [ ] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
-- [ ] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: custom-prompt generation with @-mentions and side-by-side regeneration (IN-Q11/Q12)"`
+- [x] **Step 1: Failing tests** — @-mention filters retrieval to the named material; regenerate never mutates the original; the recorded prompt round-trips onto the created Draft.
+- [x] **Step 2–4: FAIL → implement (against the merged P2-0 run/SSE contract) → PASS.** Completed by Stephen/Codex under the recorded takeover. Presets/@mentions, durable custom generation, transient regeneration, explicit replacement, focused/full tests, typecheck/lint/build, and real-browser clicks all passed.
+- [x] **Step 5: Commit** — `0870e23` (`feat: custom-prompt generation and explicit regeneration (IN-Q11/IN-Q12)`), CI-green PR #40.
 
 ---
 

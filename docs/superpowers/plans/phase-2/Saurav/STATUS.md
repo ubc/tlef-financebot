@@ -94,6 +94,25 @@ Draft/version write, working navigation, zero browser errors, and zero
 residual fixtures. PR #42 is CI green and stays draft only until PRs #34/#39
 merge; Saurav need not act.
 
+## Stephen/Codex aggregate regression — 2026-07-28
+
+Regression-only branch `codex/phase-2-admin-integration-regression` at
+`c4def83` combines current `main` with the released Phase 2/Admin heads behind
+PRs #42/#41/#38/#40. It is not a merge PR and claims no Saurav files.
+
+Aggregate verification passed: 61 Jest suites / 640 tests, typecheck, lint,
+Node 24 build, and 10 real-SAML-session browser scenarios (1 opt-in live-LLM
+scenario skipped). The run covered generation/regeneration, instructor
+pipeline/publish, Admin Student Preview isolation, and script migration.
+
+It found one E2E-fixture integration gap, not a production permission bug:
+Admin A1 correctly requires a platform-Instructor grant for course creation,
+so the test `faculty` identity can no longer rely on affiliation alone. PR #36
+fixes global setup at `51b43c4` (CI green) by provisioning the grant using the
+IdP-returned canonical uid; production authorization remains unchanged.
+Exact shared-file merge resolutions are recorded in Stephen's STATUS and
+coordination ledger. Saurav need not act.
+
 ## Stephen/Codex Admin A2 coordination — 2026-07-28
 
 Student Preview A2 was completed on a Stephen-owned integration stack of
