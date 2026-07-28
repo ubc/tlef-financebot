@@ -21,10 +21,9 @@
 // of "below 3 approved" (`THIN_THRESHOLD` below) per the plan's Task G
 // resolution — the two numbers are intentionally different.
 //
-// @mentions are PLAIN TEXT: `generateBody` (generation.routes.ts) has no
-// material-reference param, so whatever the instructor types in the custom
-// prompt — including any "@lecture.pdf" — goes straight into `prompt`. No
-// @-autocomplete (out of scope per the brief; a plain textarea is fine).
+// Task 10 resolves @mentions server-side against ready materials assigned to
+// the selected LO. The form provides a material-name autocomplete that inserts
+// the canonical token; typed tokens remain supported.
 //
 // Topic join: `getPreseeding` returns per-LO rows with no Topic/theme id, so
 // Topic names are derived by scanning `getCourseTree`'s themes for each
@@ -40,13 +39,17 @@ import {
   ApiError,
   generateQuestions,
   getCourseTree,
+  getGenerationPresets,
   getPreseeding,
+  listMaterials,
   listContentRuns,
   subscribeContentRuns,
   type ContentRunSummary,
   type CourseTree,
   type GenerationDifficulty,
+  type GenerationPreset,
   type GenerationQuestionType,
+  type Material,
   type PreseedingLo,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
@@ -107,27 +110,39 @@ export type PresetTemplateId =
   | 'true-false-explanation'
   | 'common-misconception';
 
-export const PRESET_TEMPLATES: Array<{ id: PresetTemplateId; label: string }> = [
-  { id: 'numerical-parameterized', label: 'Numerical problem (parameterized)' },
-  { id: 'concept-check-mcq', label: 'Concept check MCQ' },
-  { id: 'true-false-explanation', label: 'True/False with explanation' },
-  { id: 'common-misconception', label: 'Common misconception confounder' },
+export const PRESET_TEMPLATES: Array<{ id: PresetTemplateId; label: string; text: string }> = [
+  {
+    id: 'numerical-parameterized',
+    label: 'Calculation question',
+    text: 'Create a calculation question that requires students to select and apply the correct finance formula, showing enough information for one unambiguous answer.',
+  },
+  {
+    id: 'concept-check-mcq',
+    label: 'Concept check',
+    text: 'Create a concise concept check that distinguishes genuine understanding from memorizing a definition.',
+  },
+  {
+    id: 'true-false-explanation',
+    label: 'Applied scenario',
+    text: 'Create an applied business scenario in which the student must use this learning objective to make or justify a finance decision.',
+  },
+  {
+    id: 'common-misconception',
+    label: 'Common-misconception probe',
+    text: 'Create a question whose most plausible distractor exposes a common student misconception, and explain that misconception clearly.',
+  },
 ];
 
 /** Preset template id -> starter prompt text that fills the custom-prompt
  * textarea (I12's chip row). A starting point the instructor can edit
  * further, not a fixed value sent verbatim. */
 export function presetPrompt(id: PresetTemplateId): string {
-  switch (id) {
-    case 'numerical-parameterized':
-      return 'Generate a numerical problem with parameterized values (vary the key inputs) that requires a multi-step calculation to solve.';
-    case 'concept-check-mcq':
-      return 'Generate a concept-check multiple-choice question that tests understanding of the underlying idea rather than computation.';
-    case 'true-false-explanation':
-      return 'Generate a true/false question and include a clear explanation of why the statement is true or false.';
-    case 'common-misconception':
-      return "Generate a question whose confounder option targets a common student misconception about this topic.";
-  }
+  return PRESET_TEMPLATES.find((preset) => preset.id === id)?.text ?? '';
+}
+
+/** Token format accepted by the server mention resolver. */
+export function materialMentionToken(name: string): string {
+  return /\s/u.test(name) ? `@"${name.replace(/"/gu, '')}"` : `@${name}`;
 }
 
 // --- LO/Topic join ------------------------------------------------------------
@@ -174,11 +189,17 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let preseeding: PreseedingLo[];
   let tree: CourseTree;
   let recentRuns: ContentRunSummary[];
+  let materials: Material[];
+  let generationPresets: GenerationPreset[];
   try {
-    [preseeding, tree, recentRuns] = await Promise.all([
+    [preseeding, tree, recentRuns, materials, generationPresets] = await Promise.all([
       getPreseeding(courseId),
       getCourseTree(courseId),
       listContentRuns(courseId, { kind: 'question-generation', limit: 25 }),
+      listMaterials(courseId),
+      getGenerationPresets().catch(() =>
+        PRESET_TEMPLATES.map(({ label, text }) => ({ label, text })),
+      ),
     ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -216,8 +237,48 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   const promptTextarea = el('textarea', {
     class: 'input input--area',
     rows: '5',
-    placeholder: 'Describe the question to generate. Use @filename to reference a specific uploaded material (plain text — no autocomplete).',
+    placeholder: 'Describe the question to generate. Type @filename or use the material autocomplete below.',
   }) as HTMLTextAreaElement;
+  const materialListId = `generation-materials-${courseId}`;
+  const mentionInput = el('input', {
+    class: 'input',
+    type: 'search',
+    list: materialListId,
+    placeholder: 'Start typing an assigned material name…',
+  }) as HTMLInputElement;
+
+  function materialsForSelectedLo(): Material[] {
+    const theme = tree.themes.find((candidate) =>
+      (candidate.los ?? []).some((lo) => lo._id === formLoId),
+    );
+    if (!theme) return [];
+    return materials.filter(
+      (material) =>
+        material.status === 'ready' &&
+        material.assignments.some(
+          (assignment) =>
+            assignment.loId === formLoId ||
+            (assignment.loId === undefined && assignment.themeId === theme._id),
+        ),
+    );
+  }
+
+  function insertMaterialMention(): void {
+    const material = materialsForSelectedLo().find(
+      (candidate) => candidate.name.toLocaleLowerCase() === mentionInput.value.trim().toLocaleLowerCase(),
+    );
+    if (!material) {
+      formError = 'Choose a ready material assigned to the selected LO.';
+      renderForm();
+      return;
+    }
+    const prefix = promptTextarea.value.trimEnd();
+    promptTextarea.value = `${prefix}${prefix ? ' ' : ''}${materialMentionToken(material.name)} `;
+    mentionInput.value = '';
+    formError = null;
+    renderForm();
+    promptTextarea.focus();
+  }
 
   function openFormFor(loId: string): void {
     formLoId = loId;
@@ -292,6 +353,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         class: 'input',
         onchange: (e: Event) => {
           formLoId = (e.target as HTMLSelectElement).value;
+          mentionInput.value = '';
+          renderForm();
         },
       },
       ...losInScope.map((lo) =>
@@ -333,14 +396,14 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       el(
         'div',
         { class: 'preseeding-presets' },
-        ...PRESET_TEMPLATES.map((preset) =>
+        ...generationPresets.map((preset) =>
           el(
             'button',
             {
               class: 'chip-btn',
               type: 'button',
               onclick: () => {
-                promptTextarea.value = presetPrompt(preset.id);
+                promptTextarea.value = preset.text;
               },
             },
             preset.label,
@@ -359,6 +422,32 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         { class: 'form-field' },
         el('span', { class: 'form-field__label', text: 'Custom prompt · Use @filename to reference a specific uploaded material' }),
         promptTextarea,
+      ),
+      el(
+        'div',
+        { class: 'preseeding-form__row' },
+        el(
+          'label',
+          { class: 'form-field' },
+          el('span', { class: 'form-field__label', text: 'Material @mention autocomplete' }),
+          mentionInput,
+          el(
+            'datalist',
+            { id: materialListId },
+            ...materialsForSelectedLo().map((material) =>
+              el('option', { value: material.name, text: material.name }),
+            ),
+          ),
+        ),
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost btn--sm',
+            type: 'button',
+            onclick: insertMaterialMention,
+          },
+          'Insert @mention',
+        ),
       ),
       formError ? errorState(formError) : false,
       formQueuedMessage

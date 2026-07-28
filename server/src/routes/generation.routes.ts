@@ -1,11 +1,17 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { ensureCourseInstructor } from '../components/auth/course-guards';
+import { ensureApiAuthenticated } from '../components/auth';
+import {
+  ensureCourseInstructor,
+  NO_COURSE_ACCESS_BODY,
+} from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   enqueueGenerationRun,
+  PRESET_PROMPTS,
   preseedingProgress,
+  regenerateQuestion,
 } from '../services/generation.service';
 
 // Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
@@ -16,6 +22,29 @@ export const generationRouter = Router();
 
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
+const regenerationParams = z.object({ courseId: objectIdParam, questionId: objectIdParam });
+const regenerationBody = z.object({ prompt: z.string().trim().min(1).max(2000) });
+
+function ensureAnyInstructor(req: Request, res: Response, next: NextFunction): void {
+  if (
+    req.user?.isAdmin ||
+    req.user?.courseRoles.some((courseRole) => courseRole.role === 'instructor')
+  ) {
+    next();
+    return;
+  }
+  res.status(403).json(NO_COURSE_ACCESS_BODY);
+}
+
+/** Static, editable prompt starters used by the instructor generation form. */
+generationRouter.get(
+  '/generation/presets',
+  ensureApiAuthenticated(),
+  ensureAnyInstructor,
+  (_req, res) => {
+    res.json(PRESET_PROMPTS);
+  },
+);
 
 // Bounds: at least one question, capped so a single request can't enqueue an
 // unbounded run (each question is 3 LLM calls). Default is a small batch.
@@ -54,6 +83,30 @@ generationRouter.post(
   },
 );
 
+/**
+ * POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }
+ * -> a transient side-by-side variant. The service records only request
+ * provenance; replacing content remains an explicit PATCH to the question.
+ */
+generationRouter.post(
+  '/courses/:courseId/questions/:questionId/regenerate',
+  validate({ params: regenerationParams }),
+  ensureCourseInstructor(),
+  validate({ body: regenerationBody }),
+  async (req, res) => {
+    const params = req.params as z.infer<typeof regenerationParams>;
+    const body = req.body as z.infer<typeof regenerationBody>;
+    res.json(
+      await regenerateQuestion(
+        new ObjectId(params.questionId),
+        body.prompt,
+        req.user!.puid,
+        new ObjectId(params.courseId),
+      ),
+    );
+  },
+);
+
 /** GET /api/courses/:courseId/preseeding -> [{ loId, loName, approved, reviewed,
  * target }]. Instructor-only. Per-LO Approved/Reviewed counts against target 5. */
 generationRouter.get(
@@ -75,6 +128,15 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'lo-not-found': 404,
   'lo-not-in-course': 403,
   'content-run-enqueue-failed': 503,
+  'question-not-found': 404,
+  'version-not-found': 404,
+  'question-has-no-lo': 409,
+  'question-changed-during-regeneration': 409,
+  'generation-material-mention-not-found': 400,
+  'generation-material-mention-ambiguous': 400,
+  'generation-invalid-options': 422,
+  'generation-retrieval-failed': 503,
+  'generation-no-grounding': 422,
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
