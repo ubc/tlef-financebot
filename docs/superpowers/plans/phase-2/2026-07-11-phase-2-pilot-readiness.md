@@ -404,6 +404,11 @@ manual checklist text. Full detail in Saurav's personal plan
 **Owner:** Dev B (Saurav)
 **Reviewer:** Dev A (Stephen)
 
+**Takeover note (2026-07-28):** Stephen authorized Codex to take this
+independent, not-started Saurav task so Phase 2 can continue while the stacked
+Stephen PR chain is awaiting merge. The exact file claim is recorded in both
+developers' status files before implementation; Saurav need not confirm.
+
 **Files:**
 - Create: `server/src/services/import.service.ts`
 - Create: `server/src/routes/import.routes.ts`

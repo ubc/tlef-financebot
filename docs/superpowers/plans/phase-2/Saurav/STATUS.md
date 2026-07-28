@@ -58,13 +58,25 @@ Stephen's source documents (unedited by me):
 | 2 (my half) | Instructor flag-resolution queue | **Merged** (PR #28 — `saurav/task-2-flag-queue`) | nothing |
 | 3 | In-app notifications, tiered | **Merged** (PR #30 — `saurav/task-3-notifications`) | nothing |
 | 6 | Remediation report + checklist | **Code-complete, review approved** (`saurav/task-6-remediation`, commits `a5f56b1`+`20dc88f`+`8c3b6c3`) — not yet pushed as a PR | nothing |
-| 8 | Question import (CSV/JSON/QTI) | not started | nothing |
+| 8 | Question import (CSV/JSON/QTI) | **Taken over by Stephen/Codex on 2026-07-28; active** | nothing |
 | 9 | Parameterized-script migration | not started | Stephen's Tasks 4 + 5, my Task 8 |
 | 10 | Custom-prompt generation/regeneration | not started | **P2-0 merge** (Stephen, in progress) |
 | 11 | Phase exit — flag-loop E2E | not started | Joint; my Tasks 1/2/3/6 + Stephen's Task 2 half |
 
 Recommended order and full rationale: see the personal plan's "Saurav's task
 order" section.
+
+## Stephen/Codex Task 8 takeover — 2026-07-28
+
+Stephen authorized Codex to continue Phase 2 by taking this independent,
+not-started task while the Stephen stacked PR chain awaits merge. No Saurav
+implementation exists to duplicate. Codex recorded the exact claim before
+implementation in `../Stephen/coordination/CODEX.md`: dependency manifests,
+the new import service/routes/view and fixtures/tests, append-only app/router
+wiring, `client/src/api.ts`, `docs/api-contract.md`, and Task 8 status docs.
+
+Saurav need not confirm or stop unrelated work. Do not start Task 8 or Task 9's
+shared import-file extension until Codex records the Task 8 release commit.
 
 ## Deviations from the plan
 

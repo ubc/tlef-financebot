@@ -193,6 +193,38 @@ honest against `git log`.
 
 ---
 
+### Task 8 cross-owner takeover: Question import — CSV/JSON/QTI (IN-Q01)
+
+**Original owner:** Dev B (Saurav) · **Implementing for Stephen:** Codex
+**Reason:** independent and not started; it directly supplies the remaining
+Phase 2 exit criterion while Admin A2 waits for the stacked PR chain to merge.
+
+**Claimed files:**
+
+- `package.json`, `package-lock.json`
+- create `server/src/services/import.service.ts`
+- create `server/src/routes/import.routes.ts`
+- `server/src/app.ts`
+- create `client/src/views/instructor/import.ts`
+- `client/src/api.ts`, `client/src/main.ts`, `client/src/views/instructor/shell.ts`
+- create `tests/fixtures/import-sample.{csv,json}`, `tests/fixtures/import-sample-qti.xml`
+- create `tests/unit/import.service.test.ts`, `tests/unit/import.routes.test.ts`
+- create `tests/e2e/import.spec.ts`
+- `docs/api-contract.md` and the Phase 2 plan/status files
+
+- [ ] **Step 1:** add dependencies and the three five-item fixtures.
+- [ ] **Step 2:** write failing parser, partial-success, parameterization,
+  commit/auto-conversion, route-auth, and multipart tests.
+- [ ] **Step 3:** implement the service and instructor-gated preview/commit
+  routes; revalidate every client-returned preview candidate on commit.
+- [ ] **Step 4:** implement and wire the Instructor Import page, including a
+  real upload → preview → confirm flow.
+- [ ] **Step 5:** focused/full tests, typecheck/lint/build, then live browser
+  verification with isolated fixture cleanup.
+- [ ] **Step 6:** commit and open a short-lived PR from current `main`.
+
+---
+
 ### Task 11: Phase exit — flag-loop E2E (joint)
 
 **Owner:** Joint — you drive `tests/e2e/flag-loop.spec.ts`; Saurav verifies the instructor/AI side.

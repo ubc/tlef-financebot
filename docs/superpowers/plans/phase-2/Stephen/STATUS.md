@@ -13,6 +13,7 @@ _Last updated: 2026-07-28_
 - Admin Console v0: **A1 complete on stacked PR #36**.
 - Task 7 progression/redirect + finite rounds: **complete on stacked PR #37**.
 - Task 11 flag-loop phase exit E2E: **complete on stacked PR #38**.
+- Task 8 question import: **active cross-owner takeover with Codex**.
 
 Admin v0 is Stephen-owned staging enablement. Saurav does not need to confirm
 or stop his own work; this status is the requested informational handoff so
@@ -102,6 +103,30 @@ Codex aligned only these E2E files with the current product:
 
 No production route/service changed for these stale assertions. These paths
 are released at `4422d20`.
+
+## Task 8 cross-owner takeover
+
+Admin A2 remains intentionally blocked until PRs #34, #36, and #37 merge.
+Stephen authorized Codex to continue Phase 2 by taking Saurav's independent,
+not-started Task 8. This directly advances the only remaining Phase 2 exit
+criterion: importing existing COMM 298 content as Drafts.
+
+The exact implementation claim is:
+
+- `package.json`, `package-lock.json`
+- `server/src/services/import.service.ts`, `server/src/routes/import.routes.ts`
+- `server/src/app.ts`
+- `client/src/views/instructor/import.ts`
+- `client/src/api.ts`, `client/src/main.ts`, `client/src/views/instructor/shell.ts`
+- `tests/fixtures/import-sample.csv`, `tests/fixtures/import-sample.json`,
+  `tests/fixtures/import-sample-qti.xml`
+- `tests/unit/import.service.test.ts`, `tests/unit/import.routes.test.ts`
+- `tests/e2e/import.spec.ts`
+- `docs/api-contract.md` and Task 8 plan/status documents
+
+No Saurav implementation existed to duplicate. Saurav need not confirm or
+pause unrelated work; these paths remain read-only to the other agent until
+Codex records a release commit.
 
 ## Admin v0 decisions
 

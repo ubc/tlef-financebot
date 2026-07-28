@@ -2,8 +2,8 @@
 
 **Ledger owner:** Codex only  
 **Last updated:** 2026-07-28
-**State:** Task 11 released on PR #38; no Codex implementation path active
-**Base:** PR #38 head `8c029c2` (`codex/phase-2-task11-flag-loop`)
+**State:** Task 8 question import active as recorded cross-owner takeover
+**Base:** `main` at `3a7ea8d`
 
 Both agents read this file and `CLAUDE.md` before editing. Each agent updates
 only its own claim file. While multiple Stephen worktrees are active, publish
@@ -11,6 +11,36 @@ narrow plan commits instead of running the current whole-folder `sync-plans`
 script from a stale worktree; it has overwritten the other agent's newer
 ledger more than once. A path claimed by the other agent is read-only until
 that agent records `released` plus a commit SHA.
+
+## Active Task 8
+
+Phase 2 Task 8 — CSV/JSON/QTI question import with preview, partial-success
+parsing, parameterization flags, and Draft-only commit. Stephen explicitly
+authorized this takeover; Saurav's status records it before implementation.
+
+Planned branch: `codex/phase-2-task8-import`, from current `main`.
+
+### Task 8 files claimed by Codex
+
+- `package.json`, `package-lock.json`
+- create `server/src/services/import.service.ts`
+- create `server/src/routes/import.routes.ts`
+- `server/src/app.ts`
+- create `client/src/views/instructor/import.ts`
+- `client/src/api.ts`
+- `client/src/main.ts`
+- `client/src/views/instructor/shell.ts`
+- create `tests/fixtures/import-sample.csv`
+- create `tests/fixtures/import-sample.json`
+- create `tests/fixtures/import-sample-qti.xml`
+- create `tests/unit/import.service.test.ts`
+- create `tests/unit/import.routes.test.ts`
+- create `tests/e2e/import.spec.ts`
+- `docs/api-contract.md`
+- Phase 2 Task 8 plan/status documents
+
+No active Saurav code branch or uncommitted work is being reused. Task 9 may
+later extend the three import files only after this claim is released.
 
 ## Released Task 11
 
