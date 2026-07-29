@@ -2,6 +2,34 @@
 
 _Last updated: 2026-07-28_
 
+## Update (2026-07-28): workflow/UX hardening loop started
+
+Stephen requested an extended user-journey loop covering both Instructor
+course-authoring paths, question generation/review, flags/notifications, and
+the complete anonymous Student Preview workflow. The working plan is
+[`2026-07-28-workflow-ux-hardening-stephen.md`](2026-07-28-workflow-ux-hardening-stephen.md).
+
+Baseline findings already confirmed:
+
+- PR #50 is merged. AI-generated hierarchy suggestions now include per-LO
+  source mappings, and Apply automatically persists material assignments.
+- The earlier `generation-no-assigned-materials` failures were accurate but
+  exposed an internal recovery requirement too late. Round 1 will prevent the
+  doomed generation action and route the Instructor directly to assignment.
+- The repository already routes `EMBEDDINGS_PROVIDER=openai` through the GenAI
+  toolkit and reuses `LLM_API_KEY`; no provider-adapter rewrite is required.
+- `text-embedding-3-small` returns 1536-dimensional vectors by default, versus
+  the current FastEmbed model's 384. Existing Qdrant course collections cannot
+  accept the new vectors without migration/re-ingestion; no collection will be
+  deleted automatically.
+- A separate runaway `amplify status` process exhausted the Mac's ephemeral
+  ports and caused both OpenAI and localhost to report `EADDRNOTAVAIL`. That
+  process was terminated, and OpenAI/loopback connectivity recovered.
+
+Work is proceeding as small reviewable rounds rather than one broad rewrite.
+Findings, shipped fixes, validation evidence, and remaining UX risks will be
+appended here after each round.
+
 ## Update (2026-07-28): P2-I1 through P2-I5 code-complete
 
 Stephen asked Codex to implement the rows that remained backlog-only in
