@@ -160,6 +160,17 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
       .send({ loId: loId.toHexString() });
     expect(jest.mocked(enqueueGenerationRun).mock.calls[0]![0]).toMatchObject({ count: 3 });
   });
+
+  it('returns a recoverable conflict before enqueue when the LO has no assigned material', async () => {
+    jest.mocked(enqueueGenerationRun).mockRejectedValue(new Error('generation-no-assigned-materials'));
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/courses/${courseId.toHexString()}/generate`)
+      .send({ loId: loId.toHexString() });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'generation-no-assigned-materials' });
+  });
 });
 
 describe('GET /api/courses/:courseId/preseeding (IN-Q10)', () => {

@@ -35,6 +35,7 @@ import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
+import { subscribeFlagsChanged } from '../../flag-sync.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -220,6 +221,18 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   let actionErrorMessage: string | null = null;
 
   const resultsContainer = el('div', {});
+  const initialGroups = groupFlags(flags);
+  const header = pageHeader(
+    'Flags',
+    `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${initialGroups.length} question version${initialGroups.length === 1 ? '' : 's'}`,
+  );
+  const headerSubtitle = header.querySelector('.page-header__subtitle');
+
+  function updateHeader(): void {
+    const groups = groupFlags(flags);
+    const text = `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${groups.length} question version${groups.length === 1 ? '' : 's'}`;
+    if (headerSubtitle) headerSubtitle.textContent = text;
+  }
 
   // Task 6 (§6.2 remediation): per-group state, keyed by `questionVersionId`
   // (the grouping key — see the module note). Survives `reload()` (which only
@@ -377,6 +390,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     } catch (error) {
       loadErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
     }
+    updateHeader();
     renderResults();
   }
 
@@ -628,10 +642,26 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   body.replaceChildren(
-    pageHeader('Flags', `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${groupFlags(flags).length} question version${groupFlags(flags).length === 1 ? '' : 's'}`),
+    header,
     resultsContainer,
   );
+  updateHeader();
   renderResults();
+
+  const unsubscribeFlagsChanged = subscribeFlagsChanged(() => void reload());
+  const refreshWhenVisible = (): void => {
+    if (document.visibilityState === 'visible' && root.isConnected) void reload();
+  };
+  document.addEventListener('visibilitychange', refreshWhenVisible);
+  window.addEventListener('focus', refreshWhenVisible);
+  const lifecycleObserver = new MutationObserver(() => {
+    if (root.isConnected) return;
+    unsubscribeFlagsChanged();
+    document.removeEventListener('visibilitychange', refreshWhenVisible);
+    window.removeEventListener('focus', refreshWhenVisible);
+    lifecycleObserver.disconnect();
+  });
+  lifecycleObserver.observe(outlet, { childList: true });
 }
 
 export function renderFlagQueue(outlet: HTMLElement, params: RouteParams): void {

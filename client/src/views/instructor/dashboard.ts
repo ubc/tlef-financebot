@@ -1,13 +1,9 @@
-// Course Dashboard (I1) — overview stat tiles, a client-derived pre-publish
+// Course Dashboard (I1) — overview stat tiles, a server-backed pre-publish
 // checklist, and Quick Actions (Task 15, Task C). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-id `148:3516`) and `.superpowers/sdd/task-15/i1-course-dashboard.png`.
 //
-// No `GET .../publish-checklist` endpoint exists (api.ts's `getPublishChecklist`
-// throws — see its doc comment), so the five checklist rows below are derived
-// client-side from data already fetched for this page: the course record, the
-// hierarchy tree, `listMaterials`, and `getPreseeding` (Task-15 Task C brief,
-// "CRITICAL resolutions" #1).
+// checklist, and shortcuts into the setup workflow.
 import {
   ApiError,
   getCourseTree,
@@ -37,6 +33,32 @@ interface DashboardData {
   tree: CourseTree;
   preseeding: PreseedingLo[];
   checklist: ChecklistItem[];
+}
+
+interface ChecklistAction {
+  text: string;
+  path: string;
+}
+
+/** Server checklist label -> the shortest screen that can resolve it. */
+export function checklistActionFor(label: string): ChecklistAction | undefined {
+  const normalized = label.toLocaleLowerCase();
+  if (normalized.includes('term date')) {
+    return { text: 'Set dates', path: '/instructor/course/:id/settings' };
+  }
+  if (normalized.includes('theme') || normalized.includes('topic')) {
+    return { text: 'Add Topic', path: '/instructor/course/:id/structure' };
+  }
+  if (normalized.includes('learning objective')) {
+    return { text: 'Add LO', path: '/instructor/course/:id/structure' };
+  }
+  if (normalized.includes('registration code')) {
+    return { text: 'Open Settings', path: '/instructor/course/:id/settings' };
+  }
+  if (normalized.includes('approved question')) {
+    return { text: 'Generate Questions', path: '/instructor/course/:id/preseeding' };
+  }
+  return undefined;
 }
 
 async function loadData(courseId: string): Promise<DashboardData> {
@@ -113,12 +135,34 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
     const checklist = el(
       'div',
       { class: 'checklist' },
-      ...data.checklist.map((item) => checklistRow(item.item, item.ok)),
+      ...data.checklist.map((item) => {
+        const action = item.ok ? undefined : checklistActionFor(item.item);
+        return checklistRow(
+          item.item,
+          item.ok,
+          action
+            ? {
+                text: action.text,
+                onClick: () => navigate(action.path.replace(':id', encodeURIComponent(courseId))),
+              }
+            : undefined,
+        );
+      }),
     );
 
     const quickActions = el(
       'div',
       { class: 'quick-action-grid' },
+      quickActionCard(
+        courseId,
+        data.checklist.find((item) => item.item === 'Term dates set')?.ok
+          ? 'Course Settings'
+          : 'Set Term Dates',
+        data.checklist.find((item) => item.item === 'Term dates set')?.ok
+          ? 'Update term dates, feedback strategy, registration, and roster'
+          : 'Required before publishing · choose the course start and end dates',
+        '/instructor/course/:id/settings',
+      ),
       quickActionCard(courseId, 'Edit Topic/LO Structure', 'Add, rename, reorder Topics and LOs', '/instructor/course/:id/structure'),
       quickActionCard(courseId, 'Upload Materials', 'Add course materials and assign to LOs', '/instructor/course/:id/materials'),
       quickActionCard(courseId, 'Content Map', 'Inspect material kinds and LO coverage gaps', '/instructor/course/:id/content-map'),

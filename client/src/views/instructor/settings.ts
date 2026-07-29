@@ -26,8 +26,8 @@ import { pageHeader } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
-function fieldLabel(text: string): HTMLElement {
-  return el('label', { class: 'form-field__label', text });
+function fieldLabel(text: string, htmlFor: string): HTMLElement {
+  return el('label', { class: 'form-field__label', for: htmlFor, text });
 }
 
 const FEEDBACK_STRATEGIES: Array<{
@@ -65,22 +65,24 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   let selectedStrategy = course.feedbackStrategy;
   let autoPause: AutoPauseConfig = { ...course.autoPause };
   let registrationCode = course.registrationCode;
-  const nameInput = el('input', { class: 'input', type: 'text', value: course.name }) as HTMLInputElement;
-  const codeInput = el('input', { class: 'input', type: 'text', value: course.courseCode }) as HTMLInputElement;
-  const sectionInput = el('input', { class: 'input', type: 'text', value: course.section ?? '' }) as HTMLInputElement;
-  const termInput = el('input', { class: 'input', type: 'text', value: course.term }) as HTMLInputElement;
+  const nameInput = el('input', { class: 'input', type: 'text', id: 'settings-course-name', value: course.name }) as HTMLInputElement;
+  const codeInput = el('input', { class: 'input', type: 'text', id: 'settings-course-code', value: course.courseCode }) as HTMLInputElement;
+  const sectionInput = el('input', { class: 'input', type: 'text', id: 'settings-section', value: course.section ?? '' }) as HTMLInputElement;
+  const termInput = el('input', { class: 'input', type: 'text', id: 'settings-term', value: course.term }) as HTMLInputElement;
 
-  const termStartInput = el('input', { class: 'input', type: 'date', value: toDateInputValue(course.termStart) }) as HTMLInputElement;
-  const termEndInput = el('input', { class: 'input', type: 'date', value: toDateInputValue(course.termEnd) }) as HTMLInputElement;
-  const minAttemptsInput = el('input', { class: 'input', type: 'number', min: '1', value: String(autoPause.minAttempts) }) as HTMLInputElement;
-  const flagPercentInput = el('input', { class: 'input', type: 'number', min: '0', max: '100', value: String(autoPause.flagPercent) }) as HTMLInputElement;
-  const flagCountInput = el('input', { class: 'input', type: 'number', min: '0', value: String(autoPause.flagCount) }) as HTMLInputElement;
+  const termStartInput = el('input', { class: 'input', type: 'date', id: 'settings-term-start', value: toDateInputValue(course.termStart) }) as HTMLInputElement;
+  const termEndInput = el('input', { class: 'input', type: 'date', id: 'settings-term-end', value: toDateInputValue(course.termEnd) }) as HTMLInputElement;
+  const minAttemptsInput = el('input', { class: 'input', type: 'number', id: 'settings-min-attempts', min: '1', value: String(autoPause.minAttempts) }) as HTMLInputElement;
+  const flagPercentInput = el('input', { class: 'input', type: 'number', id: 'settings-flag-percent', min: '0', max: '100', value: String(autoPause.flagPercent) }) as HTMLInputElement;
+  const flagCountInput = el('input', { class: 'input', type: 'number', id: 'settings-flag-count', min: '0', value: String(autoPause.flagCount) }) as HTMLInputElement;
   const settingsErrorSlot = el('div', {});
+  const settingsStatusSlot = el('div', { 'aria-live': 'polite' });
   const strategyGroup = el('div', { class: 'strategy-group' });
   const codeValueEl = el('span', { class: 'registration-code__value mono', text: registrationCode ?? '— not generated —' });
   const codeErrorSlot = el('div', {});
   const rosterTextarea = el('textarea', {
     class: 'input input--area roster-textarea',
+    id: 'settings-roster',
     rows: '8',
     text: roster.map((r) => r.identifier).join('\n'),
   }) as HTMLTextAreaElement;
@@ -132,11 +134,20 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   const saveSettings = async (): Promise<void> => {
     settingsErrorSlot.replaceChildren();
+    settingsStatusSlot.replaceChildren();
     const minAttempts = Number(minAttemptsInput.value);
     const flagPercent = Number(flagPercentInput.value);
     const flagCount = Number(flagCountInput.value);
     if (![minAttempts, flagPercent, flagCount].every((n) => Number.isFinite(n) && n >= 0)) {
       settingsErrorSlot.replaceChildren(errorState('Auto-pause fields must be non-negative numbers.'));
+      return;
+    }
+    if (
+      termStartInput.value
+      && termEndInput.value
+      && termEndInput.value < termStartInput.value
+    ) {
+      settingsErrorSlot.replaceChildren(errorState('Term end date must be on or after the start date.'));
       return;
     }
     try {
@@ -154,6 +165,9 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
       autoPause = { ...updated.autoPause };
       selectedStrategy = updated.feedbackStrategy;
       renderStrategyGroup();
+      settingsStatusSlot.replaceChildren(
+        el('p', { class: 'preseeding-queued-message', role: 'status', text: 'Course settings saved.' }),
+      );
     } catch (error) {
       settingsErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
     }
@@ -213,24 +227,24 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         el(
           'div',
           { class: 'form-field' },
-          fieldLabel('Course Name'),
+          fieldLabel('Course Name', 'settings-course-name'),
           nameInput,
         ),
         el(
           'div',
           { class: 'form-field' },
-          fieldLabel('Course Code'),
+          fieldLabel('Course Code', 'settings-course-code'),
           codeInput,
         ),
-        el('div', { class: 'form-field' }, fieldLabel('Section'), sectionInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term'), termInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term Start Date'), termStartInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term End Date'), termEndInput),
+        el('div', { class: 'form-field' }, fieldLabel('Section', 'settings-section'), sectionInput),
+        el('div', { class: 'form-field' }, fieldLabel('Term', 'settings-term'), termInput),
+        el('div', { class: 'form-field' }, fieldLabel('Term Start Date', 'settings-term-start'), termStartInput),
+        el('div', { class: 'form-field' }, fieldLabel('Term End Date', 'settings-term-end'), termEndInput),
 
         el('h2', { class: 'section-title', text: 'Auto-pause' }),
-        el('div', { class: 'form-field' }, fieldLabel('Minimum attempts before auto-pause applies'), minAttemptsInput),
-        el('div', { class: 'form-field' }, fieldLabel('Flag percentage threshold'), flagPercentInput),
-        el('div', { class: 'form-field' }, fieldLabel('Flag count threshold'), flagCountInput),
+        el('div', { class: 'form-field' }, fieldLabel('Minimum attempts before auto-pause applies', 'settings-min-attempts'), minAttemptsInput),
+        el('div', { class: 'form-field' }, fieldLabel('Flag percentage threshold', 'settings-flag-percent'), flagPercentInput),
+        el('div', { class: 'form-field' }, fieldLabel('Flag count threshold', 'settings-flag-count'), flagCountInput),
 
         el('h2', { class: 'section-title', text: 'Registration Code' }),
         el(
@@ -242,6 +256,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         codeErrorSlot,
 
         settingsErrorSlot,
+        settingsStatusSlot,
         el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void saveSettings() }, 'Save Settings'),
         el(
           'button',
@@ -261,6 +276,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
         el('h2', { class: 'section-title', text: 'Roster' }),
         el('p', { class: 'view__lead', text: 'One student identifier per line. Saving replaces the full roster.' }),
+        fieldLabel('Student identifiers', 'settings-roster'),
         rosterTextarea,
         rosterErrorSlot,
         el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => void saveRoster() }, 'Save Roster'),

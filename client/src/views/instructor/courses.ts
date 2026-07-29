@@ -103,8 +103,8 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
   }
 }
 
-function fieldLabel(text: string): HTMLElement {
-  return el('label', { class: 'form-field__label', text });
+function fieldLabel(text: string, htmlFor: string): HTMLElement {
+  return el('label', { class: 'form-field__label', for: htmlFor, text });
 }
 
 /** Create Course (N2): name/code/term form, with a non-blocking client-side
@@ -206,10 +206,10 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     el(
       'form',
       { class: 'form stack', onsubmit: (e: Event) => void submit(e) },
-      el('div', { class: 'form-field' }, fieldLabel('Course name *'), nameInput),
-      el('div', { class: 'form-field' }, fieldLabel('Course code *'), codeInput),
-      el('div', { class: 'form-field' }, fieldLabel('Section'), sectionInput),
-      el('div', { class: 'form-field' }, fieldLabel('Term *'), termInput),
+      el('div', { class: 'form-field' }, fieldLabel('Course name *', 'course-name'), nameInput),
+      el('div', { class: 'form-field' }, fieldLabel('Course code *', 'course-code'), codeInput),
+      el('div', { class: 'form-field' }, fieldLabel('Section', 'course-section'), sectionInput),
+      el('div', { class: 'form-field' }, fieldLabel('Term *', 'course-term'), termInput),
       duplicateSlot,
       errorSlot,
       el(

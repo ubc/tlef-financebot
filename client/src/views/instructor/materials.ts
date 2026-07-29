@@ -36,6 +36,22 @@ function statusLabel(status: Material['status']): string {
   return status === 'ready' ? 'Ready' : status === 'failed' ? 'Failed' : 'Processing';
 }
 
+/** Persisted material/run errors are domain codes; keep diagnostics available
+ * while leading with the recovery an instructor can understand. */
+export function materialErrorMessage(message: string): string {
+  const code = message.split(':')[0] ?? message;
+  if (code === 'blocked-url') {
+    return 'This URL points to a private or local address and cannot be imported. Use a publicly accessible HTTPS URL or upload the file instead.';
+  }
+  if (code === 'qdrant-vector-size-mismatch') {
+    return 'The vector database was created for a different embedding model. An administrator must migrate the collection and re-ingest course materials.';
+  }
+  if (code === 'unsupported-format') {
+    return 'This file type is not supported. Upload a PDF, Word, PowerPoint, text, or Markdown file.';
+  }
+  return message;
+}
+
 /** A small Topic/LO checkbox tree for the "Or assign manually" section of the
  * Assign Material panel (n3) — every checked LO becomes a `{ themeId, loId }`
  * assignment. `check()` lets the "Modify" action on a suggestion pre-tick one
@@ -186,7 +202,11 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     const stage = run.stage.charAt(0).toUpperCase() + run.stage.slice(1);
     const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
     if (run.status === 'failed') return `Failed during ${stage}${units}`;
-    if (run.status === 'completed') return `Completed · ${stage}${units}`;
+    if (run.status === 'completed') {
+      return run.totalUnits !== undefined
+        ? `${run.completedUnits}/${run.totalUnits} processed`
+        : 'Completed';
+    }
     return `${stage}${units}`;
   }
 
@@ -195,7 +215,13 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     const progress = runProgress(run);
     const suggestion = material.classificationSuggestion;
     const classificationText =
-      material.status !== 'ready' ? '—' : suggestion ? `Auto-classified (${classificationLabel(suggestion.confidence)})` : 'No match';
+      material.status !== 'ready'
+        ? '—'
+        : suggestion
+          ? `Suggested (${classificationLabel(suggestion.confidence)})`
+          : material.assignments.length > 0
+            ? 'Assignment confirmed'
+            : 'No AI suggestion';
 
     const action =
       material.status === 'failed'
@@ -211,7 +237,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
                 refresh();
               },
             },
-            'Assign →',
+            material.assignments.length > 0 ? 'Edit assignment →' : 'Assign →',
           );
     const kinds: MaterialKind[] = [
       'lecture',
@@ -252,9 +278,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
           text: `${statusLabel(material.status)}${progress ? ` · ${progress}` : ''} · Uploaded ${formatDate(material.uploadedAt)}`,
         }),
         material.status === 'failed' && material.error
-          ? el('p', { class: 'material-row__error', text: material.error })
+          ? el('p', { class: 'material-row__error', text: materialErrorMessage(material.error) })
           : run?.error
-            ? el('p', { class: 'material-row__error', text: run.error.message })
+            ? el('p', { class: 'material-row__error', text: materialErrorMessage(run.error.message) })
             : false,
       ),
       el('p', { class: 'material-row__assign', text: material.status === 'ready' ? assignmentSummary(material, tree) : '—' }),
@@ -347,13 +373,13 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el(
           'div',
           { class: 'row' },
-          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void resolve('accept') }, 'Accept'),
+          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void resolve('accept') }, 'Accept & assign'),
           el(
             'button',
             { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => checklist.check(suggestion.themeId, suggestion.loId) },
-            'Modify',
+            'Edit assignment',
           ),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void resolve('reject') }, 'Reject'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void resolve('reject') }, 'Dismiss suggestion'),
         ),
       ),
       errorSlot,

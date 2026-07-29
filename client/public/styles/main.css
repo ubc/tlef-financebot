@@ -228,6 +228,13 @@ a {
 
 /* ---- Buttons + inputs ---------------------------------------------------- */
 
+/* Component classes frequently set their own display value. Keep the native
+ * `hidden` contract authoritative so state-specific controls do not remain
+ * visible merely because `.btn`, `.row`, or another component uses display. */
+[hidden] {
+  display: none !important;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

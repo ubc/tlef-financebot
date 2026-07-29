@@ -1,7 +1,7 @@
 # FinanceBot workflow and UX hardening — Stephen
 
-**Owner:** Stephen  
-**Branch strategy:** small, independently reviewable `codex/workflow-ux-hardening-round-*` PRs  
+**Owner:** Stephen
+**Branch strategy:** small, independently reviewable `codex/workflow-ux-hardening-round-*` PRs
 **Started:** 2026-07-28
 
 ## Goal

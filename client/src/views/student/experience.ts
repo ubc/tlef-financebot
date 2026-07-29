@@ -37,6 +37,7 @@ import {
   type SubmitAttemptInput,
 } from '../../api.js';
 import { broadcastNotificationsChanged } from '../../notification-sync.js';
+import { broadcastFlagsChanged } from '../../flag-sync.js';
 
 export interface StudentRoutes {
   courses(courseId?: string): string;
@@ -167,7 +168,10 @@ export function createPreviewStudentExperience(
         reason,
         options?.sendToInstructorQueue,
       );
-      if (result.testQueued) broadcastNotificationsChanged();
+      if (result.testQueued) {
+        broadcastNotificationsChanged();
+        broadcastFlagsChanged();
+      }
       return result;
     },
     skip: (courseId, loId, attempted) =>

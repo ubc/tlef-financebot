@@ -7,6 +7,7 @@
 // client/src/views/instructor/preseeding.ts.
 import {
   coverageStatus,
+  generationErrorMessage,
   materialMentionToken,
   presetPrompt,
   thinLos,
@@ -47,6 +48,16 @@ describe('materialMentionToken', () => {
 
   it('quotes material names containing spaces for exact server resolution', () => {
     expect(materialMentionToken('Lecture 3.pdf')).toBe('@"Lecture 3.pdf"');
+  });
+});
+
+describe('generationErrorMessage', () => {
+  it('translates the missing-assignment domain code into an actionable message', () => {
+    expect(generationErrorMessage('generation-no-assigned-materials')).toContain('Assign at least one');
+  });
+
+  it('preserves an unknown message so diagnostics are not hidden', () => {
+    expect(generationErrorMessage('unexpected-provider-error')).toBe('unexpected-provider-error');
   });
 });
 

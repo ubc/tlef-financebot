@@ -40,8 +40,10 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
 import { ObjectId } from 'mongodb';
 import {
   enqueueGenerationRun,
+  GENERATOR_PROMPT,
   preseedingProgress,
   registerGenerationJobs,
+  REVIEWER_PROMPT,
   runGenerationPipeline,
 } from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
@@ -56,13 +58,14 @@ import {
   getContentRun,
   updateContentRun,
 } from '../../server/src/services/content-runs.service';
+import type { QuestionOption } from '../../server/src/types/domain';
 
 const loFindOne = jest.fn();
 const loToArray = jest.fn();
 const materialToArray = jest.fn();
 const countDocuments = jest.fn();
 
-function validOptions() {
+function validOptions(): QuestionOption[] {
   return [
     { key: 'A', text: '10%', role: 'correct', explanation: 'right' },
     { key: 'B', text: '5%', role: 'common-misconception', explanation: 'mix-up' },
@@ -70,8 +73,8 @@ function validOptions() {
     { key: 'D', text: '99%', role: 'clearly-wrong', explanation: 'nope' },
   ];
 }
-function generatorOutput(options = validOptions()) {
-  return { stem: 'What is the IRR?', options, difficulty: 'medium' };
+function generatorOutput(options: QuestionOption[] = validOptions()) {
+  return { stem: 'What is the IRR?', options, difficulty: 'medium' as const };
 }
 
 const courseId = new ObjectId();
@@ -124,6 +127,26 @@ beforeEach(() => {
   } as never);
 });
 
+describe('difficulty calibration prompts', () => {
+  it('defines medium difficulty beyond a direct formula substitution', () => {
+    const prompt = GENERATOR_PROMPT({
+      type: 'mcq',
+      loName: 'Calculate present value',
+      difficulty: 'medium',
+      chunks: [{ text: 'PV and FV formulas' }],
+    });
+    expect(prompt).toContain('a direct formula substitution is too easy');
+  });
+
+  it('asks the reviewer to flag mismatched stated and actual difficulty', () => {
+    const prompt = REVIEWER_PROMPT({
+      loName: 'Calculate present value',
+      question: generatorOutput(),
+    });
+    expect(prompt).toContain('Difficulty calibration');
+  });
+});
+
 describe('durable generation runs (P2-0)', () => {
   it('validates the LO, persists a unique run, and enqueues only its runId', async () => {
     const runId = new ObjectId();
@@ -148,9 +171,24 @@ describe('durable generation runs (P2-0)', () => {
           validator: 'val-model',
           reviewer: 'rev-model',
         },
+        grounding: {
+          allowedMaterialIds: [materialId],
+          retrievedChunkCount: 0,
+        },
       }),
     );
     expect(enqueueJob).toHaveBeenCalledWith('generation.run', { runId: runId.toHexString() });
+  });
+
+  it('rejects an LO with no ready assigned material before creating a run', async () => {
+    materialToArray.mockResolvedValue([]);
+
+    await expect(
+      enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR' }),
+    ).rejects.toThrow('generation-no-assigned-materials');
+
+    expect(createQuestionGenerationRun).not.toHaveBeenCalled();
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it('keeps a successful Draft and finishes partial when another item fails validation', async () => {
