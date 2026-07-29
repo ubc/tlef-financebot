@@ -52,18 +52,20 @@ large architectural or visual rewrites.
 
 ## Round 1 priorities
 
-- [ ] Establish browser baseline for both Instructor setup paths.
-- [ ] Verify the merged AI hierarchy auto-assignment path end to end.
-- [ ] Prevent generation when an LO has no ready assigned material and provide
+- [x] Establish the structure-first Instructor and Student Preview browser
+      baseline.
+- [x] Verify the merged AI hierarchy auto-assignment path end to end.
+- [x] Prevent generation when an LO has no ready assigned material and provide
       a direct recovery action.
-- [ ] Replace raw generation failure codes with useful user-facing messages.
-- [ ] Add a Settings quick action for missing term dates.
-- [ ] Verify OpenAI embedding-provider compatibility and define a safe Qdrant
+- [x] Replace raw generation failure codes with useful user-facing messages.
+- [x] Add direct checklist actions and a Settings quick action for missing term
+      dates.
+- [x] Verify OpenAI embedding-provider compatibility and define a safe Qdrant
       384 → 1536 dimension migration path.
-- [ ] Exercise question review, approval, flags, notifications, and Student
+- [x] Exercise question review, approval, flags, notifications, and Student
       Preview paths.
-- [ ] Run targeted tests plus the full regression suite.
-- [ ] Update `Stephen/STATUS.md` with evidence and unresolved findings.
+- [x] Run targeted tests plus the full regression suite.
+- [x] Update `Stephen/STATUS.md` with evidence and unresolved findings.
 
 ## OpenAI embeddings configuration finding
 
