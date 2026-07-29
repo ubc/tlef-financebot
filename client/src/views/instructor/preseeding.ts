@@ -151,6 +151,29 @@ export function materialMentionToken(name: string): string {
   return /\s/u.test(name) ? `@"${name.replace(/"/gu, '')}"` : `@${name}`;
 }
 
+const GENERATION_ERROR_MESSAGE: Record<string, string> = {
+  'generation-no-assigned-materials':
+    'This Learning Objective has no ready assigned material. Assign at least one course material before generating questions.',
+  'generation-material-mention-not-found':
+    'One of the @mentioned materials is not ready or is not assigned to this Learning Objective.',
+  'generation-material-mention-ambiguous':
+    'The @mentioned material name matches more than one assigned file. Rename the files or remove the @mention.',
+  'generation-retrieval-failed':
+    'The assigned material could not be searched. Check the vector database and embedding configuration, then try again.',
+  'generation-no-grounding':
+    'No usable content was found in the assigned materials. Check the file content and assignment before trying again.',
+  'generation-no-questions-created':
+    'The run completed, but no valid Draft questions could be created.',
+  'content-run-enqueue-failed':
+    'Question generation could not be queued. Please try again after the background job service recovers.',
+};
+
+/** Convert persisted/server domain codes into instructor-facing recovery text. */
+export function generationErrorMessage(message: string): string {
+  const code = message.split(':')[0] ?? message;
+  return GENERATION_ERROR_MESSAGE[code] ?? message;
+}
+
 // --- LO/Topic join ------------------------------------------------------------
 
 interface LoRow {
@@ -262,9 +285,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     placeholder: 'Start typing an assigned material name…',
   }) as HTMLInputElement;
 
-  function materialsForSelectedLo(): Material[] {
+  function materialsForLo(loId: string): Material[] {
     const theme = tree.themes.find((candidate) =>
-      (candidate.los ?? []).some((lo) => lo._id === formLoId),
+      (candidate.los ?? []).some((lo) => lo._id === loId),
     );
     if (!theme) return [];
     return materials.filter(
@@ -272,10 +295,22 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         material.status === 'ready' &&
         material.assignments.some(
           (assignment) =>
-            assignment.loId === formLoId ||
+            assignment.loId === loId ||
             (assignment.loId === undefined && assignment.themeId === theme._id),
         ),
     );
+  }
+
+  function materialsForSelectedLo(): Material[] {
+    return materialsForLo(formLoId);
+  }
+
+  function hasReadyAssignedMaterial(loId: string): boolean {
+    return materialsForLo(loId).length > 0;
+  }
+
+  function openMaterials(): void {
+    navigate(`/instructor/course/${encodeURIComponent(courseId)}/materials`);
   }
 
   function insertMaterialMention(): void {
@@ -309,6 +344,11 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       renderForm();
       return;
     }
+    if (materialsForSelectedLo().length === 0) {
+      formError = GENERATION_ERROR_MESSAGE['generation-no-assigned-materials'];
+      renderForm();
+      return;
+    }
     formBusy = true;
     formError = null;
     formQueuedMessage = null;
@@ -323,7 +363,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       activeFormRunId = queued.runId;
       formQueuedMessage = `Generation queued as run ${queued.runId.slice(-8)}.`;
     } catch (error) {
-      formError = error instanceof ApiError ? error.message : (error as Error).message;
+      formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
     renderForm();
@@ -361,7 +401,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       selectedBlueprintId = created._id;
       formQueuedMessage = `Saved blueprint “${created.name}”.`;
     } catch (error) {
-      formError = error instanceof ApiError ? error.message : (error as Error).message;
+      formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
     renderForm();
@@ -377,7 +417,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       activeFormRunId = queued.runId;
       formQueuedMessage = `Blueprint run queued as ${queued.runId.slice(-8)}.`;
     } catch (error) {
-      formError = error instanceof ApiError ? error.message : (error as Error).message;
+      formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
     renderForm();
@@ -392,7 +432,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       formQueuedMessage = `Retry queued as run ${queued.runId.slice(-8)}.`;
       renderForm();
     } catch (error) {
-      formError = error instanceof ApiError ? error.message : (error as Error).message;
+      formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
       renderForm();
     } finally {
       retryingRuns.delete(run._id);
@@ -405,11 +445,18 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
     const created = run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0;
     const failed = run.kind === 'question-generation' ? run.result?.failures.length ?? 0 : 0;
-    return `${run.status} · ${stage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed`;
+    const activeStage = run.status === 'running'
+      ? ` · ${stage}`
+      : run.status === 'failed'
+        ? ` · during ${stage}`
+        : '';
+    return `${run.status}${activeStage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed`;
   }
 
   function runStatusPanel(run: ContentRunSummary): HTMLElement {
     const created = run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0;
+    const missingAssignedMaterial = run.error?.code === 'generation-no-assigned-materials'
+      || run.error?.message.split(':')[0] === 'generation-no-assigned-materials';
     return el(
       'div',
       { class: `preseeding-queued-message content-run-status content-run-status--${run.status}`, role: 'status' },
@@ -428,8 +475,21 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             ' Review Drafts →',
           )
         : false,
-      run.error ? el('p', { class: 'material-row__error', text: run.error.message }) : false,
-      run.kind === 'question-generation' && ['completed', 'partial', 'failed'].includes(run.status)
+      run.error ? el('p', { class: 'material-row__error', text: generationErrorMessage(run.error.message) }) : false,
+      missingAssignedMaterial
+        ? el(
+            'button',
+            {
+              class: 'btn btn--ghost btn--sm',
+              type: 'button',
+              onclick: openMaterials,
+            },
+            'Assign course materials',
+          )
+        : false,
+      run.kind === 'question-generation'
+        && !missingAssignedMaterial
+        && ['completed', 'partial', 'failed'].includes(run.status)
         ? el(
             'button',
             {
@@ -445,6 +505,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   }
 
   function renderForm(): void {
+    const assignedMaterials = materialsForSelectedLo();
+    const canGenerate = Boolean(formLoId) && assignedMaterials.length > 0;
     const blueprintSelect = el(
       'select',
       {
@@ -545,6 +607,25 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             )
           : false,
       ),
+      formLoId
+        ? assignedMaterials.length > 0
+          ? el('p', {
+              class: 'preseeding-form__hint',
+              text: `${assignedMaterials.length} ready assigned material${assignedMaterials.length === 1 ? '' : 's'} will ground this generation: ${assignedMaterials.map((material) => material.name).join(', ')}`,
+            })
+          : el(
+              'div',
+              { class: 'unassigned-banner', role: 'status' },
+              el('p', {
+                text: 'Questions must be grounded in course content. This LO has no ready assigned material yet.',
+              }),
+              el(
+                'button',
+                { class: 'btn btn--ghost btn--sm', type: 'button', onclick: openMaterials },
+                'Assign course materials',
+              ),
+            )
+        : false,
       el(
         'div',
         { class: 'preseeding-presets' },
@@ -626,7 +707,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         {
           class: 'btn btn--instr-primary',
           type: 'button',
-          disabled: formBusy || !formLoId ? 'disabled' : undefined,
+          disabled: formBusy || !canGenerate ? 'disabled' : undefined,
           onclick: () => void submitGenerate(),
         },
         formBusy ? 'Generating…' : 'Generate Question →',
@@ -649,9 +730,16 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   async function generateForAllThin(): Promise<void> {
     const thin = thinLos(preseeding);
     if (thin.length === 0) return;
+    const eligible = thin.filter((lo) => hasReadyAssignedMaterial(lo.loId));
+    const skipped = thin.length - eligible.length;
+    if (eligible.length === 0) {
+      bulkError = 'None of the below-target Learning Objectives has a ready assigned material. Assign course materials before generating questions.';
+      renderTiles();
+      return;
+    }
     if (!await confirmDialog({
       title: 'Generate questions?',
-      message: `Start generation for ${thin.length} below-target Learning Objective${thin.length === 1 ? '' : 's'}?`,
+      message: `Start generation for ${eligible.length} below-target Learning Objective${eligible.length === 1 ? '' : 's'}?${skipped ? ` ${skipped} without assigned materials will be skipped.` : ''}`,
       confirmLabel: 'Start generation',
     })) return;
     bulkBusy = true;
@@ -660,15 +748,15 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     renderTiles();
     // One generateQuestions call per thin LO (Task G brief), all in flight
     // together; a single LO's failure doesn't stop the rest from enqueuing.
-    const results = await Promise.allSettled(thin.map((lo) => generateQuestions(courseId, { loId: lo.loId })));
+    const results = await Promise.allSettled(eligible.map((lo) => generateQuestions(courseId, { loId: lo.loId })));
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const runIds = results
       .filter((result): result is PromiseFulfilledResult<{ runId: string }> => result.status === 'fulfilled')
       .map((result) => result.value.runId.slice(-8));
     bulkBusy = false;
-    bulkMessage = `Queued generation for ${succeeded} of ${thin.length} LO${thin.length === 1 ? '' : 's'}${runIds.length ? ` — runs ${runIds.join(', ')}` : ''}.`;
-    if (succeeded < thin.length) {
-      bulkError = `${thin.length - succeeded} LO${thin.length - succeeded === 1 ? '' : 's'} failed to enqueue — try again from that row's "Generate Questions" action.`;
+    bulkMessage = `Queued generation for ${succeeded} of ${eligible.length} eligible LO${eligible.length === 1 ? '' : 's'}${runIds.length ? ` — runs ${runIds.join(', ')}` : ''}.${skipped ? ` Skipped ${skipped} without assigned materials.` : ''}`;
+    if (succeeded < eligible.length) {
+      bulkError = `${eligible.length - succeeded} LO${eligible.length - succeeded === 1 ? '' : 's'} failed to enqueue — try again from that row's "Generate Questions" action.`;
     }
     renderTiles();
   }
@@ -707,6 +795,12 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       statusBadge(COVERAGE_LABEL[status], COVERAGE_BADGE_VARIANT[status]),
       status === 'at-target'
         ? el('span', {})
+        : !hasReadyAssignedMaterial(row.loId)
+          ? el(
+              'button',
+              { class: 'btn btn--ghost btn--sm', type: 'button', onclick: openMaterials },
+              'Assign Materials →',
+            )
         : el(
             'button',
             { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => openFormFor(row.loId) },

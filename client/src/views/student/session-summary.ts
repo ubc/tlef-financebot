@@ -248,7 +248,7 @@ function summaryBody(
     el(
       'div',
       { class: 'stat-tile-row' },
-      statTile(summary.losCovered.length, 'LOs Covered'),
+      statTile(summary.losCovered.length, 'LOs Mastered'),
       statTile(summary.questionsAttempted, 'Questions Answered'),
       statTile(correct, 'Correct Answers', 'good'),
       statTile(`${pct}%`, 'Accuracy', pct >= 70 ? 'good' : pct >= 40 ? 'warn' : 'bad'),

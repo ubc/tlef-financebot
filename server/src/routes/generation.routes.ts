@@ -140,6 +140,7 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'question-changed-during-regeneration': 409,
   'generation-material-mention-not-found': 400,
   'generation-material-mention-ambiguous': 400,
+  'generation-no-assigned-materials': 409,
   'generation-invalid-options': 422,
   'generation-retrieval-failed': 503,
   'generation-no-grounding': 422,

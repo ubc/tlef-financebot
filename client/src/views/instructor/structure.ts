@@ -43,6 +43,29 @@ export function findDuplicateName(names: string[], candidate: string): string | 
   return names.find((name) => name.trim().toLowerCase() === norm);
 }
 
+interface SuggestionSelection {
+  checked: boolean;
+  los: Array<{ checked: boolean }>;
+}
+
+/** Topic selection owns its child LO selection in the AI review panel. */
+export function setSuggestionTopicSelected(
+  theme: SuggestionSelection,
+  checked: boolean,
+): void {
+  theme.checked = checked;
+  theme.los.forEach((lo) => {
+    lo.checked = checked;
+  });
+}
+
+/** Applying an AI hierarchy must never create a selected Topic with zero LOs. */
+export function canApplySuggestion(themes: SuggestionSelection[]): boolean {
+  const selected = themes.filter((theme) => theme.checked);
+  return selected.length > 0
+    && selected.every((theme) => theme.los.some((lo) => lo.checked));
+}
+
 function fieldLabel(text: string): HTMLElement {
   return el('label', { class: 'form-field__label', text });
 }
@@ -245,12 +268,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
                   type: 'checkbox',
                   checked: theme.checked ? 'checked' : undefined,
                   onchange: (e: Event) => {
-                    theme.checked = (e.target as HTMLInputElement).checked;
-                    if (!theme.checked) {
-                      theme.los.forEach((lo) => {
-                        lo.checked = false;
-                      });
-                    }
+                    setSuggestionTopicSelected(
+                      theme,
+                      (e.target as HTMLInputElement).checked,
+                    );
                     renderRows();
                   },
                 }),
@@ -308,7 +329,9 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
             {
               class: 'btn btn--instr-primary btn--sm',
               type: 'button',
-              disabled: applyingSuggestion ? 'disabled' : undefined,
+              disabled: applyingSuggestion || !canApplySuggestion(themeDrafts)
+                ? 'disabled'
+                : undefined,
               onclick: () => void applySelected(),
             },
             applyingSuggestion ? 'Applying…' : 'Apply & auto-assign',
@@ -341,6 +364,9 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           const themeName = suggested.name.trim();
           if (!themeName) throw new Error('Every selected Topic needs a name.');
           const selectedLos = suggested.los.filter((lo) => lo.checked);
+          if (selectedLos.length === 0) {
+            throw new Error(`Select at least one LO under "${themeName}".`);
+          }
           const blankLo = selectedLos.some((lo) => !lo.name.trim());
           if (blankLo) throw new Error(`Every selected LO under "${themeName}" needs a name.`);
         }

@@ -13,6 +13,7 @@ import {
   classificationLabel,
   removeAssignment,
 } from '../../client/src/views/instructor/material-assign';
+import { materialErrorMessage } from '../../client/src/views/instructor/materials';
 import type { CourseTree, Material } from '../../client/src/api';
 
 function tree(): CourseTree {
@@ -77,6 +78,18 @@ describe('classificationLabel', () => {
   it('returns No match below 0.5', () => {
     expect(classificationLabel(0.49)).toBe('No match');
     expect(classificationLabel(0)).toBe('No match');
+  });
+});
+
+describe('materialErrorMessage', () => {
+  it('explains blocked private URLs without exposing an internal code as the primary message', () => {
+    expect(materialErrorMessage('blocked-url:host:localhost')).toContain('private or local address');
+  });
+
+  it('explains embedding collection migration failures', () => {
+    expect(materialErrorMessage('qdrant-vector-size-mismatch:course-1:expected=1536:actual=384')).toContain(
+      'different embedding model',
+    );
   });
 });
 

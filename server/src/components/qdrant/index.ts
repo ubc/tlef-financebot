@@ -9,6 +9,20 @@ export const qdrant = new QdrantClient({
   apiKey: env.qdrantApiKey || undefined,
 });
 
+/** Return the one vector size used by FinanceBot's anonymous-vector
+ * collections. Named-vector configurations are intentionally not guessed. */
+export function collectionVectorSize(
+  vectors: Schemas['VectorsConfig'] | undefined,
+): number | undefined {
+  if (!vectors) return undefined;
+  if ('size' in vectors && typeof vectors.size === 'number') return vectors.size;
+  const namedVectors = vectors as Record<string, Schemas['VectorParams'] | undefined>;
+  const sizes = Object.values(namedVectors)
+    .map((config) => config?.size)
+    .filter((value): value is number => typeof value === 'number');
+  return sizes.length === 1 ? sizes[0] : undefined;
+}
+
 /**
  * Create the collection if it does not already exist. Idempotent, so it is safe
  * to call on every ingest/startup. `size` MUST equal the embedding model's
@@ -17,7 +31,16 @@ export const qdrant = new QdrantClient({
  */
 export async function ensureCollection(name: string, size: number): Promise<void> {
   const { collections } = await qdrant.getCollections();
-  if (collections.some((c) => c.name === name)) return;
+  if (collections.some((c) => c.name === name)) {
+    const existing = await qdrant.getCollection(name);
+    const existingSize = collectionVectorSize(existing.config.params.vectors);
+    if (existingSize !== size) {
+      throw new Error(
+        `qdrant-vector-size-mismatch:${name}:expected=${size}:actual=${existingSize ?? 'unknown'}`,
+      );
+    }
+    return;
+  }
   await qdrant.createCollection(name, {
     vectors: { size, distance: 'Cosine' },
   });

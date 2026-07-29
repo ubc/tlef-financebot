@@ -159,6 +159,16 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
   if (!lo) throw new Error('lo-not-found');
   if (!lo.courseId.equals(input.courseId)) throw new Error('lo-not-in-course');
 
+  // Resolve and freeze grounding before creating the durable run. Previously a
+  // request with no ready assigned material was accepted, then failed in the
+  // background and left a noisy terminal run in the instructor UI. Enqueue is
+  // the actionable boundary: reject here while the caller can still direct the
+  // instructor to Course Materials.
+  const resolvedMaterialIds = input.pinnedMaterialIds ?? (
+    await groundingMaterialIds(input.courseId, lo, input.prompt)
+  ).map((id) => new ObjectId(id));
+  if (resolvedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+
   const run = await createQuestionGenerationRun({
     courseId: input.courseId,
     requestedBy: input.byPuid,
@@ -169,14 +179,10 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
     ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
-    ...(input.pinnedMaterialIds
-      ? {
-          grounding: {
-            allowedMaterialIds: input.pinnedMaterialIds,
-            retrievedChunkCount: 0,
-          },
-        }
-      : {}),
+    grounding: {
+      allowedMaterialIds: resolvedMaterialIds,
+      retrievedChunkCount: 0,
+    },
     models: input.models ?? configuredGenerationModels(),
   });
   try {
@@ -819,10 +825,18 @@ export function GENERATOR_PROMPT(params: {
   chunks: RetrievedChunk[];
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
+  const difficultyGuidance = params.difficulty === 'easy'
+    ? 'Easy means one direct recall or one-step application with no irrelevant information.'
+    : params.difficulty === 'medium'
+      ? 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.'
+      : params.difficulty === 'hard'
+        ? 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.'
+        : '';
   return [
     `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
     `for the learning objective: "${params.loName}".`,
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
+    difficultyGuidance,
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
@@ -868,6 +882,8 @@ export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOut
     '  3. LO & material alignment — it tests this LO and is grounded in the material.',
     '  4. Distractor quality — wrong options are plausible and pedagogically useful.',
     '  5. Clarity — the stem and options are unambiguous.',
+    '  6. Difficulty calibration — the actual reasoning demand matches the stated difficulty;',
+    '     a one-step substitution should not pass as medium or hard.',
     '',
     'Question JSON:',
     JSON.stringify(params.question),

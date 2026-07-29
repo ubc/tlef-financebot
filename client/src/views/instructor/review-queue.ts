@@ -244,8 +244,13 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     if (!to) return;
     actionErrorMessage = null;
     try {
-      const updated = await transitionQuestion(item.id, to);
-      queueItems = queueItems.map((q) => (q.id === item.id ? { ...q, state: updated.state } : q));
+      await transitionQuestion(item.id, to);
+      // The server queue intentionally excludes Approved questions. Rebuild
+      // from that authoritative list so the approved row disappears and the
+      // header/tab counts update together; merely changing the row's local
+      // state left an Approved item inside “awaiting review”.
+      await renderReviewQueueInner(outlet, courseId);
+      return;
     } catch (error) {
       actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
     }
@@ -353,7 +358,9 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
           {
             class: 'btn btn--instr-primary btn--sm',
             type: 'button',
-            onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(item.id)}`),
+            onclick: () => navigate(
+              `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(item.id)}?from=queue`,
+            ),
           },
           'Review →',
         ),

@@ -137,6 +137,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   const courseId = detail.courseId || fallbackCourseId;
   const query = currentQuery();
   const fromFlags = query.get('from') === 'flags';
+  const fromQueue = query.get('from') === 'queue';
   const flagVersionId = query.get('flagVersionId');
   let flagContext: Flag[] = [];
   if (fromFlags && flagVersionId) {
@@ -193,6 +194,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   const stemTextarea = el('textarea', {
     class: 'input input--area question-stem-input',
+    'aria-label': 'Question stem',
     rows: '4',
     text: draftStem,
     oninput: (e: Event) => {
@@ -207,6 +209,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     'select',
     {
       class: 'input question-difficulty-select',
+      'aria-label': 'Difficulty',
       onchange: (e: Event) => {
         draftDifficulty = (e.target as HTMLSelectElement).value as Difficulty;
         difficultySelect.classList.toggle('edited', isFieldEdited(draftDifficulty, baseline.difficulty));
@@ -229,6 +232,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       const textInput = el('input', {
         class: 'input option-editor__text',
         type: 'text',
+        'aria-label': `${ROLE_LABEL[role]} option text`,
         value: draft.text,
         oninput: (e: Event) => {
           draft.text = (e.target as HTMLInputElement).value;
@@ -239,6 +243,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
       const explInput = el('textarea', {
         class: 'input input--area option-editor__explanation',
+        'aria-label': `${ROLE_LABEL[role]} explanation`,
         rows: '2',
         text: draft.explanation,
         oninput: (e: Event) => {
@@ -253,7 +258,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       return el(
         'div',
         { class: 'option-editor' },
-        el('span', { class: 'option-editor__role-label', text: ROLE_LABEL[role] }),
+        el('span', { class: 'option-editor__role-label', text: `${draft.key}. ${ROLE_LABEL[role]}` }),
         textInput,
         el('label', { class: 'option-editor__explanation-label', text: 'Explanation' }),
         explInput,
@@ -801,6 +806,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   const backPath = fromFlags
     ? `/instructor/course/${encodeURIComponent(courseId)}/flags`
+    : fromQueue
+      ? `/instructor/course/${encodeURIComponent(courseId)}/queue`
     : `/instructor/course/${encodeURIComponent(courseId)}/bank`;
   const containsTestFlags = flagContext.some((flag) => flag.source === 'instructor-preview-test');
   const containsRealFlags = flagContext.some((flag) => flag.source !== 'instructor-preview-test');
@@ -842,7 +849,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           navigate(backPath);
         },
       },
-      fromFlags ? '← Back to Flag Queue' : '← Back to Question Bank',
+      fromFlags ? '← Back to Flag Queue' : fromQueue ? '← Back to Review Queue' : '← Back to Question Bank',
     ),
     pageHeader('Question', ''),
     ...(flagBanner ? [flagBanner] : []),

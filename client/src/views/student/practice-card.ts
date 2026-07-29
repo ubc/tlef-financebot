@@ -40,6 +40,7 @@ export interface PracticeCardAdapter {
     reason?: string,
     options?: { sendToInstructorQueue?: boolean },
   ) => Promise<{ flagged: true }>;
+  bookmark?: (questionId: string) => Promise<{ bookmarked: boolean }>;
   allowsInstructorTestFlag?: boolean;
   updatesMastery: boolean;
   materialHref?: (courseId: string, loId: string, materialId: string) => string;
@@ -79,7 +80,13 @@ export function makeQuestionCard(
   let submitting = false;
   let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' = 'idle';
   let flagReason = '';
-  let sendToInstructorQueue = false;
+  let bookmarkState: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
+  let bookmarkError: string | undefined;
+  // Instructor Preview exists specifically to exercise the real flag loop.
+  // Default its explicit TEST option on (the instructor can still uncheck it
+  // for a preview-session-only flag); live student practice never exposes the
+  // option and therefore remains false.
+  let sendToInstructorQueue = Boolean(adapter.allowsInstructorTestFlag);
   let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
@@ -131,6 +138,21 @@ export function makeQuestionCard(
     } catch (error) {
       flagState = 'editing';
       flagError = (error as Error).message;
+    }
+    draw();
+  };
+
+  const saveBookmark = async (): Promise<void> => {
+    if (!adapter.bookmark || bookmarkState === 'saving' || bookmarkState === 'saved') return;
+    bookmarkState = 'saving';
+    bookmarkError = undefined;
+    draw();
+    try {
+      await adapter.bookmark(question.questionId);
+      bookmarkState = 'saved';
+    } catch (error) {
+      bookmarkState = 'error';
+      bookmarkError = (error as Error).message;
     }
     draw();
   };
@@ -190,6 +212,34 @@ export function makeQuestionCard(
     let footer: HTMLElement;
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
+    const bookmarkControl = (): HTMLElement | false => {
+      // Review Book entries retain the attempt/LO/theme context needed for
+      // later repractice, so bookmarking becomes available as soon as this
+      // question has been answered.
+      if (!adapter.bookmark || !result) return false;
+      return el(
+        'div',
+        { class: 'stack stack--compact' },
+        el(
+          'button',
+          {
+            class: 'btn btn--ghost btn--sm',
+            type: 'button',
+            disabled: bookmarkState === 'saving' || bookmarkState === 'saved',
+            'aria-live': 'polite',
+            onclick: () => void saveBookmark(),
+          },
+          bookmarkState === 'saving'
+            ? 'Saving bookmark…'
+            : bookmarkState === 'saved'
+              ? 'Bookmarked'
+              : 'Bookmark',
+        ),
+        bookmarkError
+          ? el('span', { class: 'form-error', role: 'alert', text: bookmarkError })
+          : false,
+      );
+    };
     const flagControl = (): HTMLElement | false => {
       if (!adapter.flag) return false;
       if (flagState === 'flagged') {
@@ -276,6 +326,7 @@ export function makeQuestionCard(
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
+        bookmarkControl(),
         flagControl(),
         el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
       );
@@ -283,7 +334,7 @@ export function makeQuestionCard(
       // Strategy-A retry-in-place: the original explanations for the
       // withheld options stay withheld — this recursive card is a fresh
       // question with its own reveal, not a re-render of the original's.
-      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
+      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
       retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true, adapter);
@@ -322,7 +373,7 @@ export function makeQuestionCard(
           'Continue practicing',
         ),
       );
-      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
+      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
     } else if (recommendation) {
       const themeComplete = recommendation === 'advance-theme';
       const hasNextLo = ctx.isThemeMode && ctx.loIndex + 1 < ctx.los.length;
@@ -353,11 +404,12 @@ export function makeQuestionCard(
           ),
         ),
       );
-      footer = el('div', { class: 'row practice-card__footer' }, flagControl());
+      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
     } else {
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
+        bookmarkControl(),
         flagControl(),
         el(
           'button',

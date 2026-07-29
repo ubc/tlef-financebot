@@ -57,6 +57,7 @@ function runPracticeLoop(
   const cardAdapter: PracticeCardAdapter = {
     submit: (input) => experience.submit(ctx.courseId, input),
     flag: (questionId, reason, options) => experience.flag(ctx.courseId, questionId, reason, options),
+    bookmark: (questionId) => experience.bookmark(ctx.courseId, questionId),
     allowsInstructorTestFlag: experience.preview,
     updatesMastery: true,
     materialHref: experience.materialHref,
@@ -74,7 +75,7 @@ function runPracticeLoop(
       title,
       el(
         'a',
-        { class: 'btn btn--ghost btn--sm', href: experience.routes.summary(ctx.courseId) },
+        { class: 'btn btn--ghost btn--sm', href: endSessionHref },
         'Session Summary →',
       ),
     ),
