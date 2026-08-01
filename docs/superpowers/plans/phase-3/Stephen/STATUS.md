@@ -33,9 +33,15 @@ by Stephen and review this file plus the core checkboxes before editing.
   review, Theme/optional LO breakdowns, weak-area links, history, Review Book
   miss collection, and the idempotent `exam.mastery-pass` worker are covered.
   Focused regression 60/60 and full Jest 744/744 passed; core progress 9/29.
-- Active implementation branch: `codex/phase-3-exam-results` (stacked on the
+- Task 5 Student Exam Prep UI: complete in `7da2eb6`; four views, dynamic active
+  entry, navigation grid, timed warning/auto-submit, unanswered confirmation,
+  weak-area links, and full history/review are covered. The real SAML/Mongo
+  integrity E2E passed, full Jest remains 744/744, and the Mongo-compatible
+  one-open-sitting index was verified during live server startup. Core progress
+  is 12/29.
+- Active implementation branch: `codex/phase-3-exam-ui` (stacked on the
   completed Task 2 branch until integration).
-- Next: Task 5 Student Exam Prep views and integrity E2E.
+- Next: Task 1 capability model, then Tasks 6–8 and the Phase 3 exit review.
 
 ## Coordination
 

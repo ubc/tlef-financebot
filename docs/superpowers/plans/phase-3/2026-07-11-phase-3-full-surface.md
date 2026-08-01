@@ -148,9 +148,12 @@
 
 Key behaviours: question navigation grid with answered/unanswered states; "Submit exam" warns listing unanswered questions before final submission; countdown visible throughout when limited, warning style at 5 minutes, auto-submit on expiry (server-verified); no feedback of any kind mid-attempt; results view with per-Theme bars, full question review, and links into Topic Practice / Review Book for weak areas.
 
-- [ ] **Step 1: Build the four views; typecheck + lint PASS.**
-- [ ] **Step 2: Playwright spec** `tests/e2e/exam-mode.spec.ts` — start exam → answer some → verify **no** correctness/explanation text appears anywhere mid-attempt (assert on page content) → reload resumes with answers retained → submit → results show score, review, and Review Book contains the misses. Run → PASS. *(This spec is also Phase 4's exam-integrity critical path — keep it.)*
-- [ ] **Step 3: Commit** — `git commit -m "feat: exam prep student views with integrity guarantees (ST-X01..X04)"`
+- [x] **Step 1: Build the four views; typecheck + lint PASS.** Active-template
+  nav/home visibility, countdown warning, unanswered confirmation, and weak-area
+  navigation are included; full typecheck/build and changed-file lint passed.
+- [x] **Step 2: Playwright spec** `tests/e2e/exam-mode.spec.ts` — start exam → answer some → verify **no** correctness/explanation text appears anywhere mid-attempt (assert on page content) → reload resumes with answers retained → submit → results show score, review, and Review Book contains the misses. Run → PASS. *(This spec is also Phase 4's exam-integrity critical path — keep it.)*
+- [x] **Step 3: Commit** — `7da2eb6` (`feat: exam prep student views with
+  integrity guarantees (ST-X01..X04)`). Full Jest remained 744/744.
 
 ---
 
