@@ -189,11 +189,11 @@ Instructor behaviour.
   post-exam mastery qualifier end to end.
 - [x] Carry the Exam Prep AttemptRecord fixture/contract directly into Task 7
   analytics under Stephen's authorized WS-11 takeover.
-- [ ] Participate in the joint full-suite/manual exit review before checking
-  the shared Task 9 complete.
+- [x] Complete the authorized joint full-suite/manual exit review, publish all
+  evidence in Stephen's status, and mark shared Task 9 complete for Saurav's
+  asynchronous review.
 
-## Planned first implementation slice
+## Completion
 
-Start with Task 2.1–2.3 (service tests, service, routes), then add the Settings
-UI. This produces a reviewable, independently useful template contract without
-waiting for WS-12. Task 3 starts only after the saved-template shape is stable.
+All Phase 3 implementation and exit-check work is complete. The core plan is
+29/29; no unclaimed Saurav Phase 3 task remains.

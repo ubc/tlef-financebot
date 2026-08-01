@@ -63,9 +63,18 @@ by Stephen and review this file plus the core checkboxes before editing.
   generation records the required flagged explanation. Typecheck/build/scoped
   lint passed; focused tests 43/43 and full Jest 769/769 passed. Core progress
   is 24/29.
-- Active implementation branch: `codex/phase-3-admin-essentials` (stacked on the
+- Task 9 Phase exit: complete in `f08913c`; the live Exam Prep test now proves
+  student completion through Instructor Exam Prep analytics, the TA hard-deny
+  invariant is green, and weak Theme/LO plus inactive-student surfaces were
+  checked against seeded data. The full final suite passed: lint, typecheck,
+  Jest 769/769, and Playwright 21 passed with only the explicitly optional
+  live-LLM test skipped. Preview TEST flags were also corrected to explicit
+  opt-in during the exit audit.
+- Active implementation branch: `codex/phase-3-exit-checks` (stacked on the
   completed Phase 3 implementation).
-- Next: Task 9 Phase 3 exit checks and final status/sync.
+- **Phase 3 is complete: 29/29 actionable core checklist items checked.**
+  Saurav should not start duplicate Phase 3 work; this status is the handoff
+  and review notice requested by Stephen.
 
 ## Coordination
 
