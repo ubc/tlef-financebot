@@ -86,7 +86,7 @@
   - `examState(attemptId, puid)` — question list (stems/options only — **no roles, explanations, or correctness before submission**), answered/unanswered map, `remainingSeconds` when the template has a time limit (computed from `startedAt`; the server, not the client clock, is authoritative — `submitExam` is also invoked by a lazy check: any exam route touching an expired attempt auto-submits it first).
 - Routes (student-guarded): `GET /api/courses/:courseId/exams` (active templates — entry point hidden client-side when empty), `POST /api/courses/:courseId/exams/:templateId/start`, `GET /api/exam-attempts/:attemptId`, `PUT /api/exam-attempts/:attemptId/answers/:index`, `POST /api/exam-attempts/:attemptId/submit`.
 
-- [ ] **Step 1: Failing tests** —
+- [x] **Step 1: Failing tests** —
 
 ```
 1. assembly matches the template exactly when supply suffices (counts per theme, split)
@@ -100,8 +100,11 @@
 8. submit writes one AttemptRecord per question with mode:'exam-prep' and scores points
 ```
 
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: exam assembly from approved bank with shortfall handling and single-sitting attempt state machine (ST-X01/X02)"`
+- [x] **Step 2–4: FAIL → implement → PASS.** Focused/regression 68/68 and
+  full Jest 737/737 passed; typecheck/build and changed-file lint passed.
+- [x] **Step 5: Commit** — `fc3a676` (`feat: exam assembly from approved bank
+  with shortfall handling and single-sitting attempt state machine
+  (ST-X01/X02)`).
 
 ---
 

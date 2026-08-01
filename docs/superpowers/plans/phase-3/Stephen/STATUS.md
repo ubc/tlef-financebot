@@ -24,10 +24,14 @@ by Stephen and review this file plus the core checkboxes before editing.
 
 ## Current progress
 
-- Task 2 Exam templates: complete in `a7b1586`; core progress 3/29.
+- Task 2 Exam templates: complete in `a7b1586`.
+- Task 3 Exam attempts: complete in `fc3a676`; exact/supply-shortfall assembly,
+  single-sitting resume, correctness-free state, server expiry, scoring, five
+  Student routes, and one-open-sitting index are covered. Focused/regression
+  tests 68/68 and full Jest 737/737 passed; core progress 6/29.
 - Active implementation branch: `codex/phase-3-exam-attempts` (stacked on the
   completed Task 2 branch until integration).
-- Task 3 Exam attempts: in progress.
+- Next: Task 4 results/history/Review Book/mastery pass.
 
 ## Coordination
 
