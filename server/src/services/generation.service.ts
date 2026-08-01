@@ -9,9 +9,11 @@ import {
   generationBlueprintsCol,
   questionsCol,
   questionVersionsCol,
+  contentRunsCol,
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
+import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
 import {
   createQuestionGenerationRun,
@@ -169,6 +171,16 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
   ).map((id) => new ObjectId(id));
   if (resolvedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
 
+  const platformSettings = await getPlatformSettings();
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const [daily] = await contentRunsCol().aggregate<{ total: number }>([
+    { $match: { kind: 'question-generation', createdAt: { $gte: dayStart } } },
+    { $group: { _id: null, total: { $sum: '$input.count' } } },
+  ]).toArray();
+  if ((daily?.total ?? 0) + input.count > platformSettings.costControls.maxGenerationsPerDay) {
+    throw new Error('generation-daily-limit');
+  }
   const run = await createQuestionGenerationRun({
     courseId: input.courseId,
     requestedBy: input.byPuid,
@@ -183,7 +195,12 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
       allowedMaterialIds: resolvedMaterialIds,
       retrievedChunkCount: 0,
     },
-    models: input.models ?? configuredGenerationModels(),
+    models: input.models ?? {
+      embedding: env.embeddingsModel,
+      generator: platformSettings.models.generator,
+      validator: platformSettings.models.validator,
+      reviewer: platformSettings.models.reviewer,
+    },
   });
   try {
     await enqueueJob<GenerationJobData>(GENERATION_JOB, { runId: run._id.toHexString() });
@@ -218,6 +235,13 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
+  const platformSettings = await getPlatformSettings();
+  const models = input.models ?? {
+    embedding: env.embeddingsModel,
+    generator: platformSettings.models.generator,
+    validator: platformSettings.models.validator,
+    reviewer: platformSettings.models.reviewer,
+  };
 
   const lo = await losCol().findOne({ _id: loId });
   if (!lo) throw new Error('lo-not-found');
@@ -235,7 +259,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   const { chunks } = await retrieveChunks(collection, courseId, lo, prompt);
 
   for (let i = 0; i < count; i += 1) {
-    const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks);
+    const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
     if (!generated) {
       console.warn(
         `[generation] skipped a question for LO ${loId.toHexString()} after ` +
@@ -248,12 +272,14 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
       VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
-      { model: env.llmModelValidator },
+      { model: models.validator },
     );
-    const review = await completeJson<ReviewerOutput>(
-      REVIEWER_PROMPT({ loName: lo.name, question: generated }),
-      { model: env.llmModelReviewer },
-    );
+    const review = platformSettings.featureFlags.reviewerAgent
+      ? await completeJson<ReviewerOutput>(
+          REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+          { model: models.reviewer },
+        )
+      : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
 
     const sourceRefs = chunks
       .filter((chunk) => chunk.materialId)
@@ -318,6 +344,7 @@ export async function regenerateQuestion(
   if (!loId) throw new Error('question-has-no-lo');
   const lo = await losCol().findOne({ _id: loId });
   if (!lo || !lo.courseId.equals(question.courseId)) throw new Error('lo-not-in-course');
+  const platformSettings = await getPlatformSettings();
 
   const grounding = await retrieveChunks(
     courseCollection(question.courseId),
@@ -336,17 +363,20 @@ export async function regenerateQuestion(
     current.difficulty,
     generationInstruction,
     grounding.chunks,
+    platformSettings.models.generator,
   );
   if (!generated) throw new Error('generation-invalid-options');
 
   const validation = await completeJson<ValidatorOutput>(
     VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
-    { model: env.llmModelValidator },
+    { model: platformSettings.models.validator },
   );
-  const review = await completeJson<ReviewerOutput>(
-    REVIEWER_PROMPT({ loName: lo.name, question: generated }),
-    { model: env.llmModelReviewer },
-  );
+  const review = platformSettings.featureFlags.reviewerAgent
+    ? await completeJson<ReviewerOutput>(
+        REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+        { model: platformSettings.models.reviewer },
+      )
+    : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
   const variant: RegenerationVariant = {
     stem: generated.stem,
     options: generated.options,
@@ -401,6 +431,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
   const models = input.models ?? configuredGenerationModels();
+  const platformSettings = await getPlatformSettings();
   const result: QuestionGenerationResult = { createdQuestionIds: [], failures: [] };
   let stage: QuestionGenerationRun['stage'] = 'retrieving';
 
@@ -501,10 +532,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const reviewed: TrackedCandidate[] = [];
     for (const candidate of validated) {
       try {
-        candidate.review = await completeJson<ReviewerOutput>(
-          REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
-          { model: models.reviewer },
-        );
+        candidate.review = platformSettings.featureFlags.reviewerAgent
+          ? await completeJson<ReviewerOutput>(
+              REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
+              { model: models.reviewer },
+            )
+          : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
         reviewed.push(candidate);
       } catch (error) {
         result.failures.push(generationFailure(candidate.item, 'reviewing', error, 'generation-review-failed'));

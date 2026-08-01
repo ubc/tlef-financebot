@@ -29,6 +29,8 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
   materialsCol: jest.fn(),
   questionsCol: jest.fn(),
+  contentRunsCol: jest.fn(),
+  platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
 }));
 jest.mock('../../server/src/services/content-runs.service', () => ({
   createQuestionGenerationRun: jest.fn(),
@@ -50,7 +52,7 @@ import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
 import { search } from '../../server/src/components/qdrant';
 import { createQuestion } from '../../server/src/services/questions.service';
-import { losCol, materialsCol, questionsCol } from '../../server/src/components/mongodb/collections';
+import { contentRunsCol, losCol, materialsCol, platformSettingsCol, questionsCol } from '../../server/src/components/mongodb/collections';
 import { defineJob, enqueueJob } from '../../server/src/components/jobs';
 import {
   createQuestionGenerationRun,
@@ -98,6 +100,8 @@ beforeEach(() => {
   jest.mocked(getContentRun).mockReset();
   jest.mocked(updateContentRun).mockReset();
   jest.mocked(updateContentRun).mockResolvedValue({} as never);
+  jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => null) } as never);
+  jest.mocked(contentRunsCol).mockReturnValue({ aggregate: jest.fn(() => ({ toArray: async () => [] })) } as never);
 
   jest.mocked(losCol).mockReturnValue({
     findOne: loFindOne,
@@ -125,6 +129,53 @@ beforeEach(() => {
     questionId: new ObjectId(),
     version: { _id: new ObjectId() },
   } as never);
+});
+
+describe('platform reviewer feature flag (AD-07)', () => {
+  it('skips the reviewer call and records disabled reasoning', async () => {
+    jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+      _id: 'platform',
+      models: { generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model', masteryEvaluator: 'mastery-model' },
+      costControls: { maxGenerationsPerDay: 100 },
+      featureFlags: { reviewerAgent: false, layer2Evaluator: true },
+      updatedBy: 'ADMIN', updatedAt: new Date(),
+    })) } as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ valid: true, roleAssessment: 'roles valid' });
+    jest.mocked(search).mockResolvedValue([{ payload: { chunk: 'grounding', materialId: materialId.toHexString() } }] as never);
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: new ObjectId() } as never);
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(createQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      agentDecision: {
+        decision: 'flag',
+        reasoning: 'Reviewer agent disabled at generation time.',
+        roleAssessment: 'roles valid',
+      },
+    }));
+  });
+});
+
+describe('platform generation cost control (AD-07)', () => {
+  it('rejects enqueue before creating a run when the daily limit would be exceeded', async () => {
+    jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+      _id: 'platform',
+      models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm' },
+      costControls: { maxGenerationsPerDay: 5 },
+      featureFlags: { reviewerAgent: true, layer2Evaluator: true },
+      updatedBy: 'ADMIN', updatedAt: new Date(),
+    })) } as never);
+    jest.mocked(contentRunsCol).mockReturnValue({
+      aggregate: jest.fn(() => ({ toArray: async () => [{ total: 4 }] })),
+    } as never);
+
+    await expect(enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR' }))
+      .rejects.toThrow('generation-daily-limit');
+    expect(createQuestionGenerationRun).not.toHaveBeenCalled();
+  });
 });
 
 describe('difficulty calibration prompts', () => {

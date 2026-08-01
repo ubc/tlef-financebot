@@ -6,7 +6,7 @@ import type {
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
-  GenerationBlueprint, CapabilitySettings, TaInvite,
+  GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -41,6 +41,8 @@ export const generationBlueprintsCol = (): Collection<GenerationBlueprint> =>
 export const capabilitySettingsCol = (): Collection<CapabilitySettings> =>
   getDb().collection<CapabilitySettings>('capabilitySettings');
 export const taInvitesCol = (): Collection<TaInvite> => getDb().collection<TaInvite>('taInvites');
+export const platformSettingsCol = (): Collection<PlatformSettings> =>
+  getDb().collection<PlatformSettings>('platformSettings');
 
 export interface IndexSpec {
   collection: string;

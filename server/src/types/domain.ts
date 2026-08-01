@@ -103,6 +103,7 @@ export interface User {
   researchExportConsent?: boolean; // optional, declinable (§4.1)
   createdAt: Date;
   lastLoginAt: Date;
+  deactivatedAt?: Date;
 }
 
 /** Admin-managed global Instructor grant keyed by the canonical SAML PUID. */
@@ -118,6 +119,20 @@ export interface CapabilitySettings {
   courseId?: ObjectId;
   assignments: Partial<Record<Capability, Partial<Record<CapabilityRole, boolean>>>>;
   userOverrides?: Record<string, Partial<Record<Capability, boolean>>>;
+  updatedBy: string;
+  updatedAt: Date;
+}
+
+export interface PlatformSettings {
+  _id: 'platform';
+  models: {
+    generator: string;
+    validator: string;
+    reviewer: string;
+    masteryEvaluator: string;
+  };
+  costControls: { maxGenerationsPerDay: number };
+  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: Date;
 }

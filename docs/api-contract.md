@@ -451,5 +451,29 @@ excluded because every calculation reads only live collections.
   attempts (including Exam Prep), mastery/qualifiers, engagement, Review Book,
   and student flag events.
 
+## Admin essentials
+
+Every route below requires platform Admin, and every successful state-changing
+operation writes an audit entry.
+
+- `GET /api/admin/directory?q=&role=&courseId=` — searchable user directory
+  with course roles and deactivation state.
+- `PUT|DELETE /api/admin/users/:puid/courses/:courseId/roles/:role` — assign or
+  remove a Student, Instructor, or TA role. Removing a course's final Instructor
+  first returns `409 { warning: 'orphans-course' }`; repeat the DELETE with
+  `?confirm=true` to proceed.
+- `POST /api/admin/users/:puid/deactivate|reactivate` — retain records while
+  revoking/restoring all access. Passport returns no identity for a deactivated
+  user on the next request.
+- `GET /api/admin/capabilities?courseId=` / `PUT /api/admin/capabilities` —
+  platform defaults or a separate per-course matrix, including effective-value
+  source labels. TA approval and flag resolution remain hard-locked off.
+- `GET|PUT /api/admin/platform-settings` — generator, validator, reviewer, and
+  future mastery-evaluator model selectors; positive daily generation limit;
+  Reviewer Agent and Layer-2 evaluator feature flags. Turning Reviewer Agent
+  off requires `confirmQualityImpact: true`. New generated Drafts then skip the
+  reviewer call and persist a flagged decision with the disabled-reviewer
+  reason. Exceeding the daily requested-question limit returns 429.
+
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`

@@ -114,6 +114,12 @@ commonly need:
   distributions highlight common misconceptions, engagement uses 30-minute
   session clustering with CSV export, and course-scoped individual profiles
   combine history, mastery, Review Book, and flag events.
+- Phase 3 Admin essentials are implemented: the searchable directory manages
+  course roles and retained-record account deactivation, protects against
+  orphaning courses, exposes platform/course capability matrices, and persists
+  model, daily generation limit, and quality flags. Admin mutations are audited;
+  reviewer-disabled generation is explicitly flagged instead of silently
+  pretending review occurred.
 - Phase 3 Exam Prep services are implemented through WS-10 Task 4: instructors
   save split-aware midterm/final templates with non-blocking supply warnings;
   students receive one resumable, server-timed sitting assembled only from

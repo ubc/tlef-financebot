@@ -87,7 +87,7 @@ export async function getAuthState(): Promise<AuthState> {
 
 export interface AdminAccount {
   puid: string;
-  status: 'active' | 'pending';
+  status: 'active' | 'pending' | 'deactivated';
   uid: string;
   displayName: string;
   email: string;
@@ -98,6 +98,97 @@ export interface AdminAccount {
   createdAt?: string;
   grantedAt?: string;
   updatedAt?: string;
+}
+
+export type CourseRole = 'student' | 'instructor' | 'ta';
+
+export interface AdminDirectoryUser {
+  _id: string;
+  puid: string;
+  uid: string;
+  displayName: string;
+  email: string;
+  affiliations: string[];
+  isAdmin: boolean;
+  courseRoles: Array<{ courseId: string; role: CourseRole }>;
+  deactivatedAt?: string;
+  lastLoginAt: string;
+}
+
+export function listAdminUsers(filters: { q?: string; role?: CourseRole; courseId?: string } = {}): Promise<AdminDirectoryUser[]> {
+  const query = new URLSearchParams();
+  if (filters.q) query.set('q', filters.q);
+  if (filters.role) query.set('role', filters.role);
+  if (filters.courseId) query.set('courseId', filters.courseId);
+  return request<AdminDirectoryUser[]>(`/api/admin/directory${query.size ? `?${query}` : ''}`);
+}
+
+export function assignAdminCourseRole(puid: string, courseId: string, role: CourseRole): Promise<void> {
+  return request<void>(`/api/admin/users/${encodeURIComponent(puid)}/courses/${encodeURIComponent(courseId)}/roles/${role}`, { method: 'PUT' });
+}
+
+export function removeAdminCourseRole(
+  puid: string,
+  courseId: string,
+  role: CourseRole,
+  confirm = false,
+): Promise<{ removed: boolean; warning?: 'orphans-course'; courseId?: string }> {
+  return request<{ removed: boolean; warning?: 'orphans-course'; courseId?: string }>(
+    `/api/admin/users/${encodeURIComponent(puid)}/courses/${encodeURIComponent(courseId)}/roles/${role}?confirm=${confirm}`,
+    { method: 'DELETE' },
+  );
+}
+
+export function setAdminUserActive(puid: string, active: boolean): Promise<void> {
+  return request<void>(`/api/admin/users/${encodeURIComponent(puid)}/${active ? 'reactivate' : 'deactivate'}`, { method: 'POST' });
+}
+
+export type CapabilityRole = 'student' | 'instructor' | 'ta' | 'admin';
+
+export interface CapabilityMatrix {
+  scope: 'platform' | 'course';
+  courseId?: string;
+  assignments: Partial<Record<Capability, Partial<Record<CapabilityRole, boolean>>>>;
+  matrix: Array<{
+    capability: Capability;
+    roles: Record<CapabilityRole, { value: boolean; source: 'default' | 'course' | 'admin-override' | 'user-override' }>;
+  }>;
+}
+
+export function getAdminCapabilities(courseId?: string): Promise<CapabilityMatrix> {
+  return request<CapabilityMatrix>(`/api/admin/capabilities${courseId ? `?courseId=${encodeURIComponent(courseId)}` : ''}`);
+}
+
+export function saveAdminCapabilities(
+  assignments: CapabilityMatrix['assignments'],
+  courseId?: string,
+): Promise<void> {
+  return request<void>('/api/admin/capabilities', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments, courseId }),
+  });
+}
+
+export interface PlatformSettings {
+  models: { generator: string; validator: string; reviewer: string; masteryEvaluator: string };
+  costControls: { maxGenerationsPerDay: number };
+  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean };
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export function getAdminPlatformSettings(): Promise<PlatformSettings> {
+  return request<PlatformSettings>('/api/admin/platform-settings');
+}
+
+export function saveAdminPlatformSettings(
+  settings: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags'>,
+  confirmQualityImpact = false,
+): Promise<PlatformSettings> {
+  return request<PlatformSettings>('/api/admin/platform-settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...settings, confirmQualityImpact }),
+  });
 }
 
 /** GET /api/admin/users?query= -> persisted users plus pending PUID grants. */
@@ -1984,13 +2075,16 @@ export type Capability =
   | 'question.review'
   | 'question.suggest-edit'
   | 'question.mark-reviewed'
+  | 'question.create-draft'
   | 'question.approve'
   | 'flag.triage'
   | 'flag.resolve'
   | 'analytics.view'
+  | 'analytics.individual'
+  | 'exam.configure'
   | 'course.manage-tas'
-  | 'course.manage-settings'
-  | 'exam.manage';
+  | 'materials.upload'
+  | 'hierarchy.edit';
 
 export interface TaInvite {
   _id: string;

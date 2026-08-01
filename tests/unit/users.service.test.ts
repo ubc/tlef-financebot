@@ -170,4 +170,11 @@ describe('findUserByPuid platform authorization refresh', () => {
     });
     expect(findGrant).toHaveBeenCalledWith({ puid: 'PUID-PROF-0001' });
   });
+
+  it('returns falsey identity for a deactivated user before refreshing grants', async () => {
+    findUser.mockResolvedValue({ ...storedUser, deactivatedAt: new Date() });
+
+    await expect(findUserByPuid('PUID-PROF-0001')).resolves.toBeNull();
+    expect(findGrant).not.toHaveBeenCalled();
+  });
 });

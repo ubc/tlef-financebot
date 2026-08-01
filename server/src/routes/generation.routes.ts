@@ -144,6 +144,7 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'generation-invalid-options': 422,
   'generation-retrieval-failed': 503,
   'generation-no-grounding': 422,
+  'generation-daily-limit': 429,
   'generation-blueprint-not-found': 404,
 };
 

@@ -66,6 +66,9 @@ import {
 } from './views/instructor/student-preview.js';
 import { renderImport } from './views/instructor/import.js';
 import { renderAdminAccounts } from './views/admin/accounts.js';
+import { renderAdminUsers } from './views/admin/users.js';
+import { renderAdminCapabilities } from './views/admin/capabilities.js';
+import { renderAdminPlatformSettings } from './views/admin/platform-settings.js';
 import {
   createPreviewStudentExperience,
   previewStudentRoutes as previewNavRoutes,
@@ -107,6 +110,9 @@ const ROUTES: Route[] = [
 // these patterns never actually shadow one another. All instructor views
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
+  { path: '/admin/platform-settings', render: renderAdminPlatformSettings },
+  { path: '/admin/capabilities', render: renderAdminCapabilities },
+  { path: '/admin/users', render: renderAdminUsers },
   { path: '/admin/accounts', render: renderAdminAccounts },
   { path: '/instructor/courses/new', render: renderCreateCourse },
   { path: '/instructor/courses', render: renderCourses },
@@ -253,7 +259,12 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     ? [
         {
           label: 'Admin',
-          items: [{ label: 'User Accounts', path: '/admin/accounts' }],
+          items: [
+            { label: 'User Directory', path: '/admin/users' },
+            { label: 'Instructor Grants', path: '/admin/accounts' },
+            { label: 'Capabilities', path: '/admin/capabilities' },
+            { label: 'Platform Settings', path: '/admin/platform-settings' },
+          ],
         },
         ...INSTRUCTOR_NAV,
       ]

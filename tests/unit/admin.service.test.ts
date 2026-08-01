@@ -1,17 +1,23 @@
 import { ObjectId } from 'mongodb';
 import {
   auditCol,
+  platformSettingsCol,
   platformInstructorGrantsCol,
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 import {
   grantPlatformInstructor,
+  deactivateUser,
+  removeRole,
+  updatePlatformSettings,
   listAdminAccounts,
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   auditCol: jest.fn(),
+  capabilitySettingsCol: jest.fn(),
+  platformSettingsCol: jest.fn(),
   platformInstructorGrantsCol: jest.fn(),
   usersCol: jest.fn(),
 }));
@@ -24,6 +30,10 @@ const findUserAfterUpdate = jest.fn();
 const updateUser = jest.fn();
 const findUsers = jest.fn();
 const insertAudit = jest.fn();
+const findUser = jest.fn();
+const countUsers = jest.fn();
+const findPlatformSettings = jest.fn();
+const replacePlatformSettings = jest.fn();
 
 beforeEach(() => {
   for (const mock of [
@@ -34,6 +44,10 @@ beforeEach(() => {
     updateUser,
     findUsers,
     insertAudit,
+    findUser,
+    countUsers,
+    findPlatformSettings,
+    replacePlatformSettings,
   ]) {
     mock.mockReset();
   }
@@ -47,8 +61,80 @@ beforeEach(() => {
     findOneAndUpdate: findUserAfterUpdate,
     updateOne: updateUser,
     find: findUsers,
+    findOne: findUser,
+    countDocuments: countUsers,
   } as never);
   jest.mocked(auditCol).mockReturnValue({ insertOne: insertAudit } as never);
+  jest.mocked(platformSettingsCol).mockReturnValue({
+    findOne: findPlatformSettings,
+    replaceOne: replacePlatformSettings,
+  } as never);
+});
+
+describe('Phase 3 Admin essentials', () => {
+  it('warns before orphaning a course and removes only after confirmation', async () => {
+    const courseId = new ObjectId();
+    const instructor = userDoc({ courseRoles: [{ courseId, role: 'instructor' }] });
+    findUser.mockResolvedValue(instructor);
+    countUsers.mockResolvedValue(1);
+    updateUser.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+
+    await expect(removeRole('ESIPROF00001', courseId, 'instructor', 'ADMIN')).resolves.toEqual({
+      removed: false, warning: 'orphans-course', courseId: courseId.toHexString(),
+    });
+    expect(updateUser).not.toHaveBeenCalled();
+
+    await expect(removeRole('ESIPROF00001', courseId, 'instructor', 'ADMIN', true)).resolves.toEqual({ removed: true });
+    expect(updateUser).toHaveBeenCalledWith(
+      { _id: instructor._id },
+      { $pull: { courseRoles: { courseId, role: 'instructor' } } },
+    );
+    expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'role.revoke' }));
+  });
+
+  it('deactivates without deleting records and writes an audit entry', async () => {
+    const user = userDoc();
+    findUser.mockResolvedValue(user);
+    updateUser.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+
+    await deactivateUser(user.puid, 'ADMIN');
+
+    expect(updateUser).toHaveBeenCalledWith(
+      { _id: user._id },
+      { $set: { deactivatedAt: expect.any(Date) } },
+    );
+    expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'user.deactivate' }));
+  });
+
+  it('rejects non-positive cost controls and audits a valid settings mutation', async () => {
+    const base = {
+      models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm' },
+      costControls: { maxGenerationsPerDay: 10 },
+      featureFlags: { reviewerAgent: true, layer2Evaluator: true },
+    };
+    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...base });
+
+    await expect(updatePlatformSettings({ ...base, costControls: { maxGenerationsPerDay: 0 } }, 'ADMIN'))
+      .rejects.toThrow('invalid-cost-controls');
+    await updatePlatformSettings(base, 'ADMIN');
+
+    expect(replacePlatformSettings).toHaveBeenCalledWith(
+      { _id: 'platform' }, expect.objectContaining(base), { upsert: true },
+    );
+    expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'platform-settings.update' }));
+  });
+
+  it('requires explicit quality-impact confirmation before disabling reviewer', async () => {
+    const patch = {
+      models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm' },
+      costControls: { maxGenerationsPerDay: 10 },
+      featureFlags: { reviewerAgent: false, layer2Evaluator: true },
+    };
+    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...patch, featureFlags: { reviewerAgent: true, layer2Evaluator: true } });
+
+    await expect(updatePlatformSettings(patch, 'ADMIN')).rejects.toThrow('reviewer-disable-confirmation-required');
+    await expect(updatePlatformSettings({ ...patch, confirmQualityImpact: true }, 'ADMIN')).resolves.toMatchObject(patch);
+  });
 });
 
 function grantDoc(over: Record<string, unknown> = {}) {

@@ -76,7 +76,7 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
   const user = await usersCol().findOne({ puid });
-  if (!user) return null;
+  if (!user || user.deactivatedAt) return null;
 
   // The grant collection is the authorization source of truth. Recomputing
   // during Passport deserialization makes revoke effective on the next

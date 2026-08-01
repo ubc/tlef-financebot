@@ -24,6 +24,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
   materialsCol: jest.fn(),
   questionsCol: jest.fn(),
+  platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
   questionVersionsCol: jest.fn(),
 }));
 
