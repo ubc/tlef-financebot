@@ -367,3 +367,11 @@ HTTPS `POST_LOGIN_REDIRECT` / `POST_LOGOUT_REDIRECT` as needed.
 
 See the passport-ubcshib README's staging/production guide for the underlying
 `passport-saml` options.
+
+## Capability authorization (Phase 3)
+
+`ensureCapability(capability)` resolves the course from `req.params.courseId`
+or `res.locals.courseId`, then applies platform, course-role, and per-user
+settings. It returns the same 401/generic 403 shapes as the course guards. The
+TA hard-deny for question approval and flag resolution lives in the capability
+service, so configuration cannot bypass it.

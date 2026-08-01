@@ -2,8 +2,8 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import { z } from 'zod';
-import { ensureApiAuthenticated } from '../components/auth';
-import { ensureCourseInstructor, NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
+import { ensureApiAuthenticated, ensureCapability } from '../components/auth';
+import { NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   browseBank,
@@ -256,7 +256,7 @@ function toQuestionResponse(question: WithId<Question>): Record<string, unknown>
 questionsRouter.get(
   '/courses/:courseId/questions',
   validate({ params: courseIdParams }),
-  ensureCourseInstructor(),
+  ensureCapability('question.review'),
   validate({ query: browseQuery }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
@@ -277,7 +277,7 @@ questionsRouter.get(
 questionsRouter.get(
   '/courses/:courseId/review-queue',
   validate({ params: courseIdParams }),
-  ensureCourseInstructor(),
+  ensureCapability('question.review'),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const queue = await reviewQueue(courseId);
@@ -293,7 +293,7 @@ questionsRouter.get(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.review'),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const { question, current, versions } = await getQuestionDetail(questionId);
@@ -307,7 +307,7 @@ questionsRouter.patch(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.approve'),
   validate({ body: patchQuestionBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
@@ -334,7 +334,7 @@ questionsRouter.post(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.review'),
   validate({ body: internalNoteBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
@@ -354,7 +354,7 @@ questionsRouter.patch(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.approve'),
   validate({ body: patchQuestionParamsBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
@@ -385,7 +385,7 @@ questionsRouter.post(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.approve'),
   validate({ body: previewQuestionParamsBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
@@ -422,7 +422,7 @@ questionsRouter.post(
   validate({ params: questionIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromQuestion(),
-  ensureCourseInstructor(),
+  ensureCapability('question.approve'),
   validate({ body: transitionBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
@@ -444,7 +444,7 @@ questionsRouter.post(
   ensureApiAuthenticated(),
   validate({ body: bulkTransitionBody }),
   stashCourseIdFromBulk(),
-  ensureCourseInstructor(),
+  ensureCapability('question.approve'),
   async (req, res) => {
     const { questionIds, to } = req.body as z.infer<typeof bulkTransitionBody>;
     const updated = await bulkTransition(

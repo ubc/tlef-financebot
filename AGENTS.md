@@ -114,6 +114,11 @@ commonly need:
   active-template selection, question navigation, server-confirmed countdown
   submission, full post-submit review, weak-area links, and exam history; the
   Exam Prep nav entry remains hidden when no template is active.
+- Phase 3 capability authorization is implemented: thirteen independently
+  configurable permissions resolve from per-user, course, platform, and
+  default layers. Question/flag teaching-team routes use capability guards,
+  while TA approval and flag resolution remain hard-denied regardless of
+  stored configuration.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage

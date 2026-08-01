@@ -78,6 +78,10 @@ objects directly.
   and explicit post-start registration. Its idempotent batch worker marks only
   missed LOs `examVerified` and never overwrites practice-derived mastery
   status, tier, or rolling-window evidence.
+- `capabilities.service.ts` — Phase 3 §4.2 permission resolution. It layers
+  per-user course overrides over course-role overrides, platform settings, and
+  defaults; `question.approve` and `flag.resolve` are hard-denied for TAs before
+  any configurable value is considered.
 
 Other services will appear as more components are built up.
 

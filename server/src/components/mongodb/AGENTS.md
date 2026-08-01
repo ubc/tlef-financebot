@@ -101,6 +101,10 @@ Book and flag state. Both collections expire after 24 hours and are
 intentionally separate from every live-learning collection. Do not merge them
 or make live-learning queries depend on a remembered preview exclusion filter.
 
+Phase 3 adds `capabilitySettingsCol()`. A unique `(scope, courseId)` index keeps
+one platform settings document and one override document per course; per-TA
+overrides live inside the course document and are resolved before role values.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

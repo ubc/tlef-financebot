@@ -21,6 +21,11 @@ jest.mock('../../server/src/services/questions.service', () => ({
   transitionQuestion: jest.fn(),
   bulkTransition: jest.fn(),
 }));
+jest.mock('../../server/src/services/capabilities.service', () => ({
+  hasCapability: jest.fn(async (user: User, requestedCourseId: ObjectId) => user.courseRoles.some(
+    (entry) => entry.role === 'instructor' && entry.courseId.equals(requestedCourseId),
+  )),
+}));
 
 import { questionsRouter } from '../../server/src/routes/questions.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';

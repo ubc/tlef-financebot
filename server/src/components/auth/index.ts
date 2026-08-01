@@ -12,6 +12,7 @@ import { findUserByPuid } from '../../services/users.service';
 export { ensureAuthenticated, conditionalAuth } from 'passport-ubcshib';
 export { ensureApiAuthenticated } from './guards';
 export { ensureAdmin, ensurePlatformInstructor } from './platform-guards';
+export { ensureCapability } from './capability-guard';
 export { ensureRole, rolesOf, hasRole } from './roles';
 export { verifyIdpCertificatePresent } from './strategies/shibboleth';
 export type { AppUser } from './strategies/shibboleth';

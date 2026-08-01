@@ -51,6 +51,23 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export type CourseRole = 'student' | 'instructor' | 'ta';
 
+export type Capability =
+  | 'question.review'
+  | 'question.suggest-edit'
+  | 'question.mark-reviewed'
+  | 'question.create-draft'
+  | 'question.approve'
+  | 'flag.triage'
+  | 'flag.resolve'
+  | 'analytics.view'
+  | 'analytics.individual'
+  | 'exam.configure'
+  | 'course.manage-tas'
+  | 'materials.upload'
+  | 'hierarchy.edit';
+
+export type CapabilityRole = CourseRole | 'admin';
+
 export type ContentRunKind = 'material-ingest' | 'question-generation';
 export type MaterialKind =
   | 'lecture'
@@ -93,6 +110,15 @@ export interface PlatformInstructorGrant {
   puid: string;
   grantedByPuid: string;
   createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CapabilitySettings {
+  scope: 'platform' | 'course';
+  courseId?: ObjectId;
+  assignments: Partial<Record<Capability, Partial<Record<CapabilityRole, boolean>>>>;
+  userOverrides?: Record<string, Partial<Record<Capability, boolean>>>;
+  updatedBy: string;
   updatedAt: Date;
 }
 

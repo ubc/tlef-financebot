@@ -2,8 +2,8 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import { z } from 'zod';
-import { ensureApiAuthenticated } from '../components/auth';
-import { ensureCourseInstructor, ensureCourseStudent } from '../components/auth/course-guards';
+import { ensureApiAuthenticated, ensureCapability } from '../components/auth';
+import { ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { flagQuestion, resolveFlag, listFlags, notifyRemediation, remediationReportForFlag } from '../services/flags.service';
 import { getQuestionCourseId } from '../services/bank.service';
@@ -116,7 +116,7 @@ flagsRouter.post(
 flagsRouter.get(
   '/courses/:courseId/flags',
   validate({ params: courseIdParams }),
-  ensureCourseInstructor(),
+  ensureCapability('flag.triage'),
   validate({ query: flagsQuery }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
@@ -133,7 +133,7 @@ flagsRouter.post(
   validate({ params: flagIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromFlag(),
-  ensureCourseInstructor(),
+  ensureCapability('flag.resolve'),
   validate({ body: resolveFlagBody }),
   async (req, res) => {
     const flagId = new ObjectId(String(req.params.flagId));
@@ -154,7 +154,7 @@ flagsRouter.post(
   validate({ params: flagIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromFlag(),
-  ensureCourseInstructor(),
+  ensureCapability('flag.resolve'),
   async (req, res) => {
     const flagId = new ObjectId(String(req.params.flagId));
     const result = await notifyRemediation(flagId);
@@ -174,7 +174,7 @@ flagsRouter.get(
   validate({ params: flagIdParams }),
   ensureApiAuthenticated(),
   stashCourseIdFromFlag(),
-  ensureCourseInstructor(),
+  ensureCapability('flag.resolve'),
   async (req, res) => {
     const flagId = new ObjectId(String(req.params.flagId));
     const report = await remediationReportForFlag(flagId);

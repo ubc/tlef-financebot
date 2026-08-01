@@ -21,6 +21,10 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['generationBlueprints:{"courseId":1,"updatedAt":-1}']).toBeDefined();
   });
 
+  it('enforces one capability settings document per scope/course', () => {
+    expect(byCollection['capabilitySettings:{"scope":1,"courseId":1}'].options?.unique).toBe(true);
+  });
+
   it('indexes the hot attempt-record and serving paths', () => {
     expect(byCollection['attemptRecords:{"puid":1,"courseId":1,"loId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['attemptRecords:{"questionVersionId":1}']).toBeDefined();

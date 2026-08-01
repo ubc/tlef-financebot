@@ -63,6 +63,10 @@ jest.mock('../../server/src/components/auth', () => ({
     () =>
     (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
       res.status(403).json({ error: 'Platform Instructor access required.' }),
+  ensureCapability:
+    () =>
+    (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
+      res.status(403).json({ error: 'You do not have access to this course.' }),
 }));
 
 import { createApp } from '../../server/src/app';

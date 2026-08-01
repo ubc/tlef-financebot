@@ -6,7 +6,7 @@ import type {
   Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
-  GenerationBlueprint,
+  GenerationBlueprint, CapabilitySettings,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -38,6 +38,8 @@ export const sessionSummariesCol = (): Collection<SessionSummaryRecord> => getDb
 export const contentRunsCol = (): Collection<ContentRun> => getDb().collection<ContentRun>('contentRuns');
 export const generationBlueprintsCol = (): Collection<GenerationBlueprint> =>
   getDb().collection<GenerationBlueprint>('generationBlueprints');
+export const capabilitySettingsCol = (): Collection<CapabilitySettings> =>
+  getDb().collection<CapabilitySettings>('capabilitySettings');
 
 export interface IndexSpec {
   collection: string;
@@ -89,6 +91,7 @@ export const INDEX_SPECS: IndexSpec[] = [
       partialFilterExpression: { open: true },
     },
   },
+  { collection: 'capabilitySettings', keys: { scope: 1, courseId: 1 }, options: { unique: true } },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called
