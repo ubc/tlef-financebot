@@ -1,6 +1,6 @@
 # Phase 1 UI — Status & Handoff
 
-_Last updated: 2026-07-18 (Saurav)_
+_Last updated: 2026-08-01 (Saurav — S0 reconciliation)._
 
 Cross-developer note (for Stephen and his agent). The detailed per-task ledger
 lives in `STATUS.md`; this file is the clean summary + how to run/see the
@@ -13,10 +13,15 @@ Phase 1 has **two** product-UI halves; both are now built:
 | UI | Owner | Status |
 |---|---|---|
 | **Student** — enroll by code, course home, practice by LO/theme + adaptive feedback, Review Book, session summary | Stephen | **Merged to `main`** (`client/src/views/student/*`, enroll flow in `home.ts`) |
-| **Instructor** — My Courses/Create, Dashboard, Structure editor, Settings, Materials, Question Bank + review/editor, Review Queue, Pre-seeding/Generate | Saurav (Task 15) | On `saurav/task-15-instructor-views` → **PR open** |
+| **Instructor** — My Courses/Create, Dashboard, Structure editor, Settings, Materials, Question Bank + review/editor, Review Queue, Pre-seeding/Generate | Saurav (Task 15) | **Merged to `main`** (PR #21, `a17ede4`) |
 
 Everything else in the Figma file (TA `T1–T4`, Admin `A1–A5`, Analytics `I9/I10`,
-Exam screens, Parameterization `I13`) is **later phases**, not Phase 1.
+Exam screens, Parameterization `I13`) was **later phases** at the time of
+writing. Phase 2 has since delivered several of them — Admin `A1/A2` (PRs #45,
+#41/#46), Parameterization `I13` (PRs #33/#34, #42), plus the Import and
+flag-review surfaces. **Analytics `I9/I10`, TA `T1–T4`, and the Exam screens are
+Phase 3.** The pre-login screen was also rebuilt from the `0 - Login` frame
+(PR #43).
 
 ## 2. NEW: we plan UI work against the Figma designs (via Figma MCP)
 
