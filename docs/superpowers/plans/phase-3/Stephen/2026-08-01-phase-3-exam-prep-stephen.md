@@ -167,6 +167,19 @@ Instructor behaviour.
 - [x] Run client typecheck/lint/build, focused server suites, and the live E2E;
   commit and sync.
 
+## Authorized WS-11/12 takeover
+
+- [x] Task 1 capability settings collection, thirteen-capability defaults,
+  per-course/per-user resolution, source reporting, and generic course-scoped
+  guard.
+- [x] Hard-deny TA `question.approve` and `flag.resolve` before configurable
+  values, and retrofit question/flag teaching-team reads/mutations without
+  changing Instructor behavior (`c14de29`; full Jest 750/750).
+- [ ] Task 6 TA invitations, activation, permissions, review/suggestion/notes,
+  and escalation workflows.
+- [ ] Task 7 Instructor analytics and individual Student profile.
+- [ ] Task 8 Admin user/capability/platform-settings essentials.
+
 ## Stephen's Phase 3 exit evidence
 
 - [x] Demonstrate a template-conforming exam with exact supply and a separate
