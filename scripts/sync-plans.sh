@@ -6,14 +6,16 @@
 #   npm run sync-plans -- Stephen
 #
 # What it does:
-#   1. Publishes YOUR own plan folders (docs/superpowers/plans/*/<You>/) to `main`,
+#   1. Publishes YOUR own plan folders (docs/superpowers/plans/*/<You>/) to the
+#      dedicated documentation branch (`docs/phase-0-shared-services` by default),
 #      using a throwaway git worktree so your current working branch is never touched.
-#   2. Refreshes your local copy of every plan folder from `main`, so you can read
-#      the other developer's latest plans.
+#   2. Refreshes the other developer's personal plan folders from that
+#      documentation branch, without touching shared core plans being edited
+#      on your current feature branch.
 #
-# If `main` rejects a direct push (branch protection), your plans go to a
-# `plans-sync-<You>` branch instead and you are told to open a PR. In that case
-# the local refresh is skipped so your unpublished work is never overwritten.
+# Override the branch for a one-off migration/test with PLANS_SYNC_BRANCH.
+# The sync command never pushes to main, so plan-only updates do not trigger the
+# staging deployment attached to main.
 #
 # Written for macOS's default bash 3.2 — no bash-4 features.
 
@@ -31,16 +33,31 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 PLANS="docs/superpowers/plans"
 EMAIL="$(echo "$ME" | tr '[:upper:]' '[:lower:]')@users.noreply.github.com"
+SYNC_BRANCH="${PLANS_SYNC_BRANCH:-docs/phase-0-shared-services}"
+SYNC_MARKER="$PLANS/.sync-branch-initialized"
 
 echo "==> [$ME] Fetching origin..."
-git fetch origin --quiet
+git fetch origin "$SYNC_BRANCH" --quiet
 
-# --- 1. Publish my plan folders to main via an isolated worktree ------------
+# --- 1. Publish my plan folders via an isolated worktree ---------------------
 WT="$(mktemp -d)"
 cleanup() { git worktree remove --force "$WT" >/dev/null 2>&1 || true; rm -rf "$WT" 2>/dev/null || true; }
 trap cleanup EXIT
 
-git worktree add --quiet --detach "$WT" origin/main
+git worktree add --quiet --detach "$WT" "origin/$SYNC_BRANCH"
+
+# The selected branch predates most personal plans. Seed it once from the
+# caller's complete plans tree before switching to per-developer publishing;
+# otherwise the first refresh would remove newer plans that the old branch has
+# never seen.
+if [ ! -f "$WT/$SYNC_MARKER" ]; then
+  mkdir -p "$WT/$PLANS"
+  cp -R "$PLANS/." "$WT/$PLANS/"
+  cat > "$WT/$SYNC_MARKER" <<EOF
+This branch is the canonical exchange point for personal phase-plan folders.
+Initialized by sync-plans.sh; plan-only pushes must not target main.
+EOF
+fi
 
 found_mine=0
 while IFS= read -r dir; do
@@ -50,7 +67,6 @@ while IFS= read -r dir; do
   cp -R "$dir/." "$WT/$rel/"
 done < <(find "$PLANS" -type d -name "$ME")
 
-pushed_to_main=0
 (
   cd "$WT"
   # Stage first, then check the index: plain `git diff` can't see brand-new
@@ -60,27 +76,30 @@ pushed_to_main=0
   fi
   if [ "$found_mine" -eq 1 ] && ! git diff --cached --quiet -- "$PLANS"; then
     git -c user.name="$ME" -c user.email="$EMAIL" commit -q -m "docs(plans): publish $ME's plans"
-    if git push --quiet origin HEAD:main 2>/dev/null; then
-      echo "==> Published $ME's plans to main."
-      exit 0
-    else
-      git push --quiet --force origin "HEAD:plans-sync-$ME"
-      echo "==> 'main' rejected a direct push; pushed to 'plans-sync-$ME' — open a PR to merge." >&2
-      exit 3
+    if ! git push --quiet origin "HEAD:$SYNC_BRANCH" 2>/dev/null; then
+      # A concurrent sync usually touches only the other developer's folder.
+      # Rebase once so both updates land without a force-push.
+      git fetch origin "$SYNC_BRANCH" --quiet
+      git rebase "origin/$SYNC_BRANCH"
+      git push --quiet origin "HEAD:$SYNC_BRANCH"
     fi
+    echo "==> Published $ME's plans to $SYNC_BRANCH."
+    exit 0
   fi
   echo "==> No new changes in your plan folders to publish."
   exit 0
-) && pushed_to_main=1 || { [ "$?" -eq 3 ] && pushed_to_main=0 || exit 1; }
+) || exit 1
 
-# --- 2. Refresh local plan folders from main --------------------------------
-if [ "$pushed_to_main" -eq 1 ]; then
-  git fetch origin main --quiet
-  git checkout origin/main -- "$PLANS" 2>/dev/null || true
-  git restore --staged "$PLANS" 2>/dev/null || true   # keep them unstaged on your branch
-  echo "==> Pulled latest plans from main (yours + $OTHER's)."
-else
-  echo "==> Skipped local refresh: your plans are not on main yet (resolve the PR first)." >&2
-fi
+# --- 2. Refresh the other developer's folders from the documentation branch -
+git fetch origin "$SYNC_BRANCH" --quiet
+for phase_dir in "$PLANS"/phase-*; do
+  [ -d "$phase_dir" ] || continue
+  other_dir="$phase_dir/$OTHER"
+  if git cat-file -e "origin/$SYNC_BRANCH:$other_dir" 2>/dev/null; then
+    git checkout "origin/$SYNC_BRANCH" -- "$other_dir"
+    git restore --staged "$other_dir" 2>/dev/null || true
+  fi
+done
+echo "==> Pulled $OTHER's latest personal plans from $SYNC_BRANCH."
 
 echo "==> Done. Read $OTHER's plans under $PLANS/<phase>/$OTHER/."

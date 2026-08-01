@@ -41,7 +41,8 @@ Run this before and after a work session:
 npm run sync-plans -- <YourName>
 ```
 
-It publishes your `<YourName>/` plan folder to `main` and pulls the other
+It publishes your `<YourName>/` plan folder to the dedicated
+`docs/phase-0-shared-services` documentation branch and pulls the other
 developer's latest plans into your working tree, so both sides stay current
-without waiting for feature branches to merge. See AGENTS.md for the details and
-the branch-protection fallback.
+without triggering the staging deployment attached to `main`. See AGENTS.md
+for the details.

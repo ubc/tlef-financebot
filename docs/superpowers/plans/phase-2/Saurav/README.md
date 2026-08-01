@@ -13,5 +13,5 @@ Current plan: [`2026-07-23-phase-2-pilot-readiness-saurav.md`](2026-07-23-phase-
 Progress: [`STATUS.md`](STATUS.md).
 
 **How to share it:** run `npm run sync-plans -- Saurav` to publish this folder
-to `main` and pull Stephen's latest plans. See the root `CLAUDE.md` /
+to the dedicated documentation branch and pull Stephen's latest plans. See the root `CLAUDE.md` /
 `AGENTS.md` "Two-developer convention" for the full workflow.

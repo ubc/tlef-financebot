@@ -169,10 +169,11 @@ and `git log`. An agent never sees the other developer's uncommitted work.
    `docs/superpowers/plans/<phase>/<YourName>/`. This is how the other developer
    (and their agent) sees what you are working on.
 3. **Sync before and after working:** run `npm run sync-plans -- <YourName>`.
-   This publishes your `<YourName>/` plan folder to `main` and pulls the other
+   This publishes your `<YourName>/` plan folder to the dedicated
+   `docs/phase-0-shared-services` documentation branch and pulls the other
    developer's latest plans into your working tree, so both sides stay current
-   without waiting for feature branches to merge. If `main` is protected, your
-   plans are pushed to a `plans-sync-<YourName>` branch and you open a PR.
+   without triggering the staging deployment attached to `main` or waiting for
+   feature branches to merge.
 4. **Read the current phase plan and `git log --oneline -20`** to see which
    tasks are checked off / merged.
 5. **Only pick up tasks owned by its developer.** Every task in the phase plans
