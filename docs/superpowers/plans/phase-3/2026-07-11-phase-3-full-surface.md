@@ -22,7 +22,7 @@
 
 ### Task 1: Capability model (PRD §4.2) — build first
 
-**Owner:** Unassigned WS-12 (claim as a whole with Tasks 6 and 8 before implementation)
+**Owner:** Dev A (Stephen) — WS-12 cross-owner takeover authorized by Stephen on 2026-08-01
 
 **Files:**
 - Create: `server/src/services/capabilities.service.ts`
@@ -150,7 +150,7 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 6: TA management + TA workflows (IN-T01–T03, TA-01–TA-04, §6.2 notes)
 
-**Owner:** Unassigned WS-12 (claim as a whole with Tasks 1 and 8 before implementation)
+**Owner:** Dev A (Stephen) — WS-12 cross-owner takeover authorized by Stephen on 2026-08-01
 
 **Files:**
 - Create: `server/src/services/tas.service.ts`
@@ -181,7 +181,7 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 7: Instructor analytics (IN-A01–IN-A04)
 
-**Owner:** Dev B (Saurav) — WS-11
+**Owner:** Dev A (Stephen) — WS-11 cross-owner takeover authorized by Stephen on 2026-08-01; Saurav had not started Phase 3
 
 **Files:**
 - Create: `server/src/services/analytics.service.ts`
@@ -208,7 +208,7 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 8: Admin essentials (AD-01, AD-02, AD-07)
 
-**Owner:** Unassigned WS-12 (claim as a whole with Tasks 1 and 6 before implementation)
+**Owner:** Dev A (Stephen) — WS-12 cross-owner takeover authorized by Stephen on 2026-08-01
 
 **Files:**
 - Create: `server/src/services/admin.service.ts`
@@ -235,9 +235,8 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 9: Phase exit checks
 
-**Owner:** Joint — Stephen owns the WS-10 exam evidence; WS-11/12 owners own
-their corresponding analytics/TA evidence and both developers participate in
-the final exit review.
+**Owner:** Dev A (Stephen) — complete Phase 3 exit after the authorized WS-10,
+WS-11, and WS-12 takeover; publish evidence for Saurav to review asynchronously.
 
 - [ ] **Step 1:** `tests/e2e/exam-mode.spec.ts` (Task 5) green; a student completes a template-conforming exam and results feed mastery + analytics (extend the spec: instructor analytics shows the exam attempts under the Exam Prep tab).
 - [ ] **Step 2:** TA invariant test (Task 6) green — TA can review, suggest, escalate; cannot approve under any configuration.
