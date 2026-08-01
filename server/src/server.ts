@@ -9,6 +9,7 @@ import { registerMaterialJobs } from './services/materials.service';
 import { registerGenerationJobs } from './services/generation.service';
 import { registerNotificationJobs } from './services/notifications.service';
 import { reconcileContentRuns } from './services/content-runs.service';
+import { registerExamMasteryJobs } from './services/exam-mastery.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -65,6 +66,10 @@ async function main(): Promise<void> {
   // hoisted-require ordering crash as the two jobs above. Awaited (unlike the
   // two calls above) because scheduleRecurring() is itself async.
   await registerNotificationJobs();
+
+  // Phase 3 Exam Prep post-submit qualifier pass. Registration is explicit
+  // here because exams.routes.ts imports the owning service before jobs start.
+  registerExamMasteryJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

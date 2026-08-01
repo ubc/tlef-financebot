@@ -18,6 +18,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
   questionsCol: jest.fn(),
   questionVersionsCol: jest.fn(),
+  reviewBookCol: jest.fn(),
 }));
 jest.mock('../../server/src/services/params.service', () => ({
   drawSeed: jest.fn(() => 1234),
@@ -40,6 +41,7 @@ import {
   losCol,
   questionsCol,
   questionVersionsCol,
+  reviewBookCol,
 } from '../../server/src/components/mongodb/collections';
 import { enqueueExamMasteryPass } from '../../server/src/services/exam-mastery.service';
 import { notifyCourseStaff } from '../../server/src/services/notifications.service';
@@ -161,6 +163,7 @@ let currentTemplate: ReturnType<typeof template>;
 let bank: BankEntry[];
 let examAttempts: Array<ExamAttempt & { _id: ObjectId }>;
 let attemptRecords: Record<string, unknown>[];
+let reviewBookQuestions: Set<string>;
 
 function equals(left: unknown, right: unknown): boolean {
   if (left instanceof ObjectId && right instanceof ObjectId) return left.equals(right);
@@ -203,6 +206,7 @@ function seed(entries: BankEntry[], templateDoc = template()): void {
   bank = entries;
   examAttempts = [];
   attemptRecords = [];
+  reviewBookQuestions = new Set();
 
   jest.mocked(resolveParamValues).mockResolvedValue({ rate: 5 });
   jest.mocked(enqueueExamMasteryPass).mockResolvedValue(undefined);
@@ -258,6 +262,15 @@ function seed(entries: BankEntry[], templateDoc = template()): void {
     insertMany: jest.fn(async (docs: Record<string, unknown>[]) => {
       attemptRecords.push(...docs);
       return { insertedCount: docs.length };
+    }),
+  } as never);
+  jest.mocked(reviewBookCol).mockReturnValue({
+    findOne: jest.fn(async (filter: { questionId: ObjectId }) => (
+      reviewBookQuestions.has(filter.questionId.toHexString()) ? { _id: new ObjectId() } : null
+    )),
+    updateOne: jest.fn(async (filter: { questionId: ObjectId }) => {
+      reviewBookQuestions.add(filter.questionId.toHexString());
+      return { matchedCount: 1 };
     }),
   } as never);
 }
@@ -396,5 +409,9 @@ describe('answering and submission', () => {
       expect.objectContaining({ mode: 'exam-prep', examAttemptId: attempt._id, correct: false, isRetry: false }),
     ]));
     expect(enqueueExamMasteryPass).toHaveBeenCalledWith(attempt._id);
+    expect(reviewBookQuestions.size).toBe(1);
+
+    await submitExam(attempt._id, puid);
+    expect(reviewBookQuestions.size).toBe(1);
   });
 });

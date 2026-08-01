@@ -7,6 +7,7 @@ import {
   losCol,
   questionsCol,
   questionVersionsCol,
+  themesCol,
 } from '../components/mongodb/collections';
 import type {
   AttemptRecord,
@@ -16,7 +17,7 @@ import type {
   QuestionVersion,
   User,
 } from '../types/domain';
-import { decideStrategy } from './attempts.service';
+import { decideStrategy, upsertReviewBookEntry } from './attempts.service';
 import { enqueueExamMasteryPass } from './exam-mastery.service';
 import { notifyCourseStaff } from './notifications.service';
 import { drawSeed, resolveParamValues, substituteParams } from './params.service';
@@ -50,6 +51,49 @@ export interface ExamState {
   submitted: boolean;
   submittedAt?: Date;
   remainingSeconds?: number;
+}
+
+export interface ExamResultBreakdown {
+  earned: number;
+  possible: number;
+  practiceLink?: { courseId: ObjectId; themeId?: ObjectId; loId?: ObjectId };
+}
+
+export interface ExamResults {
+  attemptId: ObjectId;
+  kind: ExamTemplate['kind'];
+  submittedAt: Date;
+  score: number;
+  maxScore: number;
+  byTheme: Array<ExamResultBreakdown & { themeId: ObjectId; name: string }>;
+  byLo?: Array<ExamResultBreakdown & { loId: ObjectId; themeId: ObjectId; name: string }>;
+  questions: Array<{
+    index: number;
+    questionId: ObjectId;
+    questionVersionId: ObjectId;
+    themeId: ObjectId;
+    loId: ObjectId;
+    type: QuestionVersion['type'];
+    stem: string;
+    options: Array<{
+      key: string;
+      text: string;
+      role: QuestionVersion['options'][number]['role'];
+      explanation: string;
+      correct: boolean;
+    }>;
+    selectedKey: string | null;
+    correct: boolean;
+    points: number;
+  }>;
+}
+
+export interface ExamHistoryItem {
+  attemptId: ObjectId;
+  kind: ExamTemplate['kind'];
+  date: Date;
+  score: number;
+  maxScore: number;
 }
 
 function shuffle<T>(items: T[], rand: () => number): T[] {
@@ -288,12 +332,145 @@ export async function submitExam(
     return { score: latest.score ?? 0, maxScore: latest.maxScore };
   }
   if (records.length > 0) await attemptsCol().insertMany(records);
+  for (const record of records) {
+    if (record.correct) continue;
+    await upsertReviewBookEntry({
+      puid: record.puid,
+      courseId: record.courseId,
+      questionId: record.questionId,
+      loId: record.loId,
+      themeId: record.themeId,
+      attemptId: record._id,
+    });
+  }
   await enqueueExamMasteryPass(attemptId);
   await examAttemptsCol().updateOne(
     { _id: attemptId, puid },
     { $set: { masteryPassQueuedAt: new Date() } },
   );
   return { score, maxScore: attempt.maxScore };
+}
+
+export async function examResults(attemptId: ObjectId, puid: string): Promise<ExamResults> {
+  const attempt = await examAttemptsCol().findOne({ _id: attemptId, puid });
+  if (!attempt) throw new Error('exam-attempt-not-found');
+  if (!attempt.submittedAt) throw new Error('exam-not-submitted');
+
+  const versionIds = attempt.questions.map((question) => question.questionVersionId);
+  const themeIds = [...new Map(
+    attempt.questions.map((question) => [question.themeId.toHexString(), question.themeId]),
+  ).values()];
+  const loIds = [...new Map(
+    attempt.questions.map((question) => [question.loId.toHexString(), question.loId]),
+  ).values()];
+  const [versions, themes, los] = await Promise.all([
+    versionIds.length
+      ? questionVersionsCol().find({ _id: { $in: versionIds } }).toArray()
+      : Promise.resolve([]),
+    themeIds.length
+      ? themesCol().find({ _id: { $in: themeIds }, courseId: attempt.courseId }).toArray()
+      : Promise.resolve([]),
+    loIds.length
+      ? losCol().find({ _id: { $in: loIds }, courseId: attempt.courseId }).toArray()
+      : Promise.resolve([]),
+  ]);
+  const versionById = new Map(versions.map((version) => [version._id.toHexString(), version]));
+  const themeName = new Map(themes.map((theme) => [theme._id.toHexString(), theme.name]));
+  const loName = new Map(los.map((lo) => [lo._id.toHexString(), lo.name]));
+  const themeTotals = new Map<string, ExamResultBreakdown & { themeId: ObjectId; name: string }>();
+  const loTotals = new Map<string, ExamResultBreakdown & {
+    loId: ObjectId;
+    themeId: ObjectId;
+    name: string;
+  }>();
+
+  const questions = attempt.questions.map((question, index) => {
+    const version = versionById.get(question.questionVersionId.toHexString());
+    if (!version) throw new Error('exam-version-not-found');
+    const selected = version.options.find((option) => option.key === question.selectedKey);
+    const correct = selected?.role === 'correct';
+    const earned = correct ? question.points : 0;
+    const themeKey = question.themeId.toHexString();
+    const loKey = question.loId.toHexString();
+    const theme = themeTotals.get(themeKey) ?? {
+      themeId: question.themeId,
+      name: themeName.get(themeKey) ?? 'Unknown Theme',
+      earned: 0,
+      possible: 0,
+    };
+    theme.earned += earned;
+    theme.possible += question.points;
+    themeTotals.set(themeKey, theme);
+    const lo = loTotals.get(loKey) ?? {
+      loId: question.loId,
+      themeId: question.themeId,
+      name: loName.get(loKey) ?? 'Unknown Learning Objective',
+      earned: 0,
+      possible: 0,
+    };
+    lo.earned += earned;
+    lo.possible += question.points;
+    loTotals.set(loKey, lo);
+    const substitute = (text: string) => question.paramValues
+      ? substituteParams(text, question.paramValues)
+      : text;
+    return {
+      index,
+      questionId: question.questionId,
+      questionVersionId: question.questionVersionId,
+      themeId: question.themeId,
+      loId: question.loId,
+      type: version.type,
+      stem: substitute(version.stem),
+      options: version.options.map((option) => ({
+        key: option.key,
+        text: substitute(option.text),
+        role: option.role,
+        explanation: substitute(option.explanation),
+        correct: option.role === 'correct',
+      })),
+      selectedKey: question.selectedKey ?? null,
+      correct,
+      points: question.points,
+    };
+  });
+  const byTheme = [...themeTotals.values()].map((item) => ({
+    ...item,
+    ...(item.earned < item.possible
+      ? { practiceLink: { courseId: attempt.courseId, themeId: item.themeId } }
+      : {}),
+  }));
+  const byLo = [...loTotals.values()].map((item) => ({
+    ...item,
+    ...(item.earned < item.possible
+      ? { practiceLink: { courseId: attempt.courseId, loId: item.loId } }
+      : {}),
+  }));
+  return {
+    attemptId: attempt._id,
+    kind: attempt.templateKind,
+    submittedAt: attempt.submittedAt,
+    score: attempt.score ?? 0,
+    maxScore: attempt.maxScore,
+    byTheme,
+    ...(attempt.loBreakdown ? { byLo } : {}),
+    questions,
+  };
+}
+
+export async function examHistory(puid: string, courseId: ObjectId): Promise<ExamHistoryItem[]> {
+  const attempts = await examAttemptsCol().find({
+    puid,
+    courseId,
+    submittedAt: { $exists: true },
+  }).sort({ submittedAt: -1 }).toArray();
+  return attempts.flatMap((attempt) => attempt.submittedAt ? [{
+    attemptId: attempt._id,
+    kind: attempt.templateKind,
+    date: attempt.submittedAt,
+    score: attempt.score ?? 0,
+    maxScore: attempt.maxScore,
+  }] : []);
 }
 
 export async function examState(attemptId: ObjectId, puid: string): Promise<ExamState> {

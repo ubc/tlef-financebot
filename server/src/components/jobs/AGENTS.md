@@ -24,6 +24,10 @@ from `env` (`env.mongodbUri`, `env.mongodbDbName`); no `process.env` access here
 | `scheduleRecurring(name, interval)` | Schedule a defined job on a recurring interval (e.g. `'1 day'`). |
 | `hasPendingJob(name, runId)` | Startup-only check for a live Agenda job whose `data.runId` matches a durable content run. |
 
+Phase 3 adds `exam.mastery-pass`, registered by
+`registerExamMasteryJobs()` in `server.ts` after `startJobs()`. The job consumes
+only an `examAttemptId` and idempotently applies the post-exam qualifier batch.
+
 ## Registering job handlers: do NOT call `defineJob()` at module level
 
 Job **handlers** are not defined here — the function passed to `defineJob()`

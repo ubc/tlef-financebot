@@ -50,8 +50,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
 - `exams.routes.ts` — Phase 3 WS-10. Exposes course-Instructor list/upsert
   endpoints for midterm/final Exam Prep templates plus course-Student active
   template, single-sitting start/resume, sanitized attempt-state, answer, and
-  submit endpoints. Attempt-id routes authenticate before resolving and
-  stashing their course for `ensureCourseStudent()`.
+  submit endpoints, followed by post-submit full results and newest-first
+  course history. Attempt-id routes authenticate before resolving and stashing
+  their course for `ensureCourseStudent()`; results return 409 before submit.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
   (including a courses-spanning bulk transition). All routes are

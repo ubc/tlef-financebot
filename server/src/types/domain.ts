@@ -482,6 +482,7 @@ export interface ExamAttempt {
   score?: number;
   maxScore: number;
   masteryPassQueuedAt?: Date;
+  masteryPassCompletedAt?: Date;
 }
 
 export interface Flag {

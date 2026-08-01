@@ -148,7 +148,7 @@ export function gradeAnswer(
 /** Upserts the ReviewBookEntry for a miss: one entry per (puid, courseId,
  * questionId); a repeat miss updates `triggeringAttemptId`/`updatedAt`
  * without creating a duplicate. Returns whether this was a brand-new entry. */
-async function upsertReviewBookEntry(input: {
+export async function upsertReviewBookEntry(input: {
   puid: string;
   courseId: ObjectId;
   questionId: ObjectId;

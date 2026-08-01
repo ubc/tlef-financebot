@@ -89,7 +89,17 @@ grant attaches to the same PUID-backed User on first SAML login.
   Answers remain changeable until submission.
 - `POST /api/exam-attempts/:attemptId/submit` → `{ score, maxScore }`. Submission
   is idempotent, writes one `mode: 'exam-prep'` AttemptRecord per question, and
-  queues the post-exam mastery pass.
+  auto-collects each miss into the Review Book with its AttemptRecord context,
+  then queues the post-exam mastery pass.
+- `GET /api/exam-attempts/:attemptId/results` → `{ attemptId, kind,
+  submittedAt, score, maxScore, byTheme, byLo?, questions }`. Returns `409`
+  before submission. Theme/optional LO breakdown rows contain
+  `{ earned, possible }` and weak rows add `practiceLink` metadata. Question
+  review contains substituted stems plus all option roles/explanations only
+  after submission.
+- `GET /api/courses/:courseId/exam-history` → newest-first
+  `[{ attemptId, kind, date, score, maxScore }]`; `attemptId` drills into the
+  same results endpoint.
 
 ## Hierarchy (instructor)
 - `POST /api/courses/:courseId/themes { name, availableFrom? }` → 201 Theme

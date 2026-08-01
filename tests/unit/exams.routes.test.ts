@@ -10,6 +10,8 @@ jest.mock('../../server/src/services/exam-templates.service', () => ({
 }));
 jest.mock('../../server/src/services/exam-attempts.service', () => ({
   answerQuestion: jest.fn(),
+  examHistory: jest.fn(),
+  examResults: jest.fn(),
   examState: jest.fn(),
   getExamAttemptCourseId: jest.fn(),
   startExam: jest.fn(),
@@ -24,6 +26,8 @@ import {
 } from '../../server/src/services/exam-templates.service';
 import {
   answerQuestion,
+  examHistory,
+  examResults,
   examState,
   getExamAttemptCourseId,
   startExam,
@@ -120,6 +124,23 @@ beforeEach(() => {
     startedAt: new Date('2026-09-01T12:00:00.000Z'),
     submitted: false,
   });
+  jest.mocked(examResults).mockResolvedValue({
+    attemptId,
+    kind: 'midterm',
+    submittedAt: new Date('2026-09-01T13:00:00.000Z'),
+    score: 3,
+    maxScore: 5,
+    byTheme: [],
+    byLo: [],
+    questions: [],
+  });
+  jest.mocked(examHistory).mockResolvedValue([{
+    attemptId,
+    kind: 'midterm',
+    date: new Date('2026-09-01T13:00:00.000Z'),
+    score: 3,
+    maxScore: 5,
+  }]);
   jest.mocked(submitExam).mockResolvedValue({ score: 3, maxScore: 5 });
 });
 
@@ -238,6 +259,25 @@ describe('student exam routes', () => {
     expect(answerQuestion).toHaveBeenCalledWith(expect.any(ObjectId), 'PUID-student', 0, 'b');
     expect(submit.status).toBe(200);
     expect(submit.body).toEqual({ score: 3, maxScore: 5 });
+  });
+
+  it('returns post-submit results and course history', async () => {
+    const results = await request(makeApp(userFixture('student'))).get(
+      `/api/exam-attempts/${attemptId.toHexString()}/results`,
+    );
+    const history = await request(makeApp(userFixture('student'))).get(
+      `/api/courses/${courseId.toHexString()}/exam-history`,
+    );
+
+    expect(results.status).toBe(200);
+    expect(results.body).toEqual(expect.objectContaining({ score: 3, maxScore: 5 }));
+    expect(examResults).toHaveBeenCalledWith(expect.any(ObjectId), 'PUID-student');
+    expect(history.status).toBe(200);
+    expect(history.body[0]).toEqual(expect.objectContaining({
+      attemptId: attemptId.toHexString(),
+      kind: 'midterm',
+    }));
+    expect(examHistory).toHaveBeenCalledWith('PUID-student', expect.any(ObjectId));
   });
 
   it('rejects signed-out child requests before resolving the attempt course', async () => {

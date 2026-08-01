@@ -104,6 +104,13 @@ commonly need:
   and commit partial-success CSV/JSON/QTI batches as Drafts, or sandbox-preview
   an existing parameterized `generate(random)` script and migrate it into one
   parameterized Draft after variable/placeholder review.
+- Phase 3 Exam Prep services are implemented through WS-10 Task 4: instructors
+  save split-aware midterm/final templates with non-blocking supply warnings;
+  students receive one resumable, server-timed sitting assembled only from
+  Approved pinned question versions; pre-submit state contains no correctness
+  data; submission writes exam AttemptRecords, auto-collects misses, exposes
+  full results/history, and queues an idempotent mastery qualifier batch that
+  preserves practice-derived mastery status.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage

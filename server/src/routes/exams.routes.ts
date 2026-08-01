@@ -12,6 +12,8 @@ import {
 } from '../services/exam-templates.service';
 import {
   answerQuestion,
+  examHistory,
+  examResults,
   examState,
   getExamAttemptCourseId,
   startExam,
@@ -173,6 +175,32 @@ examsRouter.post(
   },
 );
 
+examsRouter.get(
+  '/exam-attempts/:attemptId/results',
+  validate({ params: attemptParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromAttempt(),
+  ensureCourseStudent(),
+  async (req, res) => {
+    res.json(await examResults(
+      new ObjectId(String(req.params.attemptId)),
+      req.user!.puid,
+    ));
+  },
+);
+
+examsRouter.get(
+  '/courses/:courseId/exam-history',
+  validate({ params: courseParams }),
+  ensureCourseStudent(),
+  async (req, res) => {
+    res.json(await examHistory(
+      req.user!.puid,
+      new ObjectId(String(req.params.courseId)),
+    ));
+  },
+);
+
 const BAD_REQUEST_ERRORS = new Set([
   'exam-template-invalid-kind',
   'exam-template-themes-required',
@@ -196,6 +224,7 @@ const NOT_FOUND_ERRORS = new Set([
 
 const CONFLICT_ERRORS = new Set([
   'exam-already-submitted',
+  'exam-not-submitted',
   'exam-submit-conflict',
   'exam-template-not-active',
 ]);
