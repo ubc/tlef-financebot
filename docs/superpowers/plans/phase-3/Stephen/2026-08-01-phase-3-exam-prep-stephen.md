@@ -178,7 +178,7 @@ Instructor behaviour.
 - [x] Task 6 TA invitations, activation, permissions, review/suggestion/notes,
   and escalation workflows.
 - [x] Task 7 Instructor analytics and individual Student profile.
-- [ ] Task 8 Admin user/capability/platform-settings essentials.
+- [x] Task 8 Admin user/capability/platform-settings essentials.
 
 ## Stephen's Phase 3 exit evidence
 
