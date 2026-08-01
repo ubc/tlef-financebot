@@ -81,6 +81,14 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'contentRuns', keys: { courseId: 1, kind: 1, status: 1, createdAt: -1 } },
   { collection: 'generationBlueprints', keys: { courseId: 1, name: 1 }, options: { unique: true } },
   { collection: 'generationBlueprints', keys: { courseId: 1, updatedAt: -1 } },
+  {
+    collection: 'examAttempts',
+    keys: { puid: 1, courseId: 1, templateId: 1, submittedAt: 1 },
+    options: {
+      unique: true,
+      partialFilterExpression: { submittedAt: { $exists: false } },
+    },
+  },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

@@ -69,6 +69,13 @@ objects directly.
   Validates course-scoped Theme selections and exam counts/windows, computes
   split-aware Approved-question supply warnings without blocking saves, and
   keeps one template per `(courseId, kind)`.
+- `exam-attempts.service.ts` — Phase 3 WS-10 Approved-only exam assembly and
+  one-open-sitting state machine. It pins versions/parameter values, records
+  non-blocking shortfalls, exposes a correctness-free live projection, applies
+  server-authoritative expiry, and creates scored exam AttemptRecords exactly
+  once on submission.
+- `exam-mastery.service.ts` — owns the `exam.mastery-pass` Agenda job contract;
+  Task 3 provides its enqueue seam and Task 4 adds the idempotent batch worker.
 
 Other services will appear as more components are built up.
 

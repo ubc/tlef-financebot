@@ -40,5 +40,8 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['flags:{"questionVersionId":1,"state":1}']).toBeDefined();
     expect(byCollection['contentRuns:{"courseId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['contentRuns:{"courseId":1,"kind":1,"status":1,"createdAt":-1}']).toBeDefined();
+    const openExam = byCollection['examAttempts:{"puid":1,"courseId":1,"templateId":1,"submittedAt":1}'];
+    expect(openExam.options?.unique).toBe(true);
+    expect(openExam.options?.partialFilterExpression).toEqual({ submittedAt: { $exists: false } });
   });
 });

@@ -70,6 +70,27 @@ grant attaches to the same PUID-backed User on first SAML login.
   and Approved-question supply are split-aware; a shortfall warning never
   blocks the save. Updates apply only to attempts assembled after the save.
 
+## Exam Prep attempts (student)
+
+- `GET /api/courses/:courseId/exams` → currently active `[ExamTemplate]`. The
+  client hides Exam Prep when this list is empty.
+- `POST /api/courses/:courseId/exams/:templateId/start` → `201 ExamAttempt`.
+  Starting the same template again resumes its one open sitting with prior
+  answers retained. Assembly uses only Approved questions, follows each
+  Theme/type split without duplicates, fixes parameter values for the sitting,
+  and records any non-blocking supply shortfall.
+- `GET /api/exam-attempts/:attemptId` → `{ attemptId, templateId, kind,
+  questions: [{ index, type, stem, options: [{ key, text }], points, answered }],
+  answers, shortfalls, startedAt, submitted, submittedAt?, remainingSeconds? }`.
+  Before submission this projection never includes option roles, explanations,
+  correctness, or answer keys. An expired timed sitting is server-submitted
+  before the response is returned.
+- `PUT /api/exam-attempts/:attemptId/answers/:index { selectedKey }` → `204`.
+  Answers remain changeable until submission.
+- `POST /api/exam-attempts/:attemptId/submit` → `{ score, maxScore }`. Submission
+  is idempotent, writes one `mode: 'exam-prep'` AttemptRecord per question, and
+  queues the post-exam mastery pass.
+
 ## Hierarchy (instructor)
 - `POST /api/courses/:courseId/themes { name, availableFrom? }` → 201 Theme
 - `PATCH /api/themes/:themeId { name?, availableFrom?, order? }` → Theme

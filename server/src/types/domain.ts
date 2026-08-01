@@ -463,6 +463,10 @@ export interface ExamAttempt {
   puid: string;
   courseId: ObjectId;
   templateId: ObjectId;
+  /** Template settings pinned when the attempt starts; later edits affect only new attempts. */
+  templateKind: 'midterm' | 'final';
+  timeLimitMinutes?: number;
+  loBreakdown: boolean;
   questions: Array<{
     questionId: ObjectId;
     questionVersionId: ObjectId;
@@ -477,6 +481,7 @@ export interface ExamAttempt {
   submittedAt?: Date;
   score?: number;
   maxScore: number;
+  masteryPassQueuedAt?: Date;
 }
 
 export interface Flag {

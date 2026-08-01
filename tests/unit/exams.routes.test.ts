@@ -4,18 +4,36 @@ import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/exam-templates.service', () => ({
+  activeTemplates: jest.fn(),
   listTemplates: jest.fn(),
   saveTemplate: jest.fn(),
+}));
+jest.mock('../../server/src/services/exam-attempts.service', () => ({
+  answerQuestion: jest.fn(),
+  examState: jest.fn(),
+  getExamAttemptCourseId: jest.fn(),
+  startExam: jest.fn(),
+  submitExam: jest.fn(),
 }));
 
 import { examsRouter } from '../../server/src/routes/exams.routes';
 import {
+  activeTemplates,
   listTemplates,
   saveTemplate,
 } from '../../server/src/services/exam-templates.service';
+import {
+  answerQuestion,
+  examState,
+  getExamAttemptCourseId,
+  startExam,
+  submitExam,
+} from '../../server/src/services/exam-attempts.service';
 
 const courseId = new ObjectId();
 const themeId = new ObjectId();
+const templateId = new ObjectId();
+const attemptId = new ObjectId();
 
 function userFixture(role: 'instructor' | 'student'): User {
   return {
@@ -58,6 +76,7 @@ const validBody = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(activeTemplates).mockResolvedValue([]);
   jest.mocked(listTemplates).mockResolvedValue([]);
   jest.mocked(saveTemplate).mockResolvedValue({
     template: {
@@ -78,6 +97,30 @@ beforeEach(() => {
       available: 3,
     }],
   });
+  jest.mocked(getExamAttemptCourseId).mockResolvedValue(courseId);
+  jest.mocked(startExam).mockResolvedValue({
+    _id: attemptId,
+    puid: 'PUID-student',
+    courseId,
+    templateId,
+    templateKind: 'midterm',
+    loBreakdown: true,
+    questions: [],
+    shortfalls: [],
+    startedAt: new Date('2026-09-01T12:00:00.000Z'),
+    maxScore: 0,
+  });
+  jest.mocked(examState).mockResolvedValue({
+    attemptId,
+    templateId,
+    kind: 'midterm',
+    questions: [],
+    answers: [],
+    shortfalls: [],
+    startedAt: new Date('2026-09-01T12:00:00.000Z'),
+    submitted: false,
+  });
+  jest.mocked(submitExam).mockResolvedValue({ score: 3, maxScore: 5 });
 });
 
 describe('exam template routes', () => {
@@ -142,5 +185,100 @@ describe('exam template routes', () => {
 
     expect(response.status).toBe(400);
     expect(saveTemplate).not.toHaveBeenCalled();
+  });
+});
+
+describe('student exam routes', () => {
+  it('lists only active templates for an enrolled Student', async () => {
+    const response = await request(makeApp(userFixture('student'))).get(
+      `/api/courses/${courseId.toHexString()}/exams`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(activeTemplates).toHaveBeenCalledWith(expect.any(ObjectId));
+    expect(jest.mocked(activeTemplates).mock.calls[0][0].equals(courseId)).toBe(true);
+  });
+
+  it('starts or resumes a single sitting for an active template', async () => {
+    const response = await request(makeApp(userFixture('student'))).post(
+      `/api/courses/${courseId.toHexString()}/exams/${templateId.toHexString()}/start`,
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body._id).toBe(attemptId.toHexString());
+    expect(startExam).toHaveBeenCalledWith(
+      expect.objectContaining({ puid: 'PUID-student' }),
+      expect.any(ObjectId),
+      expect.any(ObjectId),
+    );
+  });
+
+  it('loads the sanitized attempt state through child-resource authorization', async () => {
+    const response = await request(makeApp(userFixture('student'))).get(
+      `/api/exam-attempts/${attemptId.toHexString()}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      attemptId: attemptId.toHexString(),
+      submitted: false,
+    }));
+    expect(examState).toHaveBeenCalledWith(expect.any(ObjectId), 'PUID-student');
+  });
+
+  it('persists an answer and submits the attempt', async () => {
+    const answer = await request(makeApp(userFixture('student')))
+      .put(`/api/exam-attempts/${attemptId.toHexString()}/answers/0`)
+      .send({ selectedKey: 'b' });
+    const submit = await request(makeApp(userFixture('student'))).post(
+      `/api/exam-attempts/${attemptId.toHexString()}/submit`,
+    );
+
+    expect(answer.status).toBe(204);
+    expect(answerQuestion).toHaveBeenCalledWith(expect.any(ObjectId), 'PUID-student', 0, 'b');
+    expect(submit.status).toBe(200);
+    expect(submit.body).toEqual({ score: 3, maxScore: 5 });
+  });
+
+  it('rejects signed-out child requests before resolving the attempt course', async () => {
+    const response = await request(makeApp()).get(
+      `/api/exam-attempts/${attemptId.toHexString()}`,
+    );
+
+    expect(response.status).toBe(401);
+    expect(getExamAttemptCourseId).not.toHaveBeenCalled();
+  });
+
+  it('403s Instructors and Students enrolled in another course', async () => {
+    const instructor = await request(makeApp(userFixture('instructor'))).get(
+      `/api/courses/${courseId.toHexString()}/exams`,
+    );
+    const otherCourse = new ObjectId();
+    jest.mocked(getExamAttemptCourseId).mockResolvedValue(otherCourse);
+    const wrongCourse = await request(makeApp(userFixture('student'))).get(
+      `/api/exam-attempts/${attemptId.toHexString()}`,
+    );
+
+    expect(instructor.status).toBe(403);
+    expect(wrongCourse.status).toBe(403);
+    expect(examState).not.toHaveBeenCalled();
+  });
+
+  it('maps validation, missing attempts, and submitted attempts to stable statuses', async () => {
+    const badIndex = await request(makeApp(userFixture('student')))
+      .put(`/api/exam-attempts/${attemptId.toHexString()}/answers/-1`)
+      .send({ selectedKey: 'a' });
+    jest.mocked(getExamAttemptCourseId).mockResolvedValueOnce(null);
+    const missing = await request(makeApp(userFixture('student'))).get(
+      `/api/exam-attempts/${attemptId.toHexString()}`,
+    );
+    jest.mocked(answerQuestion).mockRejectedValueOnce(new Error('exam-already-submitted'));
+    const submitted = await request(makeApp(userFixture('student')))
+      .put(`/api/exam-attempts/${attemptId.toHexString()}/answers/0`)
+      .send({ selectedKey: 'a' });
+
+    expect(badIndex.status).toBe(400);
+    expect(missing.status).toBe(404);
+    expect(submitted.status).toBe(409);
   });
 });
