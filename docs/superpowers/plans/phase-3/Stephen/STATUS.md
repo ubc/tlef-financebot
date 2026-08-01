@@ -43,9 +43,16 @@ by Stephen and review this file plus the core checkboxes before editing.
   user/course/platform/default resolution, source reporting, capability guards,
   and structurally hard-denied TA approve/resolve are covered. Focused 51/51
   and full Jest 750/750 passed; core progress is 15/29.
-- Active implementation branch: `codex/phase-3-capability-model` (stacked on the
-  completed Task 2 branch until integration).
-- Next: Task 6 TA workflows, then Tasks 7–8 and the Phase 3 exit review.
+- Task 6 TA workflows: complete in `d3b578b`; UBC-email invite activation,
+  per-TA capabilities, daily term-end expiry/re-invite, TA course switcher,
+  review/mark-reviewed, suggested-edit instructor resolution, internal notes,
+  and flag/proactive escalation are covered. TA approve/resolve remain hard
+  denied even with every toggle enabled. Typecheck/build/scoped lint passed;
+  focused tests 39/39 and full Jest 757/757 passed. Core progress is 18/29.
+- Active implementation branch: `codex/phase-3-ta-workflows` (stacked on the
+  completed Phase 3 implementation).
+- Next: Task 7 Instructor analytics, then Task 8 Admin essentials and the
+  Phase 3 exit review.
 
 ## Coordination
 

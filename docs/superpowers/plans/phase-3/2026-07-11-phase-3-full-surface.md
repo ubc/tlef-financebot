@@ -184,9 +184,9 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
   - Internal notes (§6.2): `POST /api/questions/:id/notes { text }` — instructor or `question.review` TAs; timestamped, attributed, teaching-team-only (never in student payloads — assert in test).
   - TA-04: all TA routes scope by course via `courseRoles`; the client shows a course switcher when >1 TA course.
 
-- [ ] **Step 1: Failing tests** — invite→login activation by email match; **no configuration grants a TA the transition to `approved`** (route test: TA with every capability toggled on still gets 403 on `POST /transition { to: 'approved' }` — this is the phase exit criterion); suggestion accept applies exactly the patch; escalation moves flag state and preserves the recommendation; notes never appear in `/practice/next` or exam payloads.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: TA invites, per-TA permissions, review/mark-reviewed, suggested edits, flag triage — approval structurally impossible for TAs (IN-T01..03, TA-01..04)"`
+- [x] **Step 1: Failing tests** — invite→login activation by email match; **no configuration grants a TA the transition to `approved`** (route test: TA with every capability toggled on still gets 403 on `POST /transition { to: 'approved' }` — this is the phase exit criterion); suggestion accept applies exactly the patch; escalation moves flag state and preserves the recommendation; notes never appear in `/practice/next` or exam payloads.
+- [x] **Step 2–4: FAIL → implement → PASS.**
+- [x] **Step 5: Commit** — `d3b578b` (`feat: TA invites, per-TA permissions, review/mark-reviewed, suggested edits, flag triage — approval structurally impossible for TAs (IN-T01..03, TA-01..04)`). Full Jest 757/757.
 
 ---
 
