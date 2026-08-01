@@ -4023,6 +4023,241 @@ button.class-row--link:focus-visible .class-row__title {
   font-weight: 650;
 }
 
+/* ---- Exam Prep (Phase 3 WS-10) ------------------------------------------- */
+
+.exam-home-entry,
+.exam-live__header,
+.exam-card__head,
+.exam-controls,
+.exam-breakdown-row__label,
+.exam-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.exam-home-entry {
+  margin-bottom: 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--student-sidebar-bg) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--student-sidebar-bg) 7%, var(--surface));
+}
+
+.exam-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.exam-card,
+.exam-question,
+.exam-score-card,
+.exam-review,
+.exam-history-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.exam-card,
+.exam-question,
+.exam-review {
+  padding: 1.2rem 1.3rem;
+}
+
+.exam-card__title,
+.exam-card__meta,
+.exam-question__number,
+.exam-review h3 {
+  margin: 0;
+}
+
+.exam-card__meta,
+.exam-question__number {
+  margin-top: 0.55rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.exam-live__header {
+  align-items: flex-start;
+}
+
+.exam-timer {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.exam-timer--warning {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.exam-question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr));
+  gap: 0.45rem;
+  margin: 1rem 0;
+}
+
+.exam-question-grid__item {
+  min-height: 2.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.exam-question-grid__item.is-answered {
+  border-color: var(--student-sidebar-bg);
+  background: color-mix(in srgb, var(--student-sidebar-bg) 12%, var(--surface));
+}
+
+.exam-question-grid__item.is-current {
+  outline: 3px solid color-mix(in srgb, var(--student-sidebar-bg) 28%, transparent);
+}
+
+.exam-question__stem {
+  margin: 1rem 0;
+  font-size: 1.05rem;
+}
+
+.exam-options {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.exam-controls {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.exam-score-card {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.4rem;
+}
+
+.exam-score-card__score {
+  margin: 0;
+  color: var(--student-sidebar-bg);
+  font-size: 2rem;
+  font-weight: 750;
+}
+
+.exam-score-card__label,
+.exam-review-option__label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.exam-breakdown-row {
+  margin-bottom: 0.8rem;
+}
+
+.exam-breakdown-row progress {
+  width: 100%;
+  height: 0.75rem;
+  accent-color: var(--student-sidebar-bg);
+}
+
+.exam-breakdown-row__link {
+  display: inline-block;
+  margin-top: 0.25rem;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.exam-review-list {
+  margin-top: 1.5rem;
+}
+
+.exam-review + .exam-review {
+  margin-top: 1rem;
+}
+
+.exam-review.is-correct {
+  border-left: 4px solid var(--up);
+}
+
+.exam-review.is-missed {
+  border-left: 4px solid var(--down);
+}
+
+.exam-review__stem {
+  margin: 0.8rem 0;
+}
+
+.exam-review-option {
+  margin-top: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.exam-review-option.is-selected {
+  border-color: var(--student-sidebar-bg);
+}
+
+.exam-review-option.is-answer {
+  background: color-mix(in srgb, var(--up) 8%, var(--surface));
+}
+
+.exam-review-option__text > :first-child,
+.exam-review-option__explanation > :first-child {
+  margin-top: 0.25rem;
+}
+
+.exam-review-option__explanation {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.exam-history-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.exam-history-row {
+  padding: 0.9rem 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.exam-history-row:hover {
+  border-color: var(--student-sidebar-bg);
+}
+
+.exam-history-row__kind {
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .exam-home-entry,
+  .exam-live__header,
+  .exam-card__head,
+  .exam-history-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 /* ---- My Courses card grid / join box (Figma screen 1) ----------------------- */
 
 .course-tile__head {

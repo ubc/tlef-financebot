@@ -6,6 +6,7 @@
 // banner (welcome on a student's first-ever visit, or a "pick up where you
 // left off" summary of their last deferred session — ST-P11).
 import {
+  listActiveExams,
   type CourseHomeTheme,
   type SessionSummaryForStart,
 } from '../../api.js';
@@ -119,10 +120,11 @@ export async function renderCourseHomeWithExperience(
   outlet.append(root);
 
   try {
-    const [home, enrollments, summary] = await Promise.all([
+    const [home, enrollments, summary, activeExams] = await Promise.all([
       experience.getHome(courseId),
       experience.listEnrollments(courseId),
       experience.getSessionStart(courseId),
+      experience.preview ? Promise.resolve([]) : listActiveExams(courseId),
     ]);
     const enrollment = enrollments.find((e) => e.courseId === courseId);
     const { covered, total } = overallCoverage(home);
@@ -155,6 +157,19 @@ export async function renderCourseHomeWithExperience(
     root.replaceChildren(
       pageHeader(enrollment?.name ?? 'Course', subtitle),
       bannerSlot,
+      ...(activeExams.length
+        ? [el('section', { class: 'exam-home-entry' },
+            el('div', {},
+              el('p', { class: 'eyebrow', text: 'EXAM PREP AVAILABLE' }),
+              el('h2', { class: 'section-title', text: 'Practice a midterm or final sitting' }),
+              el('p', { class: 'muted', text: 'Complete one resumable sitting with feedback held until submission.' }),
+            ),
+            el('a', {
+              class: 'btn btn--primary',
+              href: `#/course/${encodeURIComponent(courseId)}/exams`,
+            }, 'Open Exam Prep'),
+          )]
+        : []),
       body,
       copyrightFooter(),
     );

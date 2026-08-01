@@ -477,6 +477,7 @@ export interface ExamAttempt {
     selectedKey?: string; // answer-in-progress; changeable until submit (ST-X02)
   }>;
   shortfalls: Array<{ themeId: ObjectId; requested: number; assembled: number }>; // ST-X01
+  open?: boolean; // true only while the single sitting is answerable (partial unique index)
   startedAt: Date;
   submittedAt?: Date;
   score?: number;

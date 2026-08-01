@@ -62,6 +62,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `views/instructor/student-preview.ts` | Route table that renders the real Student pages with the anonymous Preview adapter. Preview swaps the entire Instructor shell for Student chrome rather than maintaining a second UI. |
 | `preview-session.ts` | Browser-scoped UUID for one fresh anonymous Preview student. Exit clears it; refresh keeps the current walkthrough. |
 | `views/instructor/content-map.ts` | Instructor-only Theme/LO coverage map joining material kinds, question states, run status, and authoring gaps. |
+| `views/student/exam-*.ts` | Phase 3 Exam Prep selection, integrity-preserving live sitting, post-submit results, and history. The live DOM receives only sanitized stems/options; correctness and explanations exist only in the results view. |
 
 ## Adding a page
 

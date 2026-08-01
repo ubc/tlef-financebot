@@ -10,7 +10,7 @@ import {
   createNotificationBell,
 } from './notifications-bell.js';
 import { loadSession, displayName, type Session } from './auth.js';
-import { setUnauthorizedHandler } from './api.js';
+import { listActiveExams, setUnauthorizedHandler } from './api.js';
 import { startRouter, type Route, type RouterHandle } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
@@ -24,6 +24,10 @@ import { renderLoList } from './views/student/lo-list.js';
 import { renderPractice } from './views/student/practice.js';
 import { renderReviewBook } from './views/student/review-book.js';
 import { renderSessionSummary } from './views/student/session-summary.js';
+import { renderExamSelect } from './views/student/exam-select.js';
+import { renderExamAttempt } from './views/student/exam-attempt.js';
+import { renderExamResults } from './views/student/exam-results.js';
+import { renderExamHistory } from './views/student/exam-history.js';
 import {
   INSTRUCTOR_NAV,
   courseIdFromPath,
@@ -86,6 +90,10 @@ const ROUTES: Route[] = [
   { path: '/course/:id/practice/:loId', render: renderPractice },
   { path: '/course/:id/review-book', render: renderReviewBook },
   { path: '/course/:id/summary', render: renderSessionSummary },
+  { path: '/course/:id/exams', render: renderExamSelect },
+  { path: '/course/:id/exam-attempt/:attemptId/results', render: renderExamResults },
+  { path: '/course/:id/exam-attempt/:attemptId', render: renderExamAttempt },
+  { path: '/course/:id/exam-history', render: renderExamHistory },
   { path: '/course/:id', render: renderCourseHome },
 ];
 
@@ -271,6 +279,11 @@ function isStudentNavActive(item: StudentNavItem, path: string, courseId: string
   if (item.disabled) return false;
   if (!studentNavNeedsCourse(item)) return item.path('') === path;
   if (!courseId) return false;
+  if (item.examOnly) {
+    return path.startsWith(`/course/${courseId}/exams`)
+      || path.startsWith(`/course/${courseId}/exam-attempt/`)
+      || path.startsWith(`/course/${courseId}/exam-history`);
+  }
   return item.path(courseId) === path;
 }
 
@@ -351,6 +364,7 @@ function buildStudentShell(
       },
       el('span', { class: 'nav__text', text: item.label }),
     ) as HTMLAnchorElement;
+    if (item.examOnly) link.hidden = true;
     anchors.push({ item, link });
     nav.append(link);
   }
@@ -425,6 +439,7 @@ function buildStudentShell(
   // onNavigate, read by `syncPracticeContext` too, since that can also run
   // asynchronously (via `onPracticeActionsChange`) well after onNavigate.
   let practiceMode = false;
+  let examAvailabilityRequest = 0;
 
   // Renders (or clears) the sidebar context panel from whatever
   // `getPracticeActions()` currently holds. Called both on navigation and
@@ -457,6 +472,7 @@ function buildStudentShell(
     fallback: config.fallback,
     onNavigate: (path) => {
       const courseId = config.courseIdFromPath(path);
+      const availabilityRequest = ++examAvailabilityRequest;
       practiceMode = config.practicePath(path);
       nav.hidden = practiceMode;
       for (const { item, link } of anchors) {
@@ -467,6 +483,24 @@ function buildStudentShell(
         link.classList.toggle('nav__link--disabled', Boolean(item.disabled) || !href);
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
+      }
+
+      const examAnchors = anchors.filter(({ item }) => item.examOnly);
+      if (examAnchors.length && courseId && !config.preview) {
+        void listActiveExams(courseId).then((templates) => {
+          if (availabilityRequest !== examAvailabilityRequest) return;
+          for (const { item, link } of examAnchors) {
+            const available = templates.length > 0;
+            link.hidden = !available;
+            link.setAttribute('href', available ? (studentNavHref(item, courseId) ?? '#') : '#');
+            link.classList.toggle('nav__link--disabled', !available);
+          }
+        }).catch(() => {
+          if (availabilityRequest !== examAvailabilityRequest) return;
+          for (const { link } of examAnchors) link.hidden = true;
+        });
+      } else {
+        for (const { link } of examAnchors) link.hidden = true;
       }
 
       syncPracticeContext();

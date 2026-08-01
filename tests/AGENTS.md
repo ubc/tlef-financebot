@@ -87,6 +87,11 @@ Notes:
   Preview-only attempt/session state and zero live attempt/mastery/Review
   Book/flag/notification/summary records. The fixture and temporary course role
   are removed in `afterAll`.
+- `exam-mode.spec.ts` seeds an active midterm template, logs in as the real
+  Student persona, verifies no explanation text appears before submission,
+  reload-resumes the same answer state, and then checks results, Review Book,
+  ExamAttempt, and exam AttemptRecord persistence. It cleans every course
+  fixture and Student role in `afterAll`.
 
 ## Writing a11y tests (`tests/a11y/*.spec.ts`)
 

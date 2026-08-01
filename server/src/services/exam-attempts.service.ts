@@ -197,6 +197,7 @@ async function createAttempt(
     loBreakdown: template.loBreakdown,
     questions: selected,
     shortfalls,
+    open: true,
     startedAt: new Date(),
     maxScore: selected.reduce((sum, question) => sum + question.points, 0),
   };
@@ -323,7 +324,7 @@ export async function submitExam(
   const submittedAt = new Date();
   const claimed = await examAttemptsCol().findOneAndUpdate(
     { _id: attemptId, puid, submittedAt: { $exists: false } },
-    { $set: { score, submittedAt } },
+    { $set: { score, submittedAt, open: false } },
     { returnDocument: 'after' },
   );
   if (!claimed) {

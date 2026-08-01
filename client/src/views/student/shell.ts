@@ -5,13 +5,14 @@ export interface StudentNavItem {
   /** Path suffix appended to `/course/:id`, or a literal path for course-less items. */
   path: (courseId: string) => string;
   disabled?: boolean;
+  examOnly?: boolean;
 }
 
 /** Static nav shown outside an active practice session. */
 export const STUDENT_NAV: StudentNavItem[] = [
   { label: 'My Courses', path: () => '/' },
   { label: 'Review Book', path: (id) => `/course/${id}/review-book` },
-  { label: 'Exam Prep', path: () => '#', disabled: true },
+  { label: 'Exam Prep', path: (id) => `/course/${id}/exams`, examOnly: true },
 ];
 
 /** Extracts the courseId from a student path (`/course/:id...`), or undefined

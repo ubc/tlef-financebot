@@ -920,6 +920,140 @@ export function saveExamTemplate(
   );
 }
 
+// --- Exam Prep student sitting/results (Phase 3 WS-10 / ST-X01..X04) -------
+
+export interface ExamAttemptSummary {
+  _id: string;
+  courseId: string;
+  templateId: string;
+  templateKind: ExamTemplateKind;
+  startedAt: string;
+  submittedAt?: string;
+  score?: number;
+  maxScore: number;
+}
+
+export interface ExamStateQuestion {
+  index: number;
+  type: 'mcq' | 'true-false';
+  stem: string;
+  options: Array<{ key: string; text: string }>;
+  points: number;
+  answered: boolean;
+}
+
+export interface ExamAttemptState {
+  attemptId: string;
+  templateId: string;
+  kind: ExamTemplateKind;
+  questions: ExamStateQuestion[];
+  answers: Array<string | null>;
+  shortfalls: Array<{ themeId: string; requested: number; assembled: number }>;
+  startedAt: string;
+  submitted: boolean;
+  submittedAt?: string;
+  remainingSeconds?: number;
+}
+
+export interface ExamBreakdown {
+  earned: number;
+  possible: number;
+  practiceLink?: { courseId: string; themeId?: string; loId?: string };
+}
+
+export interface ExamResultQuestion {
+  index: number;
+  questionId: string;
+  questionVersionId: string;
+  themeId: string;
+  loId: string;
+  type: 'mcq' | 'true-false';
+  stem: string;
+  options: Array<{
+    key: string;
+    text: string;
+    role: 'correct' | 'common-misconception' | 'partially-correct' | 'clearly-wrong';
+    explanation: string;
+    correct: boolean;
+  }>;
+  selectedKey: string | null;
+  correct: boolean;
+  points: number;
+}
+
+export interface ExamResults {
+  attemptId: string;
+  kind: ExamTemplateKind;
+  submittedAt: string;
+  score: number;
+  maxScore: number;
+  byTheme: Array<ExamBreakdown & { themeId: string; name: string }>;
+  byLo?: Array<ExamBreakdown & { loId: string; themeId: string; name: string }>;
+  questions: ExamResultQuestion[];
+}
+
+export interface ExamHistoryItem {
+  attemptId: string;
+  kind: ExamTemplateKind;
+  date: string;
+  score: number;
+  maxScore: number;
+}
+
+export function listActiveExams(courseId: string): Promise<ExamTemplate[]> {
+  return request<ExamTemplate[]>(`/api/courses/${encodeURIComponent(courseId)}/exams`);
+}
+
+export function startExamAttempt(
+  courseId: string,
+  templateId: string,
+): Promise<ExamAttemptSummary> {
+  return request<ExamAttemptSummary>(
+    `/api/courses/${encodeURIComponent(courseId)}/exams/${encodeURIComponent(templateId)}/start`,
+    { method: 'POST' },
+  );
+}
+
+export function getExamAttempt(attemptId: string): Promise<ExamAttemptState> {
+  return request<ExamAttemptState>(`/api/exam-attempts/${encodeURIComponent(attemptId)}`);
+}
+
+export function saveExamAnswer(
+  attemptId: string,
+  index: number,
+  selectedKey: string,
+): Promise<void> {
+  return request<void>(
+    `/api/exam-attempts/${encodeURIComponent(attemptId)}/answers/${index}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedKey }),
+    },
+  );
+}
+
+export function submitExamAttempt(
+  attemptId: string,
+): Promise<{ score: number; maxScore: number }> {
+  return request<{ score: number; maxScore: number }>(
+    `/api/exam-attempts/${encodeURIComponent(attemptId)}/submit`,
+    { method: 'POST' },
+  );
+}
+
+export function getExamResults(attemptId: string): Promise<ExamResults> {
+  return request<ExamResults>(
+    `/api/exam-attempts/${encodeURIComponent(attemptId)}/results`,
+  );
+}
+
+export function getExamHistory(courseId: string): Promise<ExamHistoryItem[]> {
+  return request<ExamHistoryItem[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/exam-history`,
+  );
+}
+
 /** POST /api/courses/:courseId/themes { name } -> 201 Theme. */
 export function addTheme(courseId: string, name: string): Promise<CourseTreeTheme> {
   return request<CourseTreeTheme>(`/api/courses/${encodeURIComponent(courseId)}/themes`, {

@@ -110,7 +110,10 @@ commonly need:
   Approved pinned question versions; pre-submit state contains no correctness
   data; submission writes exam AttemptRecords, auto-collects misses, exposes
   full results/history, and queues an idempotent mastery qualifier batch that
-  preserves practice-derived mastery status.
+  preserves practice-derived mastery status. Four Student views provide
+  active-template selection, question navigation, server-confirmed countdown
+  submission, full post-submit review, weak-area links, and exam history; the
+  Exam Prep nav entry remains hidden when no template is active.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage

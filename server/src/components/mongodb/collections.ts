@@ -83,10 +83,10 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'generationBlueprints', keys: { courseId: 1, updatedAt: -1 } },
   {
     collection: 'examAttempts',
-    keys: { puid: 1, courseId: 1, templateId: 1, submittedAt: 1 },
+    keys: { puid: 1, courseId: 1, templateId: 1, open: 1 },
     options: {
       unique: true,
-      partialFilterExpression: { submittedAt: { $exists: false } },
+      partialFilterExpression: { open: true },
     },
   },
 ];
