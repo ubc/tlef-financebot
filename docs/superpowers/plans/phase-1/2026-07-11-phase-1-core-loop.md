@@ -65,15 +65,15 @@ exists — seed via the Task 4 service or direct Mongo inserts; don't wait.
 - Modify: `package.json` (add `agenda`, `nanoid@3` — v3 is CommonJS-compatible)
 
 **Interfaces:**
-- Consumes: `getMongoClient()` from the mongodb component; `env`.
+- Consumes: `env` (`mongodbUri`, `mongodbDbName`). **Note (post-implementation):** agenda@4's job-locking reads `findOneAndUpdate(...).value`, a mongodb@4 result shape the repo's top-level mongodb@7 driver no longer returns — so the component opens its OWN connection via agenda's bundled mongodb@4 driver (`db: { address }`, address derived from `env`) instead of sharing `getMongoClient()`. See `server/src/components/jobs/AGENTS.md`.
 - Produces: `startJobs(): Promise<void>`, `stopJobs(): Promise<void>`, `defineJob<T>(name: string, handler: (data: T) => Promise<void>): void`, `enqueueJob<T>(name: string, data: T): Promise<void>`, `scheduleRecurring(name: string, interval: string): Promise<void>`. Used by ingestion (Task 6), generation (Task 8), mastery evaluation (Task 13), and later phases (term-expiry sweep, daily summaries).
 
-- [ ] **Step 1: Install**
+- [x] **Step 1: Install**
 
 Run: `npm install agenda nanoid@3`
 Expected: exit 0.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `tests/unit/jobs.component.test.ts`:
 
@@ -110,12 +110,12 @@ describe('jobs component', () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `npx jest tests/unit/jobs.component.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement `server/src/components/jobs/index.ts`**
+- [x] **Step 4: Implement `server/src/components/jobs/index.ts`**
 
 ```ts
 import { Agenda, type Job } from 'agenda';
@@ -164,12 +164,12 @@ export async function stopJobs(): Promise<void> {
 
 In `server/src/server.ts`, after `ensureIndexes()`: `await startJobs();`. Write `server/src/components/jobs/AGENTS.md` (3–6 lines describing the component and that job handlers live next to the service that owns them).
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `npx jest tests/unit/jobs.component.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/src/components/jobs package.json tests/unit/jobs.component.test.ts server/src/server.ts
@@ -206,7 +206,7 @@ git commit -m "feat: agenda-backed jobs component"
   - `ensureCourseStudent()`: same for `role: 'student'`.
 - Produces (routes): the Courses/Hierarchy/Roster endpoints exactly as in `docs/api-contract.md`.
 
-- [ ] **Step 1: Write the failing service tests**
+- [x] **Step 1: Write the failing service tests**
 
 `tests/unit/courses.service.test.ts` (mock `collections` like `tests/unit/users.service.test.ts` does — one `jest.fn()` per accessor returning an object of collection-method mocks). Cover, with concrete assertions:
 
@@ -225,12 +225,12 @@ git commit -m "feat: agenda-backed jobs component"
 
 Write these five as real `it()` blocks with the mock wiring — follow the `users.service.test.ts` mocking pattern exactly (mock `../../server/src/components/mongodb/collections`, reset in `beforeEach`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/courses.service.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the service**
+- [x] **Step 3: Implement the service**
 
 `server/src/services/courses.service.ts` — implement every function listed in **Interfaces** above. Key excerpts (write the full file; these are the load-bearing parts):
 
@@ -277,7 +277,7 @@ export async function publishChecklist(courseId: ObjectId) {
 }
 ```
 
-- [ ] **Step 4: Implement the guards**
+- [x] **Step 4: Implement the guards**
 
 `server/src/components/auth/course-guards.ts`:
 
@@ -316,18 +316,18 @@ export const ensureCourseStudent = (): RequestHandler => ensureCourseRole('stude
 export const ensureCourseTa = (): RequestHandler => ensureCourseRole('ta');
 ```
 
-- [ ] **Step 5: Implement the routes**
+- [x] **Step 5: Implement the routes**
 
 `server/src/routes/courses.routes.ts` — implement every Courses/Hierarchy/Roster endpoint from the contract, each with `validate()` schemas (e.g. `z.object({ name: z.string().min(1), courseCode: z.string().min(1), term: z.string().min(1) })` for course creation; ObjectId params validated with `z.string().regex(/^[0-9a-f]{24}$/)`). Instructor endpoints use `ensureCourseInstructor()`; `POST /api/courses` uses `ensureApiAuthenticated()` (any authenticated user may create a course in the pilot; tighten later via the Phase-3 capability model). Mount in `app.ts`: `app.use('/api', coursesRouter);`.
 
-- [ ] **Step 6: Write the failing route tests, then make them pass**
+- [x] **Step 6: Write the failing route tests, then make them pass**
 
 `tests/unit/courses.routes.test.ts` — supertest with the passport stand-in middleware (copy the `makeApp` pattern from `tests/unit/notes.route.test.ts`, but set `req.user` to a domain-User fixture with `courseRoles`). Mock `courses.service`. Cover: 401 signed out; 403 non-instructor PATCHing a course; 201 create; 400 invalid body; publish returns `{ published, checklist }`.
 
 Run: `npx jest tests/unit/courses.routes.test.ts tests/unit/courses.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/src/services/courses.service.ts server/src/routes/courses.routes.ts server/src/components/auth/course-guards.ts server/src/app.ts tests/unit/courses.service.test.ts tests/unit/courses.routes.test.ts
@@ -350,7 +350,7 @@ git commit -m "feat: courses service and routes — hierarchy CRUD, term dates, 
 - Consumes: `coursesCol()`, `rosterCol()`, `usersCol()`; `User` from `req.user`.
 - Produces: `enrollByCode(user: User, code: string): Promise<{ courseId: ObjectId; name: string; courseCode: string }>` throwing `EnrollmentError` with `.code` one of `'not-recognized' | 'not-on-roster' | 'course-ended' | 'already-enrolled'`; `listEnrollments(user: User): Promise<Array<{ courseId, name, courseCode, term, active: boolean }>>` where `active` is false past `termEnd` (respecting per-student `extendedUntil`). Routes map error codes to statuses: 404 / 403 / 410 / 409 per the contract.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/unit/enrollment.service.test.ts` (collections mocked). Concrete cases:
 
@@ -406,12 +406,12 @@ it('is idempotent: already enrolled -> already-enrolled, no duplicate', async ()
 
 Roster match rule: the student's `uid` **or** `email` (both lower-cased) must equal a roster `identifier`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement service + routes**
+- [x] **Step 3: Implement service + routes**
 
 ```ts
 export class EnrollmentError extends Error {
@@ -441,17 +441,19 @@ export async function enrollByCode(user: User, code: string) {
 
 Routes (`enrollment.routes.ts`): `POST /api/enrollments` (body `{ code: z.string().min(1) }`) mapping `EnrollmentError.code` → 404/403/410/409 with the exact user-facing messages from ST-E02 ("you're not on the roster for this course — contact your instructor", "this course has ended", "code not recognized", informational duplicate message); `GET /api/enrollments` listing via `listEnrollments`. Mount in `app.ts`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/enrollment.service.ts server/src/routes/enrollment.routes.ts server/src/app.ts tests/unit/enrollment.service.test.ts
 git commit -m "feat: enrollment by registration code with roster cross-check and four error states (ST-E02)"
 ```
+
+**Note (post-implementation, Stephen 2026-07-16):** shipped as specified; review Approved, no Critical/Important findings. Two deferred Minors: `enrollByCode`/`listEnrollments` duplicate roster+expiry logic with subtly different null-handling (a shared `resolveAccessEnd()` helper would remove drift risk); test coverage exercises only the `uid` roster-match path, not `email` (the core doc's own spec has the same gap).
 
 ---
 
@@ -472,7 +474,15 @@ git commit -m "feat: enrollment by registration code with roster cross-check and
   - `bulkTransition(questionIds: ObjectId[], to: PublicationState, byPuid: string): Promise<number>` — applies to each; skips invalid ones; returns updated count.
 - MCQ invariants enforced in `createQuestion`/`editQuestion`: exactly 4 options for `mcq` / 2 for `true-false`; exactly one option with `role: 'correct'`; a `true-false` incorrect option's role is forced to `'common-misconception'` (PRD §9.1). Violations throw `Error('invalid-options:<reason>')`.
 
-- [ ] **Step 1: Write the failing tests**
+**Note (post-implementation, Saurav 2026-07-16) — the shipped service deviates from the above in five places.** Full rationale in `phase-1/Saurav/STATUS.md`; the short version for anyone coding against this service:
+
+1. **`editQuestion` does not version or label a tagging-only patch.** If the patch has no content key (`stem`/`options`/`difficulty`/`paramSlots`), it updates the head's `loIds`/`themeIds` only, inserts **no** version, adds **no** `manually-edited`, and returns the current version. The recipe below was unconditional, which stamped an IN-Q13 retag as manually-edited and piled up content-identical versions. Content-bearing edits behave exactly as written here.
+2. **`editedFields` is per-edit** (patched content keys of *that* edit). `domain.ts:128`'s docstring was reworded to match — the cumulative divergence-from-original set is the union of `editedFields` across the version chain.
+3. **`transitionQuestion` hoists one `const now`** so the returned `updatedAt` matches what was written; the excerpt below returns a stale one. **If you echo this return to a client, you now get the real timestamp.**
+4. **`bulkTransition` only skips `question-not-found` and `invalid-transition:*`; every other error propagates.** A bare `catch {}` turned a Mongo outage into a silent `0`. **Callers (Task 5) must handle a rejected `bulkTransition`.**
+5. **`createQuestion` inserts the version before the head**; `editQuestion` throws `question-not-found` / `version-not-found` on the paths this doc left silent.
+
+- [x] **Step 1: Write the failing tests**
 
 `tests/unit/questions.service.test.ts` — collections mocked. Cases (write in full):
 
@@ -481,12 +491,12 @@ git commit -m "feat: enrollment by registration code with roster cross-check and
 3. `transitionQuestion` allows `pending-review → approved` and rejects `draft → approved` (assert the thrown message and that no write happened); audit log written on success.
 4. `bulkTransition` returns the count of questions whose transition was valid.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest tests/unit/questions.service.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `questions.service.ts`**
+- [x] **Step 3: Implement `questions.service.ts`**
 
 Core excerpt (write the full file):
 
@@ -518,12 +528,12 @@ export async function transitionQuestion(questionId: ObjectId, to: PublicationSt
 
 `editQuestion` reads the current version, builds `next = { ...current, ...patch, version: current.version + 1, editedFields, createdBy: byPuid, createdAt: new Date() }` (dropping `_id`), validates options if patched, inserts it, and updates the head with `$set: { currentVersionId, currentVersion, updatedAt }`, `$addToSet: { labels: 'manually-edited' }` plus `loIds`/`themeIds` if provided.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx jest tests/unit/questions.service.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/questions.service.ts tests/unit/questions.service.test.ts
@@ -549,15 +559,24 @@ git commit -m "feat: question versioning, option invariants, publication transit
   - `reviewQueue(courseId): Promise<Array<Question & { _id: ObjectId; current: QuestionVersion; priority: number }>>` — non-archived, non-approved questions ordered: (1) `labels` contains `student-flagged`, (2) `state === 'reviewed'`, (3) rest by under-coverage (fewest approved questions on their first LO) — computed with three queries and concatenated, de-duplicated by id (IN-Q02 ordering).
 - Produces (routes): `GET /api/courses/:courseId/questions`, `GET /api/questions/:questionId` (head + current + `agentDecision` + `internalNotes` + version list metadata), `PATCH /api/questions/:questionId`, `POST /api/questions/:questionId/transition`, `POST /api/questions/bulk-transition`, `GET /api/courses/:courseId/review-queue` — instructor-guarded; child-resource routes look up the question first and stash `res.locals.courseId` before the guard runs (mount guard after a small loader middleware).
 
-- [ ] **Step 1: Write failing tests** — `bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter (assert a query containing `labels`), archived hidden by default, review-queue ordering (flagged fixture sorts before reviewed before new). `questions.routes.test.ts`: 403 for a student hitting instructor routes; `transition` route returns 409 with the service's `invalid-transition` message; PATCH validates options shape via zod (`options: z.array(z.object({ key: z.string(), text: z.string(), role: z.enum([...]), explanation: z.string() })).length(4).optional()` — use a refinement allowing 2 for true-false based on the loaded question type, or validate count in the service and let zod check element shape only).
+**Note (post-implementation, Saurav 2026-07-17) — four deviations.** Full rationale in `phase-1/Saurav/STATUS.md`; the short version for anyone coding against this surface:
 
-- [ ] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+1. **The stash-then-guard recipe above does NOT cover `POST /api/questions/bulk-transition`** — that route has no `:courseId` and takes an **array** of ids that may span courses, while `ensureCourseInstructor()` resolves exactly one course. Stashing a single question's courseId would have let an instructor of course A transition course B's questions. Implemented: distinct `courseId`s of the found questions must be **exactly one**, else **403**; then stash + guard. 403 (not 400) so it isn't an existence oracle. **Anyone adding another array-taking route under `/api/questions` must apply the same rule** — the singular recipe is a trap there.
+2. **The span-check 403 reuses the guard's body** via a frozen `NO_COURSE_ACCESS_BODY` exported from `components/auth/course-guards.ts`, so the two 403s are indistinguishable. Import that constant rather than re-typing the string.
+3. **`includeArchived` is service-only, not a query param** — `docs/api-contract.md:47` doesn't list it and the contract governs the HTTP surface. `state=archived` still reaches archived questions.
+4. **`flagsCol()`/`attemptsCol()` are not consumed** — the review-queue ordering as specified needs neither.
 
-- [ ] **Step 3: Implement** service + routes per the interfaces; mount in `app.ts`.
+**Serialization rule (deliberate):** Question heads serialize as **`id`** per the contract; an embedded `current: QuestionVersion` serializes **raw with its own `_id`**. `PATCH` therefore returns a raw `QuestionVersion` — that is correct, not an oversight.
 
-- [ ] **Step 4: Run tests** — same command + `npm run typecheck` → PASS.
+- [x] **Step 1: Write failing tests** — `bank.service.test.ts`: state filter is strictly publication states with `student-flagged` as a separate label filter (assert a query containing `labels`), archived hidden by default, review-queue ordering (flagged fixture sorts before reviewed before new). `questions.routes.test.ts`: 403 for a student hitting instructor routes; `transition` route returns 409 with the service's `invalid-transition` message; PATCH validates options shape via zod (`options: z.array(z.object({ key: z.string(), text: z.string(), role: z.enum([...]), explanation: z.string() })).length(4).optional()` — use a refinement allowing 2 for true-false based on the loaded question type, or validate count in the service and let zod check element shape only).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run tests to verify they fail** — `npx jest tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts` → FAIL.
+
+- [x] **Step 3: Implement** service + routes per the interfaces; mount in `app.ts`.
+
+- [x] **Step 4: Run tests** — same command + `npm run typecheck` → PASS.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/bank.service.ts server/src/routes/questions.routes.ts server/src/app.ts tests/unit/bank.service.test.ts tests/unit/questions.routes.test.ts
@@ -581,22 +600,34 @@ git commit -m "feat: question bank browse/filter and prioritized review queue (I
 - Consumes: `multer` (disk storage under `uploads/` — gitignored), genai components (`document-parsing`, `chunking`, `embeddings`), qdrant component, jobs component (Task 1), `materialsCol()`.
 - Produces:
   - `createMaterials(courseId, files: Express.Multer.File[]): Promise<Material[]>` and `createUrlMaterial(courseId, url: string): Promise<Material>` — insert `status: 'processing'` docs, then `enqueueJob('material.ingest', { materialId })` per material (independent processing — one failure never blocks others, IN-S04).
-  - Job `material.ingest`: parse (file via toolkit by extension; URL via `fetch` + HTML parsing through the toolkit) → chunk → embed → upsert into the per-course Qdrant collection `course-<courseId>` with payload `{ materialId, chunk }` → set `status: 'ready'`; on error set `status: 'failed', error: message`. Register with `defineJob` in this service; import the service from `server.ts` after `startJobs()` so registration runs.
+  - Job `material.ingest`: parse (file via toolkit by extension; URL via `fetch` + HTML parsing through the toolkit) → chunk → embed → upsert into the per-course Qdrant collection `course-<courseId>` with payload `{ materialId, chunk }` → set `status: 'ready'`; on error set `status: 'failed', error: message`. ~~Register with `defineJob` in this service; import the service from `server.ts` after `startJobs()` so registration runs.~~ **← This instruction is WRONG and made the server fail to boot. See the note below.**
+
+> **🚨 Note (post-implementation, Saurav 2026-07-17) — READ THIS BEFORE REGISTERING A JOB IN TASK 7 OR TASK 8.**
+>
+> **Never call `defineJob()` at module level.** The compiled output is CommonJS, so `server.ts` → `app.ts` → `<your>.routes.ts` → `<your>.service.ts` pulls the service in via a **hoisted synchronous `require` that runs before `main()`** — and therefore before `startJobs()`. `requireAgenda()` then throws `Jobs not started` and **the whole app fails to boot**. The strikethrough instruction above assumed nothing else imports the service; a route always does.
+>
+> **Do this instead:** export a `registerXJobs()` function that calls `defineJob(...)`, and call it from `server.ts` immediately after `startJobs()`. `materials.service.ts`'s `registerMaterialJobs()` is the reference; `components/jobs/AGENTS.md` documents the pattern.
+>
+> This shipped green: **all 156 tests passed while the server could not start**, because no test imported `app.ts`. `tests/unit/app.smoke.test.ts` now guards it — keep `components/jobs` unmocked there or the guard is hollow.
+>
+> **Four more Task 6 deviations** (full rationale in `phase-1/Saurav/STATUS.md`): `'md'` added to `Material['format']` in `domain.ts`; **`.txt` is read directly via `fs.readFile`** because the document-parsing component supports `.pdf .docx .pptx .html .md` but **not `.txt`**; the URL path adds a timeout, byte cap, HTML content-type allowlist, and SSRF blocking across redirects; and **`components/qdrant/index.ts` was NOT modified** — its functions already take a collection name.
+>
+> **Two things Tasks 7/8 inherit from this service:** `courseCollection(courseId)` → `course-<hex>` is exported for you. Ingest point ids are **deterministic** (UUIDv5 over `materialId:chunkIndex`) so re-ingest overwrites rather than duplicating — but a re-ingest producing **fewer** chunks leaves orphan tail points in the collection (they still carry `payload.materialId` and are still retrievable). Closing that needs a delete-by-filter API the qdrant component lacks.
   - `retryMaterial(materialId)` — re-enqueues a failed material.
   - `assignMaterial(materialId, assignments: Array<{ themeId; loId? }>)` (IN-S05) — replaces assignments; never deletes the material or its questions.
   - `courseCollection(courseId: ObjectId): string` — returns `course-<hex>`; exported, used by generation (Task 8) and classification (Task 7).
   - Supported formats: `pdf docx pptx txt md url`; anything else → route responds 400 naming the format (inline error, IN-S04).
 - Routes: `POST /api/courses/:courseId/materials` (multipart `files[]` via `multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } })`, or JSON `{ url }`), `GET .../materials`, `POST /api/materials/:materialId/retry`, `PUT /api/materials/:materialId/assignments` — instructor-guarded.
 
-- [ ] **Step 1: Write failing tests** — mock collections + jobs + genai/qdrant modules. Cases: unsupported extension rejected with the format named; three files create three `processing` docs and three enqueues; ingest job success path calls parse→chunk→embed→upsert with collection `course-<id>` and sets `ready`; ingest job failure sets `failed` with the error message and does not throw (other files unaffected); URL material stores `sourceUrl`.
+- [x] **Step 1: Write failing tests** — mock collections + jobs + genai/qdrant modules. Cases: unsupported extension rejected with the format named; three files create three `processing` docs and three enqueues; ingest job success path calls parse→chunk→embed→upsert with collection `course-<id>` and sets `ready`; ingest job failure sets `failed` with the error message and does not throw (other files unaffected); URL material stores `sourceUrl`.
 
-- [ ] **Step 2: Run to verify FAIL.**
+- [x] **Step 2: Run to verify FAIL.**
 
-- [ ] **Step 3: Implement** service, job registration, routes; add `uploads/` to `.gitignore`. Verify manually: upload `tests/fixtures/sample-material.md` through the UI-less route with `curl -F "files=@tests/fixtures/sample-material.md" -b <session>` and watch status go `processing → ready`.
+- [x] **Step 3: Implement** service, job registration, routes; add `uploads/` to `.gitignore`. Verify manually: upload `tests/fixtures/sample-material.md` through the UI-less route with `curl -F "files=@tests/fixtures/sample-material.md" -b <session>` and watch status go `processing → ready`.
 
-- [ ] **Step 4: Run tests + typecheck** → PASS.
+- [x] **Step 4: Run tests + typecheck** → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/src/services/materials.service.ts server/src/routes/materials.routes.ts server/src/app.ts .gitignore tests/unit/materials.service.test.ts
@@ -668,7 +699,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `recordSkip(puid, courseId, loId, attempted: boolean): Promise<void>` — sets `skipped`; new attempts clear it (ST-P06).
   - `themeCoverage(puid, courseId, themeId): Promise<{ covered: boolean; includesSkipped: boolean }>` — covered once all non-skipped active LOs are covered (§9.2).
 
-- [ ] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
+**Note (post-implementation, Stephen 2026-07-17):** "recomputes ... from the latest ≤10 attempts" above describes `attemptCount`/`windowAccuracy`/`windowRoles` only — those genuinely are freshly recomputed from the full capped window on every call. **Tier progression is an incremental delta, not a window replay**: each call applies exactly one tier transition using `prior.currentTier` (or `'easy'` if this is the LO's first-ever attempt) plus the newest attempt in the window. This is a deliberate, load-bearing design choice, not a shortcut — a full-window tier replay was tried and reverted because it silently collapses `currentTier` (e.g. `hard` → `easy`) once earlier tier-earning attempts age out of the 10-slot window during a legitimate common-misconception-miss streak, which this section's own rule requires to be tier-**neutral**. See `phase-1/Stephen/2026-07-11-phase-1-core-loop-stephen.md`'s Task 9 note and the gitignored `.superpowers/sdd/task-9-report.md` for the full incident. Anyone calling `computeProfile` directly (not through `recordAttemptInMastery`) with a multi-attempt window against a stale or null `prior` is outside its contract and will get an under-stepped tier by design.
+
+- [x] **Step 1: Write the failing tests** — this is the highest-value test file in the phase; write it exhaustively with a helper that feeds a scripted attempt sequence through `recordAttemptInMastery` against an in-memory fake of `masteryCol`/`attemptsCol` (a `Map`-backed stub implementing `findOne`/`find().sort().limit().toArray()`/`updateOne` with upsert). Scripted cases:
 
 ```
 1. easy ✓, medium ✓, hard ✓            -> tier walks easy→medium→hard; status in-progress (only 3 attempts)
@@ -681,8 +714,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 8. themeCoverage: LO-A covered, LO-B skipped -> covered:true, includesSkipped:true
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** exactly the rules above (pure function `computeProfile(window: AttemptRecord[], prior: MasteryProfile | null): MasteryProfile` + thin persistence wrapper — keeps the rules unit-testable). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery Layer-1 rolling window, tier progression, coverage and skip semantics (§9.2)"`
 
 ---
 
@@ -701,7 +734,9 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `selectRetryQuestion(input: { puid; courseId; loId; excludeQuestionId: ObjectId; sessionServedIds: ObjectId[] }): Promise<same | null>` — a **new** question testing the same concept (same LO, different questionId); `null` → caller degrades to Strategy B (§5.1).
   - `studentCourseHome(puid, courseId): Promise<Array<{ theme: Theme; available: boolean; los: Array<{ lo: LearningObjective; status: MasteryStatus; approvedCount: number }> }>>` — only themes/LOs with ≥1 approved question, `availableFrom` respected, archived hidden (ST-P01/P02).
 
-- [ ] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
+**Note (post-implementation, Stephen 2026-07-17):** `approvedCount` is tallied with a single course-wide `find({courseId, state:'approved'})` plus an in-memory `Map` keyed by `loId` (not one `countDocuments` per LO — that N+1 shape was caught in review since it's invisible under a test fake but real against Mongo). `available` on a returned entry is always `true` in practice — a not-yet-available theme is hidden entirely rather than included with `available:false`; flag before Task 14 if the client view ever needs to distinguish "locked but visible" from "absent."
+
+- [x] **Step 1: Write the failing tests** — fake collections with a seeded bank builder `bank([{ id, difficulty, state, loIds }])`. Cases:
 
 ```
 1. picks only 'approved' — a bank of drafts/pending/paused returns null
@@ -715,8 +750,8 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
 9. studentCourseHome hides a theme whose availableFrom is tomorrow and an LO with 0 approved
 ```
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** (pure selection over an in-memory candidate list fetched once per call; `Math.random` injected as an optional argument defaulting to `Math.random` so tests can pin it). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: mastery-driven question selection with graceful degradation ladder (§5.1)"`
 
 ---
 
@@ -754,7 +789,9 @@ export interface AttemptResult {
   Behaviour: writes the AttemptRecord (pinning version, LO context, mode, applied strategy, difficulty from the version, paramValues, isRetry) → updates mastery (retry attempts are independent full-weight attempts) → on any miss, upserts the ReviewBookEntry **immediately regardless of retry outcome** (one entry per question; repeat miss updates `triggeringAttemptId`/`updatedAt`) → Strategy A miss additionally calls `selectRetryQuestion`; no retry available ⇒ degrade to full reveal (`strategy` stays `'a'`, `revealed` becomes all options — the §5.1 degradation) → `recommendation: 'advance-lo'` when this attempt flipped the LO to covered; `'advance-theme'` when the theme is now covered (ST-P05 backend).
   - Routes (`practice.routes.ts`, student-guarded): `POST /api/courses/:courseId/practice/next` (serves via `selectNextQuestion`; response **never** contains roles, explanations, or correctness — only `{ key, text }` options + `watermark: user.uid`), `POST /api/attempts`, `POST /api/courses/:courseId/los/:loId/skip`, `GET /api/courses/:courseId/home` (via `studentCourseHome`), `GET /api/courses/:courseId/session-summary` (last session's attempts grouped by LO + deferred summary — see Task 12's session model).
 
-- [ ] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
+**Note (post-implementation, Stephen 2026-07-17):** `AttemptRecord.themeId`/`ReviewBookEntry.themeId` must be derived from the theme owning the served `loId` (a `losCol()` lookup), **not** `question.themeIds[0]` — a question's `loIds`/`themeIds` are independently-populated many-to-many tag lists, so an arbitrary array index can silently pin the wrong theme for a question tagged across multiple themes, corrupting the `themeCoverage()` check behind `recommendation: 'advance-theme'`. `losCol()` is therefore a required Consumes entry this section omitted. `recommendation`'s precedence when one attempt both completes an LO and its theme: `'advance-theme'` supersedes `'advance-lo'` (a documented interpretation, not stated explicitly above). ⚠️ Cross-task, pre-existing, not fixed here: `editQuestion` (Task 4) doesn't reset `state` to `draft` on a post-approval edit, so `submitAttempt`'s `state === 'approved'` gate alone doesn't catch a student holding a stale `questionVersionId` from before the edit — raise at the Task 16 exit review.
+
+- [x] **Step 1: Write the failing tests** — the second-highest-value file. `attempts.service.test.ts` cases:
 
 ```
 1. decideStrategy truth table (6 cases: 3 course settings × CM/other roles)
@@ -774,8 +811,8 @@ export interface AttemptResult {
 
 `practice.routes.test.ts`: `/practice/next` response contains no `role`/`explanation` keys anywhere (walk the JSON); 403 non-enrolled; skip endpoint 204.
 
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** service + routes. Step 4: **Tests + typecheck PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: attempt submission with adaptive feedback strategies, retry gate, and review-book auto-collection (ST-P04, ST-R01)"`
 
 ---
 
@@ -801,9 +838,9 @@ export interface AttemptResult {
   - Re-practice needs no new serving code: the client calls `POST /api/attempts` with `mode: 'review-book'` on the stored question (fresh attempt, full feedback, full mastery weight — ST-R03; parameterized re-randomization arrives with Phase 2's param execution).
 - Routes per contract: `GET /api/courses/:courseId/review-book?sort=`, `POST/DELETE /api/questions/:questionId/bookmark`, `DELETE /api/review-book/:entryId`, the two summary endpoints.
 
-- [ ] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
+- [x] **Step 1: Failing tests** — bookmark toggle on an auto-collected entry keeps the entry with `sources: ['auto']`; bookmark on a never-missed question creates `sources: ['bookmark']`; removeEntry never calls attemptsCol; listReviewBook groups by theme with counts and honours `date` sort; sessionEndSummary's `missedQuestions` ids equal the reviewBook additions in the window.
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement.** Step 4: **PASS.**
+- [x] **Step 5: Commit** — `git commit -m "feat: review book browsing, bookmarking, and session summaries (ST-R02..R07, ST-P10/P11)"`
 
 ---
 
@@ -851,11 +888,11 @@ Key behaviours to implement (each is small, concrete DOM code following the exis
 - **Review Book:** collapsed theme groups with counts; expanding lists entries (auto vs bookmark badges); sort dropdown; "Re-practice" serves the stored question and submits with `mode: 'review-book'`; remove button per entry; empty state (ST-R05).
 - **Session summary:** counts, accuracy per LO, missed list with links; "Defer to next session" PUTs the deferred summary (ST-P10/R06).
 
-- [ ] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
-- [ ] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
-- [ ] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
-- [ ] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
+- [x] **Step 1: Extend the router with param matching + unit-test it** (`tests/unit/client-router.test.ts` via jsdom test env if configured; otherwise a pure function test on the extracted `matchRoute(pattern, path)` helper — write `matchRoute` as a pure export precisely so it's testable without a DOM).
+- [x] **Step 2: Build the views one route at a time**, verifying each in the browser against seeded data (use the instructor UI from Task 15 or curl to seed). Keep each view file under ~200 lines; shared bits (option buttons, status badge) go in `client/src/ui.ts`.
+- [x] **Step 3: Typecheck + lint after each view.** Run: `npm run typecheck && npm run lint` → PASS.
+- [x] **Step 4: Playwright happy-path spec** `tests/e2e/practice-loop.spec.ts`: student joins course (pre-seeded via API in the spec's beforeAll using an instructor session), practices one question, sees feedback, misses one, finds it in the Review Book. Run: `npm run test:e2e -- tests/e2e/practice-loop.spec.ts` → PASS.
+- [x] **Step 5: Commit** — `git commit -m "feat: student practice, review book, and session summary views (ST-P01..P11, ST-R05)"`
 
 ---
 
