@@ -29,9 +29,13 @@ by Stephen and review this file plus the core checkboxes before editing.
   single-sitting resume, correctness-free state, server expiry, scoring, five
   Student routes, and one-open-sitting index are covered. Focused/regression
   tests 68/68 and full Jest 737/737 passed; core progress 6/29.
-- Active implementation branch: `codex/phase-3-exam-attempts` (stacked on the
+- Task 4 Exam results/history/mastery: complete in `e847063`; full post-submit
+  review, Theme/optional LO breakdowns, weak-area links, history, Review Book
+  miss collection, and the idempotent `exam.mastery-pass` worker are covered.
+  Focused regression 60/60 and full Jest 744/744 passed; core progress 9/29.
+- Active implementation branch: `codex/phase-3-exam-results` (stacked on the
   completed Task 2 branch until integration).
-- Next: Task 4 results/history/Review Book/mastery pass.
+- Next: Task 5 Student Exam Prep views and integrity E2E.
 
 ## Coordination
 
