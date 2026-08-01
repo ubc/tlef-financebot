@@ -22,6 +22,8 @@
 
 ### Task 1: Capability model (PRD §4.2) — build first
 
+**Owner:** Unassigned WS-12 (claim as a whole with Tasks 6 and 8 before implementation)
+
 **Files:**
 - Create: `server/src/services/capabilities.service.ts`
 - Create: `server/src/components/auth/capability-guard.ts`
@@ -46,6 +48,8 @@
 
 ### Task 2: Exam templates (IN-S07) + feedback-strategy setting UI (IN-S10)
 
+**Owner:** Dev A (Stephen) — WS-10
+
 **Files:**
 - Create: `server/src/services/exam-templates.service.ts`
 - Create: `server/src/routes/exams.routes.ts`
@@ -65,6 +69,8 @@
 ---
 
 ### Task 3: Exam assembly + single-sitting attempt (ST-X01, ST-X02)
+
+**Owner:** Dev A (Stephen) — WS-10
 
 **Files:**
 - Create: `server/src/services/exam-attempts.service.ts`
@@ -101,6 +107,8 @@
 
 ### Task 4: Exam results, history, post-exam mastery pass (ST-X03, ST-X04, §9.2)
 
+**Owner:** Dev A (Stephen) — WS-10
+
 **Files:**
 - Modify: `server/src/services/exam-attempts.service.ts` (results + history)
 - Create: `server/src/services/exam-mastery.service.ts` (batch job)
@@ -124,6 +132,8 @@
 
 ### Task 5: Exam Prep client views
 
+**Owner:** Dev A (Stephen) — WS-10
+
 **Files:**
 - Create: `client/src/views/student/exam-select.ts`, `client/src/views/student/exam-attempt.ts`, `client/src/views/student/exam-results.ts`, `client/src/views/student/exam-history.ts`
 - Modify: student course-home (Exam Prep entry visible only when `GET /exams` is non-empty), router.
@@ -139,6 +149,8 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 ---
 
 ### Task 6: TA management + TA workflows (IN-T01–T03, TA-01–TA-04, §6.2 notes)
+
+**Owner:** Unassigned WS-12 (claim as a whole with Tasks 1 and 8 before implementation)
 
 **Files:**
 - Create: `server/src/services/tas.service.ts`
@@ -169,6 +181,8 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 7: Instructor analytics (IN-A01–IN-A04)
 
+**Owner:** Dev B (Saurav) — WS-11
+
 **Files:**
 - Create: `server/src/services/analytics.service.ts`
 - Create: `server/src/routes/analytics.routes.ts`
@@ -194,6 +208,8 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 
 ### Task 8: Admin essentials (AD-01, AD-02, AD-07)
 
+**Owner:** Unassigned WS-12 (claim as a whole with Tasks 1 and 6 before implementation)
+
 **Files:**
 - Create: `server/src/services/admin.service.ts`
 - Create: `server/src/routes/admin.routes.ts`
@@ -218,6 +234,10 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 ---
 
 ### Task 9: Phase exit checks
+
+**Owner:** Joint — Stephen owns the WS-10 exam evidence; WS-11/12 owners own
+their corresponding analytics/TA evidence and both developers participate in
+the final exit review.
 
 - [ ] **Step 1:** `tests/e2e/exam-mode.spec.ts` (Task 5) green; a student completes a template-conforming exam and results feed mastery + analytics (extend the spec: instructor analytics shows the exam attempts under the Exam Prep tab).
 - [ ] **Step 2:** TA invariant test (Task 6) green — TA can review, suggest, escalate; cannot approve under any configuration.
