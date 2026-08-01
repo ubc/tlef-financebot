@@ -154,25 +154,25 @@ Instructor behaviour.
 
 ## Task 5 — Student Exam Prep views and integrity E2E
 
-- [ ] Add typed client APIs and four student views: selection, attempt,
+- [x] Add typed client APIs and four student views: selection, attempt,
   results, and history.
-- [ ] Enable the existing Exam Prep navigation only when an active template is
+- [x] Enable the existing Exam Prep navigation only when an active template is
   returned; keep it hidden/disabled when none is active.
-- [ ] Implement navigation grid states, unanswered-submit confirmation,
+- [x] Implement navigation grid states, unanswered-submit confirmation,
   countdown/5-minute warning, reload resume, and server-confirmed auto-submit.
-- [ ] Keep the live attempt DOM free of correctness/explanation text and render
+- [x] Keep the live attempt DOM free of correctness/explanation text and render
   full review only after submission.
-- [ ] Add `tests/e2e/exam-mode.spec.ts` covering the full integrity path and
+- [x] Add `tests/e2e/exam-mode.spec.ts` covering the full integrity path and
   Review Book collection; clean every seeded record in `afterAll`.
-- [ ] Run client typecheck/lint/build, focused server suites, and the live E2E;
+- [x] Run client typecheck/lint/build, focused server suites, and the live E2E;
   commit and sync.
 
 ## Stephen's Phase 3 exit evidence
 
-- [ ] Demonstrate a template-conforming exam with exact supply and a separate
+- [x] Demonstrate a template-conforming exam with exact supply and a separate
   non-blocking shortfall case.
-- [ ] Demonstrate reload resume and zero pre-submit feedback/correctness data.
-- [ ] Demonstrate results, Review Book misses, history, AttemptRecords, and the
+- [x] Demonstrate reload resume and zero pre-submit feedback/correctness data.
+- [x] Demonstrate results, Review Book misses, history, AttemptRecords, and the
   post-exam mastery qualifier end to end.
 - [ ] Hand the Exam Prep AttemptRecord fixture/contract to the WS-11 owner for
   the analytics tab assertion; do not implement Saurav's analytics surface.
