@@ -109,6 +109,11 @@ commonly need:
   automatic, and the TA workspace supports review, suggested edits, internal
   notes, and flag escalation. TA approval and flag resolution remain hard-denied
   regardless of configured toggles.
+- Phase 3 Instructor analytics are implemented: Topic Practice and Exam Prep
+  failure rates use a five-attempt privacy/reliability floor, answer
+  distributions highlight common misconceptions, engagement uses 30-minute
+  session clustering with CSV export, and course-scoped individual profiles
+  combine history, mastery, Review Book, and flag events.
 - Phase 3 Exam Prep services are implemented through WS-10 Task 4: instructors
   save split-aware midterm/final templates with non-blocking supply warnings;
   students receive one resumable, server-timed sitting assembled only from

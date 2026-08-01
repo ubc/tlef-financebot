@@ -53,7 +53,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   },
   {
     label: '',
-    items: [{ label: 'Student Analytics', path: null, disabled: true }],
+    items: [{ label: 'Student Analytics', path: '/instructor/course/:id/analytics' }],
   },
   {
     label: 'Course Settings',

@@ -1,4 +1,4 @@
-// Copies browser builds of katex, marked, and dompurify from node_modules into
+// Copies browser builds from node_modules into
 // client/public/vendor/ so the no-bundler client can load them via script tags.
 import { cpSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -14,6 +14,7 @@ const copies = [
   ['node_modules/katex/dist/fonts', 'fonts'],
   ['node_modules/marked/lib/marked.umd.js', 'marked.min.js'],
   ['node_modules/dompurify/dist/purify.min.js', 'purify.min.js'],
+  ['node_modules/chart.js/dist/chart.umd.js', 'chart.umd.js'],
 ];
 for (const [src, dest] of copies) {
   cpSync(path.join(root, src), path.join(vendor, dest), { recursive: true });

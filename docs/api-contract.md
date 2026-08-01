@@ -425,5 +425,31 @@ TA deny for `question.approve` and `flag.resolve` cannot be overridden.
 The daily `tas.term-expiry` job removes course TA roles after `termEnd`; a
 re-invite restores the saved permission configuration.
 
+## Instructor analytics
+
+Class analytics routes require `analytics.view`; individual student search and
+profiles require `analytics.individual`. Preview records are structurally
+excluded because every calculation reads only live collections.
+
+- `GET /api/courses/:courseId/analytics/failure-rates?mode=topic-practice|exam-prep`
+  — Theme rates with expandable LO rates. Any group below five attempts returns
+  `{ attempts, insufficient: true }` and no rate.
+- `GET /api/courses/:courseId/analytics/questions/:questionId/distribution` —
+  option counts/percentages and a common-misconception highlight when its share
+  exceeds 1.5 times the uniform expectation; the five-attempt floor applies.
+- `GET /api/courses/:courseId/analytics/engagement?from=&to=` — totals and
+  weekly questions, active students, sessions, average session minutes, LO
+  coverage, and Review Book activity. A gap over 30 minutes starts a session.
+- `GET /api/courses/:courseId/analytics/engagement.csv` — the weekly rows as an
+  RFC-style escaped CSV download.
+- `GET /api/courses/:courseId/analytics/low-engagement?inactiveDays=7` —
+  enrolled students at or beyond the inactivity threshold, including students
+  with no attempts.
+- `GET /api/courses/:courseId/students?q=` — search enrolled students by name,
+  CWL, or email.
+- `GET /api/courses/:courseId/students/:puid/analytics` — identity, chronological
+  attempts (including Exam Prep), mastery/qualifiers, engagement, Review Book,
+  and student flag events.
+
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`

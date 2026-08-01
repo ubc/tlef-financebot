@@ -46,6 +46,7 @@
     "@qdrant/js-client-rest": "^1.18.0",
     "@types/multer": "^2.2.0",
     "agenda": "4.4.0",
+    "chart.js": "^4.5.1",
     "connect-mongo": "^6.0.0",
     "cors": "^2.8.6",
     "csv-parse": "^7.0.1",

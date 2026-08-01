@@ -59,6 +59,8 @@ import { renderPreseeding } from './views/instructor/preseeding.js';
 import { renderTas } from './views/instructor/tas.js';
 import { renderTaReviewQueue } from './views/ta/review-queue.js';
 import { renderTaFlagTriage } from './views/ta/flag-triage.js';
+import { renderAnalytics } from './views/instructor/analytics.js';
+import { renderStudentProfile } from './views/instructor/student-profile.js';
 import {
   previewStudentRoutes as buildPreviewStudentRoutes,
 } from './views/instructor/student-preview.js';
@@ -121,6 +123,8 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id/tas', render: renderTas },
+  { path: '/instructor/course/:id/student/:puid', render: renderStudentProfile },
+  { path: '/instructor/course/:id/analytics', render: renderAnalytics },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
 

@@ -2133,6 +2133,98 @@ export function proactivelyEscalateTaQuestion(
   });
 }
 
+// --- Phase 3: Instructor analytics -----------------------------------------
+
+export interface AnalyticsRate {
+  attempts: number;
+  insufficient: boolean;
+  failureRate?: number;
+}
+
+export interface ThemeFailureRate extends AnalyticsRate {
+  themeId: string;
+  name: string;
+  los: Array<AnalyticsRate & { loId: string; name: string }>;
+}
+
+export interface AnswerDistribution {
+  attempts: number;
+  insufficient: boolean;
+  options: Array<{ key: string; role: string; count: number; pct?: number }>;
+  misconceptionHighlight: boolean;
+}
+
+export interface EngagementAnalytics {
+  totals: {
+    questionsAttempted: number;
+    avgSessionMinutes: number;
+    sessionsPerStudent: number;
+    loCoverageRate: number;
+    reviewBookActivityRate: number;
+  };
+  weeks: Array<{
+    week: string;
+    questionsAttempted: number;
+    sessions: number;
+    activeStudents: number;
+    avgSessionMinutes: number;
+    loCoverageRate: number;
+    reviewBookActivityRate: number;
+  }>;
+}
+
+export interface AnalyticsStudent {
+  puid: string;
+  uid: string;
+  displayName: string;
+  email: string;
+  lastAttemptAt?: string;
+  inactiveDays?: number;
+}
+
+export interface StudentAnalyticsProfile {
+  student: AnalyticsStudent;
+  history: Array<{ _id: string; mode: string; correct: boolean; createdAt: string; loId: string; themeId: string }>;
+  mastery: Array<{ loId: string; status: string; attemptCount: number; windowAccuracy: number; examVerified?: boolean; rationale?: string }>;
+  reviewBook: Array<{ _id: string; questionId: string; updatedAt: string }>;
+  flags: Array<{ _id: string; questionId: string; state: string; reason?: string; createdAt: string }>;
+  engagement: { attempts: number; sessions: number; lastAttemptAt?: string; examPrepAttempts: number; topicPracticeAttempts: number };
+}
+
+export function getFailureRates(courseId: string, mode: 'topic-practice' | 'exam-prep'): Promise<ThemeFailureRate[]> {
+  return request<ThemeFailureRate[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/analytics/failure-rates?mode=${encodeURIComponent(mode)}`,
+  );
+}
+
+export function getAnswerDistribution(courseId: string, questionId: string): Promise<AnswerDistribution> {
+  return request<AnswerDistribution>(
+    `/api/courses/${encodeURIComponent(courseId)}/analytics/questions/${encodeURIComponent(questionId)}/distribution`,
+  );
+}
+
+export function getEngagementAnalytics(courseId: string): Promise<EngagementAnalytics> {
+  return request<EngagementAnalytics>(`/api/courses/${encodeURIComponent(courseId)}/analytics/engagement`);
+}
+
+export function getLowEngagement(courseId: string, inactiveDays = 7): Promise<AnalyticsStudent[]> {
+  return request<AnalyticsStudent[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/analytics/low-engagement?inactiveDays=${inactiveDays}`,
+  );
+}
+
+export function searchAnalyticsStudents(courseId: string, query: string): Promise<AnalyticsStudent[]> {
+  return request<AnalyticsStudent[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/students?q=${encodeURIComponent(query)}`,
+  );
+}
+
+export function getStudentAnalytics(courseId: string, puid: string): Promise<StudentAnalyticsProfile> {
+  return request<StudentAnalyticsProfile>(
+    `/api/courses/${encodeURIComponent(courseId)}/students/${encodeURIComponent(puid)}/analytics`,
+  );
+}
+
 // --- Instructor: flag-resolution queue (ST-P09, §6.2) — Task 2 --------------
 //
 // Verified against server/src/routes/flags.routes.ts + services/flags.service.ts
