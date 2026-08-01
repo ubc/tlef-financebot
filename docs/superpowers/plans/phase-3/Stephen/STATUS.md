@@ -39,9 +39,13 @@ by Stephen and review this file plus the core checkboxes before editing.
   integrity E2E passed, full Jest remains 744/744, and the Mongo-compatible
   one-open-sitting index was verified during live server startup. Core progress
   is 12/29.
-- Active implementation branch: `codex/phase-3-exam-ui` (stacked on the
+- Task 1 Capability model: complete in `c14de29`; thirteen permissions,
+  user/course/platform/default resolution, source reporting, capability guards,
+  and structurally hard-denied TA approve/resolve are covered. Focused 51/51
+  and full Jest 750/750 passed; core progress is 15/29.
+- Active implementation branch: `codex/phase-3-capability-model` (stacked on the
   completed Task 2 branch until integration).
-- Next: Task 1 capability model, then Tasks 6–8 and the Phase 3 exit review.
+- Next: Task 6 TA workflows, then Tasks 7–8 and the Phase 3 exit review.
 
 ## Coordination
 

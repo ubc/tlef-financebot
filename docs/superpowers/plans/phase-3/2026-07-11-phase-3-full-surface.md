@@ -40,9 +40,11 @@
   - `ensureCapability(capability: Capability)`: RequestHandler — 401/403 like the Phase-1 guards; used by every TA-facing route and retrofitted onto instructor question/flag routes (behaviour-preserving for instructors given the defaults).
   - `effectivePermission(courseId, role, capability): Promise<{ value: boolean; source: 'default' | 'course' | 'admin-override' | 'user-override' }>` — for AD-02's display.
 
-- [ ] **Step 1: Failing tests** — TA invariant survives a settings doc granting `question.approve` to `ta`; per-course override beats platform default; user override beats role; `effectivePermission` reports the winning source; instructor defaults all-true.
-- [ ] **Step 2–4: FAIL → implement → PASS** (re-run Phase 1/2 route suites after retrofitting guards — they must stay green).
-- [ ] **Step 5: Commit** — `git commit -m "feat: capability model with platform defaults, per-course/per-user overrides, and hard TA approval invariant (§4.2)"`
+- [x] **Step 1: Failing tests** — TA invariant survives a settings doc granting `question.approve` to `ta`; per-course override beats platform default; user override beats role; `effectivePermission` reports the winning source; instructor defaults all-true.
+- [x] **Step 2–4: FAIL → implement → PASS** (re-run Phase 1/2 route suites after retrofitting guards — they must stay green). Focused 51/51 and full Jest 750/750 passed; full typecheck and changed-file lint passed.
+- [x] **Step 5: Commit** — `c14de29` (`feat: capability model with platform
+  defaults, per-course/per-user overrides, and hard TA approval invariant
+  (§4.2)`).
 
 ---
 
