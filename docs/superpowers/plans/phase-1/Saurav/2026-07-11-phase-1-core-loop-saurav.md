@@ -264,7 +264,8 @@ Requires Tasks 1, 4, 6 merged. **Step 5 is the ~Aug 2 mid-phase checkpoint (join
 - [x] **Step 3: Implement** — full grounded prompt templates (`GENERATOR_PROMPT`/`VALIDATOR_PROMPT`/`REVIEWER_PROMPT` exported). Job (`registerGenerationJobs()`, NOT module-level) + routes mounted in `app.ts`, registered in `server.ts` after `startJobs()`.
 - [x] **Step 4: Tests + typecheck** → 332 unit pass, typecheck + build + lint clean.
 - [ ] **Step 5: Manual checkpoint (JOINT, ~Aug 2)** — NOT yet run (needs docker + reachable LLM). Deferred to the joint checkpoint, same as Task 6/7 live e2e.
-- [x] **Step 6: Commit** — `feat: three-agent generation pipeline …` (`7f604df`).
+      **Still open at 2026-08-01 and now due** — every Phase 2 browser run skipped the opt-in live-LLM scenario, so generation has never been observed against a real model. This is the last unfinished Saurav-owned Phase 1 step.
+- [x] **Step 6: Commit** — `feat: three-agent generation pipeline …` (`c156bdf`), merged in PR #20 (`f7f9dad`).
 
 ---
 
@@ -321,11 +322,13 @@ gate. Stephen typically drives the student-serving assertions; Saurav's share:
 
 ## Saurav's exit checklist (Dev B slice of the phase exit criteria)
 
-- [ ] Task 8 mid-phase checkpoint hit (~Aug 2): an instructor-generated, approved question served to a student end-to-end.
-- [ ] Publication-state transitions covered by jest (Task 4); auth-gated instructor endpoints covered (Tasks 2, 5).
-- [ ] Generation pipeline never publishes — output always Draft (Task 8 tests).
-- [ ] Approved-only serving proof passes against the real bank services (Task 16).
-- [ ] Instructor pipeline e2e green (Task 15) and joint core-loop demo green (Task 16).
+_Reconciled against `main` on 2026-08-01._
+
+- [ ] Task 8 mid-phase checkpoint hit (~Aug 2): an instructor-generated, approved question served to a student end-to-end. — **Not hit.**
+- [x] Publication-state transitions covered by jest (Task 4); auth-gated instructor endpoints covered (Tasks 2, 5). — `questions.service.test.ts`, `questions.routes.test.ts`, `courses.routes.test.ts`, `materials.routes.test.ts`, `generation.routes.test.ts`.
+- [x] Generation pipeline never publishes — output always Draft (Task 8 tests). — `generation.service.test.ts:344` pins that a reviewer **reject** still inserts a Draft rather than discarding, and `:356` pins that the pipeline never publishes.
+- [ ] Approved-only serving proof passes against the real bank services (Task 16). — `tests/unit/approved-only-serving.test.ts` does not exist. The property is partly pinned elsewhere (`serving.service.test.ts` case 1; `question-not-servable` in `attempts.service.test.ts` / `practice.routes.test.ts`), but not in Task 16's all-six-states, 50-run form.
+- [ ] Instructor pipeline e2e green (Task 15) and joint core-loop demo green (Task 16). — **Half done.** `instructor-pipeline.spec.ts` is green as of the Phase 2 Task 11 suite run (`4422d20`). `core-loop-demo.spec.ts` does not exist.
 
 ## Slip order (Saurav-relevant, lowest first)
 

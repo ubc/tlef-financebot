@@ -288,16 +288,32 @@ before merging PR for Task 2.
   start, but the Phase 1 exit gate isn't claimed until it runs.
 - **Phase 1 S0** (reconcile `Saurav/STATUS.md`, `PHASE-1-UI-HANDOFF.md`, and
   the Phase 1 core plan's Task 7/8/15 checkboxes against merged PRs #19–21) —
-  still owed. Deliberately deferred: 2026-07-23 direction was to do the Phase
-  2 split first and reconcile Phase 1 status after some Phase 2 work lands.
+  ~~still owed~~ **DONE 2026-08-01** on `saurav/phase-1-s0-reconciliation`.
+  Root cause: the Task 7/8/15 ticks went into the personal plan and STATUS but
+  were never mirrored into the shared core plan, so for two weeks the file
+  Stephen's agent reads showed three merged tasks as not started. The
+  reconciliation also established that **all Phase 1 implementation is merged**
+  and the only open Phase 1 items are live-infrastructure verification: Task 8
+  Step 5 (never-run live-LLM generation checkpoint) and joint Task 16.
 
 ## What's left
 
-- Merge/review **Task 8** PR #39; Task 9 shares its import files.
-- Review/merge Codex's recorded cross-owner **Task 10** PR after handoff.
-- Watch for Stephen's Task 5 PR #34 and Task 8 PR #39 merging; both unblock
-  Task 9.
-- Still owe: Phase 1 S0 reconciliation (see above).
+_Updated 2026-08-01._ Every Phase 2 implementation task above is **merged**
+(PRs #27–#43), as is Stephen's side (#32–#37, #41, #45–#51). Remaining:
+
+- **Phase 2 exit gate** — one unchecked criterion: real COMM 298 practice sets
+  and parameterized scripts imported as Drafts. Blocked on content, not code:
+  no real instructor content exists in this repo or `tlef-create` yet.
+- **Phase 1 carry-over** — Task 8 Step 5 (live-LLM generation checkpoint) and
+  joint Task 16. See the reconciled
+  [`../../phase-1/Saurav/STATUS.md`](../../phase-1/Saurav/STATUS.md).
+- **Phase 3 has no owner map and no Saurav plan yet** — the Phase 3 core
+  document's nine tasks carry no `**Owner:**` lines, so the Phase 2 split has no
+  Phase 3 equivalent. Needs an ownership proposal agreed with Stephen before
+  either developer can write a personal Phase 3 plan.
+
+~~Merge/review Task 8 PR #39; review/merge Task 10 PR; watch for PRs #34/#39.~~
+All merged. ~~Still owe: Phase 1 S0 reconciliation.~~ Done — see above.
 
 ## What I need from Stephen
 
