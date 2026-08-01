@@ -56,9 +56,16 @@ by Stephen and review this file plus the core checkboxes before editing.
   Chart.js is vendored by the existing client vendor step. Typecheck/build and
   scoped lint passed; focused tests 5/5 and full Jest 762/762 passed. Core
   progress is 21/29.
-- Active implementation branch: `codex/phase-3-instructor-analytics` (stacked on the
+- Task 8 Admin essentials: complete in `48a41fe`; searchable user/course-role
+  management, retained-record deactivation, orphan confirmation, audited
+  platform/course capability matrices, four model selectors, enforced positive
+  daily generation limits, and quality feature flags are covered. Reviewer-off
+  generation records the required flagged explanation. Typecheck/build/scoped
+  lint passed; focused tests 43/43 and full Jest 769/769 passed. Core progress
+  is 24/29.
+- Active implementation branch: `codex/phase-3-admin-essentials` (stacked on the
   completed Phase 3 implementation).
-- Next: Task 8 Admin essentials, then the Phase 3 exit review.
+- Next: Task 9 Phase 3 exit checks and final status/sync.
 
 ## Coordination
 

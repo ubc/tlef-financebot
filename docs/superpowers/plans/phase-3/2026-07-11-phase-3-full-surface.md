@@ -238,9 +238,9 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
   - AD-07: `GET/PUT /api/admin/platform-settings` — four model selectors (applied on save; generation/evaluator services read settings-first), cost controls with inline validation (reject non-positive numbers → 400), feature flags as labelled toggles; disabling `reviewerAgent` requires `{ confirmQualityImpact: true }` in the body (the client shows the confirmation describing the quality impact — this is the §11 fallback control); the generation pipeline skips the reviewer step when the flag is off, recording `agentDecision: { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' , roleAssessment: '' }`.
 - All routes guarded by `ensureAdmin()` (new tiny guard: 403 unless `req.user.isAdmin`).
 
-- [ ] **Step 1: Failing tests** — deactivated user's `deserializeUser` yields `false`; orphan warning + confirm flow; reviewer-flag-off pipeline path records the disabled reasoning; cost-control validation; audit entries on every admin mutation.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: admin user directory, capability matrix, platform settings with model selectors and reviewer toggle (AD-01/02/07)"`
+- [x] **Step 1: Failing tests** — deactivated user's `deserializeUser` yields `false`; orphan warning + confirm flow; reviewer-flag-off pipeline path records the disabled reasoning; cost-control validation; audit entries on every admin mutation.
+- [x] **Step 2–4: FAIL → implement → PASS.**
+- [x] **Step 5: Commit** — `48a41fe` (`feat: admin user directory, capability matrix, platform settings with model selectors and reviewer toggle (AD-01/02/07)`). Full Jest 769/769.
 
 ---
 
