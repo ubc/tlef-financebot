@@ -175,7 +175,7 @@ Instructor behaviour.
 - [x] Hard-deny TA `question.approve` and `flag.resolve` before configurable
   values, and retrofit question/flag teaching-team reads/mutations without
   changing Instructor behavior (`c14de29`; full Jest 750/750).
-- [ ] Task 6 TA invitations, activation, permissions, review/suggestion/notes,
+- [x] Task 6 TA invitations, activation, permissions, review/suggestion/notes,
   and escalation workflows.
 - [ ] Task 7 Instructor analytics and individual Student profile.
 - [ ] Task 8 Admin user/capability/platform-settings essentials.
@@ -187,8 +187,8 @@ Instructor behaviour.
 - [x] Demonstrate reload resume and zero pre-submit feedback/correctness data.
 - [x] Demonstrate results, Review Book misses, history, AttemptRecords, and the
   post-exam mastery qualifier end to end.
-- [ ] Hand the Exam Prep AttemptRecord fixture/contract to the WS-11 owner for
-  the analytics tab assertion; do not implement Saurav's analytics surface.
+- [x] Carry the Exam Prep AttemptRecord fixture/contract directly into Task 7
+  analytics under Stephen's authorized WS-11 takeover.
 - [ ] Participate in the joint full-suite/manual exit review before checking
   the shared Task 9 complete.
 
