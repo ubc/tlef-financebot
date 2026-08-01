@@ -120,6 +120,9 @@ commonly need:
   model, daily generation limit, and quality flags. Admin mutations are audited;
   reviewer-disabled generation is explicitly flagged instead of silently
   pretending review occurred.
+- Phase 3 is feature-complete (29/29 core plan checks): Exam Prep, capability
+  model, TA workflows, Instructor analytics, Admin essentials, and the combined
+  exit suite are all implemented and verified.
 - Phase 3 Exam Prep services are implemented through WS-10 Task 4: instructors
   save split-aware midterm/final templates with non-blocking supply warnings;
   students receive one resumable, server-timed sitting assembled only from

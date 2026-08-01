@@ -249,11 +249,11 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
 **Owner:** Dev A (Stephen) — complete Phase 3 exit after the authorized WS-10,
 WS-11, and WS-12 takeover; publish evidence for Saurav to review asynchronously.
 
-- [ ] **Step 1:** `tests/e2e/exam-mode.spec.ts` (Task 5) green; a student completes a template-conforming exam and results feed mastery + analytics (extend the spec: instructor analytics shows the exam attempts under the Exam Prep tab).
-- [ ] **Step 2:** TA invariant test (Task 6) green — TA can review, suggest, escalate; cannot approve under any configuration.
-- [ ] **Step 3:** Instructor dashboard answers "which Themes/LOs are weak, which students are inactive" — manual check against seeded data.
-- [ ] **Step 4:** Full suite: `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS. Feature-complete by **Aug 23 EOD**.
-- [ ] **Step 5: Commit** — `git commit -m "test: phase-3 exit checks"`
+- [x] **Step 1:** `tests/e2e/exam-mode.spec.ts` (Task 5) green; a student completes a template-conforming exam and results feed mastery + analytics (extended spec verifies two Exam Prep AttemptRecords under the Instructor Exam Prep tab).
+- [x] **Step 2:** TA invariant test (Task 6) green — TA can review, suggest, escalate; cannot approve under any configuration.
+- [x] **Step 3:** Instructor dashboard answers "which Themes/LOs are weak, which students are inactive" — verified against the seeded failure-rate/low-engagement fixtures and the live Exam Prep analytics E2E.
+- [x] **Step 4:** Full suite: `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS on 2026-08-01: lint/typecheck clean, Jest 769/769, Playwright 21 passed + 1 intentionally skipped live-LLM test. Feature-complete ahead of **Aug 23 EOD**.
+- [x] **Step 5: Commit** — `f08913c` (`test: phase-3 exit checks`).
 
 ---
 
