@@ -20,6 +20,7 @@ import {
   notifyRemediation,
   regenerateQuestion as requestQuestionRegeneration,
   resolveFlag,
+  resolveTaQuestionSuggestion,
   transitionQuestion,
   type CourseTree,
   type Difficulty,
@@ -166,6 +167,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   let draftStem = baseline.stem;
   let draftDifficulty: Difficulty = baseline.difficulty;
 
+  const pendingSuggestions = detail.suggestions?.filter((suggestion) => suggestion.status === 'pending') ?? [];
+
   const errorSlot = el('div', {});
   const flagUpdateButton = el(
     'button',
@@ -218,6 +221,61 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     },
     ...DIFFICULTIES.map((d) => el('option', { value: d, text: d.charAt(0).toUpperCase() + d.slice(1), selected: d === draftDifficulty ? 'selected' : undefined })),
   ) as HTMLSelectElement;
+
+  const suggestionPanel = el(
+    'section',
+    { class: 'card stack' },
+    el('h3', { text: 'TA suggested edits' }),
+    ...(pendingSuggestions.length
+      ? pendingSuggestions.map((suggestion) => {
+          const summary = Object.entries(suggestion.patch)
+            .map(([field, value]) => `${field}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+            .join('\n');
+          const status = el('span', { 'aria-live': 'polite' });
+          return el('article', { class: 'stack stack--sm' },
+            el('p', { class: 'muted', text: `${suggestion.puid} · ${new Date(suggestion.at).toLocaleString()}` }),
+            el('pre', { class: 'code-block', text: summary }),
+            el('div', { class: 'cluster' },
+              el('button', {
+                class: 'btn btn--secondary btn--sm', type: 'button', text: 'Load into editor',
+                onclick: () => {
+                  if (suggestion.patch.stem !== undefined) {
+                    draftStem = suggestion.patch.stem;
+                    stemTextarea.value = draftStem;
+                    stemTextarea.classList.toggle('edited', isFieldEdited(draftStem, baseline.stem));
+                  }
+                  if (suggestion.patch.difficulty !== undefined) {
+                    draftDifficulty = suggestion.patch.difficulty;
+                    difficultySelect.value = draftDifficulty;
+                    difficultySelect.classList.toggle('edited', isFieldEdited(draftDifficulty, baseline.difficulty));
+                  }
+                  updateSaveButton();
+                },
+              }),
+              el('button', {
+                class: 'btn btn--instr-primary btn--sm', type: 'button', text: 'Accept exactly',
+                onclick: async () => {
+                  await resolveTaQuestionSuggestion(questionId, suggestion.id, 'accept');
+                  await renderQuestionDetailInner(outlet, questionId, fallbackCourseId);
+                },
+              }),
+              el('button', {
+                class: 'btn btn--ghost btn--sm', type: 'button', text: 'Discard',
+                onclick: async () => {
+                  try {
+                    await resolveTaQuestionSuggestion(questionId, suggestion.id, 'discard');
+                    await renderQuestionDetailInner(outlet, questionId, fallbackCourseId);
+                  } catch (error) {
+                    status.textContent = error instanceof ApiError ? error.message : (error as Error).message;
+                  }
+                },
+              }),
+              status,
+            ),
+          );
+        })
+      : [el('p', { class: 'muted', text: 'No pending TA suggestions.' })]),
+  );
 
   const optionInputs: Array<{ role: OptionRole; textInput: HTMLInputElement; explInput: HTMLTextAreaElement }> = [];
   const displayRoles = ROLE_ORDER.filter((role) => draftOptions.some((o) => o.role === role));
@@ -865,6 +923,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         el('h3', { class: 'detail-section-title', text: 'Question Stem' }),
         stemTextarea,
         optionsSection,
+        suggestionPanel,
         errorSlot,
         el(
           'section',

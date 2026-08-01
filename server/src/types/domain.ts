@@ -122,6 +122,16 @@ export interface CapabilitySettings {
   updatedAt: Date;
 }
 
+export interface TaInvite {
+  courseId: ObjectId;
+  email: string;
+  status: 'pending' | 'active' | 'expired';
+  permissions?: Partial<Record<Capability, boolean>>;
+  invitedAt: Date;
+  updatedAt: Date;
+  activatedPuid?: string;
+}
+
 export interface Course {
   name: string;
   courseCode: string; // e.g. "COMM 298"
@@ -217,6 +227,15 @@ export interface Question {
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
   regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
   internalNotes: Array<{ puid: string; text: string; at: Date }>; // teaching-team-only (§6.2)
+  suggestions?: Array<{
+    id: ObjectId;
+    puid: string;
+    patch: Record<string, unknown>;
+    status: 'pending' | 'accepted' | 'discarded';
+    at: Date;
+    resolvedAt?: Date;
+    resolvedBy?: string;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -517,10 +536,11 @@ export interface Flag {
   questionId: ObjectId;
   questionVersionId: ObjectId; // flags attach to the specific version (§6.2)
   puid: string; // flagging student
-  source?: 'student' | 'instructor-preview-test';
+  source?: 'student' | 'instructor-preview-test' | 'ta';
+  raisedBy?: 'student' | 'ta';
   reason?: string;
   state: FlagState;
-  taRecommendation?: { action: 'correct' | 'archive' | 'clear'; note?: string; puid: string; at: Date };
+  taRecommendation?: { recommendation: 'correct' | 'archive' | 'clear'; note?: string; puid: string; at: Date };
   // `correctnessAffecting` (Task 6 review fix): persists whether this
   // resolution was marked correctness-affecting, so the remediation panel's
   // "was this checklist relevant?" bit survives a reload — flags are

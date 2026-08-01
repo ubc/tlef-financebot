@@ -369,6 +369,7 @@ describe('answering and submission', () => {
       'explanation',
       'correct',
       'correctness',
+      'internalNotes',
     ]));
     expect(state.questions[0]).toMatchObject({ stem: expect.stringContaining('5') });
     expect(state.questions[0].options).toEqual([

@@ -10,6 +10,7 @@ import { registerGenerationJobs } from './services/generation.service';
 import { registerNotificationJobs } from './services/notifications.service';
 import { reconcileContentRuns } from './services/content-runs.service';
 import { registerExamMasteryJobs } from './services/exam-mastery.service';
+import { registerTaJobs } from './services/tas.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
   // Phase 3 Exam Prep post-submit qualifier pass. Registration is explicit
   // here because exams.routes.ts imports the owning service before jobs start.
   registerExamMasteryJobs();
+
+  // Term-end TA access sweep. The operation is idempotent and removes only
+  // course-scoped TA roles; re-invitation remains available to instructors.
+  await registerTaJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

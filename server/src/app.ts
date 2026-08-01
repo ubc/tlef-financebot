@@ -26,6 +26,7 @@ import { previewRouter } from './routes/preview.routes';
 import { importRouter } from './routes/import.routes';
 import { adminRouter } from './routes/admin.routes';
 import { examsRouter } from './routes/exams.routes';
+import { tasRouter } from './routes/tas.routes';
 import { authRouter } from './routes/auth.routes';
 import { configureAuth } from './components/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
@@ -83,6 +84,7 @@ export function createApp(): Express {
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
   app.use('/api', examsRouter); // Exam templates and Exam Prep attempts/results (Phase 3 WS-10).
+  app.use('/api', tasRouter); // TA invitations, permissions, review/suggestion/triage workflows (Phase 3 WS-12).
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).

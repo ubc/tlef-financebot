@@ -101,7 +101,7 @@ beforeEach(() => {
 // silently reintroduce a leak.
 // -----------------------------------------------------------------------------
 
-const DENYLIST = new Set(['role', 'explanation', 'correct']);
+const DENYLIST = new Set(['role', 'explanation', 'correct', 'internalNotes']);
 
 function collectKeys(value: unknown, found: Set<string> = new Set()): Set<string> {
   if (Array.isArray(value)) {
@@ -116,7 +116,7 @@ function collectKeys(value: unknown, found: Set<string> = new Set()): Set<string
 }
 
 describe('POST /api/courses/:courseId/practice/next — serving-response no-leak (security)', () => {
-  it('never leaks role/explanation/correct anywhere in the JSON tree, and includes the watermark', async () => {
+  it('never leaks answer metadata or internal notes anywhere in the JSON tree, and includes the watermark', async () => {
     const questionId = new ObjectId();
     const versionId = new ObjectId();
     jest.mocked(selectNextQuestion).mockResolvedValue({

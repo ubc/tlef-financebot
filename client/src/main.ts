@@ -56,6 +56,9 @@ import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
+import { renderTas } from './views/instructor/tas.js';
+import { renderTaReviewQueue } from './views/ta/review-queue.js';
+import { renderTaFlagTriage } from './views/ta/flag-triage.js';
 import {
   previewStudentRoutes as buildPreviewStudentRoutes,
 } from './views/instructor/student-preview.js';
@@ -117,7 +120,13 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/flags', render: renderFlagQueue },
   { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
+  { path: '/instructor/course/:id/tas', render: renderTas },
   { path: '/instructor/course/:id', render: renderDashboard },
+];
+
+const TA_ROUTES: Route[] = [
+  { path: '/ta/course/:id/review', render: renderTaReviewQueue },
+  { path: '/ta/course/:id/flags', render: renderTaFlagTriage },
 ];
 
 /** Instructor chrome shows for an explicit global/course Instructor grant or
@@ -139,6 +148,85 @@ function isInstructor(session: Session): boolean {
   return user.isAdmin
     || user.platformInstructor === true
     || user.courseRoles.some((cr) => cr.role === 'instructor');
+}
+
+function taCourseIds(session: Session): string[] {
+  return session.user?.courseRoles
+    .filter((role) => role.role === 'ta')
+    .map((role) => role.courseId) ?? [];
+}
+
+function isTa(session: Session): boolean {
+  return taCourseIds(session).length > 0;
+}
+
+function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
+  const courseIds = taCourseIds(session);
+  const initialCourseId = /^\/ta\/course\/([^/]+)/.exec(hashPath())?.[1]
+    ? decodeURIComponent(/^\/ta\/course\/([^/]+)/.exec(hashPath())![1])
+    : courseIds[0];
+  const shell = el('div', { class: 'app-shell' });
+  const nav = el('nav', { class: 'nav', 'aria-label': 'Teaching assistant' });
+  const reviewLink = el('a', { class: 'nav__link', text: 'Review Queue' }) as HTMLAnchorElement;
+  const flagsLink = el('a', { class: 'nav__link', text: 'Flag Triage' }) as HTMLAnchorElement;
+  const picker = el('select', {
+    class: 'input',
+    'aria-label': 'TA course',
+    onchange: () => {
+      window.location.hash = `/ta/course/${encodeURIComponent(picker.value)}/review`;
+    },
+  }, ...courseIds.map((courseId, index) => el('option', {
+    value: courseId,
+    text: `Course ${index + 1}`,
+  }))) as HTMLSelectElement;
+  if (courseIds.length > 1) {
+    nav.append(el('div', { class: 'stack stack--sm' }, el('label', { text: 'Course' }), picker));
+  }
+  nav.append(
+    el('p', { class: 'nav__group', text: 'TA WORKSPACE' }),
+    reviewLink,
+    flagsLink,
+  );
+  const aside = el('aside', { class: 'sidebar sidebar--instructor' },
+    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+    el('span', { class: 'instructor-pill', text: 'TEACHING ASSISTANT' }),
+    nav,
+    session.user ? el('div', { class: 'sidebar__foot', text: displayName(session.user) }) : false,
+  );
+  const outlet = el('main', { class: 'outlet', id: 'view-root', tabindex: '-1' });
+  const topbar = el('header', { class: 'topbar' },
+    el('button', {
+      class: 'icon-btn topbar__menu', type: 'button', 'aria-label': 'Toggle navigation',
+      onclick: () => shell.classList.toggle('is-open'),
+    }, '≡'),
+    el('span', { class: 'topbar__title', text: 'TA Workspace' }),
+    el('div', { class: 'topbar__right' },
+      createNotificationBell(), createThemeToggle(),
+      el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
+    ),
+  );
+  shell.append(
+    aside,
+    el('div', { class: 'main' }, topbar, outlet),
+    el('div', { class: 'backdrop', 'aria-hidden': 'true', onclick: () => shell.classList.remove('is-open') }),
+  );
+  mount(root, shell);
+  return startRouter({
+    routes: TA_ROUTES,
+    outlet,
+    fallback: `/ta/course/${encodeURIComponent(initialCourseId)}/review`,
+    onNavigate: (path) => {
+      const match = /^\/ta\/course\/([^/]+)/.exec(path);
+      const courseId = match ? decodeURIComponent(match[1]) : initialCourseId;
+      picker.value = courseId;
+      reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
+      flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
+      reviewLink.classList.toggle('nav__link--active', path.endsWith('/review'));
+      flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
+      shell.classList.remove('is-open');
+      document.title = `Teaching Assistant · ${APP.name}`;
+    },
+  });
 }
 
 /**
@@ -535,7 +623,7 @@ function buildPreviewStudentShell(
   });
 }
 
-type ShellMode = 'landing' | 'instructor' | 'student' | 'preview';
+type ShellMode = 'landing' | 'instructor' | 'ta' | 'student' | 'preview';
 let activeRouter: RouterHandle | undefined;
 let activeMode: ShellMode | undefined;
 let activeSession: Session | undefined;
@@ -543,7 +631,8 @@ let activeSession: Session | undefined;
 function shellMode(session: Session, path: string): ShellMode {
   if (!session.authenticated) return 'landing';
   if (isInstructor(session) && previewCourseIdFromPath(path)) return 'preview';
-  return isInstructor(session) ? 'instructor' : 'student';
+  if (isInstructor(session)) return 'instructor';
+  return isTa(session) ? 'ta' : 'student';
 }
 
 function redirectLegacyPreview(session: Session): boolean {
@@ -579,7 +668,9 @@ async function bootstrap(): Promise<void> {
   }
   activeRouter = activeMode === 'instructor'
     ? buildInstructorShell(root, session)
-    : buildStudentShell(root, session);
+    : activeMode === 'ta'
+      ? buildTaShell(root, session)
+      : buildStudentShell(root, session);
 }
 
 // A 401 from a gated endpoint (e.g. the session expired) re-bootstraps: the

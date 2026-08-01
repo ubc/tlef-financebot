@@ -104,6 +104,11 @@ commonly need:
   and commit partial-success CSV/JSON/QTI batches as Drafts, or sandbox-preview
   an existing parameterized `generate(random)` script and migrate it into one
   parameterized Draft after variable/placeholder review.
+- Phase 3 TA workflows are implemented: UBC-email invitations activate on CWL
+  login, per-TA course capabilities take effect immediately, term-end expiry is
+  automatic, and the TA workspace supports review, suggested edits, internal
+  notes, and flag escalation. TA approval and flag resolution remain hard-denied
+  regardless of configured toggles.
 - Phase 3 Exam Prep services are implemented through WS-10 Task 4: instructors
   save split-aware midterm/final templates with non-blocking supply warnings;
   students receive one resumable, server-timed sitting assembled only from

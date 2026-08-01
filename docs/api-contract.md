@@ -398,5 +398,32 @@ student-flag label, contributes to auto-pause, or notifies a real student.
 - `DELETE /api/review-book/:entryId` → 204 (never touches answer history, ST-R03)
 - Re-practice serves through `POST /api/attempts` with `mode: 'review-book'`.
 
+## Teaching assistants
+
+Instructor-managed membership uses UBC email invitations. A matching SAML
+login activates the pending invitation and adds a course-scoped `ta` role.
+Permissions are evaluated immediately through the capability model; the hard
+TA deny for `question.approve` and `flag.resolve` cannot be overridden.
+
+- `GET /api/courses/:courseId/tas` / `POST .../tas { email }` — list or invite.
+- `PUT /api/courses/:courseId/tas/:puid/permissions { permissions }` — replace
+  the TA's course overrides; `POST .../:puid/reinvite` restores an expired TA.
+- `GET /api/courses/:courseId/ta/review-queue` — review data plus teaching-team
+  suggestions/notes, without approve/reject operations.
+- `POST /api/questions/:questionId/mark-reviewed` — transition to `reviewed`.
+- `POST /api/questions/:questionId/suggestions { stem?, options?, difficulty?,
+  loIds?, themeIds? }` — store an unsaved proposed patch. Instructor-only
+  `POST .../suggestions/:suggestionId/accept|discard` resolves it; accept applies
+  the stored patch through normal question versioning.
+- `POST /api/questions/:questionId/notes { text }` — attributed internal note,
+  never included in student practice or exam payloads.
+- `GET /api/courses/:courseId/ta/flags` and `POST /api/flags/:flagId/escalate
+  { recommendation, note? }` — triage an open flag into the Instructor queue.
+- `POST /api/questions/:questionId/escalate { reasonCategory, note? }` — create
+  a proactive TA escalation without pretending it came from a student.
+
+The daily `tas.term-expiry` job removes course TA roles after `termEnd`; a
+re-invite restores the saved permission configuration.
+
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`

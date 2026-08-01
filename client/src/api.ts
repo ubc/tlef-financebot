@@ -1768,6 +1768,7 @@ export interface QuestionHead {
   generationPrompt?: string;
   regenerations?: Array<{ prompt: string; at: string }>;
   internalNotes: Array<{ puid: string; text: string; at: string }>;
+  suggestions?: QuestionSuggestion[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1975,6 +1976,161 @@ export interface ReviewQueueItem extends BankQuestion {
  * Instructor-only. */
 export function getReviewQueue(courseId: string): Promise<ReviewQueueItem[]> {
   return request<ReviewQueueItem[]>(`/api/courses/${encodeURIComponent(courseId)}/review-queue`);
+}
+
+// --- Phase 3: Teaching Assistants ------------------------------------------
+
+export type Capability =
+  | 'question.review'
+  | 'question.suggest-edit'
+  | 'question.mark-reviewed'
+  | 'question.approve'
+  | 'flag.triage'
+  | 'flag.resolve'
+  | 'analytics.view'
+  | 'course.manage-tas'
+  | 'course.manage-settings'
+  | 'exam.manage';
+
+export interface TaInvite {
+  _id: string;
+  courseId: string;
+  email: string;
+  status: 'pending' | 'active' | 'expired';
+  invitedAt: string;
+  updatedAt: string;
+  activatedPuid?: string;
+  displayName?: string;
+  permissions?: Partial<Record<Capability, boolean>>;
+}
+
+export interface QuestionSuggestion {
+  id: string;
+  puid: string;
+  patch: Partial<Pick<QuestionDetail, 'loIds' | 'themeIds'>> & {
+    stem?: string;
+    options?: QuestionOption[];
+    difficulty?: Difficulty;
+  };
+  status: 'pending' | 'accepted' | 'discarded';
+  at: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}
+
+export interface TaReviewQueueItem extends ReviewQueueItem {
+  suggestions: QuestionSuggestion[];
+  internalNotes: Array<{ puid: string; text: string; at: string }>;
+}
+
+export function listTas(courseId: string): Promise<TaInvite[]> {
+  return request<TaInvite[]>(`/api/courses/${encodeURIComponent(courseId)}/tas`);
+}
+
+export function inviteTa(courseId: string, email: string): Promise<TaInvite> {
+  return request<TaInvite>(`/api/courses/${encodeURIComponent(courseId)}/tas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function updateTaPermissions(
+  courseId: string,
+  puid: string,
+  permissions: Partial<Record<Capability, boolean>>,
+): Promise<void> {
+  return request<void>(
+    `/api/courses/${encodeURIComponent(courseId)}/tas/${encodeURIComponent(puid)}/permissions`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions }),
+    },
+  );
+}
+
+export function reinviteTa(courseId: string, puid: string): Promise<TaInvite> {
+  return request<TaInvite>(
+    `/api/courses/${encodeURIComponent(courseId)}/tas/${encodeURIComponent(puid)}/reinvite`,
+    { method: 'POST' },
+  );
+}
+
+export function getTaReviewQueue(courseId: string): Promise<TaReviewQueueItem[]> {
+  return request<TaReviewQueueItem[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/ta/review-queue`,
+  );
+}
+
+export function markTaQuestionReviewed(questionId: string): Promise<QuestionHead> {
+  return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/mark-reviewed`, {
+    method: 'POST',
+  });
+}
+
+export function suggestTaQuestionEdit(
+  questionId: string,
+  patch: QuestionSuggestion['patch'],
+): Promise<QuestionSuggestion> {
+  return request<QuestionSuggestion>(`/api/questions/${encodeURIComponent(questionId)}/suggestions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export function resolveTaQuestionSuggestion(
+  questionId: string,
+  suggestionId: string,
+  action: 'accept' | 'discard',
+): Promise<void> {
+  return request<void>(
+    `/api/questions/${encodeURIComponent(questionId)}/suggestions/${encodeURIComponent(suggestionId)}/${action}`,
+    { method: 'POST' },
+  );
+}
+
+export function addTaQuestionNote(
+  questionId: string,
+  text: string,
+): Promise<{ puid: string; text: string; at: string }> {
+  return request<{ puid: string; text: string; at: string }>(
+    `/api/questions/${encodeURIComponent(questionId)}/notes`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    },
+  );
+}
+
+export function listTaFlags(courseId: string): Promise<Flag[]> {
+  return request<Flag[]>(`/api/courses/${encodeURIComponent(courseId)}/ta/flags`);
+}
+
+export function escalateTaFlag(
+  flagId: string,
+  recommendation: 'correct' | 'archive' | 'clear',
+  note?: string,
+): Promise<Flag> {
+  return request<Flag>(`/api/flags/${encodeURIComponent(flagId)}/escalate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recommendation, note }),
+  });
+}
+
+export function proactivelyEscalateTaQuestion(
+  questionId: string,
+  reasonCategory: string,
+  note?: string,
+): Promise<Flag> {
+  return request<Flag>(`/api/questions/${encodeURIComponent(questionId)}/escalate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reasonCategory, note }),
+  });
 }
 
 // --- Instructor: flag-resolution queue (ST-P09, §6.2) — Task 2 --------------

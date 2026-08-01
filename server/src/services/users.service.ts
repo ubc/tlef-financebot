@@ -4,6 +4,7 @@ import {
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import type { User } from '../types/domain';
+import { activatePendingTaInvites } from './tas.service';
 
 /** Stephen's explicit staging bootstrap identity. Never grants production Admin. */
 export const STAGING_BOOTSTRAP_ADMIN_PUID = 'ESI5CZY7J307';
@@ -70,7 +71,7 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
     },
     { upsert: true, returnDocument: 'after' },
   );
-  return result as unknown as User;
+  return activatePendingTaInvites(result as unknown as User);
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {

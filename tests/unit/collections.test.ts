@@ -23,6 +23,8 @@ describe('collection index specs (PRD §2 data model)', () => {
 
   it('enforces one capability settings document per scope/course', () => {
     expect(byCollection['capabilitySettings:{"scope":1,"courseId":1}'].options?.unique).toBe(true);
+    expect(byCollection['taInvites:{"courseId":1,"email":1}'].options?.unique).toBe(true);
+    expect(byCollection['taInvites:{"status":1,"email":1}']).toBeDefined();
   });
 
   it('indexes the hot attempt-record and serving paths', () => {
