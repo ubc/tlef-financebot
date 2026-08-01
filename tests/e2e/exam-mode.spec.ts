@@ -132,7 +132,7 @@ test.describe('Exam Prep single-sitting integrity path', () => {
     ]);
   });
 
-  test('withholds feedback, resumes after reload, then reveals results and collects misses', async ({ page }) => {
+  test('withholds feedback, resumes, reveals results, and feeds Instructor analytics', async ({ page, browser }) => {
     await login(page, 'student');
     await page.goto('/#/');
     await page.getByPlaceholder('Registration code').fill(registrationCode);
@@ -181,5 +181,19 @@ test.describe('Exam Prep single-sitting integrity path', () => {
     await expect.poll(() => examAttemptsCol().countDocuments({ courseId: cId, submittedAt: { $exists: true } })).toBe(1);
     await expect(attemptsCol().countDocuments({ courseId: cId, mode: 'exam-prep' })).resolves.toBe(2);
     await expect(reviewBookCol().countDocuments({ courseId: cId })).resolves.toBe(2);
+
+    const instructorContext = await browser.newContext({ storageState: AUTH_FILE });
+    const instructorPage = await instructorContext.newPage();
+    try {
+      await instructorPage.goto(`/#/instructor/course/${courseId}/analytics`);
+      await expect(instructorPage.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
+      await instructorPage.getByRole('button', { name: 'Exam Prep', exact: true }).click();
+      await expect(instructorPage.getByText(
+        'Exam integrity Topic: Insufficient data (<5 attempts) (2 attempts)',
+        { exact: true },
+      )).toBeVisible();
+    } finally {
+      await instructorContext.close();
+    }
   });
 });

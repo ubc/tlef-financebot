@@ -52,7 +52,7 @@ export function createApp(): Express {
   // (concurrency target is 250 active sessions, PRD §2).
   app.use(
     '/api',
-    rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false }),
+    rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: true, legacyHeaders: false }),
   );
 
   app.use(cors());

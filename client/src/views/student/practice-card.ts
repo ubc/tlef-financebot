@@ -86,7 +86,10 @@ export function makeQuestionCard(
   // Default its explicit TEST option on (the instructor can still uncheck it
   // for a preview-session-only flag); live student practice never exposes the
   // option and therefore remains false.
-  let sendToInstructorQueue = Boolean(adapter.allowsInstructorTestFlag);
+  // Preview exposes the explicit TEST-queue checkbox, but it is opt-in. Merely
+  // allowing the control must never pre-check it or leak Preview activity into
+  // live flags/notifications.
+  let sendToInstructorQueue = false;
   let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question

@@ -258,8 +258,10 @@ test.describe('Phase 2 flag safety loop', () => {
       await expect(
         instructorPage.getByText('A question was auto-paused after exceeding the flag thresholds.'),
       ).toBeVisible();
+      await instructorPage.getByRole('button', { name: /Notifications/ }).click();
 
-      await instructorPage.getByRole('button', { name: 'Clear' }).click();
+      await instructorPage.getByRole('button', { name: 'Return to Students' }).click();
+      await instructorPage.getByRole('dialog').getByRole('button', { name: 'Return to Students' }).click();
       await expect(instructorPage.getByText('Resolved: cleared')).toBeVisible();
       await expect
         .poll(async () => (await questionsCol().findOne({ _id: qId }))?.state)

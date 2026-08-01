@@ -132,8 +132,8 @@ test.describe('Admin user accounts', () => {
     await expect(pendingCard).toBeVisible();
     await expect(activeCard).toBeVisible();
 
-    page.once('dialog', (dialog) => void dialog.accept());
     await pendingCard.getByRole('button', { name: 'Revoke Instructor' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Revoke access' }).click();
     await expect(
       page.getByRole('status').filter({
         hasText: `Instructor access revoked for ${PENDING_PUID}.`,
@@ -141,8 +141,8 @@ test.describe('Admin user accounts', () => {
     ).toBeVisible();
     await expect(pendingCard).toHaveCount(0);
 
-    page.once('dialog', (dialog) => void dialog.accept());
     await activeCard.getByRole('button', { name: 'Revoke Instructor' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Revoke access' }).click();
     await expect(
       page.getByRole('status').filter({
         hasText: 'Instructor access revoked for E2E Active Professor.',

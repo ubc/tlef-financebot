@@ -197,7 +197,8 @@ test.describe('instructor pipeline', () => {
       await expect(row.getByText('Pending Review')).toBeVisible();
 
       await row.getByRole('button', { name: 'Approve', exact: true }).click();
-      await expect(row.getByText('Approved', { exact: true })).toBeVisible();
+      // Approved questions leave the awaiting-review queue immediately.
+      await expect(row).toHaveCount(0);
     });
 
     await test.step('publish the course', async () => {

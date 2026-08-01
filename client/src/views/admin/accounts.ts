@@ -89,7 +89,6 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     autocomplete: 'off',
     required: 'required',
     placeholder: 'e.g. ESI5CZY7J307',
-    pattern: '[A-Za-z0-9._-]+',
   }) as HTMLInputElement;
   const grantButton = el(
     'button',

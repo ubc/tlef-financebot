@@ -191,6 +191,7 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByText('Review Book Added')).toBeVisible();
     await page.getByRole('link', { name: 'Go to Review Book', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Review Book' })).toBeVisible();
+    await page.getByRole('button', { name: /expand entries/i }).click();
     await expect(page.getByText(APPROVED_STEM)).toBeVisible();
 
     await expect.poll(() => previewAttemptsCol().countDocuments({ courseId })).toBe(1);
@@ -248,7 +249,8 @@ test.describe('Instructor student preview', () => {
     // intentionally completes well inside the 30-second polling fallback.
     await expect(instructorPage.locator('.notif-bell__badge')).toBeVisible({ timeout: 5_000 });
     await instructorPage.getByRole('button', { name: /Notifications/ }).click();
-    await expect(instructorPage.getByText(/Test flag from Instructor Preview/)).toBeVisible();
+    await expect(instructorPage.getByText(/Cross-tab test flag/).first()).toBeVisible();
+    await instructorPage.getByRole('button', { name: /Notifications/ }).click();
 
     await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}/flags`);
     await expect(instructorPage.getByText('TEST · Instructor Preview')).toBeVisible();
