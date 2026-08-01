@@ -177,7 +177,7 @@ Instructor behaviour.
   changing Instructor behavior (`c14de29`; full Jest 750/750).
 - [x] Task 6 TA invitations, activation, permissions, review/suggestion/notes,
   and escalation workflows.
-- [ ] Task 7 Instructor analytics and individual Student profile.
+- [x] Task 7 Instructor analytics and individual Student profile.
 - [ ] Task 8 Admin user/capability/platform-settings essentials.
 
 ## Stephen's Phase 3 exit evidence
