@@ -3,12 +3,9 @@
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-id `148:3721`) and `.superpowers/sdd/task-15/i4-settings.png`.
 //
-// The wireframe's "Exam Templates" section has no backing endpoint anywhere
-// in docs/api-contract.md — omitted rather than faked (Task-15 Global
-// Constraints: "derive client-side... do not add or change a server
-// endpoint"). Course Name / Course Code are shown read-only for context: only
-// term dates / feedback strategy / auto-pause are patchable via `updateCourse`
-// (docs/api-contract.md's Courses section).
+// Phase 3 WS-10 adds the formerly out-of-scope Exam Templates editor as a
+// separate Course Settings route. This page keeps the existing course metadata,
+// feedback strategy, auto-pause, registration code, and roster responsibilities.
 import {
   ApiError,
   archiveCourse,
@@ -92,19 +89,25 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   function renderStrategyGroup(): void {
     strategyGroup.replaceChildren(
       ...FEEDBACK_STRATEGIES.map((option) =>
-        el(
-          'button',
-          {
-            class: `strategy-card${selectedStrategy === option.value ? ' strategy-card--active' : ''}`,
-            type: 'button',
-            onclick: () => {
+        (() => {
+          const radio = el('input', {
+            type: 'radio',
+            name: 'feedback-strategy',
+            value: option.value,
+            onchange: () => {
               selectedStrategy = option.value;
               renderStrategyGroup();
             },
-          },
-          el('p', { class: 'strategy-card__title', text: option.title }),
-          el('p', { class: 'strategy-card__subtitle', text: option.subtitle }),
-        ),
+          }) as HTMLInputElement;
+          radio.checked = selectedStrategy === option.value;
+          return el(
+            'label',
+            { class: `strategy-card${radio.checked ? ' strategy-card--active' : ''}` },
+            radio,
+            el('span', { class: 'strategy-card__title', text: option.title }),
+            el('span', { class: 'strategy-card__subtitle', text: option.subtitle }),
+          );
+        })(),
       ),
     );
   }

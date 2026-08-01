@@ -869,6 +869,57 @@ export function restoreCourse(courseId: string): Promise<InstructorCourse> {
   });
 }
 
+// --- Exam Prep templates (Phase 3 WS-10 / IN-S07) --------------------------
+
+export type ExamTemplateKind = 'midterm' | 'final';
+
+export interface ExamTemplateThemeConfig {
+  themeId: string;
+  mcqCount: number;
+  tfCount: number;
+  pointsPerQuestion: number;
+}
+
+export interface ExamTemplate {
+  _id: string;
+  courseId: string;
+  kind: ExamTemplateKind;
+  themes: ExamTemplateThemeConfig[];
+  timeLimitMinutes?: number;
+  availabilityStart: string;
+  availabilityEnd: string;
+  loBreakdown: boolean;
+  updatedAt: string;
+}
+
+export interface ExamTemplateSupplyWarning {
+  themeId: string;
+  themeName: string;
+  requested: number;
+  available: number;
+}
+
+export function listExamTemplates(courseId: string): Promise<ExamTemplate[]> {
+  return request<ExamTemplate[]>(
+    `/api/courses/${encodeURIComponent(courseId)}/exam-templates`,
+  );
+}
+
+export function saveExamTemplate(
+  courseId: string,
+  kind: ExamTemplateKind,
+  input: Omit<ExamTemplate, '_id' | 'courseId' | 'kind' | 'updatedAt'>,
+): Promise<{ template: ExamTemplate; warnings: ExamTemplateSupplyWarning[] }> {
+  return request<{ template: ExamTemplate; warnings: ExamTemplateSupplyWarning[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}/exam-templates/${kind}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 /** POST /api/courses/:courseId/themes { name } -> 201 Theme. */
 export function addTheme(courseId: string, name: string): Promise<CourseTreeTheme> {
   return request<CourseTreeTheme>(`/api/courses/${encodeURIComponent(courseId)}/themes`, {

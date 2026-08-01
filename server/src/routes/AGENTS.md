@@ -47,6 +47,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   capabilities. Every stateful call carries a server-validated
   `previewSessionId`; these routes intentionally do not weaken
   `ensureCourseStudent()` or call live student workflows.
+- `exams.routes.ts` — Phase 3 WS-10. Initially exposes course-Instructor
+  list/upsert endpoints for midterm/final Exam Prep templates; student attempt,
+  result, and history routes are added in the following WS-10 tasks.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
   (including a courses-spanning bulk transition). All routes are

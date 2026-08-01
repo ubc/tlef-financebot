@@ -65,6 +65,10 @@ objects directly.
   exception: it creates a clearly sourced live instructor-queue flag and a
   staff notification, while still skipping student labels, auto-pause, and
   all real-student notifications.
+- `exam-templates.service.ts` — Phase 3 WS-10 midterm/final configuration.
+  Validates course-scoped Theme selections and exam counts/windows, computes
+  split-aware Approved-question supply warnings without blocking saves, and
+  keeps one template per `(courseId, kind)`.
 
 Other services will appear as more components are built up.
 

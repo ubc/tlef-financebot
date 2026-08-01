@@ -1,4 +1,4 @@
-# FinanceBot API Contract (v1 + Phase 2 authoring workflows)
+# FinanceBot API Contract (v1 + Phase 3 Exam Prep workflows)
 
 All endpoints are under `/api`, JSON in/out, session-cookie authenticated
 unless marked public. IDs are Mongo ObjectId hex strings.
@@ -56,6 +56,19 @@ grant attaches to the same PUID-backed User on first SAML login.
   student practice with `403 course-archived`.
 - Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` → `{ count }`;
   `GET .../roster` → `[{ identifier, extendedUntil? }]`
+
+## Exam Prep templates (instructor)
+
+- `GET /api/courses/:courseId/exam-templates` → `[ExamTemplate]`, sorted by
+  kind. One saved template is maintained per course and kind (`midterm` or
+  `final`).
+- `PUT /api/courses/:courseId/exam-templates/:kind`
+  `{ themes: [{ themeId, mcqCount, tfCount, pointsPerQuestion }],
+  timeLimitMinutes?, availabilityStart, availabilityEnd, loBreakdown }` →
+  `{ template: ExamTemplate, warnings: [{ themeId, themeName, requested,
+  available }] }`. Theme ids must be active Themes in the target course. Counts
+  and Approved-question supply are split-aware; a shortfall warning never
+  blocks the save. Updates apply only to attempts assembled after the save.
 
 ## Hierarchy (instructor)
 - `POST /api/courses/:courseId/themes { name, availableFrom? }` → 201 Theme
