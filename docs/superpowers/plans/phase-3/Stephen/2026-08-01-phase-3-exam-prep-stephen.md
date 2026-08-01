@@ -55,66 +55,69 @@ Instructor behaviour.
 
 ### 2.1 Service contract tests
 
-- [ ] Add `tests/unit/exam-templates.service.test.ts` with mocked typed
+- [x] Add `tests/unit/exam-templates.service.test.ts` with mocked typed
   collections.
-- [ ] Prove an optional time limit is accepted while missing/invalid Theme
+- [x] Prove an optional time limit is accepted while missing/invalid Theme
   counts, split, points, or availability fields are rejected.
-- [ ] Prove supply warnings identify Theme id/name and exact requested versus
+- [x] Prove supply warnings identify Theme id/name and exact requested versus
   Approved available count without rejecting the save.
-- [ ] Prove saving the same `(courseId, kind)` replaces that template and that
+- [x] Prove saving the same `(courseId, kind)` replaces that template and that
   midterm/final remain independent.
-- [ ] Prove `activeTemplates(courseId, now)` uses an inclusive availability
+- [x] Prove `activeTemplates(courseId, now)` uses an inclusive availability
   window and omits inactive templates.
-- [ ] Run the focused suite and record the expected failure before
+- [x] Run the focused suite and record the expected failure before
   implementation.
 
 ### 2.2 Service implementation
 
-- [ ] Add `server/src/services/exam-templates.service.ts` with explicit input
+- [x] Add `server/src/services/exam-templates.service.ts` with explicit input
   normalization/validation and `saveTemplate`, `listTemplates`, and
   `activeTemplates` exports.
-- [ ] Resolve Theme names and Approved supply course-safely; archived Themes,
+- [x] Resolve Theme names and Approved supply course-safely; archived Themes,
   cross-course Theme ids, Draft/Reviewed/Paused questions, and mismatched
   question types must not count as supply.
-- [ ] Upsert by `(courseId, kind)`, preserve one stable template identity when
+- [x] Upsert by `(courseId, kind)`, preserve one stable template identity when
   replacing a kind, and always stamp `updatedAt` server-side.
-- [ ] Tighten the existing Mongo index on `(courseId, kind)` to unique and add
-  an availability-oriented index only if the implemented query benefits from
-  it.
-- [ ] Run focused tests to green.
+- [x] Retain the existing `(courseId, kind)` index and avoid an in-place unique
+  option change that would make `ensureIndexes()` fail against the already
+  deployed non-unique index; the service's keyed upsert preserves the contract.
+  No extra availability index is justified for two templates per course.
+- [x] Run focused tests to green.
 
 ### 2.3 Instructor routes
 
-- [ ] Add `server/src/routes/exams.routes.ts` with Zod route/body validation.
-- [ ] Implement instructor-guarded
+- [x] Add `server/src/routes/exams.routes.ts` with Zod route/body validation.
+- [x] Implement instructor-guarded
   `PUT /api/courses/:courseId/exam-templates/:kind` and
   `GET /api/courses/:courseId/exam-templates`.
-- [ ] Add `tests/unit/exams.routes.test.ts` covering 401, 403, bad ids/body,
+- [x] Add `tests/unit/exams.routes.test.ts` covering 401, 403, bad ids/body,
   course-scoped service calls, warning serialization, and both kinds.
-- [ ] Append the router mount in `server/src/app.ts` and document it in the
+- [x] Append the router mount in `server/src/app.ts` and document it in the
   closest route/service AGENTS files.
 
 ### 2.4 Instructor settings UI
 
-- [ ] Add typed template request/response functions to `client/src/api.ts`.
-- [ ] Add `client/src/views/instructor/exam-templates.ts` as an accessible
+- [x] Add typed template request/response functions to `client/src/api.ts`.
+- [x] Add `client/src/views/instructor/exam-templates.ts` as an accessible
   midterm/final editor for covered Themes, per-Theme MCQ/T-F counts, point
   values, optional time limit, availability window, and LO-breakdown toggle.
-- [ ] Surface exact non-blocking supply warnings inline after save.
-- [ ] Link the editor from the course Settings surface/navigation without
+- [x] Surface exact non-blocking supply warnings inline after save.
+- [x] Link the editor from the course Settings surface/navigation without
   reordering existing route tables.
-- [ ] Present feedback strategy as a labelled radio group with descriptions;
+- [x] Present feedback strategy as a labelled radio group with descriptions;
   retain the existing `PATCH /api/courses/:id` persistence contract.
-- [ ] Add only the minimal CSS needed, using existing Instructor tokens and
+- [x] Add only the minimal CSS needed, using existing Instructor tokens and
   responsive patterns.
 
 ### 2.5 Task 2 verification and handoff
 
-- [ ] Run focused Jest suites, `npm run typecheck`, `npm run lint`, and
-  `npm run build`.
-- [ ] Review response shapes for ObjectId/Date JSON serialization and verify no
+- [x] Run focused Jest suites, `npm run typecheck`, scoped lint, and
+  `npm run build`. Full `npm run lint` remains blocked solely by the pre-existing
+  untracked `.claude/worktrees/` nested TS roots; all changed source/test files
+  lint clean.
+- [x] Review response shapes for ObjectId/Date JSON serialization and verify no
   correctness data is exposed by the template endpoints.
-- [ ] Commit the Task 2 implementation, then mark the Task 2 core/personal
+- [x] Commit the Task 2 implementation (`a7b1586`), then mark the Task 2 core/personal
   checkboxes honestly and sync Stephen's plan.
 
 ## Task 3 — Assembly and single-sitting attempt state machine

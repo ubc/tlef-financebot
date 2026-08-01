@@ -62,9 +62,9 @@
 - Consumes: `examTemplatesCol()`, `questionsCol()`, `themesCol()`.
 - Produces: `saveTemplate(courseId, input: Omit<ExamTemplate, 'courseId' | 'updatedAt'>): Promise<{ template: WithId<ExamTemplate>; warnings: Array<{ themeId; themeName; requested: number; available: number }> }>` — validates required fields (themes with counts/splits/points, availability window); computes per-theme Approved supply vs `mcqCount + tfCount` and returns shortfall warnings **without blocking the save** (IN-S07); one template per `(courseId, kind)` (upsert). `listTemplates(courseId)`, `activeTemplates(courseId, now)` (availability window contains `now`). Template updates apply to the next generated attempt only — assembly always reads the template at start time; in-flight `ExamAttempt`s pin their own question list (already guaranteed by the `ExamAttempt.questions` snapshot).
 
-- [ ] **Step 1: Failing tests** — missing time-limit is allowed (optional), missing counts rejected; supply warning lists the exact shortfall; upsert replaces the same kind; activeTemplates respects the window.
-- [ ] **Step 2–4: FAIL → implement (service, routes `PUT /api/courses/:courseId/exam-templates/:kind`, `GET .../exam-templates`, instructor views) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: midterm/final exam templates with supply warnings; feedback-strategy setting UI (IN-S07, IN-S10)"`
+- [x] **Step 1: Failing tests** — missing time-limit is allowed (optional), missing counts rejected; supply warning lists the exact shortfall; upsert replaces the same kind; activeTemplates respects the window.
+- [x] **Step 2–4: FAIL → implement (service, routes `PUT /api/courses/:courseId/exam-templates/:kind`, `GET .../exam-templates`, instructor views) → PASS.** Focused 13/13 and full Jest 722/722 passed; typecheck/build and scoped lint passed.
+- [x] **Step 5: Commit** — `a7b1586` (`feat: midterm/final exam templates with supply warnings; feedback-strategy setting UI (IN-S07, IN-S10)`).
 
 ---
 
