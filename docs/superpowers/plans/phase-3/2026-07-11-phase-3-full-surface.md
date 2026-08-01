@@ -211,9 +211,9 @@ Key behaviours: question navigation grid with answered/unanswered states; "Submi
   - `studentProfile(courseId, puid)` → chronological history, per-LO mastery, engagement summary, flag events (redirects; struggle flags when Phase-3+ ships them; questions the student flagged) (IN-A04). Search by name/CWL: `GET /api/courses/:courseId/students?q=`.
 - Routes instructor-guarded + `ensureCapability('analytics.view')` / `'analytics.individual'` for the profile; Topic Practice and Exam Prep separated as tabs (mode filter).
 
-- [ ] **Step 1: Failing tests** — insufficient-data floor; failure rate math on a seeded fixture (10 attempts, 4 misses → 40%); CM highlight triggers at the threshold; engagement session clustering (two attempts 40 min apart = 2 sessions); CSV serializer escapes commas/quotes.
-- [ ] **Step 2–4: FAIL → implement (aggregation pipelines in the service; Chart.js bar/line charts in the views) → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: class analytics, answer distributions, engagement metrics with CSV export, individual profiles (IN-A01..A04)"`
+- [x] **Step 1: Failing tests** — insufficient-data floor; failure rate math on a seeded fixture (10 attempts, 4 misses → 40%); CM highlight triggers at the threshold; engagement session clustering (two attempts 40 min apart = 2 sessions); CSV serializer escapes commas/quotes.
+- [x] **Step 2–4: FAIL → implement (aggregation pipelines in the service; Chart.js bar/line charts in the views) → PASS.**
+- [x] **Step 5: Commit** — `17442ad` (`feat: class analytics, answer distributions, engagement metrics with CSV export, individual profiles (IN-A01..A04)`). Full Jest 762/762.
 
 ---
 

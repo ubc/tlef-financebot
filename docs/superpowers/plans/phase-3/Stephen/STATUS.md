@@ -49,10 +49,16 @@ by Stephen and review this file plus the core checkboxes before editing.
   and flag/proactive escalation are covered. TA approve/resolve remain hard
   denied even with every toggle enabled. Typecheck/build/scoped lint passed;
   focused tests 39/39 and full Jest 757/757 passed. Core progress is 18/29.
-- Active implementation branch: `codex/phase-3-ta-workflows` (stacked on the
+- Task 7 Instructor analytics: complete in `17442ad`; separate Topic Practice
+  and Exam Prep Theme/LO failure rates, five-attempt floors, answer
+  distributions/CM highlighting, 30-minute engagement sessions, low-engagement
+  roster, CSV export, search, and individual student profiles are covered.
+  Chart.js is vendored by the existing client vendor step. Typecheck/build and
+  scoped lint passed; focused tests 5/5 and full Jest 762/762 passed. Core
+  progress is 21/29.
+- Active implementation branch: `codex/phase-3-instructor-analytics` (stacked on the
   completed Phase 3 implementation).
-- Next: Task 7 Instructor analytics, then Task 8 Admin essentials and the
-  Phase 3 exit review.
+- Next: Task 8 Admin essentials, then the Phase 3 exit review.
 
 ## Coordination
 
