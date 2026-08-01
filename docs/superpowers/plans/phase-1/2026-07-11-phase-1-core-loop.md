@@ -651,9 +651,19 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `classifyMaterial(materialId): Promise<Material>` — prompt includes the course's Theme/LO names + the material's first ~2000 chars; expects `{ themeName: string; loName?: string; confidence: number }`; resolves names to ids; stores `classificationSuggestion`; `confidence < 0.5` leaves it unset (material marked "Unclassified" client-side). Called at the end of a successful `material.ingest` job.
   - `suggestHierarchy(courseId): Promise<Array<{ theme: string; los: string[] }>>` — from all `ready` materials' first chunks; returned to the instructor for accept/modify/reject; **acceptance** calls existing `addTheme`/`addLo` (Task 2). *Slip candidate #3 — if the phase is tight, cut this function and its endpoint only.*
 
-- [ ] **Step 1: Failing tests** — mock llm: classification stores a suggestion with resolved ObjectIds; low confidence stores nothing; suggestHierarchy shapes the LLM JSON into the return type and never writes to the DB directly.
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** (prompts inline in the service, few-shot with one example; temperature 0). Step 4: **Run tests + typecheck** → PASS.
-- [ ] **Step 5: Commit** — `git commit -m "feat: LLM material classification and hierarchy suggestion (IN-S06)"`
+- [x] **Step 1: Failing tests** — mock llm: classification stores a suggestion with resolved ObjectIds; low confidence stores nothing; suggestHierarchy shapes the LLM JSON into the return type and never writes to the DB directly.
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** (prompts inline in the service, few-shot with one example; temperature 0). Step 4: **Run tests + typecheck** → PASS.
+- [x] **Step 5: Commit** — `c86067f` (`feat: LLM material classification and hierarchy suggestion (IN-S06)`), merged in PR #19 (`d7fea18`).
+
+**Deviations (recorded 2026-07-17 in [`Saurav/STATUS.md`](Saurav/STATUS.md#task-7)):**
+`suggestHierarchy` and its endpoint were **built, not slipped** — slip candidate
+#3 was declined by a human decision, and
+`GET /api/courses/:courseId/suggest-hierarchy` was added to
+`docs/api-contract.md` as a contract change. A persisted `Material.excerpt`
+field replaced the plan's unrecoverable "first chunk from Qdrant" read.
+Classification runs best-effort in the ingest tail (no `defineJob`), and
+`completeJson<T>` was added to `components/genai/llm`. **Live end-to-end never
+run** — folded into Task 8 Step 5 / Task 16.
 
 ---
 
@@ -675,10 +685,20 @@ git commit -m "feat: material upload and async RAG ingestion into per-course Qdr
   - `preseedingProgress(courseId): Promise<Array<{ loId: ObjectId; loName: string; approved: number; reviewed: number; target: number }>>` (target 5, highlight below 3 client-side); route `GET /api/courses/:courseId/preseeding`.
 - Pipeline prompts live as exported constants (`GENERATOR_PROMPT`, `VALIDATOR_PROMPT`, `REVIEWER_PROMPT`) so Phase 4's content QA can tune them without touching logic. Each is a template function taking the chunks/LO/question JSON.
 
-- [ ] **Step 1: Failing tests** — mock llm/qdrant/questions.service. Cases: (1) pipeline calls the three steps with the three distinct configured models (assert model arg per call); (2) reviewer `reject` still inserts a Draft with `agentDecision.decision: 'reject'` (nothing is auto-discarded; the instructor sees it in the queue); (3) generator output failing option invariants is retried once, then skipped with a logged warning (count returned reflects insertions); (4) `preseedingProgress` counts approved/reviewed per LO.
-- [ ] **Step 2: Verify FAIL.** Step 3: **Implement** with full prompt texts (write real, grounded prompt templates — generator instructs 4 options exactly one correct + roles from the taxonomy + JSON schema of the expected output; validator instructs per-option role assessment; reviewer instructs the five IN-Q05 criteria). Step 4: **Tests + typecheck PASS.**
+- [x] **Step 1: Failing tests** — mock llm/qdrant/questions.service. Cases: (1) pipeline calls the three steps with the three distinct configured models (assert model arg per call); (2) reviewer `reject` still inserts a Draft with `agentDecision.decision: 'reject'` (nothing is auto-discarded; the instructor sees it in the queue); (3) generator output failing option invariants is retried once, then skipped with a logged warning (count returned reflects insertions); (4) `preseedingProgress` counts approved/reviewed per LO.
+- [x] **Step 2: Verify FAIL.** Step 3: **Implement** with full prompt texts (write real, grounded prompt templates — generator instructs 4 options exactly one correct + roles from the taxonomy + JSON schema of the expected output; validator instructs per-option role assessment; reviewer instructs the five IN-Q05 criteria). Step 4: **Tests + typecheck PASS.**
 - [ ] **Step 5: Manual checkpoint** — with docker + a reachable LLM (`LLM_PROVIDER=ollama` or sandbox): create a course + theme + LO, upload the fixture material, run generation, confirm Draft questions with agent decisions appear. **This is the ~Aug 2 mid-phase checkpoint input.**
-- [ ] **Step 6: Commit** — `git commit -m "feat: three-agent generation pipeline with per-step models; thin-LO generation and pre-seeding progress (§9.1, IN-Q10)"`
+      **STILL OPEN as of 2026-08-01 — the only unfinished step in Saurav's Phase 1 slice.** Every Phase 2 browser run to date has *skipped* the opt-in live-LLM scenario (see the Phase 2 Task 11 and aggregate-regression evidence), so no generation run against a real LLM has ever been observed. Unit + boot-smoke coverage only.
+- [x] **Step 6: Commit** — `c156bdf` (`feat: three-agent generation pipeline with per-step models; thin-LO generation and pre-seeding progress (§9.1, IN-Q10)`), merged in PR #20 (`f7f9dad`).
+
+**Deviations (recorded 2026-07-17 in [`Saurav/STATUS.md`](Saurav/STATUS.md#task-8)):**
+the generator runs warm (`temperature: 0.7`) while validator/reviewer stay
+deterministic, otherwise a `count > 1` batch returns identical questions;
+retrieval is hoisted out of the per-question loop (one grounding query per
+batch); a cross-course `lo-not-in-course` guard was added because `loId` arrives
+in the body; a structural `optionShapeValid` pre-check saves validator/reviewer
+calls; `preseedingProgress` gained `loName`; and `registerGenerationJobs()` is
+called from `server.ts` rather than `defineJob` at module level (Task 6 lesson).
 
 ---
 
@@ -857,6 +877,12 @@ export interface AttemptResult {
 - Consumes: llm component with `env.llmModelMasteryEvaluator`; jobs component; `masteryCol()`, `attemptsCol()`, `questionsCol()`.
 - Produces: job `mastery.evaluate` with data `{ puid, courseId, loId }`: loads full attempt history for the LO + Layer-1 stats + the LO's actual bank composition (counts per difficulty) → prompts the evaluator → `{ status: 'covered' | 'in-progress' | 'struggling', rationale: string, recommendedType?: string }` → writes `status`/`rationale`, resets `attemptsSinceEvaluation`. Bank-constrained: prompt includes the available difficulty tiers so a thin bank never yields a recommendation for a tier that doesn't exist. Cadence: `attempts.service` enqueues when `attemptsSinceEvaluation >= 5`; **fast-track** bypass — enqueue immediately when the last two attempts both selected `clearly-wrong` options. Evaluation is async and never blocks the feedback response.
 
+> **🔴 SLIPPED — not built, and not anybody's active task (Stephen's 2026-07-22
+> closeout decision, reaffirmed in the Phase 2 entry gate).** The pre-approved
+> fallback above was exercised. Layer-1 mastery (Task 9) stands alone; nothing
+> in Phases 2–4 currently plans to pick this up. The unchecked steps below
+> record what was *not* done — they are not open work items.
+
 - [ ] **Step 1: Failing tests** — cadence: 5th attempt enqueues, 4th doesn't; fast-track on two consecutive clearly-wrong; evaluator job writes status+rationale and resets the counter; LLM returning invalid JSON leaves the profile unchanged (Layer-1 status stands — safe failure).
 - [ ] **Step 2–4: FAIL → implement → PASS.**
 - [ ] **Step 5: Commit** — `git commit -m "feat: Layer-2 LLM mastery evaluator with batched cadence and disengaged fast-track (§9.2)"`
@@ -914,10 +940,25 @@ Key behaviours to implement (each is small, concrete DOM code following the exis
 
 Key behaviours: duplicate-name inline warning (non-blocking) on theme/LO create; edited-field highlighting in the editor (compare against the loaded version, add a `.edited` class); approve moves state immediately and updates the row without reload; bulk approve asks `confirm()` with the count; publish shows the checklist with warnings but allows publishing; upload form accepts multiple files + a URL field, polls `GET /materials` every 3s while any material is `processing`.
 
-- [ ] **Step 1: Build views route by route against the live API** (same discipline as Task 14).
-- [ ] **Step 2: Typecheck + lint.** → PASS.
-- [ ] **Step 3: Playwright spec** `tests/e2e/instructor-pipeline.spec.ts`: create course → add theme/LO → upload fixture material → generate for the LO (skip if no LLM configured in CI: guard with `test.skip(!process.env.LLM_AVAILABLE)`) → approve a question → publish course.
-- [ ] **Step 4: Commit** — `git commit -m "feat: instructor course setup, materials, bank, review queue, and pre-seeding views"`
+- [x] **Step 1: Build views route by route against the live API** (same discipline as Task 14).
+- [x] **Step 2: Typecheck + lint.** → PASS.
+- [x] **Step 3: Playwright spec** `tests/e2e/instructor-pipeline.spec.ts`: create course → add theme/LO → upload fixture material → generate for the LO (skip if no LLM configured in CI: guard with `test.skip(!process.env.LLM_AVAILABLE)`) → approve a question → publish course.
+      Spec landed at `15df236`. It was written but **never executed live** during Phase 1 (no stack in-session). It has since been stabilized and **actually run green** in the Phase 2 Task 11 full-suite pass (`4422d20`, PR #38): 12 Playwright scenarios passed, this spec among them.
+- [x] **Step 4: Commit** — 12 commits `0316d71..77eb6a2`, merged in PR #21 (`a17ede4`).
+
+**Deviations (recorded 2026-07-18 in [`Saurav/STATUS.md`](Saurav/STATUS.md#task-15)):**
+the task was **re-planned wireframe-driven** mid-flight against Figma
+"Wireframe v0.2" and executed as 8 sub-tasks under
+[`Saurav/2026-07-17-task-15-instructor-views.md`](Saurav/2026-07-17-task-15-instructor-views.md).
+The delivered file set therefore differs from the list above: `course-setup.ts`
+became `courses.ts` + `dashboard.ts` + `structure.ts` + `settings.ts`, plus a
+`shell.ts` and `question-detail.ts` and a shared `instructor-ui.ts` vocabulary.
+Two endpoints are derived client-side per the no-server-changes constraint (no
+`GET /api/courses` list; the publish checklist is computed in the dashboard).
+Generation is async, so the I12 wireframe's synchronous preview panel is
+deliberately omitted. `isInstructor()` keys the shell on an **explicit grant**,
+not faculty affiliation (decision I1) — the Phase-2 platform-instructor grant in
+Admin Console v0 (PR #45) is the follow-through.
 
 ---
 
@@ -933,6 +974,13 @@ Key behaviours: duplicate-name inline warning (non-blocking) on theme/LO create;
 - Consumes: everything above.
 - Produces: the phase exit evidence.
 
+> **🟡 DEFERRED, still owed — this is the Phase 1 exit gate and it has never
+> run.** Stephen deferred it on 2026-07-22 and explicitly exempted Phase 2 from
+> waiting on it; Phase 2 was then started, completed, and merged. Neither file
+> below exists on `main` as of 2026-08-01. **Nobody may claim the Phase 1 exit
+> gate passed until this task runs.** See the partial-credit note under the exit
+> criteria checklist for what existing tests already cover.
+
 - [ ] **Step 1: `approved-only-serving.test.ts`** — drive `selectNextQuestion` and `submitAttempt` against fake collections seeded with questions in every one of the six publication states; assert only the `approved` one is ever selected across 50 randomized runs, and that submitting against a non-approved head throws (`question-not-servable`). Run: `npx jest tests/unit/approved-only-serving.test.ts` → PASS.
 - [ ] **Step 2: `core-loop-demo.spec.ts`** — the phase-doc demo as one Playwright flow: instructor creates course → uploads material → generates (or seeds via API when `!LLM_AVAILABLE`) → approves → student enrolls with code → practices with adaptive feedback → a miss lands in the Review Book → re-practice updates mastery (assert LO status text changed). Run: `npm run test:e2e -- tests/e2e/core-loop-demo.spec.ts` → PASS.
 - [ ] **Step 3: Full suite + CI green.** Run: `npm run lint && npm run typecheck && npm test && npm run test:e2e` → PASS.
@@ -942,10 +990,16 @@ Key behaviours: duplicate-name inline warning (non-blocking) on theme/LO create;
 
 ## Exit criteria checklist (from phase-1-core-loop.md)
 
-- [ ] Demo flow passes end to end (Task 16).
-- [ ] Jest/supertest coverage: publication-state transitions (Task 4), selection degradation ladder (Task 10), feedback-strategy dispatch (Task 11), auth-gated endpoints (Tasks 2–5, 11).
-- [ ] No unreviewed content can reach a student — verified by test (Task 16).
-- [ ] Mid-phase checkpoint hit (~Aug 2): Task 8 Step 5.
+_Reconciled against `main` on 2026-08-01 (Saurav, Phase 1 "S0")._
+
+- [ ] Demo flow passes end to end (Task 16). — **Not run.** `tests/e2e/core-loop-demo.spec.ts` does not exist. Phase 2's `flag-loop.spec.ts` and `instructor-pipeline.spec.ts` each cover *parts* of the flow, but no single spec walks instructor-generate → approve → student-enroll → practice → Review Book → mastery change.
+- [x] Jest/supertest coverage: publication-state transitions (Task 4), selection degradation ladder (Task 10), feedback-strategy dispatch (Task 11), auth-gated endpoints (Tasks 2–5, 11). — Covered by `tests/unit/questions.service.test.ts` + `questions.routes.test.ts` (transitions), `serving.service.test.ts` (degradation ladder), `attempts.service.test.ts` + `courses.service.test.ts` (feedback-strategy dispatch), and the per-router route suites (auth gating).
+- [ ] No unreviewed content can reach a student — verified by test (Task 16). — **Materially covered, dedicated artifact still owed.** `serving.service.test.ts` case 1 pins that a bank of draft/pending/paused questions returns `null`, and `attempts.service.test.ts` + `practice.routes.test.ts` pin `question-not-servable` on a non-approved head. What is missing is Task 16's specific proof shape: all six publication states seeded at once, asserted across 50 randomized runs.
+- [ ] Mid-phase checkpoint hit (~Aug 2): Task 8 Step 5. — **Not hit.** No generation run against a live LLM has ever been observed; every Phase 2 browser run skipped the opt-in live-LLM scenario.
+
+**Net Phase 1 position:** all *implementation* tasks are merged. The three open
+items are all **verification against live infrastructure** — Task 8 Step 5, and
+Task 16's two artifacts. They are the whole of the Phase 1 exit gate.
 
 ## Slip order (lowest first, from the phase doc)
 
