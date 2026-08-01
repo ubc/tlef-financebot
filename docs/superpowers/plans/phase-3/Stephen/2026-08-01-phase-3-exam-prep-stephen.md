@@ -141,16 +141,16 @@ Instructor behaviour.
 
 ## Task 4 — Results, history, Review Book, and mastery pass
 
-- [ ] Write failing tests for pre-submit 409, score/theme totals, optional LO
+- [x] Write failing tests for pre-submit 409, score/theme totals, optional LO
   breakdown, Review Book idempotency, history ordering, and the
   `examVerified` qualifier preserving practice-derived mastery status.
-- [ ] Add post-submit full review/result projection and course-scoped history
+- [x] Add post-submit full review/result projection and course-scoped history
   with stable drill-in ids.
-- [ ] Reuse Review Book upsert semantics so each miss appears once and retains
+- [x] Reuse Review Book upsert semantics so each miss appears once and retains
   the triggering exam attempt context.
-- [ ] Define/register/enqueue the `exam.mastery-pass` job next to its owning
+- [x] Define/register/enqueue the `exam.mastery-pass` job next to its owning
   service following the jobs component guidance; make retries idempotent.
-- [ ] Add results/history routes, run regression suites, commit, and sync.
+- [x] Add results/history routes, run regression suites, commit, and sync.
 
 ## Task 5 — Student Exam Prep views and integrity E2E
 

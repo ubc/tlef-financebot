@@ -127,9 +127,12 @@
   - Job `exam.mastery-pass` (enqueued by `submitExam`): for each exam AttemptRecord, updates the LO's profile by setting `examVerified: true` on a miss-affected LO **as a qualifier** — it never overwrites the practice-derived `status` (§9.2); processed in one batch, not the live cadence.
 - Routes: `GET /api/exam-attempts/:attemptId/results`, `GET /api/courses/:courseId/exam-history`.
 
-- [ ] **Step 1: Failing tests** — results hidden pre-submission (409); byTheme sums match the score; `loBreakdown: false` omits `byLo`; mastery pass sets the qualifier without changing `status`; misses land in the Review Book once each.
-- [ ] **Step 2–4: FAIL → implement → PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat: exam results with post-scoring review, exam history, and post-exam mastery qualifier pass (ST-X03/X04, §9.2)"`
+- [x] **Step 1: Failing tests** — results hidden pre-submission (409); byTheme sums match the score; `loBreakdown: false` omits `byLo`; mastery pass sets the qualifier without changing `status`; misses land in the Review Book once each.
+- [x] **Step 2–4: FAIL → implement → PASS.** Task-focused regression 60/60
+  and full Jest 744/744 passed; typecheck/build and changed-file lint passed.
+- [x] **Step 5: Commit** — `e847063` (`feat: exam results with post-scoring
+  review, exam history, and post-exam mastery qualifier pass (ST-X03/X04,
+  §9.2)`).
 
 ---
 
