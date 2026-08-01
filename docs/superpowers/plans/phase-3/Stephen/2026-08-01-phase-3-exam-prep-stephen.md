@@ -122,21 +122,21 @@ Instructor behaviour.
 
 ## Task 3 — Assembly and single-sitting attempt state machine
 
-- [ ] Write the eight core failing cases: exact assembly, non-blocking
+- [x] Write the eight core failing cases: exact assembly, non-blocking
   shortfall, Approved-only draw, mutable answers before submit, immutable after
   submit, sanitized exam state, server-authoritative expiry, resume, and
   AttemptRecord scoring.
-- [ ] Implement deterministic-testable randomized selection per Theme/type with
+- [x] Implement deterministic-testable randomized selection per Theme/type with
   no duplicates, pinned question versions and parameter values, and persisted
   shortfalls/max score.
-- [ ] Implement ownership checks, open-attempt resume, answer updates,
+- [x] Implement ownership checks, open-attempt resume, answer updates,
   idempotent/atomic submission, and lazy auto-submit on every expired-attempt
   route.
-- [ ] Add the five student routes with `ensureCourseStudent()` or child-resource
+- [x] Add the five student routes with `ensureCourseStudent()` or child-resource
   course stashing as appropriate; never authorize using request body ids.
-- [ ] Ensure every pre-submit payload is explicitly projected to stem/options
+- [x] Ensure every pre-submit payload is explicitly projected to stem/options
   text only and recursively lacks roles, explanations, and correctness.
-- [ ] Run focused plus existing practice/attempt/parameterization regression
+- [x] Run focused plus existing practice/attempt/parameterization regression
   suites; commit and sync only when green.
 
 ## Task 4 — Results, history, Review Book, and mastery pass
