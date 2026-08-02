@@ -101,7 +101,15 @@ test.describe('instructor pipeline', () => {
 
   test('creates a course, builds structure, uploads a material, approves a seeded question, and publishes', async ({ page }) => {
     await test.step('log in and land on the instructor shell (My Courses)', async () => {
-      await page.goto('/');
+      // Navigate to My Courses explicitly rather than relying on where `/`
+      // lands. main.ts:345 makes the root fallback role-dependent — `isAdmin`
+      // goes to #/admin/accounts, everyone else to #/instructor/courses — and
+      // `isAdmin` is written at first login from ADMIN_CWL_ALLOWLIST and never
+      // revoked when that list changes. So `page.goto('/')` reaching My Courses
+      // depends on whether the shared dev database happens to have the faculty
+      // user flagged admin, which is ambient state this spec does not own.
+      // core-loop-demo.spec.ts navigates explicitly for the same reason.
+      await page.goto('/#/instructor/courses');
       await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
     });
 
