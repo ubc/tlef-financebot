@@ -36,6 +36,31 @@ async function login(page: Page, username: string): Promise<void> {
   await page.waitForURL('**/', { timeout: 30_000 });
 }
 
+/**
+ * A notification this run just produced.
+ *
+ * The bell is per-user, not per-course, and lists every notification the user
+ * can see (newest first, `notifications.service.ts:204`). So a bare
+ * `getByText(body)` matches identically-worded notifications left behind by
+ * earlier runs against other courses — this spec's own cleanup is scoped to
+ * its `courseId`, and orphans from a since-deleted course outlive it. That
+ * made the auto-pause assertion a strict-mode failure once such an orphan
+ * existed ("just now" and "4d ago" both matching).
+ *
+ * Matching on the rendered relative time as well pins the assertion to a
+ * notification created during this run. `formatRelative`
+ * (`notifications-bell.ts:22`) yields 'just now' under a minute and 'Nm ago'
+ * under an hour; anything older renders as hours, days, or a date, so residue
+ * cannot satisfy this. Deliberately stronger than `.first()`, which would let
+ * a stale notification pass the test if the expected one were never created.
+ */
+function freshNotification(page: Page, body: string) {
+  return page
+    .locator('.notif-item')
+    .filter({ hasText: body })
+    .filter({ hasText: /just now|^\d+m ago$/ });
+}
+
 let courseId = '';
 let registrationCode = '';
 let themeId = '';
@@ -192,9 +217,7 @@ test.describe('Phase 2 flag safety loop', () => {
       await expect(instructorPage.getByText('1 flag', { exact: true })).toBeVisible();
 
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
-      await expect(
-        instructorPage.getByText(`A question was flagged: "${FLAG_REASON}"`),
-      ).toBeVisible();
+      await expect(freshNotification(instructorPage, `A question was flagged: "${FLAG_REASON}"`)).toBeVisible();
 
       const cId = new ObjectId(courseId);
       const tId = new ObjectId(themeId);
@@ -256,7 +279,7 @@ test.describe('Phase 2 flag safety loop', () => {
       await expect(instructorPage.getByText('5 flags', { exact: true })).toBeVisible();
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
       await expect(
-        instructorPage.getByText('A question was auto-paused after exceeding the flag thresholds.'),
+        freshNotification(instructorPage, 'A question was auto-paused after exceeding the flag thresholds.'),
       ).toBeVisible();
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
 
@@ -292,7 +315,7 @@ test.describe('Phase 2 flag safety loop', () => {
       await page.goto(`/#/course/${courseId}`);
       await page.reload();
       await page.getByRole('button', { name: /Notifications/ }).click();
-      await expect(page.getByText('Your flag was resolved (clear).')).toBeVisible();
+      await expect(freshNotification(page, 'Your flag was resolved (clear).')).toBeVisible();
     } finally {
       await instructorContext.close();
     }
