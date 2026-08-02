@@ -10,39 +10,38 @@ backed by one authoritative aggregate contract.
 
 ### 1. Contract and service
 
-- [ ] Define `InstructorWorkflowSummary` with course lifecycle, checklist
+- [x] Define `InstructorWorkflowSummary` with course lifecycle, checklist
   progress, operational counts, and priority-ordered actions.
-- [ ] Compose existing `getCourseTree`, `publishChecklist`, content-map,
+- [x] Compose existing `getCourseTree`, `publishChecklist`, content-map,
   review-queue, flag, and low-engagement services in parallel.
-- [ ] Derive action identifiers and entity counts without storing workflow
+- [x] Derive action identifiers and entity counts without storing workflow
   state in MongoDB.
 
 ### 2. Route and client API
 
-- [ ] Add `GET /api/courses/:courseId/instructor-workflow` behind
+- [x] Add `GET /api/courses/:courseId/instructor-workflow` behind
   `ensureCourseInstructor()`.
-- [ ] Serialize ObjectIds at the HTTP boundary and add the matching typed client
+- [x] Serialize ObjectIds at the HTTP boundary and add the matching typed client
   function.
 
 ### 3. Launch Cockpit UI
 
-- [ ] Show readiness completion and lifecycle context.
-- [ ] Show Topics, LOs, Approved questions, review backlog, open flags, and
+- [x] Show readiness completion and lifecycle context.
+- [x] Show Topics, LOs, Approved questions, review backlog, open flags, and
   content health.
-- [ ] Render a priority-ordered "Next actions" list with direct destinations.
-- [ ] Preserve Student Preview and the existing publish/unpublish control.
-- [ ] Make Student Analytics actionable instead of disabled.
+- [x] Render a priority-ordered "Next actions" list with direct destinations.
+- [x] Preserve Student Preview and the existing publish/unpublish control.
+- [x] Make Student Analytics actionable instead of disabled.
 
 ### 4. Verification and handoff
 
-- [ ] Add service tests for empty, healthy, and action-heavy courses.
-- [ ] Add route authorization/serialization tests and pure action-mapping tests.
-- [ ] Run lint, typecheck, Jest, and build.
-- [ ] Commit, update the shared/core checkboxes and Stephen status, then run
+- [x] Add service tests for empty, healthy, and action-heavy courses.
+- [x] Add route authorization/serialization tests and pure action-mapping tests.
+- [x] Run lint, typecheck, Jest, build, Playwright, and axe.
+- [x] Commit, update the shared/core checkboxes and Stephen status, then run
   `npm run sync-plans -- Stephen`.
 
 ## Later tasks
 
 After this slice is clean: LO Content Studio, unified Action Inbox,
 analytics-to-action links, course/team lifecycle, then Admin Operations.
-
