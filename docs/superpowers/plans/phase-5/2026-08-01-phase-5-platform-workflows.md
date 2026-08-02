@@ -21,13 +21,13 @@ after the Instructor control plane is usable end to end.
 
 **Owner:** Stephen
 
-- [ ] Add one course-scoped workflow-summary contract that aggregates launch
+- [x] Add one course-scoped workflow-summary contract that aggregates launch
   readiness, content health, review work, student flags, and recent failed work.
-- [ ] Replace the static Instructor Dashboard shortcut grid with readiness
+- [x] Replace the static Instructor Dashboard shortcut grid with readiness
   progress, operational counts, and a priority-ordered action queue.
-- [ ] Add service, route, and pure client-logic coverage; run the full
+- [x] Add service, route, and pure client-logic coverage; run the full
   lint/typecheck/Jest/build regression suite.
-- [ ] Record completion evidence in Stephen's status and sync the plan.
+- [x] Record completion evidence in Stephen's status and sync the plan.
 
 ### Task 2: LO-centred Content Studio
 
@@ -77,4 +77,3 @@ after the Instructor control plane is usable end to end.
   replace infrastructure monitoring.
 - [ ] Complete AD-05 course rollout states and enrollment caps.
 - [ ] Add a readable audit-history surface over the existing AuditLog writes.
-
