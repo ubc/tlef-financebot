@@ -2489,3 +2489,14 @@ export function markNotificationRead(id: string): Promise<AppNotification> {
 export function markAllNotificationsRead(): Promise<{ count: number }> {
   return request<{ count: number }>('/api/notifications/read-all', { method: 'POST' });
 }
+
+/** POST /api/notifications/:id/dismiss -> the updated notification. Clicking
+ * a notification in the bell dismisses it for good. */
+export function dismissNotification(id: string): Promise<AppNotification> {
+  return request<AppNotification>(`/api/notifications/${encodeURIComponent(id)}/dismiss`, { method: 'POST' });
+}
+
+/** POST /api/notifications/dismiss-all -> { count }. "Clear all". */
+export function dismissAllNotifications(): Promise<{ count: number }> {
+  return request<{ count: number }>('/api/notifications/dismiss-all', { method: 'POST' });
+}
