@@ -4,7 +4,13 @@ import type { WithId } from 'mongodb';
 import { z } from 'zod';
 import { ensureApiAuthenticated } from '../components/auth';
 import { validate } from '../middleware/validate';
-import { listNotifications, markNotificationRead, markAllNotificationsRead } from '../services/notifications.service';
+import {
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  dismissNotification,
+  dismissAllNotifications,
+} from '../services/notifications.service';
 import type { Notification } from '../types/domain';
 
 // The signed-in user's own in-app notifications (§4.3, §9.1) — poll target,
@@ -68,6 +74,26 @@ notificationsRouter.post(
  * notification for the authenticated user read. */
 notificationsRouter.post('/notifications/read-all', ensureApiAuthenticated(), async (req, res) => {
   const count = await markAllNotificationsRead(req.user!.puid);
+  res.json({ count });
+});
+
+/** POST /api/notifications/:id/dismiss -> the updated Notification. Clicking
+ * a notification in the bell dismisses it; the flag queue remains the durable
+ * record of the underlying work. Scoped to the authenticated user's own. */
+notificationsRouter.post(
+  '/notifications/:id/dismiss',
+  validate({ params: notificationIdParams }),
+  ensureApiAuthenticated(),
+  async (req, res) => {
+    const notification = await dismissNotification(new ObjectId(String(req.params.id)), req.user!.puid);
+    res.json(toNotificationResponse(notification));
+  },
+);
+
+/** POST /api/notifications/dismiss-all -> { count }. "Clear all" empties the
+ * bell entirely, read and unread alike. */
+notificationsRouter.post('/notifications/dismiss-all', ensureApiAuthenticated(), async (req, res) => {
+  const count = await dismissAllNotifications(req.user!.puid);
   res.json({ count });
 });
 

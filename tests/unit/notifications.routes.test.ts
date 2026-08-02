@@ -19,6 +19,8 @@ jest.mock('../../server/src/services/notifications.service', () => ({
   listNotifications: jest.fn(),
   markNotificationRead: jest.fn(),
   markAllNotificationsRead: jest.fn(),
+  dismissNotification: jest.fn(),
+  dismissAllNotifications: jest.fn(),
 }));
 
 import { notificationsRouter } from '../../server/src/routes/notifications.routes';
@@ -26,6 +28,8 @@ import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  dismissNotification,
+  dismissAllNotifications,
 } from '../../server/src/services/notifications.service';
 
 const TEST_PUID = 'PUID-TEST-0001';
@@ -48,6 +52,8 @@ beforeEach(() => {
   jest.mocked(listNotifications).mockReset();
   jest.mocked(markNotificationRead).mockReset();
   jest.mocked(markAllNotificationsRead).mockReset();
+  jest.mocked(dismissNotification).mockReset();
+  jest.mocked(dismissAllNotifications).mockReset();
 });
 
 describe('notifications routes (auth-gated)', () => {
@@ -124,5 +130,61 @@ describe('notifications routes (auth-gated)', () => {
       expect(res.body).toEqual({ count: 3 });
       expect(markAllNotificationsRead).toHaveBeenCalledWith(TEST_PUID);
     });
+  });
+});
+
+describe('POST /api/notifications/:id/dismiss', () => {
+  it('401s when signed out', async () => {
+    const res = await request(makeApp(false)).post(`/api/notifications/${VALID_ID}/dismiss`);
+    expect(res.status).toBe(401);
+    expect(dismissNotification).not.toHaveBeenCalled();
+  });
+
+  it('dismisses with the AUTHENTICATED puid, not a caller-supplied one', async () => {
+    (dismissNotification as jest.Mock).mockResolvedValue({
+      _id: new ObjectId(VALID_ID),
+      recipientPuid: TEST_PUID,
+      kind: 'flag',
+      priority: 'standard',
+      body: 'x',
+      createdAt: new Date(),
+      dismissedAt: new Date(),
+    });
+
+    const res = await request(makeApp(true))
+      .post(`/api/notifications/${VALID_ID}/dismiss`)
+      .send({ recipientPuid: 'PUID-ATTACKER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(VALID_ID);
+    expect(dismissNotification).toHaveBeenCalledWith(expect.any(ObjectId), TEST_PUID);
+  });
+
+  it('rejects a malformed id before reaching the service', async () => {
+    const res = await request(makeApp(true)).post('/api/notifications/not-an-objectid/dismiss');
+    expect(res.status).toBe(400);
+    expect(dismissNotification).not.toHaveBeenCalled();
+  });
+
+  it('404s when the service reports notification-not-found', async () => {
+    (dismissNotification as jest.Mock).mockRejectedValue(new Error('notification-not-found'));
+    const res = await request(makeApp(true)).post(`/api/notifications/${VALID_ID}/dismiss`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/notifications/dismiss-all', () => {
+  it('401s when signed out', async () => {
+    const res = await request(makeApp(false)).post('/api/notifications/dismiss-all');
+    expect(res.status).toBe(401);
+    expect(dismissAllNotifications).not.toHaveBeenCalled();
+  });
+
+  it('returns the dismissed count for the authenticated user', async () => {
+    (dismissAllNotifications as jest.Mock).mockResolvedValue(7);
+    const res = await request(makeApp(true)).post('/api/notifications/dismiss-all');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ count: 7 });
+    expect(dismissAllNotifications).toHaveBeenCalledWith(TEST_PUID);
   });
 });
