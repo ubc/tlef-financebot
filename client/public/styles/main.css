@@ -1974,7 +1974,7 @@ button.class-row--link:focus-visible .class-row__title {
   --sidebar-bg: var(--instr-sidebar-bg);
   --sidebar-text: var(--instr-sidebar-text);
   --sidebar-text-strong: #ffffff;
-  --sidebar-active: rgba(255, 255, 255, 0.16);
+  --sidebar-active: rgba(0, 0, 0, 0.18);
 }
 
 .sidebar--instructor .brand {
@@ -1991,7 +1991,7 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0 0.5rem 1rem;
   padding: 0.2rem 0.55rem;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.18);
   color: #ffffff;
   font-size: 0.68rem;
   font-weight: 700;
@@ -2001,6 +2001,15 @@ button.class-row--link:focus-visible .class-row__title {
 .nav__link--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.sidebar--instructor .nav__link--disabled {
+  opacity: 1;
+}
+
+.sidebar--instructor .nav__group,
+.sidebar--instructor .sidebar__foot {
+  color: #ffffff;
 }
 
 .nav__link--disabled:hover {
@@ -2446,6 +2455,167 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+/* ---- Instructor Launch Cockpit (Phase 5 workflow v2) ----------------------- */
+
+.cockpit-readiness {
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.cockpit-readiness__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.cockpit-readiness__summary .section-title,
+.cockpit-readiness__summary p {
+  margin: 0;
+}
+
+.cockpit-readiness__percent {
+  color: var(--instr-green-fg);
+  font-size: 1.4rem;
+}
+
+.cockpit-readiness__progress {
+  width: 100%;
+  height: 0.7rem;
+  accent-color: var(--instr-green-fg);
+}
+
+.workflow-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.workflow-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workflow-action:hover {
+  border-color: var(--instr-sidebar-bg);
+  box-shadow: var(--shadow);
+}
+
+.workflow-action--blocking {
+  border-left-color: var(--instr-red-fg);
+}
+
+.workflow-action--high {
+  border-left-color: var(--instr-amber-fg);
+}
+
+.workflow-action--normal {
+  border-left-color: var(--instr-blue-fg);
+}
+
+.workflow-action__body,
+.workflow-action__aside {
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-action__body {
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.workflow-action__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.workflow-action__title {
+  font-weight: 680;
+}
+
+.workflow-action__count {
+  min-width: 1.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.workflow-action__detail {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.workflow-action__aside {
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.workflow-action__priority,
+.workflow-action__open {
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.workflow-action__priority--blocking {
+  color: var(--instr-red-fg);
+}
+
+.workflow-action__priority--high {
+  color: var(--instr-amber-fg);
+}
+
+.workflow-action__priority--normal,
+.workflow-action__open {
+  color: var(--accent);
+}
+
+.cockpit-checklist {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cockpit-checklist summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.cockpit-checklist .checklist {
+  margin-top: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .workflow-action {
+    align-items: flex-start;
+  }
+
+  .workflow-action__aside {
+    display: none;
+  }
 }
 
 /* ---- Course Structure two-pane layout (I2) ---------------------------------- */

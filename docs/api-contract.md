@@ -48,6 +48,11 @@ grant attaches to the same PUID-backed User on first SAML login.
   lifecycle from `published`/`archivedAt`.
 - `GET /api/courses/:courseId/publish-checklist` →
   `[{ item, ok }]` from the same side-effect-free server check used at publish.
+- `GET /api/courses/:courseId/instructor-workflow` → the Instructor Launch
+  Cockpit read model: course lifecycle, publish-readiness percentage/checklist,
+  operational counts, and priority-ordered actions with stable destination
+  identifiers. It derives from existing course/content/review/flag/analytics
+  state and stores no parallel workflow state.
 - `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
 - `POST /api/courses/:courseId/publish` / `POST .../unpublish` → `{ published, checklist: [{ item, ok }] }`
 - `POST /api/courses/:courseId/archive` → archived Course;

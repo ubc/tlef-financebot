@@ -1,4 +1,4 @@
-import { checklistActionFor } from '../../client/src/views/instructor/dashboard';
+import { checklistActionFor, workflowActionPath } from '../../client/src/views/instructor/dashboard';
 
 describe('course dashboard checklist actions', () => {
   it.each([
@@ -15,5 +15,28 @@ describe('course dashboard checklist actions', () => {
 
   it('leaves an unknown future checklist item without a misleading destination', () => {
     expect(checklistActionFor('Unknown requirement')).toBeUndefined();
+  });
+});
+
+describe('course cockpit workflow destinations', () => {
+  it.each([
+    ['settings', '/settings'],
+    ['structure', '/structure'],
+    ['materials', '/materials'],
+    ['content-map', '/content-map'],
+    ['preseeding', '/preseeding'],
+    ['review-queue', '/queue'],
+    ['bank', '/bank'],
+    ['flags', '/flags'],
+    ['analytics', '/analytics'],
+  ] as const)('maps %s to its course screen', (destination, suffix) => {
+    expect(workflowActionPath(destination, 'course id')).toBe(
+      `/instructor/course/course%20id${suffix}`,
+    );
+  });
+
+  it('maps Preview into the isolated student shell and keeps dashboard commands local', () => {
+    expect(workflowActionPath('student-preview', 'abc')).toBe('/preview/course/abc');
+    expect(workflowActionPath('dashboard', 'abc')).toBeNull();
   });
 });
