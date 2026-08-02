@@ -62,7 +62,7 @@
   /* Instructor shell + primitives (Task 15) — approximated from the Figma
      "Wireframe v0.2" screenshots, not exact design tokens (see
      docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md). */
-  --instr-sidebar-bg: #2f7d46;
+  --instr-sidebar-bg: #245f35;
   --instr-sidebar-text: #cfe6d7;
   --instr-dark: #1a1f1a;
   --instr-dark-hover: #2c332c;
@@ -80,7 +80,7 @@
   /* Student shell + primitives (Task 1) — same "approximate, not exact"
      treatment as the instructor tokens above, blue per the student wireframe
      screens instead of green. */
-  --student-sidebar-bg: #3b5fd6;
+  --student-sidebar-bg: #2f4cab;
   --student-sidebar-text: #d6e0fb;
 }
 
@@ -121,7 +121,7 @@
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 30px -18px rgba(0, 0, 0, 0.7);
 
-  --instr-sidebar-bg: #1e5c33;
+  --instr-sidebar-bg: #1a4e2b;
   --instr-sidebar-text: #a9d1b6;
   --instr-dark: #05070a;
   --instr-dark-hover: #14181f;
@@ -652,7 +652,7 @@ a {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--sidebar-text) 75%, transparent);
+  color: color-mix(in srgb, var(--sidebar-text) 85%, transparent);
 }
 
 .nav__link {
@@ -698,7 +698,7 @@ a {
 .sidebar__foot {
   padding: 0.75rem 0.65rem 0.25rem;
   font-size: 0.72rem;
-  color: color-mix(in srgb, var(--sidebar-text) 70%, transparent);
+  color: color-mix(in srgb, var(--sidebar-text) 85%, transparent);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 0.5rem;
 }
@@ -3884,7 +3884,10 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0 0.5rem;
   padding: 0.9rem 0.95rem;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.14);
+  /* Recessed, not raised: a white overlay lifts the panel toward the sidebar
+     text and drops this block under WCAG AA (3.86:1). Darkening instead keeps
+     the same visual separation while the text clears 4.5:1 with margin. */
+  background: rgba(0, 0, 0, 0.14);
 }
 
 .practice-context__eyebrow {

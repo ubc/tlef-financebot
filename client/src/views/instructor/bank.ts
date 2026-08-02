@@ -259,6 +259,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       'select',
       {
         class: 'input',
+        'aria-label': 'Filter by Topic',
         onchange: (e: Event) => {
           filters = { ...filters, themeId: (e.target as HTMLSelectElement).value, loId: '' };
           void reload();
@@ -285,6 +286,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       'select',
       {
         class: 'input',
+        'aria-label': 'Filter by Learning Objective',
         onchange: (e: Event) => {
           filters = { ...filters, loId: (e.target as HTMLSelectElement).value };
           void reload();
@@ -300,6 +302,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       'select',
       {
         class: 'input',
+        'aria-label': 'Filter by question type',
         onchange: (e: Event) => {
           filters = { ...filters, type: (e.target as HTMLSelectElement).value as QuestionType | '' };
           void reload();
@@ -323,6 +326,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       'select',
       {
         class: 'input',
+        'aria-label': 'Filter by publication state',
         onchange: (e: Event) => {
           filters = { ...filters, status: (e.target as HTMLSelectElement).value as PublicationState | '' };
           void reload();

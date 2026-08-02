@@ -291,6 +291,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       'select',
       {
         class: 'input',
+        'aria-label': 'Sort the review queue',
         onchange: (e: Event) => {
           sortKey = (e.target as HTMLSelectElement).value as SortKey;
           renderResults();
