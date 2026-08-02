@@ -27,8 +27,13 @@
 
 **Interfaces:** consumes the full deployed app against the compose stack.
 
-- [ ] **Step 1: Audit coverage against the phase-doc list** — required paths: (a) login → enroll → practice → feedback → Review Book; (b) exam-mode integrity (no feedback leakage mid-attempt); (c) flag → auto-pause → resolve. Map each to its existing spec; list gaps (likely: session resume mid-practice ST-E03; Strategy-A retry gate end-to-end; deferred session summary).
-- [ ] **Step 2: Write `critical-paths.spec.ts` covering exactly the gaps found** — concrete specs, e.g.:
+**Owner:** Saurav (claimed 2026-08-01; Phase 4 has no owner map — see
+[`../phase-3/Saurav/2026-08-01-phase-3-post-implementation-review.md`](../phase-3/Saurav/2026-08-01-phase-3-post-implementation-review.md)
+for why claiming in writing matters here).
+
+- [x] **Step 1: Audit coverage against the phase-doc list** — required paths: (a) login → enroll → practice → feedback → Review Book; (b) exam-mode integrity (no feedback leakage mid-attempt); (c) flag → auto-pause → resolve. Map each to its existing spec; list gaps (likely: session resume mid-practice ST-E03; Strategy-A retry gate end-to-end; deferred session summary).
+      **Result:** all three required paths were already covered — (a) `practice-loop.spec.ts:127`, (b) `exam-mode.spec.ts:135`, (c) `flag-loop.spec.ts:168`. The plan's `core-loop-demo.spec.ts` reference was a missing *file*, not missing coverage; it is supplied separately by Phase 1 Task 16 (PR #54), which also closes the one real gap in (a): **no e2e anywhere asserted a mastery status transition**. All three predicted gaps were confirmed real.
+- [x] **Step 2: Write `critical-paths.spec.ts` covering exactly the gaps found** — concrete specs, e.g.:
 
 ```ts
 test('interrupted practice session resumes with persisted mastery (ST-E03)', async ({ page, context }) => {
@@ -44,6 +49,7 @@ test('strategy-A retry gate withholds explanations until the retry resolves (ST-
 ```
 
 - [ ] **Step 3: Run the full e2e suite three times consecutively** — `for i in 1 2 3; do npm run test:e2e || break; done` → 3× PASS (flake check; fix any flaky waits with proper `expect(...).toBeVisible()` polling, never `waitForTimeout`).
+      **Blocked, not skipped (2026-08-01).** `critical-paths.spec.ts` itself passed 3× consecutively with zero residual fixtures, but the FULL suite cannot go 3× green yet: `flag-loop.spec.ts` fails on a pre-existing test-isolation defect. Its auto-pause assertion is a strict-mode `getByText` that matches notifications from *other* courses; line 152 cleans notifications scoped to its own `courseId`, so orphans from an earlier run's since-deleted course survive and collide (dev DB held 31 notifications, oldest 2026-07-28). It passes on a clean DB, which is why CI is green. Fix is either scoping that assertion or purging orphaned notifications — Stephen's Task 11 spec, not claimed here.
 - [ ] **Step 4: Commit** — `git commit -m "test: consolidate critical-path e2e coverage (login->practice->review book, exam integrity, flag loop, session resume, retry gate)"`
 
 ---
