@@ -60,11 +60,30 @@ test('strategy-A retry gate withholds explanations until the retry resolves (ST-
 
 ### Task 2: WCAG 2.1 AA scans (@axe-core/playwright)
 
+**Owner:** Saurav (claimed 2026-08-02). **Complete** — 11 surfaces scan clean;
+see [`Saurav/STATUS.md`](Saurav/STATUS.md).
+
+> **Starting point was worse than "needs extending":** the suite scanned only the
+> logged-out landing page. Its two signed-in tests waited on Phase-0 selectors
+> that no longer exist, so they timed out rather than scanning. Every student
+> practice surface and the whole instructor shell had never been checked.
+>
+> **Root cause of the contrast failures** was structural, not a bad token: both
+> sidebar backgrounds sat at the pessimal luminance (~0.179) where white and
+> black both bottom out near 4.58:1, leaving ~0.5 ratio points of headroom — so
+> the 70–75% alpha fades on `.nav__group` / `.sidebar__foot` could not pass at
+> any text colour. Fixed by darkening ~24% and raising the fades to 85%.
+>
+> **The critical findings were the five unnamed `<select>`s** (four Question Bank
+> filters, the Review Queue sort), which a screen reader announced as bare combo
+> boxes. The plan predicted the question-options radio group would be the big one;
+> that turned out already compliant.
+
 **Files:**
 - Modify/extend: `tests/a11y/a11y.spec.ts`
 - Fix: whatever the scans surface (client views/CSS)
 
-- [ ] **Step 1: Extend the a11y suite to the required surfaces** — student: question view (with a rendered KaTeX formula + table), feedback view (both strategies), Review Book, exam attempt + results; instructor: dashboard/home, review queue, bank, analytics. Pattern per surface:
+- [x] **Step 1: Extend the a11y suite to the required surfaces** — student: question view (with a rendered KaTeX formula + table), feedback view (both strategies), Review Book, exam attempt + results; instructor: dashboard/home, review queue, bank, analytics. Pattern per surface:
 
 ```ts
 import AxeBuilder from '@axe-core/playwright';
@@ -77,8 +96,8 @@ test('question view has no WCAG 2.1 AA violations', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 2: Run, triage, fix blockers** — `npm run test:a11y`. Fix every `critical`/`serious` violation (semantic buttons/labels, contrast, focus order, option-group semantics — radio group with `fieldset`/`legend` on the question options is the likely big one). Re-run until zero serious+ violations.
-- [ ] **Step 3: Commit fixes and specs separately** — `git commit -m "test(a11y): WCAG 2.1 AA scans across student and instructor surfaces"` / `git commit -m "fix(a11y): <specific fixes>"`
+- [x] **Step 2: Run, triage, fix blockers** — `npm run test:a11y`. Fix every `critical`/`serious` violation (semantic buttons/labels, contrast, focus order, option-group semantics — radio group with `fieldset`/`legend` on the question options is the likely big one). Re-run until zero serious+ violations.
+- [x] **Step 3: Commit fixes and specs separately** — `git commit -m "test(a11y): WCAG 2.1 AA scans across student and instructor surfaces"` / `git commit -m "fix(a11y): <specific fixes>"`
 
 ---
 
