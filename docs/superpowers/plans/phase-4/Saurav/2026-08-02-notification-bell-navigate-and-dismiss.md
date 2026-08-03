@@ -753,6 +753,21 @@ git commit -m "feat(notifications): bell navigates on click and clears on demand
 
 ### Task 5: Client — scroll to and highlight the subject flag
 
+> **Amendment (2026-08-02, approved by Saurav during execution):** Step 2's
+> instruction to call `highlightFromQuery()` as the last statement of
+> `renderResults()` is correct as far as it goes, but `renderResults()` is
+> re-run by `reload()`, which is wired to `subscribeFlagsChanged`,
+> `visibilitychange`, and `window` focus — and nothing strips `?flag=` from
+> the hash. As written, every alt-tab back to the tab, or any other user
+> touching a flag in that course, re-scrolled the viewport to the same group
+> and re-flashed it. The shipped implementation adds a closure-local
+> `highlightApplied` one-shot flag, set only after a SUCCESSFUL match, so a
+> late-arriving group still gets its single highlight while a stale id cannot
+> burn the shot. Hash-stripping was considered and rejected: mutating the hash
+> fires `hashchange` and risks a re-render loop. The TA view needs no guard —
+> its highlight runs in `renderInner`, which only re-runs on the TA's own
+> escalate action.
+
 **Files:**
 - Modify: `client/src/views/instructor/flags.ts:577-642` and its import block
 - Modify: `client/src/views/ta/flag-triage.ts` (whole file — 59 lines)
