@@ -66,6 +66,15 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   let open = false;
   let intervalId: ReturnType<typeof setInterval> | undefined;
   const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll());
+  // Ids dismissed locally (single or "clear all") whose server confirmation
+  // is still in flight. poll() runs on a 30s interval, on window focus, and
+  // on visibilitychange -- any of those can land mid-request and, without
+  // this guard, would overwrite the optimistic removal with the
+  // not-yet-dismissed server list until the *next* tick fixes it (up to 30s
+  // of a resurrected row/list). poll() filters these ids out of whatever it
+  // fetches; the handlers add an id when they start a dismiss and remove it
+  // once the server request settles, success or failure.
+  const pendingDismissIds = new Set<string>();
 
   function syncBadge(): void {
     const count = unreadCount(notifications);
@@ -133,6 +142,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     const target = notificationTarget(n, audience);
     notifications = notifications.filter((x) => x.id !== n.id);
     open = false;
+    pendingDismissIds.add(n.id);
     syncBadge();
     renderPanel();
     if (target) window.location.hash = target;
@@ -142,6 +152,11 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     } catch {
       // Transient failure -- the next poll restores the row rather than
       // silently swallowing it.
+    } finally {
+      // Either the server now agrees it's dismissed (so it won't be in the
+      // next poll's response anyway), or the request failed and the id must
+      // stop being filtered so a legitimate poll-driven restore can happen.
+      pendingDismissIds.delete(n.id);
     }
   }
 
@@ -150,6 +165,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
    * list would be a large and confusing loss to reconcile 30s later. */
   async function handleClearAll(): Promise<void> {
     const previous = notifications;
+    previous.forEach((n) => pendingDismissIds.add(n.id));
     notifications = [];
     syncBadge();
     renderPanel();
@@ -160,6 +176,8 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       notifications = previous;
       syncBadge();
       renderPanel();
+    } finally {
+      previous.forEach((n) => pendingDismissIds.delete(n.id));
     }
   }
 
@@ -234,7 +252,12 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       return;
     }
     try {
-      notifications = await listNotifications();
+      const fetched = await listNotifications();
+      // Drop anything still mid-dismiss locally -- the server may not have
+      // processed that request yet, and applying its stale response here
+      // would resurrect a row (or the whole list, for "clear all") that the
+      // user already dismissed, with nothing to fix it until the next tick.
+      notifications = pendingDismissIds.size === 0 ? fetched : fetched.filter((n) => !pendingDismissIds.has(n.id));
     } catch {
       // Transient failure -- keep the last known list and try again next tick.
     }
