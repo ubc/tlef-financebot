@@ -206,6 +206,54 @@ describe('flagQuestion (ST-P09)', () => {
     expect(questionsUpdateOne).not.toHaveBeenCalled();
   });
 
+  // Tests 2b/2c cover the 2026-08-03 dedupe fix. Test 2 above CANNOT: its
+  // `flagsFindOne` is a bare mock that ignores the filter it is handed, so it
+  // returns a flag no matter what the query says and passes identically
+  // against the old (state-blind) and new (open-only) dedupe. 2b asserts the
+  // query itself; 2c asserts the behaviour through a filter-honouring mock.
+  it('2b. the dedupe query is scoped to OPEN flags only', async () => {
+    const question = baseQuestion({ state: 'draft' });
+    questionsFindOne.mockResolvedValue(question);
+    flagsFindOne.mockResolvedValue(null);
+
+    await flagQuestion({ puid: 'PUID-STU-0001', questionId: question._id });
+
+    expect(flagsFindOne).toHaveBeenCalledWith({
+      puid: 'PUID-STU-0001',
+      questionVersionId: question.currentVersionId,
+      state: 'open',
+    });
+  });
+
+  it('2c. a student whose earlier flag on this version was RESOLVED can flag it again, and staff are notified', async () => {
+    const question = baseQuestion({ state: 'draft' });
+    questionsFindOne.mockResolvedValue(question);
+    // Honour the filter: this student has a resolved-cleared flag on this
+    // version and no open one, so an open-scoped lookup must miss.
+    flagsFindOne.mockImplementation((filter: Record<string, unknown>) =>
+      Promise.resolve(
+        filter.state === 'open'
+          ? null
+          : baseFlag({
+              questionId: question._id,
+              questionVersionId: question.currentVersionId,
+              puid: 'PUID-STU-0001',
+              state: 'resolved-cleared',
+            }),
+      ),
+    );
+
+    const result = await flagQuestion({ puid: 'PUID-STU-0001', questionId: question._id, reason: 'still wrong' });
+
+    expect(result).toEqual({ flagged: true, duplicate: false });
+    expect(flagsInsertOne).toHaveBeenCalledTimes(1);
+    // The regression that made this look like a broken notification bell: the
+    // old dedupe short-circuited before this call, so the instructor was never
+    // told about a re-flag of an already-adjudicated question.
+    expect(notifyCourseStaff).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(notifyCourseStaff).mock.calls[0][1]).toMatchObject({ kind: 'flag' });
+  });
+
   it('3. different student flags -> second record', async () => {
     const question = baseQuestion({ state: 'draft' });
     questionsFindOne.mockResolvedValue(question);

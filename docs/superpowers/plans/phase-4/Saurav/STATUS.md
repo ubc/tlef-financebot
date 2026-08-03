@@ -299,6 +299,53 @@ Both were found during implementation, neither was in the original plan:
   Task 2 validated in both shells). Adding a flag-queue surface to the spec —
   and rendering the wash without `reducedMotion` — is the open follow-up.
 
+## UI bug fix — flag dedupe blocked re-flagging forever (same branch)
+
+Found on 2026-08-03 by Saurav testing the bell manually: flagged several
+questions as `student`, saw **nothing** as `faculty`. It looked like the new
+notification work had broken, and it had not — **no flags were being created at
+all**, so there was nothing to notify anyone about.
+
+**Root cause** — `flags.service.ts`'s dedupe was
+`findOne({ puid, questionVersionId })` with **no `state` term**, so it matched a
+student's own flag in *any* state including `resolved-*`. Once an instructor
+adjudicated a flag, that student could never flag that version again, for the
+life of the version. The call returned `duplicate: true` and short-circuited
+**before the insert and before `notifyCourseStaff`**.
+
+**Why it was invisible.** `flags.routes.ts` deliberately returned a uniform
+`{ flagged: true }` and dropped `duplicate` ("idempotent UX"), and
+`practice-card.ts` renders **"Flagged ✓"** on any success. A silently-deduped
+flag was pixel-identical to a real one. The dev DB made this certain: the
+student was demonstrably live (a `redirect` notification fired to faculty at
+`06:19:54`) while the newest flag document was from `2026-08-02T22:33` — and
+that student already held flags on the current version of **6 of the 10**
+approved questions in the course, all resolved.
+
+**Fixed, both halves** (decisions confirmed with Saurav):
+
+1. Dedupe is now scoped `state: 'open'`. A resolved flag is a closed
+   conversation; a student who still thinks the question is wrong is new
+   signal. Re-flagging while one is genuinely *pending* still dedupes, which is
+   what stops spam.
+2. `duplicate` is surfaced through the route, `api.ts`, and the practice-card
+   adapter; the card renders **"Already flagged — under review"** as a distinct
+   terminal state from "Flagged ✓". The uniform response is what let a dedupe
+   bug masquerade as a broken bell, so this half is not cosmetic.
+
+**Verification.** Unit tests 2b/2c added to `tests/unit/flags.service.test.ts`.
+Existing test 2 could not catch this — its `flagsFindOne` is a bare mock that
+ignores the filter, so it passes identically against both the old and new
+dedupe. 2b asserts the query shape; 2c uses a filter-honouring mock to assert a
+resolved flag no longer blocks a new one *and* that staff get notified.
+**Mutation-verified:** reverting `state: 'open'` fails exactly those two and
+nothing else. Full unit suite 806 passed / 78 suites; `flag-loop.spec.ts` +
+`notification-bell.spec.ts` 3 passed; lint and typecheck clean.
+
+**Note for Task 4 (browser matrix):** this was a server-side logic bug, so it
+is not browser-specific — but it is a reminder that the bell's *apparent*
+failures may not be bell bugs.
+
 ## Fixes landed on the way (branch `saurav/fix-flag-loop-isolation`, #56)
 
 Both are test-isolation defects found by Step 3's flake check, not product bugs.

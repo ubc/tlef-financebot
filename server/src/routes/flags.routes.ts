@@ -91,9 +91,14 @@ function toFlagResponse(flag: WithId<Flag> & { remediation?: RemediationReport }
 
 // --- Student: flag a question --------------------------------------------------
 
-/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
- * Student-guarded; idempotent per (puid, questionVersionId) — the response is
- * the same whether this call created a new flag or deduped an existing one. */
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true, duplicate }.
+ * Student-guarded; idempotent per (puid, questionVersionId) while that flag is
+ * open. `duplicate` is surfaced rather than swallowed: the call is still
+ * idempotent (both outcomes are a 200 with `flagged: true`), but the student
+ * needs to be able to tell "your flag was recorded" from "you already have one
+ * pending on this". The old uniform response made a deduped flag visually
+ * identical to a new one, which hid a dedupe bug as a broken notification bell
+ * — see flagQuestion()'s note in flags.service.ts. */
 flagsRouter.post(
   '/questions/:questionId/flag',
   validate({ params: questionIdParams }),
@@ -104,8 +109,12 @@ flagsRouter.post(
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const { reason } = req.body as z.infer<typeof flagQuestionBody>;
-    await flagQuestion({ puid: req.user!.puid, questionId, ...(reason !== undefined ? { reason } : {}) });
-    res.json({ flagged: true });
+    const result = await flagQuestion({
+      puid: req.user!.puid,
+      questionId,
+      ...(reason !== undefined ? { reason } : {}),
+    });
+    res.json({ flagged: true, duplicate: result.duplicate });
   },
 );
 

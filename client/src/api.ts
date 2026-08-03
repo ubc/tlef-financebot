@@ -442,14 +442,17 @@ export function getNextPracticeQuestion(
   });
 }
 
-/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
- * Student-only and idempotent for the signed-in student/current version. */
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true, duplicate }.
+ * Student-only and idempotent for the signed-in student/current version while
+ * that student's flag on it is still open. `duplicate: true` means no new flag
+ * was recorded because one is already pending — the caller should say so rather
+ * than report a fresh flag (see the note in server/src/routes/flags.routes.ts). */
 export function flagPracticeQuestion(
   questionId: string,
   reason?: string,
-): Promise<{ flagged: true }> {
+): Promise<{ flagged: true; duplicate: boolean }> {
   const normalizedReason = reason?.trim();
-  return request<{ flagged: true }>(
+  return request<{ flagged: true; duplicate: boolean }>(
     `/api/questions/${encodeURIComponent(questionId)}/flag`,
     {
       method: 'POST',
