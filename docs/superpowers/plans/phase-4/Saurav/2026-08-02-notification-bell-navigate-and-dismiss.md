@@ -548,6 +548,20 @@ git commit -m "feat(notifications): map notifications to their in-app destinatio
 
 ### Task 4: Client — bell behaviour (navigate, dismiss, clear all)
 
+> **Amendment (2026-08-02, approved by Saurav during execution):** Step 4's
+> code below is superseded on one point. As written, `handleActivate` and
+> `handleClearAll` mutate the list optimistically and then await the server
+> call with no guard, so a `poll()` landing mid-flight (30s interval, window
+> focus, or visibilitychange) overwrites the optimistic state with
+> still-undismissed server data — and there is no self-heal on success,
+> because `broadcastNotificationsChanged()` uses `BroadcastChannel.postMessage`
+> (`client/src/notification-sync.ts:25-27`), which does not deliver to the
+> sending tab. The shipped implementation adds a closure-local
+> `pendingDismissIds: Set<string>`: ids are added before the first `await`,
+> removed in a `finally` on both success and failure, and `poll()` filters its
+> fetched list through the set before assigning. Interaction model, transient-
+> failure convention, and clear-all rollback are all unchanged.
+
 **Files:**
 - Modify: `client/src/api.ts` (append after line 2491)
 - Modify: `client/src/notifications-bell.ts:34-149` and `:184-215`
