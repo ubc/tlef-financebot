@@ -34,7 +34,7 @@ import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.
 import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { subscribeFlagsChanged } from '../../flag-sync.js';
 
 function navigate(path: string): void {
@@ -615,7 +615,41 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       actions,
     );
 
-    return el('div', { class: 'flag-group' }, row, remediationPanel(group));
+    return el(
+      'div',
+      {
+        class: 'flag-group',
+        'data-question-id': group.questionId,
+        'data-flag-ids': group.flags.map((flag) => flag.id).join(' '),
+      },
+      row,
+      remediationPanel(group),
+    );
+  }
+
+  /** A notification click lands here with ?flag= or ?question= (see
+   * client/src/notification-target.ts). Scroll that group into view and mark
+   * it, so the user sees the thing they were notified about rather than the
+   * top of an undifferentiated queue. A stale id (flag already resolved and
+   * filtered out) simply highlights nothing -- being on the right page is
+   * still the right outcome. */
+  function highlightFromQuery(): void {
+    const query = currentQuery();
+    const flagId = query.get('flag');
+    const questionId = query.get('question');
+    if (!flagId && !questionId) return;
+
+    const groups = Array.from(resultsContainer.querySelectorAll<HTMLElement>('.flag-group'));
+    const match = groups.find((group) =>
+      questionId
+        ? group.dataset.questionId === questionId
+        : (group.dataset.flagIds ?? '').split(' ').includes(flagId as string),
+    );
+    if (!match) return;
+
+    for (const group of groups) group.classList.remove('flag-group--highlight');
+    match.classList.add('flag-group--highlight');
+    match.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function renderResults(): void {
@@ -639,6 +673,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
           )
         : emptyState('No flagged questions.'),
     );
+    highlightFromQuery();
   }
 
   body.replaceChildren(

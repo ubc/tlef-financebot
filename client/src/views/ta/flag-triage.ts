@@ -1,6 +1,6 @@
 import { ApiError, escalateTaFlag, listTaFlags, type Flag } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
 
 async function renderInner(outlet: HTMLElement, courseId: string): Promise<void> {
@@ -23,7 +23,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
     ) as HTMLSelectElement;
     const note = el('textarea', { class: 'input input--area', rows: '2', placeholder: 'Recommendation note' }) as HTMLTextAreaElement;
     const status = el('span', { 'aria-live': 'polite' });
-    return el('article', { class: 'card stack' },
+    return el('article', { class: 'card stack', 'data-flag-id': flag.id },
       el('strong', { text: flag.currentVersion?.stem ?? 'Question unavailable' }),
       el('p', { text: flag.reason || 'No reason supplied.' }),
       recommendation,
@@ -52,6 +52,19 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
     ),
     ...(flags.length ? flags.map(flagCard) : [el('p', { class: 'muted', text: 'No open flags.' })]),
   );
+
+  // A notification click lands here with ?flag= (see notification-target.ts).
+  // The TA view is a flat list, so the lookup is a direct id match. A stale
+  // id highlights nothing, which is the right outcome for a flag that has
+  // already been escalated out of the open list.
+  const flagId = currentQuery().get('flag');
+  if (flagId) {
+    const match = body.querySelector<HTMLElement>(`[data-flag-id="${CSS.escape(flagId)}"]`);
+    if (match) {
+      match.classList.add('card--highlight');
+      match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
 }
 
 export function renderTaFlagTriage(outlet: HTMLElement, params: RouteParams): void {
