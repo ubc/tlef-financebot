@@ -46,9 +46,13 @@ describe('notificationTarget', () => {
     expect(target).toBe('/instructor/course/course-1/flags?question=q-7');
   });
 
-  it('routes correction by question id', () => {
-    const target = notificationTarget(notification({ kind: 'correction', refId: 'q-4' }), 'ta');
-    expect(target).toBe('/ta/course/course-1/flags?question=q-4');
+  // Review fix (round 2): `correction`'s refId is a questionVERSION id
+  // (remediation.service.ts sends refType: 'questionVersion'), and the flag
+  // queue stamps `data-question-id` with the QUESTION id. A `?question=` here
+  // could never match, so the kind routes to the queue with no highlight param.
+  it('routes correction to the flag queue with no highlight param', () => {
+    const target = notificationTarget(notification({ kind: 'correction', refId: 'qv-4' }), 'ta');
+    expect(target).toBe('/ta/course/course-1/flags');
   });
 
   it('routes review-backlog to each audience own review surface', () => {
