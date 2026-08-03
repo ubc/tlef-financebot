@@ -666,6 +666,14 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     highlightApplied = true;
     for (const group of groups) group.classList.remove('flag-group--highlight');
     match.classList.add('flag-group--highlight');
+    // The outline alone is visual-only: the router's replaceChildren() drops
+    // focus to <body>, so a keyboard or screen-reader user would land here with
+    // no idea which group they were sent to. tabindex="-1" is
+    // programmatic-focus-only -- it adds no tab stop to normal traversal and no
+    // trap -- and preventScroll leaves the smooth scroll below in charge of the
+    // viewport rather than having focus() jump it first.
+    match.setAttribute('tabindex', '-1');
+    match.focus({ preventScroll: true });
     match.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
