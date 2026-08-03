@@ -66,15 +66,27 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   let open = false;
   let intervalId: ReturnType<typeof setInterval> | undefined;
   const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll());
-  // Ids dismissed locally (single or "clear all") whose server confirmation
-  // is still in flight. poll() runs on a 30s interval, on window focus, and
-  // on visibilitychange -- any of those can land mid-request and, without
-  // this guard, would overwrite the optimistic removal with the
-  // not-yet-dismissed server list until the *next* tick fixes it (up to 30s
-  // of a resurrected row/list). poll() filters these ids out of whatever it
-  // fetches; the handlers add an id when they start a dismiss and remove it
-  // once the server request settles, success or failure.
-  const pendingDismissIds = new Set<string>();
+  // Monotonic counter bumped by every LOCAL mutation of `notifications`
+  // (activate/dismiss, "clear all", mark-panel-read) before that handler's
+  // first `await`. poll() runs on a 30s interval, on window focus, and on
+  // visibilitychange, so a GET can easily still be in flight when the user
+  // mutates. poll() snapshots the epoch before its `await` and discards the
+  // response if the epoch moved while it was waiting.
+  //
+  // What this guarantees: a poll response is applied ONLY if no local
+  // mutation started after that request was issued. That covers the case a
+  // "dismiss currently in flight" check cannot -- a GET issued BEFORE the
+  // dismissal existed server-side, whose reply arrives after the POST has
+  // already settled. Such a reply legitimately still contains the dismissed
+  // rows, and applying it would resurrect the row (or the whole list, for
+  // "clear all") or pop the badge back to N, with nothing to fix it until the
+  // next tick up to 30s later.
+  //
+  // What it deliberately does NOT do: suppress the NEXT poll. A poll issued
+  // after the mutation carries the current epoch and is applied normally, so
+  // a failed dismissal is still reconciled back into the list by the server,
+  // which is the transient-failure convention the rest of this widget uses.
+  let mutationEpoch = 0;
 
   function syncBadge(): void {
     const count = unreadCount(notifications);
@@ -140,9 +152,9 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
    * matching how the rest of this widget treats transient errors. */
   async function handleActivate(n: AppNotification): Promise<void> {
     const target = notificationTarget(n, audience);
+    mutationEpoch++;
     notifications = notifications.filter((x) => x.id !== n.id);
     open = false;
-    pendingDismissIds.add(n.id);
     syncBadge();
     renderPanel();
     if (target) window.location.hash = target;
@@ -152,11 +164,6 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     } catch {
       // Transient failure -- the next poll restores the row rather than
       // silently swallowing it.
-    } finally {
-      // Either the server now agrees it's dismissed (so it won't be in the
-      // next poll's response anyway), or the request failed and the id must
-      // stop being filtered so a legitimate poll-driven restore can happen.
-      pendingDismissIds.delete(n.id);
     }
   }
 
@@ -165,7 +172,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
    * list would be a large and confusing loss to reconcile 30s later. */
   async function handleClearAll(): Promise<void> {
     const previous = notifications;
-    previous.forEach((n) => pendingDismissIds.add(n.id));
+    mutationEpoch++;
     notifications = [];
     syncBadge();
     renderPanel();
@@ -176,8 +183,6 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       notifications = previous;
       syncBadge();
       renderPanel();
-    } finally {
-      previous.forEach((n) => pendingDismissIds.delete(n.id));
     }
   }
 
@@ -186,6 +191,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
    * next poll reconciles if the request failed. */
   async function markPanelRead(): Promise<void> {
     if (unreadCount(notifications) === 0) return;
+    mutationEpoch++;
     const now = new Date().toISOString();
     notifications = notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
     syncBadge();
@@ -251,13 +257,14 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       removeGlobalListeners();
       return;
     }
+    const epoch = mutationEpoch;
     try {
       const fetched = await listNotifications();
-      // Drop anything still mid-dismiss locally -- the server may not have
-      // processed that request yet, and applying its stale response here
-      // would resurrect a row (or the whole list, for "clear all") that the
-      // user already dismissed, with nothing to fix it until the next tick.
-      notifications = pendingDismissIds.size === 0 ? fetched : fetched.filter((n) => !pendingDismissIds.has(n.id));
+      // A local mutation started after this GET went out, so this response
+      // predates it and cannot be trusted to reflect it (see `mutationEpoch`).
+      // Drop it; the next poll carries the post-mutation epoch and reconciles.
+      if (epoch !== mutationEpoch) return;
+      notifications = fetched;
     } catch {
       // Transient failure -- keep the last known list and try again next tick.
     }
