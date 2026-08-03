@@ -26,8 +26,11 @@ import {
   notifyCourseStaff,
   checkReviewBacklog,
   runDailySummary,
+  listNotifications,
+  dismissNotification,
+  dismissAllNotifications,
 } from '../../server/src/services/notifications.service';
-import type { Course, User } from '../../server/src/types/domain';
+import type { Course, User, Notification } from '../../server/src/types/domain';
 
 const notificationsInsertOne = jest.fn();
 const notificationsFind = jest.fn();
@@ -327,5 +330,77 @@ describe('notify', () => {
       refId,
     });
     expect(doc.createdAt).toBeInstanceOf(Date);
+  });
+});
+
+// --- dismissal ----------------------------------------------------------
+
+describe('dismissal', () => {
+  it('listNotifications excludes dismissed notifications', async () => {
+    const toArray = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ toArray });
+    const sort = jest.fn().mockReturnValue({ limit });
+    const find = jest.fn().mockReturnValue({ sort });
+    (notificationsCol as jest.Mock).mockReturnValue({ find });
+
+    await listNotifications('PUID-1');
+
+    expect(find).toHaveBeenCalledWith({
+      recipientPuid: 'PUID-1',
+      dismissedAt: { $exists: false },
+    });
+  });
+
+  it('listNotifications combines unreadOnly with the dismissed filter', async () => {
+    const toArray = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ toArray });
+    const sort = jest.fn().mockReturnValue({ limit });
+    const find = jest.fn().mockReturnValue({ sort });
+    (notificationsCol as jest.Mock).mockReturnValue({ find });
+
+    await listNotifications('PUID-1', { unreadOnly: true });
+
+    expect(find).toHaveBeenCalledWith({
+      recipientPuid: 'PUID-1',
+      readAt: { $exists: false },
+      dismissedAt: { $exists: false },
+    });
+  });
+
+  it('dismissNotification scopes the update to the owning puid', async () => {
+    const id = new ObjectId();
+    const updated = { _id: id, recipientPuid: 'PUID-1' } as WithId<Notification>;
+    const findOneAndUpdate = jest.fn().mockResolvedValue(updated);
+    (notificationsCol as jest.Mock).mockReturnValue({ findOneAndUpdate });
+
+    const result = await dismissNotification(id, 'PUID-1');
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: id, recipientPuid: 'PUID-1' },
+      { $set: { dismissedAt: expect.any(Date) } },
+      { returnDocument: 'after' },
+    );
+    expect(result).toBe(updated);
+  });
+
+  it('dismissNotification throws when the id/owner pair does not match', async () => {
+    (notificationsCol as jest.Mock).mockReturnValue({
+      findOneAndUpdate: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(dismissNotification(new ObjectId(), 'PUID-OTHER')).rejects.toThrow('notification-not-found');
+  });
+
+  it('dismissAllNotifications clears every non-dismissed notification and returns the count', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 4 });
+    (notificationsCol as jest.Mock).mockReturnValue({ updateMany });
+
+    const count = await dismissAllNotifications('PUID-1');
+
+    expect(updateMany).toHaveBeenCalledWith(
+      { recipientPuid: 'PUID-1', dismissedAt: { $exists: false } },
+      { $set: { dismissedAt: expect.any(Date) } },
+    );
+    expect(count).toBe(4);
   });
 });

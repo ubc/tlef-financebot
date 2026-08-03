@@ -4479,3 +4479,32 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.72rem;
   color: var(--muted);
 }
+
+/* Notification landing highlight: a notification click deep-links into the
+   flag queue (see client/src/notification-target.ts), and this is what marks
+   the row it landed on. Uses outline rather than border so the ring does not
+   reflow the grid-based .flag-row layout. */
+.flag-group--highlight,
+.card--highlight {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+  animation: notif-landing 2.4s ease-out;
+}
+
+@keyframes notif-landing {
+  0%,
+  40% {
+    background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-group--highlight,
+  .card--highlight {
+    animation: none;
+  }
+}

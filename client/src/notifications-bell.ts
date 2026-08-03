@@ -7,8 +7,15 @@
 // views/instructor/materials.ts's poll loop, just checked against this
 // widget's own wrapper element instead of a per-view root.
 import { el, mount } from './dom.js';
-import { listNotifications, markNotificationRead, markAllNotificationsRead, type AppNotification } from './api.js';
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  dismissNotification,
+  dismissAllNotifications,
+  type AppNotification,
+} from './api.js';
 import { broadcastNotificationsChanged, subscribeNotificationsChanged } from './notification-sync.js';
+import { notificationTarget, type NotificationAudience } from './notification-target.js';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -34,12 +41,18 @@ function formatRelative(iso: string): string {
 /**
  * Builds the bell + its dropdown panel, and starts 30s polling immediately.
  * Elevated notifications (auto-pause) get a distinct border + icon (§4.3
- * tiering) via `.notif-item--elevated`. Opening the panel marks nothing read
- * automatically -- only clicking an individual (unread) notification, or
- * "Mark all read", does; that keeps a quick glance at the badge from
- * silently clearing state the user hasn't actually looked at yet.
+ * tiering) via `.notif-item--elevated`.
+ *
+ * Interaction model (confirmed with Saurav, 2026-08-02) is the phone-style
+ * one: OPENING the panel marks everything read, so the badge is a "since you
+ * last looked" counter; CLICKING an item navigates to the relevant flag
+ * queue and dismisses it; "Clear all" empties the list outright. Dismissal is
+ * safe here because the bell is a nudge surface, not a record -- the flag
+ * queue retains every flag regardless of what happens in here. This reverses
+ * the earlier "opening marks nothing read" rule, which left the badge
+ * stuck-on and the list growing without bound.
  */
-export function createNotificationBell(): HTMLElement {
+export function createNotificationBell(audience: NotificationAudience): HTMLElement {
   const button = el(
     'button',
     { class: 'icon-btn notif-bell', type: 'button', 'aria-label': 'Notifications', title: 'Notifications' },
@@ -53,6 +66,27 @@ export function createNotificationBell(): HTMLElement {
   let open = false;
   let intervalId: ReturnType<typeof setInterval> | undefined;
   const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll());
+  // Monotonic counter bumped by every LOCAL mutation of `notifications`
+  // (activate/dismiss, "clear all", mark-panel-read) before that handler's
+  // first `await`. poll() runs on a 30s interval, on window focus, and on
+  // visibilitychange, so a GET can easily still be in flight when the user
+  // mutates. poll() snapshots the epoch before its `await` and discards the
+  // response if the epoch moved while it was waiting.
+  //
+  // What this guarantees: a poll response is applied ONLY if no local
+  // mutation started after that request was issued. That covers the case a
+  // "dismiss currently in flight" check cannot -- a GET issued BEFORE the
+  // dismissal existed server-side, whose reply arrives after the POST has
+  // already settled. Such a reply legitimately still contains the dismissed
+  // rows, and applying it would resurrect the row (or the whole list, for
+  // "clear all") or pop the badge back to N, with nothing to fix it until the
+  // next tick up to 30s later.
+  //
+  // What it deliberately does NOT do: suppress the NEXT poll. A poll issued
+  // after the mutation carries the current epoch and is applied normally, so
+  // a failed dismissal is still reconciled back into the list by the server,
+  // which is the transient-failure convention the rest of this widget uses.
+  let mutationEpoch = 0;
 
   function syncBadge(): void {
     const count = unreadCount(notifications);
@@ -73,7 +107,7 @@ export function createNotificationBell(): HTMLElement {
       {
         class: `notif-item${n.priority === 'elevated' ? ' notif-item--elevated' : ''}${unread ? ' notif-item--unread' : ''}`,
         type: 'button',
-        onclick: () => void handleOpenItem(n),
+        onclick: () => void handleActivate(n),
       },
       el('span', {
         class: `notif-item__icon${n.priority === 'elevated' ? ' notif-item__icon--elevated' : ''}`,
@@ -104,43 +138,76 @@ export function createNotificationBell(): HTMLElement {
         el('span', { text: 'Notifications' }),
         el(
           'button',
-          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleMarkAll() },
-          'Mark all read',
+          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClearAll() },
+          'Clear all',
         ),
       ),
       el('div', { class: 'notif-panel__list' }, ...notifications.map((n) => renderItem(n))),
     );
   }
 
-  async function handleOpenItem(n: AppNotification): Promise<void> {
-    if (n.readAt) return;
-    try {
-      const updated = await markNotificationRead(n.id);
-      notifications = notifications.map((x) => (x.id === n.id ? updated : x));
-      broadcastNotificationsChanged();
-    } catch {
-      // Transient failure -- leave local state as-is; the next poll reconciles.
-    }
+  /** Click = go there and dismiss. The list is updated optimistically so the
+   * panel never shows a row the user has already dealt with; a failed
+   * dismissal is simply reconciled by the next poll rather than surfaced,
+   * matching how the rest of this widget treats transient errors. */
+  async function handleActivate(n: AppNotification): Promise<void> {
+    const target = notificationTarget(n, audience);
+    mutationEpoch++;
+    notifications = notifications.filter((x) => x.id !== n.id);
+    open = false;
     syncBadge();
     renderPanel();
+    if (target) window.location.hash = target;
+    try {
+      await dismissNotification(n.id);
+      broadcastNotificationsChanged();
+    } catch {
+      // Transient failure -- the next poll restores the row rather than
+      // silently swallowing it.
+    }
   }
 
-  async function handleMarkAll(): Promise<void> {
-    try {
-      await markAllNotificationsRead();
-      const now = new Date().toISOString();
-      notifications = notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
-      broadcastNotificationsChanged();
-    } catch {
-      // Transient failure -- leave local state as-is; the next poll reconciles.
-    }
+  /** "Clear all" -- empties the bell, read and unread alike. Rolled back on
+   * failure because, unlike a single dismissal, silently dropping the whole
+   * list would be a large and confusing loss to reconcile 30s later. */
+  async function handleClearAll(): Promise<void> {
+    const previous = notifications;
+    mutationEpoch++;
+    notifications = [];
     syncBadge();
     renderPanel();
+    try {
+      await dismissAllNotifications();
+      broadcastNotificationsChanged();
+    } catch {
+      notifications = previous;
+      syncBadge();
+      renderPanel();
+    }
+  }
+
+  /** Opening the panel is the "I have looked at these" signal, so it clears
+   * the badge. Fire-and-forget: the badge is already zeroed locally, and the
+   * next poll reconciles if the request failed. */
+  async function markPanelRead(): Promise<void> {
+    if (unreadCount(notifications) === 0) return;
+    mutationEpoch++;
+    const now = new Date().toISOString();
+    notifications = notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+    syncBadge();
+    renderPanel();
+    try {
+      await markAllNotificationsRead();
+      broadcastNotificationsChanged();
+    } catch {
+      // Transient failure -- next poll reconciles.
+    }
   }
 
   function toggle(): void {
     open = !open;
     renderPanel();
+    if (open) void markPanelRead();
   }
 
   button.addEventListener('click', (e) => {
@@ -190,8 +257,14 @@ export function createNotificationBell(): HTMLElement {
       removeGlobalListeners();
       return;
     }
+    const epoch = mutationEpoch;
     try {
-      notifications = await listNotifications();
+      const fetched = await listNotifications();
+      // A local mutation started after this GET went out, so this response
+      // predates it and cannot be trusted to reflect it (see `mutationEpoch`).
+      // Drop it; the next poll carries the post-mutation epoch and reconciles.
+      if (epoch !== mutationEpoch) return;
+      notifications = fetched;
     } catch {
       // Transient failure -- keep the last known list and try again next tick.
     }

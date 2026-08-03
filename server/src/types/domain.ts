@@ -591,6 +591,11 @@ export interface Notification {
   refType?: string;
   refId?: ObjectId;
   readAt?: Date;
+  /** Set when the recipient dismisses the notification from the bell (click
+   * or "Clear all"). Dismissed documents are retained for audit but never
+   * returned by listNotifications() — the flag queue, not the bell, is the
+   * durable record of outstanding work. */
+  dismissedAt?: Date;
   createdAt: Date;
 }
 

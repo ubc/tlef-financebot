@@ -442,14 +442,17 @@ export function getNextPracticeQuestion(
   });
 }
 
-/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true }.
- * Student-only and idempotent for the signed-in student/current version. */
+/** POST /api/questions/:questionId/flag { reason? } -> { flagged: true, duplicate }.
+ * Student-only and idempotent for the signed-in student/current version while
+ * that student's flag on it is still open. `duplicate: true` means no new flag
+ * was recorded because one is already pending — the caller should say so rather
+ * than report a fresh flag (see the note in server/src/routes/flags.routes.ts). */
 export function flagPracticeQuestion(
   questionId: string,
   reason?: string,
-): Promise<{ flagged: true }> {
+): Promise<{ flagged: true; duplicate: boolean }> {
   const normalizedReason = reason?.trim();
-  return request<{ flagged: true }>(
+  return request<{ flagged: true; duplicate: boolean }>(
     `/api/questions/${encodeURIComponent(questionId)}/flag`,
     {
       method: 'POST',
@@ -2471,6 +2474,10 @@ export interface AppNotification {
   refType?: string;
   refId?: string;
   readAt?: string;
+  /** Set once the recipient dismisses this notification (click or "Clear all").
+   * Returned by the dismiss endpoints; never present on the bell's poll list,
+   * which filters dismissed documents out server-side. */
+  dismissedAt?: string;
   createdAt: string;
 }
 
@@ -2488,4 +2495,15 @@ export function markNotificationRead(id: string): Promise<AppNotification> {
 /** POST /api/notifications/read-all -> { count }. */
 export function markAllNotificationsRead(): Promise<{ count: number }> {
   return request<{ count: number }>('/api/notifications/read-all', { method: 'POST' });
+}
+
+/** POST /api/notifications/:id/dismiss -> the updated notification. Clicking
+ * a notification in the bell dismisses it for good. */
+export function dismissNotification(id: string): Promise<AppNotification> {
+  return request<AppNotification>(`/api/notifications/${encodeURIComponent(id)}/dismiss`, { method: 'POST' });
+}
+
+/** POST /api/notifications/dismiss-all -> { count }. "Clear all". */
+export function dismissAllNotifications(): Promise<{ count: number }> {
+  return request<{ count: number }>('/api/notifications/dismiss-all', { method: 'POST' });
 }

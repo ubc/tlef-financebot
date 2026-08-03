@@ -190,6 +190,162 @@ a launch-blocking bug fix now"), but it is unbuilt *feature* work, not a fix.
 Not verified: the in-practice disclaimer and the CWL-username watermark, which
 may or may not exist — the consent gating is the part confirmed absent.
 
+## UI bug fix — notification bell: navigate & dismiss (branch `saurav/fix-notification-bell`)
+
+The first of the UI bugs the freeze-legal pause above was called for. Plan:
+[`.superpowers/sdd/2026-08-02-notification-bell-navigate-and-dismiss/`](../../../../../.superpowers/sdd/2026-08-02-notification-bell-navigate-and-dismiss/).
+
+**The bug.** The bell was a dead end. Notification rows were inert — clicking
+one did nothing, so there was no way to get from "a question was flagged" to
+the flag itself. Nothing ever left the list either: the badge could not reach
+zero and the panel grew without bound.
+
+**What shipped** (six tasks, all landed on the branch):
+
+| Task | What |
+|---|---|
+| 1 | `Notification.dismissedAt?: Date`; `listNotifications` excludes dismissed documents |
+| 2 | `POST /api/notifications/:id/dismiss` and `/dismiss-all`, both scoped to the caller's own puid |
+| 3 | `client/src/notification-target.ts` — pure notification→route map, unit-tested |
+| 4 | The bell navigates on click, dismisses on click, and gained a "Clear all" |
+| 5 | The instructor flag queue scrolls to and highlights the flag/question the notification points at; the TA view does the same on its card |
+| 6 | `tests/e2e/notification-bell.spec.ts` + this entry |
+
+### The three product decisions (confirmed with Saurav, 2026-08-02)
+
+1. **Clicking a notification dismisses it.** It navigates to the relevant flag
+   queue *and* removes the row for good.
+2. **Opening the bell clears the badge.** Opening the panel is the "I have
+   looked at these" signal, phone-style, so the badge is a since-you-last-looked
+   counter rather than a permanent scold.
+3. **"Clear all" clears everything, read or unread.** It replaced the old
+   "Mark all read" button in the panel header.
+
+**Why dismissal is safe, and why this is the whole rationale:** the **flag queue
+is the durable record**. Every flag stays in it regardless of what happens in
+the bell, so a notification is a *disposable nudge*, not a record of work. That
+is the single fact the three decisions above rest on. Dismissed documents are
+also retained (`dismissedAt` stamped, never deleted), so the audit trail
+survives and a "recently dismissed" view stays possible.
+
+### ⚠️ This REVERSES the earlier "opening the panel marks nothing read" rule
+
+That rule was deliberate when it was written, and it is deliberately gone now.
+It left the badge stuck on and the list unbounded, which is most of what made
+the bell feel broken. **Do not "fix" it back.** `notifications-bell.ts`'s module
+comment records the same reversal at the code, and
+`tests/e2e/notification-bell.spec.ts` fails if it is undone — verified by
+mutation, below.
+
+### Two amendments approved mid-execution by Saurav
+
+Both were found during implementation, neither was in the original plan:
+
+- **Task 4 — the bell's `mutationEpoch` poll guard.** The bell polls every 30s,
+  on window focus, and on `visibilitychange`. Any of those can land mid-dismiss
+  and overwrite the optimistic removal with the server's not-yet-dismissed list,
+  resurrecting a row (or the entire list, for "Clear all") until the *next*
+  tick — up to 30 seconds. Shipped first as a `pendingDismissIds` set of ids
+  whose dismissal was in flight; **round-2 review replaced it entirely** with a
+  monotonic `mutationEpoch`, because the set only asked "is a dismiss in flight
+  *now*" and the real hazard is "was this GET issued *before* the dismiss
+  landed" — a GET already in flight when Clear all fired would resolve after the
+  POST had settled and the set had emptied, resurrecting the whole list.
+  `poll()` now snapshots the epoch before its `await` and drops the response if
+  a local mutation moved it; the epoch is bumped by `handleActivate`,
+  `handleClearAll`, **and** `markPanelRead` (which previously had no race
+  protection at all, so the badge could pop back to N).
+- **Task 5 — the `highlightApplied` one-shot highlight guard.** The flag queue's
+  `renderResults()` reruns on every background trigger (`subscribeFlagsChanged`,
+  tab focus, any resolve/notify action), and nothing clears `?flag=`/`?question=`
+  from the hash. Without a guard the instructor is re-scrolled and re-flashed on
+  every one of those events for as long as they stay on the URL. The highlight
+  now fires at most once per view instance, set only on a successful match.
+  **Round-2 review** applied the same guard to the TA view (`renderInner` reruns
+  on the TA's own escalate action, so escalating flag Y while `?flag=X` was
+  still in the URL re-flashed X) and made both views move focus to the matched
+  element (`tabindex="-1"` + `focus({ preventScroll: true })`) — the highlight
+  had been visual-only, leaving keyboard and screen-reader users on `<body>`.
+
+### Verification
+
+- **`tests/e2e/notification-bell.spec.ts` — 2 tests, observed passing.** This is
+  the *only* automated coverage of the bell's DOM behaviour: Jest runs
+  `testEnvironment: 'node'` with no jsdom installed (`tests/AGENTS.md:66-69`), so
+  the pure route map is unit-testable but the widget is not. The spec seeds its
+  own course, two questions, two open flags and its own notifications — no
+  ambient dev-database state, per the `315d1dd` rule.
+- **Mutation-verified**, because a spec that passes against the broken code is
+  worthless. Four separate reversions were applied and each made it fail:
+  dropping `dismissedAt` from the list filter → both survives-a-reload
+  assertions fail; opening no longer marking read → the badge assertion fails;
+  the click no longer navigating → the URL assertion fails; the highlight class
+  not being applied → the highlight assertion fails. Every mutation was reverted.
+- **Full e2e suite: 25 passed, 2 failed, 1 skipped.** The two failures are the
+  pre-existing `ADMIN_CWL_ALLOWLIST` ones (`app.spec.ts`, `walking-skeleton.spec.ts`)
+  documented in the open item above — unchanged by this work. The new spec
+  deliberately navigates to `#/instructor/courses` rather than `/` so it is
+  immune to that same trap.
+- **`npm run test:a11y`: 4 passed.** This shows the branch regressed nothing on
+  the surfaces Task 2 (`6e3874a`) already covers. It does **not** show the new
+  highlight itself is WCAG AA clean, and the original wording here claimed it
+  did. Two reasons: `tests/a11y/a11y.spec.ts` never visits a flag queue (it
+  scans the landing screen, four instructor surfaces, and the student
+  practice/exam surfaces — no `/flags` route), and `playwright.config.ts` sets
+  `reducedMotion: 'reduce'` globally, which the a11y config inherits, so the
+  `notif-landing` keyframe and its background wash never render under axe even
+  if a flag queue were added. The highlight's contrast is therefore **unscanned**
+  and rests on the design choice alone (`var(--accent)` outline, the same token
+  Task 2 validated in both shells). Adding a flag-queue surface to the spec —
+  and rendering the wash without `reducedMotion` — is the open follow-up.
+
+## UI bug fix — flag dedupe blocked re-flagging forever (same branch)
+
+Found on 2026-08-03 by Saurav testing the bell manually: flagged several
+questions as `student`, saw **nothing** as `faculty`. It looked like the new
+notification work had broken, and it had not — **no flags were being created at
+all**, so there was nothing to notify anyone about.
+
+**Root cause** — `flags.service.ts`'s dedupe was
+`findOne({ puid, questionVersionId })` with **no `state` term**, so it matched a
+student's own flag in *any* state including `resolved-*`. Once an instructor
+adjudicated a flag, that student could never flag that version again, for the
+life of the version. The call returned `duplicate: true` and short-circuited
+**before the insert and before `notifyCourseStaff`**.
+
+**Why it was invisible.** `flags.routes.ts` deliberately returned a uniform
+`{ flagged: true }` and dropped `duplicate` ("idempotent UX"), and
+`practice-card.ts` renders **"Flagged ✓"** on any success. A silently-deduped
+flag was pixel-identical to a real one. The dev DB made this certain: the
+student was demonstrably live (a `redirect` notification fired to faculty at
+`06:19:54`) while the newest flag document was from `2026-08-02T22:33` — and
+that student already held flags on the current version of **6 of the 10**
+approved questions in the course, all resolved.
+
+**Fixed, both halves** (decisions confirmed with Saurav):
+
+1. Dedupe is now scoped `state: 'open'`. A resolved flag is a closed
+   conversation; a student who still thinks the question is wrong is new
+   signal. Re-flagging while one is genuinely *pending* still dedupes, which is
+   what stops spam.
+2. `duplicate` is surfaced through the route, `api.ts`, and the practice-card
+   adapter; the card renders **"Already flagged — under review"** as a distinct
+   terminal state from "Flagged ✓". The uniform response is what let a dedupe
+   bug masquerade as a broken bell, so this half is not cosmetic.
+
+**Verification.** Unit tests 2b/2c added to `tests/unit/flags.service.test.ts`.
+Existing test 2 could not catch this — its `flagsFindOne` is a bare mock that
+ignores the filter, so it passes identically against both the old and new
+dedupe. 2b asserts the query shape; 2c uses a filter-honouring mock to assert a
+resolved flag no longer blocks a new one *and* that staff get notified.
+**Mutation-verified:** reverting `state: 'open'` fails exactly those two and
+nothing else. Full unit suite 806 passed / 78 suites; `flag-loop.spec.ts` +
+`notification-bell.spec.ts` 3 passed; lint and typecheck clean.
+
+**Note for Task 4 (browser matrix):** this was a server-side logic bug, so it
+is not browser-specific — but it is a reminder that the bell's *apparent*
+failures may not be bell bugs.
+
 ## Fixes landed on the way (branch `saurav/fix-flag-loop-isolation`, #56)
 
 Both are test-isolation defects found by Step 3's flake check, not product bugs.
@@ -256,6 +412,7 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 1. **UI bug fixes** — in progress by Saurav, deliberately ahead of the remaining
    verification so the browser matrix and load numbers describe the fixed build.
+   The notification bell one is done (section above); more may follow.
 2. **Task 4 cross-browser** — no staging or content needed, and it is the first
    time this app will run in Safari/WebKit. May reclassify some of the UI bugs.
 3. **Task 3 scripts** — build and debug locally, check query plans, hold the
@@ -266,7 +423,12 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 ## Next session: read this first
 
-Everything Saurav did on 2026-08-01/02 is merged (#52–#58). `main` is at
-`2ec7d26`. Working tree clean, no branches in flight. The four open questions
-above are the only things blocking forward progress that a session cannot
-resolve on its own.
+Everything Saurav did on 2026-08-01/02 up to #59 is merged. **One branch is in
+flight: `saurav/fix-notification-bell`** — the bell bug fix above, all six tasks
+landed and verified, not yet merged. Read its section before touching
+`notifications-bell.ts`, `notification-target.ts`, or the flag queue's
+highlight: the "opening clears the badge" behaviour is a deliberate reversal,
+not a regression.
+
+The four open questions above are the only things blocking forward progress
+that a session cannot resolve on its own.

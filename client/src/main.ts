@@ -211,7 +211,7 @@ function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
     }, '≡'),
     el('span', { class: 'topbar__title', text: 'TA Workspace' }),
     el('div', { class: 'topbar__right' },
-      createNotificationBell(), createThemeToggle(),
+      createNotificationBell('ta'), createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
   );
@@ -323,7 +323,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     el(
       'div',
       { class: 'topbar__right' },
-      createNotificationBell(),
+      createNotificationBell('instructor'),
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
@@ -511,7 +511,7 @@ function buildStudentShell(
       config.preview
         ? el('span', { class: 'preview-mode-label', text: 'Anonymous Student Preview' })
         : false,
-      config.preview ? createAnonymousNotificationBell() : createNotificationBell(),
+      config.preview ? createAnonymousNotificationBell() : createNotificationBell('student'),
       createThemeToggle(),
       config.preview
         ? el(

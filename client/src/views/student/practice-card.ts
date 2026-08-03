@@ -39,7 +39,7 @@ export interface PracticeCardAdapter {
     questionId: string,
     reason?: string,
     options?: { sendToInstructorQueue?: boolean },
-  ) => Promise<{ flagged: true }>;
+  ) => Promise<{ flagged: true; duplicate?: boolean }>;
   bookmark?: (questionId: string) => Promise<{ bookmarked: boolean }>;
   allowsInstructorTestFlag?: boolean;
   updatesMastery: boolean;
@@ -78,7 +78,11 @@ export function makeQuestionCard(
   let selectedKey: string | undefined;
   let result: AttemptResult | undefined;
   let submitting = false;
-  let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' = 'idle';
+  // 'duplicate' is a distinct terminal state from 'flagged', not a cosmetic
+  // variant: it means the server recorded NOTHING because this student already
+  // has an open flag on this version. Collapsing the two is what let a dedupe
+  // bug masquerade as a broken notification bell (see flags.service.ts).
+  let flagState: 'idle' | 'editing' | 'submitting' | 'flagged' | 'duplicate' = 'idle';
   let flagReason = '';
   let bookmarkState: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let bookmarkError: string | undefined;
@@ -131,13 +135,19 @@ export function makeQuestionCard(
   };
 
   const submitFlag = async (): Promise<void> => {
-    if (!adapter.flag || flagState === 'submitting' || flagState === 'flagged') return;
+    if (
+      !adapter.flag ||
+      flagState === 'submitting' ||
+      flagState === 'flagged' ||
+      flagState === 'duplicate'
+    )
+      return;
     flagState = 'submitting';
     flagError = undefined;
     draw();
     try {
-      await adapter.flag(question.questionId, flagReason, { sendToInstructorQueue });
-      flagState = 'flagged';
+      const result = await adapter.flag(question.questionId, flagReason, { sendToInstructorQueue });
+      flagState = result.duplicate ? 'duplicate' : 'flagged';
     } catch (error) {
       flagState = 'editing';
       flagError = (error as Error).message;
@@ -250,6 +260,16 @@ export function makeQuestionCard(
           'span',
           { class: 'btn btn--ghost btn--sm', role: 'status', 'aria-live': 'polite' },
           'Flagged ✓',
+        );
+      }
+      // Deliberately different wording from 'Flagged ✓' — nothing was recorded
+      // by this call, and telling the student otherwise is what made the
+      // original bug invisible from the practice surface.
+      if (flagState === 'duplicate') {
+        return el(
+          'span',
+          { class: 'btn btn--ghost btn--sm', role: 'status', 'aria-live': 'polite' },
+          'Already flagged — under review',
         );
       }
 

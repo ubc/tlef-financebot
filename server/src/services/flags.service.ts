@@ -89,12 +89,24 @@ async function countDistinctAttempters(questionVersionId: ObjectId): Promise<num
 
 /**
  * ST-P09: attaches a flag to the question's CURRENT version. Idempotent per
- * (puid, questionVersionId) — a student re-flagging the same version they
- * already flagged (in any flag state) gets `duplicate: true` and no new
- * record; the route surfaces `{ flagged: true }` either way (idempotent
- * UX). Non-blocking: never itself changes the question's publication state
- * directly — that only happens via checkAutoPause below (called after every
- * new flag) or later via resolveFlag.
+ * (puid, questionVersionId) while that student's flag is still OPEN — a
+ * second flag on a version they already have pending gets `duplicate: true`
+ * and no new record. Non-blocking: never itself changes the question's
+ * publication state directly — that only happens via checkAutoPause below
+ * (called after every new flag) or later via resolveFlag.
+ *
+ * The `state: 'open'` term matters and is not incidental. Without it the
+ * dedupe matched a student's flag in ANY state, including `resolved-*`, so
+ * once an instructor adjudicated a flag that student could never flag that
+ * version again — for the life of the version. The call short-circuited
+ * before the insert AND before notifyCourseStaff, so the student saw
+ * "Flagged ✓", no flag reached the queue, and no notification reached the
+ * instructor. Found on 2026-08-03 while testing the notification bell: a
+ * student flagging six already-resolved questions produced zero flags and
+ * zero notifications, which read as a broken bell rather than a dedupe bug.
+ * A resolved flag is a closed conversation; a student who still thinks the
+ * question is wrong is new signal, not a duplicate. Re-flagging while one is
+ * genuinely pending remains deduped, which is what stops the spam.
  */
 export async function flagQuestion(input: {
   puid: string;
@@ -105,7 +117,11 @@ export async function flagQuestion(input: {
   const question = await questionsCol().findOne({ _id: input.questionId });
   if (!question) throw new Error('question-not-found');
 
-  const existing = await flagsCol().findOne({ puid: input.puid, questionVersionId: question.currentVersionId });
+  const existing = await flagsCol().findOne({
+    puid: input.puid,
+    questionVersionId: question.currentVersionId,
+    state: 'open',
+  });
   if (existing) return { flagged: true, duplicate: true };
 
   const flagId = new ObjectId();

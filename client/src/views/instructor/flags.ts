@@ -34,7 +34,7 @@ import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.
 import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { subscribeFlagsChanged } from '../../flag-sync.js';
 
 function navigate(path: string): void {
@@ -615,7 +615,66 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       actions,
     );
 
-    return el('div', { class: 'flag-group' }, row, remediationPanel(group));
+    return el(
+      'div',
+      {
+        class: 'flag-group',
+        'data-question-id': group.questionId,
+        'data-flag-ids': group.flags.map((flag) => flag.id).join(' '),
+      },
+      row,
+      remediationPanel(group),
+    );
+  }
+
+  // Review fix (round 1): `renderResults()` — and therefore
+  // `highlightFromQuery()` below — reruns on every background trigger
+  // (`subscribeFlagsChanged`, tab-focus/visibilitychange, any resolve/notify
+  // action), not just the initial notification landing, and nothing ever
+  // clears `?flag=`/`?question=` from the hash. Without a one-shot guard the
+  // instructor gets re-scrolled and re-flashed on every one of those events
+  // for as long as they stay on the URL, even after scrolling away or
+  // mid-edit elsewhere. Set only on a SUCCESSFUL match (not on every call/on
+  // entry): a stale id never matches regardless of when the flag is set, so
+  // gating on entry would only cost us the (harmless, no-op) case of a
+  // genuinely late-arriving match still getting its one highlight.
+  let highlightApplied = false;
+
+  /** A notification click lands here with ?flag= or ?question= (see
+   * client/src/notification-target.ts). Scroll that group into view and mark
+   * it, so the user sees the thing they were notified about rather than the
+   * top of an undifferentiated queue. A stale id (flag already resolved and
+   * filtered out) simply highlights nothing -- being on the right page is
+   * still the right outcome. Runs at most once per page load (see
+   * `highlightApplied` above) so later background re-renders don't re-scroll
+   * the instructor back to a group they've since navigated away from. */
+  function highlightFromQuery(): void {
+    if (highlightApplied) return;
+    const query = currentQuery();
+    const flagId = query.get('flag');
+    const questionId = query.get('question');
+    if (!flagId && !questionId) return;
+
+    const groups = Array.from(resultsContainer.querySelectorAll<HTMLElement>('.flag-group'));
+    const match = groups.find((group) =>
+      questionId
+        ? group.dataset.questionId === questionId
+        : (group.dataset.flagIds ?? '').split(' ').includes(flagId as string),
+    );
+    if (!match) return;
+
+    highlightApplied = true;
+    for (const group of groups) group.classList.remove('flag-group--highlight');
+    match.classList.add('flag-group--highlight');
+    // The outline alone is visual-only: the router's replaceChildren() drops
+    // focus to <body>, so a keyboard or screen-reader user would land here with
+    // no idea which group they were sent to. tabindex="-1" is
+    // programmatic-focus-only -- it adds no tab stop to normal traversal and no
+    // trap -- and preventScroll leaves the smooth scroll below in charge of the
+    // viewport rather than having focus() jump it first.
+    match.setAttribute('tabindex', '-1');
+    match.focus({ preventScroll: true });
+    match.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function renderResults(): void {
@@ -639,6 +698,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
           )
         : emptyState('No flagged questions.'),
     );
+    highlightFromQuery();
   }
 
   body.replaceChildren(

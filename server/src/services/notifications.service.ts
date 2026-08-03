@@ -188,19 +188,26 @@ export async function registerNotificationJobs(): Promise<void> {
   await scheduleRecurring(DAILY_SUMMARY_JOB, '24 hours');
 }
 
-// --- Routes surface: list / mark-read / mark-all-read -----------------------
+// --- Routes surface: list / mark-read / mark-all-read / dismiss / dismiss-all
 // Kept here (rather than in notifications.routes.ts) per routes/AGENTS.md:
 // "No database or SDK calls directly in a route." Every query below is
 // scoped by the CALLER-SUPPLIED puid — notifications.routes.ts is
 // responsible for passing the AUTHENTICATED user's own puid, never one taken
-// from the request body/params, so a user can never read or mark-read
-// another user's notifications.
+// from the request body/params, so a user can never read, mark-read, or
+// dismiss another user's notifications.
 
 export async function listNotifications(
   puid: string,
   opts?: { unreadOnly?: boolean },
 ): Promise<WithId<Notification>[]> {
-  const filter = { recipientPuid: puid, ...(opts?.unreadOnly ? { readAt: { $exists: false } } : {}) };
+  const filter = {
+    recipientPuid: puid,
+    ...(opts?.unreadOnly ? { readAt: { $exists: false } } : {}),
+    // Dismissed notifications stay in the collection but leave the bell for
+    // good -- the 30s client poll would otherwise resurrect anything the
+    // user cleared.
+    dismissedAt: { $exists: false },
+  };
   return notificationsCol().find(filter).sort({ createdAt: -1 }).limit(NOTIFICATIONS_LIST_LIMIT).toArray();
 }
 
@@ -223,6 +230,29 @@ export async function markAllNotificationsRead(puid: string): Promise<number> {
   const result = await notificationsCol().updateMany(
     { recipientPuid: puid, readAt: { $exists: false } },
     { $set: { readAt: new Date() } },
+  );
+  return result.modifiedCount;
+}
+
+/** Dismiss one notification. Scoped by (id, recipientPuid) exactly like
+ * markNotificationRead, so a user can only ever dismiss their OWN. */
+export async function dismissNotification(id: ObjectId, puid: string): Promise<WithId<Notification>> {
+  const updated = await notificationsCol().findOneAndUpdate(
+    { _id: id, recipientPuid: puid },
+    { $set: { dismissedAt: new Date() } },
+    { returnDocument: 'after' },
+  );
+  if (!updated) throw new Error('notification-not-found');
+  return updated;
+}
+
+/** Dismiss every not-yet-dismissed notification for this puid ("Clear all");
+ * returns the count touched. Deliberately clears read AND unread -- the bell
+ * is a nudge surface, and the flag queue keeps the underlying work. */
+export async function dismissAllNotifications(puid: string): Promise<number> {
+  const result = await notificationsCol().updateMany(
+    { recipientPuid: puid, dismissedAt: { $exists: false } },
+    { $set: { dismissedAt: new Date() } },
   );
   return result.modifiedCount;
 }

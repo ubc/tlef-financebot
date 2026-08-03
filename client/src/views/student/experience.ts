@@ -60,12 +60,16 @@ export interface StudentExperience {
     input: { loId: string; sessionServedIds: string[] },
   ): Promise<PracticeQuestion>;
   submit(courseId: string, input: SubmitAttemptInput): Promise<AttemptResult>;
+  // `duplicate` is optional because only the live student path reports it —
+  // the Preview implementation below dedupes per preview session and returns
+  // `testQueued` instead. An absent value reads as "a new flag was recorded",
+  // which is the right default for Preview.
   flag(
     courseId: string,
     questionId: string,
     reason?: string,
     options?: { sendToInstructorQueue?: boolean },
-  ): Promise<{ flagged: true }>;
+  ): Promise<{ flagged: true; duplicate?: boolean }>;
   skip(courseId: string, loId: string, attempted: boolean): Promise<void>;
   getSessionStart(courseId: string): Promise<SessionSummaryForStart>;
   endSession(courseId: string, since: Date): Promise<SessionEndSummary>;
