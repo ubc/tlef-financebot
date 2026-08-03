@@ -241,18 +241,31 @@ mutation, below.
 
 Both were found during implementation, neither was in the original plan:
 
-- **Task 4 — the `pendingDismissIds` poll guard.** The bell polls every 30s, on
-  window focus, and on `visibilitychange`. Any of those can land mid-dismiss and
-  overwrite the optimistic removal with the server's not-yet-dismissed list,
+- **Task 4 — the bell's `mutationEpoch` poll guard.** The bell polls every 30s,
+  on window focus, and on `visibilitychange`. Any of those can land mid-dismiss
+  and overwrite the optimistic removal with the server's not-yet-dismissed list,
   resurrecting a row (or the entire list, for "Clear all") until the *next*
-  tick — up to 30 seconds. The bell now keeps a closure-local set of ids whose
-  dismissal is in flight and filters them out of whatever a poll fetches.
+  tick — up to 30 seconds. Shipped first as a `pendingDismissIds` set of ids
+  whose dismissal was in flight; **round-2 review replaced it entirely** with a
+  monotonic `mutationEpoch`, because the set only asked "is a dismiss in flight
+  *now*" and the real hazard is "was this GET issued *before* the dismiss
+  landed" — a GET already in flight when Clear all fired would resolve after the
+  POST had settled and the set had emptied, resurrecting the whole list.
+  `poll()` now snapshots the epoch before its `await` and drops the response if
+  a local mutation moved it; the epoch is bumped by `handleActivate`,
+  `handleClearAll`, **and** `markPanelRead` (which previously had no race
+  protection at all, so the badge could pop back to N).
 - **Task 5 — the `highlightApplied` one-shot highlight guard.** The flag queue's
   `renderResults()` reruns on every background trigger (`subscribeFlagsChanged`,
   tab focus, any resolve/notify action), and nothing clears `?flag=`/`?question=`
   from the hash. Without a guard the instructor is re-scrolled and re-flashed on
   every one of those events for as long as they stay on the URL. The highlight
   now fires at most once per view instance, set only on a successful match.
+  **Round-2 review** applied the same guard to the TA view (`renderInner` reruns
+  on the TA's own escalate action, so escalating flag Y while `?flag=X` was
+  still in the URL re-flashed X) and made both views move focus to the matched
+  element (`tabindex="-1"` + `focus({ preventScroll: true })`) — the highlight
+  had been visual-only, leaving keyboard and screen-reader users on `<body>`.
 
 ### Verification
 
@@ -273,8 +286,18 @@ Both were found during implementation, neither was in the original plan:
   documented in the open item above — unchanged by this work. The new spec
   deliberately navigates to `#/instructor/courses` rather than `/` so it is
   immune to that same trap.
-- **`npm run test:a11y`: 4 passed.** The new highlight outline does not regress
-  the WCAG AA contrast work from Task 2 (`6e3874a`).
+- **`npm run test:a11y`: 4 passed.** This shows the branch regressed nothing on
+  the surfaces Task 2 (`6e3874a`) already covers. It does **not** show the new
+  highlight itself is WCAG AA clean, and the original wording here claimed it
+  did. Two reasons: `tests/a11y/a11y.spec.ts` never visits a flag queue (it
+  scans the landing screen, four instructor surfaces, and the student
+  practice/exam surfaces — no `/flags` route), and `playwright.config.ts` sets
+  `reducedMotion: 'reduce'` globally, which the a11y config inherits, so the
+  `notif-landing` keyframe and its background wash never render under axe even
+  if a flag queue were added. The highlight's contrast is therefore **unscanned**
+  and rests on the design choice alone (`var(--accent)` outline, the same token
+  Task 2 validated in both shells). Adding a flag-queue surface to the spec —
+  and rendering the wash without `reducedMotion` — is the open follow-up.
 
 ## Fixes landed on the way (branch `saurav/fix-flag-loop-isolation`, #56)
 

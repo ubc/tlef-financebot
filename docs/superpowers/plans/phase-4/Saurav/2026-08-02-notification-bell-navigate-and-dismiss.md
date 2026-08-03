@@ -368,8 +368,18 @@ git commit -m "feat(notifications): dismiss and dismiss-all endpoints"
 | `flag` | flag queue | `?flag=<refId>` |
 | `flag-resolved` | flag queue | `?flag=<refId>` |
 | `auto-pause` | flag queue | `?question=<refId>` |
-| `correction` | flag queue | `?question=<refId>` |
+| `correction` | flag queue | none — see the round-2 note below |
 | `daily-summary` | flag queue | none |
+
+> **Review fix (round 2):** `correction` was originally specced (and shipped) as
+> `?question=<refId>`, which can never match. `remediation.service.ts`'s
+> `notifyAffectedStudents` sends `refType: 'questionVersion'`, i.e. a question
+> VERSION id, while the flag queue stamps `data-question-id` with the QUESTION
+> id — two id spaces that never intersect. `correction` is also student-facing,
+> and students get `null` from `notificationTarget` regardless, so the staff
+> path is unreachable in practice. It now routes to the flag queue with no
+> query param; Step 3's code block and the `routes correction by question id`
+> test below are superseded accordingly.
 | `review-backlog` | review queue (instructor `/queue`, TA `/review`) | none |
 | `redirect` | `null` — student-facing, no staff surface | — |
 
@@ -561,6 +571,18 @@ git commit -m "feat(notifications): map notifications to their in-app destinatio
 > removed in a `finally` on both success and failure, and `poll()` filters its
 > fetched list through the set before assigning. Interaction model, transient-
 > failure convention, and clear-all rollback are all unchanged.
+>
+> **Review fix (round 2):** `pendingDismissIds` is GONE, replaced by a monotonic
+> `mutationEpoch`. The set keyed on "is a dismiss in flight *now*", but the
+> hazard is "was this GET issued *before* the dismiss landed": a GET already in
+> flight when Clear all fires resolves after the POST has settled and the set
+> has emptied, so its still-undismissed rows were applied and the whole list
+> resurrected for up to 30s. `poll()` now snapshots `mutationEpoch` before its
+> `await` and discards the response if it moved. The epoch is bumped, before the
+> first `await`, by `handleActivate`, `handleClearAll`, and `markPanelRead` —
+> the last of which had no race protection at all, so the badge could pop back
+> to N. Interaction model, transient-failure convention, and clear-all rollback
+> remain unchanged.
 
 **Files:**
 - Modify: `client/src/api.ts` (append after line 2491)
@@ -767,6 +789,17 @@ git commit -m "feat(notifications): bell navigates on click and clears on demand
 > fires `hashchange` and risks a re-render loop. The TA view needs no guard —
 > its highlight runs in `renderInner`, which only re-runs on the TA's own
 > escalate action.
+>
+> **Review fix (round 2):** the last sentence above was wrong — "only re-runs on
+> the TA's own escalate action" is a narrower trigger, not an absent one.
+> Escalating flag Y while `?flag=X` is still in the URL re-scrolls and re-flashes
+> X. The TA view now carries the same one-shot guard, threaded through
+> `renderInner` as a `HighlightOnce` object created per view instance in
+> `renderTaFlagTriage`. Round 2 also made BOTH views move focus to the matched
+> element (`tabindex="-1"` then `focus({ preventScroll: true })`, before
+> `scrollIntoView`): the outline was visual-only, and after the router's
+> `replaceChildren()` focus sits on `<body>`, so keyboard and screen-reader
+> users had no signal about which row they had been sent to.
 
 **Files:**
 - Modify: `client/src/views/instructor/flags.ts:577-642` and its import block
