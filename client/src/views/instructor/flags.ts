@@ -627,13 +627,29 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     );
   }
 
+  // Review fix (round 1): `renderResults()` — and therefore
+  // `highlightFromQuery()` below — reruns on every background trigger
+  // (`subscribeFlagsChanged`, tab-focus/visibilitychange, any resolve/notify
+  // action), not just the initial notification landing, and nothing ever
+  // clears `?flag=`/`?question=` from the hash. Without a one-shot guard the
+  // instructor gets re-scrolled and re-flashed on every one of those events
+  // for as long as they stay on the URL, even after scrolling away or
+  // mid-edit elsewhere. Set only on a SUCCESSFUL match (not on every call/on
+  // entry): a stale id never matches regardless of when the flag is set, so
+  // gating on entry would only cost us the (harmless, no-op) case of a
+  // genuinely late-arriving match still getting its one highlight.
+  let highlightApplied = false;
+
   /** A notification click lands here with ?flag= or ?question= (see
    * client/src/notification-target.ts). Scroll that group into view and mark
    * it, so the user sees the thing they were notified about rather than the
    * top of an undifferentiated queue. A stale id (flag already resolved and
    * filtered out) simply highlights nothing -- being on the right page is
-   * still the right outcome. */
+   * still the right outcome. Runs at most once per page load (see
+   * `highlightApplied` above) so later background re-renders don't re-scroll
+   * the instructor back to a group they've since navigated away from. */
   function highlightFromQuery(): void {
+    if (highlightApplied) return;
     const query = currentQuery();
     const flagId = query.get('flag');
     const questionId = query.get('question');
@@ -647,6 +663,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     );
     if (!match) return;
 
+    highlightApplied = true;
     for (const group of groups) group.classList.remove('flag-group--highlight');
     match.classList.add('flag-group--highlight');
     match.scrollIntoView({ behavior: 'smooth', block: 'center' });
