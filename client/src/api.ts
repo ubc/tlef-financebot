@@ -2471,6 +2471,10 @@ export interface AppNotification {
   refType?: string;
   refId?: string;
   readAt?: string;
+  /** Set once the recipient dismisses this notification (click or "Clear all").
+   * Returned by the dismiss endpoints; never present on the bell's poll list,
+   * which filters dismissed documents out server-side. */
+  dismissedAt?: string;
   createdAt: string;
 }
 

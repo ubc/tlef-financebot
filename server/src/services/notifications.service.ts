@@ -188,13 +188,13 @@ export async function registerNotificationJobs(): Promise<void> {
   await scheduleRecurring(DAILY_SUMMARY_JOB, '24 hours');
 }
 
-// --- Routes surface: list / mark-read / mark-all-read -----------------------
+// --- Routes surface: list / mark-read / mark-all-read / dismiss / dismiss-all
 // Kept here (rather than in notifications.routes.ts) per routes/AGENTS.md:
 // "No database or SDK calls directly in a route." Every query below is
 // scoped by the CALLER-SUPPLIED puid — notifications.routes.ts is
 // responsible for passing the AUTHENTICATED user's own puid, never one taken
-// from the request body/params, so a user can never read or mark-read
-// another user's notifications.
+// from the request body/params, so a user can never read, mark-read, or
+// dismiss another user's notifications.
 
 export async function listNotifications(
   puid: string,

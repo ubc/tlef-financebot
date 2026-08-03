@@ -14,11 +14,12 @@ import {
 import type { Notification } from '../types/domain';
 
 // The signed-in user's own in-app notifications (§4.3, §9.1) — poll target,
-// mark-read, mark-all-read. Deliberately NOT course-scoped by URL: every
-// route here operates on `req.user!.puid` only, so a user can never read or
-// mark-read another user's notifications (ensureApiAuthenticated() is
-// sufficient; there is no course-role guard to apply since there is no
-// course-scoped resource in the URL). See routes/AGENTS.md.
+// mark-read, mark-all-read, dismiss, dismiss-all. Deliberately NOT
+// course-scoped by URL: every route here operates on `req.user!.puid` only,
+// so a user can never read, mark-read, or dismiss another user's
+// notifications (ensureApiAuthenticated() is sufficient; there is no
+// course-role guard to apply since there is no course-scoped resource in the
+// URL). See routes/AGENTS.md.
 export const notificationsRouter = Router();
 
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
