@@ -37,6 +37,15 @@ function navigate(path: string): void {
   window.location.hash = path;
 }
 
+/** Visible label paired to its control via `for`/`id` — the same helper
+ * `views/instructor/courses.ts` and `exam-templates.ts` use. A `for`/`id` pair
+ * gives the field one accessible name (the visible text) instead of the
+ * mismatch you get from an unpaired `aria-label` next to a visible label that
+ * says something else, and it makes clicking the label focus the control. */
+function fieldLabel(text: string, htmlFor: string): HTMLElement {
+  return el('label', { class: 'form-field__label', for: htmlFor, text });
+}
+
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 
 const SUGGESTION_STATUS_VARIANT: Record<QuestionSuggestion['status'], 'pending' | 'approved' | 'archived'> = {
@@ -65,10 +74,10 @@ function suggestPanel(
 
   const stemInput = el('textarea', {
     class: 'input input--area', rows: '5', text: original.stem,
-    'aria-label': 'Suggested stem',
+    id: 'ta-question-suggest-stem',
   }) as HTMLTextAreaElement;
 
-  const difficultyInput = el('select', { class: 'input', 'aria-label': 'Suggested difficulty' },
+  const difficultyInput = el('select', { class: 'input', id: 'ta-question-suggest-difficulty' },
     ...DIFFICULTIES.map((level) => el('option', {
       value: level,
       text: level,
@@ -112,9 +121,9 @@ function suggestPanel(
 
   return el('section', { class: 'card stack' },
     el('h2', { class: 'section-title', text: 'Suggest an edit' }),
-    el('label', { class: 'form-field__label', text: 'Stem' }),
+    fieldLabel('Stem', stemInput.id),
     stemInput,
-    el('label', { class: 'form-field__label', text: 'Difficulty' }),
+    fieldLabel('Difficulty', difficultyInput.id),
     difficultyInput,
     hint,
     el('div', { class: 'cluster' }, submit, status),
@@ -156,7 +165,7 @@ function notesPanel(detail: QuestionDetail): HTMLElement {
   const status = el('span', { 'aria-live': 'polite' });
   const noteInput = el('textarea', {
     class: 'input input--area', rows: '3', maxlength: '2000',
-    'aria-label': 'Internal note', placeholder: 'Optional note for instructors and other TAs. Students cannot see this.',
+    id: 'ta-question-note', placeholder: 'Optional note for instructors and other TAs. Students cannot see this.',
   }) as HTMLTextAreaElement;
   const notesList = el('div', { class: 'stack stack--sm' });
 
@@ -192,7 +201,7 @@ function notesPanel(detail: QuestionDetail): HTMLElement {
   return el('section', { class: 'card stack' },
     el('h2', { class: 'section-title', text: 'Internal note' }),
     notesList,
-    el('label', { class: 'form-field__label', text: 'Add a note' }),
+    fieldLabel('Add a note', noteInput.id),
     noteInput,
     el('div', { class: 'cluster' },
       el('button', {
@@ -224,13 +233,13 @@ function escalatePanel(detail: QuestionDetail): HTMLElement {
   const status = el('span', { 'aria-live': 'polite' });
   const noteInput = el('textarea', {
     class: 'input input--area', rows: '2', maxlength: '2000',
-    'aria-label': 'Escalation note', placeholder: 'Optional note for the instructor about your concern.',
+    id: 'ta-question-escalate-note', placeholder: 'Optional note for the instructor about your concern.',
   }) as HTMLTextAreaElement;
 
   return el('section', { class: 'card stack' },
     el('h2', { class: 'section-title', text: 'Escalate to instructor' }),
     el('p', { class: 'muted', text: 'Raises a flag for the instructor to resolve. Use this for anything that needs their attention beyond a suggested edit.' }),
-    el('label', { class: 'form-field__label', text: 'Note (optional)' }),
+    fieldLabel('Note (optional)', noteInput.id),
     noteInput,
     el('div', { class: 'cluster' },
       el('button', {
