@@ -83,4 +83,3 @@ build:                        passed
 - [x] Admin operations pass WCAG A/AA axe scans.
 - [x] New layout regression test creates and cleans its own fixture.
 - [x] Manual test tutorial covers every production persona and feature family.
-

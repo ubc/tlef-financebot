@@ -394,4 +394,3 @@ Does it change live student data? yes/no
 - P1：主闭环无法完成、按钮不可达、永久 Processing、错误发布。
 - P2：手机裁切、错误提示不清、重要状态缺失、WCAG failure。
 - P3：间距、文案、非阻断视觉一致性。
-
