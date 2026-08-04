@@ -33,7 +33,8 @@ import { createQuestion } from '../../server/src/services/questions.service';
 // phase doc actually requires:
 //   student    — question view (KaTeX + table), feedback under BOTH strategies,
 //                Review Book, exam attempt, exam results
-//   instructor — dashboard, review queue, bank, analytics
+//   instructor — course list, dashboard, review queue, bank, analytics
+//   admin      — user directory, capability matrix, platform settings
 
 const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
@@ -228,6 +229,10 @@ test.describe('a11y across the signed-in surfaces', () => {
     const context = await browser.newContext({ storageState: AUTH_FILE });
     const page = await context.newPage();
     try {
+      await page.goto('/#/instructor/courses');
+      await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
+      await expectNoViolations(page, 'instructor course list');
+
       await page.goto(`/#/instructor/course/${courseId}`);
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
@@ -316,5 +321,35 @@ test.describe('a11y across the signed-in surfaces', () => {
     await expect(page).toHaveURL(/results/, { timeout: 15_000 });
     await expect(page.locator('.exam-score-card')).toBeVisible();
     await expectNoViolations(page, 'student exam results');
+  });
+
+  test('Phase 3 Admin operations have no WCAG A/AA violations', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: AUTH_FILE });
+    const page = await context.newPage();
+    const me = await context.request.get('/api/auth/me');
+    const auth = (await me.json()) as { user?: { puid: string } };
+    const puid = auth.user?.puid ?? '';
+    expect(puid).toBeTruthy();
+
+    await connectMongo();
+    const user = await usersCol().findOne({ puid });
+    expect(user).toBeTruthy();
+    const originalIsAdmin = user?.isAdmin ?? false;
+    await usersCol().updateOne({ puid }, { $set: { isAdmin: true } });
+
+    try {
+      for (const route of [
+        { path: '/#/admin/users', heading: 'User Directory' },
+        { path: '/#/admin/capabilities', heading: 'Capability Matrix' },
+        { path: '/#/admin/platform-settings', heading: 'Platform Settings' },
+      ]) {
+        await page.goto(route.path);
+        await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
+        await expectNoViolations(page, `admin ${route.heading}`);
+      }
+    } finally {
+      await usersCol().updateOne({ puid }, { $set: { isAdmin: originalIsAdmin } });
+      await context.close();
+    }
   });
 });
