@@ -601,14 +601,14 @@ describe('openFlags / isGroupOpen', () => {
     const [group] = groupFlags([
       flag({ id: 'f1', state: 'open' }),
       flag({ id: 'f2', state: 'escalated' }),
-      flag({ id: 'f3', state: 'resolved' }),
+      flag({ id: 'f3', state: 'resolved-corrected' }),
     ]);
     expect(openFlags(group).map((f) => f.id)).toEqual(['f1', 'f2']);
     expect(isGroupOpen(group)).toBe(true);
   });
 
   it('is closed when every flag is resolved', () => {
-    const [group] = groupFlags([flag({ state: 'resolved' })]);
+    const [group] = groupFlags([flag({ state: 'resolved-corrected' })]);
     expect(isGroupOpen(group)).toBe(false);
   });
 });
@@ -617,7 +617,7 @@ describe('sortGroups', () => {
   it('puts open groups before resolved ones, newest first within each', () => {
     const groups = groupFlags([
       flag({ id: 'old-open', questionVersionId: 'v1', createdAt: '2026-07-01T00:00:00.000Z' }),
-      flag({ id: 'new-resolved', questionVersionId: 'v2', state: 'resolved', createdAt: '2026-08-02T00:00:00.000Z' }),
+      flag({ id: 'new-resolved', questionVersionId: 'v2', state: 'resolved-corrected', createdAt: '2026-08-02T00:00:00.000Z' }),
       flag({ id: 'new-open', questionVersionId: 'v3', createdAt: '2026-08-01T00:00:00.000Z' }),
     ]);
     expect(sortGroups(groups).map((g) => g.flags[0].id)).toEqual(['new-open', 'old-open', 'new-resolved']);
