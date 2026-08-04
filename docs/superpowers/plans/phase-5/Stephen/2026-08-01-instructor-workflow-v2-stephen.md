@@ -41,6 +41,19 @@ backed by one authoritative aggregate contract.
 - [x] Commit, update the shared/core checkboxes and Stephen status, then run
   `npm run sync-plans -- Stephen`.
 
+## UI and workflow hardening follow-up — 2026-08-03
+
+- [x] Sync and preserve Saurav's latest shared plan output before editing.
+- [x] Audit Admin, Instructor, Student, and TA routes at desktop and 390px.
+- [x] Restore the missing shared card/cluster/checkbox layout contracts.
+- [x] Rebuild Admin User Directory, Capability Matrix, and Platform Settings
+  information hierarchy and responsive behaviour.
+- [x] Convert Bank, Review Queue, and Coverage tables to phone-safe cards.
+- [x] Fix Topic header and LO progress-card mobile reflow.
+- [x] Add populated responsive workflow regression and Phase 3 Admin axe scans.
+- [x] Publish a full manual feature-test tutorial and UI audit report.
+- [x] Run lint, typecheck, build, Jest, Playwright, and axe.
+
 ## Later tasks
 
 After this slice is clean: LO Content Studio, unified Action Inbox,
