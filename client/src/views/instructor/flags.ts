@@ -40,6 +40,7 @@ import {
   byCreatedAtDesc,
   groupFlags,
   isGroupOpen,
+  latestEscalation,
   openFlags,
   sortGroups,
   type FlagGroup,
@@ -78,6 +79,20 @@ const RESOLUTION_VARIANT: Record<ResolveAction, BadgeVariant> = {
   correct: 'approved',
   archive: 'archived',
   clear: 'neutral',
+};
+
+/** Copy for the "TA recommends" line on an escalated group (see
+ * `latestEscalation` below) — deliberately its own map rather than
+ * `RESOLUTION_LABEL.replace('Resolved: ', '')`: that map's values ("Resolved:
+ * corrected", "…archived", "…cleared") describe a completed instructor
+ * action, so stripping the prefix leaves a past-tense fragment ("TA
+ * recommends: corrected") that reads like the TA already did the thing
+ * rather than suggesting it. This map uses an imperative phrase so the
+ * sentence reads as a recommendation still awaiting the instructor. */
+const ESCALATION_RECOMMENDATION_LABEL: Record<ResolveAction, string> = {
+  correct: 'Correct the question',
+  archive: 'Archive the question',
+  clear: 'Clear the flag',
 };
 
 /** The most recent resolution action across the group's resolved flags — a
@@ -537,9 +552,19 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     const topicLo = group.question ? topicLoLabel(tree, group.question.loIds, group.question.themeIds) : '—';
     const open = isGroupOpen(group);
     const resolutionAction = latestResolutionAction(group);
+    // Only meaningful while the group is still open — once an instructor
+    // resolves it, the resolution badge below takes over regardless of
+    // whether a TA escalation preceded it. `flag.taRecommendation` has always
+    // been on the wire (`escalateFlag` in tas.service.ts persists it, and
+    // `listFlags` spreads the whole document) but this view never rendered
+    // it, so a TA's triage was invisible to the instructor — this line and
+    // the badge below are that fix.
+    const escalation = open ? latestEscalation(group) : null;
 
     const badge = open
-      ? flagCountBadge(group)
+      ? escalation
+        ? statusBadge('Escalated by TA', 'flag')
+        : flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
 
     const actions = open
@@ -565,6 +590,15 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
         el('p', { class: 'flag-row__topic', text: topicLo }),
         reasonsSummary(group),
         staleVersionNote(group),
+        escalation
+          ? el(
+              'p',
+              { class: 'flag-row__escalation' },
+              el('strong', { text: `TA recommends: ${ESCALATION_RECOMMENDATION_LABEL[escalation.recommendation]}` }),
+              escalation.note ? el('span', { text: ` — "${escalation.note}"` }) : false,
+              el('span', { class: 'muted', text: ` · ${new Date(escalation.at).toLocaleDateString()}` }),
+            )
+          : false,
       ),
       badge,
       actions,

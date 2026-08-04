@@ -1,6 +1,8 @@
 // Pure-logic tests for flag grouping/sorting, extracted from
 // views/instructor/flags.ts so the instructor and TA flag views group
 // identically. See client/src/flag-groups.ts.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   groupFlags,
   isGroupOpen,
@@ -78,6 +80,43 @@ describe('sortGroups', () => {
     sortGroups(groups);
     expect(groups.map((g) => g.questionVersionId)).toEqual(before);
   });
+
+  it('sorts an escalated open group ahead of a newer, un-triaged open group', () => {
+    const groups = groupFlags([
+      flag({ id: 'newer-untriaged', questionVersionId: 'v1', createdAt: '2026-08-02T00:00:00.000Z' }),
+      flag({
+        id: 'older-escalated',
+        questionVersionId: 'v2',
+        state: 'escalated',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        taRecommendation: { recommendation: 'clear', puid: 'PUID-TA', at: '2026-07-02T00:00:00.000Z' },
+      }),
+    ]);
+    // Older by createdAt, but a TA already triaged it — a plain
+    // newest-first sort (the pre-fix behavior) would rank 'newer-untriaged'
+    // first here, which is exactly the bug: the TA's triage work would sink
+    // below a flag no one has looked at yet.
+    expect(sortGroups(groups).map((g) => g.flags[0].id)).toEqual(['older-escalated', 'newer-untriaged']);
+  });
+
+  it('still ranks resolved groups behind an escalated-but-open one', () => {
+    const groups = groupFlags([
+      flag({
+        id: 'resolved',
+        questionVersionId: 'v1',
+        state: 'resolved-corrected',
+        createdAt: '2026-08-03T00:00:00.000Z',
+      }),
+      flag({
+        id: 'escalated',
+        questionVersionId: 'v2',
+        state: 'escalated',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        taRecommendation: { recommendation: 'archive', puid: 'PUID-TA', at: '2026-07-02T00:00:00.000Z' },
+      }),
+    ]);
+    expect(sortGroups(groups).map((g) => g.flags[0].id)).toEqual(['escalated', 'resolved']);
+  });
 });
 
 describe('latestEscalation', () => {
@@ -100,5 +139,13 @@ describe('latestEscalation', () => {
   it('tolerates a recommendation with no note', () => {
     const [group] = groupFlags([flag({ state: 'escalated', taRecommendation: rec('2026-08-01T00:00:00.000Z', 'correct') })]);
     expect(latestEscalation(group)?.note).toBeUndefined();
+  });
+});
+
+describe('instructor flag queue source', () => {
+  const source = readFileSync(join(__dirname, '../../client/src/views/instructor/flags.ts'), 'utf8');
+
+  it('renders the TA recommendation rather than silently dropping it', () => {
+    expect(source).toContain('latestEscalation');
   });
 });

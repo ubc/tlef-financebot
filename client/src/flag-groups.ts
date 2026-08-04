@@ -43,13 +43,24 @@ export function byCreatedAtDesc(a: Flag, b: Flag): number {
   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
-/** Unresolved groups first (most recently flagged first within that set),
- * then resolved groups (most recently flagged first). */
+/** Unresolved groups first, then resolved groups. Within the unresolved
+ * partition, a group a TA has already escalated (see `latestEscalation`
+ * below) sorts ahead of one no one has triaged yet, regardless of which is
+ * newer — that's the whole point of escalating: it's supposed to reach the
+ * top of the instructor's queue, not wait behind a same-day flag nobody has
+ * looked at. Everything else is most-recently-flagged-first within its
+ * partition (escalated-vs-escalated, un-triaged-vs-un-triaged, and the
+ * resolved partition, none of which distinguish escalation). */
 export function sortGroups(groups: FlagGroup[]): FlagGroup[] {
   return [...groups].sort((a, b) => {
     const aOpen = isGroupOpen(a);
     const bOpen = isGroupOpen(b);
     if (aOpen !== bOpen) return aOpen ? -1 : 1;
+    if (aOpen) {
+      const aEscalated = latestEscalation(a) !== null;
+      const bEscalated = latestEscalation(b) !== null;
+      if (aEscalated !== bEscalated) return aEscalated ? -1 : 1;
+    }
     const aLatest = [...a.flags].sort(byCreatedAtDesc)[0];
     const bLatest = [...b.flags].sort(byCreatedAtDesc)[0];
     return byCreatedAtDesc(aLatest, bLatest);
