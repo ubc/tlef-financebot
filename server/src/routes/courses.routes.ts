@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { ensureApiAuthenticated, ensurePlatformInstructor } from '../components/auth';
+import { ensureApiAuthenticated, ensureCapability, ensurePlatformInstructor } from '../components/auth';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
@@ -18,6 +18,7 @@ import {
   archiveLo,
   getLoCourseId,
   getCourseTree,
+  getCourseOutline,
   publishChecklist,
   setPublished,
   archiveCourse,
@@ -154,6 +155,20 @@ coursesRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await getCourseTree(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/** GET /api/courses/:courseId/outline -> { themes: [{ _id, name, order, los: [{ _id, name, order }] }] }.
+ * TA-accessible subset of `GET /api/courses/:courseId` — theme/LO names and
+ * order only, none of the course record's registrationCode/term/autoPause/
+ * feedbackStrategy fields. `ensureCapability` performs its own authentication
+ * check, so no `ensureApiAuthenticated()` precedes it here. */
+coursesRouter.get(
+  '/courses/:courseId/outline',
+  validate({ params: courseIdParams }),
+  ensureCapability('question.review'),
+  async (req, res) => {
+    res.json(await getCourseOutline(new ObjectId(String(req.params.courseId))));
   },
 );
 

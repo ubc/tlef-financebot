@@ -41,6 +41,10 @@ grant attaches to the same PUID-backed User on first SAML login.
 - `POST /api/courses { name, courseCode, section?, term }` → 201 Course
   (platform-Instructor or Admin; faculty affiliation alone is insufficient)
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
+- `GET /api/courses/:courseId/outline` → `{ themes: [{ _id, name, order, los: [{ _id, name, order }] }] }`
+  (capability `question.review` — the TA-accessible subset of the above: theme/LO
+  names and order only, none of the course record's registrationCode, term
+  dates, autoPause, or feedbackStrategy)
 - `PATCH /api/courses/:courseId { name?, courseCode?, section?, term?,
   termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
 - Course responses expose `lifecycle: 'draft'|'published'|'archived'`,
