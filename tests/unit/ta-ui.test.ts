@@ -85,3 +85,17 @@ describe('TA review queue source', () => {
     expect(source).not.toMatch(/'Approve/);
   });
 });
+
+describe('TA question page source', () => {
+  const source = readFileSync(join(__dirname, '../../client/src/views/ta/question-detail.ts'), 'utf8');
+
+  it('never calls an approve-gated API', () => {
+    for (const forbidden of ['editQuestion', 'transitionQuestion', 'resolveTaQuestionSuggestion', 'updateQuestionParams']) {
+      expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it('gates submission on buildSuggestionPatch so empty suggestions cannot be filed', () => {
+    expect(source).toContain('buildSuggestionPatch');
+  });
+});

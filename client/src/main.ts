@@ -59,6 +59,7 @@ import { renderPreseeding } from './views/instructor/preseeding.js';
 import { renderTas } from './views/instructor/tas.js';
 import { renderTaReviewQueue } from './views/ta/review-queue.js';
 import { renderTaFlagTriage } from './views/ta/flag-triage.js';
+import { renderTaQuestionDetail } from './views/ta/question-detail.js';
 import { renderAnalytics } from './views/instructor/analytics.js';
 import { renderStudentProfile } from './views/instructor/student-profile.js';
 import {
@@ -135,6 +136,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
 ];
 
 const TA_ROUTES: Route[] = [
+  { path: '/ta/course/:id/question/:questionId', render: renderTaQuestionDetail },
   { path: '/ta/course/:id/review', render: renderTaReviewQueue },
   { path: '/ta/course/:id/flags', render: renderTaFlagTriage },
 ];
@@ -266,7 +268,10 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
-      reviewLink.classList.toggle('nav__link--active', path.endsWith('/review'));
+      reviewLink.classList.toggle(
+        'nav__link--active',
+        path.endsWith('/review') || path.includes('/question/'),
+      );
       flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
       shell.classList.remove('is-open');
       document.title = viewAs ? `TA View · ${APP.name}` : `Teaching Assistant · ${APP.name}`;
