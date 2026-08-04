@@ -3548,10 +3548,15 @@ button.class-row--link:focus-visible .class-row__title {
 
 .flag-row__topic,
 .flag-row__reason,
-.flag-row__stale {
+.flag-row__stale,
+.flag-row__escalation {
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.flag-row__escalation strong {
+  color: var(--text);
 }
 
 .flag-test-badge {
@@ -3636,6 +3641,21 @@ button.class-row--link:focus-visible .class-row__title {
   align-items: center;
   gap: 0.4rem;
   justify-self: end;
+}
+
+/* TA flag triage's per-group recommendation form (select + note + escalate
+   button) needs to stack rather than sit in a single row like the
+   instructor queue's plain button cluster above. */
+.flag-row__actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  justify-self: stretch;
+  min-width: 14rem;
+}
+
+.flag-row__actions--stack .form-field__label {
+  margin-bottom: -0.2rem;
 }
 
 .flag-row__correctness {
