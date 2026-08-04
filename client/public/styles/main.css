@@ -3445,6 +3445,13 @@ button.class-row--link:focus-visible .class-row__title {
   border-bottom: none;
 }
 
+/* TA queue row: 5 columns — no select checkbox (the instructor row's leading
+   1.75rem column), otherwise the same Question/Type-LO/Agent/Status/Actions
+   layout. */
+.queue-row--ta {
+  grid-template-columns: minmax(220px, 2.4fr) 1.1fr 0.9fr 1fr 1.4fr;
+}
+
 .queue-row--head {
   background: var(--surface-2);
   color: var(--muted);

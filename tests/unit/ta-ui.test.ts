@@ -1,5 +1,7 @@
 // Pure-logic tests for the TA views' shared helpers. DOM-free by design —
 // see client/src/views/ta/ta-ui.ts.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   buildSuggestionPatch,
   pendingSuggestionCount,
@@ -67,5 +69,19 @@ describe('buildSuggestionPatch', () => {
       .toEqual({ difficulty: 'hard' });
     expect(buildSuggestionPatch(original, { stem: 'Define NPV.', difficulty: 'hard' }))
       .toEqual({ stem: 'Define NPV.', difficulty: 'hard' });
+  });
+});
+
+describe('TA review queue source', () => {
+  const source = readFileSync(join(__dirname, '../../client/src/views/ta/review-queue.ts'), 'utf8');
+
+  it('imports no approval or transition API (TAs never get question.approve)', () => {
+    for (const forbidden of ['transitionQuestion', 'bulkTransition', 'editQuestion']) {
+      expect(source).not.toContain(forbidden);
+    }
+  });
+
+  it('renders no Approve control', () => {
+    expect(source).not.toMatch(/'Approve/);
   });
 });
