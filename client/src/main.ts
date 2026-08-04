@@ -170,11 +170,39 @@ function isTa(session: Session): boolean {
   return taCourseIds(session).length > 0;
 }
 
-function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
-  const courseIds = taCourseIds(session);
-  const initialCourseId = /^\/ta\/course\/([^/]+)/.exec(hashPath())?.[1]
-    ? decodeURIComponent(/^\/ta\/course\/([^/]+)/.exec(hashPath())![1])
-    : courseIds[0];
+function taCourseIdFromPath(path: string): string | undefined {
+  const match = /^\/ta\/course\/([^/]+)/.exec(path);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+/**
+ * Set when an INSTRUCTOR is inspecting the TA workspace for one of their own
+ * courses instead of a real TA (a user holding a `ta` courseRole) being in it.
+ *
+ * Unlike the anonymous student preview, this is NOT a sandbox: there is no
+ * parallel `/api/preview/*` surface for the TA endpoints, so the views here
+ * read and write the course's real review queue and flags. What it does
+ * faithfully reproduce is the TA's reduced ACTION SURFACE, because that
+ * reduction lives in the views themselves (views/ta/* offer suggest/annotate/
+ * escalate and never approve or resolve) rather than being computed from the
+ * signed-in user's capabilities.
+ *
+ * What it does NOT reproduce is capability-driven DENIAL: the TA endpoints are
+ * gated by `ensureCapability('question.review' | 'flag.triage')`, which an
+ * instructor passes on their own course regardless of how those capabilities
+ * are configured for the `ta` role. A course that has revoked `flag.triage`
+ * from its TAs still shows a working Flag Triage page here.
+ */
+interface TaViewAs {
+  courseId: string;
+  exitHref: string;
+}
+
+function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): RouterHandle {
+  // An instructor in `viewAs` holds no `ta` courseRole, so the session-derived
+  // list is empty — scope the shell to the one course they came in through.
+  const courseIds = viewAs ? [viewAs.courseId] : taCourseIds(session);
+  const initialCourseId = taCourseIdFromPath(hashPath()) ?? courseIds[0];
   const shell = el('div', { class: 'app-shell' });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Teaching assistant' });
   const reviewLink = el('a', { class: 'nav__link', text: 'Review Queue' }) as HTMLAnchorElement;
@@ -199,7 +227,7 @@ function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
   );
   const aside = el('aside', { class: 'sidebar sidebar--instructor' },
     el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
-    el('span', { class: 'instructor-pill', text: 'TEACHING ASSISTANT' }),
+    el('span', { class: 'instructor-pill', text: viewAs ? 'TA VIEW' : 'TEACHING ASSISTANT' }),
     nav,
     session.user ? el('div', { class: 'sidebar__foot', text: displayName(session.user) }) : false,
   );
@@ -211,7 +239,15 @@ function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
     }, '≡'),
     el('span', { class: 'topbar__title', text: 'TA Workspace' }),
     el('div', { class: 'topbar__right' },
+      // Deliberately spells out "live data" — this is not the student
+      // preview's sandbox, and an escalation raised from here is real.
+      viewAs
+        ? el('span', { class: 'preview-mode-label', text: 'Viewing as TA · live course data' })
+        : false,
       createNotificationBell('ta'), createThemeToggle(),
+      viewAs
+        ? el('a', { class: 'btn btn--ghost btn--sm', href: viewAs.exitHref }, 'Exit TA View')
+        : false,
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
   );
@@ -226,15 +262,14 @@ function buildTaShell(root: HTMLElement, session: Session): RouterHandle {
     outlet,
     fallback: `/ta/course/${encodeURIComponent(initialCourseId)}/review`,
     onNavigate: (path) => {
-      const match = /^\/ta\/course\/([^/]+)/.exec(path);
-      const courseId = match ? decodeURIComponent(match[1]) : initialCourseId;
+      const courseId = taCourseIdFromPath(path) ?? initialCourseId;
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
       reviewLink.classList.toggle('nav__link--active', path.endsWith('/review'));
       flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
       shell.classList.remove('is-open');
-      document.title = `Teaching Assistant · ${APP.name}`;
+      document.title = viewAs ? `TA View · ${APP.name}` : `Teaching Assistant · ${APP.name}`;
     },
   });
 }
@@ -638,14 +673,28 @@ function buildPreviewStudentShell(
   });
 }
 
-type ShellMode = 'landing' | 'instructor' | 'ta' | 'student' | 'preview';
+type ShellMode = 'landing' | 'instructor' | 'ta' | 'ta-view' | 'student' | 'preview';
 let activeRouter: RouterHandle | undefined;
 let activeMode: ShellMode | undefined;
 let activeSession: Session | undefined;
 
+/**
+ * `ta-view` is kept distinct from `ta` rather than folded into it with a
+ * boolean, because the hashchange listener rebuilds the shell only when the
+ * MODE string changes. Sharing one mode would leave the "TA VIEW" pill and
+ * Exit button stale when a hand-typed URL moves between a course the user
+ * really TAs and one they only instruct.
+ */
 function shellMode(session: Session, path: string): ShellMode {
   if (!session.authenticated) return 'landing';
   if (isInstructor(session) && previewCourseIdFromPath(path)) return 'preview';
+  const taCourseId = taCourseIdFromPath(path);
+  // A real `ta` grant on THIS course wins over an instructor grant elsewhere,
+  // so a user who both instructs one course and TAs another gets the genuine
+  // TA shell (no Exit button back to a dashboard they cannot open) on the
+  // course they actually TA.
+  if (taCourseId && taCourseIds(session).includes(taCourseId)) return 'ta';
+  if (taCourseId && isInstructor(session)) return 'ta-view';
   if (isInstructor(session)) return 'instructor';
   return isTa(session) ? 'ta' : 'student';
 }
@@ -678,6 +727,16 @@ async function bootstrap(): Promise<void> {
     const courseId = previewCourseIdFromPath(hashPath());
     if (courseId) {
       activeRouter = buildPreviewStudentShell(root, session, courseId);
+      return;
+    }
+  }
+  if (activeMode === 'ta-view') {
+    const courseId = taCourseIdFromPath(hashPath());
+    if (courseId) {
+      activeRouter = buildTaShell(root, session, {
+        courseId,
+        exitHref: `#/instructor/course/${encodeURIComponent(courseId)}`,
+      });
       return;
     }
   }

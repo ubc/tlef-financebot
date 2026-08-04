@@ -174,6 +174,12 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         '/preview/course/:id',
         () => startAnonymousPreview(courseId),
       ),
+      quickActionCard(
+        courseId,
+        'View as TA',
+        'Inspect the TA workspace for this course · live data, not a sandbox',
+        '/ta/course/:id/review',
+      ),
       quickActionCard(courseId, 'Student Analytics', 'View class performance and engagement', null),
     );
 
