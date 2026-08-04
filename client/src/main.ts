@@ -278,6 +278,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         {
           class: `nav__link${item.disabled ? ' nav__link--disabled' : ''}`,
           href: '#',
+          'aria-disabled': item.disabled ? 'true' : undefined,
           onclick: (e: Event) => {
             // No resolved destination yet (out-of-scope item, or a
             // course-scoped item before any course is selected) — the '#'
@@ -351,6 +352,13 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         const active = isNavItemActive(item, path);
         link.classList.toggle('nav__link--active', active);
         link.classList.toggle('nav__link--disabled', !href);
+        if (href) {
+          link.removeAttribute('aria-disabled');
+          link.removeAttribute('tabindex');
+        } else {
+          link.setAttribute('aria-disabled', 'true');
+          link.setAttribute('tabindex', '-1');
+        }
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }

@@ -138,6 +138,11 @@ commonly need:
   default layers. Question/flag teaching-team routes use capability guards,
   while TA approval and flag resolution remain hard-denied regardless of
   stored configuration.
+- Phase 5 Instructor Workflow v2 has started with a Course Launch Cockpit: one
+  non-persisted aggregate read model turns course readiness, content health,
+  review backlog, active flags, and engagement into a priority-ordered action
+  queue with direct destinations. The Instructor shell now passes its current
+  axe WCAG A/AA scans.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage
