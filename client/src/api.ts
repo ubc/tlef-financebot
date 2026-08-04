@@ -2393,13 +2393,26 @@ export interface RemediationReport {
   examAttempts: number;
 }
 
+export interface TaRecommendation {
+  recommendation: 'correct' | 'archive' | 'clear';
+  note?: string;
+  puid: string;
+  at: string;
+}
+
 export interface Flag {
   id: string;
   courseId: string;
   questionId: string;
   questionVersionId: string; // the version this flag was raised against (§6.2) — may differ from question.currentVersionId after a later edit
   puid: string;
-  source?: 'student' | 'instructor-preview-test';
+  source?: 'student' | 'instructor-preview-test' | 'ta';
+  raisedBy?: 'student' | 'ta';
+  /** Set by `POST /api/flags/:flagId/escalate` (tas.service.ts's
+   * `escalateFlag`). Present on every `listFlags`/`listTaFlags` row for an
+   * escalated flag — the server has always sent it; this type omitted it,
+   * which is why the instructor queue never showed it. */
+  taRecommendation?: TaRecommendation;
   reason?: string;
   state: FlagState;
   // `correctnessAffecting` (Task 6 review fix): persisted on the resolution
