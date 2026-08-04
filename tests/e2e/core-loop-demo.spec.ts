@@ -192,8 +192,8 @@ test.describe('Phase 1 exit — core loop demo', () => {
       await test.step('creates a course', async () => {
         await instructor.getByRole('button', { name: '+ Create course' }).click();
         await expect(instructor.getByRole('heading', { name: 'Create Course' })).toBeVisible();
-        await instructor.locator('#course-name').fill(COURSE_NAME);
-        await instructor.locator('#course-code').fill(COURSE_CODE);
+        await instructor.locator('#course-identity').fill(`${COURSE_CODE} - ${COURSE_NAME}`);
+        await instructor.locator('#course-section').fill('101');
         const yearSelect = instructor.locator('#course-academic-year');
         const termSelect = instructor.locator('#course-term');
         const academicYear = String(await yearSelect.locator('option').first().getAttribute('value'));
@@ -290,7 +290,7 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await expect(instructor.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
         await instructor.getByRole('button', { name: 'Publish Course', exact: false }).click();
         await expect(instructor.locator('.page-header__subtitle')).toContainText(
-          `${COURSE_CODE} · ${selectedTerm} · Published`,
+          `${COURSE_CODE} · Section 101 · ${selectedTerm} · Published`,
         );
 
         const course = (await (await instructor.request.get(`/api/courses/${courseId}`)).json()) as {

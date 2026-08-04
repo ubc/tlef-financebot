@@ -188,8 +188,24 @@ function fieldLabel(text: string, htmlFor: string): HTMLElement {
   return el('label', { class: 'form-field__label', for: htmlFor, text });
 }
 
-/** Create Course (N2): name/code/term form, with a non-blocking client-side
- * duplicate-term callout (see `findDuplicateCourse`). */
+export interface CourseIdentity {
+  courseCode: string;
+  name: string;
+}
+
+/** Split the instructor-facing combined label without changing the API's
+ * normalized courseCode/name contract. Requiring whitespace around the
+ * separator keeps hyphenated course codes and titles intact. */
+export function parseCourseIdentity(value: string): CourseIdentity | undefined {
+  const match = /^(.+?)\s+[-–—]\s+(.+)$/.exec(value.trim());
+  if (!match) return undefined;
+  const courseCode = match[1]?.trim() ?? '';
+  const name = match[2]?.trim() ?? '';
+  return courseCode && name ? { courseCode, name } : undefined;
+}
+
+/** Create Course (N2): combined course identity/section/term form, with a
+ * non-blocking client-side duplicate-term callout (see `findDuplicateCourse`). */
 export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   const user = getSession().user;
   if (!user?.isAdmin && !user?.platformInstructor) {
@@ -212,9 +228,20 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   );
   mount(outlet, root);
 
-  const nameInput = el('input', { class: 'input', type: 'text', id: 'course-name', required: 'required' }) as HTMLInputElement;
-  const codeInput = el('input', { class: 'input', type: 'text', id: 'course-code', required: 'required' }) as HTMLInputElement;
-  const sectionInput = el('input', { class: 'input', type: 'text', id: 'course-section' }) as HTMLInputElement;
+  const identityInput = el('input', {
+    class: 'input',
+    type: 'text',
+    id: 'course-identity',
+    placeholder: 'COMM 298 - Introduction to Finance',
+    required: 'required',
+    'aria-describedby': 'course-identity-help',
+  }) as HTMLInputElement;
+  const sectionInput = el('input', {
+    class: 'input',
+    type: 'text',
+    id: 'course-section',
+    placeholder: '101',
+  }) as HTMLInputElement;
   // Academic year and term are both fixed vocabularies — UBC runs exactly
   // four teaching terms per academic year — so they are selects, not free
   // text. They are stored combined into the single `term` string the API
@@ -253,7 +280,8 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   let existingCourses: InstructorCourse[] = [];
 
   const updateDuplicateCallout = (): void => {
-    const duplicate = findDuplicateCourse(existingCourses, codeInput.value, currentTerm());
+    const identity = parseCourseIdentity(identityInput.value);
+    const duplicate = findDuplicateCourse(existingCourses, identity?.courseCode ?? '', currentTerm());
     if (!duplicate) {
       duplicateSlot.replaceChildren();
       return;
@@ -279,7 +307,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     );
   };
 
-  codeInput.addEventListener('input', updateDuplicateCallout);
+  identityInput.addEventListener('input', updateDuplicateCallout);
   academicYearInput.addEventListener('change', updateDuplicateCallout);
   termInput.addEventListener('change', updateDuplicateCallout);
 
@@ -296,18 +324,24 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   const submit = async (event: Event): Promise<void> => {
     event.preventDefault();
     errorSlot.replaceChildren();
-    const name = nameInput.value.trim();
-    const courseCode = codeInput.value.trim();
+    const identity = parseCourseIdentity(identityInput.value);
     const section = sectionInput.value.trim();
     // No trim/blank guard on term: both selects always carry one of their
     // generated option values, so it can never arrive empty or padded.
     const term = currentTerm();
-    if (!name || !courseCode) {
-      errorSlot.replaceChildren(errorState('Course name and course code are both required.'));
+    if (!identity) {
+      errorSlot.replaceChildren(
+        errorState('Enter the course as “COMM 298 - Introduction to Finance”.'),
+      );
       return;
     }
     try {
-      const created = await createCourse({ name, courseCode, ...(section ? { section } : {}), term });
+      const created = await createCourse({
+        name: identity.name,
+        courseCode: identity.courseCode,
+        ...(section ? { section } : {}),
+        term,
+      });
       navigate(`/instructor/course/${encodeURIComponent(created._id)}`);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -319,9 +353,18 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     el(
       'form',
       { class: 'form stack', onsubmit: (e: Event) => void submit(e) },
-      el('div', { class: 'form-field' }, fieldLabel('Course name *', 'course-name'), nameInput),
-      el('div', { class: 'form-field' }, fieldLabel('Course code *', 'course-code'), codeInput),
-      el('div', { class: 'form-field' }, fieldLabel('Section', 'course-section'), sectionInput),
+      el(
+        'div',
+        { class: 'form-field' },
+        fieldLabel('Course name *', 'course-identity'),
+        identityInput,
+        el('span', {
+          class: 'form-field__help',
+          id: 'course-identity-help',
+          text: 'Use the format course code - title.',
+        }),
+      ),
+      el('div', { class: 'form-field' }, fieldLabel('Course section', 'course-section'), sectionInput),
       el(
         'div',
         { class: 'term-fields' },
