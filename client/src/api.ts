@@ -915,6 +915,31 @@ export async function getCourseTree(courseId: string): Promise<CourseTree> {
   return { course, themes };
 }
 
+export interface CourseOutlineLo {
+  _id: string;
+  name: string;
+  order: number;
+}
+
+export interface CourseOutlineTheme {
+  _id: string;
+  name: string;
+  order: number;
+  los: CourseOutlineLo[];
+}
+
+export interface CourseOutline {
+  themes: CourseOutlineTheme[];
+}
+
+/** GET /api/courses/:courseId/outline -> theme/LO names + order only. The
+ * TA-accessible subset of `getCourseTree` (which is instructor-only): a
+ * `question.review` holder can call this, and it carries none of the course
+ * record. */
+export function getCourseOutline(courseId: string): Promise<CourseOutline> {
+  return request<CourseOutline>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
+}
+
 /** PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? } -> Course. */
 export function updateCourse(
   courseId: string,
