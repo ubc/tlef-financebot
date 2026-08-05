@@ -5484,3 +5484,58 @@ button.class-row--link:focus-visible .class-row__title {
     animation: none;
   }
 }
+
+/* Derived values on the parameterization panel (design spec 2026-08-05): the
+   correct answer and every distractor, each computed from the slots above.
+   Four-up grid matching .param-slots' conventions, collapsing on narrow
+   screens like .exam-template-fields does. */
+.derived-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.derived-values__head,
+.derived-values__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 2.5fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.derived-values__head {
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+/* The single signal telling an instructor whether students can see this
+   question — absent proof is the numeric gate's refusal condition. Uses the
+   existing solid badge fills, which are chosen for AA contrast on any
+   surface, rather than introducing new colour tokens. */
+.verification-banner {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.verification-banner--ok {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.verification-banner--fail {
+  background: var(--err-bg);
+  color: var(--err-fg);
+}
+
+@media (max-width: 640px) {
+  .derived-values__head {
+    display: none;
+  }
+
+  .derived-values__row {
+    grid-template-columns: 1fr;
+  }
+}

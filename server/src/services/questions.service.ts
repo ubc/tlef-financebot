@@ -24,7 +24,8 @@ import type {
 // server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
-type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript';
+type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
+  | 'derivedValues' | 'numericKind';
 
 /** Enforces MCQ/T-F option shape (PRD §9.1). T/F wrong-role is coerced, never rejected. */
 function assertOptionInvariants(type: QuestionType, options: QuestionOption[]): QuestionOption[] {
@@ -139,7 +140,17 @@ export async function createQuestion(input: {
  */
 export async function editQuestion(
   questionId: ObjectId,
-  patch: Partial<Pick<QuestionVersion, 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'>> & {
+  // `verification` is deliberately part of the patch surface even though it is
+  // machine-written rather than instructor-authored: a save that fails
+  // verification must be able to write it as `undefined`, actively clearing any
+  // proof the previous version carried. Leaving a stale proof in place would
+  // let the numeric gate keep serving numbers the current formulas no longer
+  // produce (R4).
+  patch: Partial<Pick<
+    QuestionVersion,
+    'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
+    | 'derivedValues' | 'numericKind' | 'verification'
+  >> & {
     loIds?: ObjectId[];
     themeIds?: ObjectId[];
   },
@@ -175,6 +186,14 @@ export async function editQuestion(
     contentPatch.generateScript = patch.generateScript;
     editedFields.push('generateScript');
   }
+  if (patch.derivedValues !== undefined) {
+    contentPatch.derivedValues = patch.derivedValues;
+    editedFields.push('derivedValues');
+  }
+  if (patch.numericKind !== undefined) {
+    contentPatch.numericKind = patch.numericKind;
+    editedFields.push('numericKind');
+  }
 
   const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};
   if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
@@ -204,6 +223,14 @@ export async function editQuestion(
     createdBy: byPuid,
     createdAt: now,
   };
+
+  // R4: a verification proof belongs to the exact content it was computed
+  // over. `next` spreads the PREVIOUS version, so without this the old proof
+  // would ride along through any edit — letting the numeric gate keep serving
+  // numbers the current formulas no longer produce. The caller either supplies
+  // a freshly-computed proof or the question loses the one it had.
+  if (patch.verification !== undefined) next.verification = patch.verification;
+  else delete next.verification;
 
   const { insertedId } = await questionVersionsCol().insertOne(next);
 
