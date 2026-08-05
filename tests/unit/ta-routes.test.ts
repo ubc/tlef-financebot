@@ -131,6 +131,54 @@ describe('TA structural authorization and safe review payloads', () => {
 // regex rejected with 400 "Invalid request." — TA escalation could never have
 // worked. Nothing covered this endpoint, and reproducing it needs a real `ta`
 // courseRole, so it survived until a human tried it.
+// Regression: this route hand-rolled its own projection and omitted `loIds`
+// and `themeIds`, which `BankQuestion` declares as required. The client
+// therefore typed them as present while the wire never carried them, and the
+// TA queue's Topic/LO column threw on `undefined.includes(...)` — the tabs
+// painted their counts, then the row render died, showing "All (7)" over an
+// empty table. It now shares `toBankItem` with the instructor queue so the two
+// cannot drift again.
+describe('TA review queue serialization', () => {
+  beforeEach(() => {
+    jest.mocked(reviewQueue).mockResolvedValue([{
+      _id: questionId,
+      state: 'pending-review',
+      labels: [],
+      loIds: [new ObjectId()],
+      themeIds: [new ObjectId()],
+      current: { stem: 'What is NPV?', type: 'mcq', options: [], difficulty: 'medium' },
+      priority: 1,
+      internalNotes: [],
+    }] as unknown as Awaited<ReturnType<typeof reviewQueue>>);
+  });
+
+  it('carries every field BankQuestion declares, including loIds/themeIds', async () => {
+    const response = await request(makeApp(ta())).get(
+      `/api/courses/${courseId.toHexString()}/ta/review-queue`,
+    );
+
+    expect(response.status).toBe(200);
+    const [item] = response.body;
+    for (const key of ['id', 'state', 'labels', 'loIds', 'themeIds', 'current']) {
+      expect(item[key]).toBeDefined();
+    }
+    expect(Array.isArray(item.loIds)).toBe(true);
+    expect(Array.isArray(item.themeIds)).toBe(true);
+  });
+
+  it('adds the TA-only fields on top of the shared bank shape', async () => {
+    const response = await request(makeApp(ta())).get(
+      `/api/courses/${courseId.toHexString()}/ta/review-queue`,
+    );
+
+    const [item] = response.body;
+    expect(item.priority).toBe(1);
+    expect(item.suggestions).toEqual([]);
+    expect(item.internalNotes).toEqual([]);
+    expect(item.id).toMatch(/^[0-9a-f]{24}$/);
+  });
+});
+
 describe('TA flag list serialization', () => {
   const flagId = new ObjectId();
 

@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { getQuestionCourseId, reviewQueue } from '../services/bank.service';
 import { listFlags } from '../services/flags.service';
 import { toFlagResponse } from './flags.routes';
+import { toBankItem } from './questions.routes';
 import { addQuestionInternalNote, transitionQuestion } from '../services/questions.service';
 import {
   addTa,
@@ -139,11 +140,15 @@ tasRouter.get(
   ensureCapability('question.review'),
   async (req, res) => {
     const items = await reviewQueue(new ObjectId(String(req.params.courseId)));
+    // Built from the SAME `toBankItem` the instructor queue uses, plus the two
+    // TA-only fields. This route used to hand-roll its own projection and
+    // omitted `loIds`/`themeIds` — fields `BankQuestion` declares as required,
+    // so the client typed them as present while the wire never carried them.
+    // Nothing noticed until the TA queue grew a Topic/LO column and
+    // `topicLoLabel` threw on `undefined.includes(...)`, killing the row render
+    // after the tabs had already painted their counts.
     res.json(items.map((item) => ({
-      id: item._id,
-      state: item.state,
-      labels: item.labels,
-      current: item.current,
+      ...toBankItem(item),
       priority: item.priority,
       suggestions: item.suggestions ?? [],
       internalNotes: item.internalNotes,
