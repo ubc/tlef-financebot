@@ -222,7 +222,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
   body.replaceChildren(
     pageHeader(
       'TA Review Queue',
-      `${items.length} question${items.length === 1 ? '' : 's'} awaiting review · Review, suggest, annotate or escalate. Final approval remains instructor-only.`,
+      `${items.length} question${items.length === 1 ? '' : 's'} awaiting review · Review, suggest an edit, or annotate. Final approval remains instructor-only.`,
     ),
     el('div', {}, tabsContainer, controlsContainer, resultsContainer),
   );

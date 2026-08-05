@@ -1,8 +1,15 @@
 // TA Question Page — the destination of the TA Review Queue's Review → button
 // (views/ta/review-queue.ts). This is where the editing-ish work a TA is
 // allowed to do now lives, having been pulled off the queue rows: suggest an
-// edit, add an internal note, escalate to the instructor. The question itself
-// renders strictly read-only.
+// edit and add an internal note. The question itself renders strictly
+// read-only.
+//
+// Escalation is deliberately NOT here. A TA escalates a FLAG, from flag
+// triage (views/ta/flag-triage.ts), where the thing being escalated already
+// exists and carries a student's reason. Raising a brand-new flag straight
+// off a question was a second, near-duplicate path to the same place, and it
+// produced flags with no recommendation attached — which is what made an
+// escalated group render a form that could not act on it.
 //
 // The hard constraint (phase-3 exit criterion): TAs never get approve, reject,
 // or edit, under any configuration. Concretely, this file must never call
@@ -20,7 +27,6 @@ import {
   addTaQuestionNote,
   getCourseOutline,
   getQuestion,
-  proactivelyEscalateTaQuestion,
   suggestTaQuestionEdit,
   type CourseOutline,
   type Difficulty,
@@ -29,7 +35,6 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
-import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -215,45 +220,6 @@ function notesPanel(detail: QuestionDetail): HTMLElement {
   );
 }
 
-/** Proactive escalation — raises a flag for the instructor, so it is confirmed
- * first (same convention as the instructor's Reject & Archive). The TA cannot
- * withdraw an escalation once filed; `confirmDialog` says so up front. */
-async function escalate(detail: QuestionDetail, note: string, status: HTMLElement): Promise<void> {
-  if (!await confirmDialog({
-    title: 'Escalate this question to the instructor?',
-    message: 'This raises a flag on the question for the instructor to resolve. You cannot withdraw it yourself.',
-    confirmLabel: 'Escalate',
-  })) return;
-  try {
-    await proactivelyEscalateTaQuestion(detail.id, 'TA review concern', note);
-    status.textContent = 'Escalated to the instructor.';
-  } catch (error) {
-    status.textContent = error instanceof ApiError ? error.message : (error as Error).message;
-  }
-}
-
-function escalatePanel(detail: QuestionDetail): HTMLElement {
-  const status = el('span', { 'aria-live': 'polite' });
-  const noteInput = el('textarea', {
-    class: 'input input--area', rows: '2', maxlength: '2000',
-    id: 'ta-question-escalate-note', placeholder: 'Optional note for the instructor about your concern.',
-  }) as HTMLTextAreaElement;
-
-  return el('section', { class: 'card stack' },
-    el('h2', { class: 'section-title', text: 'Escalate to instructor' }),
-    el('p', { class: 'muted', text: 'Raises a flag for the instructor to resolve. Use this for anything that needs their attention beyond a suggested edit.' }),
-    fieldLabel('Note (optional)', noteInput.id),
-    noteInput,
-    el('div', { class: 'cluster' },
-      el('button', {
-        class: 'btn btn--danger btn--sm', type: 'button',
-        onclick: () => void escalate(detail, noteInput.value.trim(), status),
-      }, 'Escalate'),
-      status,
-    ),
-  );
-}
-
 /** Read-only question body: rich-text stem, then the options list with the
  * correct option marked. No inputs bound to the live question anywhere in
  * this section — a TA can read the question, never edit it in place. */
@@ -319,7 +285,6 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
     suggestPanel(detail, () => void refresh()),
     suggestionsList(detail.suggestions ?? []),
     notesPanel(detail),
-    escalatePanel(detail),
   );
 }
 

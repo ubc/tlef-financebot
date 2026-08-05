@@ -2243,17 +2243,9 @@ export function escalateTaFlag(
   });
 }
 
-export function proactivelyEscalateTaQuestion(
-  questionId: string,
-  reasonCategory: string,
-  note?: string,
-): Promise<Flag> {
-  return request<Flag>(`/api/questions/${encodeURIComponent(questionId)}/escalate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reasonCategory, note }),
-  });
-}
+// `proactivelyEscalateTaQuestion` (POST /api/questions/:id/escalate) was
+// removed: a TA escalates a FLAG from flag triage, not a bare question. The
+// server route still exists (see docs/api-contract.md) but nothing calls it.
 
 // --- Phase 3: Instructor analytics -----------------------------------------
 
