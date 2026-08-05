@@ -62,13 +62,24 @@ function fieldLabel(text: string, htmlFor: string): HTMLElement {
  *
  * `escalateFlag` matches on `{ _id, state: 'open' }` server-side and throws
  * `invalid-flag-transition` otherwise, so an already-escalated flag in the
- * group is skipped here rather than being sent and failing the whole batch. */
+ * group is skipped here rather than being sent and failing the whole batch.
+ *
+ * A function that sends zero requests must never report success (review
+ * finding 1): a group whose flags are ALL already `state: 'escalated'` —
+ * including the proactive-escalation shape (`state: 'escalated'`, no
+ * `taRecommendation`) that `groupRow` below now keeps the form hidden for —
+ * has no target flags. Before this fix, `targets.length === 0` still fell
+ * through the empty loop to `{ ok: true }`, silently discarding whatever
+ * recommendation and note the TA had just entered. */
 async function escalateGroup(
   group: FlagGroup,
   recommendation: Recommendation,
   note: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const targets = openFlags(group).filter((flag) => flag.state === 'open');
+  if (targets.length === 0) {
+    return { ok: false, error: 'Nothing to escalate — every flag on this question has already been escalated.' };
+  }
   let escalated = 0;
   for (const flag of targets) {
     try {
@@ -117,14 +128,34 @@ function flagCountBadge(group: FlagGroup): HTMLElement {
 
 /** An already-escalated group shows the recommendation back instead of the
  * controls — re-escalating is a no-op server-side, and a TA needs to see what
- * they (or another TA) already told the instructor. */
+ * they (or another TA) already told the instructor.
+ *
+ * Review finding 1(b): a group can be escalated with NO recommendation — the
+ * proactive-escalation shape `proactivelyEscalateQuestion` (tas.service.ts)
+ * produces, `state: 'escalated'` with no `taRecommendation` — in which case
+ * `latestEscalation` returns null even though the group plainly is
+ * escalated. Rendering nothing there (the pre-fix behavior) left the TA with
+ * no indication the question was already escalated. This now falls back to
+ * the flag's own `reason` (built by `proactivelyEscalateQuestion` as
+ * `` `${reasonCategory}: ${note}` ``) so the TA sees what was raised, even
+ * without a recommendation. */
 function escalationSummary(group: FlagGroup): HTMLElement | false {
   const escalation = latestEscalation(group);
-  if (!escalation) return false;
+  if (escalation) {
+    return el('p', { class: 'flag-row__escalation' },
+      el('strong', { text: `Escalated — recommends: ${RECOMMENDATION_LABEL[escalation.recommendation]}` }),
+      escalation.note ? el('span', { text: ` — "${escalation.note}"` }) : false,
+      el('span', { class: 'muted', text: ` · ${new Date(escalation.at).toLocaleDateString()}` }),
+    );
+  }
+  const proactive = group.flags
+    .filter((flag) => flag.state === 'escalated' && !flag.taRecommendation)
+    .sort(byCreatedAtDesc)[0];
+  if (!proactive) return false;
   return el('p', { class: 'flag-row__escalation' },
-    el('strong', { text: `Escalated — recommends: ${RECOMMENDATION_LABEL[escalation.recommendation]}` }),
-    escalation.note ? el('span', { text: ` — "${escalation.note}"` }) : false,
-    el('span', { class: 'muted', text: ` · ${new Date(escalation.at).toLocaleDateString()}` }),
+    el('strong', { text: 'Escalated by a TA — no recommendation recorded' }),
+    proactive.reason?.trim() ? el('span', { text: ` — "${proactive.reason.trim()}"` }) : false,
+    el('span', { class: 'muted', text: ` · ${new Date(proactive.createdAt).toLocaleDateString()}` }),
   );
 }
 
@@ -174,17 +205,22 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
     else stemCell.textContent = '(question content unavailable)';
 
     const topicLo = group.question ? topicLoLabel(outline, group.question.loIds, group.question.themeIds) : '—';
-    const escalation = latestEscalation(group);
 
-    // Any escalation already on the group hides the controls entirely (even
-    // if the group also holds a still-open, never-escalated flag) — the
-    // brief's call: a TA sees their (or another TA's) prior recommendation
-    // rather than a live form inviting a redundant one. `escalateGroup`
-    // itself is separately defensive about mixed open/escalated flags
-    // within a group (it filters to `state === 'open'` before sending), for
-    // whichever group DOES still show controls.
+    // Review finding 1(b): gate the form on whether the group has a flag
+    // `escalateGroup` can actually act on, NOT on `latestEscalation(group)`
+    // (whether a recommendation already exists). Those used to be treated as
+    // equivalent, but a proactive escalation (`proactivelyEscalateQuestion`
+    // in tas.service.ts) creates a flag with `state: 'escalated'` and no
+    // `taRecommendation` — `latestEscalation` returns null for it, so the old
+    // `!escalation` gate rendered a live form over a group with zero `state
+    // === 'open'` flags. `escalateGroup` would then compute an empty targets
+    // list and silently discard whatever the TA entered. Checking for an
+    // open flag directly keeps the form gated to groups it can act on;
+    // `escalationSummary` above covers the read-only cases (recommendation
+    // text, or "escalated, no recommendation yet").
+    const hasOpenFlag = group.flags.some((flag) => flag.state === 'open');
     let actionsCell: HTMLElement | false = false;
-    if (!escalation) {
+    if (hasOpenFlag) {
       const idBase = `flag-${group.questionVersionId}`;
       const recommendationId = `${idBase}-recommendation`;
       const noteId = `${idBase}-note`;
