@@ -49,6 +49,8 @@ import { tasRouter } from '../../server/src/routes/tas.routes';
 import { questionsRouter } from '../../server/src/routes/questions.routes';
 import { getQuestionCourseId, reviewQueue } from '../../server/src/services/bank.service';
 import { listFlags } from '../../server/src/services/flags.service';
+import { escalateFlag, proactivelyEscalateQuestion } from '../../server/src/services/tas.service';
+import { flagsCol } from '../../server/src/components/mongodb/collections';
 import { transitionQuestion } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
@@ -124,13 +126,60 @@ describe('TA structural authorization and safe review payloads', () => {
   });
 });
 
-// Regression: the TA flag list used to return listFlags() raw, so its rows
-// carried Mongo's `_id` while the client's `Flag` type (and every other flag
-// endpoint) uses `id`. The TA flag view read `flag.id` as undefined and
-// escalation posted to /api/flags/undefined/escalate, which the flagId param
-// regex rejected with 400 "Invalid request." — TA escalation could never have
-// worked. Nothing covered this endpoint, and reproducing it needs a real `ta`
-// courseRole, so it survived until a human tried it.
+// Every TA route that returns a document must map Mongo's `_id` to `id`, the
+// convention the client types declare. These three used to return the raw
+// service result. Nothing broke only because every call site discards the
+// return value and refetches — the first caller to read `.id` would have got
+// undefined, which is precisely how the flag-list and review-queue bugs
+// reached a human.
+describe('TA mutation responses use `id`, never a raw `_id`', () => {
+  it('mark-reviewed', async () => {
+    const response = await request(makeApp(ta())).post(
+      `/api/questions/${questionId.toHexString()}/mark-reviewed`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(questionId.toHexString());
+    expect(response.body._id).toBeUndefined();
+  });
+
+  it('flag escalate', async () => {
+    const flagId = new ObjectId();
+    jest.mocked(escalateFlag).mockResolvedValue({
+      _id: flagId, courseId, questionId, questionVersionId: new ObjectId(),
+      puid: 'student-1', state: 'escalated', createdAt: new Date(),
+    } as unknown as Awaited<ReturnType<typeof escalateFlag>>);
+    jest.mocked(flagsCol).mockReturnValue({
+      findOne: jest.fn().mockResolvedValue({ _id: flagId, courseId }),
+    } as unknown as ReturnType<typeof flagsCol>);
+
+    const response = await request(makeApp(ta()))
+      .post(`/api/flags/${flagId.toHexString()}/escalate`)
+      .send({ recommendation: 'archive', note: 'wrong answer key' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(flagId.toHexString());
+    expect(response.body._id).toBeUndefined();
+  });
+
+  it('proactive question escalate', async () => {
+    const flagId = new ObjectId();
+    jest.mocked(proactivelyEscalateQuestion).mockResolvedValue({
+      _id: flagId, courseId, questionId, questionVersionId: new ObjectId(),
+      puid: 'ta:PUID-TA', source: 'ta', raisedBy: 'ta',
+      state: 'escalated', createdAt: new Date(),
+    } as unknown as Awaited<ReturnType<typeof proactivelyEscalateQuestion>>);
+
+    const response = await request(makeApp(ta()))
+      .post(`/api/questions/${questionId.toHexString()}/escalate`)
+      .send({ reasonCategory: 'TA review concern' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.id).toBe(flagId.toHexString());
+    expect(response.body._id).toBeUndefined();
+  });
+});
+
 // Regression: this route hand-rolled its own projection and omitted `loIds`
 // and `themeIds`, which `BankQuestion` declares as required. The client
 // therefore typed them as present while the wire never carried them, and the
@@ -179,6 +228,13 @@ describe('TA review queue serialization', () => {
   });
 });
 
+// Regression: the TA flag list used to return listFlags() raw, so its rows
+// carried Mongo's `_id` while the client's `Flag` type (and every other flag
+// endpoint) uses `id`. The TA flag view read `flag.id` as undefined and
+// escalation posted to /api/flags/undefined/escalate, which the flagId param
+// regex rejected with 400 "Invalid request." — TA escalation could never have
+// worked. Nothing covered this endpoint, and reproducing it needs a real `ta`
+// courseRole, so it survived until a human tried it.
 describe('TA flag list serialization', () => {
   const flagId = new ObjectId();
 

@@ -7,7 +7,7 @@ import { validate } from '../middleware/validate';
 import { getQuestionCourseId, reviewQueue } from '../services/bank.service';
 import { listFlags } from '../services/flags.service';
 import { toFlagResponse } from './flags.routes';
-import { toBankItem } from './questions.routes';
+import { toBankItem, toQuestionResponse } from './questions.routes';
 import { addQuestionInternalNote, transitionQuestion } from '../services/questions.service';
 import {
   addTa,
@@ -162,11 +162,11 @@ tasRouter.post(
   ensureApiAuthenticated(),
   stashQuestionCourse(),
   ensureCapability('question.mark-reviewed'),
-  async (req, res) => res.json(await transitionQuestion(
+  async (req, res) => res.json(toQuestionResponse(await transitionQuestion(
     new ObjectId(String(req.params.questionId)),
     'reviewed',
     req.user!.puid,
-  )),
+  ))),
 );
 
 tasRouter.post(
@@ -254,10 +254,10 @@ tasRouter.post(
   validate({ body: escalateBody }),
   async (req, res) => {
     const body = req.body as z.infer<typeof escalateBody>;
-    res.json(await escalateFlag(
+    res.json(toFlagResponse(await escalateFlag(
       new ObjectId(String(req.params.flagId)), req.user!.puid,
       body.recommendation, body.note,
-    ));
+    )));
   },
 );
 
@@ -270,10 +270,10 @@ tasRouter.post(
   validate({ body: proactiveBody }),
   async (req, res) => {
     const body = req.body as z.infer<typeof proactiveBody>;
-    res.status(201).json(await proactivelyEscalateQuestion(
+    res.status(201).json(toFlagResponse(await proactivelyEscalateQuestion(
       new ObjectId(String(req.params.questionId)), req.user!.puid,
       body.reasonCategory, body.note,
-    ));
+    )));
   },
 );
 

@@ -245,7 +245,7 @@ export function toBankItem(item: BankItem): {
 
 /** Same id-mapping for a bare (non-joined) Question head, e.g. the
  * transition response. */
-function toQuestionResponse(question: WithId<Question>): Record<string, unknown> {
+export function toQuestionResponse(question: WithId<Question>): Record<string, unknown> {
   const { _id, ...rest } = question;
   return { id: _id.toString(), ...rest };
 }
