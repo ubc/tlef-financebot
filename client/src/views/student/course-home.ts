@@ -12,7 +12,7 @@ import {
 } from '../../api.js';
 import { el } from '../../dom.js';
 import { emptyState, errorState, loadingState, masteryBadge } from '../../ui.js';
-import { pageHeader, progressRow, copyrightFooter } from '../../student-ui.js';
+import { progressRow, copyrightFooter } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
 import {
   LIVE_STUDENT_EXPERIENCE,
@@ -155,7 +155,32 @@ export async function renderCourseHomeWithExperience(
           );
 
     root.replaceChildren(
-      pageHeader(enrollment?.name ?? 'Course', subtitle),
+      el('header', { class: 'student-course-hero' },
+        el('div', { class: 'student-course-hero__main' },
+          el('p', { class: 'eyebrow', text: 'Course learning project' }),
+          el('h1', { class: 'student-course-hero__title', text: enrollment?.name ?? 'Course' }),
+          el('p', { class: 'student-course-hero__meta mono', text: subtitle }),
+          el('p', { class: 'student-course-hero__lead', text: 'Build mastery one topic at a time. Practice is low-stakes, resumable, and connected to your Review Book.' }),
+        ),
+        el('div', { class: 'student-course-hero__progress' },
+          el('strong', { text: `${total ? Math.round((covered / total) * 100) : 0}%` }),
+          el('span', { text: 'LO mastery coverage' }),
+          el('div', { class: 'coverage-bar' },
+            el('div', { class: 'coverage-bar__fill', style: `width:${total ? (covered / total) * 100 : 0}%` }),
+          ),
+        ),
+      ),
+      el('nav', { class: 'student-learning-flow', 'aria-label': 'Learning workflow' },
+        el('span', { class: 'student-learning-flow__step is-active' },
+          el('strong', { text: '1' }), el('span', { text: 'Choose a topic' }),
+        ),
+        el('span', { class: 'student-learning-flow__step' },
+          el('strong', { text: '2' }), el('span', { text: 'Practice and retry' }),
+        ),
+        el('span', { class: 'student-learning-flow__step' },
+          el('strong', { text: '3' }), el('span', { text: 'Review weak areas' }),
+        ),
+      ),
       bannerSlot,
       ...(activeExams.length
         ? [el('section', { class: 'exam-home-entry' },

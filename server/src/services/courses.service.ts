@@ -329,16 +329,33 @@ export interface CourseOutlineTheme {
   los: Array<{ _id: ObjectId; name: string; order: number }>;
 }
 
-/** Theme/LO names and order only — the minimum a `question.review` holder
- * needs to label a question "Topic 1 / LO 2". Deliberately NOT the course
- * record: `getCourseTree` (instructor-only) carries registrationCode, term
- * dates, autoPause and feedbackStrategy, none of which a TA should receive. */
-export async function getCourseOutline(courseId: ObjectId): Promise<{ themes: CourseOutlineTheme[] }> {
-  const [themes, los] = await Promise.all([
+export interface CourseOutlineIdentity {
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+}
+
+/** Safe course identity plus Theme/LO names and order — the minimum a
+ * `question.review` holder needs to understand which course project they are
+ * working in and label a question "Topic 1 / LO 2". This deliberately
+ * projects rather than returning the course record: registrationCode, dates,
+ * lifecycle, autoPause and feedbackStrategy never reach a TA. */
+export async function getCourseOutline(
+  courseId: ObjectId,
+): Promise<{ course: CourseOutlineIdentity; themes: CourseOutlineTheme[] }> {
+  const [course, themes, los] = await Promise.all([
+    getCourse(courseId),
     themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
   ]);
   return {
+    course: {
+      name: course.name,
+      courseCode: course.courseCode,
+      ...(course.section ? { section: course.section } : {}),
+      term: course.term,
+    },
     themes: themes.map((theme) => ({
       _id: theme._id,
       name: theme.name,

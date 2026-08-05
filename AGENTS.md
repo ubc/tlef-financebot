@@ -150,6 +150,13 @@ commonly need:
   viewport-bound three-panel layout with source-level Trash/Restore actions.
   The former Content Map is labelled Coverage Map to distinguish gap analysis
   from graph exploration inside the Knowledge Workspace.
+- The Course-as-Project shell now spans Student and TA roles: Student and
+  isolated Student Preview share course-project cards, persistent course
+  context, a collapsible icon rail, and a linear learning journey; TA and
+  Instructor TA View share real safe course identity, multi-course switching,
+  a collapsible rail, and the Review Queue → Flag Triage workflow. The
+  TA-accessible outline returns only name/code/section/term plus ordered
+  Theme/LO labels and never exposes private course settings.
 - Phase 5 now includes the first Course Knowledge Workspace slice: a responsive
   Files/Assistant/Inspector surface unifies upload, durable SSE stage progress,
   original/chunk/metadata preview, confidence-based multi-LO automation,

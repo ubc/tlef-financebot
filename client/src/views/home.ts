@@ -13,7 +13,7 @@ import {
 } from '../api.js';
 import { healthCard } from './health.js';
 import { renderMyCourses } from './instructor/courses.js';
-import { pageHeader, copyrightFooter } from '../student-ui.js';
+import { copyrightFooter } from '../student-ui.js';
 import {
   LIVE_STUDENT_EXPERIENCE,
   type StudentExperience,
@@ -86,16 +86,23 @@ function courseCard(
   experience: StudentExperience,
 ): HTMLElement {
   const { covered, total } = coverage ?? { covered: 0, total: 0 };
+  const palette = ['#3658b6', '#227f72', '#8a5a2b', '#6e4ca1', '#9a3f5c'];
+  const color = palette[Array.from(enrollment.courseCode).reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length];
   return el(
     'article',
-    { class: 'theme-card' },
+    { class: 'theme-card student-course-card', style: `--course-color:${color}` },
+    el('div', { class: 'student-course-card__cover' },
+      el('span', { class: 'student-course-card__code', text: enrollment.courseCode }),
+      el('span', { class: 'student-course-card__project', text: 'Course project' }),
+    ),
+    el('div', { class: 'student-course-card__body' },
     el(
       'div',
       { class: 'course-tile__head' },
       el('h3', { class: 'theme-card__title', text: enrollment.name }),
       badge(enrollment.active ? 'Active' : 'Ended', enrollment.active ? 'up' : 'muted'),
     ),
-    el('p', { class: 'theme-card__coverage-label mono', text: `${enrollment.courseCode} · ${enrollment.term}` }),
+    el('p', { class: 'theme-card__coverage-label mono', text: enrollment.term }),
     el(
       'div',
       { class: 'theme-card__coverage' },
@@ -109,6 +116,7 @@ function courseCard(
         href: experience.routes.course(enrollment.courseId),
       },
       enrollment.active ? 'Open →' : 'View',
+    ),
     ),
   );
 }
@@ -124,13 +132,21 @@ function myCoursesSection(
   const joinError = el('p', {});
   const section = el(
     'div',
-    { class: 'view' },
-    pageHeader('My Courses', ''),
+    { class: 'view view--student-projects' },
+    el('header', { class: 'student-projects__header' },
+      el('div', {},
+        el('p', { class: 'eyebrow', text: 'Learning dashboard' }),
+        el('h1', { class: 'view__title', text: 'My Courses' }),
+        el('p', { class: 'view__lead', text: 'Choose a course project and continue from your current learning progress.' }),
+      ),
+    ),
     body,
     el(
       'div',
       { class: 'join-box' },
-      el('p', { class: 'join-box__label', text: 'Enter registration code' }),
+      el('p', { class: 'eyebrow', text: 'Join a course' }),
+      el('h2', { class: 'section-title', text: 'Have a registration code?' }),
+      el('p', { class: 'muted', text: 'Enter the code your instructor shared. The course will appear in your dashboard immediately.' }),
       el(
         'form',
         {

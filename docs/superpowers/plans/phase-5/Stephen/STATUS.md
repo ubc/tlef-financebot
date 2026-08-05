@@ -34,6 +34,16 @@ _Last updated: 2026-08-05_
   Workspace graph instead of presenting two competing graph destinations.
 - Course chrome reads only the current course and caches it. It deliberately
   avoids `listInstructorCourses()`'s legacy N+1 scan over stale course roles.
+- Student and TA role parity is complete on the same Course-as-Project shell.
+  Student now gets Canvas-inspired course-project cards, persistent course
+  context, a collapsible icon rail, Course Home navigation, and an explicit
+  Choose topic → Practice/retry → Review weak areas learning path. Anonymous
+  Student Preview reuses the same chrome and remains state-isolated.
+- TA now gets the real course name/code/term/section instead of `Course 1`, a
+  safe multi-course picker, persistent project context, a collapsible icon
+  rail, and the numbered Review Queue → Flag Triage workflow. The TA-safe
+  outline response exposes only identity fields plus Theme/LO names; private
+  settings and registration data remain excluded.
 
 ## Verification
 
@@ -42,7 +52,7 @@ _Last updated: 2026-08-05_
 - Playwright: 22 passed; the explicitly optional live-LLM test skipped.
 - axe WCAG A/AA: 4/4 passed, including Launch Cockpit and the three Phase 3
   Admin operations.
-- Course-as-Project verification: 84 Jest suites / 887 tests passed; 28/28
+- Course-as-Project role verification: 84 Jest suites / 888 tests passed; 28/28
   configured Playwright workflows passed with the one opt-in live-LLM test
   skipped; 5/5 axe WCAG A/AA scenarios passed.
 

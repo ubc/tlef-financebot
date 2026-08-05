@@ -981,13 +981,17 @@ export interface CourseOutlineTheme {
 }
 
 export interface CourseOutline {
+  course: {
+    name: string;
+    courseCode: string;
+    section?: string;
+    term: string;
+  };
   themes: CourseOutlineTheme[];
 }
 
-/** GET /api/courses/:courseId/outline -> theme/LO names + order only. The
- * TA-accessible subset of `getCourseTree` (which is instructor-only): a
- * `question.review` holder can call this, and it carries none of the course
- * record. */
+/** GET /api/courses/:courseId/outline -> safe course identity + theme/LO names.
+ * The TA-accessible subset of `getCourseTree` (which is instructor-only). */
 export function getCourseOutline(courseId: string): Promise<CourseOutline> {
   return request<CourseOutline>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
 }

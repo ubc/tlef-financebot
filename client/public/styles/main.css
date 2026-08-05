@@ -6767,3 +6767,360 @@ button.class-row--link:focus-visible .class-row__title {
     opacity: 1;
   }
 }
+
+/* =============================================================================
+   Course-as-Project role shells — Student + Teaching Assistant
+   ========================================================================== */
+
+.app-shell--role.is-collapsed {
+  grid-template-columns: var(--sidebar-collapsed-w) minmax(0, 1fr);
+}
+
+.app-shell--role .sidebar {
+  padding: 0.9rem 0.75rem;
+  overflow-x: hidden;
+}
+
+.app-shell--role .nav {
+  gap: 0.2rem;
+}
+
+.app-shell--role .nav__group {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.app-shell--role .nav__link {
+  min-height: 2.45rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+}
+
+.app-shell--role .nav__link--active {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(8, 16, 34, 0.28);
+  box-shadow: none;
+}
+
+.app-shell--role.is-collapsed .sidebar {
+  align-items: stretch;
+  padding-inline: 0.55rem;
+}
+
+.app-shell--role.is-collapsed .sidebar__brand-row {
+  flex-direction: column;
+}
+
+.app-shell--role.is-collapsed .brand__name,
+.app-shell--role.is-collapsed .student-preview-pill,
+.app-shell--role.is-collapsed .instructor-pill,
+.app-shell--role.is-collapsed .nav__group,
+.app-shell--role.is-collapsed .nav__text,
+.app-shell--role.is-collapsed .course-context__back,
+.app-shell--role.is-collapsed .course-context__body,
+.app-shell--role.is-collapsed .course-context__picker,
+.app-shell--role.is-collapsed .sidebar__foot {
+  display: none;
+}
+
+.app-shell--role.is-collapsed .sidebar__brand-row .brand {
+  padding-inline: 0;
+}
+
+.app-shell--role.is-collapsed .course-context {
+  display: grid;
+  place-items: center;
+  padding: 0.45rem;
+}
+
+.app-shell--role.is-collapsed .course-context[hidden] {
+  display: none;
+}
+
+.app-shell--role.is-collapsed .course-context__project,
+.app-shell--role.is-collapsed .nav__link {
+  justify-content: center;
+}
+
+.app-shell--role.is-collapsed .nav__glyph {
+  width: 2rem;
+  height: 2rem;
+}
+
+.sidebar--student .brand {
+  padding: 0.3rem 0.35rem 0.4rem;
+}
+
+.sidebar--student .student-preview-pill {
+  margin: 0.15rem 0.35rem 0.45rem;
+}
+
+.sidebar--ta .course-context__picker {
+  margin-top: 0.65rem;
+}
+
+.sidebar--ta .ta-course-picker {
+  min-height: 2.25rem;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.16);
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+/* Student course-project dashboard. */
+
+.student-projects__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.view--student-projects .theme-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.student-course-card {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.student-course-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--course-color) 38%, var(--border));
+  box-shadow: 0 18px 36px -26px color-mix(in srgb, var(--course-color) 70%, transparent);
+}
+
+.student-course-card__cover {
+  display: flex;
+  min-height: 7.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.1rem;
+  background:
+    radial-gradient(circle at 85% 10%, rgba(255, 255, 255, 0.2), transparent 34%),
+    var(--course-color);
+  color: #fff;
+}
+
+.student-course-card__code {
+  font-size: 1.25rem;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+}
+
+.student-course-card__project {
+  align-self: flex-start;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.student-course-card__body {
+  display: flex;
+  min-height: 13.5rem;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem;
+}
+
+.student-course-card__body > .btn {
+  width: 100%;
+  margin-top: auto;
+}
+
+.view--student-projects .join-box {
+  margin-top: 2rem;
+  padding: 1.35rem;
+  border-style: solid;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.view--student-projects .join-box .section-title {
+  margin-bottom: 0.35rem;
+}
+
+/* Student course home: one calm project summary followed by a clear journey. */
+
+.student-course-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.3fr);
+  gap: 2rem;
+  margin-bottom: 1rem;
+  padding: clamp(1.35rem, 3vw, 2rem);
+  border: 1px solid color-mix(in srgb, var(--student-sidebar-bg) 24%, var(--border));
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    radial-gradient(circle at 90% 10%, color-mix(in srgb, var(--student-sidebar-bg) 14%, transparent), transparent 34%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.student-course-hero__title {
+  font-size: clamp(1.8rem, 4vw, 2.65rem);
+  letter-spacing: -0.035em;
+}
+
+.student-course-hero__meta,
+.student-course-hero__lead {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+}
+
+.student-course-hero__lead {
+  max-width: 45rem;
+}
+
+.student-course-hero__progress {
+  align-self: center;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--student-sidebar-bg) 5%, var(--surface));
+}
+
+.student-course-hero__progress strong,
+.student-course-hero__progress span {
+  display: block;
+}
+
+.student-course-hero__progress strong {
+  color: var(--student-sidebar-bg);
+  font-size: 1.7rem;
+}
+
+.student-course-hero__progress span {
+  margin: 0.15rem 0 0.7rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.student-learning-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.student-learning-flow__step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3.2rem;
+  padding: 0.7rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.student-learning-flow__step + .student-learning-flow__step {
+  border-left: 1px solid var(--border);
+}
+
+.student-learning-flow__step strong {
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.student-learning-flow__step.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--student-sidebar-bg) 7%, var(--surface));
+}
+
+.student-learning-flow__step.is-active strong {
+  background: var(--student-sidebar-bg);
+  color: #fff;
+}
+
+@media (max-width: 860px) {
+  .app-shell--role.is-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell--role.is-collapsed .sidebar {
+    align-items: stretch;
+    width: min(86vw, var(--sidebar-w));
+    padding: 0.9rem 0.75rem;
+  }
+
+  .app-shell--role.is-collapsed .sidebar__brand-row {
+    flex-direction: row;
+  }
+
+  .app-shell--role.is-collapsed .brand__name,
+  .app-shell--role.is-collapsed .nav__group,
+  .app-shell--role.is-collapsed .nav__text,
+  .app-shell--role.is-collapsed .course-context__body,
+  .app-shell--role.is-collapsed .course-context__picker,
+  .app-shell--role.is-collapsed .sidebar__foot {
+    display: block;
+  }
+
+  .app-shell--role.is-collapsed .student-preview-pill,
+  .app-shell--role.is-collapsed .instructor-pill,
+  .app-shell--role.is-collapsed .course-context__back {
+    display: inline-block;
+  }
+
+  .app-shell--role.is-collapsed .course-context {
+    display: block;
+    padding: 0.65rem;
+  }
+
+  .app-shell--role.is-collapsed .course-context[hidden] {
+    display: none;
+  }
+
+  .app-shell--role.is-collapsed .course-context__project,
+  .app-shell--role.is-collapsed .nav__link {
+    justify-content: flex-start;
+  }
+
+  .student-course-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .student-projects__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-learning-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .student-learning-flow__step + .student-learning-flow__step {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .view--student-projects .join-box .row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .view--student-projects .join-box .btn {
+    width: 100%;
+  }
+}

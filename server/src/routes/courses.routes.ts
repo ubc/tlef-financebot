@@ -169,11 +169,12 @@ coursesRouter.get(
   },
 );
 
-/** GET /api/courses/:courseId/outline -> { themes: [{ _id, name, order, los: [{ _id, name, order }] }] }.
- * TA-accessible subset of `GET /api/courses/:courseId` — theme/LO names and
- * order only, none of the course record's registrationCode/term/autoPause/
- * feedbackStrategy fields. `ensureCapability` performs its own authentication
- * check, so no `ensureApiAuthenticated()` precedes it here. */
+/** GET /api/courses/:courseId/outline -> safe course identity plus ordered
+ * Theme/LO names. TA-accessible subset of `GET /api/courses/:courseId` — it
+ * carries name/code/section/term for workspace context, but never registration
+ * code, dates, lifecycle, autoPause or feedbackStrategy. `ensureCapability`
+ * performs its own authentication check, so no `ensureApiAuthenticated()`
+ * precedes it here. */
 coursesRouter.get(
   '/courses/:courseId/outline',
   validate({ params: courseIdParams }),

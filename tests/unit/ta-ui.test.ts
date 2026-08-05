@@ -8,6 +8,7 @@ import {
 } from '../../client/src/views/ta/ta-ui';
 
 const outline: CourseOutlineForLabel = {
+  course: { name: 'Corporate Finance', courseCode: 'COMM 298', section: '101', term: '2026W1' },
   themes: [
     { _id: 't1', name: 'Time Value of Money', order: 0, los: [{ _id: 'l1', name: 'Discounting', order: 0 }, { _id: 'l2', name: 'Annuities', order: 1 }] },
     { _id: 't2', name: 'Risk', order: 1, los: [{ _id: 'l3', name: 'Beta', order: 0 }] },
