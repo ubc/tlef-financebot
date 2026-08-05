@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   groupFlags,
+  isGroupEscalated,
   isGroupOpen,
   latestEscalation,
   openFlags,
@@ -58,6 +59,33 @@ describe('openFlags / isGroupOpen', () => {
   it('is closed when every flag is resolved', () => {
     const [group] = groupFlags([flag({ state: 'resolved-corrected' })]);
     expect(isGroupOpen(group)).toBe(false);
+  });
+});
+
+describe('isGroupEscalated', () => {
+  it('is true for a flag escalated WITH a taRecommendation', () => {
+    const [group] = groupFlags([
+      flag({
+        state: 'escalated',
+        taRecommendation: { recommendation: 'clear', puid: 'PUID-TA', at: '2026-07-02T00:00:00.000Z' },
+      }),
+    ]);
+    expect(isGroupEscalated(group)).toBe(true);
+  });
+
+  it('is true for a flag escalated with NO taRecommendation — the proactive-escalation shape ' +
+    '`proactivelyEscalateQuestion` (tas.service.ts) produces, which `latestEscalation` alone ' +
+    'cannot see (review finding 1/2)', () => {
+    const [group] = groupFlags([
+      flag({ state: 'escalated', raisedBy: 'ta', source: 'ta' }),
+    ]);
+    expect(latestEscalation(group)).toBeNull();
+    expect(isGroupEscalated(group)).toBe(true);
+  });
+
+  it('is false when no flag in the group is escalated', () => {
+    const [group] = groupFlags([flag({ state: 'open' })]);
+    expect(isGroupEscalated(group)).toBe(false);
   });
 });
 
@@ -116,6 +144,26 @@ describe('sortGroups', () => {
       }),
     ]);
     expect(sortGroups(groups).map((g) => g.flags[0].id)).toEqual(['escalated', 'resolved']);
+  });
+
+  it('sorts a recommendation-less escalated group (proactive TA escalation) ahead of a newer, un-triaged open group', () => {
+    const groups = groupFlags([
+      flag({ id: 'newer-untriaged', questionVersionId: 'v1', createdAt: '2026-08-02T00:00:00.000Z' }),
+      flag({
+        id: 'proactive-escalation',
+        questionVersionId: 'v2',
+        state: 'escalated',
+        raisedBy: 'ta',
+        source: 'ta',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        // No taRecommendation — this is exactly what
+        // `proactivelyEscalateQuestion` (tas.service.ts) produces. Before the
+        // fix, `sortGroups` tested `latestEscalation(group) !== null`, which
+        // is null here, so this group would rank as un-triaged and sort
+        // behind 'newer-untriaged' despite being escalated.
+      }),
+    ]);
+    expect(sortGroups(groups).map((g) => g.flags[0].id)).toEqual(['proactive-escalation', 'newer-untriaged']);
   });
 });
 

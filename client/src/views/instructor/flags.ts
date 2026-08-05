@@ -39,6 +39,7 @@ import { subscribeFlagsChanged } from '../../flag-sync.js';
 import {
   byCreatedAtDesc,
   groupFlags,
+  isGroupEscalated,
   isGroupOpen,
   latestEscalation,
   openFlags,
@@ -154,14 +155,21 @@ function flagCountBadge(group: FlagGroup): HTMLElement {
 
 /** Most-recent reason (or "No reason given") + its date, plus "(and N more)"
  * when the group holds more than one flag (resolved ambiguity #1's
- * micro-layout call). */
+ * micro-layout call).
+ *
+ * Review finding 2: `raisedBy`/`source: 'ta'` were added to `Flag` (api.ts)
+ * for the TA proactive-escalation path but read nowhere in this view — an
+ * instructor had no cheap way to tell a TA-raised flag from a student one.
+ * Prefixing "TA:" here when the most recent flag was TA-raised is the
+ * minimal, honest surface the review asked for (no new panel). */
 function reasonsSummary(group: FlagGroup): HTMLElement {
   const sorted = [...group.flags].sort(byCreatedAtDesc);
   const latest = sorted[0];
   const reasonText = latest.reason?.trim() ? latest.reason : 'No reason given';
   const dateText = new Date(latest.createdAt).toLocaleDateString();
   const extra = sorted.length > 1 ? ` (and ${sorted.length - 1} more)` : '';
-  return el('p', { class: 'flag-row__reason', text: `"${reasonText}" — ${dateText}${extra}` });
+  const raisedByPrefix = latest.raisedBy === 'ta' ? 'TA: ' : '';
+  return el('p', { class: 'flag-row__reason', text: `${raisedByPrefix}"${reasonText}" — ${dateText}${extra}` });
 }
 
 /** Flags when the joined `currentVersion` postdates the flag(s) in this
@@ -559,10 +567,20 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     // `listFlags` spreads the whole document) but this view never rendered
     // it, so a TA's triage was invisible to the instructor — this line and
     // the badge below are that fix.
+    //
+    // Review finding 2: the badge/priority test keys on `isGroupEscalated`
+    // (flag STATE), not on `latestEscalation` (presence of a recommendation).
+    // `proactivelyEscalateQuestion` (tas.service.ts) inserts a flag with
+    // `state: 'escalated'` and no `taRecommendation` — the "Escalate" button
+    // on the TA question page — so a recommendation-keyed test missed
+    // exactly that shape, rendering it as a plain flag count indistinguishable
+    // from a student flag. `escalation` (the recommendation itself, if any)
+    // is kept separately below for the text line only.
+    const escalated = open && isGroupEscalated(group);
     const escalation = open ? latestEscalation(group) : null;
 
     const badge = open
-      ? escalation
+      ? escalated
         ? statusBadge('Escalated by TA', 'flag')
         : flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
@@ -598,7 +616,11 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
               escalation.note ? el('span', { text: ` — "${escalation.note}"` }) : false,
               el('span', { class: 'muted', text: ` · ${new Date(escalation.at).toLocaleDateString()}` }),
             )
-          : false,
+          // Escalated (badge above already reflects this) but no
+          // recommendation to show text for — the proactive-escalation shape.
+          : escalated
+            ? el('p', { class: 'flag-row__escalation' }, el('strong', { text: 'Escalated by a TA — no recommendation recorded' }))
+            : false,
       ),
       badge,
       actions,

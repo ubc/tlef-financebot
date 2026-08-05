@@ -43,9 +43,25 @@ export function byCreatedAtDesc(a: Flag, b: Flag): number {
   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
+/** Whether a TA has escalated this group, keyed on flag STATE rather than on
+ * the presence of a `taRecommendation`. `escalateFlag` (tas.service.ts) always
+ * sets both `state: 'escalated'` and `taRecommendation` together, but
+ * `proactivelyEscalateQuestion` — the "Escalate" button on the TA question
+ * page — inserts a flag with `state: 'escalated'` and NO `taRecommendation`.
+ * Testing for a recommendation (as `sortGroups` and the instructor queue's
+ * badge both used to) makes that second shape invisible: it neither sorts to
+ * the top nor gets the "Escalated by TA" badge, indistinguishable from an
+ * ordinary student flag. `latestEscalation` below is still the right function
+ * for rendering the recommendation TEXT — only a recommendation-bearing
+ * escalation has text to show — but "is this escalated at all" must check
+ * `state`, not `taRecommendation`. */
+export function isGroupEscalated(group: FlagGroup): boolean {
+  return group.flags.some((flag) => flag.state === 'escalated');
+}
+
 /** Unresolved groups first, then resolved groups. Within the unresolved
- * partition, a group a TA has already escalated (see `latestEscalation`
- * below) sorts ahead of one no one has triaged yet, regardless of which is
+ * partition, a group a TA has already escalated (see `isGroupEscalated`
+ * above) sorts ahead of one no one has triaged yet, regardless of which is
  * newer — that's the whole point of escalating: it's supposed to reach the
  * top of the instructor's queue, not wait behind a same-day flag nobody has
  * looked at. Everything else is most-recently-flagged-first within its
@@ -57,8 +73,8 @@ export function sortGroups(groups: FlagGroup[]): FlagGroup[] {
     const bOpen = isGroupOpen(b);
     if (aOpen !== bOpen) return aOpen ? -1 : 1;
     if (aOpen) {
-      const aEscalated = latestEscalation(a) !== null;
-      const bEscalated = latestEscalation(b) !== null;
+      const aEscalated = isGroupEscalated(a);
+      const bEscalated = isGroupEscalated(b);
       if (aEscalated !== bEscalated) return aEscalated ? -1 : 1;
     }
     const aLatest = [...a.flags].sort(byCreatedAtDesc)[0];
@@ -67,10 +83,14 @@ export function sortGroups(groups: FlagGroup[]): FlagGroup[] {
   });
 }
 
-/** The most recent TA recommendation in the group, or null if no TA escalated
- * any of its flags. A group can hold several escalations (two TAs, or one TA
+/** The most recent TA recommendation in the group, or null if no flag in it
+ * carries one. A group can hold several escalations (two TAs, or one TA
  * escalating two flags on the same version); the latest is the one that
- * reflects the current teaching-team position. */
+ * reflects the current teaching-team position. Note this is null for a
+ * proactive escalation (`state: 'escalated'`, no `taRecommendation`) even
+ * though the group IS escalated — use `isGroupEscalated` to test escalation
+ * status, and this only for the recommendation text once you know one
+ * exists. */
 export function latestEscalation(group: FlagGroup): TaRecommendation | null {
   const escalated = group.flags
     .map((flag) => flag.taRecommendation)
