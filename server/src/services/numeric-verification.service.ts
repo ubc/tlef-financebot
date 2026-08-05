@@ -5,9 +5,9 @@
 // values collide. Pure functions only (apart from the Tier 3 sandbox) — no
 // DB/HTTP here; callers own persistence. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
-import { EVALUATOR_VERSION, evaluateFormula, parseFormula } from '../components/formula';
+import { EVALUATOR_VERSION } from '../components/formula';
 import { executeGenerate } from '../components/param-worker';
-import { seededRandom } from './params.service';
+import { resolveSlotsAndDerived } from './params.service';
 import type { DerivedValue, NumericVerification, ParamSlot } from '../types/domain';
 
 /** Draws sampled per verification run. Every one must pass every check. */
@@ -47,46 +47,23 @@ function sampleSeedsFor(count: number): number[] {
   return seeds;
 }
 
-/** Mirrors params.service.ts's drawSlot, which is private there. Duplicated
- * deliberately rather than exported: verification must pin its own draw
- * semantics so a future change to the serving draw is a visible test
- * failure, not a silent divergence between proof and serve. */
-function drawSlot(slot: ParamSlot, rand: () => number): number {
-  if (slot.values && slot.values.length > 0) {
-    const idx = Math.min(slot.values.length - 1, Math.floor(rand() * slot.values.length));
-    return slot.values[idx];
-  }
-  const min = slot.min ?? 0;
-  const max = slot.max ?? min;
-  const step = slot.step && slot.step !== 0 ? slot.step : 1;
-  const count = Math.floor((max - min) / step) + 1;
-  const idx = Math.min(count - 1, Math.floor(rand() * count));
-  return min + step * idx;
-}
-
 /**
- * Draws every slot then evaluates every derived value in declaration order,
- * so a later formula may reference an earlier one by name. Returns drawn and
- * derived values in one flat map, which is exactly what `substituteParams`
- * consumes.
+ * Verification's view of resolution. Delegates to `resolveSlotsAndDerived`,
+ * which is the SAME function the serving paths call — a proof computed by
+ * different code than the serve would prove nothing, which is precisely the
+ * failure mode the proof exists to prevent. This wrapper only converts its
+ * throw into the result shape verification reports against.
  */
 export function resolveDerivedValues(
   slots: ParamSlot[],
   derivedValues: DerivedValue[],
   seed: number,
 ): ResolveResult {
-  const rand = seededRandom(seed);
-  const values: Record<string, number> = {};
-  for (const slot of slots) values[slot.name] = drawSlot(slot, rand);
-
-  for (const derived of derivedValues) {
-    const parsed = parseFormula(derived.formula);
-    if (!parsed.ok) return { ok: false, error: `${derived.name}: ${parsed.error}` };
-    const evaluated = evaluateFormula(parsed.ast, values);
-    if (!evaluated.ok) return { ok: false, error: `${derived.name}: ${evaluated.error}` };
-    values[derived.name] = evaluated.value;
+  try {
+    return { ok: true, values: resolveSlotsAndDerived(slots, derivedValues, seed) };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
   }
-  return { ok: true, values };
 }
 
 /** The three per-draw checks shared by Tier 1/2 and Tier 3. Returns an error

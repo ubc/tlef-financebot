@@ -16,6 +16,15 @@ import {
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
+import {
+  CORRECT_EXPLANATION,
+  MISCONCEPTION_EXPLANATION,
+  correctOptionText,
+  misconceptionOptionText,
+  numericFixture,
+  optionPattern,
+  wrongOptionText,
+} from './numeric-fixture';
 
 // Phase 4 Task 1 Step 2 — critical-path gap fill.
 //
@@ -48,21 +57,12 @@ const LO_NAME = 'Price a coupon bond (Critical Paths)';
  * SECOND question to offer as the retry — `selectRetryQuestion` excludes the
  * one just answered, so a single-question bank would silently degrade to a
  * full reveal and the gate would never be exercised. */
+// Numerical questions must be parameterized and verified or the numeric gate
+// refuses to serve them (design spec 2026-08-05). Each variant's prose lead is
+// distinct so the row lookups below can still tell them apart by stem prefix.
 const QUESTIONS = [
-  {
-    stem: 'A bond pays a 5% annual coupon on 1,000 face value. What is one year of coupon income?',
-    correctText: '50 dollars',
-    cmText: '5 dollars',
-    correctExplanation: 'Coupon income is 5% of face value: 0.05 x 1000 = 50.',
-    cmExplanation: 'The 5% is a rate on face value, not a dollar amount.',
-  },
-  {
-    stem: 'A bond pays an 8% annual coupon on 1,000 face value. What is one year of coupon income?',
-    correctText: '80 dollars',
-    cmText: '8 dollars',
-    correctExplanation: 'Coupon income is 8% of face value: 0.08 x 1000 = 80.',
-    cmExplanation: 'The 8% is a rate on face value, not a dollar amount.',
-  },
+  numericFixture('For a zero-coupon corporate bond,', 2),
+  numericFixture('For a zero-coupon treasury note,', 3),
 ];
 
 /** SP-initiated CWL login (test users' password equals their username). */
@@ -74,12 +74,17 @@ async function login(page: Page, username: string): Promise<void> {
   await page.waitForURL('**/', { timeout: 30_000 });
 }
 
-/** Reads the question currently rendered in `card` and returns its fixture. */
-async function askedIn(card: ReturnType<Page['locator']>): Promise<(typeof QUESTIONS)[number]> {
-  const text = await card.innerText();
-  const asked = QUESTIONS.find((q) => text.includes(q.stem.slice(0, 40)));
-  expect(asked, `card should render one of the seeded questions; got:\n${text}`).toBeTruthy();
-  return asked!;
+/** Reads the question currently rendered in `card` and returns its fixture
+ * together with the RENDERED text. The questions are parameterized, so option
+ * values differ per serve — callers recompute them from `rendered` rather than
+ * reading a constant off the fixture. */
+async function askedIn(
+  card: ReturnType<Page['locator']>,
+): Promise<{ fixture: (typeof QUESTIONS)[number]; rendered: string }> {
+  const rendered = await card.innerText();
+  const fixture = QUESTIONS.find((q) => rendered.includes(q.stem.slice(0, 30)));
+  expect(fixture, `card should render one of the seeded questions; got:\n${rendered}`).toBeTruthy();
+  return { fixture: fixture!, rendered };
 }
 
 let courseId = '';
@@ -124,15 +129,9 @@ test.describe('Phase 4 critical paths (gap fill)', () => {
         loIds: [new ObjectId(loId)],
         themeIds: [new ObjectId(themeId)],
         type: 'mcq',
-        stem: q.stem,
         difficulty: 'easy',
         createdBy: 'e2e-critical-paths',
-        options: [
-          { key: 'A', text: q.correctText, role: 'correct', explanation: q.correctExplanation },
-          { key: 'B', text: q.cmText, role: 'common-misconception', explanation: q.cmExplanation },
-          { key: 'C', text: '1,000 dollars', role: 'clearly-wrong', explanation: 'That is face value, not coupon income.' },
-          { key: 'D', text: '100 dollars', role: 'partially-correct', explanation: 'Right idea, wrong rate.' },
-        ],
+        ...q,
       });
       await api.post(`/api/questions/${questionId.toString()}/transition`, { data: { to: 'pending-review' } });
       await api.post(`/api/questions/${questionId.toString()}/transition`, { data: { to: 'approved' } });
@@ -174,7 +173,7 @@ test.describe('Phase 4 critical paths (gap fill)', () => {
     await page.goto(`/#/course/${courseId}/practice/${loId}`);
     const card = page.locator('.practice-card').first();
     const first = await askedIn(card);
-    await page.getByRole('button', { name: first.correctText, exact: false }).first().click();
+    await page.getByRole('button', { name: optionPattern(correctOptionText(first.rendered)) }).first().click();
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.getByText('Correct!')).toBeVisible();
 
@@ -187,7 +186,7 @@ test.describe('Phase 4 critical paths (gap fill)', () => {
     // then reload. ST-E03 allows exactly one unsubmitted question to be lost.
     await page.goto(`/#/course/${courseId}/practice/${loId}`);
     const second = await askedIn(page.locator('.practice-card').first());
-    await page.getByRole('button', { name: second.cmText, exact: false }).first().click();
+    await page.getByRole('button', { name: optionPattern(wrongOptionText(second.rendered)) }).first().click();
     await page.reload();
 
     // The unsubmitted selection is gone — a fresh card, nothing pre-selected,
@@ -215,26 +214,32 @@ test.describe('Phase 4 critical paths (gap fill)', () => {
 
     const card = page.locator('.practice-card').first();
     const asked = await askedIn(card);
-    const other = QUESTIONS.find((q) => q.stem !== asked.stem)!;
+    const other = QUESTIONS.find((q) => q.stem !== asked.fixture.stem)!;
 
-    await page.getByRole('button', { name: asked.cmText, exact: false }).first().click();
+    // Must be the common-misconception option specifically: that role is what
+    // opens the Strategy A retry gate.
+    await page.getByRole('button', { name: optionPattern(misconceptionOptionText(asked.rendered)) }).first().click();
     await page.getByRole('button', { name: 'Submit' }).click();
 
     // Chosen-only reveal: the student sees why THEIR pick was wrong…
-    await expect(page.getByText(asked.cmExplanation)).toBeVisible();
+    await expect(page.getByText(MISCONCEPTION_EXPLANATION)).toBeVisible();
     // …and the correct answer's explanation is withheld — not merely hidden by
     // CSS. Assert on page content so a rendered-but-invisible leak still fails.
-    await expect(page.locator('body')).not.toContainText(asked.correctExplanation);
+    await expect(page.locator('body')).not.toContainText(CORRECT_EXPLANATION);
 
     // The gate offers a DIFFERENT question testing the same concept, in place.
     const retryPanel = page.locator('.practice-card__retry');
     await expect(retryPanel).toBeVisible();
-    await expect(retryPanel).toContainText(other.stem.slice(0, 40));
+    await expect(retryPanel).toContainText(other.stem.slice(0, 30));
 
     // Resolving the retry correctly reveals that question fully.
-    await retryPanel.getByRole('button', { name: other.correctText, exact: false }).first().click();
+    const retryRendered = await retryPanel.innerText();
+    await retryPanel
+      .getByRole('button', { name: optionPattern(correctOptionText(retryRendered)) })
+      .first()
+      .click();
     await retryPanel.getByRole('button', { name: 'Submit' }).click();
-    await expect(retryPanel.getByText(other.correctExplanation)).toBeVisible();
+    await expect(retryPanel.getByText(CORRECT_EXPLANATION)).toBeVisible();
   });
 
   test('a deferred session summary greets the student on their next visit (ST-P10, ST-P11)', async ({ page }) => {
@@ -243,7 +248,7 @@ test.describe('Phase 4 critical paths (gap fill)', () => {
     // Practise once so there is a session worth summarising.
     await page.goto(`/#/course/${courseId}/practice/${loId}`);
     const asked = await askedIn(page.locator('.practice-card').first());
-    await page.getByRole('button', { name: asked.correctText, exact: false }).first().click();
+    await page.getByRole('button', { name: optionPattern(correctOptionText(asked.rendered)) }).first().click();
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.getByText('Correct!')).toBeVisible();
 

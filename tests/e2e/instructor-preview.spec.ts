@@ -23,7 +23,12 @@ import { createQuestion } from '../../server/src/services/questions.service';
 const COURSE_NAME = 'Instructor Preview E2E Course';
 const THEME_NAME = 'Preview Theme';
 const LO_NAME = 'Preview compound interest';
-const APPROVED_STEM = 'In Instructor Preview, what is 2 + 2?';
+// Deliberately CONCEPTUAL, not parameterized. This spec's subject is preview
+// isolation, not numerics — the old "what is 2 + 2?" was a stand-in, and the
+// numeric gate (design spec 2026-08-05) would refuse to serve it since it
+// reads as numerical with no verification proof. Parameterizing a dummy would
+// add noise; making it genuinely conceptual is the honest fix.
+const APPROVED_STEM = 'In Instructor Preview, which best describes diversification?';
 const DRAFT_STEM = 'DRAFT CONTENT MUST NOT APPEAR';
 
 const courseId = new ObjectId();
@@ -84,10 +89,10 @@ test.describe('Instructor student preview', () => {
       difficulty: 'medium',
       createdBy: 'preview-e2e',
       options: [
-        { key: 'A', text: '4', role: 'correct', explanation: 'Two plus two equals four.' },
-        { key: 'B', text: '5', role: 'common-misconception', explanation: 'This adds one too many.' },
-        { key: 'C', text: '3', role: 'partially-correct', explanation: 'This is one too few.' },
-        { key: 'D', text: '22', role: 'clearly-wrong', explanation: 'This concatenates instead of adding.' },
+        { key: 'A', text: 'It reduces idiosyncratic risk', role: 'correct', explanation: 'Spreading holdings cancels firm-specific shocks.' },
+        { key: 'B', text: 'It removes all market risk', role: 'common-misconception', explanation: 'Systematic risk cannot be diversified away.' },
+        { key: 'C', text: 'It guarantees higher returns', role: 'partially-correct', explanation: 'It changes the risk profile, not expected return.' },
+        { key: 'D', text: 'It concentrates holdings', role: 'clearly-wrong', explanation: 'That is the opposite of diversifying.' },
       ],
     });
     approvedQuestionId = approved.questionId;
@@ -174,7 +179,7 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: 'Send flag', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Flagged');
 
-    await page.getByRole('button', { name: /^B\s+5$/ }).click();
+    await page.getByRole('button', { name: /removes all market risk/ }).click();
     await page.getByRole('button', { name: 'Submit', exact: true }).click();
     await expect(page.getByText(/Not quite/i)).toBeVisible();
     const storedPreviewBeforeReload = await page.evaluate(

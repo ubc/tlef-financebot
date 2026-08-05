@@ -10,6 +10,9 @@ import type {
   PublicationState,
   QuestionLabel,
   Difficulty,
+  ParamSlot,
+  DerivedValue,
+  NumericVerification,
 } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -54,6 +57,14 @@ export async function createQuestion(input: {
   createdBy: string;
   generationPrompt?: string;
   generateScript?: string;
+  // Parameterization + its verification proof (design spec 2026-08-05). A
+  // numerical question without `verification` never serves — see
+  // numeric-gate.service.ts — so callers that build one must verify it and
+  // pass the proof through here.
+  paramSlots?: ParamSlot[];
+  derivedValues?: DerivedValue[];
+  numericKind?: 'numeric' | 'conceptual';
+  verification?: NumericVerification;
   agentDecision?: Question['agentDecision'];
   labels?: QuestionLabel[];
   templateFamilyId?: ObjectId;
@@ -77,6 +88,10 @@ export async function createQuestion(input: {
     createdBy: input.createdBy,
     createdAt: now,
     ...(input.generateScript !== undefined ? { generateScript: input.generateScript } : {}),
+    ...(input.paramSlots !== undefined ? { paramSlots: input.paramSlots } : {}),
+    ...(input.derivedValues !== undefined ? { derivedValues: input.derivedValues } : {}),
+    ...(input.numericKind !== undefined ? { numericKind: input.numericKind } : {}),
+    ...(input.verification !== undefined ? { verification: input.verification } : {}),
   };
 
   const question: Question = {
