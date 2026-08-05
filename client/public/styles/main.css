@@ -421,6 +421,10 @@ a {
   gap: 0.6rem;
 }
 
+.stack--sm {
+  gap: 0.35rem;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -893,6 +897,21 @@ a {
   font-family: var(--mono);
   font-size: 0.78rem;
   overflow-x: auto;
+}
+
+/* Suggestion-patch summary (ta/question-detail.ts, instructor/question-detail.ts).
+   Wraps rather than scrolling like .raw__pre above, since a long suggested
+   stem should not overflow its card horizontally. */
+.code-block {
+  margin: 0;
+  padding: 0.85rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Component tiles (overview) ----------------------------------------- */
@@ -3479,6 +3498,14 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--instr-red-fg);
 }
 
+/* Sibling of .queue-row__flag above, same micro-layout, muted rather than
+   red since a pending suggestion is informational, not an alert. */
+.queue-row__suggestions {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .queue-row__type-lo {
   display: flex;
   flex-direction: column;
@@ -3666,6 +3693,42 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.78rem;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* ---- TA Question Page (views/ta/question-detail.ts) ------------------------ */
+
+/* Read-only answer options. Plain <li>/<ol> markup renders the browser's
+   decimal marker on top of the explicit "A."/"B." key span the view emits
+   ("1. A. …"), so the marker is removed here and the key does the numbering
+   instead. */
+.question-options-readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.question-options-readonly__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.question-options-readonly__key {
+  flex-shrink: 0;
+  font-weight: 650;
+}
+
+.question-options-readonly__item--correct {
+  border-color: var(--up);
+  background: var(--ok-bg);
+  color: var(--ok-fg);
 }
 
 /* ---- Remediation checklist panel (§6.2, Task 6) ----------------------------- */
