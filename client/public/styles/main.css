@@ -3618,6 +3618,14 @@ button.class-row--link:focus-visible .class-row__title {
   gap: 0.75rem;
 }
 
+/* Create Course's paired Academic Year / Term dropdowns — same two-up grid as
+   .exam-template-fields, collapsing to one column on narrow screens. */
+.term-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
 .exam-template-fields .form-field:last-child {
   grid-column: 1 / -1;
 }
@@ -3672,6 +3680,10 @@ button.class-row--link:focus-visible .class-row__title {
 
   .exam-template-fields .form-field:last-child {
     grid-column: auto;
+  }
+
+  .term-fields {
+    grid-template-columns: 1fr;
   }
 }
 

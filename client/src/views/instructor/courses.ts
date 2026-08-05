@@ -40,6 +40,87 @@ export function findDuplicateCourse(
   );
 }
 
+/**
+ * UBC's four teaching terms, in the order they occur inside one academic
+ * year. `startMonth` is the 0-indexed calendar month the term begins, and
+ * `inNextCalendarYear` says whether that month falls in the second half of
+ * the academic year (2026/27's Winter Term 2 starts in January *2027*).
+ */
+const UBC_TERMS = [
+  { name: 'Winter Term 1', startMonth: 8, inNextCalendarYear: false }, // Sep–Dec
+  { name: 'Winter Term 2', startMonth: 0, inNextCalendarYear: true }, //  Jan–Apr
+  { name: 'Summer Term 1', startMonth: 4, inNextCalendarYear: true }, //  May–Jun
+  { name: 'Summer Term 2', startMonth: 6, inNextCalendarYear: true }, //  Jul–Aug
+] as const;
+
+/** The four term names alone, for the Term dropdown. */
+export const UBC_TERM_NAMES = UBC_TERMS.map((term) => term.name);
+
+/** FinanceBot's first academic year — nothing earlier is ever offered, since
+ * no course predates it. The Academic Year dropdown starts here and only
+ * moves forward as the calendar catches up. */
+const FIRST_ACADEMIC_YEAR = 2026;
+
+/** How many academic years the dropdown shows. Deliberately a short rolling
+ * window rather than a long fixed list: courses get set up months, not
+ * decades, ahead, and a short list stays glanceable and never needs
+ * maintaining. */
+const ACADEMIC_YEARS_SHOWN = 4;
+
+/** `2026` -> `2026/27`. */
+function academicYearLabel(startYear: number): string {
+  return `${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`;
+}
+
+/** The calendar year an academic year starts in. UBC's academic year runs
+ * September through August, so anything before September still belongs to the
+ * year that started the previous September. */
+function academicYearStart(now: Date): number {
+  return now.getMonth() >= UBC_TERMS[0].startMonth ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+function termStart(startYear: number, term: (typeof UBC_TERMS)[number]): Date {
+  return new Date(startYear + (term.inNextCalendarYear ? 1 : 0), term.startMonth, 1);
+}
+
+/**
+ * The academic years offered on the Create Course form, earliest first — e.g.
+ * `['2026/27', '2027/28', '2028/29', '2029/30']`. Never starts before
+ * `FIRST_ACADEMIC_YEAR`, and rolls forward once the calendar passes it. Pure
+ * and `now`-injected so it is unit-testable without faking the clock.
+ */
+export function academicYearOptions(now: Date): string[] {
+  const first = Math.max(FIRST_ACADEMIC_YEAR, academicYearStart(now));
+  return Array.from({ length: ACADEMIC_YEARS_SHOWN }, (_, i) => academicYearLabel(first + i));
+}
+
+/** How the two dropdowns combine into the single stored `term` string, e.g.
+ * `Winter Term 1, 2026/27`. */
+export function formatTerm(termName: string, academicYear: string): string {
+  return `${termName}, ${academicYear}`;
+}
+
+/**
+ * What the two dropdowns preselect: the next term to *begin*, since a course
+ * is almost always being set up ahead of its term. Clamped into the offered
+ * window, so it always names an option that actually exists.
+ */
+export function defaultTermSelection(now: Date): { academicYear: string; termName: string } {
+  const years = academicYearOptions(now);
+  for (const [index, academicYear] of years.entries()) {
+    const startYear = Number(academicYear.slice(0, 4));
+    for (const term of UBC_TERMS) {
+      // The first offered year may already be under way (or, at launch, still
+      // in the future) — only the earliest year needs the has-it-started
+      // check; every later year is entirely ahead of `now`.
+      if (index > 0 || termStart(startYear, term) > now) {
+        return { academicYear, termName: term.name };
+      }
+    }
+  }
+  return { academicYear: years[years.length - 1]!, termName: UBC_TERMS[0].name };
+}
+
 function courseHref(courseId: string): string {
   return `#/instructor/course/${encodeURIComponent(courseId)}`;
 }
@@ -134,7 +215,36 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   const nameInput = el('input', { class: 'input', type: 'text', id: 'course-name', required: 'required' }) as HTMLInputElement;
   const codeInput = el('input', { class: 'input', type: 'text', id: 'course-code', required: 'required' }) as HTMLInputElement;
   const sectionInput = el('input', { class: 'input', type: 'text', id: 'course-section' }) as HTMLInputElement;
-  const termInput = el('input', { class: 'input', type: 'text', id: 'course-term', required: 'required' }) as HTMLInputElement;
+  // Academic year and term are both fixed vocabularies — UBC runs exactly
+  // four teaching terms per academic year — so they are selects, not free
+  // text. They are stored combined into the single `term` string the API
+  // takes (see `formatTerm`), and both preselect the next term to begin.
+  const now = new Date();
+  const defaults = defaultTermSelection(now);
+  const academicYearInput = el(
+    'select',
+    { class: 'input', id: 'course-academic-year', required: 'required' },
+    ...academicYearOptions(now).map((academicYear) =>
+      el('option', {
+        value: academicYear,
+        text: academicYear,
+        selected: academicYear === defaults.academicYear ? 'selected' : undefined,
+      }),
+    ),
+  ) as HTMLSelectElement;
+  const termInput = el(
+    'select',
+    { class: 'input', id: 'course-term', required: 'required' },
+    ...UBC_TERM_NAMES.map((termName) =>
+      el('option', {
+        value: termName,
+        text: termName,
+        selected: termName === defaults.termName ? 'selected' : undefined,
+      }),
+    ),
+  ) as HTMLSelectElement;
+  /** The two dropdowns as the single string the course record stores. */
+  const currentTerm = (): string => formatTerm(termInput.value, academicYearInput.value);
   const errorSlot = el('div', {});
   const duplicateSlot = el('div', {});
 
@@ -143,7 +253,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   let existingCourses: InstructorCourse[] = [];
 
   const updateDuplicateCallout = (): void => {
-    const duplicate = findDuplicateCourse(existingCourses, codeInput.value, termInput.value);
+    const duplicate = findDuplicateCourse(existingCourses, codeInput.value, currentTerm());
     if (!duplicate) {
       duplicateSlot.replaceChildren();
       return;
@@ -170,7 +280,8 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   };
 
   codeInput.addEventListener('input', updateDuplicateCallout);
-  termInput.addEventListener('input', updateDuplicateCallout);
+  academicYearInput.addEventListener('change', updateDuplicateCallout);
+  termInput.addEventListener('change', updateDuplicateCallout);
 
   void listInstructorCourses()
     .then((courses) => {
@@ -188,9 +299,11 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     const name = nameInput.value.trim();
     const courseCode = codeInput.value.trim();
     const section = sectionInput.value.trim();
-    const term = termInput.value.trim();
-    if (!name || !courseCode || !term) {
-      errorSlot.replaceChildren(errorState('Course name, code, and term are all required.'));
+    // No trim/blank guard on term: both selects always carry one of their
+    // generated option values, so it can never arrive empty or padded.
+    const term = currentTerm();
+    if (!name || !courseCode) {
+      errorSlot.replaceChildren(errorState('Course name and course code are both required.'));
       return;
     }
     try {
@@ -209,7 +322,12 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       el('div', { class: 'form-field' }, fieldLabel('Course name *', 'course-name'), nameInput),
       el('div', { class: 'form-field' }, fieldLabel('Course code *', 'course-code'), codeInput),
       el('div', { class: 'form-field' }, fieldLabel('Section', 'course-section'), sectionInput),
-      el('div', { class: 'form-field' }, fieldLabel('Term *', 'course-term'), termInput),
+      el(
+        'div',
+        { class: 'term-fields' },
+        el('div', { class: 'form-field' }, fieldLabel('Academic Year *', 'course-academic-year'), academicYearInput),
+        el('div', { class: 'form-field' }, fieldLabel('Term *', 'course-term'), termInput),
+      ),
       duplicateSlot,
       errorSlot,
       el(
