@@ -134,7 +134,7 @@ export async function createMaterialIngestRun(input: {
   materialId: ObjectId;
   sourceName: string;
   sourceFormat: Material['format'];
-  trigger: 'upload' | 'retry';
+  trigger: 'upload' | 'retry' | 'restore';
   previousRunId?: ObjectId;
 }): Promise<WithId<MaterialIngestRun>> {
   const now = new Date();

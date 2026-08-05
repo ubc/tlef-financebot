@@ -2,7 +2,7 @@ import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
 import { env } from '../config/env';
-import type { LearningObjective, Material, Theme } from '../types/domain';
+import type { LearningObjective, Material, MaterialKind, Theme } from '../types/domain';
 import { addLo, addTheme } from './courses.service';
 
 // -----------------------------------------------------------------------------
@@ -29,10 +29,8 @@ import { addLo, addTheme } from './courses.service';
 //    assignments are preserved.
 // -----------------------------------------------------------------------------
 
-// Below this the model is telling us it isn't sure; per the brief a low-
-// confidence classification stores nothing and the material shows as
-// "Unclassified" client-side.
-const CONFIDENCE_THRESHOLD = 0.5;
+export const AUTO_APPLY_CONFIDENCE = 0.85;
+export const REVIEW_CONFIDENCE = 0.65;
 
 // How much of each material's text the prompts use. The excerpt is persisted on
 // the Material at ingest time (materials.service.ts) — see the deviation note
@@ -40,9 +38,19 @@ const CONFIDENCE_THRESHOLD = 0.5;
 const MAX_HIERARCHY_MATERIALS = 40;
 
 interface ClassificationResult {
-  themeName: string;
+  themeName?: string;
   loName?: string;
-  confidence: number;
+  confidence?: number;
+  materialKind?: MaterialKind;
+  materialKindConfidence?: number;
+  matches?: Array<{ themeName?: unknown; loName?: unknown; confidence?: unknown; rationale?: unknown }>;
+  concepts?: Array<{
+    name?: unknown;
+    description?: unknown;
+    confidence?: unknown;
+    evidence?: unknown;
+    relationships?: unknown;
+  }>;
 }
 
 interface HierarchyResult {
@@ -63,14 +71,12 @@ function normalizeName(name: string): string {
 
 /**
  * IN-S06 auto-classification. Reads the material's persisted excerpt and the
- * course's live Theme/LO names, asks the LLM for a single best-fit Theme (+
- * optional LO) with a confidence, and stores a `classificationSuggestion` only
- * when the model is confident AND the suggested names resolve to real ids.
- * Stores nothing (and makes no LLM call) when the material has no excerpt or the
- * course has no themes yet.
+ * course's live Theme/LO names, asks the LLM for kind, concepts, and zero or
+ * more mappings. High-confidence mappings apply automatically; medium ones
+ * become review items. Extraction still runs before a hierarchy exists.
  */
 export async function classifyMaterial(materialId: ObjectId): Promise<void> {
-  const material = await materialsCol().findOne({ _id: materialId });
+  const material = await materialsCol().findOne({ _id: materialId, deletedAt: { $exists: false } });
   if (!material?.excerpt) return; // nothing ingested to classify
 
   const courseId = material.courseId;
@@ -78,29 +84,113 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
     themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
   ]);
-  if (themes.length === 0) return; // no hierarchy to classify into yet
-
   const result = await completeJson<ClassificationResult>(buildClassificationPrompt(material, themes, los), {
     model: env.llmDefaultModel,
     temperature: 0,
   });
 
-  if (typeof result.confidence !== 'number' || result.confidence < CONFIDENCE_THRESHOLD) return;
+  const rawMatches = Array.isArray(result.matches)
+    ? result.matches
+    : result.themeName
+      ? [{ themeName: result.themeName, loName: result.loName, confidence: result.confidence }]
+      : [];
+  const resolved: NonNullable<Material['classificationSuggestions']> = [];
+  for (const match of rawMatches.slice(0, 8)) {
+    if (typeof match.themeName !== 'string' || typeof match.confidence !== 'number') continue;
+    if (match.confidence < REVIEW_CONFIDENCE || match.confidence > 1) continue;
+    const theme = themes.find((candidate) => normalizeName(candidate.name) === normalizeName(match.themeName as string));
+    if (!theme) continue;
+    const lo =
+      typeof match.loName === 'string'
+        ? los.find(
+            (candidate) =>
+              candidate.themeId.equals(theme._id) &&
+              normalizeName(candidate.name) === normalizeName(match.loName as string),
+          )
+        : undefined;
+    const duplicate = resolved.some(
+      (candidate) =>
+        candidate.themeId.equals(theme._id) &&
+        Boolean(candidate.loId) === Boolean(lo?._id) &&
+        (!candidate.loId || !lo?._id || candidate.loId.equals(lo._id)),
+    );
+    if (duplicate) continue;
+    resolved.push({
+      themeId: theme._id,
+      ...(lo ? { loId: lo._id } : {}),
+      confidence: match.confidence,
+      ...(typeof match.rationale === 'string' ? { rationale: match.rationale.slice(0, 500) } : {}),
+    });
+  }
+  resolved.sort((a, b) => b.confidence - a.confidence);
+  const autoApplied = resolved.filter((match) => match.confidence >= AUTO_APPLY_CONFIDENCE);
+  const needsReview = resolved.filter((match) => match.confidence < AUTO_APPLY_CONFIDENCE);
+  const assignments = [...(material.assignments ?? [])];
+  for (const match of autoApplied) {
+    const exists = assignments.some(
+      (assignment) =>
+        assignment.themeId.equals(match.themeId) &&
+        Boolean(assignment.loId) === Boolean(match.loId) &&
+        (!assignment.loId || !match.loId || assignment.loId.equals(match.loId)),
+    );
+    if (!exists) assignments.push({ themeId: match.themeId, ...(match.loId ? { loId: match.loId } : {}) });
+  }
 
-  const theme = themes.find((t) => normalizeName(t.name) === normalizeName(result.themeName ?? ''));
-  if (!theme) return; // the model named a theme that doesn't exist — discard
+  const kinds: MaterialKind[] = ['lecture', 'reading', 'assignment', 'assessment', 'solution', 'reference', 'other'];
+  const aiKind = kinds.includes(result.materialKind as MaterialKind) ? (result.materialKind as MaterialKind) : undefined;
+  const kindConfidence =
+    typeof result.materialKindConfidence === 'number' && result.materialKindConfidence >= 0 && result.materialKindConfidence <= 1
+      ? result.materialKindConfidence
+      : 0;
+  const concepts: NonNullable<Material['knowledgeConcepts']> = [];
+  for (const raw of Array.isArray(result.concepts) ? result.concepts.slice(0, 24) : []) {
+    if (typeof raw.name !== 'string' || raw.name.trim() === '') continue;
+    const relationships = Array.isArray(raw.relationships)
+      ? raw.relationships
+          .filter(
+            (relationship): relationship is { targetName: string; type: string } =>
+              typeof relationship === 'object' &&
+              relationship !== null &&
+              typeof (relationship as { targetName?: unknown }).targetName === 'string' &&
+              typeof (relationship as { type?: unknown }).type === 'string',
+          )
+          .slice(0, 12)
+          .map((relationship) => ({ targetName: relationship.targetName.slice(0, 120), type: relationship.type.slice(0, 60) }))
+      : undefined;
+    concepts.push({
+      name: raw.name.trim().slice(0, 120),
+      ...(typeof raw.description === 'string' ? { description: raw.description.slice(0, 600) } : {}),
+      confidence:
+        typeof raw.confidence === 'number' ? Math.max(0, Math.min(1, raw.confidence)) : 0.5,
+      ...(typeof raw.evidence === 'string' ? { evidence: raw.evidence.slice(0, 600) } : {}),
+      ...(relationships?.length ? { relationships } : {}),
+    });
+  }
 
-  // An LO only counts if it names a real LO UNDER the matched theme.
-  const lo = result.loName
-    ? los.find((l) => l.themeId.equals(theme._id) && normalizeName(l.name) === normalizeName(result.loName!))
-    : undefined;
-
-  const suggestion: Material['classificationSuggestion'] = {
-    themeId: theme._id,
-    ...(lo ? { loId: lo._id } : {}),
-    confidence: result.confidence,
+  const highestConfidence = resolved[0]?.confidence ?? 0;
+  const set: Partial<Material> = {
+    assignments,
+    classificationSuggestions: needsReview,
+    automation: {
+      kind: {
+        value: aiKind && kindConfidence >= REVIEW_CONFIDENCE ? aiKind : (material.kind ?? 'other'),
+        confidence: aiKind ? kindConfidence : 0,
+        source: aiKind && kindConfidence >= REVIEW_CONFIDENCE ? 'ai' : 'filename',
+      },
+      assignment: {
+        status: autoApplied.length > 0 ? 'auto-applied' : needsReview.length > 0 ? 'needs-review' : 'unmatched',
+        confidence: highestConfidence,
+        updatedAt: new Date(),
+      },
+    },
+    knowledgeConcepts: concepts,
   };
-  await materialsCol().updateOne({ _id: materialId }, { $set: { classificationSuggestion: suggestion } });
+  if (aiKind && kindConfidence >= REVIEW_CONFIDENCE) set.kind = aiKind;
+  if (needsReview[0]) set.classificationSuggestion = needsReview[0];
+  await materialsCol().updateOne(
+    { _id: materialId, deletedAt: { $exists: false } },
+    needsReview[0] ? { $set: set } : { $set: set, $unset: { classificationSuggestion: '' } },
+  );
 }
 
 /**
@@ -111,7 +201,7 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
  */
 export async function suggestHierarchy(courseId: ObjectId): Promise<SuggestedHierarchy> {
   const materials = await materialsCol()
-    .find({ courseId, status: 'ready' })
+    .find({ courseId, status: 'ready', deletedAt: { $exists: false } })
     .toArray();
   const sourceMaterials = materials
     .filter((material) => Boolean(material.excerpt?.trim()))
@@ -204,7 +294,7 @@ export async function applySuggestedHierarchy(
     materialIds.length === 0
       ? []
       : await materialsCol()
-          .find({ _id: { $in: materialIds }, courseId, status: 'ready' })
+          .find({ _id: { $in: materialIds }, courseId, status: 'ready', deletedAt: { $exists: false } })
           .toArray();
   if (materials.length !== materialIds.length) {
     throw new Error('suggested-hierarchy-material-not-found');
@@ -270,7 +360,7 @@ export async function resolveClassification(
   const material = await materialsCol().findOne({ _id: materialId });
   if (!material) throw new Error('material-not-found');
 
-  const clearSuggestion = { $unset: { classificationSuggestion: '' } } as const;
+  const clearSuggestion = { $unset: { classificationSuggestion: '', classificationSuggestions: '' } } as const;
 
   if (action === 'reject') {
     const updated = await materialsCol().findOneAndUpdate(
@@ -339,18 +429,22 @@ function buildClassificationPrompt(
       const loLines = themeLos.length > 0 ? themeLos.map((n) => `    - ${n}`).join('\n') : '    (no LOs yet)';
       return `- Theme: ${t.name}\n${loLines}`;
     })
-    .join('\n');
+    .join('\n') || '(No Topics or LOs exist yet. Return no hierarchy matches.)';
 
   return [
     'You are helping an instructor organise course materials into an existing',
-    'Theme / Learning Objective (LO) hierarchy. Classify the material below into',
-    'exactly ONE existing Theme, and optionally ONE existing LO under that Theme.',
-    'Use ONLY names that appear in the hierarchy — do not invent new ones.',
+    'Theme / Learning Objective (LO) hierarchy. Infer the material kind, extract',
+    'important concepts with short source evidence, and find every strong match',
+    'to the existing hierarchy. A material may match multiple LOs. Use ONLY',
+    'hierarchy names shown below; never invent a match.',
     '',
     'Respond with ONLY a JSON object of this shape:',
-    '{ "themeName": string, "loName": string | null, "confidence": number }',
-    'confidence is 0..1 — your certainty the material belongs to that Theme.',
-    'If nothing fits well, still pick the closest Theme but give a low confidence.',
+    '{ "materialKind": "lecture"|"reading"|"assignment"|"assessment"|"solution"|"reference"|"other",',
+    '  "materialKindConfidence": number,',
+    '  "matches": [{ "themeName": string, "loName": string|null, "confidence": number, "rationale": string }],',
+    '  "concepts": [{ "name": string, "description": string, "confidence": number, "evidence": string,',
+    '                  "relationships": [{ "targetName": string, "type": string }] }] }',
+    'All confidence values are 0..1. Return an empty matches array when nothing fits.',
     '',
     'Existing hierarchy:',
     hierarchy,

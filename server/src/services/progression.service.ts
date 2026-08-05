@@ -63,6 +63,7 @@ export async function repeatedFailureRedirect(input: {
     .find({
       courseId: input.courseId,
       status: 'ready',
+      deletedAt: { $exists: false },
       assignments: { $elemMatch: { loId: input.loId } },
     })
     .sort({ uploadedAt: -1 })
@@ -111,6 +112,7 @@ export async function getRedirectMaterialSource(
 ): Promise<RedirectMaterialSource | null> {
   const material: WithId<Material> | null = await materialsCol().findOne({
     _id: materialId,
+    deletedAt: { $exists: false },
     courseId,
     status: 'ready',
     assignments: { $elemMatch: { loId } },

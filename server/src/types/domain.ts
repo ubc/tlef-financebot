@@ -353,6 +353,33 @@ export interface Material {
   storagePath?: string; // uploaded file location on disk
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>; // many-to-many (IN-S05)
   classificationSuggestion?: { themeId: ObjectId; loId?: ObjectId; confidence: number }; // IN-S06
+  /** Ranked AI mappings. High-confidence mappings may already be present in
+   * `assignments`; medium-confidence mappings stay here for instructor review. */
+  classificationSuggestions?: Array<{
+    themeId: ObjectId;
+    loId?: ObjectId;
+    confidence: number;
+    rationale?: string;
+  }>;
+  automation?: {
+    kind?: {
+      value: MaterialKind;
+      confidence: number;
+      source: 'ai' | 'filename' | 'manual';
+    };
+    assignment?: {
+      status: 'auto-applied' | 'needs-review' | 'unmatched';
+      confidence: number;
+      updatedAt: Date;
+    };
+  };
+  knowledgeConcepts?: Array<{
+    name: string;
+    description?: string;
+    confidence: number;
+    evidence?: string;
+    relationships?: Array<{ targetName: string; type: string }>;
+  }>;
   // First ~2000 chars of the ingested text, persisted at ingest time so IN-S06
   // classification (classifyMaterial) and hierarchy suggestion (suggestHierarchy)
   // never re-parse files or re-fetch URL materials. Absent until a material is
@@ -360,7 +387,23 @@ export interface Material {
   excerpt?: string; // IN-S06
   /** Newest durable ingest attempt. Older attempts remain in contentRuns. */
   activeRunId?: ObjectId;
+  /** Soft deletion keeps provenance and downstream questions intact. Search
+   * vectors are removed while a material is in Trash and rebuilt on restore. */
+  deletedAt?: Date;
+  deletedBy?: string;
   uploadedAt: Date;
+}
+
+/** Persisted, inspectable source chunks. Embeddings remain in Qdrant; Mongo
+ * keeps the text/evidence needed by Preview and the knowledge graph. */
+export interface MaterialChunk {
+  courseId: ObjectId;
+  materialId: ObjectId;
+  index: number;
+  text: string;
+  characterCount: number;
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
 }
 
 export interface ContentRunError {
@@ -419,7 +462,7 @@ export interface MaterialIngestRun extends ContentRunBase {
     materialId: ObjectId;
     sourceName: string;
     sourceFormat: Material['format'];
-    trigger: 'upload' | 'retry';
+    trigger: 'upload' | 'retry' | 'restore';
     previousRunId?: ObjectId;
   };
   result?: MaterialIngestResult;

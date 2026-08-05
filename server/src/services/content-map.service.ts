@@ -1,7 +1,9 @@
 import type { ObjectId } from 'mongodb';
 import {
   losCol,
+  materialChunksCol,
   materialsCol,
+  questionVersionsCol,
   questionsCol,
   themesCol,
 } from '../components/mongodb/collections';
@@ -55,7 +57,7 @@ export async function getCourseContentMap(courseId: ObjectId): Promise<CourseCon
   const [themes, los, materials, questions, runs] = await Promise.all([
     themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
-    materialsCol().find({ courseId }).sort({ uploadedAt: -1 }).toArray(),
+    materialsCol().find({ courseId, deletedAt: { $exists: false } }).sort({ uploadedAt: -1 }).toArray(),
     questionsCol().find({ courseId }).toArray(),
     listCourseContentRuns(courseId, { limit: 100 }),
   ]);
@@ -141,4 +143,163 @@ export async function getCourseContentMap(courseId: ObjectId): Promise<CourseCon
       .filter((material) => material.assignments.length === 0)
       .map(materialSummary),
   };
+}
+
+export type KnowledgeNodeType = 'material' | 'evidence' | 'concept' | 'topic' | 'lo' | 'question';
+
+export interface KnowledgeGraphNode {
+  id: string;
+  type: KnowledgeNodeType;
+  label: string;
+  subtitle?: string;
+  materialId?: ObjectId;
+  confidence?: number;
+  trashed?: boolean;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: 'contains' | 'supports' | 'covers' | 'defines' | 'assesses' | 'sourced-from' | 'related-to';
+  label?: string;
+}
+
+export interface CourseKnowledgeGraph {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  truncated: boolean;
+}
+
+/** An inspectable evidence graph assembled from durable application records.
+ * Chunks are capped per material for an initial readable view; selecting a
+ * material loads its complete chunk list through the workspace-detail API. */
+export async function getCourseKnowledgeGraph(courseId: ObjectId): Promise<CourseKnowledgeGraph> {
+  const [themes, los, materials, questions] = await Promise.all([
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    materialsCol().find({ courseId }).sort({ uploadedAt: -1 }).toArray(),
+    questionsCol().find({ courseId }).toArray(),
+  ]);
+  const chunks = await materialChunksCol()
+    .find({ courseId })
+    .sort({ materialId: 1, index: 1 })
+    .toArray();
+  const versions = questions.length
+    ? await questionVersionsCol().find({ _id: { $in: questions.map((question) => question.currentVersionId) } }).toArray()
+    : [];
+  const versionById = new Map(versions.map((version) => [version._id.toHexString(), version]));
+  const nodes: KnowledgeGraphNode[] = [];
+  const edges: KnowledgeGraphEdge[] = [];
+  const edgeKeys = new Set<string>();
+  const addEdge = (edge: KnowledgeGraphEdge): void => {
+    const key = `${edge.source}:${edge.target}:${edge.type}`;
+    if (edgeKeys.has(key)) return;
+    edgeKeys.add(key);
+    edges.push(edge);
+  };
+
+  for (const theme of themes) {
+    const topicId = `topic:${theme._id.toHexString()}`;
+    nodes.push({ id: topicId, type: 'topic', label: theme.name, subtitle: 'Topic' });
+  }
+  for (const lo of los) {
+    const loId = `lo:${lo._id.toHexString()}`;
+    nodes.push({ id: loId, type: 'lo', label: lo.name, subtitle: 'Learning objective' });
+    addEdge({
+      id: `edge:topic-lo:${lo._id.toHexString()}`,
+      source: `topic:${lo.themeId.toHexString()}`,
+      target: loId,
+      type: 'defines',
+    });
+  }
+
+  let truncated = false;
+  for (const material of materials) {
+    const materialHex = material._id.toHexString();
+    const materialNodeId = `material:${materialHex}`;
+    nodes.push({
+      id: materialNodeId,
+      type: 'material',
+      label: material.name,
+      subtitle: material.deletedAt ? 'Source deleted · retained provenance' : `${material.kind ?? 'other'} · ${material.status}`,
+      materialId: material._id,
+      ...(material.deletedAt ? { trashed: true } : {}),
+    });
+    const materialChunks = chunks
+      .filter((chunk) => chunk.materialId.equals(material._id))
+      .map((chunk) => ({ index: chunk.index, text: chunk.text }));
+    if (materialChunks.length === 0 && material.excerpt) {
+      materialChunks.push({ index: 0, text: material.excerpt });
+    }
+    if (materialChunks.length > 4) truncated = true;
+    const visibleChunks = materialChunks.slice(0, 4);
+    for (const chunk of visibleChunks) {
+      const chunkNodeId = `evidence:${materialHex}:${chunk.index}`;
+      nodes.push({
+        id: chunkNodeId,
+        type: 'evidence',
+        label: `Chunk ${chunk.index + 1}`,
+        subtitle: chunk.text.slice(0, 140),
+        materialId: material._id,
+      });
+      addEdge({ id: `edge:material-chunk:${materialHex}:${chunk.index}`, source: materialNodeId, target: chunkNodeId, type: 'contains' });
+    }
+    for (const [conceptIndex, concept] of (material.knowledgeConcepts ?? []).entries()) {
+      const conceptNodeId = `concept:${materialHex}:${conceptIndex}`;
+      nodes.push({
+        id: conceptNodeId,
+        type: 'concept',
+        label: concept.name,
+        subtitle: concept.description,
+        materialId: material._id,
+        confidence: concept.confidence,
+      });
+      const supporting = visibleChunks.find(
+        (chunk) =>
+          (concept.evidence && chunk.text.toLowerCase().includes(concept.evidence.slice(0, 60).toLowerCase())) ||
+          chunk.text.toLowerCase().includes(concept.name.toLowerCase()),
+      );
+      addEdge({
+        id: `edge:evidence-concept:${materialHex}:${conceptIndex}`,
+        source: supporting ? `evidence:${materialHex}:${supporting.index}` : materialNodeId,
+        target: conceptNodeId,
+        type: 'supports',
+      });
+      for (const assignment of material.assignments) {
+        if (!assignment.loId) continue;
+        addEdge({
+          id: `edge:concept-lo:${materialHex}:${conceptIndex}:${assignment.loId.toHexString()}`,
+          source: conceptNodeId,
+          target: `lo:${assignment.loId.toHexString()}`,
+          type: 'covers',
+        });
+      }
+    }
+  }
+
+  for (const question of questions) {
+    const questionHex = question._id.toHexString();
+    const version = versionById.get(question.currentVersionId.toHexString());
+    const questionNodeId = `question:${questionHex}`;
+    nodes.push({
+      id: questionNodeId,
+      type: 'question',
+      label: version?.stem.slice(0, 120) || `Question ${questionHex.slice(-6)}`,
+      subtitle: `${question.state} · v${question.currentVersion}`,
+    });
+    for (const loId of question.loIds) {
+      addEdge({ id: `edge:lo-question:${loId.toHexString()}:${questionHex}`, source: `lo:${loId.toHexString()}`, target: questionNodeId, type: 'assesses' });
+    }
+    for (const source of version?.sourceRefs ?? []) {
+      addEdge({
+        id: `edge:question-source:${questionHex}:${source.materialId.toHexString()}`,
+        source: questionNodeId,
+        target: `material:${source.materialId.toHexString()}`,
+        type: 'sourced-from',
+      });
+    }
+  }
+
+  return { nodes, edges, truncated };
 }

@@ -143,6 +143,12 @@ commonly need:
   review backlog, active flags, and engagement into a priority-ordered action
   queue with direct destinations. The Instructor shell now passes its current
   axe WCAG A/AA scans.
+- Phase 5 now includes the first Course Knowledge Workspace slice: a responsive
+  Files/Assistant/Inspector surface unifies upload, durable SSE stage progress,
+  original/chunk/metadata preview, confidence-based multi-LO automation,
+  reversible Trash, and an interactive provenance graph from source evidence
+  through concepts/LOs to questions. Source chunks are persisted separately
+  from embeddings, and deleted sources cannot ground new generation.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage

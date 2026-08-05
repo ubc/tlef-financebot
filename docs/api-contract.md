@@ -122,6 +122,19 @@ grant attaches to the same PUID-backed User on first SAML login.
 ## Materials (instructor)
 - `POST /api/courses/:courseId/materials` (multipart, field `files[]`; or JSON `{ url }`) → 201 `[Material]` (successfully queued entries have status `processing` + a unique `activeRunId`; an immediate run-storage/enqueue failure is returned as status `failed` so no row remains stuck)
 - `GET /api/courses/:courseId/materials` → `[Material]`
+- `GET /api/courses/:courseId/materials-trash` → soft-deleted `[Material]`
+- `GET /api/courses/:courseId/materials/:materialId/workspace` →
+  `{ material, chunks: [{ index, text, characterCount }] }`; private server
+  `storagePath` is never serialized. Legacy ingests without persisted chunks
+  expose their retained excerpt as a compatibility preview chunk.
+- `GET /api/courses/:courseId/materials/:materialId/source` → authorized inline
+  original-file preview or an http(s) redirect for URL materials. File paths
+  are realpath-checked under the configured upload directory.
+- `DELETE /api/courses/:courseId/materials/:materialId` → Material in Trash.
+  This preserves chunks, questions, and provenance but excludes the source from
+  retrieval and removes its Qdrant points.
+- `POST /api/courses/:courseId/materials/:materialId/restore` → Material with a
+  new `activeRunId`; restore re-runs parse → chunk → embed → index → classify.
 - Material responses expose `kind:
   'lecture'|'reading'|'assignment'|'assessment'|'solution'|'reference'|'other'`.
   New rows receive a deterministic name-based suggestion; legacy rows normalize
@@ -143,9 +156,21 @@ grant attaches to the same PUID-backed User on first SAML login.
   question counts by publication state, latest ingest/generation run status,
   unassigned materials, and gaps (`no-material`,
   `no-approved-questions`, `thin-approved-set`).
+- `GET /api/courses/:courseId/knowledge-graph` →
+  `{ nodes, edges, truncated }` for the inspectable
+  Material → Evidence → Concept → Topic/LO → Question graph. Trashed sources
+  remain visible as provenance nodes; the overview caps evidence nodes per
+  source while the material workspace endpoint returns the full chunk list.
 
-## Materials (instructor) — implementation note (IN-S06 auto-classification)
-On successful ingest a material may gain a `classificationSuggestion { themeId, loId?, confidence }` (LLM best-fit into the existing hierarchy; only stored when `confidence ≥ 0.5` and the names resolve). Accept via `POST .../classification { action: 'accept' }` (merges it into `assignments`, clears the suggestion); reject clears it. Absent/low-confidence ⇒ material shows "Unclassified" client-side.
+## Materials (instructor) — implementation note (Knowledge Workspace automation)
+On successful ingest the classifier infers material kind, extracts evidence-
+backed concepts, and may return multiple existing Topic/LO matches. Resolved
+matches at confidence `≥ 0.85` are auto-applied and remain instructor-editable;
+matches from `0.65` through `< 0.85` enter Review; lower or invented hierarchy
+names never become assignments. Kind/concept extraction still runs when the
+course has no hierarchy, supporting materials-first authoring. The legacy
+singular `classificationSuggestion` stays populated for the first review item
+so existing accept/reject clients remain compatible.
 
 When the hierarchy itself is AI-generated after materials were uploaded, each
 suggested LO carries the material ids that support it. Applying the reviewed

@@ -232,13 +232,13 @@ test.describe('Phase 1 exit — core loop demo', () => {
 
       await test.step('uploads a course material', async () => {
         await instructor.getByRole('link', { name: 'Course Materials' }).click();
-        await expect(instructor.getByRole('heading', { name: 'Course Materials' })).toBeVisible();
+        await expect(instructor.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
         await instructor.locator('.upload-zone__input').setInputFiles(FIXTURE_PATH);
-        await expect(instructor.locator('.material-row__name')).toHaveText(FIXTURE_NAME);
+        await expect(instructor.locator('.workspace-file__name')).toHaveText(FIXTURE_NAME);
         // Ingest is async; Processing or Ready both mean the upload landed.
         await expect(
-          instructor.locator('.material-row').filter({ hasText: FIXTURE_NAME }).locator('.material-row__meta'),
-        ).toContainText(/Processing|Ready/);
+          instructor.locator('.workspace-file').filter({ hasText: FIXTURE_NAME }).locator('.workspace-file__meta'),
+        ).toContainText(/processing|queued|parsing|chunking|embedding|indexing|classifying|ready/);
       });
 
       await test.step('question bank is authored into pending review', async () => {
