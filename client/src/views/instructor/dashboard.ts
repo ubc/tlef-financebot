@@ -10,7 +10,7 @@ import {
   type InstructorWorkflowSummary,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { checklistRow, pageHeader, statTile } from '../../instructor-ui.js';
+import { checklistRow, statTile } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
@@ -107,6 +107,70 @@ function readinessCard(data: InstructorWorkflowSummary): HTMLElement {
       el('strong', { class: 'cockpit-readiness__percent', text: `${readiness.percent}%` }),
     ),
     progress,
+  );
+}
+
+function courseFlow(data: InstructorWorkflowSummary): HTMLElement {
+  const { course, counts } = data;
+  const steps: Array<{
+    number: string;
+    label: string;
+    detail: string;
+    path?: string;
+    onClick?: () => void;
+  }> = [
+    {
+      number: '1',
+      label: 'Sources',
+      detail: `${counts.contentIssues ? `${counts.contentIssues} issue${counts.contentIssues === 1 ? '' : 's'}` : 'Knowledge ready'}`,
+      path: `/instructor/course/${encodeURIComponent(course.id)}/materials`,
+    },
+    {
+      number: '2',
+      label: 'Learning objectives',
+      detail: `${counts.learningObjectives} LO${counts.learningObjectives === 1 ? '' : 's'}`,
+      path: `/instructor/course/${encodeURIComponent(course.id)}/structure`,
+    },
+    {
+      number: '3',
+      label: 'Questions',
+      detail: `${counts.approvedQuestions} approved`,
+      path: `/instructor/course/${encodeURIComponent(course.id)}/preseeding`,
+    },
+    {
+      number: '4',
+      label: 'Review',
+      detail: `${counts.reviewQueue} waiting`,
+      path: `/instructor/course/${encodeURIComponent(course.id)}/queue`,
+    },
+    {
+      number: '5',
+      label: 'Student preview',
+      detail: 'Test the experience',
+      onClick: () => startAnonymousPreview(course.id),
+      path: `/preview/course/${encodeURIComponent(course.id)}`,
+    },
+  ];
+  return el(
+    'nav',
+    { class: 'course-flow', 'aria-label': 'Course authoring workflow' },
+    ...steps.map((step) =>
+      el(
+        'a',
+        {
+          class: 'course-flow__step',
+          href: `#${step.path}`,
+          onclick: step.onClick,
+        },
+        el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: step.number }),
+        el(
+          'span',
+          { class: 'course-flow__body' },
+          el('strong', { text: step.label }),
+          el('span', { text: step.detail }),
+        ),
+      ),
+    ),
   );
 }
 
@@ -211,7 +275,7 @@ function pathActionCard(title: string, subtitle: string, path: string): HTMLElem
 
 async function renderDashboardInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course cockpit…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view view--course-project' }, body);
   mount(outlet, root);
 
   try {
@@ -222,6 +286,11 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       : course.lifecycle === 'published'
         ? 'Published'
         : 'Sandbox (not yet published)';
+    const lifecycleBadge = course.lifecycle === 'archived'
+      ? 'Archived'
+      : course.lifecycle === 'published'
+        ? 'Published'
+        : 'Draft';
 
     async function publish(): Promise<void> {
       try {
@@ -243,13 +312,38 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       }
     }
 
-    const header = pageHeader(
-      course.name,
-      `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''} · ${course.term} · ${lifecycleLabel}`,
-      course.lifecycle === 'archived' ? undefined : {
-        text: course.lifecycle === 'published' ? 'Return to draft' : 'Publish Course →',
-        onClick: () => void publish(),
-      },
+    const header = el(
+      'header',
+      { class: 'project-hero' },
+      el(
+        'div',
+        { class: 'project-hero__body' },
+        el('p', { class: 'project-hero__eyebrow', text: 'COURSE PROJECT' }),
+        el('h1', { class: 'project-hero__title', text: course.name }),
+        el('p', {
+          class: 'project-hero__meta page-header__subtitle',
+          text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''} · ${course.term} · ${lifecycleLabel}`,
+        }),
+      ),
+      el(
+        'div',
+        { class: 'project-hero__actions' },
+        el('span', {
+          class: `project-hero__status project-hero__status--${course.lifecycle}`,
+          text: lifecycleBadge,
+        }),
+        course.lifecycle === 'archived'
+          ? false
+          : el(
+              'button',
+              {
+                class: 'btn btn--instr-primary',
+                type: 'button',
+                onclick: () => void publish(),
+              },
+              course.lifecycle === 'published' ? 'Return to draft' : 'Publish course →',
+            ),
+      ),
     );
 
     const checklist = el(
@@ -273,7 +367,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
     const explore = el(
       'div',
       { class: 'quick-action-grid' },
-      quickActionCard(courseId, 'Content Map', 'Inspect each LO from sources to Approved questions', 'content-map'),
+      quickActionCard(courseId, 'Coverage Map', 'Find thin LOs and trace each one to sources and Approved questions', 'content-map'),
       quickActionCard(courseId, 'Question Bank', 'Search, edit, version, and manage all questions', 'bank'),
       quickActionCard(courseId, 'Student Analytics', 'Explore learning, misconceptions, and engagement', 'analytics'),
       quickActionCard(
@@ -292,16 +386,45 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
 
     body.replaceChildren(
       header,
-      readinessCard(data),
-      statTiles(data),
-      el('h2', { class: 'section-title', text: 'Next actions' }),
-      actionList(data, () => void publish(), () => void restore()),
-      el('details', { class: 'cockpit-checklist' },
-        el('summary', { text: 'View launch checklist' }),
-        checklist,
+      courseFlow(data),
+      el(
+        'div',
+        { class: 'project-cockpit' },
+        el(
+          'section',
+          { class: 'project-panel project-panel--primary', 'aria-labelledby': 'next-actions-title' },
+          el('div', { class: 'project-panel__heading' },
+            el('div', {},
+              el('p', { class: 'project-panel__eyebrow', text: 'CONTINUE WORKING' }),
+              el('h2', { id: 'next-actions-title', class: 'section-title', text: 'Next actions' }),
+            ),
+            el('span', { class: 'project-panel__count', text: String(data.actions.length) }),
+          ),
+          actionList(data, () => void publish(), () => void restore()),
+          el('details', { class: 'cockpit-checklist' },
+            el('summary', { text: 'View launch checklist' }),
+            checklist,
+          ),
+        ),
+        el(
+          'aside',
+          { class: 'project-panel project-panel--status', 'aria-label': 'Course status' },
+          readinessCard(data),
+          el('h2', { class: 'section-title project-panel__snapshot-title', text: 'Course snapshot' }),
+          statTiles(data),
+        ),
       ),
-      el('h2', { class: 'section-title', text: 'Explore course' }),
-      explore,
+      el(
+        'section',
+        { class: 'project-explore', 'aria-labelledby': 'explore-course-title' },
+        el('div', { class: 'project-panel__heading' },
+          el('div', {},
+            el('p', { class: 'project-panel__eyebrow', text: 'MORE TOOLS' }),
+            el('h2', { id: 'explore-course-title', class: 'section-title', text: 'Explore course' }),
+          ),
+        ),
+        explore,
+      ),
     );
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;

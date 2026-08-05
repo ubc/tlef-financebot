@@ -128,22 +128,47 @@ function courseHref(courseId: string): string {
   return `#/instructor/course/${encodeURIComponent(courseId)}`;
 }
 
+function courseTone(course: InstructorCourse): number {
+  const seed = `${course.courseCode}${course.section ?? ''}`;
+  return [...seed].reduce((total, character) => total + character.charCodeAt(0), 0) % 6;
+}
+
 function courseCard(course: InstructorCourse): HTMLElement {
   const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
   const label = lifecycle === 'archived' ? 'Archived' : lifecycle === 'published' ? 'Published' : 'Sandbox';
   return el(
     'a',
-    { class: 'course-card', href: courseHref(course._id) },
+    {
+      class: `course-card course-card--tone-${courseTone(course)}`,
+      href: courseHref(course._id),
+      'aria-label': `Open ${course.courseCode} ${course.name}`,
+    },
+    el(
+      'div',
+      { class: 'course-card__cover' },
+      el('span', { class: 'course-card__code', text: course.courseCode }),
+      statusBadge(label, lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral'),
+      el('span', {
+        class: 'course-card__monogram',
+        'aria-hidden': 'true',
+        text: course.courseCode.split(/\s+/).map((part) => part[0]).join('').slice(0, 3),
+      }),
+    ),
     el(
       'div',
       { class: 'course-card__main' },
-      el('h3', { class: 'course-card__title', text: `${course.courseCode} — ${course.name}` }),
+      el('h3', { class: 'course-card__title', text: course.name }),
       el('p', {
         class: 'course-card__meta',
         text: [course.term, course.section ? `Section ${course.section}` : ''].filter(Boolean).join(' · '),
       }),
     ),
-    statusBadge(label, lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral'),
+    el(
+      'div',
+      { class: 'course-card__footer' },
+      el('span', { text: 'Course project' }),
+      el('strong', { text: 'Open →' }),
+    ),
   );
 }
 
@@ -161,7 +186,7 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
     pageHeader(
       'My Courses',
       canCreateCourse
-        ? 'Select a course to manage, or create a new one.'
+        ? 'Each course is a project. Open one to continue building, reviewing, and previewing it.'
         : 'Select a course you have been assigned to manage.',
       canCreateCourse
         ? {
@@ -176,11 +201,63 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
 
   try {
     const courses = await listInstructorCourses();
+    if (!courses.length) {
+      body.replaceChildren(emptyState('You have no courses yet — create one to get started.'));
+      return;
+    }
+    let query = '';
+    let lifecycleFilter = 'all';
+    const resultCount = el('span', { class: 'course-projects__count' });
+    const grid = el('div', { class: 'course-list' });
+    const search = el('input', {
+      class: 'input course-projects__search',
+      type: 'search',
+      placeholder: 'Search courses…',
+      'aria-label': 'Search courses',
+    }) as HTMLInputElement;
+    const filter = el(
+      'select',
+      { class: 'input course-projects__filter', 'aria-label': 'Filter courses by status' },
+      el('option', { value: 'all', text: 'All projects' }),
+      el('option', { value: 'published', text: 'Published' }),
+      el('option', { value: 'draft', text: 'Sandbox' }),
+      el('option', { value: 'archived', text: 'Archived' }),
+    ) as HTMLSelectElement;
+
+    function refreshProjects(): void {
+      const normalizedQuery = query.trim().toLowerCase();
+      const visible = courses.filter((course) => {
+        const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
+        const matchesLifecycle = lifecycleFilter === 'all' || lifecycle === lifecycleFilter;
+        const haystack = `${course.courseCode} ${course.name} ${course.term} ${course.section ?? ''}`.toLowerCase();
+        return matchesLifecycle && (!normalizedQuery || haystack.includes(normalizedQuery));
+      });
+      resultCount.textContent = `${visible.length} project${visible.length === 1 ? '' : 's'}`;
+      grid.replaceChildren(
+        ...(visible.length
+          ? visible.map(courseCard)
+          : [el('div', { class: 'course-projects__empty' }, emptyState('No course projects match this search.'))]),
+      );
+    }
+
+    search.addEventListener('input', () => {
+      query = search.value;
+      refreshProjects();
+    });
+    filter.addEventListener('change', () => {
+      lifecycleFilter = filter.value;
+      refreshProjects();
+    });
     body.replaceChildren(
-      courses.length
-        ? el('div', { class: 'course-list' }, ...courses.map(courseCard))
-        : emptyState('You have no courses yet — create one to get started.'),
+      el(
+        'div',
+        { class: 'course-projects__toolbar' },
+        el('div', { class: 'course-projects__controls' }, search, filter),
+        resultCount,
+      ),
+      grid,
     );
+    refreshProjects();
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderMyCourses(outlet)));

@@ -77,7 +77,7 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
       'div',
       { class: 'view' },
       pageHeader(
-        'Content Map',
+        'Coverage Map',
         'Course materials, assessment-like sources, question coverage, and recent generation status by LO.',
       ),
       body,

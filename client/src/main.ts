@@ -10,7 +10,12 @@ import {
   createNotificationBell,
 } from './notifications-bell.js';
 import { loadSession, displayName, type Session } from './auth.js';
-import { listActiveExams, setUnauthorizedHandler } from './api.js';
+import {
+  listActiveExams,
+  getCourseTree,
+  setUnauthorizedHandler,
+  type InstructorCourse,
+} from './api.js';
 import { startRouter, type Route, type RouterHandle } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
@@ -289,9 +294,19 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
  * rebuilt on every `onNavigate` rather than just toggling an active class.
  */
 function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle {
-  const shell = el('div', { class: 'app-shell' });
+  const sidebarPreferenceKey = 'financebot:instructor-sidebar-collapsed';
+  const startsCollapsed = window.localStorage.getItem(sidebarPreferenceKey) === 'true';
+  const shell = el('div', {
+    class: `app-shell app-shell--instructor${startsCollapsed ? ' is-collapsed' : ''}`,
+  });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
-  const anchors: Array<{ item: InstructorNavItem; link: HTMLAnchorElement }> = [];
+  const anchors: Array<{
+    item: InstructorNavItem;
+    link: HTMLAnchorElement;
+    section: HTMLElement;
+    courseScoped: boolean;
+  }> = [];
+  const sections: Array<{ element: HTMLElement; courseScoped: boolean }> = [];
   const routes = session.user?.isAdmin
     ? INSTRUCTOR_ROUTES
     : INSTRUCTOR_ROUTES.filter((route) => !route.path.startsWith('/admin/'));
@@ -300,10 +315,10 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         {
           label: 'Admin',
           items: [
-            { label: 'User Directory', path: '/admin/users' },
-            { label: 'Instructor Grants', path: '/admin/accounts' },
-            { label: 'Capabilities', path: '/admin/capabilities' },
-            { label: 'Platform Settings', path: '/admin/platform-settings' },
+            { label: 'User Directory', path: '/admin/users', glyph: 'U' },
+            { label: 'Instructor Grants', path: '/admin/accounts', glyph: 'G' },
+            { label: 'Capabilities', path: '/admin/capabilities', glyph: 'C' },
+            { label: 'Platform Settings', path: '/admin/platform-settings', glyph: 'S' },
           ],
         },
         ...INSTRUCTOR_NAV,
@@ -311,7 +326,12 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     : INSTRUCTOR_NAV;
 
   for (const group of navGroups) {
-    if (group.label) nav.append(el('p', { class: 'nav__group', text: group.label }));
+    const courseScoped = group.items.some((item) => item.path?.includes(':id'));
+    const section = el('div', {
+      class: `nav__section${courseScoped ? ' nav__section--course' : ''}`,
+    });
+    sections.push({ element: section, courseScoped });
+    if (group.label) section.append(el('p', { class: 'nav__group', text: group.label }));
     for (const item of group.items) {
       const link = el(
         'a',
@@ -319,6 +339,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
           class: `nav__link${item.disabled ? ' nav__link--disabled' : ''}`,
           href: '#',
           'aria-disabled': item.disabled ? 'true' : undefined,
+          'aria-label': item.label,
           onclick: (e: Event) => {
             // No resolved destination yet (out-of-scope item, or a
             // course-scoped item before any course is selected) — the '#'
@@ -329,24 +350,76 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
             }
             shell.classList.remove('is-open');
           },
+          title: item.label,
         },
+        el('span', {
+          class: `nav__glyph${/^\d$/.test(item.glyph ?? '') ? ' nav__glyph--step' : ''}`,
+          'aria-hidden': 'true',
+          text: item.glyph ?? '·',
+        }),
         el('span', { class: 'nav__text', text: item.label }),
       ) as HTMLAnchorElement;
-      anchors.push({ item, link });
-      nav.append(link);
+      anchors.push({ item, link, section, courseScoped });
+      section.append(link);
     }
+    nav.append(section);
   }
 
   const user = session.user;
+  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
+  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
+  const courseContext = el(
+    'section',
+    { class: 'course-context', hidden: 'hidden', 'aria-label': 'Current course' },
+    el('a', { class: 'course-context__back', href: '#/instructor/courses' }, '← All courses'),
+    el(
+      'div',
+      { class: 'course-context__project' },
+      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'P' }),
+      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+    ),
+  );
+  const collapseButton = el(
+    'button',
+    {
+      class: 'sidebar__collapse',
+      type: 'button',
+      'aria-label': startsCollapsed ? 'Expand navigation' : 'Collapse navigation',
+      'aria-expanded': startsCollapsed ? 'false' : 'true',
+      title: startsCollapsed ? 'Expand navigation' : 'Collapse navigation',
+    },
+    el('span', { 'aria-hidden': 'true', text: startsCollapsed ? '›' : '‹' }),
+  ) as HTMLButtonElement;
+  collapseButton.addEventListener('click', () => {
+    const collapsed = !shell.classList.contains('is-collapsed');
+    shell.classList.toggle('is-collapsed', collapsed);
+    window.localStorage.setItem(sidebarPreferenceKey, String(collapsed));
+    collapseButton.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    collapseButton.setAttribute('aria-expanded', String(!collapsed));
+    collapseButton.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    collapseButton.replaceChildren(el('span', { 'aria-hidden': 'true', text: collapsed ? '›' : '‹' }));
+  });
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--instructor' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+    el(
+      'div',
+      { class: 'sidebar__brand-row' },
+      el(
+        'a',
+        { class: 'brand', href: '#/instructor/courses', title: APP.name },
+        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
+        el('span', { class: 'brand__name', text: APP.name }),
+      ),
+      collapseButton,
+    ),
     el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
+    courseContext,
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
   );
 
+  const topbarTitle = el('span', { class: 'topbar__title', text: 'All courses' });
   const topbar = el(
     'header',
     { class: 'topbar' },
@@ -360,7 +433,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       },
       '≡',
     ),
-    el('span', { class: 'topbar__title' }),
+    topbarTitle,
     el(
       'div',
       { class: 'topbar__right' },
@@ -380,14 +453,52 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
   shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
   mount(root, shell);
 
+  const courseIndex = new Map<string, Promise<InstructorCourse>>();
+  let courseContextVersion = 0;
+  function updateCourseContext(courseId: string | null, path: string): void {
+    const version = ++courseContextVersion;
+    if (!courseId) {
+      courseContext.hidden = true;
+      topbarTitle.textContent = path.startsWith('/admin/')
+        ? 'Platform administration'
+        : path === '/instructor/courses/new'
+          ? 'Create course project'
+          : 'Course projects';
+      return;
+    }
+    courseContext.hidden = false;
+    courseContextName.textContent = 'Course project';
+    courseContextMeta.textContent = 'Loading course…';
+    topbarTitle.textContent = 'Course project';
+    let courseRequest = courseIndex.get(courseId);
+    if (!courseRequest) {
+      courseRequest = getCourseTree(courseId).then((tree) => tree.course);
+      courseIndex.set(courseId, courseRequest);
+    }
+    void courseRequest.then((course) => {
+      if (version !== courseContextVersion) return;
+      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
+      courseContextMeta.textContent = [course.term, course.section ? `Section ${course.section}` : '']
+        .filter(Boolean)
+        .join(' · ');
+      topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
+    }).catch(() => {
+      if (version !== courseContextVersion) return;
+      courseIndex.delete(courseId);
+      courseContextMeta.textContent = 'Instructor workspace';
+    });
+  }
+
   return startRouter({
     routes,
     outlet,
     fallback: session.user?.isAdmin ? '/admin/accounts' : '/instructor/courses',
     onNavigate: (path) => {
       const courseId = courseIdFromPath(path);
-      for (const { item, link } of anchors) {
+      updateCourseContext(courseId, path);
+      for (const { item, link, courseScoped } of anchors) {
         const href = resolveHref(item, courseId);
+        link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
         const active = isNavItemActive(item, path);
         link.classList.toggle('nav__link--active', active);
@@ -401,6 +512,9 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         }
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
+      }
+      for (const section of sections) {
+        section.element.hidden = section.courseScoped && !courseId;
       }
       document.title = `${path.startsWith('/admin/') ? 'Admin' : 'Instructor'} · ${APP.name}`;
     },

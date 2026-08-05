@@ -143,6 +143,13 @@ commonly need:
   review backlog, active flags, and engagement into a priority-ordered action
   queue with direct destinations. The Instructor shell now passes its current
   axe WCAG A/AA scans.
+- Phase 5's Course-as-Project UX foundation is implemented: My Courses is a
+  searchable Project dashboard; course-only navigation appears only inside a
+  selected course and collapses to an accessible icon rail; Course Home exposes
+  the Sources-to-Preview authoring path; and the Knowledge Workspace uses a
+  viewport-bound three-panel layout with source-level Trash/Restore actions.
+  The former Content Map is labelled Coverage Map to distinguish gap analysis
+  from graph exploration inside the Knowledge Workspace.
 - Phase 5 now includes the first Course Knowledge Workspace slice: a responsive
   Files/Assistant/Inspector surface unifies upload, durable SSE stage progress,
   original/chunk/metadata preview, confidence-based multi-LO automation,

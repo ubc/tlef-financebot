@@ -300,29 +300,45 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     const isSelected = selectedId === material._id;
     const assignmentState = material.automation?.assignment;
     return el(
-      'button',
-      {
-        class: `workspace-file${isSelected ? ' workspace-file--selected' : ''}`,
-        type: 'button',
-        onclick: () => selectMaterial(material),
-      },
-      el('span', { class: `workspace-file__icon workspace-file__icon--${material.status}`, text: material.format.toUpperCase().slice(0, 4) }),
+      'div',
+      { class: `workspace-file-row${isSelected ? ' workspace-file-row--selected' : ''}` },
       el(
-        'span',
-        { class: 'workspace-file__body' },
-        el('span', { class: 'workspace-file__name', text: material.name }),
-        el('span', {
-          class: 'workspace-file__meta',
-          text: material.deletedAt
-            ? `Trash · ${formatDate(material.deletedAt)}`
-            : `${material.kind ?? 'other'} · ${run?.stage ?? material.status}`,
-        }),
+        'button',
+        {
+          class: `workspace-file${isSelected ? ' workspace-file--selected' : ''}`,
+          type: 'button',
+          'aria-label': `Preview ${material.name}`,
+          onclick: () => selectMaterial(material),
+        },
+        el('span', { class: `workspace-file__icon workspace-file__icon--${material.status}`, text: material.format.toUpperCase().slice(0, 4) }),
+        el(
+          'span',
+          { class: 'workspace-file__body' },
+          el('span', { class: 'workspace-file__name', text: material.name }),
+          el('span', {
+            class: 'workspace-file__meta',
+            text: material.deletedAt
+              ? `Trash · ${formatDate(material.deletedAt)}`
+              : `${material.kind ?? 'other'} · ${run?.stage ?? material.status}`,
+          }),
+        ),
+        assignmentState?.status === 'needs-review'
+          ? el('span', { class: 'workspace-file__review', title: 'Needs review', text: '!' })
+          : assignmentState?.status === 'auto-applied'
+            ? el('span', { class: 'workspace-file__auto', title: 'Auto-assigned', text: '✓' })
+            : false,
       ),
-      assignmentState?.status === 'needs-review'
-        ? el('span', { class: 'workspace-file__review', title: 'Needs review', text: '!' })
-        : assignmentState?.status === 'auto-applied'
-          ? el('span', { class: 'workspace-file__auto', title: 'Auto-assigned', text: '✓' })
-          : false,
+      el(
+        'button',
+        {
+          class: `workspace-file__action${material.deletedAt ? ' workspace-file__action--restore' : ''}`,
+          type: 'button',
+          'aria-label': material.deletedAt ? `Restore ${material.name}` : `Move ${material.name} to Trash`,
+          title: material.deletedAt ? 'Restore source' : 'Move to Trash',
+          onclick: () => material.deletedAt ? void doRestore(material) : void doTrash(material),
+        },
+        material.deletedAt ? 'Restore' : 'Trash',
+      ),
     );
   }
 
