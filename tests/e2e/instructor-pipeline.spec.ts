@@ -45,6 +45,12 @@ const STEM = 'A project pays $1,200 in one year for an initial investment of 1,0
 
 let bootstrapCourseId = '';
 let courseId = '';
+// Create Course splits the term across two <select>s — Academic Year over a
+// rolling window computed from the clock, and the four UBC terms
+// (client/src/views/instructor/courses.ts). No year literal stays valid
+// forever, so the spec reads the first offered year and rebuilds the combined
+// term string the course record actually stores.
+let selectedTerm = '';
 let themeId = '';
 let loId = '';
 
@@ -118,7 +124,13 @@ test.describe('instructor pipeline', () => {
       await expect(page.getByRole('heading', { name: 'Create Course' })).toBeVisible();
       await page.locator('#course-name').fill(COURSE_NAME);
       await page.locator('#course-code').fill(COURSE_CODE);
-      await page.locator('#course-term').fill(COURSE_TERM);
+      const yearSelect = page.locator('#course-academic-year');
+      const termSelect = page.locator('#course-term');
+      const academicYear = String(await yearSelect.locator('option').first().getAttribute('value'));
+      expect(academicYear).toMatch(/^\d{4}\/\d{2}$/);
+      await yearSelect.selectOption(academicYear);
+      await termSelect.selectOption('Winter Term 1');
+      selectedTerm = `Winter Term 1, ${academicYear}`;
       await page.getByRole('button', { name: 'Create course', exact: true }).click();
       await page.waitForURL(/\/instructor\/course\/[^/]+$/);
       const match = /\/instructor\/course\/([^/?]+)$/.exec(page.url());
@@ -219,7 +231,7 @@ test.describe('instructor pipeline', () => {
       await expect(page.getByRole('button', { name: /Student Analytics/i })).toBeVisible();
 
       await page.getByRole('button', { name: 'Publish Course', exact: false }).click();
-      await expect(page.locator('.page-header__subtitle')).toContainText(`${COURSE_CODE} · ${COURSE_TERM} · Published`);
+      await expect(page.locator('.page-header__subtitle')).toContainText(`${COURSE_CODE} · ${selectedTerm} · Published`);
     });
   });
 

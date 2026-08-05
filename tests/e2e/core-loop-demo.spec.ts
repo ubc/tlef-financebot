@@ -108,6 +108,12 @@ async function answerCurrent(page: Page, how: 'correct' | 'wrong'): Promise<stri
 
 let bootstrapCourseId = '';
 let courseId = '';
+// Create Course splits the term across two <select>s — Academic Year over a
+// rolling window computed from the clock, and the four UBC terms
+// (client/src/views/instructor/courses.ts). No year literal stays valid
+// forever, so the spec reads the first offered year and rebuilds the combined
+// term string the course record actually stores.
+let selectedTerm = '';
 let themeId = '';
 let loId = '';
 let registrationCode = '';
@@ -188,7 +194,13 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await expect(instructor.getByRole('heading', { name: 'Create Course' })).toBeVisible();
         await instructor.locator('#course-name').fill(COURSE_NAME);
         await instructor.locator('#course-code').fill(COURSE_CODE);
-        await instructor.locator('#course-term').fill(COURSE_TERM);
+        const yearSelect = instructor.locator('#course-academic-year');
+        const termSelect = instructor.locator('#course-term');
+        const academicYear = String(await yearSelect.locator('option').first().getAttribute('value'));
+        expect(academicYear).toMatch(/^\d{4}\/\d{2}$/);
+        await yearSelect.selectOption(academicYear);
+        await termSelect.selectOption('Winter Term 1');
+        selectedTerm = `Winter Term 1, ${academicYear}`;
         await instructor.getByRole('button', { name: 'Create course', exact: true }).click();
         await instructor.waitForURL(/\/instructor\/course\/[^/]+$/);
         courseId = /\/instructor\/course\/([^/?]+)$/.exec(instructor.url())?.[1] ?? '';
@@ -278,7 +290,7 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await expect(instructor.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
         await instructor.getByRole('button', { name: 'Publish Course', exact: false }).click();
         await expect(instructor.locator('.page-header__subtitle')).toContainText(
-          `${COURSE_CODE} · ${COURSE_TERM} · Published`,
+          `${COURSE_CODE} · ${selectedTerm} · Published`,
         );
 
         const course = (await (await instructor.request.get(`/api/courses/${courseId}`)).json()) as {
