@@ -13,6 +13,7 @@ import {
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
+import { verifyQuestionNumerics } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
 import {
@@ -29,6 +30,9 @@ import type {
   QuestionGenerationRun,
   QuestionOption,
   QuestionType,
+  ParamSlot,
+  DerivedValue,
+  NumericVerification,
 } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -125,6 +129,12 @@ interface GeneratorOutput {
   stem: string;
   options: QuestionOption[];
   difficulty?: string;
+  // Parameterization (design spec 2026-08-05). A numerical question states no
+  // numbers: it declares its inputs as `paramSlots` and every displayed value
+  // — the correct answer and each distractor — as a `derivedValues` formula.
+  numericKind?: 'numeric' | 'conceptual';
+  paramSlots?: ParamSlot[];
+  derivedValues?: DerivedValue[];
 }
 interface ValidatorOutput {
   roleAssessment: string;
@@ -285,6 +295,8 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
 
+    const numerics = verifyGeneratedNumerics(generated);
+
     try {
       const { questionId } = await createQuestion({
         courseId,
@@ -297,9 +309,10 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         sourceRefs,
         createdBy: byPuid,
         ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
+        ...numerics.fields,
         agentDecision: {
           decision: normalizeDecision(review.decision),
-          reasoning: String(review.reasoning ?? ''),
+          reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
           roleAssessment: String(validation.roleAssessment ?? ''),
         },
       });
@@ -563,6 +576,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
     for (const candidate of reviewed) {
+      // This is the REGENERATION path — the one the 2026-08-05 tester used when
+      // they reported "I regenerated the numerical question and the numerical
+      // answer was still incorrect". It needs the same verification as the
+      // first-pass path above, or regenerating would launder an unverified
+      // question into the bank.
+      const numerics = verifyGeneratedNumerics(candidate.generated);
       try {
         const { questionId } = await createQuestion({
           courseId,
@@ -581,9 +600,10 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
             item: candidate.item,
           },
           ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
+          ...numerics.fields,
           agentDecision: {
             decision: normalizeDecision(candidate.review?.decision),
-            reasoning: String(candidate.review?.reasoning ?? ''),
+            reasoning: withVerificationNote(String(candidate.review?.reasoning ?? ''), numerics.failure),
             roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
           },
         });
@@ -882,13 +902,114 @@ export function GENERATOR_PROMPT(params: {
     '  - "partially-correct": right idea, incomplete or misapplied',
     '  - "clearly-wrong": obviously incorrect to a prepared student',
     '',
+    '',
+    'NUMERICAL QUESTIONS — MANDATORY.',
+    'If answering requires ANY computation, set "numericKind": "numeric".',
+    'NEVER write a computed number anywhere — not in the stem, an option, or an explanation.',
+    'State the inputs as variable slots and every displayed value as a formula; a',
+    'deterministic evaluator computes them at serve time, and each student sees different',
+    'numbers.',
+    '  - "paramSlots": the inputs, e.g.',
+    '      [ { "name": "PAYMENT", "min": 100, "max": 900, "step": 100 },',
+    '        { "name": "RATE_PCT", "min": 4, "max": 12, "step": 2 } ]',
+    '  - "derivedValues": the correct answer AND every distractor, e.g.',
+    '      [ { "name": "PV", "formula": "PAYMENT/(1+RATE_PCT/100)^2" },',
+    '        { "name": "PV_COMPOUNDED", "formula": "PAYMENT*(1+RATE_PCT/100)^2",',
+    '          "errorModel": "compounded forward instead of discounting back" } ]',
+    '    Every distractor MUST carry an "errorModel" naming the specific mistake it',
+    '    represents, and its formula must genuinely implement that mistake.',
+    '  - Option and stem text reference values as {{NAME}} placeholders, e.g. a dollar sign',
+    '    followed by {{PV}}. An option may carry several placeholders if the question asks',
+    '    for more than one value.',
+    '',
+    'Formula syntax: + - * / ^ ( ), variable names, and these functions only:',
+    '  PV(rate, periods, amount), FV(rate, periods, amount), PMT(rate, periods, principal),',
+    '  NPV(rate, cf1, cf2, ...), IRR(cf0, cf1, ...), ln, exp, sqrt, abs, min, max,',
+    '  round(value, decimals), N(x) for the standard normal CDF, and',
+    '  SUM(index, from, to, body) for series such as duration or amortization.',
+    'These functions are shorthand, not a limit: any closed-form finance formula can be',
+    'written with arithmetic alone (CAPM is RF + BETA*MRP; Gordon growth is D1/(R-G)).',
+    'Transcribe the formula the course material itself uses.',
+    '',
+    'Two rules the automatic verifier enforces — a question breaking either is rejected:',
+    '  1. Ranges must never let a formula break. A rate a formula divides by must not',
+    '     include 0, and no range may drive a value beyond about 1e12.',
+    '  2. Option values must differ for EVERY value in range — distractors must never',
+    '     coincide with the correct answer or with each other at any draw. Beware',
+    '     formulas that collide at a range endpoint (an "n periods" distractor equals the',
+    '     correct answer when n can draw 1).',
+    '',
+    'If answering requires NO computation, set "numericKind": "conceptual" and omit',
+    'paramSlots and derivedValues entirely.',
+    '',
     'Respond with ONLY this JSON shape:',
     '{ "stem": string, "difficulty": "easy"|"medium"|"hard",',
+    '  "numericKind": "numeric"|"conceptual",',
+    '  "paramSlots": [ { "name": string, "min": number, "max": number, "step": number } ],',
+    '  "derivedValues": [ { "name": string, "formula": string, "errorModel": string } ],',
     '  "options": [ { "key": string, "text": string, "role": string, "explanation": string } ] }',
     params.type === 'mcq' ? 'Use option keys "A","B","C","D".' : 'Use option keys "T","F".',
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * Verifies a generated numerical question's formulas before the version is
+ * written, so an unverifiable one lands in review already carrying its reason
+ * instead of looking approvable.
+ *
+ * Returns the parameterization fields to spread into `createQuestion`, plus an
+ * optional `failure` note to append to the reviewer's reasoning. A conceptual
+ * question returns nothing to add — the numeric gate lets it serve regardless.
+ *
+ * `optionValueNames` is derived from which derived values the options actually
+ * display: a helper value used only as an intermediate step in another formula
+ * is legitimately allowed to collide with an option's value, and demanding
+ * distinctness from it would reject sound questions.
+ */
+function verifyGeneratedNumerics(generated: GeneratorOutput): {
+  fields: {
+    numericKind?: 'numeric' | 'conceptual';
+    paramSlots?: ParamSlot[];
+    derivedValues?: DerivedValue[];
+    verification?: NumericVerification;
+  };
+  failure?: string;
+} {
+  if (generated.numericKind !== 'numeric') {
+    return { fields: generated.numericKind ? { numericKind: generated.numericKind } : {} };
+  }
+
+  const paramSlots = generated.paramSlots ?? [];
+  const derivedValues = generated.derivedValues ?? [];
+  const base = { numericKind: 'numeric' as const, paramSlots, derivedValues };
+
+  if (derivedValues.length === 0) {
+    return {
+      fields: base,
+      failure: 'declared numeric but supplied no derivedValues, so no value could be computed',
+    };
+  }
+
+  const optionValueNames = derivedValues
+    .filter((derived) => generated.options.some((option) => option.text.includes(`{{${derived.name}}}`)))
+    .map((derived) => derived.name);
+
+  const result = verifyQuestionNumerics({ slots: paramSlots, derivedValues, optionValueNames });
+  if (!result.ok) {
+    return {
+      fields: base,
+      failure: `${result.error}${result.failingSeed !== undefined ? ` (seed ${result.failingSeed})` : ''}`,
+    };
+  }
+  return { fields: { ...base, verification: result.verification } };
+}
+
+/** Appends a verification failure to the reviewer's reasoning so the instructor
+ * sees WHY the question will not serve, right where they read the review. */
+function withVerificationNote(reasoning: string, failure?: string): string {
+  return failure ? `${reasoning}\n\nNumeric verification FAILED: ${failure}` : reasoning;
 }
 
 export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
@@ -909,14 +1030,29 @@ export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOu
 export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
-    `LO "${params.loName}". Judge it against these five criteria (IN-Q05):`,
+    `LO "${params.loName}". Judge it against these six criteria (IN-Q05):`,
     '  1. Factual accuracy — every statement is correct.',
-    '  2. Calculation correctness — any numbers/formulas check out.',
-    '  3. LO & material alignment — it tests this LO and is grounded in the material.',
-    '  4. Distractor quality — wrong options are plausible and pedagogically useful.',
-    '  5. Clarity — the stem and options are unambiguous.',
-    '  6. Difficulty calibration — the actual reasoning demand matches the stated difficulty;',
+    '  2. LO & material alignment — it tests this LO and is grounded in the material.',
+    '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
+    '  4. Clarity — the stem and options are unambiguous.',
+    '  5. Difficulty calibration — the actual reasoning demand matches the stated difficulty;',
     '     a one-step substitution should not pass as medium or hard.',
+    '  6. Formula modelling — for a numerical question, does each formula in derivedValues',
+    '     actually model what the stem asks? A present value of a two-period stream must',
+    '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
+    '     Check too that each distractor\'s errorModel describes a mistake a student would',
+    '     really make, and that its formula genuinely implements that mistake.',
+    '',
+    // The deleted criterion was "Calculation correctness — any numbers/formulas
+    // check out." It passed every arithmetically-wrong question in 2026-08-05
+    // user testing, because checking arithmetic by reading it uses the same
+    // unreliable arithmetic that produced the error. Every number a student
+    // sees is now computed by a deterministic evaluator, so re-adding this
+    // criterion would buy nothing but false confidence.
+    'DO NOT attempt to evaluate any arithmetic. Every number a student sees is computed by',
+    'a deterministic evaluator from the formulas below, so arithmetic errors are',
+    'structurally impossible and "checking" them here only produces false confidence.',
+    'Judge modelling and pedagogy.',
     '',
     'Question JSON:',
     JSON.stringify(params.question),
