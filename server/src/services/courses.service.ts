@@ -250,6 +250,34 @@ export async function getCourseTree(
   };
 }
 
+export interface CourseOutlineTheme {
+  _id: ObjectId;
+  name: string;
+  order: number;
+  los: Array<{ _id: ObjectId; name: string; order: number }>;
+}
+
+/** Theme/LO names and order only — the minimum a `question.review` holder
+ * needs to label a question "Topic 1 / LO 2". Deliberately NOT the course
+ * record: `getCourseTree` (instructor-only) carries registrationCode, term
+ * dates, autoPause and feedbackStrategy, none of which a TA should receive. */
+export async function getCourseOutline(courseId: ObjectId): Promise<{ themes: CourseOutlineTheme[] }> {
+  const [themes, los] = await Promise.all([
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+  ]);
+  return {
+    themes: themes.map((theme) => ({
+      _id: theme._id,
+      name: theme.name,
+      order: theme.order,
+      los: los
+        .filter((lo) => lo.themeId.equals(theme._id))
+        .map((lo) => ({ _id: lo._id, name: lo.name, order: lo.order })),
+    })),
+  };
+}
+
 /**
  * Non-blocking duplicate-name check for the "add Theme/LO" flow — the client
  * warns the instructor but does not prevent the save (brief: warn, don't

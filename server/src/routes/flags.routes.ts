@@ -84,7 +84,7 @@ function stashCourseIdFromFlag(): (req: Request, res: Response, next: NextFuncti
  * correctness-affecting resolve response; passed straight through via the
  * `...rest` spread when it exists, so listFlags' plain `WithId<Flag>` rows
  * (which never carry it) are unaffected. */
-function toFlagResponse(flag: WithId<Flag> & { remediation?: RemediationReport }): Record<string, unknown> {
+export function toFlagResponse(flag: WithId<Flag> & { remediation?: RemediationReport }): Record<string, unknown> {
   const { _id, ...rest } = flag;
   return { id: _id.toString(), ...rest };
 }

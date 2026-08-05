@@ -225,7 +225,7 @@ function stashCourseIdFromBulk(): (req: Request, res: Response, next: NextFuncti
  * `id`; QuestionVersions serialize raw with their own `_id` — this is why
  * PATCH returning a raw QuestionVersion below is correct and must not be
  * "fixed" to an `id` mapping later. */
-function toBankItem(item: BankItem): {
+export function toBankItem(item: BankItem): {
   id: string;
   state: BankItem['state'];
   labels: BankItem['labels'];
@@ -245,7 +245,7 @@ function toBankItem(item: BankItem): {
 
 /** Same id-mapping for a bare (non-joined) Question head, e.g. the
  * transition response. */
-function toQuestionResponse(question: WithId<Question>): Record<string, unknown> {
+export function toQuestionResponse(question: WithId<Question>): Record<string, unknown> {
   const { _id, ...rest } = question;
   return { id: _id.toString(), ...rest };
 }

@@ -967,6 +967,31 @@ export async function getCourseTree(courseId: string): Promise<CourseTree> {
   return { course, themes };
 }
 
+export interface CourseOutlineLo {
+  _id: string;
+  name: string;
+  order: number;
+}
+
+export interface CourseOutlineTheme {
+  _id: string;
+  name: string;
+  order: number;
+  los: CourseOutlineLo[];
+}
+
+export interface CourseOutline {
+  themes: CourseOutlineTheme[];
+}
+
+/** GET /api/courses/:courseId/outline -> theme/LO names + order only. The
+ * TA-accessible subset of `getCourseTree` (which is instructor-only): a
+ * `question.review` holder can call this, and it carries none of the course
+ * record. */
+export function getCourseOutline(courseId: string): Promise<CourseOutline> {
+  return request<CourseOutline>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
+}
+
 /** PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? } -> Course. */
 export function updateCourse(
   courseId: string,
@@ -2276,17 +2301,9 @@ export function escalateTaFlag(
   });
 }
 
-export function proactivelyEscalateTaQuestion(
-  questionId: string,
-  reasonCategory: string,
-  note?: string,
-): Promise<Flag> {
-  return request<Flag>(`/api/questions/${encodeURIComponent(questionId)}/escalate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reasonCategory, note }),
-  });
-}
+// `proactivelyEscalateTaQuestion` (POST /api/questions/:id/escalate) was
+// removed: a TA escalates a FLAG from flag triage, not a bare question. The
+// server route still exists (see docs/api-contract.md) but nothing calls it.
 
 // --- Phase 3: Instructor analytics -----------------------------------------
 
@@ -2426,13 +2443,26 @@ export interface RemediationReport {
   examAttempts: number;
 }
 
+export interface TaRecommendation {
+  recommendation: 'correct' | 'archive' | 'clear';
+  note?: string;
+  puid: string;
+  at: string;
+}
+
 export interface Flag {
   id: string;
   courseId: string;
   questionId: string;
   questionVersionId: string; // the version this flag was raised against (§6.2) — may differ from question.currentVersionId after a later edit
   puid: string;
-  source?: 'student' | 'instructor-preview-test';
+  source?: 'student' | 'instructor-preview-test' | 'ta';
+  raisedBy?: 'student' | 'ta';
+  /** Set by `POST /api/flags/:flagId/escalate` (tas.service.ts's
+   * `escalateFlag`). Present on every `listFlags`/`listTaFlags` row for an
+   * escalated flag — the server has always sent it; this type omitted it,
+   * which is why the instructor queue never showed it. */
+  taRecommendation?: TaRecommendation;
   reason?: string;
   state: FlagState;
   // `correctnessAffecting` (Task 6 review fix): persisted on the resolution

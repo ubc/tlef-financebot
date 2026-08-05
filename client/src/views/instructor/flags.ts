@@ -36,6 +36,16 @@ import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { subscribeFlagsChanged } from '../../flag-sync.js';
+import {
+  byCreatedAtDesc,
+  groupFlags,
+  isGroupEscalated,
+  isGroupOpen,
+  latestEscalation,
+  openFlags,
+  sortGroups,
+  type FlagGroup,
+} from '../../flag-groups.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -72,45 +82,19 @@ const RESOLUTION_VARIANT: Record<ResolveAction, BadgeVariant> = {
   clear: 'neutral',
 };
 
-/** One row: every Flag raised against the same `questionVersionId`. */
-interface FlagGroup {
-  questionVersionId: string;
-  questionId: string;
-  question: Flag['question'];
-  version: Flag['currentVersion'];
-  flags: Flag[];
-}
-
-function groupFlags(flags: Flag[]): FlagGroup[] {
-  const groups = new Map<string, FlagGroup>();
-  for (const flag of flags) {
-    let group = groups.get(flag.questionVersionId);
-    if (!group) {
-      group = {
-        questionVersionId: flag.questionVersionId,
-        questionId: flag.questionId,
-        question: flag.question,
-        version: flag.currentVersion,
-        flags: [],
-      };
-      groups.set(flag.questionVersionId, group);
-    }
-    group.flags.push(flag);
-  }
-  return [...groups.values()];
-}
-
-function openFlags(group: FlagGroup): Flag[] {
-  return group.flags.filter((f) => f.state === 'open' || f.state === 'escalated');
-}
-
-function isGroupOpen(group: FlagGroup): boolean {
-  return openFlags(group).length > 0;
-}
-
-function byCreatedAtDesc(a: Flag, b: Flag): number {
-  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-}
+/** Copy for the "TA recommends" line on an escalated group (see
+ * `latestEscalation` below) — deliberately its own map rather than
+ * `RESOLUTION_LABEL.replace('Resolved: ', '')`: that map's values ("Resolved:
+ * corrected", "…archived", "…cleared") describe a completed instructor
+ * action, so stripping the prefix leaves a past-tense fragment ("TA
+ * recommends: corrected") that reads like the TA already did the thing
+ * rather than suggesting it. This map uses an imperative phrase so the
+ * sentence reads as a recommendation still awaiting the instructor. */
+const ESCALATION_RECOMMENDATION_LABEL: Record<ResolveAction, string> = {
+  correct: 'Correct the question',
+  archive: 'Archive the question',
+  clear: 'Clear the flag',
+};
 
 /** The most recent resolution action across the group's resolved flags — a
  * group can, in theory, hold flags resolved at different times with
@@ -164,19 +148,6 @@ function persistedNotifiedCount(group: FlagGroup): number | undefined {
   return undefined;
 }
 
-/** Unresolved groups first (most recently flagged first within that set),
- * then resolved groups (most recently flagged first). */
-function sortGroups(groups: FlagGroup[]): FlagGroup[] {
-  return [...groups].sort((a, b) => {
-    const aOpen = isGroupOpen(a);
-    const bOpen = isGroupOpen(b);
-    if (aOpen !== bOpen) return aOpen ? -1 : 1;
-    const aLatest = [...a.flags].sort(byCreatedAtDesc)[0];
-    const bLatest = [...b.flags].sort(byCreatedAtDesc)[0];
-    return byCreatedAtDesc(aLatest, bLatest);
-  });
-}
-
 function flagCountBadge(group: FlagGroup): HTMLElement {
   const count = openFlags(group).length;
   return statusBadge(`${count} flag${count === 1 ? '' : 's'}`, 'flag');
@@ -184,14 +155,21 @@ function flagCountBadge(group: FlagGroup): HTMLElement {
 
 /** Most-recent reason (or "No reason given") + its date, plus "(and N more)"
  * when the group holds more than one flag (resolved ambiguity #1's
- * micro-layout call). */
+ * micro-layout call).
+ *
+ * Review finding 2: `raisedBy`/`source: 'ta'` were added to `Flag` (api.ts)
+ * for the TA proactive-escalation path but read nowhere in this view — an
+ * instructor had no cheap way to tell a TA-raised flag from a student one.
+ * Prefixing "TA:" here when the most recent flag was TA-raised is the
+ * minimal, honest surface the review asked for (no new panel). */
 function reasonsSummary(group: FlagGroup): HTMLElement {
   const sorted = [...group.flags].sort(byCreatedAtDesc);
   const latest = sorted[0];
   const reasonText = latest.reason?.trim() ? latest.reason : 'No reason given';
   const dateText = new Date(latest.createdAt).toLocaleDateString();
   const extra = sorted.length > 1 ? ` (and ${sorted.length - 1} more)` : '';
-  return el('p', { class: 'flag-row__reason', text: `"${reasonText}" — ${dateText}${extra}` });
+  const raisedByPrefix = latest.raisedBy === 'ta' ? 'TA: ' : '';
+  return el('p', { class: 'flag-row__reason', text: `${raisedByPrefix}"${reasonText}" — ${dateText}${extra}` });
 }
 
 /** Flags when the joined `currentVersion` postdates the flag(s) in this
@@ -582,9 +560,29 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     const topicLo = group.question ? topicLoLabel(tree, group.question.loIds, group.question.themeIds) : '—';
     const open = isGroupOpen(group);
     const resolutionAction = latestResolutionAction(group);
+    // Only meaningful while the group is still open — once an instructor
+    // resolves it, the resolution badge below takes over regardless of
+    // whether a TA escalation preceded it. `flag.taRecommendation` has always
+    // been on the wire (`escalateFlag` in tas.service.ts persists it, and
+    // `listFlags` spreads the whole document) but this view never rendered
+    // it, so a TA's triage was invisible to the instructor — this line and
+    // the badge below are that fix.
+    //
+    // Review finding 2: the badge/priority test keys on `isGroupEscalated`
+    // (flag STATE), not on `latestEscalation` (presence of a recommendation).
+    // `proactivelyEscalateQuestion` (tas.service.ts) inserts a flag with
+    // `state: 'escalated'` and no `taRecommendation` — the "Escalate" button
+    // on the TA question page — so a recommendation-keyed test missed
+    // exactly that shape, rendering it as a plain flag count indistinguishable
+    // from a student flag. `escalation` (the recommendation itself, if any)
+    // is kept separately below for the text line only.
+    const escalated = open && isGroupEscalated(group);
+    const escalation = open ? latestEscalation(group) : null;
 
     const badge = open
-      ? flagCountBadge(group)
+      ? escalated
+        ? statusBadge('Escalated by TA', 'flag')
+        : flagCountBadge(group)
       : statusBadge(resolutionAction ? RESOLUTION_LABEL[resolutionAction] : 'Resolved', resolutionAction ? RESOLUTION_VARIANT[resolutionAction] : 'neutral');
 
     const actions = open
@@ -610,6 +608,19 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
         el('p', { class: 'flag-row__topic', text: topicLo }),
         reasonsSummary(group),
         staleVersionNote(group),
+        escalation
+          ? el(
+              'p',
+              { class: 'flag-row__escalation' },
+              el('strong', { text: `TA recommends: ${ESCALATION_RECOMMENDATION_LABEL[escalation.recommendation]}` }),
+              escalation.note ? el('span', { text: ` — "${escalation.note}"` }) : false,
+              el('span', { class: 'muted', text: ` · ${new Date(escalation.at).toLocaleDateString()}` }),
+            )
+          // Escalated (badge above already reflects this) but no
+          // recommendation to show text for — the proactive-escalation shape.
+          : escalated
+            ? el('p', { class: 'flag-row__escalation' }, el('strong', { text: 'Escalated by a TA — no recommendation recorded' }))
+            : false,
       ),
       badge,
       actions,

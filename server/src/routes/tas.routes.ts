@@ -6,6 +6,8 @@ import { flagsCol } from '../components/mongodb/collections';
 import { validate } from '../middleware/validate';
 import { getQuestionCourseId, reviewQueue } from '../services/bank.service';
 import { listFlags } from '../services/flags.service';
+import { toFlagResponse } from './flags.routes';
+import { toBankItem, toQuestionResponse } from './questions.routes';
 import { addQuestionInternalNote, transitionQuestion } from '../services/questions.service';
 import {
   addTa,
@@ -138,11 +140,15 @@ tasRouter.get(
   ensureCapability('question.review'),
   async (req, res) => {
     const items = await reviewQueue(new ObjectId(String(req.params.courseId)));
+    // Built from the SAME `toBankItem` the instructor queue uses, plus the two
+    // TA-only fields. This route used to hand-roll its own projection and
+    // omitted `loIds`/`themeIds` — fields `BankQuestion` declares as required,
+    // so the client typed them as present while the wire never carried them.
+    // Nothing noticed until the TA queue grew a Topic/LO column and
+    // `topicLoLabel` threw on `undefined.includes(...)`, killing the row render
+    // after the tabs had already painted their counts.
     res.json(items.map((item) => ({
-      id: item._id,
-      state: item.state,
-      labels: item.labels,
-      current: item.current,
+      ...toBankItem(item),
       priority: item.priority,
       suggestions: item.suggestions ?? [],
       internalNotes: item.internalNotes,
@@ -156,11 +162,11 @@ tasRouter.post(
   ensureApiAuthenticated(),
   stashQuestionCourse(),
   ensureCapability('question.mark-reviewed'),
-  async (req, res) => res.json(await transitionQuestion(
+  async (req, res) => res.json(toQuestionResponse(await transitionQuestion(
     new ObjectId(String(req.params.questionId)),
     'reviewed',
     req.user!.puid,
-  )),
+  ))),
 );
 
 tasRouter.post(
@@ -219,11 +225,24 @@ tasRouter.post(
   },
 );
 
+/** GET /courses/:courseId/ta/flags -> the same rows the instructor queue gets
+ * from GET /courses/:courseId/flags, and serialized the SAME way.
+ *
+ * This route used to return `listFlags()` raw, so its rows carried Mongo's
+ * `_id` while every other flag endpoint (and the client's `Flag` type) uses
+ * `id`. The TA flag view therefore read `flag.id` as undefined and posted to
+ * `/api/flags/undefined/escalate`, which the `flagId` param regex rejected
+ * with a 400 "Invalid request." — i.e. TA escalation could never have worked.
+ * It went unnoticed because exercising it needs a real `ta` courseRole; an
+ * instructor's "View as TA" reaches the same button and fails identically. */
 tasRouter.get(
   '/courses/:courseId/ta/flags',
   validate({ params: courseParams }),
   ensureCapability('flag.triage'),
-  async (req, res) => res.json(await listFlags(new ObjectId(String(req.params.courseId)))),
+  async (req, res) => {
+    const flags = await listFlags(new ObjectId(String(req.params.courseId)));
+    res.json(flags.map((flag) => toFlagResponse(flag)));
+  },
 );
 
 tasRouter.post(
@@ -235,10 +254,10 @@ tasRouter.post(
   validate({ body: escalateBody }),
   async (req, res) => {
     const body = req.body as z.infer<typeof escalateBody>;
-    res.json(await escalateFlag(
+    res.json(toFlagResponse(await escalateFlag(
       new ObjectId(String(req.params.flagId)), req.user!.puid,
       body.recommendation, body.note,
-    ));
+    )));
   },
 );
 
@@ -251,10 +270,10 @@ tasRouter.post(
   validate({ body: proactiveBody }),
   async (req, res) => {
     const body = req.body as z.infer<typeof proactiveBody>;
-    res.status(201).json(await proactivelyEscalateQuestion(
+    res.status(201).json(toFlagResponse(await proactivelyEscalateQuestion(
       new ObjectId(String(req.params.questionId)), req.user!.puid,
       body.reasonCategory, body.note,
-    ));
+    )));
   },
 );
 

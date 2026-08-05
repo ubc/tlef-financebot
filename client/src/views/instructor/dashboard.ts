@@ -194,6 +194,21 @@ function quickActionCard(
   );
 }
 
+/** Same card as `quickActionCard`, but for a plain client route rather than a
+ * server-modelled workflow destination. The TA workspace is instructor-
+ * initiated chrome for inspecting a course, not a step in the launch workflow,
+ * so `InstructorWorkflowSummary` has no `InstructorWorkflowDestination` for it
+ * — and inventing one would mean the server had an opinion about a screen it
+ * never surfaces an action for. */
+function pathActionCard(title: string, subtitle: string, path: string): HTMLElement {
+  return el(
+    'button',
+    { class: 'quick-action', type: 'button', onclick: () => navigate(path) },
+    el('p', { class: 'quick-action__title', text: title }),
+    el('p', { class: 'quick-action__subtitle', text: subtitle }),
+  );
+}
+
 async function renderDashboardInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course cockpit…'));
   const root = el('div', { class: 'view' }, body);
@@ -267,6 +282,11 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         'Switch into the isolated Approved-only student experience',
         'student-preview',
         () => startAnonymousPreview(courseId),
+      ),
+      pathActionCard(
+        'View as TA',
+        'Inspect the TA workspace for this course · live data, not a sandbox',
+        `/ta/course/${encodeURIComponent(courseId)}/review`,
       ),
     );
 
