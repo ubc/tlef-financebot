@@ -20,6 +20,7 @@ import type {
 import { decideStrategy, upsertReviewBookEntry } from './attempts.service';
 import { enqueueExamMasteryPass } from './exam-mastery.service';
 import { notifyCourseStaff } from './notifications.service';
+import { isServable } from './numeric-gate.service';
 import { drawSeed, resolveParamValues, substituteParams } from './params.service';
 
 type QuestionHead = WithId<Question>;
@@ -164,7 +165,10 @@ async function createAttempt(
       ['true-false', config.tfCount],
     ] as const) {
       const pool = candidates.filter((candidate) => (
-        candidate.version.type === type
+        // The numeric gate, same predicate the practice path uses: an
+        // unverified numerical question never reaches a student, exam or not.
+        isServable(candidate.version)
+        && candidate.version.type === type
         && candidate.question.themeIds.some((id) => id.equals(config.themeId))
         && !selectedIds.has(candidate.question._id.toHexString())
       ));
