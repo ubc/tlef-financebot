@@ -5,13 +5,16 @@
 // renders strictly read-only.
 //
 // The hard constraint (phase-3 exit criterion): TAs never get approve, reject,
-// or edit, under any configuration. This file must never call the question
-// PATCH/transition/params-update endpoints, nor the suggestion accept/discard
-// endpoint — accepting or discarding a suggestion is `question.approve`, the
-// instructor's call; the TA sees the outcome (a status badge) and never the
-// control. See views/instructor/question-detail.ts for the instructor
-// equivalent — read for pattern reference only, its editing machinery is
-// deliberately not reused here.
+// or edit, under any configuration. Concretely, this file must never call
+// `editQuestion`, `transitionQuestion`, `updateQuestionParams`, or
+// `resolveTaQuestionSuggestion` — accepting or discarding a suggestion is
+// `question.approve`, the instructor's call; the TA sees the outcome (a status
+// badge) and never the control. Enforcement lives server-side
+// (`ensureCapability`, plus the hard-deny list in capabilities.service.ts) and
+// is covered by tests/unit/ta-routes.test.ts, which asserts a TA with every
+// capability toggled on still gets a 403 on transition-to-approved. See
+// views/instructor/question-detail.ts for the instructor equivalent — read for
+// pattern reference only, its editing machinery is deliberately not reused.
 import {
   ApiError,
   addTaQuestionNote,
