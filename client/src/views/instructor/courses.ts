@@ -346,7 +346,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
     const term = currentTerm();
     if (!identity) {
       errorSlot.replaceChildren(
-        errorState('Enter the course as “COMM 298 - Introduction to Finance”.'),
+        errorState('Follow this format: COURSE CODE - Course title. For example: COMM 298 - Introduction to Finance.'),
       );
       return;
     }
@@ -385,7 +385,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
         el('span', {
           class: 'form-field__help',
           id: 'course-identity-help',
-          text: 'Use the format course code - title.',
+          text: 'Format: COURSE CODE - Course title. For example: COMM 298 - Introduction to Finance.',
         }),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Course section', 'course-section'), sectionInput),
