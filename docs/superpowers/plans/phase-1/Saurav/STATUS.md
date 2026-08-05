@@ -1,19 +1,25 @@
 # Saurav — Phase 1 progress
 
-_Last updated: 2026-07-17_
+_Last updated: 2026-08-01 (S0 reconciliation against `main` @ `89bb0e9`)._
 
-**Tasks 1, 2, 4, 5, and 6 are merged to `main`** (PRs #13–#17; `main` is now
-`8558317`, which also carries Stephen's Phase-1 core loop, PR #18). **Task 7 is
-in review** (PR #19, `3b4896b` — includes a one-line lint fix to Stephen's
-review-book file, see below). **Task 8 is code-complete on
-`saurav/task-8-generation`** (`7f604df`), **stacked on Task 7**, awaiting push +
-PR. Full suite green: **332 unit**, typecheck + build + lint all clean.
+**Every Saurav-owned Phase 1 implementation task is merged: Tasks 1, 2, 4, 5, 6,
+7, 8, and 15** (PRs #13–#17, #19, #20, #21). Phase 2 has since been built,
+merged, and closed on top of them.
 
-**Task 4 unblocks Stephen** — his Tasks 10/11/14 need Approved questions to
-exist, and `createQuestion` + `transitionQuestion` are now the way to seed them
-(see "What I need from you" below). Next up is **Task 8** (three-agent generation
-pipeline; needs Tasks 1+4+6, all merged) — **Step 5 is the ~Aug 2 joint
-mid-phase checkpoint.**
+**One Saurav-owned step remains open: Task 8 Step 5**, the ~Aug 2 joint
+mid-phase checkpoint (generation against a live LLM). It has still never been
+run — every Phase 2 browser run skipped the opt-in live-LLM scenario. Beyond
+that, the joint **Task 16** phase-exit demo is deferred and still owed; until it
+runs, nobody claims the Phase 1 exit gate passed.
+
+> **📌 Why this file was stale (the S0 finding).** On 2026-07-17/18 the Task
+> 7/8/15 checkboxes were ticked in the *personal* plan
+> (`2026-07-11-phase-1-core-loop-saurav.md`) and here, but **never mirrored into
+> the shared core plan** `../2026-07-11-phase-1-core-loop.md` — which is the file
+> Stephen's agent reads. For two weeks the shared source of truth showed three
+> merged tasks as not started. Both files are now reconciled. The personal
+> plan's own progress-tracking note (line 5) already mandates the mirror step;
+> it was the step that got skipped under merge pressure.
 
 > **⚠️ Pre-existing lint error on `main` (Stephen's file, NOT introduced by
 > Task 7):** `server/src/services/review-book.service.ts:1` trips
@@ -43,9 +49,14 @@ record of where the code diverged from the plan** — the ledger is scratch and
 | 4 | Question service — versioning, option invariants, publication transitions with audit (IN-Q03/Q04/Q07/Q13) | merged, PR #15 (`33b2eb1`) |
 | 5 | Bank service + question-bank routes — browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08) | merged, PR #16 (`99d0d72`) |
 | 6 | Materials service + routes + `material.ingest` job — upload/URL → parse → chunk → embed → per-course Qdrant (IN-S04/S05) | merged, PR #17 |
-| 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | in review, PR #19 (`3b4896b`) |
-| 8 | Generation service + routes — three-agent pipeline (generator/validator/reviewer, per-step models), pre-seeding progress (§9.1, IN-Q10) | merged, PR #20 |
-| 15 | Instructor client views (wireframe-driven) — shell + primitives + api, My Courses/Create, Dashboard/Structure/Settings, Materials, Bank/Detail, Review Queue, Pre-seeding/Generate, e2e (IN-S01–S06, IN-Q02–Q05, IN-Q08, IN-Q10, IN-L06) | code-complete on `saurav/task-15-instructor-views` (`15df236`), **awaiting push + PR** |
+| 7 | Classification service + routes — LLM auto-classification, accept/reject, AI-suggested hierarchy (IN-S06) | merged, PR #19 (`d7fea18`) |
+| 8 | Generation service + routes — three-agent pipeline (generator/validator/reviewer, per-step models), pre-seeding progress (§9.1, IN-Q10) | merged, PR #20 (`f7f9dad`) — **Step 5 live checkpoint still not run** |
+| 15 | Instructor client views (wireframe-driven) — shell + primitives + api, My Courses/Create, Dashboard/Structure/Settings, Materials, Bank/Detail, Review Queue, Pre-seeding/Generate, e2e (IN-S01–S06, IN-Q02–Q05, IN-Q08, IN-Q10, IN-L06) | merged, PR #21 (`a17ede4`) |
+
+**Not mine, still open:** Task 13 (Layer-2 mastery evaluator) is **slipped** per
+Stephen's 2026-07-22 closeout and is nobody's active task. Task 16 (joint phase
+exit) is **deferred and owed** — neither `tests/e2e/core-loop-demo.spec.ts` nor
+`tests/unit/approved-only-serving.test.ts` exists.
 
 ## Deviations from the plan
 
@@ -88,8 +99,12 @@ decided explicitly — none are drift.
    sequencing to `bank.ts` filter reload (stale-response race); disable
    approve/bulk buttons in-flight; `settings.ts` auto-pause allows 0 vs server >0;
    `question-detail.ts` index-based option compare. None block merge.
-6. **e2e live run deferred** to the ~Aug 2 joint checkpoint (no stack in-session);
-   spec parses + typechecks + lints clean.
+6. ~~**e2e live run deferred** to the ~Aug 2 joint checkpoint (no stack in-session);
+   spec parses + typechecks + lints clean.~~ **Closed 2026-07-28:**
+   `tests/e2e/instructor-pipeline.spec.ts` was stabilized and run green as part
+   of the Phase 2 Task 11 full-suite pass (`4422d20`, PR #38) — 12 Playwright
+   scenarios passed. Note this proves the *UI walkthrough*, not generation
+   against a live LLM; Task 8 Step 5 is still open.
 
 ### Task 8 — decided/forced during implementation (2026-07-17)
 
@@ -599,25 +614,33 @@ not an oversight:
 
 ## What's left
 
+_As of the 2026-08-01 S0 reconciliation. All implementation is done; everything
+below is verification against live infrastructure._
+
 - **~Aug 2 JOINT mid-phase checkpoint (Task 8 Step 5)** — with docker + a
   reachable LLM: create course + theme + LO, upload the fixture material, run
   generation, confirm Draft questions with agent decisions appear; **then
   approve one and have Stephen serve it to a student end-to-end.** Both
-  developers verify. This is the one remaining Task 8 step.
-- **Task 15** — instructor client views (needs 2+5+6+7+8, all now code-complete).
-  Renders Task 7's `classificationSuggestion` ("Unclassified" when absent), the
-  `GET .../suggest-hierarchy` outline, and Task 8's pre-seeding progress +
-  generated Drafts with their agent decisions.
-- **Task 13** — Layer-2 LLM mastery evaluator ("either" owner; slip candidate).
-- **Merge sequencing:** Task 7 (PR #19) merges first; then rebase Task 8 onto
-  `main` and open its PR.
-- **Task 8 carry-forward:** `courseCollection(courseId)` → `course-<hex>` is
-  exported from `materials.service.ts` for you. Retrieval will see orphan tail
-  points from any shrinking re-ingest (see Task 6's deferred items).
-- **Task 15 carry-forward:** the question-bank surface it renders is Task 5's.
-  Question heads come back as `id`, embedded `current` versions as raw `_id`
-  (see the serialization rule above), and `browseBank`'s `includeArchived` is
-  reachable only from the service — over HTTP, use `state=archived`.
+  developers verify. **This is the one remaining Saurav-owned Phase 1 step, and
+  it is now due.** It also absorbs the never-run live checks carried from Task 6
+  (a real upload → `processing → ready` ingest) and Task 7 (live classification).
+- **Task 16 (joint, owed)** — the phase-exit demo and the Approved-only proof.
+  Deferred by Stephen on 2026-07-22 and exempted from blocking Phase 2, but the
+  Phase 1 exit gate is not claimable until it runs. See the core plan's exit
+  criteria for exactly what today's tests already cover and what they don't.
+- **Task 13** — Layer-2 LLM mastery evaluator: **slipped**, not deferred.
+  Nobody's active task; not planned into Phases 2–4.
+
+**Carry-forwards that are still live:**
+
+- **Task 8:** `courseCollection(courseId)` → `course-<hex>` is exported from
+  `materials.service.ts`. Retrieval will see orphan tail points from any
+  shrinking re-ingest (see Task 6's deferred items) — worth watching during the
+  Step 5 live run, since that is the first time retrieval meets real vectors.
+- **Task 15:** the question-bank surface it renders is Task 5's. Question heads
+  come back as `id`, embedded `current` versions as raw `_id` (see the
+  serialization rule above), and `browseBank`'s `includeArchived` is reachable
+  only from the service — over HTTP, use `state=archived`.
 
 ## What I need from you (Stephen)
 
