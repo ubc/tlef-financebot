@@ -26,6 +26,7 @@ import {
   putRoster,
   getRoster,
 } from '../services/courses.service';
+import { instructorWorkflowSummary } from '../services/instructor-workflow.service';
 
 // Courses / Hierarchy / Roster endpoints (IN-S01/S02/S03, IN-L06) — the
 // instructor authoring surface, exactly as specified in docs/api-contract.md.
@@ -145,6 +146,16 @@ coursesRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await publishChecklist(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/** GET /api/courses/:courseId/instructor-workflow -> task-driven cockpit summary. */
+coursesRouter.get(
+  '/courses/:courseId/instructor-workflow',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await instructorWorkflowSummary(new ObjectId(String(req.params.courseId))));
   },
 );
 

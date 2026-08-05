@@ -7,7 +7,7 @@ import { errorState, loadingState } from '../../ui.js';
 
 async function renderInner(outlet: HTMLElement): Promise<void> {
   const body = el('div', {}, loadingState('Loading platform settings…'));
-  mount(outlet, el('div', { class: 'view' }, body));
+  mount(outlet, el('div', { class: 'view view--admin' }, body));
   let settings: PlatformSettings;
   try {
     settings = await getAdminPlatformSettings();
@@ -23,7 +23,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   reviewer.checked = settings.featureFlags.reviewerAgent;
   const layer2 = el('input', { type: 'checkbox' }) as HTMLInputElement;
   layer2.checked = settings.featureFlags.layer2Evaluator;
-  const status = el('span', { 'aria-live': 'polite' });
+  const status = el('span', { class: 'form-status', role: 'status', 'aria-live': 'polite' });
 
   async function save(): Promise<void> {
     const next = {
@@ -55,20 +55,39 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
 
   body.replaceChildren(
     pageHeader('Platform Settings', 'Model selection, generation cost limits, and quality feature flags.'),
-    el('section', { class: 'card stack' },
-      el('h2', { text: 'Pipeline models' }),
-      ...Object.entries(modelInputs).map(([key, input]) => el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: key }), input)),
+    el('section', { class: 'card stack admin-settings-panel' },
+      el('div', { class: 'admin-settings-panel__heading' },
+        el('h2', { text: 'Pipeline models' }),
+        el('p', { class: 'muted', text: 'Model IDs used when new background work starts.' }),
+      ),
+      el('div', { class: 'admin-settings-grid' },
+        ...Object.entries(modelInputs).map(([key, input]) => el('label', { class: 'form-field' },
+          el('span', { class: 'form-field__label', text: key === 'masteryEvaluator' ? 'Mastery evaluator' : key }), input,
+        )),
+      ),
     ),
-    el('section', { class: 'card stack' },
-      el('h2', { text: 'Cost controls' }),
+    el('section', { class: 'card stack admin-settings-panel' },
+      el('div', { class: 'admin-settings-panel__heading' },
+        el('h2', { text: 'Cost controls' }),
+        el('p', { class: 'muted', text: 'Platform-wide guardrails for AI generation volume.' }),
+      ),
       el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Maximum generations per day' }), maxDaily),
     ),
-    el('section', { class: 'card stack' },
-      el('h2', { text: 'Feature flags' }),
-      el('label', { class: 'checkbox-row' }, reviewer, el('span', { text: 'Reviewer Agent (quality review)' })),
-      el('label', { class: 'checkbox-row' }, layer2, el('span', { text: 'Layer 2 Mastery Evaluator' })),
+    el('section', { class: 'card stack admin-settings-panel' },
+      el('div', { class: 'admin-settings-panel__heading' },
+        el('h2', { text: 'Feature flags' }),
+        el('p', { class: 'muted', text: 'Quality stages applied to new work. Disabling review requires confirmation.' }),
+      ),
+      el('div', { class: 'admin-feature-list' },
+        el('label', { class: 'checkbox-row admin-feature' }, reviewer,
+          el('span', {}, el('strong', { text: 'Reviewer Agent' }), el('small', { text: 'Semantic quality review for generated questions.' })),
+        ),
+        el('label', { class: 'checkbox-row admin-feature' }, layer2,
+          el('span', {}, el('strong', { text: 'Layer 2 Mastery Evaluator' }), el('small', { text: 'Model-assisted mastery evaluation.' })),
+        ),
+      ),
     ),
-    el('div', { class: 'cluster' }, el('button', { class: 'btn btn--primary', type: 'button', text: 'Save settings', onclick: () => void save() }), status),
+    el('div', { class: 'admin-save-bar' }, el('button', { class: 'btn btn--primary', type: 'button', text: 'Save settings', onclick: () => void save() }), status),
   );
 }
 

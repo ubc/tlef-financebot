@@ -862,6 +862,58 @@ export interface ChecklistItem {
   ok: boolean;
 }
 
+export type InstructorWorkflowPriority = 'blocking' | 'high' | 'normal';
+export type InstructorWorkflowDestination =
+  | 'settings'
+  | 'structure'
+  | 'materials'
+  | 'content-map'
+  | 'preseeding'
+  | 'review-queue'
+  | 'bank'
+  | 'flags'
+  | 'analytics'
+  | 'student-preview'
+  | 'dashboard';
+
+export interface InstructorWorkflowAction {
+  id: string;
+  priority: InstructorWorkflowPriority;
+  destination: InstructorWorkflowDestination;
+  title: string;
+  detail: string;
+  count?: number;
+}
+
+export interface InstructorWorkflowSummary {
+  course: {
+    id: string;
+    name: string;
+    courseCode: string;
+    section?: string;
+    term: string;
+    lifecycle: 'draft' | 'published' | 'archived';
+  };
+  readiness: {
+    completed: number;
+    total: number;
+    percent: number;
+    checklist: ChecklistItem[];
+  };
+  counts: {
+    topics: number;
+    learningObjectives: number;
+    approvedQuestions: number;
+    reviewQueue: number;
+    openFlags: number;
+    thinLos: number;
+    unassignedMaterials: number;
+    contentIssues: number;
+    lowEngagementStudents: number;
+  };
+  actions: InstructorWorkflowAction[];
+}
+
 /**
  * No `GET /api/courses` endpoint exists (see the correction note above) — this
  * derives "my courses" from the session's `courseRoles` (role === 'instructor')
@@ -973,6 +1025,12 @@ export function regenerateRegistrationCode(courseId: string): Promise<{ registra
 export function getPublishChecklist(courseId: string): Promise<ChecklistItem[]> {
   return request<ChecklistItem[]>(
     `/api/courses/${encodeURIComponent(courseId)}/publish-checklist`,
+  );
+}
+
+export function getInstructorWorkflow(courseId: string): Promise<InstructorWorkflowSummary> {
+  return request<InstructorWorkflowSummary>(
+    `/api/courses/${encodeURIComponent(courseId)}/instructor-workflow`,
   );
 }
 

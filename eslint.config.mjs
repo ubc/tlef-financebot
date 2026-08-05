@@ -16,7 +16,18 @@ const nodeGlobals = {
 };
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', 'client/public/js/**', 'client/public/vendor/**', 'coverage/**', 'coverage-reports/**', '.claude/worktrees/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      'client/public/js/**',
+      'client/public/vendor/**',
+      'coverage/**',
+      'coverage-reports/**',
+      'playwright-report*/**',
+      'test-results/**',
+      '.claude/worktrees/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

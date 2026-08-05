@@ -785,27 +785,31 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 
   function loRow(row: LoRow): HTMLElement {
     const status = coverageStatus(row.approved, THIN_THRESHOLD);
-    return el(
-      'div',
-      { class: 'preseeding-row' },
-      el('span', { text: row.loLabel }),
-      el('span', { class: 'preseeding-row__topic', text: row.topicName }),
-      el('span', { class: approvedToneClass(status), text: String(row.approved) }),
-      el('span', { class: 'preseeding-row__target', text: String(row.target) }),
-      statusBadge(COVERAGE_LABEL[status], COVERAGE_BADGE_VARIANT[status]),
-      status === 'at-target'
-        ? el('span', {})
-        : !hasReadyAssignedMaterial(row.loId)
-          ? el(
-              'button',
-              { class: 'btn btn--ghost btn--sm', type: 'button', onclick: openMaterials },
-              'Assign Materials →',
-            )
+    const coverageBadge = statusBadge(COVERAGE_LABEL[status], COVERAGE_BADGE_VARIANT[status]);
+    coverageBadge.setAttribute('data-label', 'Status');
+    const action = status === 'at-target'
+      ? el('span', { class: 'preseeding-row__action' })
+      : !hasReadyAssignedMaterial(row.loId)
+        ? el(
+            'button',
+            { class: 'btn btn--ghost btn--sm', type: 'button', onclick: openMaterials },
+            'Assign Materials →',
+          )
         : el(
             'button',
             { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => openFormFor(row.loId) },
             'Generate Questions →',
-          ),
+          );
+    const actionCell = el('div', { class: 'preseeding-row__action', 'data-label': 'Action' }, action);
+    return el(
+      'div',
+      { class: 'preseeding-row' },
+      el('span', { class: 'preseeding-row__lo', 'data-label': 'Learning objective', text: row.loLabel }),
+      el('span', { class: 'preseeding-row__topic', 'data-label': 'Topic', text: row.topicName }),
+      el('span', { class: approvedToneClass(status), 'data-label': 'Approved', text: String(row.approved) }),
+      el('span', { class: 'preseeding-row__target', 'data-label': 'Target', text: String(row.target) }),
+      coverageBadge,
+      actionCell,
     );
   }
 

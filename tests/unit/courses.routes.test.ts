@@ -29,6 +29,9 @@ jest.mock('../../server/src/services/courses.service', () => ({
   putRoster: jest.fn(),
   getRoster: jest.fn(),
 }));
+jest.mock('../../server/src/services/instructor-workflow.service', () => ({
+  instructorWorkflowSummary: jest.fn(),
+}));
 
 import { coursesRouter } from '../../server/src/routes/courses.routes';
 import {
@@ -40,6 +43,7 @@ import {
   getThemeCourseId,
   getLoCourseId,
 } from '../../server/src/services/courses.service';
+import { instructorWorkflowSummary } from '../../server/src/services/instructor-workflow.service';
 
 const courseId = new ObjectId();
 
@@ -172,6 +176,37 @@ describe('courses routes (auth + course-instructor gating)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual([{ item: 'Term dates set', ok: false }]);
     expect(setPublished).not.toHaveBeenCalled();
+  });
+
+  it('returns the Instructor workflow summary only inside course scope', async () => {
+    jest.mocked(instructorWorkflowSummary).mockResolvedValue({
+      course: { id: courseId.toHexString(), name: 'Finance', courseCode: 'COMM 298', term: '2026W1', lifecycle: 'draft' },
+      readiness: { completed: 1, total: 5, percent: 20, checklist: [] },
+      counts: {
+        topics: 1,
+        learningObjectives: 2,
+        approvedQuestions: 3,
+        reviewQueue: 4,
+        openFlags: 0,
+        thinLos: 1,
+        unassignedMaterials: 0,
+        contentIssues: 0,
+        lowEngagementStudents: 0,
+      },
+      actions: [],
+    });
+
+    const allowed = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/instructor-workflow`,
+    );
+    const denied = await request(makeApp(student)).get(
+      `/api/courses/${courseId.toHexString()}/instructor-workflow`,
+    );
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.readiness.percent).toBe(20);
+    expect(instructorWorkflowSummary).toHaveBeenCalledWith(expect.any(ObjectId));
+    expect(denied.status).toBe(403);
   });
 
   it('archives and restores a course through instructor-only endpoints', async () => {

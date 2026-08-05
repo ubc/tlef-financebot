@@ -213,6 +213,10 @@ test.describe('instructor pipeline', () => {
       await page.getByRole('link', { name: 'Course Dashboard' }).click();
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
       await expect(page.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
+      await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Next actions' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Fill thin Learning Objectives/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Student Analytics/i })).toBeVisible();
 
       await page.getByRole('button', { name: 'Publish Course', exact: false }).click();
       await expect(page.locator('.page-header__subtitle')).toContainText(`${COURSE_CODE} · ${COURSE_TERM} · Published`);
