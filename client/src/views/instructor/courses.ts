@@ -20,23 +20,26 @@ function navigate(path: string): void {
 }
 
 /**
- * Pure matcher behind N2's non-blocking duplicate-term callout: an existing
- * course "matches" `code`/`term` when its course code and term are equal to
- * the given ones ignoring case and surrounding whitespace. Never blocks
- * submit — callers only use this to decide whether to show the amber
- * callout. Returns the first match, or `undefined` for no match (including
- * an empty course list, or a blank `code`/`term`).
+ * Pure matcher behind N2's duplicate-section guard. A scheduled section is
+ * identified by course code, section, and term, compared without case or
+ * surrounding whitespace. Returns the first match, or `undefined` when the
+ * identity is incomplete or unused.
  */
 export function findDuplicateCourse(
   courses: InstructorCourse[],
   code: string,
+  section: string,
   term: string,
 ): InstructorCourse | undefined {
   const normCode = code.trim().toLowerCase();
+  const normSection = section.trim().toLowerCase();
   const normTerm = term.trim().toLowerCase();
   if (!normCode || !normTerm) return undefined;
   return courses.find(
-    (course) => course.courseCode.trim().toLowerCase() === normCode && course.term.trim().toLowerCase() === normTerm,
+    (course) =>
+      course.courseCode.trim().toLowerCase() === normCode
+      && (course.section ?? '').trim().toLowerCase() === normSection
+      && course.term.trim().toLowerCase() === normTerm,
   );
 }
 
@@ -204,8 +207,8 @@ export function parseCourseIdentity(value: string): CourseIdentity | undefined {
   return courseCode && name ? { courseCode, name } : undefined;
 }
 
-/** Create Course (N2): combined course identity/section/term form, with a
- * non-blocking client-side duplicate-term callout (see `findDuplicateCourse`). */
+/** Create Course (N2): combined course identity/section/term form, with an
+ * immediate client-side duplicate guard backed by server/database enforcement. */
 export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   const user = getSession().user;
   if (!user?.isAdmin && !user?.platformInstructor) {
@@ -274,14 +277,25 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   const currentTerm = (): string => formatTerm(termInput.value, academicYearInput.value);
   const errorSlot = el('div', {});
   const duplicateSlot = el('div', {});
+  const createButton = el(
+    'button',
+    { class: 'btn btn--instr-primary', type: 'submit' },
+    'Create course',
+  ) as HTMLButtonElement;
 
-  // Existing courses, loaded once, used purely to drive the client-derived
-  // duplicate-term callout — never blocks submit (Task-15 Task B).
+  // The client explains the conflict immediately; the server remains the
+  // race-safe source of truth through the unique normalized identity key.
   let existingCourses: InstructorCourse[] = [];
 
   const updateDuplicateCallout = (): void => {
     const identity = parseCourseIdentity(identityInput.value);
-    const duplicate = findDuplicateCourse(existingCourses, identity?.courseCode ?? '', currentTerm());
+    const duplicate = findDuplicateCourse(
+      existingCourses,
+      identity?.courseCode ?? '',
+      sectionInput.value,
+      currentTerm(),
+    );
+    createButton.disabled = Boolean(duplicate);
     if (!duplicate) {
       duplicateSlot.replaceChildren();
       return;
@@ -292,11 +306,11 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
         { class: 'duplicate-callout' },
         el('p', {
           class: 'duplicate-callout__title',
-          text: `A course with code ${duplicate.courseCode} for term ${duplicate.term} already exists.`,
+          text: `Section ${duplicate.section || '—'} of ${duplicate.courseCode} for ${duplicate.term} already exists.`,
         }),
         el('p', {
           class: 'duplicate-callout__body',
-          text: 'Continue creating a separate new course, or go to the existing one.',
+          text: 'Change the section or term, or open the existing course.',
         }),
         el(
           'button',
@@ -309,6 +323,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
 
   identityInput.addEventListener('input', updateDuplicateCallout);
   academicYearInput.addEventListener('change', updateDuplicateCallout);
+  sectionInput.addEventListener('input', updateDuplicateCallout);
   termInput.addEventListener('change', updateDuplicateCallout);
 
   void listInstructorCourses()
@@ -317,8 +332,8 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       updateDuplicateCallout();
     })
     .catch(() => {
-      // Best-effort: the callout is a non-blocking hint, so a failed load
-      // just means it never appears — the form itself still works.
+      // Best-effort client feedback. The server still rejects duplicates when
+      // the course list cannot be loaded or another request wins a race.
     });
 
   const submit = async (event: Event): Promise<void> => {
@@ -335,6 +350,12 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       );
       return;
     }
+    const duplicate = findDuplicateCourse(existingCourses, identity.courseCode, section, term);
+    if (duplicate) {
+      updateDuplicateCallout();
+      errorSlot.replaceChildren(errorState('This course section already exists and cannot be created again.'));
+      return;
+    }
     try {
       const created = await createCourse({
         name: identity.name,
@@ -344,7 +365,10 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       });
       navigate(`/instructor/course/${encodeURIComponent(created._id)}`);
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : (error as Error).message;
+      const rawMessage = error instanceof ApiError ? error.message : (error as Error).message;
+      const message = rawMessage === 'course-already-exists'
+        ? 'This course section already exists. Change the section or term.'
+        : rawMessage;
       errorSlot.replaceChildren(errorState(message));
     }
   };
@@ -376,7 +400,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       el(
         'div',
         { class: 'row' },
-        el('button', { class: 'btn btn--instr-primary', type: 'submit' }, 'Create course'),
+        createButton,
         el(
           'button',
           { class: 'btn btn--ghost', type: 'button', onclick: () => navigate('/instructor/courses') },

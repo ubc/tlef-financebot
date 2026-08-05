@@ -38,7 +38,9 @@ grant attaches to the same PUID-backed User on first SAML login.
 - `GET /api/enrollments` → `[{ courseId, name, courseCode, term, active }]`
 
 ## Courses (instructor)
-- `POST /api/courses { name, courseCode, section?, term }` → 201 Course
+- `POST /api/courses { name, courseCode, section?, term }` → 201 Course; returns
+  `409 course-already-exists` when the normalized `(courseCode, section, term)`
+  identity already exists. Different sections remain separate courses.
   (platform-Instructor or Admin; faculty affiliation alone is insufficient)
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
 - `GET /api/courses/:courseId/outline` → `{ themes: [{ _id, name, order, los: [{ _id, name, order }] }] }`

@@ -137,6 +137,17 @@ test.describe('instructor pipeline', () => {
       courseId = match?.[1] ?? '';
       expect(courseId).toBeTruthy();
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+
+      const duplicateResponse = await page.request.post('/api/courses', {
+        data: {
+          name: COURSE_NAME,
+          courseCode: COURSE_CODE,
+          section: '101',
+          term: selectedTerm,
+        },
+      });
+      expect(duplicateResponse.status()).toBe(409);
+      await expect(duplicateResponse.json()).resolves.toEqual({ error: 'course-already-exists' });
     });
 
     await test.step('add a Topic and a Learning Objective', async () => {

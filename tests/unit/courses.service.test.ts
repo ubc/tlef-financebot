@@ -90,6 +90,7 @@ beforeEach(() => {
 describe('createCourse (IN-S01)', () => {
   it('inserts a sandboxed course with adaptive-strategy defaults and grants the owner instructor role', async () => {
     const insertedId = new ObjectId();
+    coursesFindOne.mockResolvedValue(null);
     coursesInsertOne.mockResolvedValue({ insertedId });
     usersUpdateOne.mockResolvedValue({ acknowledged: true });
 
@@ -110,12 +111,39 @@ describe('createCourse (IN-S01)', () => {
     expect(typeof doc.registrationCode).toBe('string');
     expect(doc.registrationCode.length).toBeGreaterThanOrEqual(8);
     expect(doc.ownerPuid).toBe('PUID-INSTR-0001');
+    expect(doc.identityKey).toBe('["comm 298","","2026w1"]');
 
     const [filter, update] = usersUpdateOne.mock.calls[0];
     expect(filter).toEqual({ puid: 'PUID-INSTR-0001' });
     expect(update.$addToSet.courseRoles).toEqual({ courseId: insertedId, role: 'instructor' });
 
     expect(result._id).toEqual(insertedId);
+    expect(result.identityKey).toBeUndefined();
+  });
+
+  it('rejects an existing course with the same code, section, and term', async () => {
+    coursesFindOne.mockResolvedValue({ _id: new ObjectId() });
+
+    await expect(createCourse('PUID-INSTR-0001', {
+      name: 'Introduction to Finance',
+      courseCode: 'COMM 298',
+      section: '101',
+      term: '2026-27 Winter Term 1',
+    })).rejects.toMatchObject({ message: 'course-already-exists', status: 409 });
+    expect(coursesInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('maps the unique identity index race to a 409 conflict', async () => {
+    coursesFindOne.mockResolvedValue(null);
+    coursesInsertOne.mockRejectedValue(Object.assign(new Error('duplicate key'), { code: 11000 }));
+
+    await expect(createCourse('PUID-INSTR-0001', {
+      name: 'Introduction to Finance',
+      courseCode: 'COMM 298',
+      section: '101',
+      term: '2026-27 Winter Term 1',
+    })).rejects.toMatchObject({ message: 'course-already-exists', status: 409 });
+    expect(usersUpdateOne).not.toHaveBeenCalled();
   });
 });
 
@@ -171,7 +199,10 @@ describe('updateCourse (IN-S02: term dates)', () => {
     expect(coursesUpdateOne).toHaveBeenCalledWith(
       { _id: courseId },
       {
-        $set: { updatedAt: expect.any(Date) },
+        $set: {
+          identityKey: '["comm 298","","2026w1"]',
+          updatedAt: expect.any(Date),
+        },
         $unset: { section: '' },
       },
     );

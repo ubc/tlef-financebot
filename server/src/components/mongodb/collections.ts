@@ -55,6 +55,14 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'platformInstructorPuidGrants', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },
+  {
+    collection: 'courses',
+    keys: { identityKey: 1 },
+    options: {
+      unique: true,
+      partialFilterExpression: { identityKey: { $type: 'string' } },
+    },
+  },
   { collection: 'themes', keys: { courseId: 1, order: 1 } },
   { collection: 'learningObjectives', keys: { courseId: 1, themeId: 1, order: 1 } },
   { collection: 'questions', keys: { courseId: 1, state: 1 } },
