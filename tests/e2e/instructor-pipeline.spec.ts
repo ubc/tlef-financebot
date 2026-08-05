@@ -122,8 +122,8 @@ test.describe('instructor pipeline', () => {
     await test.step('create course', async () => {
       await page.getByRole('button', { name: '+ Create course' }).click();
       await expect(page.getByRole('heading', { name: 'Create Course' })).toBeVisible();
-      await page.locator('#course-name').fill(COURSE_NAME);
-      await page.locator('#course-code').fill(COURSE_CODE);
+      await page.locator('#course-identity').fill(`${COURSE_CODE} - ${COURSE_NAME}`);
+      await page.locator('#course-section').fill('101');
       const yearSelect = page.locator('#course-academic-year');
       const termSelect = page.locator('#course-term');
       const academicYear = String(await yearSelect.locator('option').first().getAttribute('value'));
@@ -137,6 +137,17 @@ test.describe('instructor pipeline', () => {
       courseId = match?.[1] ?? '';
       expect(courseId).toBeTruthy();
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+
+      const duplicateResponse = await page.request.post('/api/courses', {
+        data: {
+          name: COURSE_NAME,
+          courseCode: COURSE_CODE,
+          section: '101',
+          term: selectedTerm,
+        },
+      });
+      expect(duplicateResponse.status()).toBe(409);
+      await expect(duplicateResponse.json()).resolves.toEqual({ error: 'course-already-exists' });
     });
 
     await test.step('add a Topic and a Learning Objective', async () => {
@@ -231,7 +242,9 @@ test.describe('instructor pipeline', () => {
       await expect(page.getByRole('button', { name: /Student Analytics/i })).toBeVisible();
 
       await page.getByRole('button', { name: 'Publish Course', exact: false }).click();
-      await expect(page.locator('.page-header__subtitle')).toContainText(`${COURSE_CODE} · ${selectedTerm} · Published`);
+      await expect(page.locator('.page-header__subtitle')).toContainText(
+        `${COURSE_CODE} · Section 101 · ${selectedTerm} · Published`,
+      );
     });
   });
 

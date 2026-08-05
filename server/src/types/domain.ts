@@ -152,6 +152,8 @@ export interface Course {
   courseCode: string; // e.g. "COMM 298"
   section?: string; // e.g. "101"; separate from the catalog course code
   term: string; // e.g. "2026W1"
+  /** Internal normalized courseCode/section/term key; omitted from API responses. */
+  identityKey?: string;
   ownerPuid: string;
   registrationCode: string; // unique; regenerable (IN-S03)
   termStart?: Date;

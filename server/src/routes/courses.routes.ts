@@ -41,10 +41,10 @@ const themeIdParams = z.object({ themeId: objectIdParam });
 const loIdParams = z.object({ loId: objectIdParam });
 
 const createCourseBody = z.object({
-  name: z.string().min(1),
-  courseCode: z.string().min(1),
+  name: z.string().trim().min(1),
+  courseCode: z.string().trim().min(1),
   section: z.string().trim().min(1).max(40).optional(),
-  term: z.string().min(1),
+  term: z.string().trim().min(1),
 });
 
 const autoPauseBody = z.object({
