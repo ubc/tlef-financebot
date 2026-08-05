@@ -86,6 +86,20 @@ export async function resolveParamValues(
   return undefined;
 }
 
+/**
+ * R3 (design spec 2026-08-05): the ONE place a computed value becomes display
+ * text. Integers print bare; everything else rounds to 2 decimals, which is
+ * what a finance student writing dollars and cents expects. The formula
+ * evaluator itself never rounds — all arithmetic upstream of here runs at
+ * full double precision, so intermediate rounding can never compound into the
+ * answer. That compounding is exactly the `190.48 + 272.11` class of error
+ * this work exists to eliminate.
+ */
+export function formatParamValue(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return (Math.round(value * 100) / 100).toFixed(2);
+}
+
 /** Replaces every `{{name}}` placeholder in `text` with its resolved value
  * from `values`; a placeholder with no matching key is left untouched
  * (verbatim `{{name}}`) rather than substituted with `undefined`/blank, so a
@@ -95,7 +109,7 @@ export async function resolveParamValues(
  * string out). */
 export function substituteParams(text: string, values: Record<string, number>): string {
   return text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match,
+    Object.prototype.hasOwnProperty.call(values, name) ? formatParamValue(values[name]) : match,
   );
 }
 
