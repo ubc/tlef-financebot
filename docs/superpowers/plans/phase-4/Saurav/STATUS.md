@@ -17,7 +17,7 @@ them.
 
 | Task | State |
 |---|---|
-| 1 — Critical-path E2E | Steps 1, 2, 4 done (#55). **Step 3 blocked on a decision** — see below |
+| 1 — Critical-path E2E | Steps 1, 2, 4 done (#55). **Step 3 unblocked 2026-08-05** — the allowlist question is answered; remaining work is the ~10-line role-aware spec fix |
 | 2 — WCAG 2.1 AA scans | **Complete** (#58). 11 surfaces clean |
 | 3 — 250-session concurrency | Not started. Buildable locally now; the gated run needs staging |
 | 4 — Browser/device spot checks | Not started. **Bigger than the plan assumes — see the Chromium-only finding**, and it grew again with the TA workspace (#62) |
@@ -58,7 +58,7 @@ staging URL — see the open question at the end).
 |---|---|
 | 1. Audit coverage | **done** — PR #55 |
 | 2. `critical-paths.spec.ts` | **done** — PR #55 |
-| 3. Full suite 3× green | **BLOCKED** — see below |
+| 3. Full suite 3× green | **UNBLOCKED 2026-08-05** — decision made; the role-aware spec fix is now ordinary work. See below |
 | 4. Commit | done (PRs #55, and the fixes branch) |
 
 **Step 1 result.** All three required critical paths were already covered:
@@ -110,10 +110,24 @@ heading that differs.
   ambient database state. *Recommended.*
 - **Leave them and record**, deferring the Phase 0 specs to Stephen.
 
-**Open question for whoever returns to this:** was
-`ADMIN_CWL_ALLOWLIST=12345678` set deliberately, or is it a leftover from an
-ad-hoc check of the admin-landing behaviour on 2026-08-01? If the latter,
-reverting it is the honest fix and the specs' assumption becomes true again.
+**✅ ANSWERED 2026-08-05 — it was deliberate.** Saurav: *"The admin shell is
+fine, that's how I want my local machine's faculty."* So **reverting the
+allowlist is off the table**, and with it the first option above. The
+`isAdmin` flag on `12345678` is intended local configuration, not residue from
+the 2026-08-01 admin-landing check.
+
+**That settles Task 1 Step 3 on the recommended path: make both specs
+role-aware** (~10 lines). `app.spec.ts:9` and `walking-skeleton.spec.ts:13`
+assert the *instructor* shell — `nav "Instructor"`, the `My Courses` heading —
+while `main.ts:295-298` swap the whole route table and nav on `isAdmin` and
+`main.ts:386` sends `/` to `/admin/accounts`. The specs are asserting ambient
+state they do not own; the fix belongs in the specs, not in `.env`.
+
+**Reconfirmed on 2026-08-05** during PR #63's e2e run: both specs still fail,
+identically, on a clean `main`. A third failure, `classes.spec.ts:69`, is a
+**different** user (`staff`, puid `11223344`, `isAdmin: false`) and so is *not*
+explained by the allowlist — it has a separate, still-undiagnosed cause and
+should not be folded into the role-aware fix without its own look.
 
 ## Task 2 — WCAG 2.1 AA scans — COMPLETE (#58)
 
@@ -409,8 +423,10 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 ## Open questions — these need a human, not a session
 
-1. **Was `ADMIN_CWL_ALLOWLIST=12345678` deliberate?** Decides Task 1 Step 3
-   (details above). One line either way.
+1. ~~**Was `ADMIN_CWL_ALLOWLIST=12345678` deliberate?**~~ **ANSWERED
+   2026-08-05: yes, deliberate** — Saurav wants the local `faculty` user on the
+   admin shell. Task 1 Step 3 is therefore unblocked, and the fix is the
+   role-aware spec change (~10 lines), not an `.env` revert. Details above.
 2. **Staging URL/host, and who deploys to it.** Needed to reconcile Task 6
    Steps 1–2 in the shared plan and to point the load run somewhere. Left out
    of the core plan deliberately rather than written as a placeholder.
