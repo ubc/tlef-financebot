@@ -6,6 +6,7 @@ import { flagsCol } from '../components/mongodb/collections';
 import { validate } from '../middleware/validate';
 import { getQuestionCourseId, reviewQueue } from '../services/bank.service';
 import { listFlags } from '../services/flags.service';
+import { toFlagResponse } from './flags.routes';
 import { addQuestionInternalNote, transitionQuestion } from '../services/questions.service';
 import {
   addTa,
@@ -219,11 +220,24 @@ tasRouter.post(
   },
 );
 
+/** GET /courses/:courseId/ta/flags -> the same rows the instructor queue gets
+ * from GET /courses/:courseId/flags, and serialized the SAME way.
+ *
+ * This route used to return `listFlags()` raw, so its rows carried Mongo's
+ * `_id` while every other flag endpoint (and the client's `Flag` type) uses
+ * `id`. The TA flag view therefore read `flag.id` as undefined and posted to
+ * `/api/flags/undefined/escalate`, which the `flagId` param regex rejected
+ * with a 400 "Invalid request." — i.e. TA escalation could never have worked.
+ * It went unnoticed because exercising it needs a real `ta` courseRole; an
+ * instructor's "View as TA" reaches the same button and fails identically. */
 tasRouter.get(
   '/courses/:courseId/ta/flags',
   validate({ params: courseParams }),
   ensureCapability('flag.triage'),
-  async (req, res) => res.json(await listFlags(new ObjectId(String(req.params.courseId)))),
+  async (req, res) => {
+    const flags = await listFlags(new ObjectId(String(req.params.courseId)));
+    res.json(flags.map((flag) => toFlagResponse(flag)));
+  },
 );
 
 tasRouter.post(

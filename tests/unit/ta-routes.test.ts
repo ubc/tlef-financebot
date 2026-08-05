@@ -48,6 +48,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 import { tasRouter } from '../../server/src/routes/tas.routes';
 import { questionsRouter } from '../../server/src/routes/questions.routes';
 import { getQuestionCourseId, reviewQueue } from '../../server/src/services/bank.service';
+import { listFlags } from '../../server/src/services/flags.service';
 import { transitionQuestion } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
@@ -120,5 +121,49 @@ describe('TA structural authorization and safe review payloads', () => {
 
     expect(response.status).toBe(401);
     expect(getQuestionCourseId).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: the TA flag list used to return listFlags() raw, so its rows
+// carried Mongo's `_id` while the client's `Flag` type (and every other flag
+// endpoint) uses `id`. The TA flag view read `flag.id` as undefined and
+// escalation posted to /api/flags/undefined/escalate, which the flagId param
+// regex rejected with 400 "Invalid request." — TA escalation could never have
+// worked. Nothing covered this endpoint, and reproducing it needs a real `ta`
+// courseRole, so it survived until a human tried it.
+describe('TA flag list serialization', () => {
+  const flagId = new ObjectId();
+
+  beforeEach(() => {
+    jest.mocked(listFlags).mockResolvedValue([{
+      _id: flagId,
+      courseId,
+      questionId,
+      questionVersionId: new ObjectId(),
+      puid: 'student-1',
+      state: 'open',
+      createdAt: new Date(),
+      question: null,
+      currentVersion: null,
+    }] as unknown as Awaited<ReturnType<typeof listFlags>>);
+  });
+
+  it('exposes each flag as `id`, never a raw `_id`', async () => {
+    const response = await request(makeApp(ta())).get(
+      `/api/courses/${courseId.toHexString()}/ta/flags`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].id).toBe(flagId.toHexString());
+    expect(response.body[0]._id).toBeUndefined();
+  });
+
+  it('serializes an id the escalate route will actually accept', async () => {
+    const response = await request(makeApp(ta())).get(
+      `/api/courses/${courseId.toHexString()}/ta/flags`,
+    );
+
+    // The exact shape POST /api/flags/:flagId/escalate validates against.
+    expect(response.body[0].id).toMatch(/^[0-9a-f]{24}$/);
   });
 });
