@@ -58,3 +58,20 @@ backed by one authoritative aggregate contract.
 
 After this slice is clean: LO Content Studio, unified Action Inbox,
 analytics-to-action links, course/team lifecycle, then Admin Operations.
+
+## Course-as-Project UX foundation — 2026-08-05
+
+- [x] Treat each course as a durable Project on the Instructor landing page.
+- [x] Hide course-only navigation until a course is selected; inside a course,
+  present the authoring workflow in a deliberate Sources → LOs → Questions →
+  Review → Preview sequence.
+- [x] Add a persistent, accessible desktop icon-rail collapse mode while
+  preserving the existing mobile drawer.
+- [x] Recompose Course Home as the Project cockpit: current state, next work,
+  launch readiness, and direct exploration paths.
+- [x] Keep the Knowledge Workspace inside the viewport with independent panel
+  scrolling and a source-level Trash / Restore action.
+- [x] Establish reusable Project-shell tokens and responsive rules that the
+  remaining Instructor views can adopt without route-by-route visual drift.
+- [x] Verify keyboard navigation, responsive layouts, TypeScript, lint, unit
+  tests, browser workflows, and axe before handoff.
