@@ -21,12 +21,13 @@ runs, nobody claims the Phase 1 exit gate passed.
 > plan's own progress-tracking note (line 5) already mandates the mirror step;
 > it was the step that got skipped under merge pressure.
 
-> **⚠️ Pre-existing lint error on `main` (Stephen's file, NOT introduced by
-> Task 7):** `server/src/services/review-book.service.ts:1` trips
-> `@typescript-eslint/consistent-type-imports` (`import` → `import type`).
-> Confirmed present on `8558317` by stashing Task 7 and linting. Left untouched
-> per the two-developer convention (don't "helpfully fix" the other developer's
-> file) — **flag to Stephen**; it is a one-line `--fix`.
+> **✅ RESOLVED 2026-08-05 — the pre-existing lint error is gone.** For history:
+> `server/src/services/review-book.service.ts:1` (Stephen's file, NOT introduced
+> by Task 7) tripped `@typescript-eslint/consistent-type-imports`
+> (`import` → `import type`), confirmed present on `8558317`. It was left
+> untouched per the two-developer convention rather than "helpfully fixed."
+> `npx eslint .` is clean on `main` @ `ecced1f`; it was fixed somewhere between
+> those commits. No action needed — do not re-flag it to Stephen.
 
 > **🚨 If you are about to register an Agenda job (Tasks 7, 8, 13): do NOT call
 > `defineJob()` at module level.** Task 6's brief said to, and it made the server

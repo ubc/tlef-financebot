@@ -4,6 +4,7 @@
 
 **Owner:** Saurav
 **Created:** 2026-08-04
+**Status:** **All 7 tasks implemented and merged** — PR #62 (`saurav/instructor-ta-view`), landed on `main` as `ecced1f`, 2026-08-04. Checkboxes reconciled 2026-08-05; three manual browser checks in "Final verification" remain unticked — see that section.
 **Traces to:** [`../2026-07-11-phase-3-full-surface.md`](../2026-07-11-phase-3-full-surface.md) Task 6 (TA management + TA workflows, IN-T01–T03, TA-01–TA-04)
 
 **Goal:** Rebuild the two TA views so they mirror their instructor counterparts
@@ -114,7 +115,7 @@ permission-flagged fork of it).
 none of it to render "Topic 1 / LO 2". This endpoint returns theme and LO
 names and order only.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/unit/course-outline.routes.test.ts`. Model the auth harness on
 `tests/unit/ta-routes.test.ts` — the same `hasCapability` mock encodes the TA
@@ -207,12 +208,12 @@ describe('GET /api/courses/:courseId/outline', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/course-outline.routes.test.ts`
 Expected: FAIL — `getCourseOutline is not a function` / 404 on the route.
 
-- [ ] **Step 3: Add the service function**
+- [x] **Step 3: Add the service function**
 
 In `server/src/services/courses.service.ts`, beside `getCourseTree`. Note it
 does **not** call `getCourse()` — the point is to avoid loading the course
@@ -248,7 +249,7 @@ export async function getCourseOutline(courseId: ObjectId): Promise<{ themes: Co
 }
 ```
 
-- [ ] **Step 4: Add the route**
+- [x] **Step 4: Add the route**
 
 In `server/src/routes/courses.routes.ts`. Extend the existing auth import to
 include `ensureCapability` (it is exported from `../components/auth`, as
@@ -272,19 +273,19 @@ coursesRouter.get(
 
 Add `getCourseOutline` to the existing `courses.service` import in this file.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `npx jest tests/unit/course-outline.routes.test.ts`
 Expected: PASS, 5/5.
 
-- [ ] **Step 6: Document the endpoint**
+- [x] **Step 6: Document the endpoint**
 
 In `docs/api-contract.md`, under `## Courses (instructor)` (line 40), add a row
 for `GET /api/courses/:courseId/outline` — capability `question.review`,
 returns `{ themes: [{ _id, name, order, los: [{ _id, name, order }] }] }`, and
 note it is the TA-accessible subset of `GET /api/courses/:courseId`.
 
-- [ ] **Step 7: Full verification and commit**
+- [x] **Step 7: Full verification and commit**
 
 ```bash
 npm run typecheck && npx eslint server/src/services/courses.service.ts server/src/routes/courses.routes.ts && npx jest
@@ -311,7 +312,7 @@ git commit -m "feat(courses): read-only course outline endpoint for question.rev
 
 All three helpers are DOM-free so they unit-test without jsdom.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/unit/ta-ui.test.ts`:
 
@@ -389,12 +390,12 @@ describe('buildSuggestionPatch', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/ta-ui.test.ts`
 Expected: FAIL — cannot find module `client/src/views/ta/ta-ui`.
 
-- [ ] **Step 3: Add the API wrapper**
+- [x] **Step 3: Add the API wrapper**
 
 In `client/src/api.ts`, beside `getCourseTree` (line 908):
 
@@ -425,7 +426,7 @@ export function getCourseOutline(courseId: string): Promise<CourseOutline> {
 }
 ```
 
-- [ ] **Step 4: Write the helpers**
+- [x] **Step 4: Write the helpers**
 
 Create `client/src/views/ta/ta-ui.ts`:
 
@@ -486,12 +487,12 @@ export function buildSuggestionPatch(
 `client/src/api.ts` (lines 1809 and the `QuestionSuggestion` block) — import
 them, do not redeclare.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `npx jest tests/unit/ta-ui.test.ts`
 Expected: PASS, 9/9.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npm run typecheck && npx eslint client/src/api.ts client/src/views/ta/ta-ui.ts && npx jest
@@ -520,7 +521,7 @@ it makes it testable and makes Task 5 a rendering-only job.
 This is a refactor of a working view, so the tests below characterise the
 **current** behaviour before anything moves.
 
-- [ ] **Step 1: Add the missing wire fields to the client `Flag` type**
+- [x] **Step 1: Add the missing wire fields to the client `Flag` type**
 
 In `client/src/api.ts`, in `export interface Flag`. The server already sends
 these (`server/src/types/domain.ts:552-558`; `listFlags` spreads the whole
@@ -547,7 +548,7 @@ Then inside `Flag`, replace the `source` line and add two fields:
   taRecommendation?: TaRecommendation;
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/unit/flag-groups.test.ts`:
 
@@ -658,12 +659,12 @@ describe('latestEscalation', () => {
 });
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/flag-groups.test.ts`
 Expected: FAIL — cannot find module `client/src/flag-groups`.
 
-- [ ] **Step 4: Create the module**
+- [x] **Step 4: Create the module**
 
 Create `client/src/flag-groups.ts`. Move `FlagGroup`, `groupFlags`,
 `openFlags`, `isGroupOpen`, `byCreatedAtDesc` and `sortGroups` verbatim out of
@@ -742,7 +743,7 @@ export function latestEscalation(group: FlagGroup): TaRecommendation | null {
 }
 ```
 
-- [ ] **Step 5: Point the instructor view at the module**
+- [x] **Step 5: Point the instructor view at the module**
 
 In `client/src/views/instructor/flags.ts`, delete the moved declarations and
 import them instead. `byCreatedAtDesc` is still used locally by
@@ -764,13 +765,13 @@ Everything else in the file is unchanged — `latestResolutionAction`,
 `remediationPanel` and the rest stay put; they are instructor-only concerns
 (they read `resolution`, which a TA can never write).
 
-- [ ] **Step 6: Run the tests to verify they pass, including no instructor regression**
+- [x] **Step 6: Run the tests to verify they pass, including no instructor regression**
 
 Run: `npx jest tests/unit/flag-groups.test.ts && npx jest`
 Expected: PASS. The full suite must be green — this task moved code the
 instructor flag queue depends on.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 npm run typecheck && npx eslint client/src/flag-groups.ts client/src/views/instructor/flags.ts client/src/api.ts && npx jest
@@ -798,7 +799,7 @@ agent decision, status, and two actions — **Review →** and **Mark reviewed**
 default. There is no Approve button and no bulk-approve control; both are
 `question.approve`, which no configuration grants a TA.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 The tab logic is already covered by `tests/unit/review-queue.test.ts` (it tests
 the exported `matchesTab`/`queueTabCounts` this view imports), and
@@ -825,14 +826,14 @@ describe('TA review queue source', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx jest tests/unit/ta-ui.test.ts`
 Expected: FAIL — the current file contains no `Approve` string but this test
 is written against the rewritten file; if it passes now, it still guards the
 rewrite. Confirm it runs and reports on the real file path.
 
-- [ ] **Step 3: Rewrite the view**
+- [x] **Step 3: Rewrite the view**
 
 Replace `client/src/views/ta/review-queue.ts` entirely:
 
@@ -1076,19 +1077,19 @@ export function renderTaReviewQueue(outlet: HTMLElement, params: RouteParams): v
 }
 ```
 
-- [ ] **Step 4: Add the row CSS**
+- [x] **Step 4: Add the row CSS**
 
 In `client/public/styles/main.css`, beside the existing `.queue-row` rules, add
 a `.queue-row--ta` grid override — the TA row has 5 columns to the instructor's
 6 (no select checkbox). Match the existing `.queue-row` declaration's approach
 rather than inventing a new layout system.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run typecheck && npx eslint client/src/views/ta/review-queue.ts && npx jest`
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/views/ta/review-queue.ts client/public/styles/main.css tests/unit/ta-ui.test.ts
@@ -1111,7 +1112,7 @@ git commit -m "feat(ta): rebuild the TA review queue to mirror the instructor qu
 internal-note composer, a suggest-edit composer, and proactive escalation. No
 editor — `PATCH /api/questions/:questionId` is `question.approve`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/unit/ta-ui.test.ts`:
 
@@ -1131,12 +1132,12 @@ describe('TA question page source', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx jest tests/unit/ta-ui.test.ts`
 Expected: FAIL — `ENOENT` on `client/src/views/ta/question-detail.ts`.
 
-- [ ] **Step 3: Write the view**
+- [x] **Step 3: Write the view**
 
 Create `client/src/views/ta/question-detail.ts`. Structure:
 
@@ -1282,7 +1283,7 @@ Verified against `client/src/api.ts` at plan time: `Difficulty` is exported as
 (line 1852) so `detail.id` is correct, and `QuestionVersion.difficulty` is a
 required `Difficulty` (so `original.difficulty` is never undefined).
 
-- [ ] **Step 4: Register the route**
+- [x] **Step 4: Register the route**
 
 In `client/src/main.ts`, extend `TA_ROUTES` (specific-first, per the file's
 convention):
@@ -1305,19 +1306,19 @@ highlighted while on a question page — otherwise both nav links go inactive:
       );
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run typecheck && npx eslint client/src/views/ta/question-detail.ts client/src/main.ts && npx jest`
 Expected: all green.
 
-- [ ] **Step 6: Manual check with a real TA account**
+- [x] **Step 6: Manual check with a real TA account**
 
 Sign in as a user whose only role on the course is `ta`. From the queue click
 **Review →**; confirm the page loads (no 403 on the outline), Submit is
 disabled until the stem actually changes, a submitted suggestion appears as
 `pending`, and no approve/edit control is present anywhere.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add client/src/views/ta/question-detail.ts client/src/main.ts
@@ -1345,7 +1346,7 @@ Students, no Reject & Archive, no editor link, no remediation panel — all
 `flag.resolve` or `question.approve`, both hard-denied to TAs
 (`capabilities.service.ts:46`).
 
-- [ ] **Step 1: Rewrite the view**
+- [x] **Step 1: Rewrite the view**
 
 Mirror `views/instructor/flags.ts`'s structure: grouped rows via the Task 3
 module, `flagCountBadge`, `reasonsSummary`, `staleVersionNote`, and the
@@ -1432,20 +1433,20 @@ function escalationSummary(group: FlagGroup): HTMLElement | false {
 }
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Run: `npm run typecheck && npx eslint client/src/views/ta/flag-triage.ts && npx jest`
 Expected: all green — `tests/unit/notification-target.test.ts` still passes
 (the `?flag=` landing target for the `ta` audience is unchanged).
 
-- [ ] **Step 3: Manual check**
+- [x] **Step 3: Manual check**
 
 As a real TA: land on `#/ta/course/:id/flags?flag=<id>` from a notification and
 confirm the group is highlighted, focused and scrolled to exactly once.
 Escalate a group with two flags; confirm both move to `escalated` and the
 recommendation renders back.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add client/src/views/ta/flag-triage.ts
@@ -1467,7 +1468,7 @@ queue renders neither, and shows escalated flags identically to un-triaged
 ones. The TA's triage work is invisible — which is what makes the escalate
 action feel pointless today.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `latestEscalation` is already covered by Task 3. Add a rendering-contract test
 to `tests/unit/flag-groups.test.ts`:
@@ -1484,12 +1485,12 @@ describe('instructor flag queue source', () => {
 
 Add the `node:fs`/`node:path` imports at the top of that file.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx jest tests/unit/flag-groups.test.ts`
 Expected: FAIL — `flags.ts` does not mention `latestEscalation`.
 
-- [ ] **Step 3: Render the escalation**
+- [x] **Step 3: Render the escalation**
 
 In `views/instructor/flags.ts`'s `groupRow`, add `latestEscalation` to the
 imports from `flag-groups.js`, then:
@@ -1515,17 +1516,17 @@ imports from `flag-groups.js`, then:
   `client/src/flag-groups.ts` and extend `tests/unit/flag-groups.test.ts`'s
   `sortGroups` describe block to cover it.
 
-- [ ] **Step 4: Add the CSS**
+- [x] **Step 4: Add the CSS**
 
 Add a `.flag-row__escalation` rule beside the existing `.flag-row__reason` /
 `.flag-row__stale` rules in `client/public/styles/main.css`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run typecheck && npx eslint client/src/views/instructor/flags.ts client/src/flag-groups.ts && npx jest`
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/views/instructor/flags.ts client/src/flag-groups.ts client/public/styles/main.css tests/unit/flag-groups.test.ts
@@ -1536,12 +1537,25 @@ git commit -m "fix(flags): surface TA escalations and prioritise them in the ins
 
 ## Final verification
 
-- [ ] `npm run typecheck` — server and client clean.
-- [ ] `npx eslint .` — clean.
-- [ ] `npx jest` — full suite green (806 tests at branch point, plus the ~20 added here).
+_Automated checks re-run against `main` @ `ecced1f` on 2026-08-05, after the
+merge of PR #62._
+
+- [x] `npm run typecheck` — server and client clean.
+- [x] `npx eslint .` — clean. (The `review-book.service.ts` `consistent-type-imports`
+      error carried in the Phase 1 STATUS note is also gone.)
+- [x] `npx jest` — full suite green: **83 suites, 862 tests**, up from the 806 at
+      branch point.
+
+The three manual checks below are **still unrecorded.** The late fix commits on
+this branch (`ac8065d` missing question-page/queue styles, `873ba8d` `_id`→`id`
+on the TA mutation responses, `95d1535` missing `loIds`/`themeIds`) are the kind
+of defect only a real browser run surfaces, so runs almost certainly happened —
+but nobody wrote down the result, and an inferred pass is not a pass. Re-run and
+tick, or strike them.
+
 - [ ] **Real TA account**, not the instructor's "View as TA": review queue loads with Topic/LO populated; Review → opens the question page; suggest-edit files exactly one suggestion; flag triage groups correctly and escalation renders back.
 - [ ] **Instructor account:** the flag queue shows "Escalated by TA" with the recommendation and note, sorted above un-triaged flags; the review queue, question detail and remediation panel are unchanged.
-- [ ] **TA invariant:** with every capability toggled on for the TA in `/admin/capabilities`, no approve, resolve, or edit control appears in any TA view, and `POST /api/questions/:id/transition {to:'approved'}` still 403s (existing `tests/unit/ta-routes.test.ts` coverage).
+- [ ] **TA invariant:** with every capability toggled on for the TA in `/admin/capabilities`, no approve, resolve, or edit control appears in any TA view, and `POST /api/questions/:id/transition {to:'approved'}` still 403s. The 403 half is covered automatically by `tests/unit/ta-routes.test.ts` and is green; the "no control appears with every capability on" half is the manual part.
 
 ## Out of scope
 
