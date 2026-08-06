@@ -144,11 +144,11 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
     errorModel: d.errorModel ?? '',
   }));
 
-  const errorSlot = el('div', {});
+  const errorSlot = el('div', { class: 'param-config__error' });
   const stemDisplay = stemWithSlotChips(stem);
   const slotsContainer = el('div', { class: 'param-slots' });
   const derivedContainer = el('div', { class: 'derived-values' });
-  const verificationSlot = el('div', {});
+  const verificationSlot = el('div', { class: 'param-config__verification' });
   const previewSlot = el('div', { class: 'param-preview' });
 
   const saveButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, 'Save Parameterization') as HTMLButtonElement;
@@ -507,7 +507,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       ),
       slotsContainer,
       derivedContainer,
-      el('div', { class: 'row row--wrap' }, addSlotButton, addDerivedButton),
+      el('div', { class: 'row row--wrap param-config__add' }, addSlotButton, addDerivedButton),
       verificationSlot,
       errorSlot,
       el('div', { class: 'param-config-actions' }, previewButton, saveButton),

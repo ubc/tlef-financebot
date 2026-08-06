@@ -5624,3 +5624,61 @@ button.class-row--link:focus-visible .class-row__title {
   background: var(--ok-bg);
   color: var(--ok-fg);
 }
+
+/* Parameterization page layout. These class names were referenced in the
+   markup but never had any CSS, so every block sat flush against the next —
+   the add-variable buttons, the verification banner and the preview controls
+   ran together as one undifferentiated stack. Spacing is applied per block
+   rather than as a flex `gap` on the container, because the table header and
+   its two row groups (drawn, then computed) must stay tight against each
+   other to read as a single table. */
+.param-config-layout > .detail-section-title {
+  margin: 1.75rem 0 0.5rem;
+}
+
+.param-config-layout > .detail-section-title:first-child {
+  margin-top: 0;
+}
+
+.param-config-layout > .form-field__help {
+  margin: 0 0 0.75rem;
+}
+
+.param-config__stem {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  line-height: 1.8;
+}
+
+/* Clear of the table above and the banner below. */
+.param-config__add {
+  margin-top: 1rem;
+}
+
+.param-config__verification:not(:empty),
+.param-config__error:not(:empty) {
+  margin-top: 1.25rem;
+}
+
+.param-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.param-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.param-preview__warnings {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
