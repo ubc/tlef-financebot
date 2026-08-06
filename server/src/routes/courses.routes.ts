@@ -1,5 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
+import multer from 'multer';
 import { z } from 'zod';
 import { ensureApiAuthenticated, ensureCapability, ensurePlatformInstructor } from '../components/auth';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
@@ -27,6 +28,7 @@ import {
   getRoster,
 } from '../services/courses.service';
 import { instructorWorkflowSummary } from '../services/instructor-workflow.service';
+import { classifyIdentifierList, parseRosterFile } from '../services/roster-import.service';
 
 // Courses / Hierarchy / Roster endpoints (IN-S01/S02/S03, IN-L06) — the
 // instructor authoring surface, exactly as specified in docs/api-contract.md.
@@ -67,6 +69,13 @@ const updateCourseBody = z.object({
 });
 
 const rosterBody = z.object({ identifiers: z.array(z.string()) });
+
+// A roster is a list of short strings; 2MB is far past the biggest UBC class
+// and still small enough that a stray PDF is rejected rather than parsed.
+const rosterUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+});
 
 const themeBody = z.object({
   name: z.string().min(1),
@@ -263,15 +272,51 @@ coursesRouter.post(
   },
 );
 
-/** PUT /api/courses/:courseId/roster { identifiers } -> { count }. Instructor-only. */
+/**
+ * PUT /api/courses/:courseId/roster { identifiers } -> { count, rejected }.
+ * Instructor-only.
+ *
+ * Identifiers that cannot ever match a login are dropped here rather than
+ * stored, and returned as `rejected` so the UI can say which rows and why.
+ * Storing them was worse than useless: `putRoster` accepted any non-empty
+ * string, so a roster of student numbers saved cleanly and reported its count
+ * while guaranteeing every enrolment would fail "not on roster" — see
+ * roster-import.service.ts for why a student number can never match.
+ *
+ * `rejected` is additive, so the previous `{ count }` shape still holds.
+ */
 coursesRouter.put(
   '/courses/:courseId/roster',
   validate({ params: courseIdParams }),
   ensureCourseInstructor(),
   validate({ body: rosterBody }),
   async (req, res) => {
-    const count = await putRoster(new ObjectId(String(req.params.courseId)), req.body.identifiers);
-    res.json({ count });
+    const { identifiers, rejects } = classifyIdentifierList(req.body.identifiers);
+    const count = await putRoster(new ObjectId(String(req.params.courseId)), identifiers);
+    res.json({ count, rejected: rejects });
+  },
+);
+
+/**
+ * POST /api/courses/:courseId/roster/preview (multipart field `file`, optional
+ * `column`) -> RosterParseResult. Instructor-only.
+ *
+ * Parse-only: nothing is written. The instructor reviews the detected column
+ * and the rejected rows, then saves through PUT above — so a file whose
+ * identifier column was guessed wrong is caught before it replaces a roster.
+ */
+coursesRouter.post(
+  '/courses/:courseId/roster/preview',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  rosterUpload.single('file'),
+  (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: 'roster-file-required' });
+      return;
+    }
+    const column = typeof req.body?.column === 'string' && req.body.column ? req.body.column : undefined;
+    res.json(parseRosterFile(req.file.buffer.toString('utf8'), column));
   },
 );
 
@@ -382,8 +427,21 @@ const COURSE_ERROR_STATUS: Record<string, number> = {
 };
 
 coursesRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  // multer errors carry a `code`, not a `status`; unhandled they reach the
+  // central errorHandler as a 500, so an oversized roster file would report
+  // "500 File too large" instead of a 4xx. Same mapping as materials.routes.ts.
+  if (err instanceof multer.MulterError) {
+    res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: err.message });
+    return;
+  }
   if (err instanceof Error && err.message in COURSE_ERROR_STATUS) {
     res.status(COURSE_ERROR_STATUS[err.message]).json({ error: err.message });
+    return;
+  }
+  // csv-parse throws on input it cannot tokenize at all (a PDF renamed .csv,
+  // a truncated quoted field). That is a bad upload, not a server fault.
+  if (err instanceof Error && 'code' in err && String((err as { code: unknown }).code).startsWith('CSV_')) {
+    res.status(400).json({ error: 'roster-file-unreadable' });
     return;
   }
   next(err);

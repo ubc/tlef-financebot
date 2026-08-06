@@ -1291,12 +1291,48 @@ export function getRoster(courseId: string): Promise<Array<{ identifier: string;
   );
 }
 
-/** PUT /api/courses/:courseId/roster { identifiers } -> { count }. */
-export function putRoster(courseId: string, identifiers: string[]): Promise<{ count: number }> {
-  return request<{ count: number }>(`/api/courses/${encodeURIComponent(courseId)}/roster`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifiers }),
+export type RosterRejectReason = 'student-number' | 'malformed-email' | 'invalid-characters' | 'duplicate';
+
+export interface RosterReject {
+  line: number;
+  value: string;
+  reason: RosterRejectReason;
+}
+
+export interface RosterParseResult {
+  columns: string[];
+  selectedColumn: string | null;
+  identifiers: string[];
+  rejects: RosterReject[];
+  totalRows: number;
+}
+
+/** PUT /api/courses/:courseId/roster { identifiers } -> { count, rejected }.
+ *  `rejected` lists entries dropped because they can never match a login —
+ *  most often student numbers. */
+export function putRoster(
+  courseId: string,
+  identifiers: string[],
+): Promise<{ count: number; rejected: RosterReject[] }> {
+  return request<{ count: number; rejected: RosterReject[] }>(
+    `/api/courses/${encodeURIComponent(courseId)}/roster`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifiers }),
+    },
+  );
+}
+
+/** POST /api/courses/:courseId/roster/preview (multipart, field `file`) ->
+ *  RosterParseResult. Parse-only — nothing is written until putRoster. */
+export function previewRosterFile(courseId: string, file: File, column?: string): Promise<RosterParseResult> {
+  const form = new FormData();
+  form.append('file', file);
+  if (column) form.append('column', column);
+  return request<RosterParseResult>(`/api/courses/${encodeURIComponent(courseId)}/roster/preview`, {
+    method: 'POST',
+    body: form,
   });
 }
 

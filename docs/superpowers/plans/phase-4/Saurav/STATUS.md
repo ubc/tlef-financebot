@@ -459,3 +459,17 @@ conceptual-detection wording, this README, and root `AGENTS.md`. Verification:
 (90 suites / 983 tests) pass. PR #66's recorded Playwright run has no new
 failures; the three existing environment/config failures remain documented in
 the PR.
+
+## 2026-08-06 — Course Settings PRs #67 and #68
+
+- #67 documents Auto-pause, Feedback Strategy, and Registration Code in the
+  product with keyboard-, hover-, touch-, and screen-reader-accessible help
+  tips. Course Settings is now included in the axe A/AA scan.
+- #68 adds preview-first roster CSV import, column detection/override, row-level
+  rejects, and the documented CWL/email-only identity constraint. It updates
+  `docs/api-contract.md` in the same change.
+- Stephen's pre-merge review closed two data-safety gaps in #68: a headerless
+  invalid first row is no longer mistaken for a header, and a preview with zero
+  usable identifiers disables Save Roster so it cannot silently wipe an
+  existing roster. Manual editing re-enables the intentional replace/clear
+  path.
