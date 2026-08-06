@@ -127,7 +127,13 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
     step: s.step,
     valuesText: (s.values ?? []).join(', '),
   }));
-  let draftGenerateScript = detail.current.generateScript ?? '';
+  // generateScript is NOT instructor-authored: it arrives only via script
+  // migration on import (import.service.ts's migrateScript). It is deliberately
+  // not editable here — an instructor writes formulas in the table below, not
+  // JavaScript. When a migrated script is present it OVERRIDES the table
+  // entirely (resolveParamValues checks it first), so say so rather than
+  // showing a table that has no effect.
+  const migratedScript = detail.current.generateScript ?? '';
 
   // Derived values: the correct answer and every distractor, each computed
   // from the slots above. Without these a numerical question has no machine-
@@ -362,17 +368,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
     renderSlots();
   });
 
-  const generateScriptTextarea = el('textarea', {
-    class: 'input input--area param-config__script',
-    rows: '6',
-    placeholder: 'Advanced: instructor-authored generate(random) script (overrides slot draws when present)',
-    text: draftGenerateScript,
-    oninput: (e: Event) => {
-      draftGenerateScript = (e.target as HTMLTextAreaElement).value;
-    },
-  }) as HTMLTextAreaElement;
-
-  function currentPatch(): { paramSlots?: ParamSlotInput[]; derivedValues?: DerivedValueInput[]; generateScript?: string } {
+  function currentPatch(): { paramSlots?: ParamSlotInput[]; derivedValues?: DerivedValueInput[] } {
     const paramSlots = draftSlots.map(slotToInput).filter((s): s is ParamSlotInput => s !== null);
     // Blank rows are dropped rather than sent: the server's schema requires a
     // non-empty formula and an identifier-shaped name, so an empty row an
@@ -384,14 +380,13 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         formula: d.formula.trim(),
         ...(d.errorModel.length > 0 ? { errorModel: d.errorModel } : {}),
       }));
-    // generateScript is always included (even '') so that blanking a
-    // previously-saved script and clicking Save explicitly clears it
-    // server-side — editQuestion() treats `patch.generateScript !== undefined`
-    // as "set this field," and an omitted key would leave the stale script
-    // active (and still preferred over paramSlots by resolveParamValues).
-    // derivedValues is always included for the same reason: removing the last
-    // row must clear the saved list, not leave it in place.
-    return { paramSlots, derivedValues, generateScript: draftGenerateScript };
+    // derivedValues is always included (even empty) so that removing the last
+    // row clears the saved list rather than leaving it in place —
+    // editQuestion() treats `patch.derivedValues !== undefined` as "set this
+    // field". generateScript is deliberately NOT sent: this page never edits
+    // it, and sending it would let a UI that cannot show a script silently
+    // erase one.
+    return { paramSlots, derivedValues };
   }
 
   function renderDraws(result: ParamPreviewResult): void {
@@ -447,8 +442,6 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         for (const d of saved.derivedValues ?? []) {
           draftDerived.push({ name: d.name, formula: d.formula, errorModel: d.errorModel ?? '' });
         }
-        draftGenerateScript = saved.generateScript ?? '';
-        generateScriptTextarea.value = draftGenerateScript;
         renderSlots();
         renderDerived();
         // The server verifies on every save; show the outcome immediately,
@@ -481,6 +474,17 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
     el(
       'div',
       { class: 'param-config-layout' },
+      migratedScript
+        ? el(
+            'div',
+            { class: 'verification-banner verification-banner--fail', role: 'status' },
+            el('strong', { text: 'This question uses an imported generate() script. ' }),
+            el('span', {
+              text: 'Its values come from that script, not from the table below, and the table '
+                + 'is ignored while the script is present. Scripts are not editable here.',
+            }),
+          )
+        : null,
       el('h3', { class: 'detail-section-title', text: 'Question stem (variable slots highlighted)' }),
       stemDisplay,
       el('h3', { class: 'detail-section-title', text: 'Variable Definitions' }),
@@ -505,8 +509,6 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       derivedContainer,
       el('div', { class: 'row row--wrap' }, addSlotButton, addDerivedButton),
       verificationSlot,
-      el('h3', { class: 'detail-section-title', text: 'Generate Script (advanced, optional)' }),
-      generateScriptTextarea,
       errorSlot,
       el('div', { class: 'param-config-actions' }, previewButton, saveButton),
       el('h3', { class: 'detail-section-title', text: 'Preview — sample randomized variant' }),
