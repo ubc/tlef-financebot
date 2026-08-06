@@ -10,7 +10,13 @@ import {
   createNotificationBell,
 } from './notifications-bell.js';
 import { loadSession, displayName, type Session } from './auth.js';
-import { listActiveExams, setUnauthorizedHandler } from './api.js';
+import {
+  listActiveExams,
+  getCourseOutline,
+  getCourseTree,
+  setUnauthorizedHandler,
+  type InstructorCourse,
+} from './api.js';
 import { startRouter, type Route, type RouterHandle } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
@@ -71,6 +77,7 @@ import { renderAdminUsers } from './views/admin/users.js';
 import { renderAdminCapabilities } from './views/admin/capabilities.js';
 import { renderAdminPlatformSettings } from './views/admin/platform-settings.js';
 import {
+  LIVE_STUDENT_EXPERIENCE,
   createPreviewStudentExperience,
   previewStudentRoutes as previewNavRoutes,
 } from './views/student/experience.js';
@@ -200,46 +207,103 @@ interface TaViewAs {
   exitHref: string;
 }
 
+function createSidebarCollapse(
+  shell: HTMLElement,
+  preferenceKey: string,
+  startsCollapsed: boolean,
+): HTMLButtonElement {
+  const button = el(
+    'button',
+    {
+      class: 'sidebar__collapse',
+      type: 'button',
+      'aria-label': startsCollapsed ? 'Expand navigation' : 'Collapse navigation',
+      'aria-expanded': startsCollapsed ? 'false' : 'true',
+      title: startsCollapsed ? 'Expand navigation' : 'Collapse navigation',
+    },
+    el('span', { 'aria-hidden': 'true', text: startsCollapsed ? '›' : '‹' }),
+  ) as HTMLButtonElement;
+  button.addEventListener('click', () => {
+    const collapsed = !shell.classList.contains('is-collapsed');
+    shell.classList.toggle('is-collapsed', collapsed);
+    window.localStorage.setItem(preferenceKey, String(collapsed));
+    button.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    button.replaceChildren(el('span', { 'aria-hidden': 'true', text: collapsed ? '›' : '‹' }));
+  });
+  return button;
+}
+
 function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): RouterHandle {
   // An instructor in `viewAs` holds no `ta` courseRole, so the session-derived
   // list is empty — scope the shell to the one course they came in through.
   const courseIds = viewAs ? [viewAs.courseId] : taCourseIds(session);
   const initialCourseId = taCourseIdFromPath(hashPath()) ?? courseIds[0];
-  const shell = el('div', { class: 'app-shell' });
+  const preferenceKey = 'financebot:ta-sidebar-collapsed';
+  const startsCollapsed = window.localStorage.getItem(preferenceKey) === 'true';
+  const shell = el('div', {
+    class: `app-shell app-shell--role app-shell--ta${startsCollapsed ? ' is-collapsed' : ''}`,
+  });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Teaching assistant' });
-  const reviewLink = el('a', { class: 'nav__link', text: 'Review Queue' }) as HTMLAnchorElement;
-  const flagsLink = el('a', { class: 'nav__link', text: 'Flag Triage' }) as HTMLAnchorElement;
+  const reviewLink = el('a', { class: 'nav__link', title: 'Review Queue' },
+    el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '1' }),
+    el('span', { class: 'nav__text', text: 'Review Queue' }),
+  ) as HTMLAnchorElement;
+  const flagsLink = el('a', { class: 'nav__link', title: 'Flag Triage' },
+    el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '2' }),
+    el('span', { class: 'nav__text', text: 'Flag Triage' }),
+  ) as HTMLAnchorElement;
   const picker = el('select', {
-    class: 'input',
+    class: 'input ta-course-picker',
     'aria-label': 'TA course',
     onchange: () => {
       window.location.hash = `/ta/course/${encodeURIComponent(picker.value)}/review`;
     },
   }, ...courseIds.map((courseId, index) => el('option', {
     value: courseId,
-    text: `Course ${index + 1}`,
+    text: `Course project ${index + 1}`,
   }))) as HTMLSelectElement;
-  if (courseIds.length > 1) {
-    nav.append(el('div', { class: 'stack stack--sm' }, el('label', { text: 'Course' }), picker));
-  }
   nav.append(
-    el('p', { class: 'nav__group', text: 'TA WORKSPACE' }),
-    reviewLink,
-    flagsLink,
+    el('div', { class: 'nav__section' },
+      el('p', { class: 'nav__group', text: 'Course workflow' }),
+      reviewLink,
+      flagsLink,
+    ),
   );
-  const aside = el('aside', { class: 'sidebar sidebar--instructor' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
+  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
+  const courseContext = el('section', { class: 'course-context', 'aria-label': 'Current course' },
+    el('div', { class: 'course-context__project' },
+      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'TA' }),
+      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+    ),
+    courseIds.length > 1
+      ? el('div', { class: 'course-context__picker' }, picker)
+      : false,
+  );
+  const collapseButton = createSidebarCollapse(shell, preferenceKey, startsCollapsed);
+  const aside = el('aside', { class: 'sidebar sidebar--instructor sidebar--ta' },
+    el('div', { class: 'sidebar__brand-row' },
+      el('a', { class: 'brand', href: `#/ta/course/${encodeURIComponent(initialCourseId)}/review`, title: APP.name },
+        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
+        el('span', { class: 'brand__name', text: APP.name }),
+      ),
+      collapseButton,
+    ),
     el('span', { class: 'instructor-pill', text: viewAs ? 'TA VIEW' : 'TEACHING ASSISTANT' }),
+    courseContext,
     nav,
     session.user ? el('div', { class: 'sidebar__foot', text: displayName(session.user) }) : false,
   );
   const outlet = el('main', { class: 'outlet', id: 'view-root', tabindex: '-1' });
+  const topbarTitle = el('span', { class: 'topbar__title', text: 'TA workspace' });
   const topbar = el('header', { class: 'topbar' },
     el('button', {
       class: 'icon-btn topbar__menu', type: 'button', 'aria-label': 'Toggle navigation',
       onclick: () => shell.classList.toggle('is-open'),
     }, '≡'),
-    el('span', { class: 'topbar__title', text: 'TA Workspace' }),
+    topbarTitle,
     el('div', { class: 'topbar__right' },
       // Deliberately spells out "live data" — this is not the student
       // preview's sandbox, and an escalation raised from here is real.
@@ -259,12 +323,46 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
     el('div', { class: 'backdrop', 'aria-hidden': 'true', onclick: () => shell.classList.remove('is-open') }),
   );
   mount(root, shell);
+  const courseIndex = new Map<string, ReturnType<typeof getCourseOutline>>();
+  let contextVersion = 0;
+  function updateCourseContext(courseId: string): void {
+    const version = ++contextVersion;
+    courseContextName.textContent = 'Course project';
+    courseContextMeta.textContent = 'Loading course…';
+    topbarTitle.textContent = 'TA workspace';
+    let request = courseIndex.get(courseId);
+    if (!request) {
+      request = getCourseOutline(courseId);
+      courseIndex.set(courseId, request);
+    }
+    void request.then(({ course }) => {
+      if (version !== contextVersion) return;
+      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
+      courseContextMeta.textContent = [course.term, course.section ? `Section ${course.section}` : '']
+        .filter(Boolean)
+        .join(' · ');
+      topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
+      const option = Array.from(picker.options).find((candidate) => candidate.value === courseId);
+      if (option) option.textContent = `${course.courseCode} · ${course.name}`;
+    }).catch(() => {
+      if (version !== contextVersion) return;
+      courseIndex.delete(courseId);
+      courseContextMeta.textContent = 'Teaching assistant workspace';
+    });
+  }
+  for (const courseId of courseIds) {
+    void getCourseOutline(courseId).then(({ course }) => {
+      const option = Array.from(picker.options).find((candidate) => candidate.value === courseId);
+      if (option) option.textContent = `${course.courseCode} · ${course.name}`;
+    }).catch(() => undefined);
+  }
   return startRouter({
     routes: TA_ROUTES,
     outlet,
     fallback: `/ta/course/${encodeURIComponent(initialCourseId)}/review`,
     onNavigate: (path) => {
       const courseId = taCourseIdFromPath(path) ?? initialCourseId;
+      updateCourseContext(courseId);
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
@@ -273,6 +371,10 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
         path.endsWith('/review') || path.includes('/question/'),
       );
       flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
+      if (reviewLink.classList.contains('nav__link--active')) reviewLink.setAttribute('aria-current', 'page');
+      else reviewLink.removeAttribute('aria-current');
+      if (flagsLink.classList.contains('nav__link--active')) flagsLink.setAttribute('aria-current', 'page');
+      else flagsLink.removeAttribute('aria-current');
       shell.classList.remove('is-open');
       document.title = viewAs ? `TA View · ${APP.name}` : `Teaching Assistant · ${APP.name}`;
     },
@@ -289,9 +391,19 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
  * rebuilt on every `onNavigate` rather than just toggling an active class.
  */
 function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle {
-  const shell = el('div', { class: 'app-shell' });
+  const sidebarPreferenceKey = 'financebot:instructor-sidebar-collapsed';
+  const startsCollapsed = window.localStorage.getItem(sidebarPreferenceKey) === 'true';
+  const shell = el('div', {
+    class: `app-shell app-shell--instructor${startsCollapsed ? ' is-collapsed' : ''}`,
+  });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
-  const anchors: Array<{ item: InstructorNavItem; link: HTMLAnchorElement }> = [];
+  const anchors: Array<{
+    item: InstructorNavItem;
+    link: HTMLAnchorElement;
+    section: HTMLElement;
+    courseScoped: boolean;
+  }> = [];
+  const sections: Array<{ element: HTMLElement; courseScoped: boolean }> = [];
   const routes = session.user?.isAdmin
     ? INSTRUCTOR_ROUTES
     : INSTRUCTOR_ROUTES.filter((route) => !route.path.startsWith('/admin/'));
@@ -300,10 +412,10 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         {
           label: 'Admin',
           items: [
-            { label: 'User Directory', path: '/admin/users' },
-            { label: 'Instructor Grants', path: '/admin/accounts' },
-            { label: 'Capabilities', path: '/admin/capabilities' },
-            { label: 'Platform Settings', path: '/admin/platform-settings' },
+            { label: 'User Directory', path: '/admin/users', glyph: 'U' },
+            { label: 'Instructor Grants', path: '/admin/accounts', glyph: 'G' },
+            { label: 'Capabilities', path: '/admin/capabilities', glyph: 'C' },
+            { label: 'Platform Settings', path: '/admin/platform-settings', glyph: 'S' },
           ],
         },
         ...INSTRUCTOR_NAV,
@@ -311,7 +423,12 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     : INSTRUCTOR_NAV;
 
   for (const group of navGroups) {
-    if (group.label) nav.append(el('p', { class: 'nav__group', text: group.label }));
+    const courseScoped = group.items.some((item) => item.path?.includes(':id'));
+    const section = el('div', {
+      class: `nav__section${courseScoped ? ' nav__section--course' : ''}`,
+    });
+    sections.push({ element: section, courseScoped });
+    if (group.label) section.append(el('p', { class: 'nav__group', text: group.label }));
     for (const item of group.items) {
       const link = el(
         'a',
@@ -319,6 +436,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
           class: `nav__link${item.disabled ? ' nav__link--disabled' : ''}`,
           href: '#',
           'aria-disabled': item.disabled ? 'true' : undefined,
+          'aria-label': item.label,
           onclick: (e: Event) => {
             // No resolved destination yet (out-of-scope item, or a
             // course-scoped item before any course is selected) — the '#'
@@ -329,24 +447,57 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
             }
             shell.classList.remove('is-open');
           },
+          title: item.label,
         },
+        el('span', {
+          class: `nav__glyph${/^\d$/.test(item.glyph ?? '') ? ' nav__glyph--step' : ''}`,
+          'aria-hidden': 'true',
+          text: item.glyph ?? '·',
+        }),
         el('span', { class: 'nav__text', text: item.label }),
       ) as HTMLAnchorElement;
-      anchors.push({ item, link });
-      nav.append(link);
+      anchors.push({ item, link, section, courseScoped });
+      section.append(link);
     }
+    nav.append(section);
   }
 
   const user = session.user;
+  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
+  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
+  const courseContext = el(
+    'section',
+    { class: 'course-context', hidden: 'hidden', 'aria-label': 'Current course' },
+    el('a', { class: 'course-context__back', href: '#/instructor/courses' }, '← All courses'),
+    el(
+      'div',
+      { class: 'course-context__project' },
+      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'P' }),
+      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+    ),
+  );
+  const collapseButton = createSidebarCollapse(shell, sidebarPreferenceKey, startsCollapsed);
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--instructor' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+    el(
+      'div',
+      { class: 'sidebar__brand-row' },
+      el(
+        'a',
+        { class: 'brand', href: '#/instructor/courses', title: APP.name },
+        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
+        el('span', { class: 'brand__name', text: APP.name }),
+      ),
+      collapseButton,
+    ),
     el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
+    courseContext,
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
   );
 
+  const topbarTitle = el('span', { class: 'topbar__title', text: 'All courses' });
   const topbar = el(
     'header',
     { class: 'topbar' },
@@ -360,7 +511,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       },
       '≡',
     ),
-    el('span', { class: 'topbar__title' }),
+    topbarTitle,
     el(
       'div',
       { class: 'topbar__right' },
@@ -380,14 +531,52 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
   shell.append(aside, el('div', { class: 'main' }, topbar, outlet), backdrop);
   mount(root, shell);
 
+  const courseIndex = new Map<string, Promise<InstructorCourse>>();
+  let courseContextVersion = 0;
+  function updateCourseContext(courseId: string | null, path: string): void {
+    const version = ++courseContextVersion;
+    if (!courseId) {
+      courseContext.hidden = true;
+      topbarTitle.textContent = path.startsWith('/admin/')
+        ? 'Platform administration'
+        : path === '/instructor/courses/new'
+          ? 'Create course project'
+          : 'Course projects';
+      return;
+    }
+    courseContext.hidden = false;
+    courseContextName.textContent = 'Course project';
+    courseContextMeta.textContent = 'Loading course…';
+    topbarTitle.textContent = 'Course project';
+    let courseRequest = courseIndex.get(courseId);
+    if (!courseRequest) {
+      courseRequest = getCourseTree(courseId).then((tree) => tree.course);
+      courseIndex.set(courseId, courseRequest);
+    }
+    void courseRequest.then((course) => {
+      if (version !== courseContextVersion) return;
+      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
+      courseContextMeta.textContent = [course.term, course.section ? `Section ${course.section}` : '']
+        .filter(Boolean)
+        .join(' · ');
+      topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
+    }).catch(() => {
+      if (version !== courseContextVersion) return;
+      courseIndex.delete(courseId);
+      courseContextMeta.textContent = 'Instructor workspace';
+    });
+  }
+
   return startRouter({
     routes,
     outlet,
     fallback: session.user?.isAdmin ? '/admin/accounts' : '/instructor/courses',
     onNavigate: (path) => {
       const courseId = courseIdFromPath(path);
-      for (const { item, link } of anchors) {
+      updateCourseContext(courseId, path);
+      for (const { item, link, courseScoped } of anchors) {
         const href = resolveHref(item, courseId);
+        link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
         const active = isNavItemActive(item, path);
         link.classList.toggle('nav__link--active', active);
@@ -401,6 +590,9 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         }
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
+      }
+      for (const section of sections) {
+        section.element.hidden = section.courseScoped && !courseId;
       }
       document.title = `${path.startsWith('/admin/') ? 'Admin' : 'Instructor'} · ${APP.name}`;
     },
@@ -444,6 +636,7 @@ interface StudentShellConfig {
   navItems: StudentNavItem[];
   courseIdFromPath(path: string): string | undefined;
   practicePath(path: string): boolean;
+  loadCourseContext(courseId: string): Promise<{ name: string; courseCode: string; term: string }>;
   preview?: {
     courseId: string;
     exitHref: string;
@@ -456,6 +649,12 @@ const LIVE_STUDENT_SHELL: StudentShellConfig = {
   navItems: STUDENT_NAV,
   courseIdFromPath: studentCourseIdFromPath,
   practicePath: isPracticePath,
+  loadCourseContext: async (courseId) => {
+    const enrollment = (await LIVE_STUDENT_EXPERIENCE.listEnrollments())
+      .find((candidate) => candidate.courseId === courseId);
+    if (!enrollment) throw new Error('course-not-found');
+    return enrollment;
+  },
 };
 
 function previewCourseIdFromPath(path: string): string | undefined {
@@ -470,9 +669,10 @@ function isPreviewPracticePath(path: string): boolean {
 function previewNavItems(courseId: string): StudentNavItem[] {
   const routes = previewNavRoutes();
   return [
-    { label: 'My Courses', path: () => routes.courses(courseId).replace(/^#/, '') },
-    { label: 'Review Book', path: () => routes.reviewBook(courseId).replace(/^#/, '') },
-    { label: 'Exam Prep', path: () => '#', disabled: true },
+    { label: 'My Courses', glyph: 'C', path: () => routes.courses(courseId).replace(/^#/, '') },
+    { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId).replace(/^#/, '') },
+    { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId).replace(/^#/, '') },
+    { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
   ];
 }
 
@@ -492,11 +692,25 @@ function buildStudentShell(
   session: Session,
   config: StudentShellConfig = LIVE_STUDENT_SHELL,
 ): RouterHandle {
-  const shell = el('div', { class: 'app-shell' });
+  const preferenceKey = config.preview
+    ? 'financebot:student-preview-sidebar-collapsed'
+    : 'financebot:student-sidebar-collapsed';
+  const startsCollapsed = window.localStorage.getItem(preferenceKey) === 'true';
+  const shell = el('div', {
+    class: `app-shell app-shell--role app-shell--student${startsCollapsed ? ' is-collapsed' : ''}`,
+  });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Student' });
-  const anchors: Array<{ item: StudentNavItem; link: HTMLAnchorElement }> = [];
+  const overviewSection = el('div', { class: 'nav__section' },
+    el('p', { class: 'nav__group', text: 'Courses' }),
+  );
+  const courseSection = el('div', { class: 'nav__section nav__section--course' },
+    el('p', { class: 'nav__group', text: 'Learning workspace' }),
+  );
+  const anchors: Array<{ item: StudentNavItem; link: HTMLAnchorElement; courseScoped: boolean }> = [];
 
   for (const item of config.navItems) {
+    const courseScoped = studentNavNeedsCourse(item)
+      || (config.preview !== undefined && item.label !== 'My Courses');
     const link = el(
       'a',
       {
@@ -512,24 +726,58 @@ function buildStudentShell(
           }
           shell.classList.remove('is-open');
         },
+        'aria-label': item.label,
+        title: item.label,
       },
+      el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: item.glyph }),
       el('span', { class: 'nav__text', text: item.label }),
     ) as HTMLAnchorElement;
     if (item.examOnly) link.hidden = true;
-    anchors.push({ item, link });
-    nav.append(link);
+    anchors.push({ item, link, courseScoped });
+    (courseScoped ? courseSection : overviewSection).append(link);
   }
+  nav.append(overviewSection, courseSection);
 
   const practiceContextSlot = el('div', { class: 'practice-context-slot' });
 
   const user = session.user;
+  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
+  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
+  const courseContext = el('section', {
+    class: 'course-context', hidden: 'hidden', 'aria-label': 'Current course',
+  },
+    el('a', {
+      class: 'course-context__back',
+      href: config.preview
+        ? (studentNavHref(config.navItems[0], config.preview.courseId) ?? '#')
+        : '#/',
+    }, config.preview ? '← Preview courses' : '← All courses'),
+    el('div', { class: 'course-context__project' },
+      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'L' }),
+      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+    ),
+  );
+  const collapseButton = createSidebarCollapse(shell, preferenceKey, startsCollapsed);
   const aside = el(
     'aside',
     { class: 'sidebar sidebar--student' },
-    el('div', { class: 'brand' }, el('span', { class: 'brand__name', text: APP.name })),
+    el('div', { class: 'sidebar__brand-row' },
+      el('a', {
+        class: 'brand',
+        href: config.preview
+          ? (studentNavHref(config.navItems[0], config.preview.courseId) ?? '#')
+          : '#/',
+        title: APP.name,
+      },
+        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
+        el('span', { class: 'brand__name', text: APP.name }),
+      ),
+      collapseButton,
+    ),
     config.preview
       ? el('span', { class: 'student-preview-pill', text: 'PREVIEW MODE' })
-      : false,
+      : el('span', { class: 'student-preview-pill', text: 'STUDENT' }),
+    courseContext,
     nav,
     practiceContextSlot,
     config.preview
@@ -539,6 +787,7 @@ function buildStudentShell(
         : false,
   );
 
+  const topbarTitle = el('span', { class: 'topbar__title', text: 'My courses' });
   const topbar = el(
     'header',
     { class: 'topbar' },
@@ -552,7 +801,7 @@ function buildStudentShell(
       },
       '≡',
     ),
-    el('span', { class: 'topbar__title' }),
+    topbarTitle,
     el(
       'div',
       { class: 'topbar__right' },
@@ -591,6 +840,38 @@ function buildStudentShell(
   // asynchronously (via `onPracticeActionsChange`) well after onNavigate.
   let practiceMode = false;
   let examAvailabilityRequest = 0;
+  const courseIndex = new Map<string, ReturnType<StudentShellConfig['loadCourseContext']>>();
+  let contextVersion = 0;
+
+  function updateCourseContext(courseId: string | undefined): void {
+    const version = ++contextVersion;
+    if (!courseId) {
+      courseContext.hidden = true;
+      courseSection.hidden = true;
+      topbarTitle.textContent = config.preview ? 'Student preview' : 'My courses';
+      return;
+    }
+    courseContext.hidden = false;
+    courseSection.hidden = false;
+    courseContextName.textContent = 'Course project';
+    courseContextMeta.textContent = 'Loading course…';
+    topbarTitle.textContent = config.preview ? 'Student preview' : 'Course learning';
+    let request = courseIndex.get(courseId);
+    if (!request) {
+      request = config.loadCourseContext(courseId);
+      courseIndex.set(courseId, request);
+    }
+    void request.then((course) => {
+      if (version !== contextVersion) return;
+      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
+      courseContextMeta.textContent = course.term;
+      topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
+    }).catch(() => {
+      if (version !== contextVersion) return;
+      courseIndex.delete(courseId);
+      courseContextMeta.textContent = 'Student learning workspace';
+    });
+  }
 
   // Renders (or clears) the sidebar context panel from whatever
   // `getPracticeActions()` currently holds. Called both on navigation and
@@ -623,11 +904,13 @@ function buildStudentShell(
     fallback: config.fallback,
     onNavigate: (path) => {
       const courseId = config.courseIdFromPath(path);
+      updateCourseContext(courseId);
       const availabilityRequest = ++examAvailabilityRequest;
       practiceMode = config.practicePath(path);
       nav.hidden = practiceMode;
-      for (const { item, link } of anchors) {
+      for (const { item, link, courseScoped } of anchors) {
         const href = studentNavHref(item, courseId);
+        link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
         const active = !practiceMode && isStudentNavActive(item, path, courseId);
         link.classList.toggle('nav__link--active', active);
@@ -679,6 +962,12 @@ function buildPreviewStudentShell(
     navItems: previewNavItems(courseId),
     courseIdFromPath: previewCourseIdFromPath,
     practicePath: isPreviewPracticePath,
+    loadCourseContext: async (currentCourseId) => {
+      const enrollment = (await experience.listEnrollments(currentCourseId))
+        .find((candidate) => candidate.courseId === currentCourseId);
+      if (!enrollment) throw new Error('course-not-found');
+      return enrollment;
+    },
     preview: {
       courseId,
       exitHref: `#/instructor/course/${encodeURIComponent(courseId)}`,

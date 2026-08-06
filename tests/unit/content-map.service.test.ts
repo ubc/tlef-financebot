@@ -2,7 +2,9 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   themesCol: jest.fn(),
   losCol: jest.fn(),
   materialsCol: jest.fn(),
+  materialChunksCol: jest.fn(),
   questionsCol: jest.fn(),
+  questionVersionsCol: jest.fn(),
 }));
 jest.mock('../../server/src/services/content-runs.service', () => ({
   listCourseContentRuns: jest.fn(),
@@ -12,11 +14,13 @@ import { ObjectId } from 'mongodb';
 import {
   losCol,
   materialsCol,
+  materialChunksCol,
+  questionVersionsCol,
   questionsCol,
   themesCol,
 } from '../../server/src/components/mongodb/collections';
 import { listCourseContentRuns } from '../../server/src/services/content-runs.service';
-import { getCourseContentMap } from '../../server/src/services/content-map.service';
+import { getCourseContentMap, getCourseKnowledgeGraph } from '../../server/src/services/content-map.service';
 
 function cursor(rows: unknown[]) {
   const value = {
@@ -129,5 +133,51 @@ describe('course content map', () => {
         assessmentLike: false,
       }),
     ]);
+  });
+});
+
+describe('course knowledge graph', () => {
+  it('traces material evidence and concepts through LOs to sourced questions', async () => {
+    const courseId = new ObjectId();
+    const themeId = new ObjectId();
+    const loId = new ObjectId();
+    const materialId = new ObjectId();
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    jest.mocked(themesCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: themeId, name: 'Valuation', order: 1 }])) } as never);
+    jest.mocked(losCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: loId, themeId, name: 'Compute NPV', order: 1 }])) } as never);
+    jest.mocked(materialsCol).mockReturnValue({
+      find: jest.fn(() => cursor([{
+        _id: materialId,
+        name: 'Week 3.pdf',
+        kind: 'lecture',
+        status: 'ready',
+        assignments: [{ themeId, loId }],
+        knowledgeConcepts: [{ name: 'Discount rate', confidence: 0.9, evidence: 'discount rate' }],
+        uploadedAt: new Date(),
+      }])),
+    } as never);
+    jest.mocked(materialChunksCol).mockReturnValue({
+      find: jest.fn(() => cursor([{ _id: new ObjectId(), materialId, index: 0, text: 'Choose the discount rate.' }])),
+    } as never);
+    jest.mocked(questionsCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: jest.fn(async () => [{ _id: questionId, currentVersionId: versionId, currentVersion: 1, state: 'approved', loIds: [loId] }]) })),
+    } as never);
+    jest.mocked(questionVersionsCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: jest.fn(async () => [{ _id: versionId, stem: 'What is NPV?', sourceRefs: [{ materialId }] }]) })),
+    } as never);
+
+    const graph = await getCourseKnowledgeGraph(courseId);
+
+    expect(graph.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `material:${materialId.toHexString()}`, type: 'material' }),
+      expect.objectContaining({ id: `concept:${materialId.toHexString()}:0`, label: 'Discount rate' }),
+      expect.objectContaining({ id: `question:${questionId.toHexString()}`, label: 'What is NPV?' }),
+    ]));
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: `concept:${materialId.toHexString()}:0`, target: `lo:${loId.toHexString()}`, type: 'covers' }),
+      expect.objectContaining({ source: `lo:${loId.toHexString()}`, target: `question:${questionId.toHexString()}`, type: 'assesses' }),
+      expect.objectContaining({ source: `question:${questionId.toHexString()}`, target: `material:${materialId.toHexString()}`, type: 'sourced-from' }),
+    ]));
   });
 });

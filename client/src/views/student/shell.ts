@@ -2,6 +2,7 @@
 // Student nav config for the blue shell (mirrors views/instructor/shell.ts).
 export interface StudentNavItem {
   label: string;
+  glyph: string;
   /** Path suffix appended to `/course/:id`, or a literal path for course-less items. */
   path: (courseId: string) => string;
   disabled?: boolean;
@@ -10,9 +11,10 @@ export interface StudentNavItem {
 
 /** Static nav shown outside an active practice session. */
 export const STUDENT_NAV: StudentNavItem[] = [
-  { label: 'My Courses', path: () => '/' },
-  { label: 'Review Book', path: (id) => `/course/${id}/review-book` },
-  { label: 'Exam Prep', path: (id) => `/course/${id}/exams`, examOnly: true },
+  { label: 'My Courses', glyph: 'C', path: () => '/' },
+  { label: 'Course Home', glyph: 'H', path: (id) => `/course/${id}` },
+  { label: 'Review Book', glyph: 'R', path: (id) => `/course/${id}/review-book` },
+  { label: 'Exam Prep', glyph: 'E', path: (id) => `/course/${id}/exams`, examOnly: true },
 ];
 
 /** Extracts the courseId from a student path (`/course/:id...`), or undefined

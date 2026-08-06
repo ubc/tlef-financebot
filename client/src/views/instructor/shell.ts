@@ -17,6 +17,8 @@ export interface InstructorNavItem {
    * visible but inactive so the shell matches the wireframe (Task-15 Global
    * Constraints). */
   disabled?: boolean;
+  /** Compact rail glyph. The full label remains the accessible name. */
+  glyph?: string;
 }
 
 export interface InstructorNavGroup {
@@ -31,37 +33,35 @@ export interface InstructorNavGroup {
 export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   {
     label: '',
-    items: [{ label: 'My Courses', path: '/instructor/courses' }],
+    items: [{ label: 'My Courses', path: '/instructor/courses', glyph: '▦' }],
   },
   {
-    label: '',
+    label: 'Course workspace',
     items: [
-      { label: 'Course Dashboard', path: '/instructor/course/:id' },
-      { label: 'Course Structure', path: '/instructor/course/:id/structure' },
-      { label: 'Course Materials', path: '/instructor/course/:id/materials' },
-      { label: 'Content Map', path: '/instructor/course/:id/content-map' },
+      { label: 'Course Dashboard', path: '/instructor/course/:id', glyph: '⌂' },
+      { label: 'Course Materials', path: '/instructor/course/:id/materials', glyph: '1' },
+      { label: 'Course Structure', path: '/instructor/course/:id/structure', glyph: '2' },
+      { label: 'Generate Questions', path: '/instructor/course/:id/preseeding', glyph: '3' },
+      { label: 'Review Queue', path: '/instructor/course/:id/queue', glyph: '4' },
+      { label: 'Question Bank', path: '/instructor/course/:id/bank', glyph: '5' },
     ],
   },
   {
-    label: 'Question Bank',
+    label: 'Explore & improve',
     items: [
-      { label: 'Review Queue', path: '/instructor/course/:id/queue' },
-      { label: 'Flags', path: '/instructor/course/:id/flags' },
-      { label: 'Question Bank', path: '/instructor/course/:id/bank' },
-      { label: 'Import', path: '/instructor/course/:id/import' },
+      { label: 'Coverage Map', path: '/instructor/course/:id/content-map', glyph: '◇' },
+      { label: 'Student Analytics', path: '/instructor/course/:id/analytics', glyph: '↗' },
+      { label: 'Flags', path: '/instructor/course/:id/flags', glyph: '!' },
+      { label: 'Import', path: '/instructor/course/:id/import', glyph: '⇧' },
     ],
-  },
-  {
-    label: '',
-    items: [{ label: 'Student Analytics', path: '/instructor/course/:id/analytics' }],
   },
   {
     label: 'Course Settings',
     items: [
-      { label: 'Settings', path: '/instructor/course/:id/settings' },
-      { label: 'Exam Templates', path: '/instructor/course/:id/exam-templates' },
-      { label: 'Teaching Assistants', path: '/instructor/course/:id/tas' },
-      { label: 'Co-instructors', path: null, disabled: true },
+      { label: 'Exam Templates', path: '/instructor/course/:id/exam-templates', glyph: '▤' },
+      { label: 'Teaching Assistants', path: '/instructor/course/:id/tas', glyph: '♙' },
+      { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙' },
+      { label: 'Co-instructors', path: null, disabled: true, glyph: '+' },
     ],
   },
 ];

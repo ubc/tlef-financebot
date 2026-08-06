@@ -1,7 +1,8 @@
 import { ObjectId } from 'mongodb';
-import { themesCol, losCol } from '../../server/src/components/mongodb/collections';
+import { coursesCol, themesCol, losCol } from '../../server/src/components/mongodb/collections';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  coursesCol: jest.fn(),
   themesCol: jest.fn(),
   losCol: jest.fn(),
 }));
@@ -20,6 +21,7 @@ const themesToArray = jest.fn();
 const losFind = jest.fn();
 const losSort = jest.fn();
 const losToArray = jest.fn();
+const coursesFindOne = jest.fn();
 
 beforeEach(() => {
   themesFind.mockReset();
@@ -28,6 +30,7 @@ beforeEach(() => {
   losFind.mockReset();
   losSort.mockReset();
   losToArray.mockReset();
+  coursesFindOne.mockReset();
 
   themesFind.mockReturnValue({ sort: themesSort });
   themesSort.mockReturnValue({ toArray: themesToArray });
@@ -36,9 +39,41 @@ beforeEach(() => {
 
   jest.mocked(themesCol).mockReturnValue({ find: themesFind } as never);
   jest.mocked(losCol).mockReturnValue({ find: losFind } as never);
+  jest.mocked(coursesCol).mockReturnValue({ findOne: coursesFindOne } as never);
+  coursesFindOne.mockImplementation(({ _id }: { _id: ObjectId }) => Promise.resolve({
+    _id,
+    name: 'Corporate Finance',
+    courseCode: 'COMM 298',
+    section: '101',
+    term: '2026W1',
+    ownerPuid: 'faculty-puid',
+    registrationCode: 'ABCDEFGH',
+    published: true,
+    feedbackStrategy: 'adaptive',
+    autoPause: { minAttempts: 5, flagPercent: 30, flagCount: 15 },
+    redirectFailureThreshold: 3,
+    reviewBacklogThreshold: 10,
+    createdAt: new Date('2026-08-01'),
+  }));
 });
 
 describe('getCourseOutline (projection regression guard)', () => {
+  it('returns only safe course identity fields for TA workspace context', async () => {
+    const courseId = new ObjectId();
+    themesToArray.mockResolvedValue([]);
+    losToArray.mockResolvedValue([]);
+
+    const { course } = await getCourseOutline(courseId);
+
+    expect(course).toEqual({
+      name: 'Corporate Finance',
+      courseCode: 'COMM 298',
+      section: '101',
+      term: '2026W1',
+    });
+    expect(Object.keys(course).sort()).toEqual(['courseCode', 'name', 'section', 'term']);
+  });
+
   it('returns exactly _id/name/order/los on each theme — no courseId, availableFrom, archivedAt, or stray fields', async () => {
     const courseId = new ObjectId();
     const themeId = new ObjectId();

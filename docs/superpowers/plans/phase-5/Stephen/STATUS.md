@@ -1,6 +1,6 @@
 # Stephen — Phase 5 status
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-05_
 
 ## Completed
 
@@ -24,6 +24,26 @@ _Last updated: 2026-08-03_
 - Added `responsive-workflows.spec.ts`, expanded Phase 3 Admin axe coverage,
   and published `docs/testing/manual-feature-testing-guide.md` plus the
   2026-08-03 UI audit report.
+- Course-as-Project UX foundation complete on
+  `codex/course-knowledge-workspace`: a searchable Canvas-inspired Project
+  dashboard, contextual course navigation, persistent icon rail, linear
+  authoring path, task-first Project cockpit, and viewport-bound Knowledge
+  Workspace with source-level Trash/Restore actions.
+- Renamed the legacy Content Map presentation to Coverage Map so it owns
+  readiness/gap analysis; evidence exploration remains in the Knowledge
+  Workspace graph instead of presenting two competing graph destinations.
+- Course chrome reads only the current course and caches it. It deliberately
+  avoids `listInstructorCourses()`'s legacy N+1 scan over stale course roles.
+- Student and TA role parity is complete on the same Course-as-Project shell.
+  Student now gets Canvas-inspired course-project cards, persistent course
+  context, a collapsible icon rail, Course Home navigation, and an explicit
+  Choose topic → Practice/retry → Review weak areas learning path. Anonymous
+  Student Preview reuses the same chrome and remains state-isolated.
+- TA now gets the real course name/code/term/section instead of `Course 1`, a
+  safe multi-course picker, persistent project context, a collapsible icon
+  rail, and the numbered Review Queue → Flag Triage workflow. The TA-safe
+  outline response exposes only identity fields plus Theme/LO names; private
+  settings and registration data remain excluded.
 
 ## Verification
 
@@ -32,10 +52,15 @@ _Last updated: 2026-08-03_
 - Playwright: 22 passed; the explicitly optional live-LLM test skipped.
 - axe WCAG A/AA: 4/4 passed, including Launch Cockpit and the three Phase 3
   Admin operations.
+- Course-as-Project role verification: 84 Jest suites / 888 tests passed; 28/28
+  configured Playwright workflows passed with the one opt-in live-LLM test
+  skipped; 5/5 axe WCAG A/AA scenarios passed.
 
 ## Next
 
-- Task 2: LO-centred Content Studio.
+- Continue Task 2: LO-centred Content Studio on the new Project interaction
+  model, followed by the unified Action Inbox and real tool-calling Course
+  Authoring Agent.
 
 ## Coordination
 

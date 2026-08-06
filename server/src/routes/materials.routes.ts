@@ -12,8 +12,12 @@ import { validate } from '../middleware/validate';
 import {
   createMaterials,
   createUrlMaterial,
+  getMaterialWorkspaceDetail,
   listMaterials,
+  listTrashedMaterials,
   retryMaterial,
+  restoreMaterial,
+  trashMaterial,
   assignMaterial,
   getMaterialCourseId,
   updateMaterialKind,
@@ -53,6 +57,12 @@ const materialKind = z.enum([
   'other',
 ]);
 const materialMetadataBody = z.object({ kind: materialKind });
+
+function publicMaterial<T extends { storagePath?: string }>(material: T): Omit<T, 'storagePath'> {
+  const safe = { ...material };
+  delete safe.storagePath;
+  return safe;
+}
 
 const urlMaterialBody = z.object({ url: z.string().url() });
 
@@ -160,7 +170,7 @@ materialsRouter.post(
     if (files.length > 0) {
       try {
         const materials = await createMaterials(courseId, files, req.user!.puid);
-        res.status(201).json(materials);
+        res.status(201).json(materials.map(publicMaterial));
       } catch (err) {
         // Only clean up when NO material could have been persisted (I4).
         // createMaterials validates every file's format BEFORE writing
@@ -187,7 +197,7 @@ materialsRouter.post(
       });
       return;
     }
-    res.status(201).json([await createUrlMaterial(courseId, parsed.data.url, req.user!.puid)]);
+    res.status(201).json([publicMaterial(await createUrlMaterial(courseId, parsed.data.url, req.user!.puid))]);
   },
 );
 
@@ -197,7 +207,91 @@ materialsRouter.get(
   validate({ params: courseIdParams }),
   ensureCourseInstructor(),
   async (req, res) => {
-    res.json(await listMaterials(new ObjectId(String(req.params.courseId))));
+    res.json((await listMaterials(new ObjectId(String(req.params.courseId)))).map(publicMaterial));
+  },
+);
+
+/** GET active material, persisted chunks, AI metadata, and provenance. */
+materialsRouter.get(
+  '/courses/:courseId/materials/:materialId/workspace',
+  validate({ params: courseMaterialParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const detail = await getMaterialWorkspaceDetail(
+      new ObjectId(String(req.params.courseId)),
+      new ObjectId(String(req.params.materialId)),
+    );
+    res.json({ ...detail, material: publicMaterial(detail.material) });
+  },
+);
+
+/** Stream the original source only after course authorization and a realpath
+ * containment check. URL sources redirect only to http(s). */
+materialsRouter.get(
+  '/courses/:courseId/materials/:materialId/source',
+  validate({ params: courseMaterialParams }),
+  ensureCourseInstructor(),
+  async (req, res, next) => {
+    const { material } = await getMaterialWorkspaceDetail(
+      new ObjectId(String(req.params.courseId)),
+      new ObjectId(String(req.params.materialId)),
+    );
+    if (material.format === 'url' && material.sourceUrl) {
+      const source = new URL(material.sourceUrl);
+      if (source.protocol !== 'http:' && source.protocol !== 'https:') throw new Error('material-source-unavailable');
+      res.redirect(source.toString());
+      return;
+    }
+    if (!material.storagePath) throw new Error('material-source-unavailable');
+    const [base, source] = await Promise.all([fs.realpath(UPLOAD_DIR), fs.realpath(material.storagePath)]);
+    if (source !== base && !source.startsWith(`${base}${path.sep}`)) throw new Error('material-source-unavailable');
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(material.name)}`);
+    res.sendFile(source, (error) => {
+      if (error) next(error);
+    });
+  },
+);
+
+materialsRouter.get(
+  '/courses/:courseId/materials-trash',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json((await listTrashedMaterials(new ObjectId(String(req.params.courseId)))).map(publicMaterial));
+  },
+);
+
+materialsRouter.delete(
+  '/courses/:courseId/materials/:materialId',
+  validate({ params: courseMaterialParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(
+      publicMaterial(
+        await trashMaterial(
+          new ObjectId(String(req.params.courseId)),
+          new ObjectId(String(req.params.materialId)),
+          req.user!.puid,
+        ),
+      ),
+    );
+  },
+);
+
+materialsRouter.post(
+  '/courses/:courseId/materials/:materialId/restore',
+  validate({ params: courseMaterialParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(
+      publicMaterial(
+        await restoreMaterial(
+          new ObjectId(String(req.params.courseId)),
+          new ObjectId(String(req.params.materialId)),
+          req.user!.puid,
+        ),
+      ),
+    );
   },
 );
 
@@ -319,6 +413,8 @@ materialsRouter.post(
 const MATERIAL_ERROR_STATUS: Record<string, number> = {
   'material-not-found': 404,
   'material-retry-conflict': 409,
+  'material-restore-conflict': 409,
+  'material-source-unavailable': 404,
   'no-classification-suggestion': 400, // accept with nothing to accept (IN-S06)
   'suggested-hierarchy-invalid': 400,
   'suggested-hierarchy-material-not-found': 409,

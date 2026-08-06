@@ -1,4 +1,4 @@
-import type { WithId, ObjectId } from 'mongodb';
+import type { Filter, WithId, ObjectId } from 'mongodb';
 import { customAlphabet } from 'nanoid';
 import {
   coursesCol,
@@ -34,7 +34,40 @@ export function courseLifecycle(course: Pick<Course, 'published' | 'lifecycle' |
 }
 
 function normalizeCourse(course: WithId<Course>): WithId<Course> {
-  return { ...course, lifecycle: courseLifecycle(course) };
+  const publicCourse = { ...course };
+  delete publicCourse.identityKey;
+  return { ...publicCourse, lifecycle: courseLifecycle(course) };
+}
+
+function normalizeIdentityPart(value: string | undefined): string {
+  return (value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-CA');
+}
+
+/** Stable, case/whitespace-insensitive identity for one scheduled section. */
+export function courseIdentityKey(
+  input: Pick<Course, 'courseCode' | 'section' | 'term'>,
+): string {
+  return JSON.stringify([
+    normalizeIdentityPart(input.courseCode),
+    normalizeIdentityPart(input.section),
+    normalizeIdentityPart(input.term),
+  ]);
+}
+
+function duplicateCourseError(cause?: unknown): Error & { status: number } {
+  return Object.assign(new Error('course-already-exists', cause ? { cause } : undefined), { status: 409 });
+}
+
+function throwCourseWriteError(error: unknown): never {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 11000
+  ) {
+    throw duplicateCourseError(error);
+  }
+  throw error;
 }
 
 export async function getCourse(courseId: ObjectId): Promise<WithId<Course>> {
@@ -52,9 +85,30 @@ export async function createCourse(
   ownerPuid: string,
   input: { name: string; courseCode: string; section?: string; term: string },
 ): Promise<WithId<Course>> {
+  const normalizedInput = {
+    name: input.name.trim(),
+    courseCode: input.courseCode.trim(),
+    ...(input.section?.trim() ? { section: input.section.trim() } : {}),
+    term: input.term.trim(),
+  };
+  const identityKey = courseIdentityKey(normalizedInput);
+  const legacyIdentity: Filter<Course> = {
+    courseCode: normalizedInput.courseCode,
+    term: normalizedInput.term,
+    ...(normalizedInput.section
+      ? { section: normalizedInput.section }
+      : { $or: [{ section: { $exists: false } }, { section: '' }] }),
+  };
+  const duplicate = await coursesCol().findOne(
+    { $or: [{ identityKey }, legacyIdentity] },
+    { projection: { _id: 1 }, collation: { locale: 'en', strength: 2 } },
+  );
+  if (duplicate) throw duplicateCourseError();
+
   const now = new Date();
   const course: Course = {
-    ...input,
+    ...normalizedInput,
+    identityKey,
     ownerPuid,
     registrationCode: registrationCode(),
     published: false,
@@ -66,12 +120,17 @@ export async function createCourse(
     createdAt: now,
     updatedAt: now,
   };
-  const { insertedId } = await coursesCol().insertOne(course);
+  let insertedId: ObjectId;
+  try {
+    ({ insertedId } = await coursesCol().insertOne(course));
+  } catch (error) {
+    throwCourseWriteError(error);
+  }
   await usersCol().updateOne(
     { puid: ownerPuid },
     { $addToSet: { courseRoles: { courseId: insertedId, role: 'instructor' as const } } },
   );
-  return { _id: insertedId, ...course };
+  return normalizeCourse({ _id: insertedId, ...course });
 }
 
 /**
@@ -103,17 +162,30 @@ export async function updateCourse(
   }
   const updatedAt = new Date();
   const { section, ...setPatch } = patch;
-  await coursesCol().updateOne(
-    { _id: courseId },
-    {
-      $set: {
-        ...setPatch,
-        ...(section !== undefined && section !== null ? { section } : {}),
-        updatedAt,
+  const identityChanged = patch.courseCode !== undefined || patch.section !== undefined || patch.term !== undefined;
+  const identityKey = identityChanged
+    ? courseIdentityKey({
+        courseCode: patch.courseCode?.trim() ?? course.courseCode,
+        section: section === null ? undefined : section?.trim() ?? course.section,
+        term: patch.term?.trim() ?? course.term,
+      })
+    : undefined;
+  try {
+    await coursesCol().updateOne(
+      { _id: courseId },
+      {
+        $set: {
+          ...setPatch,
+          ...(section !== undefined && section !== null ? { section } : {}),
+          ...(identityKey ? { identityKey } : {}),
+          updatedAt,
+        },
+        ...(section === null ? { $unset: { section: '' } } : {}),
       },
-      ...(section === null ? { $unset: { section: '' } } : {}),
-    },
-  );
+    );
+  } catch (error) {
+    throwCourseWriteError(error);
+  }
   return {
     ...course,
     ...setPatch,
@@ -257,16 +329,33 @@ export interface CourseOutlineTheme {
   los: Array<{ _id: ObjectId; name: string; order: number }>;
 }
 
-/** Theme/LO names and order only — the minimum a `question.review` holder
- * needs to label a question "Topic 1 / LO 2". Deliberately NOT the course
- * record: `getCourseTree` (instructor-only) carries registrationCode, term
- * dates, autoPause and feedbackStrategy, none of which a TA should receive. */
-export async function getCourseOutline(courseId: ObjectId): Promise<{ themes: CourseOutlineTheme[] }> {
-  const [themes, los] = await Promise.all([
+export interface CourseOutlineIdentity {
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+}
+
+/** Safe course identity plus Theme/LO names and order — the minimum a
+ * `question.review` holder needs to understand which course project they are
+ * working in and label a question "Topic 1 / LO 2". This deliberately
+ * projects rather than returning the course record: registrationCode, dates,
+ * lifecycle, autoPause and feedbackStrategy never reach a TA. */
+export async function getCourseOutline(
+  courseId: ObjectId,
+): Promise<{ course: CourseOutlineIdentity; themes: CourseOutlineTheme[] }> {
+  const [course, themes, los] = await Promise.all([
+    getCourse(courseId),
     themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
   ]);
   return {
+    course: {
+      name: course.name,
+      courseCode: course.courseCode,
+      ...(course.section ? { section: course.section } : {}),
+      term: course.term,
+    },
     themes: themes.map((theme) => ({
       _id: theme._id,
       name: theme.name,

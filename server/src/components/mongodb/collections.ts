@@ -3,7 +3,7 @@ import { getDb } from './index';
 import type {
   User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   PreviewAttemptRecord, PreviewStudentSession,
-  Material, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
+  Material, MaterialChunk, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
@@ -26,6 +26,7 @@ export const previewAttemptsCol = (): Collection<PreviewAttemptRecord> =>
 export const previewStudentSessionsCol = (): Collection<PreviewStudentSession> =>
   getDb().collection<PreviewStudentSession>('previewStudentSessions');
 export const materialsCol = (): Collection<Material> => getDb().collection<Material>('materials');
+export const materialChunksCol = (): Collection<MaterialChunk> => getDb().collection<MaterialChunk>('materialChunks');
 export const masteryCol = (): Collection<MasteryProfile> => getDb().collection<MasteryProfile>('masteryProfiles');
 export const reviewBookCol = (): Collection<ReviewBookEntry> => getDb().collection<ReviewBookEntry>('reviewBookEntries');
 export const examTemplatesCol = (): Collection<ExamTemplate> => getDb().collection<ExamTemplate>('examTemplates');
@@ -55,6 +56,14 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'platformInstructorPuidGrants', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },
+  {
+    collection: 'courses',
+    keys: { identityKey: 1 },
+    options: {
+      unique: true,
+      partialFilterExpression: { identityKey: { $type: 'string' } },
+    },
+  },
   { collection: 'themes', keys: { courseId: 1, order: 1 } },
   { collection: 'learningObjectives', keys: { courseId: 1, themeId: 1, order: 1 } },
   { collection: 'questions', keys: { courseId: 1, state: 1 } },
@@ -72,6 +81,8 @@ export const INDEX_SPECS: IndexSpec[] = [
   },
   { collection: 'previewStudentSessions', keys: { updatedAt: 1 }, options: { expireAfterSeconds: 86_400 } },
   { collection: 'materials', keys: { courseId: 1, uploadedAt: -1 } },
+  { collection: 'materialChunks', keys: { materialId: 1, index: 1 }, options: { unique: true } },
+  { collection: 'materialChunks', keys: { courseId: 1, materialId: 1 } },
   { collection: 'masteryProfiles', keys: { puid: 1, courseId: 1, loId: 1 }, options: { unique: true } },
   { collection: 'reviewBookEntries', keys: { puid: 1, courseId: 1, questionId: 1 }, options: { unique: true } },
   { collection: 'examTemplates', keys: { courseId: 1, kind: 1 } },

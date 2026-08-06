@@ -21,6 +21,10 @@ jest.mock('../../server/src/services/materials.service', () => ({
   createMaterials: jest.fn(),
   createUrlMaterial: jest.fn(),
   listMaterials: jest.fn(),
+  listTrashedMaterials: jest.fn(),
+  getMaterialWorkspaceDetail: jest.fn(),
+  trashMaterial: jest.fn(),
+  restoreMaterial: jest.fn(),
   retryMaterial: jest.fn(),
   assignMaterial: jest.fn(),
   updateMaterialKind: jest.fn(),
@@ -38,6 +42,10 @@ import {
   createMaterials,
   createUrlMaterial,
   listMaterials,
+  listTrashedMaterials,
+  getMaterialWorkspaceDetail,
+  trashMaterial,
+  restoreMaterial,
   retryMaterial,
   assignMaterial,
   updateMaterialKind,
@@ -277,6 +285,45 @@ describe('PATCH /api/courses/:courseId/materials/:materialId', () => {
 
     expect(res.status).toBe(403);
     expect(updateMaterialKind).not.toHaveBeenCalled();
+  });
+});
+
+describe('Course Knowledge Workspace lifecycle routes', () => {
+  it('returns an authorized material detail with private storagePath removed', async () => {
+    jest.mocked(getMaterialWorkspaceDetail).mockResolvedValue({
+      material: { _id: materialId, courseId, storagePath: '/private/upload.pdf' } as never,
+      chunks: [{ index: 0, text: 'Evidence', characterCount: 8 }],
+    });
+    const res = await request(makeApp(instructor)).get(
+      `/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}/workspace`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.material.storagePath).toBeUndefined();
+    expect(res.body.chunks).toHaveLength(1);
+  });
+
+  it('moves a source to Trash and restores it through course-scoped guards', async () => {
+    jest.mocked(trashMaterial).mockResolvedValue({ _id: materialId, courseId, deletedAt: new Date() } as never);
+    const deleted = await request(makeApp(instructor)).delete(
+      `/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}`,
+    );
+    expect(deleted.status).toBe(200);
+    expect(trashMaterial).toHaveBeenCalledWith(expect.any(ObjectId), expect.any(ObjectId), instructor.puid);
+
+    jest.mocked(restoreMaterial).mockResolvedValue({ _id: materialId, courseId, status: 'processing' } as never);
+    const restored = await request(makeApp(instructor)).post(
+      `/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}/restore`,
+    );
+    expect(restored.status).toBe(200);
+    expect(restoreMaterial).toHaveBeenCalledWith(expect.any(ObjectId), expect.any(ObjectId), instructor.puid);
+  });
+
+  it('lists Trash only for an instructor', async () => {
+    jest.mocked(listTrashedMaterials).mockResolvedValue([]);
+    const denied = await request(makeApp(student)).get(`/api/courses/${courseId.toHexString()}/materials-trash`);
+    expect(denied.status).toBe(403);
+    const allowed = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/materials-trash`);
+    expect(allowed.status).toBe(200);
   });
 });
 

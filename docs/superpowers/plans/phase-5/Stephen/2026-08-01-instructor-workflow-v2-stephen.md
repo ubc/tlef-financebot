@@ -58,3 +58,37 @@ backed by one authoritative aggregate contract.
 
 After this slice is clean: LO Content Studio, unified Action Inbox,
 analytics-to-action links, course/team lifecycle, then Admin Operations.
+
+## Course-as-Project UX foundation — 2026-08-05
+
+- [x] Treat each course as a durable Project on the Instructor landing page.
+- [x] Hide course-only navigation until a course is selected; inside a course,
+  present the authoring workflow in a deliberate Sources → LOs → Questions →
+  Review → Preview sequence.
+- [x] Add a persistent, accessible desktop icon-rail collapse mode while
+  preserving the existing mobile drawer.
+- [x] Recompose Course Home as the Project cockpit: current state, next work,
+  launch readiness, and direct exploration paths.
+- [x] Keep the Knowledge Workspace inside the viewport with independent panel
+  scrolling and a source-level Trash / Restore action.
+- [x] Establish reusable Project-shell tokens and responsive rules that the
+  remaining Instructor views can adopt without route-by-route visual drift.
+- [x] Verify keyboard navigation, responsive layouts, TypeScript, lint, unit
+  tests, browser workflows, and axe before handoff.
+
+## Student and TA role parity — 2026-08-05
+
+- [x] Extend the persistent Project shell and accessible icon-rail collapse
+  mode to live Student, anonymous Student Preview, real TA, and Instructor TA
+  View.
+- [x] Rebuild Student My Courses as a modern course-project dashboard without
+  changing registration-code enrolment semantics.
+- [x] Add Course Home to Student navigation and show a clear Choose topic →
+  Practice/retry → Review weak areas learning journey.
+- [x] Keep course identity visible throughout Student learning and Preview.
+- [x] Replace TA's opaque `Course 1` labels with a capability-gated safe course
+  identity projection and a real multi-course picker.
+- [x] Present TA work as a numbered Review Queue → Flag Triage workflow while
+  preserving hard-denied approval and resolution boundaries.
+- [x] Verify desktop collapse, 390px reflow, no horizontal overflow, no browser
+  console errors, TypeScript, lint, Jest, Playwright, and axe.

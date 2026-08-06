@@ -731,7 +731,9 @@ async function groundingMaterialIds(
   lo: { _id: ObjectId; themeId: ObjectId },
   prompt?: string,
 ): Promise<string[]> {
-  const materials = await materialsCol().find({ courseId, status: 'ready' }).toArray();
+  const materials = await materialsCol()
+    .find({ courseId, status: 'ready', deletedAt: { $exists: false } })
+    .toArray();
   const assigned = materials.filter((material) =>
     material.assignments.some(
       (assignment) =>

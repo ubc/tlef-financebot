@@ -94,6 +94,12 @@ async function answerCurrent(page: Page, how: 'correct' | 'wrong'): Promise<stri
 
 let bootstrapCourseId = '';
 let courseId = '';
+// Create Course splits the term across two <select>s — Academic Year over a
+// rolling window computed from the clock, and the four UBC terms
+// (client/src/views/instructor/courses.ts). No year literal stays valid
+// forever, so the spec reads the first offered year and rebuilds the combined
+// term string the course record actually stores.
+let selectedTerm = '';
 let themeId = '';
 let loId = '';
 let registrationCode = '';
@@ -172,9 +178,15 @@ test.describe('Phase 1 exit — core loop demo', () => {
       await test.step('creates a course', async () => {
         await instructor.getByRole('button', { name: '+ Create course' }).click();
         await expect(instructor.getByRole('heading', { name: 'Create Course' })).toBeVisible();
-        await instructor.locator('#course-name').fill(COURSE_NAME);
-        await instructor.locator('#course-code').fill(COURSE_CODE);
-        await instructor.locator('#course-term').fill(COURSE_TERM);
+        await instructor.locator('#course-identity').fill(`${COURSE_CODE} - ${COURSE_NAME}`);
+        await instructor.locator('#course-section').fill('101');
+        const yearSelect = instructor.locator('#course-academic-year');
+        const termSelect = instructor.locator('#course-term');
+        const academicYear = String(await yearSelect.locator('option').first().getAttribute('value'));
+        expect(academicYear).toMatch(/^\d{4}\/\d{2}$/);
+        await yearSelect.selectOption(academicYear);
+        await termSelect.selectOption('Winter Term 1');
+        selectedTerm = `Winter Term 1, ${academicYear}`;
         await instructor.getByRole('button', { name: 'Create course', exact: true }).click();
         await instructor.waitForURL(/\/instructor\/course\/[^/]+$/);
         courseId = /\/instructor\/course\/([^/?]+)$/.exec(instructor.url())?.[1] ?? '';
@@ -206,13 +218,13 @@ test.describe('Phase 1 exit — core loop demo', () => {
 
       await test.step('uploads a course material', async () => {
         await instructor.getByRole('link', { name: 'Course Materials' }).click();
-        await expect(instructor.getByRole('heading', { name: 'Course Materials' })).toBeVisible();
+        await expect(instructor.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
         await instructor.locator('.upload-zone__input').setInputFiles(FIXTURE_PATH);
-        await expect(instructor.locator('.material-row__name')).toHaveText(FIXTURE_NAME);
+        await expect(instructor.locator('.workspace-file__name')).toHaveText(FIXTURE_NAME);
         // Ingest is async; Processing or Ready both mean the upload landed.
         await expect(
-          instructor.locator('.material-row').filter({ hasText: FIXTURE_NAME }).locator('.material-row__meta'),
-        ).toContainText(/Processing|Ready/);
+          instructor.locator('.workspace-file').filter({ hasText: FIXTURE_NAME }).locator('.workspace-file__meta'),
+        ).toContainText(/processing|queued|parsing|chunking|embedding|indexing|classifying|ready/);
       });
 
       await test.step('question bank is authored into pending review', async () => {
@@ -263,7 +275,7 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await expect(instructor.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
         await instructor.getByRole('button', { name: 'Publish Course', exact: false }).click();
         await expect(instructor.locator('.page-header__subtitle')).toContainText(
-          `${COURSE_CODE} · ${COURSE_TERM} · Published`,
+          `${COURSE_CODE} · Section 101 · ${selectedTerm} · Published`,
         );
 
         const course = (await (await instructor.request.get(`/api/courses/${courseId}`)).json()) as {

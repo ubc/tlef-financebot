@@ -8,7 +8,7 @@ import { embed, getEmbeddingDimension } from '../components/genai/embeddings';
 import { parseFile } from '../components/genai/document-parsing';
 import { deletePointsByFilter, ensureCollection, upsertPoints } from '../components/qdrant';
 import { defineJob, enqueueJob } from '../components/jobs';
-import { materialsCol } from '../components/mongodb/collections';
+import { materialChunksCol, materialsCol } from '../components/mongodb/collections';
 import { classifyMaterial } from './classification.service';
 import {
   createMaterialIngestRun,
@@ -207,13 +207,105 @@ export async function createUrlMaterial(
 }
 
 export async function listMaterials(courseId: ObjectId): Promise<WithId<Material>[]> {
-  const materials = await materialsCol().find({ courseId }).sort({ uploadedAt: -1 }).toArray();
+  const materials = await materialsCol()
+    .find({ courseId, deletedAt: { $exists: false } })
+    .sort({ uploadedAt: -1 })
+    .toArray();
   return materials.map((material) => ({ ...material, kind: material.kind ?? 'other' }));
+}
+
+export async function listTrashedMaterials(courseId: ObjectId): Promise<WithId<Material>[]> {
+  const materials = await materialsCol()
+    .find({ courseId, deletedAt: { $exists: true } })
+    .sort({ deletedAt: -1 })
+    .toArray();
+  return materials.map((material) => ({ ...material, kind: material.kind ?? 'other' }));
+}
+
+export async function getMaterialWorkspaceDetail(
+  courseId: ObjectId,
+  materialId: ObjectId,
+): Promise<{ material: WithId<Material>; chunks: Array<{ index: number; text: string; characterCount: number }> }> {
+  const material = await materialsCol().findOne({ _id: materialId, courseId });
+  if (!material) throw new Error('material-not-found');
+  const chunks = await materialChunksCol()
+    .find({ courseId, materialId })
+    .sort({ index: 1 })
+    .project<{ index: number; text: string; characterCount: number }>({ _id: 0, index: 1, text: 1, characterCount: 1 })
+    .toArray();
+  const previewChunks =
+    chunks.length === 0 && material.excerpt
+      ? [{ index: 0, text: material.excerpt, characterCount: material.excerpt.length }]
+      : chunks;
+  return { material: { ...material, kind: material.kind ?? 'other' }, chunks: previewChunks };
+}
+
+/** Move a material to Trash without deleting provenance, chunks, or questions.
+ * Its vectors are removed immediately so it cannot ground new generation. */
+export async function trashMaterial(
+  courseId: ObjectId,
+  materialId: ObjectId,
+  deletedBy: string,
+): Promise<WithId<Material>> {
+  const material = await materialsCol().findOneAndUpdate(
+    { _id: materialId, courseId, deletedAt: { $exists: false } },
+    { $set: { deletedAt: new Date(), deletedBy } },
+    { returnDocument: 'after' },
+  );
+  if (!material) throw new Error('material-not-found');
+  try {
+    await deletePointsByFilter(courseCollection(courseId), {
+      must: [{ key: 'materialId', match: { value: materialId.toHexString() } }],
+    });
+  } catch (error) {
+    // The database flag is the authorization/source-of-truth boundary: all
+    // retrieval first derives its allow-list from active materials. A missing
+    // or temporarily unavailable collection must not make Trash unusable.
+    console.warn(`[FinanceBot:RAG] vector cleanup deferred materialId=${materialId.toHexString()}: ${String(error)}`);
+  }
+  return material;
+}
+
+/** Restore from Trash by rebuilding vectors from the retained source. */
+export async function restoreMaterial(
+  courseId: ObjectId,
+  materialId: ObjectId,
+  requestedBy = 'system',
+): Promise<WithId<Material>> {
+  const current = await materialsCol().findOne({ _id: materialId, courseId, deletedAt: { $exists: true } });
+  if (!current) throw new Error('material-not-found');
+  const run = await createMaterialIngestRun({
+    courseId,
+    requestedBy,
+    materialId,
+    sourceName: current.name,
+    sourceFormat: current.format,
+    trigger: 'restore',
+    ...(current.activeRunId ? { previousRunId: current.activeRunId } : {}),
+  });
+  const restored = await materialsCol().findOneAndUpdate(
+    { _id: materialId, courseId, deletedAt: current.deletedAt },
+    {
+      $set: { status: 'processing', activeRunId: run._id },
+      $unset: { deletedAt: '', deletedBy: '', error: '' },
+    },
+    { returnDocument: 'after' },
+  );
+  if (!restored) {
+    await failContentRun(run._id, {
+      code: 'material-restore-conflict',
+      message: 'This material was already restored. Refresh to see the active copy.',
+      atStage: 'queued',
+      retryable: true,
+    });
+    throw new Error('material-restore-conflict');
+  }
+  return enqueueMaterialRun(restored, run._id, 'restore');
 }
 
 /** Re-enqueue a failed material for ingestion. */
 export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'): Promise<WithId<Material>> {
-  const current = await materialsCol().findOne({ _id: materialId });
+  const current = await materialsCol().findOne({ _id: materialId, deletedAt: { $exists: false } });
   if (!current) throw new Error('material-not-found');
   if (current.status !== 'failed') throw new Error('material-retry-conflict');
 
@@ -245,7 +337,7 @@ export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'
 
 async function attachAndEnqueueRun(
   material: WithId<Material>,
-  trigger: 'upload' | 'retry',
+  trigger: 'upload' | 'retry' | 'restore',
   requestedBy: string,
 ): Promise<WithId<Material>> {
   let run: Awaited<ReturnType<typeof createMaterialIngestRun>> | undefined;
@@ -258,7 +350,7 @@ async function attachAndEnqueueRun(
       sourceName: material.name,
       sourceFormat: material.format,
       trigger,
-      ...(trigger === 'retry' && material.activeRunId ? { previousRunId: material.activeRunId } : {}),
+      ...(trigger !== 'upload' && material.activeRunId ? { previousRunId: material.activeRunId } : {}),
     });
     failureCode = 'material-run-link-failed';
     const linked = await materialsCol().updateOne({ _id: material._id }, { $set: { activeRunId: run._id } });
@@ -290,7 +382,7 @@ async function attachAndEnqueueRun(
 async function enqueueMaterialRun(
   material: WithId<Material>,
   runId: ObjectId,
-  trigger: 'upload' | 'retry',
+  trigger: 'upload' | 'retry' | 'restore',
 ): Promise<WithId<Material>> {
   try {
     await enqueueJob<MaterialIngestJobData>(MATERIAL_INGEST_JOB, { runId: runId.toHexString() });
@@ -324,8 +416,11 @@ export async function assignMaterial(
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>,
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOneAndUpdate(
-    { _id: materialId },
-    { $set: { assignments } },
+    { _id: materialId, deletedAt: { $exists: false } },
+    {
+      $set: { assignments },
+      $unset: { classificationSuggestion: '', classificationSuggestions: '' },
+    },
     { returnDocument: 'after' },
   );
   if (!material) throw new Error('material-not-found');
@@ -339,7 +434,7 @@ export async function updateMaterialKind(
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOneAndUpdate(
     { _id: materialId, courseId },
-    { $set: { kind } },
+    { $set: { kind, 'automation.kind': { value: kind, confidence: 1, source: 'manual' } } },
     { returnDocument: 'after' },
   );
   if (!material) throw new Error('material-not-found');
@@ -579,7 +674,7 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
 
   try {
     id = new ObjectId(materialId);
-    const material = await materialsCol().findOne({ _id: id });
+    const material = await materialsCol().findOne({ _id: id, deletedAt: { $exists: false } });
     if (!material) {
       if (runId) throw new Error('material-not-found');
       return;
@@ -606,6 +701,21 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
     const chunks = await chunkText(text, material.name);
     result.chunkCount = chunks.length;
     console.log(`[FinanceBot:RAG] chunked materialId=${materialId} chunks=${chunks.length}`);
+    await materialChunksCol().deleteMany({ materialId: id });
+    if (chunks.length > 0) {
+      const createdAt = new Date();
+      await materialChunksCol().insertMany(
+        chunks.map((chunk, index) => ({
+          courseId: material.courseId,
+          materialId: id!,
+          index,
+          text: chunk.text,
+          characterCount: chunk.text.length,
+          metadata: chunk.metadata as Record<string, unknown>,
+          createdAt,
+        })),
+      );
+    }
 
     stage = 'embedding';
     if (runId) {
@@ -650,10 +760,19 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
     }
 
     const ready = await materialsCol().updateOne(
-      { _id: id, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
+      {
+        _id: id,
+        deletedAt: { $exists: false },
+        ...(runId ? { activeRunId: new ObjectId(runId) } : {}),
+      },
       { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' } },
     );
-    if (runId && ready.matchedCount === 0) throw new Error('material-run-superseded');
+    if (runId && ready.matchedCount === 0) {
+      await deletePointsByFilter(collectionName, {
+        must: [{ key: 'materialId', match: { value: materialIdStr } }],
+      });
+      throw new Error('material-run-superseded');
+    }
 
     stage = 'classifying';
     if (runId) {
