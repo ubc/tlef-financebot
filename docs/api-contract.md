@@ -65,8 +65,21 @@ grant attaches to the same PUID-backed User on first SAML login.
   `POST .../restore` → restored unpublished Draft. Archived courses remain
   instructor-readable, appear inactive to enrolled students, and reject
   student practice with `403 course-archived`.
-- Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` → `{ count }`;
+- Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` →
+  `{ count, rejected: [{ line, value, reason }] }`;
   `GET .../roster` → `[{ identifier, extendedUntil? }]`
+  - An identifier is a **CWL username or email**, never a student number: a
+    roster entry is only ever matched against `user.uid` / `user.email`, and the
+    SAML assertion releases no student number. Identifiers that cannot match are
+    dropped rather than stored and returned in `rejected`, whose `reason` is one
+    of `student-number`, `malformed-email`, `invalid-characters`, `duplicate`.
+    They used to be stored, which produced rosters that saved cleanly and then
+    failed every enrolment with `not-on-roster`.
+- `POST /api/courses/:courseId/roster/preview` (multipart, field `file`, optional
+  `column`) → `{ columns, selectedColumn, identifiers, rejects, totalRows }`.
+  Parse-only — writes nothing. Detects the identifier column in an uploaded CSV
+  (e.g. a Workday roster export); `column` overrides the detection. Errors:
+  400 `roster-file-required`, 400 `roster-file-unreadable`, 413 on >2MB.
 
 ## Exam Prep templates (instructor)
 

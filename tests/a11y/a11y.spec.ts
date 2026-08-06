@@ -260,6 +260,25 @@ test.describe('a11y across the signed-in surfaces', () => {
       await page.goto(`/#/instructor/course/${courseId}/settings`);
       await expect(page.getByRole('heading', { name: 'Course Settings' })).toBeVisible();
       await expectNoViolations(page, 'instructor course settings');
+
+      // The roster-import preview only exists after a file is parsed, and it is
+      // the part most likely to fail: coloured status panels plus a <select>,
+      // which is the exact shape of Task 2's original critical findings (four
+      // Question Bank filters announced as bare combo boxes).
+      await page.locator('.upload-zone__input').setInputFiles({
+        name: 'a11y-roster.csv',
+        mimeType: 'text/csv',
+        // Row 3's identifier is a student number in the Email column, so the
+        // preview renders BOTH the reject list and its explanation panel. A
+        // blank cell there would be skipped as an empty row, not rejected,
+        // and the panel under test would never appear.
+        buffer: Buffer.from(
+          ['Student Number,Email', '12345678,a11y@ubc.ca', '87654321,55667788'].join('\n'),
+          'utf8',
+        ),
+      });
+      await expect(page.locator('.roster-rejects')).toBeVisible();
+      await expectNoViolations(page, 'instructor roster import preview');
     } finally {
       await context.close();
     }
