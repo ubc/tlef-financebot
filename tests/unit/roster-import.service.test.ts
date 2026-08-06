@@ -103,6 +103,17 @@ describe('parseRosterFile', () => {
     ]);
   });
 
+  it('does not silently consume the first value in a headerless invalid list', () => {
+    const result = parseRosterFile('12345678\n87654321\n');
+
+    expect(result.columns).toEqual([]);
+    expect(result.totalRows).toBe(2);
+    expect(result.rejects).toEqual([
+      { line: 1, value: '12345678', reason: 'student-number' },
+      { line: 2, value: '87654321', reason: 'student-number' },
+    ]);
+  });
+
   it('numbers rejects by the line the instructor sees in their spreadsheet', () => {
     const csv = ['Email', 'ok@ubc.ca', 'broken@', 'fine@ubc.ca'].join('\n');
 

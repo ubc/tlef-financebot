@@ -103,6 +103,10 @@ test.describe('Roster CSV import', () => {
     await expect(page.locator('.roster-rejects__explanation')).toContainText('never their student number');
     await expect(page.locator('.roster-rejects__row').first()).toContainText('Looks like a student number');
     await expect(page.locator('.roster-textarea')).toHaveValue('');
+    // A diagnosis-only preview must not turn into an accidental destructive
+    // replace: with zero usable rows the existing roster remains untouched.
+    await expect(page.getByRole('button', { name: 'Save Roster' })).toBeDisabled();
+    await expect(page.locator('.roster-list__row')).toHaveCount(2);
   });
 
   test('the identifier column can be overridden when detection guesses wrong', async ({ page }) => {

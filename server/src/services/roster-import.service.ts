@@ -126,7 +126,10 @@ function hasHeaderRow(rows: string[][]): boolean {
   const first = rows[0]?.map((cell) => cell.trim()).filter(Boolean) ?? [];
   if (first.length === 0) return false;
   if (first.length > 1) return true;
-  return isKnownHeaderCell(first[0]!) || !classifyIdentifier(first[0]!).ok;
+  // An invalid first data value is still data. Treating every non-identifier
+  // as a header silently dropped row 1 from a headerless student-number list,
+  // precisely the bad input this preview is meant to diagnose line by line.
+  return isKnownHeaderCell(first[0]!);
 }
 
 /** Pick the column most likely to hold identifiers: mostly by how many of its

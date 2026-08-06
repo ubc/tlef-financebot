@@ -209,6 +209,21 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   // it server-side instead of asking the instructor to pick the file again.
   let lastPreview: RosterParseResult | null = null;
   let lastFile: File | null = null;
+  const saveRosterButton = el(
+    'button',
+    { class: 'btn btn--ghost', type: 'button' },
+    'Save Roster',
+  ) as HTMLButtonElement;
+
+  rosterTextarea.addEventListener('input', () => {
+    // Once the instructor edits the preview by hand, the textarea becomes the
+    // source of truth again and an earlier all-rejected file must not keep the
+    // save control disabled.
+    lastPreview = null;
+    lastFile = null;
+    saveRosterButton.disabled = false;
+    rosterImportSlot.replaceChildren();
+  });
 
   function renderStrategyGroup(): void {
     strategyGroup.replaceChildren(
@@ -327,6 +342,12 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   const saveRoster = async (): Promise<void> => {
     rosterErrorSlot.replaceChildren();
+    if (lastPreview && lastPreview.identifiers.length === 0) {
+      rosterErrorSlot.replaceChildren(
+        errorState('This import has no usable CWL usernames or emails, so the existing roster was not replaced.'),
+      );
+      return;
+    }
     const identifiers = rosterTextarea.value
       .split('\n')
       .map((line) => line.trim())
@@ -337,6 +358,9 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
       roster = refreshed;
       rosterTextarea.value = roster.map((r) => r.identifier).join('\n');
       renderRosterList();
+      lastPreview = null;
+      lastFile = null;
+      saveRosterButton.disabled = false;
       // Saving used to be silent about entries it could not use, which is how
       // a roster of student numbers looked like a success and then failed
       // every enrolment. Say so, every time.
@@ -378,10 +402,12 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
    *  correct the column without re-exporting the file. */
   function renderRosterImport(): void {
     if (!lastPreview) {
+      saveRosterButton.disabled = false;
       rosterImportSlot.replaceChildren();
       return;
     }
     const { columns, selectedColumn, identifiers, rejects } = lastPreview;
+    saveRosterButton.disabled = identifiers.length === 0;
 
     const columnPicker = columns.length > 1
       ? (() => {
@@ -414,7 +440,9 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
           role: 'status',
           text: `${identifiers.length} of ${lastPreview.totalRows} row${lastPreview.totalRows === 1 ? '' : 's'} ready`
             + `${selectedColumn ? ` from column “${selectedColumn}”` : ''}.`
-            + (identifiers.length ? ' Review below, then Save Roster.' : ''),
+            + (identifiers.length
+              ? ' Review below, then Save Roster.'
+              : ' Nothing will be saved; choose a CWL/email column or edit the list.'),
         }),
         columnPicker,
         rejects.length ? rejectList(rejects) : false,
@@ -493,11 +521,12 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         fieldLabelWithHelp('Student identifiers', 'settings-roster', HELP.studentIdentifiers),
         rosterTextarea,
         rosterErrorSlot,
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => void saveRoster() }, 'Save Roster'),
+        saveRosterButton,
         rosterListEl,
       ),
     ),
   );
+  saveRosterButton.addEventListener('click', () => void saveRoster());
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {
