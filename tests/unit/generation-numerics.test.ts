@@ -2,6 +2,24 @@
 // the reviewer no longer judges arithmetic. See
 // docs/superpowers/specs/2026-08-05-numerical-question-correctness-design.md.
 import { readFileSync } from 'node:fs';
+
+// These tests exercise generation.service's PURE prompt builders, but importing
+// the module pulls in its whole component graph — and components/qdrant
+// constructs a QdrantClient at module load (`export const qdrant = new
+// QdrantClient(...)`), which fires an async server-version check. With no
+// Qdrant reachable that check resolves AFTER the test file finishes, and jest
+// fails the run with "Cannot log after tests are done" even though every test
+// passed. That is exactly how this file broke CI while passing locally, where
+// the connection refuses fast enough to land inside the run.
+//
+// generation.routes.test.ts avoids this by mocking generation.service outright;
+// this file needs the real prompts, so it mocks the side-effectful components
+// instead. None of them are reachable from a prompt builder.
+jest.mock('../../server/src/components/qdrant', () => ({ search: jest.fn() }));
+jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
+jest.mock('../../server/src/components/genai/embeddings', () => ({ embedOne: jest.fn() }));
+jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
+
 import { GENERATOR_PROMPT, REVIEWER_PROMPT } from '../../server/src/services/generation.service';
 
 const reviewerPrompt = REVIEWER_PROMPT({
