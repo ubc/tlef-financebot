@@ -5,6 +5,11 @@ _Last updated: 2026-08-05_
 ## Completed
 
 - Branch: `codex/instructor-workflow-v2`
+- Delivery update: the complete Course Knowledge Workspace + Course-as-Project
+  role experience is open for review in PR #65 from
+  `codex/course-knowledge-workspace`. The latest role-parity commit is
+  `970b0fd`; the branch contains three verified commits and was 0 behind / 3
+  ahead of `main` when the PR was created.
 - Task 1: Instructor Course Launch Cockpit — complete in `380cf0f`.
 - One course-scoped read model now aggregates lifecycle/readiness, unique
   Approved-question count, review backlog, active flags, thin LOs, unassigned
