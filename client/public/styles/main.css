@@ -2419,6 +2419,109 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.78rem;
 }
 
+/* ---- Help tips (ⓘ) --------------------------------------------------------
+   Explains a setting whose label alone is not self-describing. Shown on hover
+   AND keyboard focus, and dismissable with Escape, per WCAG 2.1 AA 1.4.13 —
+   see helpTip() in client/src/instructor-ui.ts for why hover-only was not an
+   option. Colours are token-based so both themes and the Task 2 (#58) contrast
+   work carry over: bubble text is --text on --surface, the same pair the a11y
+   scans already cleared. */
+
+.form-field__label-row,
+.section-title--with-help {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.help-tip {
+  position: relative;
+  display: inline-flex;
+  /* Keeps the bubble clear of adjacent inputs and cards. */
+  z-index: 3;
+}
+
+/* The open tip must outrank the OTHER tips too, not just the form controls.
+   All the triggers share z-index 3, so at equal stacking order the ones later
+   in the DOM paint over an open bubble — which showed up as the next field's
+   ⓘ punching a hole through the Auto-pause explanation. */
+.help-tip:hover,
+.help-tip:focus-within,
+.help-tip--pinned {
+  z-index: 10;
+}
+
+.help-tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  font: 650 0.7rem var(--ui);
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.help-tip__trigger:hover,
+.help-tip--pinned .help-tip__trigger {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.help-tip__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.help-tip__bubble {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(19rem, 70vw);
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* Escape (--dismissed) has to beat hover and focus, and it is gated INTO these
+   show rules rather than written as a later override: a plain
+   `.help-tip--dismissed .help-tip__bubble` block loses to
+   `.help-tip__trigger:focus-visible ~ .help-tip__bubble`, which carries one
+   more specificity point, so pressing Escape while the trigger still held
+   focus left the bubble on screen. */
+.help-tip:not(.help-tip--dismissed):hover .help-tip__bubble,
+.help-tip:not(.help-tip--dismissed) .help-tip__trigger:focus-visible ~ .help-tip__bubble,
+.help-tip--pinned .help-tip__bubble {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* The last column would push its bubble off-screen when centred. */
+.settings-column:last-child .help-tip__bubble {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 .form-status {
   min-height: 1.2rem;
   color: var(--muted);
