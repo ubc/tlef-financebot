@@ -231,7 +231,7 @@ export interface QuestionVersion {
   difficulty: Difficulty; // pinned at version level so recalibration never rewrites history (§9.2)
   paramSlots?: ParamSlot[];
   generateScript?: string; // instructor-authored generate() source (PrairieLearn convention)
-  numericKind?: 'numeric' | 'conceptual'; // generator's declaration; instructor may override
+  numericKind?: 'numeric' | 'conceptual'; // declaration; conceptual does not bypass detection
   derivedValues?: DerivedValue[];
   verification?: NumericVerification; // absent => a numerical version never serves
   sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>; // question reference view (§10)

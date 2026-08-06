@@ -163,6 +163,12 @@ commonly need:
   reversible Trash, and an interactive provenance graph from source evidence
   through concepts/LOs to questions. Source chunks are persisted separately
   from embeddings, and deleted sources cannot ground new generation.
+- Numerical MCQ/T-F answers are now computed rather than trusted from LLM
+  arithmetic: a closed formula evaluator, multi-seed option verification, and
+  a current-version serving gate cover practice, retry, preview, and new Exam
+  Prep assembly. Generation and side-by-side regeneration preserve the slot /
+  derived-value definitions atomically, and every displayed option must map to
+  exactly one verified computed value before a proof is stored.
 
 - Testing is set up across three layers (see `tests/AGENTS.md`): Jest + ts-jest +
   supertest unit/integration tests (`tests/unit`, with a jest-monocart-coverage

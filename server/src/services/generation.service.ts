@@ -13,7 +13,10 @@ import {
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
-import { verifyQuestionNumerics } from './numeric-verification.service';
+import {
+  optionValueNamesForVerification,
+  verifyQuestionNumerics,
+} from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
 import {
@@ -148,6 +151,10 @@ export interface RegenerationVariant {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
+  numericKind?: 'numeric' | 'conceptual';
+  paramSlots?: ParamSlot[];
+  derivedValues?: DerivedValue[];
+  verification?: NumericVerification;
   sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>;
   agentDecision: {
     decision: 'pass' | 'flag' | 'reject';
@@ -390,16 +397,23 @@ export async function regenerateQuestion(
         { model: platformSettings.models.reviewer },
       )
     : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
+  const numerics = verifyGeneratedNumerics(generated);
   const variant: RegenerationVariant = {
     stem: generated.stem,
     options: generated.options,
     difficulty: normalizeDifficulty(generated.difficulty ?? current.difficulty),
+    ...numerics.fields,
+    // A conceptual replacement must actively clear formulas inherited from a
+    // previously numerical version; omitted fields would otherwise survive
+    // editQuestion's copy-on-write spread.
+    paramSlots: numerics.fields.paramSlots ?? [],
+    derivedValues: numerics.fields.derivedValues ?? [],
     sourceRefs: grounding.chunks
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text })),
     agentDecision: {
       decision: normalizeDecision(review.decision),
-      reasoning: String(review.reasoning ?? ''),
+      reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
       roleAssessment: String(validation.roleAssessment ?? ''),
     },
   };
@@ -987,7 +1001,7 @@ export function GENERATOR_PROMPT(params: {
  * is legitimately allowed to collide with an option's value, and demanding
  * distinctness from it would reject sound questions.
  */
-function verifyGeneratedNumerics(generated: GeneratorOutput): {
+export function verifyGeneratedNumerics(generated: GeneratorOutput): {
   fields: {
     numericKind?: 'numeric' | 'conceptual';
     paramSlots?: ParamSlot[];
@@ -1011,11 +1025,19 @@ function verifyGeneratedNumerics(generated: GeneratorOutput): {
     };
   }
 
-  const optionValueNames = derivedValues
-    .filter((derived) => generated.options.some((option) => option.text.includes(`{{${derived.name}}}`)))
-    .map((derived) => derived.name);
+  const optionValues = optionValueNamesForVerification(
+    generated.options.map((option) => option.text),
+    derivedValues.map((derived) => derived.name),
+  );
+  if (!optionValues.ok) {
+    return { fields: base, failure: optionValues.error };
+  }
 
-  const result = verifyQuestionNumerics({ slots: paramSlots, derivedValues, optionValueNames });
+  const result = verifyQuestionNumerics({
+    slots: paramSlots,
+    derivedValues,
+    optionValueNames: optionValues.names,
+  });
   if (!result.ok) {
     return {
       fields: base,

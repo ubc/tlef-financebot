@@ -6,6 +6,7 @@ import {
   MAX_ABS_VALUE,
   VERIFICATION_SAMPLE_COUNT,
   SCRIPT_SAMPLE_COUNT,
+  optionValueNamesForVerification,
   resolveDerivedValues,
   verifyGenerateScript,
   verifyQuestionNumerics,
@@ -23,6 +24,29 @@ const derived: DerivedValue[] = [
   { name: 'PV_err1', formula: 'CF1/(1+RATE)^1 + CF2/(1+RATE)^1', errorModel: 'discounted both one period' },
   { name: 'PV_err2', formula: 'CF1 + CF2', errorModel: 'did not discount at all' },
 ];
+
+describe('option answer coverage', () => {
+  it('requires every option to display exactly one computed derived value', () => {
+    expect(optionValueNamesForVerification(
+      ['${{PV}}', '${{PV_err1}}', '$470.96'],
+      ['PV', 'PV_err1', 'PV_err2'],
+    )).toEqual({ ok: false, error: 'option 3 must display exactly one computed value' });
+  });
+
+  it('preserves one value name per option so reused answers collide', () => {
+    expect(optionValueNamesForVerification(
+      ['${{PV}}', '${{PV}}'],
+      ['PV'],
+    )).toEqual({ ok: true, names: ['PV', 'PV'] });
+  });
+
+  it('ignores input placeholders while selecting the computed answer', () => {
+    expect(optionValueNamesForVerification(
+      ['At {{RATE}}, the answer is ${{PV}}', '${{PV_err1}}'],
+      ['PV', 'PV_err1'],
+    )).toEqual({ ok: true, names: ['PV', 'PV_err1'] });
+  });
+});
 
 describe('resolveDerivedValues', () => {
   it('is deterministic for a given seed', () => {
@@ -64,10 +88,35 @@ describe('verifyQuestionNumerics', () => {
     expect(result.sampleSeeds).toHaveLength(VERIFICATION_SAMPLE_COUNT);
   });
 
+  it('refuses a proof that names fewer than two answer values', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [{ name: 'A', formula: 'X' }],
+      optionValueNames: ['A'],
+    });
+    expect(result).toMatchObject({ ok: false, error: 'at least two computed option values are required' });
+  });
+
+  it('refuses an answer placeholder that resolution never produced', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [{ name: 'A', formula: 'X' }, { name: 'B', formula: 'X + 1' }],
+      optionValueNames: ['A', 'MISSING'],
+    });
+    expect(result).toMatchObject({ ok: false, error: 'option value MISSING was not produced' });
+  });
+
   it('fails when a range lets a divisor reach zero', () => {
     const badSlots: ParamSlot[] = [{ name: 'RATE', min: 0, max: 0.05, step: 0.05 }];
-    const badDerived: DerivedValue[] = [{ name: 'X', formula: '100/RATE' }];
-    const result = verifyQuestionNumerics({ slots: badSlots, derivedValues: badDerived, optionValueNames: ['X'] });
+    const badDerived: DerivedValue[] = [
+      { name: 'X', formula: '100/RATE' },
+      { name: 'Y', formula: '100/(RATE + 1)' },
+    ];
+    const result = verifyQuestionNumerics({
+      slots: badSlots,
+      derivedValues: badDerived,
+      optionValueNames: ['X', 'Y'],
+    });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/division by zero/);

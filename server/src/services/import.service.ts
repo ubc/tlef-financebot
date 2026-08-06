@@ -4,7 +4,10 @@ import type { ObjectId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { losCol, themesCol } from '../components/mongodb/collections';
 import { executeGenerate } from '../components/param-worker';
-import { verifyGenerateScript } from './numeric-verification.service';
+import {
+  optionValueNamesForVerification,
+  verifyGenerateScript,
+} from './numeric-verification.service';
 import type {
   Difficulty,
   OptionRole,
@@ -671,12 +674,10 @@ export async function migrateScript(
   // Without this the numeric gate would refuse every migrated question
   // forever — the import would appear to succeed and then serve nothing.
   const options = questionOptions(candidate);
-  const scriptProof = await verifyGenerateScript(
-    input.script,
-    options
-      .map((option) => /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/.exec(option.text)?.[1])
-      .filter((name): name is string => Boolean(name)),
-  );
+  const optionValues = optionValueNamesForVerification(options.map((option) => option.text));
+  const scriptProof = optionValues.ok
+    ? await verifyGenerateScript(input.script, optionValues.names)
+    : { ok: false as const, error: optionValues.error };
 
   const assignment = await assignmentIds(courseId, input);
   const { questionId } = await createQuestion({

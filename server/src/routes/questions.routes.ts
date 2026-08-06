@@ -20,7 +20,10 @@ import {
   bulkTransition,
 } from '../services/questions.service';
 import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
-import { verifyQuestionNumerics } from '../services/numeric-verification.service';
+import {
+  optionValueNamesForVerification,
+  verifyQuestionNumerics,
+} from '../services/numeric-verification.service';
 import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
@@ -113,7 +116,7 @@ const optionBody = z.object({
   explanation: z.string(),
 });
 
-const patchQuestionBody = z.object({
+const basePatchQuestionBody = z.object({
   stem: z.string().min(1).optional(),
   options: z.array(optionBody).optional(),
   difficulty: z.enum(DIFFICULTIES).optional(),
@@ -143,6 +146,15 @@ const derivedValueBody = z.object({
   errorModel: z.string().optional(),
 });
 
+// Regeneration replacement must save its generated templates and proof in the
+// SAME version as the new stem/options. A two-request edit-then-params flow
+// briefly exposes an approved placeholder template without its gate metadata.
+const patchQuestionBody = basePatchQuestionBody.extend({
+  paramSlots: z.array(paramSlotBody).optional(),
+  derivedValues: z.array(derivedValueBody).optional(),
+  numericKind: z.enum(['numeric', 'conceptual']).optional(),
+});
+
 const patchQuestionParamsBody = z.object({
   paramSlots: z.array(paramSlotBody).optional(),
   derivedValues: z.array(derivedValueBody).optional(),
@@ -163,6 +175,38 @@ const previewQuestionParamsBody = z.object({
   generateScript: z.string().optional(),
   stem: z.string().optional(),
 });
+
+function verifyOptionFormulas(
+  options: Array<{ text: string }>,
+  slots: ParamSlot[],
+  derivedValues: DerivedValue[],
+  numericKind: 'numeric' | 'conceptual' | undefined,
+): { verification?: NumericVerification; verificationError?: string } {
+  if (numericKind === 'conceptual') return {};
+  if (derivedValues.length === 0) {
+    return numericKind === 'numeric'
+      ? { verificationError: 'A numerical question needs computed values for every option.' }
+      : {};
+  }
+
+  const optionValues = optionValueNamesForVerification(
+    options.map((option) => option.text),
+    derivedValues.map((derived) => derived.name),
+  );
+  if (!optionValues.ok) return { verificationError: optionValues.error };
+
+  const result = verifyQuestionNumerics({
+    slots,
+    derivedValues,
+    optionValueNames: optionValues.names,
+  });
+  if (result.ok) return { verification: result.verification };
+  return {
+    verificationError: result.failingSeed !== undefined
+      ? `${result.error} (seed ${result.failingSeed})`
+      : result.error,
+  };
+}
 
 const transitionBody = z.object({ to: z.enum(PUBLICATION_STATES) });
 const internalNoteBody = z.object({ text: z.string().trim().min(1).max(2000) });
@@ -329,18 +373,37 @@ questionsRouter.patch(
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const body = req.body as z.infer<typeof patchQuestionBody>;
+    let verification: NumericVerification | undefined;
+    let verificationError: string | undefined;
+    if (
+      body.paramSlots !== undefined
+      || body.derivedValues !== undefined
+      || body.numericKind !== undefined
+    ) {
+      const { current } = await getQuestionDetail(questionId);
+      ({ verification, verificationError } = verifyOptionFormulas(
+        body.options ?? current.options,
+        (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
+        (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
+        body.numericKind ?? current.numericKind,
+      ));
+    }
     const version = await editQuestion(
       questionId,
       {
         ...(body.stem !== undefined ? { stem: body.stem } : {}),
         ...(body.options !== undefined ? { options: body.options } : {}),
         ...(body.difficulty !== undefined ? { difficulty: body.difficulty } : {}),
+        ...(body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {}),
+        ...(body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {}),
+        ...(body.numericKind !== undefined ? { numericKind: body.numericKind } : {}),
         ...(body.loIds !== undefined ? { loIds: body.loIds.map((id) => new ObjectId(id)) } : {}),
         ...(body.themeIds !== undefined ? { themeIds: body.themeIds.map((id) => new ObjectId(id)) } : {}),
+        ...(verification !== undefined ? { verification } : {}),
       },
       req.user!.puid,
     );
-    res.json(version);
+    res.json({ ...version, ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
 
@@ -377,31 +440,23 @@ questionsRouter.patch(
     const questionId = new ObjectId(String(req.params.questionId));
     const body = req.body as z.infer<typeof patchQuestionParamsBody>;
 
-    // R4: verify on every save, and never carry a proof forward. An edit that
+    // R4: verify every formula-definition save, and never carry a proof forward. An edit that
     // fails verification must leave the question WITHOUT one, or the gate
     // would keep serving numbers the current formulas no longer produce.
-    const derivedValues = body.derivedValues ?? [];
     let verification: NumericVerification | undefined;
     let verificationError: string | undefined;
-
-    if (body.numericKind !== 'conceptual' && derivedValues.length > 0) {
-      // Only values the options actually display must be mutually distinct —
-      // an intermediate helper may legitimately equal one of them.
+    if (
+      body.paramSlots !== undefined
+      || body.derivedValues !== undefined
+      || body.numericKind !== undefined
+    ) {
       const { current } = await getQuestionDetail(questionId);
-      const optionValueNames = derivedValues
-        .filter((derived) => current.options.some((option) => option.text.includes(`{{${derived.name}}}`)))
-        .map((derived) => derived.name);
-      const result = verifyQuestionNumerics({
-        slots: body.paramSlots ?? [],
-        derivedValues,
-        optionValueNames,
-      });
-      if (result.ok) verification = result.verification;
-      else {
-        verificationError = result.failingSeed !== undefined
-          ? `${result.error} (seed ${result.failingSeed})`
-          : result.error;
-      }
+      ({ verification, verificationError } = verifyOptionFormulas(
+        current.options,
+        (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
+        (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
+        body.numericKind ?? current.numericKind,
+      ));
     }
 
     const version = await editQuestion(
@@ -411,9 +466,9 @@ questionsRouter.patch(
         ...(body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {}),
         ...(body.numericKind !== undefined ? { numericKind: body.numericKind } : {}),
         ...(body.generateScript !== undefined ? { generateScript: body.generateScript } : {}),
-        // Always written, so a failed verification actively clears any proof
-        // the previous version carried rather than leaving it in place.
-        verification,
+        // editQuestion clears the previous proof on every content edit; only a
+        // freshly successful verification is allowed to replace it.
+        ...(verification !== undefined ? { verification } : {}),
       },
       req.user!.puid,
     );

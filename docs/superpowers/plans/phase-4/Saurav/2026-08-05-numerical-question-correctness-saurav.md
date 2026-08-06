@@ -54,7 +54,7 @@ putting it in either one would make them mutually dependent.
   - `EVALUATOR_VERSION: number` (starts at `1`)
   - `type Node` as defined in Step 3.
 
-- [ ] **Step 1: Write the failing test for the two reported bugs**
+- [x] **Step 1: Write the failing test for the two reported bugs**
 
 Create `tests/unit/formula-evaluator.test.ts`:
 
@@ -97,12 +97,12 @@ describe('EVALUATOR_VERSION', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/formula-evaluator.test.ts`
 Expected: FAIL — `Cannot find module '../../server/src/components/formula'`
 
-- [ ] **Step 3: Write the tokenizer**
+- [x] **Step 3: Write the tokenizer**
 
 Create `server/src/components/formula/tokenizer.ts`:
 
@@ -166,7 +166,7 @@ export function tokenize(src: string): TokenizeResult {
 }
 ```
 
-- [ ] **Step 4: Write the parser**
+- [x] **Step 4: Write the parser**
 
 Create `server/src/components/formula/parser.ts`:
 
@@ -297,7 +297,7 @@ export function parseFormula(src: string): ParseResult {
 }
 ```
 
-- [ ] **Step 5a: Write R1's integer power as its own leaf module**
+- [x] **Step 5a: Write R1's integer power as its own leaf module**
 
 Create `server/src/components/formula/pow.ts`:
 
@@ -327,7 +327,7 @@ export function intPow(base: number, exp: number): number {
 }
 ```
 
-- [ ] **Step 5b: Write the evaluator**
+- [x] **Step 5b: Write the evaluator**
 
 Create `server/src/components/formula/evaluate.ts`:
 
@@ -409,7 +409,7 @@ export function evaluateFormula(ast: Node, env: Record<string, number>): EvalRes
 }
 ```
 
-- [ ] **Step 6: Write the built-ins with R2's IRR contract**
+- [x] **Step 6: Write the built-ins with R2's IRR contract**
 
 Create `server/src/components/formula/builtins.ts`:
 
@@ -495,7 +495,7 @@ export const BUILTINS: Record<string, (args: number[]) => number> = {
 };
 ```
 
-- [ ] **Step 7: Write the barrel and version constant**
+- [x] **Step 7: Write the barrel and version constant**
 
 Create `server/src/components/formula/index.ts`:
 
@@ -514,12 +514,12 @@ export { BUILTINS } from './builtins';
 export const EVALUATOR_VERSION = 1;
 ```
 
-- [ ] **Step 8: Run the test to verify it passes**
+- [x] **Step 8: Run the test to verify it passes**
 
 Run: `npx jest tests/unit/formula-evaluator.test.ts`
 Expected: PASS — 3 tests
 
-- [ ] **Step 9: Add the determinism and coverage tests**
+- [x] **Step 9: Add the determinism and coverage tests**
 
 Append to `tests/unit/formula-evaluator.test.ts`:
 
@@ -625,12 +625,12 @@ describe('errors are returned, never thrown', () => {
 });
 ```
 
-- [ ] **Step 10: Run the tests to verify they pass**
+- [x] **Step 10: Run the tests to verify they pass**
 
 Run: `npx jest tests/unit/formula-evaluator.test.ts`
 Expected: PASS — all tests
 
-- [ ] **Step 11: Document the component**
+- [x] **Step 11: Document the component**
 
 Create `server/src/components/formula/AGENTS.md`:
 
@@ -668,7 +668,7 @@ A parsed AST over a closed operation set cannot reach the host. There is no
 reserved for legacy `generateScript` (Tier 3).
 ```
 
-- [ ] **Step 12: Full verification and commit**
+- [x] **Step 12: Full verification and commit**
 
 Run: `npm run typecheck && npx eslint server/src/components/formula tests/unit/formula-evaluator.test.ts && npx jest`
 Expected: all green
@@ -698,7 +698,7 @@ git commit -m "feat(formula): deterministic formula evaluator with finance built
   - `MAX_ABS_VALUE: number` (`1e12`)
   - `formatParamValue(value: number): string` (from `params.service.ts`)
 
-- [ ] **Step 1: Add the domain types**
+- [x] **Step 1: Add the domain types**
 
 In `server/src/types/domain.ts`, immediately after the `ParamSlot` interface (currently ending at line 202), add:
 
@@ -729,7 +729,7 @@ Then in the `QuestionVersion` interface, immediately after the `generateScript` 
   verification?: NumericVerification;
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/unit/numeric-verification.test.ts`:
 
@@ -837,12 +837,12 @@ describe('verifyQuestionNumerics', () => {
 });
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/numeric-verification.test.ts`
 Expected: FAIL — cannot find `numeric-verification.service`
 
-- [ ] **Step 4: Implement the service**
+- [x] **Step 4: Implement the service**
 
 Create `server/src/services/numeric-verification.service.ts`:
 
@@ -971,7 +971,7 @@ export function verifyQuestionNumerics(input: VerifyInput): VerifyResult {
 }
 ```
 
-- [ ] **Step 5: Implement R3's display rounding**
+- [x] **Step 5: Implement R3's display rounding**
 
 **Without this step students see `462.5850340136054` instead of `$462.59`.**
 `substituteParams` currently does `String(values[name])`, which prints the raw
@@ -1028,7 +1028,7 @@ describe('R3 — round once, at display', () => {
 });
 ```
 
-- [ ] **Step 6: Verify Tier 3 `generateScript` questions**
+- [x] **Step 6: Verify Tier 3 `generateScript` questions**
 
 The spec ships Tier 3, so a `generateScript` question must be *verifiable* —
 otherwise it can never satisfy the gate and the escape hatch is decorative.
@@ -1117,12 +1117,12 @@ describe('verifyGenerateScript (Tier 3)', () => {
 > stored proof's `sampleSeeds` so the difference is visible rather than
 > implied. Do not reduce Tier 1/2 sampling, which is pure and fast.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `npx jest tests/unit/numeric-verification.test.ts`
 Expected: PASS — all tests
 
-- [ ] **Step 8: Full verification and commit**
+- [x] **Step 8: Full verification and commit**
 
 Run: `npm run typecheck && npx eslint server/src/services/numeric-verification.service.ts server/src/services/params.service.ts server/src/types/domain.ts tests/unit/numeric-verification.test.ts && npx jest`
 Expected: all green
@@ -1152,7 +1152,7 @@ git commit -m "feat(numerics): multi-seed verification, Tier 3 script proofs, an
 
 **After this task the reported bug is structurally impossible**, even before the generator emits a single formula: unverified numerical questions stop reaching students.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/unit/numeric-gate.test.ts`:
 
@@ -1239,12 +1239,12 @@ describe('isServable', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/numeric-gate.test.ts`
 Expected: FAIL — cannot find `numeric-gate.service`
 
-- [ ] **Step 3: Implement the gate**
+- [x] **Step 3: Implement the gate**
 
 Create `server/src/services/numeric-gate.service.ts`:
 
@@ -1303,12 +1303,12 @@ export function isServable(version: NumericGateVersion): boolean {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx jest tests/unit/numeric-gate.test.ts`
 Expected: PASS — all tests
 
-- [ ] **Step 5: Apply the gate to the practice/retry/preview chokepoint**
+- [x] **Step 5: Apply the gate to the practice/retry/preview chokepoint**
 
 In `server/src/services/serving.service.ts`, add to the imports at the top of the file:
 
@@ -1342,7 +1342,7 @@ with:
   return candidates;
 ```
 
-- [ ] **Step 6: Apply the gate to the exam chokepoint**
+- [x] **Step 6: Apply the gate to the exam chokepoint**
 
 In `server/src/services/exam-attempts.service.ts`, add to the imports:
 
@@ -1361,7 +1361,7 @@ Then in the pool filter inside the theme loop, add the gate as the first conditi
       ));
 ```
 
-- [ ] **Step 7: Add the integration test**
+- [x] **Step 7: Add the integration test**
 
 Append to `tests/unit/numeric-gate.test.ts`:
 
@@ -1379,7 +1379,7 @@ describe('gate integration points', () => {
 });
 ```
 
-- [ ] **Step 8: Full verification and commit**
+- [x] **Step 8: Full verification and commit**
 
 Run: `npm run typecheck && npx eslint server/src/services/numeric-gate.service.ts server/src/services/serving.service.ts server/src/services/exam-attempts.service.ts tests/unit/numeric-gate.test.ts && npx jest`
 Expected: all green
@@ -1403,7 +1403,7 @@ git commit -m "feat(numerics): gate unverified numerical questions out of every 
 - Consumes: `verifyQuestionNumerics` from Task 2; `isNumericQuestion` from Task 3.
 - Produces: generated `QuestionVersion` records carrying `numericKind`, `paramSlots`, `derivedValues`, and `verification` when verification succeeds.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/unit/generation-numerics.test.ts`:
 
@@ -1453,12 +1453,12 @@ describe('GENERATOR_PROMPT', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/generation-numerics.test.ts`
 Expected: FAIL — `Calculation correctness` still present
 
-- [ ] **Step 3: Rewrite the reviewer prompt**
+- [x] **Step 3: Rewrite the reviewer prompt**
 
 In `server/src/services/generation.service.ts`, replace the body of `REVIEWER_PROMPT` (line 909) with:
 
@@ -1491,7 +1491,7 @@ export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOut
 }
 ```
 
-- [ ] **Step 4: Extend the generator output contract**
+- [x] **Step 4: Extend the generator output contract**
 
 In `server/src/services/generation.service.ts`, replace the `GeneratorOutput` interface (line 124):
 
@@ -1508,7 +1508,7 @@ interface GeneratorOutput {
 
 Add `ParamSlot` and `DerivedValue` to the existing `../types/domain` import at the top of the file.
 
-- [ ] **Step 5: Instruct the generator to emit formulas**
+- [x] **Step 5: Instruct the generator to emit formulas**
 
 In `GENERATOR_PROMPT`, append these lines before the response-shape line:
 
@@ -1534,7 +1534,7 @@ In `GENERATOR_PROMPT`, append these lines before the response-shape line:
     'paramSlots and derivedValues.',
 ```
 
-- [ ] **Step 6: Verify generated numerical questions before persisting**
+- [x] **Step 6: Verify generated numerical questions before persisting**
 
 There are exactly **two** `createQuestion` call sites in this file —
 `generation.service.ts:289` (the main generation path) and
@@ -1566,12 +1566,12 @@ Insert immediately before each `createQuestion({` call:
 
 and include `...(verification ? { verification } : {})` in the persisted version document alongside `paramSlots`, `derivedValues`, and `numericKind`.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `npx jest tests/unit/generation-numerics.test.ts`
 Expected: PASS — all tests
 
-- [ ] **Step 8: Full verification and commit**
+- [x] **Step 8: Full verification and commit**
 
 Run: `npm run typecheck && npx eslint server/src/services/generation.service.ts tests/unit/generation-numerics.test.ts && npx jest`
 Expected: all green
@@ -1597,7 +1597,7 @@ git commit -m "feat(generation): emit formulas instead of numbers; stop asking t
 - Consumes: `verifyQuestionNumerics` from Task 2; `resolveDerivedValues` from Task 2 for the preview.
 - Produces: `PATCH /api/questions/:questionId/params` accepting `{ paramSlots, derivedValues, numericKind }` and returning `{ verification, verificationError? }`.
 
-- [ ] **Step 1: Write the failing route test**
+- [x] **Step 1: Write the failing route test**
 
 Create `tests/unit/question-params-routes.test.ts`:
 
@@ -1709,12 +1709,12 @@ describe('PATCH /api/questions/:questionId/params', () => {
 > whatever those files actually import — the *assertions* are the contract,
 > the mock wiring is not.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/question-params-routes.test.ts`
 Expected: FAIL once real assertions are in place
 
-- [ ] **Step 3: Extend the route**
+- [x] **Step 3: Extend the route**
 
 In `server/src/routes/questions.routes.ts`, extend the params PATCH body schema to accept `derivedValues` and `numericKind`:
 
@@ -1753,7 +1753,7 @@ In the handler, after writing the slots and derived values, run verification and
     res.json({ ...serialized, ...(result.ok ? { verification: result.verification } : { verificationError: result.error }) });
 ```
 
-- [ ] **Step 4: Add the client API binding**
+- [x] **Step 4: Add the client API binding**
 
 In `client/src/api.ts`, extend the params patch wrapper to send derived values:
 
@@ -1774,7 +1774,7 @@ export async function patchQuestionParams(
 }
 ```
 
-- [ ] **Step 5: Add the Derived Values table to the config view**
+- [x] **Step 5: Add the Derived Values table to the config view**
 
 In `client/src/views/instructor/param-config.ts`, add these two functions and
 call `derivedValuesTable` from the view's render path, beside the existing slot
@@ -1843,7 +1843,7 @@ function verificationBanner(result: { verification?: unknown; verificationError?
 Wire `verificationBanner` to render from the `patchQuestionParams` response, and
 send `derivedValues: drafts` in that call.
 
-- [ ] **Step 6: Style the table**
+- [x] **Step 6: Style the table**
 
 Append to `client/public/styles/main.css`:
 
@@ -1904,7 +1904,7 @@ Append to `client/public/styles/main.css`:
 > `:root` in `main.css` first and substitute the real token names if any differ.
 > Do not introduce new colour tokens.
 
-- [ ] **Step 7: Write the e2e spec**
+- [x] **Step 7: Write the e2e spec**
 
 Create `tests/e2e/numeric-parameterization.spec.ts`. Follow
 `instructor-pipeline.spec.ts`'s harness conventions — global-setup's real SAML
@@ -1955,7 +1955,7 @@ test.describe('numeric parameterization', () => {
 > off the existing markup. Add the ids in Step 5 rather than reaching for
 > brittle nth-child selectors here.
 
-- [ ] **Step 8: Full verification and commit**
+- [x] **Step 8: Full verification and commit**
 
 Run: `npm run typecheck && npx eslint client/src/views/instructor/param-config.ts client/src/api.ts server/src/routes/questions.routes.ts tests/unit/question-params-routes.test.ts && npx jest && npx playwright test tests/e2e/numeric-parameterization.spec.ts`
 Expected: all green
@@ -1969,10 +1969,10 @@ git commit -m "feat(numerics): instructor derived-value editor with live verific
 
 ## Final verification
 
-- [ ] `npm run typecheck` — server and client clean.
-- [ ] `npx eslint .` — clean.
-- [ ] `npx jest` — full suite green (873 at branch point, plus roughly 45 added here).
-- [ ] `npx playwright test` — no NEW failures. Three are pre-existing on `main`: `app.spec.ts:9`, `walking-skeleton.spec.ts:13` (both the intentional `ADMIN_CWL_ALLOWLIST` admin shell), and `classes.spec.ts:69` (undiagnosed). See `../STATUS.md`.
+- [x] `npm run typecheck` — server and client clean.
+- [x] `npx eslint .` — clean.
+- [x] `npx jest` — full suite green (873 at branch point, plus roughly 45 added here).
+- [x] `npx playwright test` — no NEW failures. Three are pre-existing on `main`: `app.spec.ts:9`, `walking-skeleton.spec.ts:13` (both the intentional `ADMIN_CWL_ALLOWLIST` admin shell), and `classes.spec.ts:69` (undiagnosed). See `../STATUS.md`.
 - [ ] **Manual:** generate a numerical question for a real LO. Confirm it arrives with `paramSlots` and `derivedValues`, that the reviewer's reasoning discusses modelling rather than arithmetic, and that its computed answer is correct.
 - [ ] **Manual:** confirm an unverified numerical question is visible in the bank and review queue but is never served in practice, retry, or an exam.
 - [ ] **Manual:** re-run the two reported failures end to end — the two-period PV stream and the three-payment compounding stream — and confirm the served answers are 462.59 and 1560.80.

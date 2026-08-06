@@ -20,7 +20,11 @@ jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.f
 jest.mock('../../server/src/components/genai/embeddings', () => ({ embedOne: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
 
-import { GENERATOR_PROMPT, REVIEWER_PROMPT } from '../../server/src/services/generation.service';
+import {
+  GENERATOR_PROMPT,
+  REVIEWER_PROMPT,
+  verifyGeneratedNumerics,
+} from '../../server/src/services/generation.service';
 
 const reviewerPrompt = REVIEWER_PROMPT({
   loName: 'Compute present value',
@@ -130,19 +134,60 @@ describe('generated numerics are verified before persisting', () => {
   // lives in numeric-verification.test.ts.
   const source = readFileSync('server/src/services/generation.service.ts', 'utf8');
 
+  it('does not prove a numerical question with any literal/uncomputed option', () => {
+    const result = verifyGeneratedNumerics({
+      stem: 'Choose the present value.',
+      difficulty: 'medium',
+      numericKind: 'numeric',
+      paramSlots: [{ name: 'CF', min: 100, max: 100 }],
+      derivedValues: [
+        { name: 'PV', formula: 'CF / 1.05' },
+        { name: 'WRONG', formula: 'CF * 1.05' },
+      ],
+      options: [
+        { key: 'A', text: '${{PV}}', role: 'correct', explanation: '' },
+        { key: 'B', text: '$105.00', role: 'common-misconception', explanation: '' },
+        { key: 'C', text: '${{WRONG}}', role: 'partially-correct', explanation: '' },
+        { key: 'D', text: '$0.00', role: 'clearly-wrong', explanation: '' },
+      ],
+    });
+    expect(result.fields.verification).toBeUndefined();
+    expect(result.failure).toMatch(/option 2 must display exactly one computed value/);
+  });
+
+  it('does not prove two options that reuse the same computed value', () => {
+    const result = verifyGeneratedNumerics({
+      stem: 'Choose the result.',
+      numericKind: 'numeric',
+      paramSlots: [{ name: 'X', min: 10, max: 10 }],
+      derivedValues: [
+        { name: 'A', formula: 'X' },
+        { name: 'B', formula: 'X + 1' },
+      ],
+      options: [
+        { key: 'A', text: '{{A}}', role: 'correct', explanation: '' },
+        { key: 'B', text: '{{A}}', role: 'common-misconception', explanation: '' },
+        { key: 'C', text: '{{B}}', role: 'partially-correct', explanation: '' },
+        { key: 'D', text: '{{B}}', role: 'clearly-wrong', explanation: '' },
+      ],
+    });
+    expect(result.fields.verification).toBeUndefined();
+    expect(result.failure).toMatch(/identical/);
+  });
+
   it('verifies at BOTH createQuestion call sites', () => {
     // The second is the regeneration path — the one the 2026-08-05 tester used
     // when they reported that regenerating still produced a wrong answer.
     const calls = source.match(/verifyGeneratedNumerics\(/g) ?? [];
-    // one definition + two call sites
-    expect(calls.length).toBeGreaterThanOrEqual(3);
+    // one definition + first-pass, durable-run, and side-by-side regeneration
+    expect(calls.length).toBeGreaterThanOrEqual(4);
     expect(source).toContain('verifyGeneratedNumerics(generated)');
     expect(source).toContain('verifyGeneratedNumerics(candidate.generated)');
   });
 
   it('spreads the verified parameterization into both persisted questions', () => {
     const spreads = source.match(/\.\.\.numerics\.fields,/g) ?? [];
-    expect(spreads).toHaveLength(2);
+    expect(spreads.length).toBeGreaterThanOrEqual(3);
   });
 
   it('records the failure reason in the reviewer reasoning both times', () => {

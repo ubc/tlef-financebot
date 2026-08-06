@@ -784,6 +784,15 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         stem: regenerationVariant.stem,
         options: regenerationVariant.options,
         difficulty: regenerationVariant.difficulty,
+        ...(regenerationVariant.paramSlots !== undefined
+          ? { paramSlots: regenerationVariant.paramSlots }
+          : {}),
+        ...(regenerationVariant.derivedValues !== undefined
+          ? { derivedValues: regenerationVariant.derivedValues }
+          : {}),
+        ...(regenerationVariant.numericKind !== undefined
+          ? { numericKind: regenerationVariant.numericKind }
+          : {}),
       });
       applySavedVersion(saved);
       regenerationVariant = null;

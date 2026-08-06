@@ -41,6 +41,52 @@ export type VerifyResult =
   | { ok: true; sampleSeeds: number[]; verification: NumericVerification }
   | { ok: false; error: string; failingSeed?: number };
 
+export type OptionValueNameResult =
+  | { ok: true; names: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Resolve the one computed value displayed by each answer option.
+ *
+ * Verification must cover the answer surface, not merely whatever formulas
+ * happened to be declared. Without this structural check a generator could
+ * provide one unused `derivedValue`, leave every option as an LLM-written
+ * literal, and still earn a proof because an empty option-value list has no
+ * collisions. Requiring exactly one computed value per option also catches two
+ * options that accidentally reuse the same placeholder.
+ *
+ * `allowedNames` is supplied for formula-backed questions so a drawn input
+ * placeholder does not masquerade as a computed answer. Script migrations do
+ * not have a declared value list, so every option must simply contain exactly
+ * one placeholder and the sandbox proof checks that the script returns it.
+ */
+export function optionValueNamesForVerification(
+  optionTexts: string[],
+  allowedNames?: Iterable<string>,
+): OptionValueNameResult {
+  const allowed = allowedNames ? new Set(allowedNames) : undefined;
+  const names: string[] = [];
+
+  for (let index = 0; index < optionTexts.length; index += 1) {
+    const placeholders = Array.from(
+      optionTexts[index]!.matchAll(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g),
+      (match) => match[1]!,
+    );
+    const computed = allowed
+      ? placeholders.filter((name) => allowed.has(name))
+      : placeholders;
+    if (computed.length !== 1) {
+      return {
+        ok: false,
+        error: `option ${index + 1} must display exactly one computed value`,
+      };
+    }
+    names.push(computed[0]!);
+  }
+
+  return { ok: true, names };
+}
+
 function sampleSeedsFor(count: number): number[] {
   const seeds: number[] = [];
   for (let i = 0; i < count; i += 1) seeds.push(SAMPLE_SEED_BASE + i);
@@ -74,7 +120,16 @@ function checkDraw(values: Record<string, number>, optionValueNames: string[]): 
     if (Math.abs(value) > MAX_ABS_VALUE) return `${name} exceeds the magnitude band ${MAX_ABS_VALUE}`;
   }
 
-  const optionValues = optionValueNames.map((name) => values[name]);
+  if (optionValueNames.length < 2) return 'at least two computed option values are required';
+  const optionValues: number[] = [];
+  for (const name of optionValueNames) {
+    if (!Object.prototype.hasOwnProperty.call(values, name)) {
+      return `option value ${name} was not produced`;
+    }
+    const value = values[name]!;
+    if (!Number.isFinite(value)) return `option value ${name} is not finite`;
+    optionValues.push(value);
+  }
   for (let a = 0; a < optionValues.length; a += 1) {
     for (let b = a + 1; b < optionValues.length; b += 1) {
       if (optionValues[a] === optionValues[b]) {

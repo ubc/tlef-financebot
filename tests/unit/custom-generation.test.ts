@@ -237,7 +237,12 @@ describe('Task 10 custom generation', () => {
     ]);
     jest
       .mocked(completeJson)
-      .mockResolvedValueOnce({ stem: 'Alternative stem', options: options(), difficulty: 'hard' })
+      .mockResolvedValueOnce({
+        stem: 'Alternative stem',
+        options: options(),
+        difficulty: 'hard',
+        numericKind: 'conceptual',
+      })
       .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
       .mockResolvedValueOnce({ decision: 'pass', reasoning: 'good alternative' });
 
@@ -251,6 +256,9 @@ describe('Task 10 custom generation', () => {
     expect(result.variant).toMatchObject({
       stem: 'Alternative stem',
       difficulty: 'hard',
+      numericKind: 'conceptual',
+      paramSlots: [],
+      derivedValues: [],
       agentDecision: { decision: 'pass', reasoning: 'good alternative' },
     });
     expect(createQuestion).not.toHaveBeenCalled();

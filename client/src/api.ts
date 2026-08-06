@@ -1823,6 +1823,10 @@ export interface RegenerationVariant {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
+  numericKind?: 'numeric' | 'conceptual';
+  paramSlots?: ParamSlotInput[];
+  derivedValues?: DerivedValueInput[];
+  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
   agentDecision: {
     decision: 'pass' | 'flag' | 'reject';
@@ -2010,7 +2014,7 @@ export interface QuestionVersion {
   /** Values COMPUTED from the slots — the correct answer and every distractor
    * of a numerical question. */
   derivedValues?: Array<{ name: string; formula: string; errorModel?: string }>;
-  /** The generator's declaration; an instructor may override it. */
+  /** The generator's declaration. It does not bypass independent detection. */
   numericKind?: 'numeric' | 'conceptual';
   /** Machine-checked proof that the computed values are sound across sampled
    * draws. ABSENT on a numerical question means it never serves to a student
@@ -2130,6 +2134,9 @@ export function editQuestion(
     stem?: string;
     options?: QuestionOption[];
     difficulty?: Difficulty;
+    paramSlots?: ParamSlotInput[];
+    derivedValues?: DerivedValueInput[];
+    numericKind?: 'numeric' | 'conceptual';
     loIds?: string[];
     themeIds?: string[];
   },

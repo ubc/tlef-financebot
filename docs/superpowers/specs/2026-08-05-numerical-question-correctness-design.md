@@ -272,9 +272,13 @@ through, and **a static question full of LLM-written wrong numbers has no
 `paramSlots`, so a structural test would read it as "not numerical" and pass it
 straight through — the exact reported bug.**
 
-An instructor override sets `numericKind: 'conceptual'` and persists. Serving
-refuses a non-servable version with a specific reason; the question stays
-visible in the bank and review queue so it can be fixed rather than vanishing.
+`numericKind: 'conceptual'` is a generator declaration, not a bypass for the
+independent detector: numeric-looking text still requires a proof. This is
+deliberately fail-closed. A future explicit human override needs separate
+provenance so a generator cannot accidentally grant itself that bypass.
+Serving refuses a non-servable version with a specific reason; the question
+stays visible in the bank and review queue so it can be fixed rather than
+vanishing.
 
 Fail-closed, and **observable**: counting gate refusals reveals which formulas
 real courses need, which tells us what to add to the library instead of

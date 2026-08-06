@@ -77,6 +77,10 @@ function patchWith(body: object) {
   return request(app()).patch(`/api/questions/${questionId.toHexString()}/params`).send(body);
 }
 
+function patchQuestion(body: object) {
+  return request(app()).patch(`/api/questions/${questionId.toHexString()}`).send(body);
+}
+
 beforeEach(() => {
   editQuestion.mockClear();
 });
@@ -96,7 +100,10 @@ describe('PATCH /api/questions/:questionId/params', () => {
     const res = await patchWith({
       ...soundBody,
       paramSlots: [{ name: 'RATE_PCT', min: 0, max: 5, step: 5 }],
-      derivedValues: [{ name: 'PV', formula: '100/RATE_PCT' }],
+      derivedValues: [
+        { name: 'PV', formula: '100/RATE_PCT' },
+        { name: 'PV_WRONG', formula: '100/(RATE_PCT + 1)' },
+      ],
     });
 
     expect(res.status).toBe(200);
@@ -143,6 +150,30 @@ describe('PATCH /api/questions/:questionId/params', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('atomic regeneration replacement through PATCH /api/questions/:questionId', () => {
+  it('writes the new option templates, formula definition, and proof in one version', async () => {
+    const options = [
+      { key: 'A', text: '${{PV}}', role: 'correct', explanation: '' },
+      { key: 'B', text: '${{PV_WRONG}}', role: 'common-misconception', explanation: '' },
+    ];
+    const res = await patchQuestion({
+      stem: 'Compute the present value of {{PAYMENT}}.',
+      options,
+      ...soundBody,
+    });
+
+    expect(res.status).toBe(200);
+    expect(editQuestion).toHaveBeenCalledTimes(1);
+    expect(editQuestion.mock.calls[0][1]).toMatchObject({
+      options,
+      numericKind: 'numeric',
+      paramSlots: soundBody.paramSlots,
+      derivedValues: soundBody.derivedValues,
+      verification: { evaluatorVersion: EVALUATOR_VERSION },
+    });
   });
 });
 
