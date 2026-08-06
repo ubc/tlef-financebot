@@ -197,16 +197,26 @@ material ids are rejected before hierarchy creation begins.
 - `GET /api/questions/:questionId` → full question + current version +
   agentDecision + notes + versions list + optional regeneration request
   history, `templateFamilyId`, and per-version `provenance`
-- `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? }` →
-  creates a new QuestionVersion; response includes it (IN-Q03)
+- `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?,
+  themeIds?, paramSlots?, derivedValues?, numericKind? }` → creates one new
+  QuestionVersion; response includes it (IN-Q03). The numeric fields let an
+  explicitly accepted regeneration replace template text and its computed
+  answer definition atomically rather than briefly exposing placeholders
+  without their gate metadata.
 - `POST /api/questions/:questionId/internal-notes { text }` → appended
   `{ puid, text, at }` teaching-team-only note. Notes are append-only and are
   excluded from student and bank-list response shapes.
-- `PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }` →
-  new/unchanged QuestionVersion (same versioning rules as the generic PATCH above,
-  scoped to just the two parameterization content keys); saves independently of
-  approval state (IN-Q09, Task 5)
-- `POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }` →
+- `PATCH /api/questions/:questionId/params { paramSlots?, derivedValues?,
+  numericKind?, generateScript? }` → new/unchanged QuestionVersion plus
+  `verification` on success or `verificationError` on failure. Numerical
+  questions must display exactly one computed derived value in every option;
+  all displayed option values are checked across the stored sample seeds.
+  Saves independently of approval state (IN-Q09, Task 5).
+- `GET /api/questions/:questionId/sample` → `{ seed, stem, options,
+  parameterized }`, one read-only rendering produced by the same resolver used
+  for student serving.
+- `POST /api/questions/:questionId/params/preview { paramSlots?, derivedValues?,
+  generateScript?, stem? }` →
   `{ draws: [{ seed, values, stem? }] x5, warnings: string[] }` — previews an
   EDIT-IN-PROGRESS candidate (the request body, not the currently-saved version)
   with 5 independently-drawn sample resolutions; `stem` falls back to the
@@ -235,11 +245,18 @@ material ids are rejected before hierarchy creation begins.
   202 `{ runId }`. The resulting run records `blueprintId`, copies the saved
   recipe, and still sends only `{ runId }` to Agenda.
 - `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
-  `{ variant: { stem, options, difficulty, sourceRefs, agentDecision } }`.
+  `{ variant: { stem, options, difficulty, paramSlots?, derivedValues?,
+  numericKind?, verification?, sourceRefs, agentDecision } }`.
   Generates a transient side-by-side alternative and appends
   `{ prompt, at }` to the question's regeneration history, but does not create
   a QuestionVersion or replace current content. Replacement is an explicit
   `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
+- Numerical QuestionVersions expose `numericKind`, `paramSlots`,
+  `derivedValues`, and an optional `verification { evaluatorVersion,
+  sampleSeeds, verifiedAt }`. Serving of practice/retry/preview candidates and
+  assembly of new Exam Prep attempts fail closed for detected numerical
+  versions without a current evaluator proof. Existing assembled exam sittings
+  retain their pinned versions and values.
 - `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
 
 ## Instructor flag resolution

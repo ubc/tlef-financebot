@@ -51,6 +51,7 @@ import {
   type ReviewQueueItem,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { toDisplayPlaceholders } from '../../placeholders.js';
 import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
@@ -328,7 +329,8 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   function questionRow(item: ReviewQueueItem): HTMLElement {
     const stemCell = el('div', { class: 'queue-row__stem' });
-    renderRichText(stemCell, item.current.stem);
+    // Read-only surface: show variables as [NAME], never {{NAME}}.
+    renderRichText(stemCell, toDisplayPlaceholders(item.current.stem));
 
     const approveTo = approveTarget(item.state);
     const checkbox = el('input', {

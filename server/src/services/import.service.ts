@@ -4,6 +4,10 @@ import type { ObjectId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { losCol, themesCol } from '../components/mongodb/collections';
 import { executeGenerate } from '../components/param-worker';
+import {
+  optionValueNamesForVerification,
+  verifyGenerateScript,
+} from './numeric-verification.service';
 import type {
   Difficulty,
   OptionRole,
@@ -57,6 +61,10 @@ export interface ScriptMigrationResult {
   sampleStem: string;
   sampleOptions: Array<{ key: string; text: string; explanation: string }>;
   mismatches: string[];
+  /** Present when the migrated script created a question that will NOT serve:
+   * the sandbox proof failed across sampled seeds. The Draft still exists so
+   * an instructor can inspect it. */
+  verificationError?: string;
 }
 
 interface RawCandidate {
@@ -661,6 +669,16 @@ export async function migrateScript(
   const { candidate, preview } = await inspectScriptMigration(input);
   if (preview.mismatches.length > 0) return preview;
 
+  // A migrated script is the ONLY way a generateScript question enters the
+  // system, so it is also the only place one can earn a verification proof.
+  // Without this the numeric gate would refuse every migrated question
+  // forever — the import would appear to succeed and then serve nothing.
+  const options = questionOptions(candidate);
+  const optionValues = optionValueNamesForVerification(options.map((option) => option.text));
+  const scriptProof = optionValues.ok
+    ? await verifyGenerateScript(input.script, optionValues.names)
+    : { ok: false as const, error: optionValues.error };
+
   const assignment = await assignmentIds(courseId, input);
   const { questionId } = await createQuestion({
     courseId,
@@ -668,15 +686,23 @@ export async function migrateScript(
     themeIds: assignment.themeIds,
     type: candidate.type as QuestionType,
     stem: candidate.stem,
-    options: questionOptions(candidate),
+    options,
     difficulty: candidate.difficulty ?? 'medium',
     createdBy: input.byPuid,
     generateScript: input.script,
+    numericKind: 'numeric',
+    ...(scriptProof.ok ? { verification: scriptProof.verification } : {}),
     provenance: {
       kind: 'script-migration',
       ...(input.sourceName ? { sourceName: input.sourceName } : {}),
     },
   });
 
-  return { ...preview, questionId };
+  // A failed proof is reported, not thrown: the question is still created as a
+  // Draft an instructor can inspect and fix, it simply will not serve.
+  return {
+    ...preview,
+    questionId,
+    ...(scriptProof.ok ? {} : { verificationError: scriptProof.error }),
+  };
 }

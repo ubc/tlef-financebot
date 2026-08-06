@@ -433,6 +433,33 @@ not a regression.
 The four open questions above are the only things blocking forward progress
 that a session cannot resolve on its own.
 
+## 2026-08-06 — Numerical correctness PR #66 review
+
+Implementation and automated verification are complete: **49/52** plan checks
+are recorded in
+`2026-08-05-numerical-question-correctness-saurav.md`. The three intentionally
+open checks are live manual instructor/student confirmations, not missing code.
+
+Stephen's pre-merge review found and fixed two correctness holes before merge:
+
+1. A numerical question could previously earn a proof while some answer
+   options remained literal LLM-written numbers, or while multiple options
+   reused one computed placeholder. Verification now requires exactly one
+   computed derived value per displayed option and checks the per-option list,
+   including duplicates and missing script outputs.
+2. Side-by-side regeneration returned only stem/options and dropped the
+   generated parameter definitions. Accepting a variant now writes its stem,
+   options, slots, derived values, numeric declaration, and fresh proof in one
+   QuestionVersion, so no approved intermediate version can expose unresolved
+   placeholders.
+
+The review also synchronized `docs/api-contract.md`, the design's fail-closed
+conceptual-detection wording, this README, and root `AGENTS.md`. Verification:
+`npm run typecheck`, focused ESLint, 95 focused tests, and the full Jest suite
+(90 suites / 983 tests) pass. PR #66's recorded Playwright run has no new
+failures; the three existing environment/config failures remain documented in
+the PR.
+
 ## 2026-08-06 — Course Settings PRs #67 and #68
 
 - #67 documents Auto-pause, Feedback Strategy, and Registration Code in the

@@ -10,6 +10,9 @@ import type {
   PublicationState,
   QuestionLabel,
   Difficulty,
+  ParamSlot,
+  DerivedValue,
+  NumericVerification,
 } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -21,7 +24,8 @@ import type {
 // server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
 
-type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript';
+type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
+  | 'derivedValues' | 'numericKind';
 
 /** Enforces MCQ/T-F option shape (PRD §9.1). T/F wrong-role is coerced, never rejected. */
 function assertOptionInvariants(type: QuestionType, options: QuestionOption[]): QuestionOption[] {
@@ -54,6 +58,14 @@ export async function createQuestion(input: {
   createdBy: string;
   generationPrompt?: string;
   generateScript?: string;
+  // Parameterization + its verification proof (design spec 2026-08-05). A
+  // numerical question without `verification` never serves — see
+  // numeric-gate.service.ts — so callers that build one must verify it and
+  // pass the proof through here.
+  paramSlots?: ParamSlot[];
+  derivedValues?: DerivedValue[];
+  numericKind?: 'numeric' | 'conceptual';
+  verification?: NumericVerification;
   agentDecision?: Question['agentDecision'];
   labels?: QuestionLabel[];
   templateFamilyId?: ObjectId;
@@ -77,6 +89,10 @@ export async function createQuestion(input: {
     createdBy: input.createdBy,
     createdAt: now,
     ...(input.generateScript !== undefined ? { generateScript: input.generateScript } : {}),
+    ...(input.paramSlots !== undefined ? { paramSlots: input.paramSlots } : {}),
+    ...(input.derivedValues !== undefined ? { derivedValues: input.derivedValues } : {}),
+    ...(input.numericKind !== undefined ? { numericKind: input.numericKind } : {}),
+    ...(input.verification !== undefined ? { verification: input.verification } : {}),
   };
 
   const question: Question = {
@@ -124,7 +140,17 @@ export async function createQuestion(input: {
  */
 export async function editQuestion(
   questionId: ObjectId,
-  patch: Partial<Pick<QuestionVersion, 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'>> & {
+  // `verification` is deliberately part of the patch surface even though it is
+  // machine-written rather than instructor-authored: a save that fails
+  // verification must be able to write it as `undefined`, actively clearing any
+  // proof the previous version carried. Leaving a stale proof in place would
+  // let the numeric gate keep serving numbers the current formulas no longer
+  // produce (R4).
+  patch: Partial<Pick<
+    QuestionVersion,
+    'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
+    | 'derivedValues' | 'numericKind' | 'verification'
+  >> & {
     loIds?: ObjectId[];
     themeIds?: ObjectId[];
   },
@@ -160,6 +186,14 @@ export async function editQuestion(
     contentPatch.generateScript = patch.generateScript;
     editedFields.push('generateScript');
   }
+  if (patch.derivedValues !== undefined) {
+    contentPatch.derivedValues = patch.derivedValues;
+    editedFields.push('derivedValues');
+  }
+  if (patch.numericKind !== undefined) {
+    contentPatch.numericKind = patch.numericKind;
+    editedFields.push('numericKind');
+  }
 
   const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};
   if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
@@ -189,6 +223,14 @@ export async function editQuestion(
     createdBy: byPuid,
     createdAt: now,
   };
+
+  // R4: a verification proof belongs to the exact content it was computed
+  // over. `next` spreads the PREVIOUS version, so without this the old proof
+  // would ride along through any edit — letting the numeric gate keep serving
+  // numbers the current formulas no longer produce. The caller either supplies
+  // a freshly-computed proof or the question loses the one it had.
+  if (patch.verification !== undefined) next.verification = patch.verification;
+  else delete next.verification;
 
   const { insertedId } = await questionVersionsCol().insertOne(next);
 

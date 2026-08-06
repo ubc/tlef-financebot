@@ -16,6 +16,7 @@ import {
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
+import { correctOptionText, numericFixture, optionPattern, wrongOptionText } from './numeric-fixture';
 
 // Phase 1 Task 16 — the phase-exit demo, as ONE continuous narrative.
 //
@@ -56,29 +57,12 @@ const LO_NAME = 'Discount a single future cash flow (Demo)';
  * assuming a sequence. Each stem carries exactly one bare `$` for the reason
  * documented in instructor-pipeline.spec.ts (a matched `$...$` pair is parsed
  * as inline KaTeX by renderRichText and would mangle the text assertions). */
+// Numerical questions must be parameterized and verified or the numeric gate
+// refuses to serve them (design spec 2026-08-05). Distinct prose leads keep
+// the review-queue row lookups below able to tell the two apart.
 const QUESTIONS = [
-  {
-    stem: 'What is the present value of 100 dollars received in one year at a 10% annual discount rate?',
-    correct: '$90.91',
-    wrong: '$110.00',
-    options: [
-      { key: 'A', text: '$90.91', role: 'correct' as const, explanation: 'PV = 100 / 1.10 = 90.91.' },
-      { key: 'B', text: '$100.00', role: 'partially-correct' as const, explanation: 'This ignores discounting entirely.' },
-      { key: 'C', text: '$110.00', role: 'clearly-wrong' as const, explanation: 'That is the future value, not the present value.' },
-      { key: 'D', text: '$95.24', role: 'common-misconception' as const, explanation: 'That discounts at 5%, not the stated 10%.' },
-    ],
-  },
-  {
-    stem: 'What is the present value of 200 dollars received in two years at a 10% annual discount rate?',
-    correct: '$165.29',
-    wrong: '$242.00',
-    options: [
-      { key: 'A', text: '$165.29', role: 'correct' as const, explanation: 'PV = 200 / 1.10^2 = 165.29.' },
-      { key: 'B', text: '$181.82', role: 'common-misconception' as const, explanation: 'That discounts one year, not two.' },
-      { key: 'C', text: '$242.00', role: 'clearly-wrong' as const, explanation: 'That compounds forward instead of discounting back.' },
-      { key: 'D', text: '$200.00', role: 'partially-correct' as const, explanation: 'This ignores discounting entirely.' },
-    ],
-  },
+  numericFixture('For a zero-coupon corporate bond,', 2),
+  numericFixture('For a zero-coupon treasury note,', 3),
 ];
 
 /** SP-initiated CWL login (test users' password equals their username).
@@ -97,11 +81,13 @@ async function login(page: Page, username: string): Promise<void> {
 async function answerCurrent(page: Page, how: 'correct' | 'wrong'): Promise<string> {
   await expect(page.locator('.practice-card')).toBeVisible();
   const cardText = await page.locator('.practice-card').innerText();
-  const asked = QUESTIONS.find((q) => cardText.includes(q.stem.slice(0, 40)));
+  const asked = QUESTIONS.find((q) => cardText.includes(q.stem.slice(0, 30)));
   expect(asked, `served question should be one of the seeded two; card was:\n${cardText}`).toBeTruthy();
 
-  const optionText = how === 'correct' ? asked!.correct : asked!.wrong;
-  await page.getByRole('button', { name: optionText, exact: false }).first().click();
+  // Parameterized: each serve draws its own numbers, so recompute the option
+  // text from the card the student is looking at rather than a constant.
+  const optionText = how === 'correct' ? correctOptionText(cardText) : wrongOptionText(cardText);
+  await page.getByRole('button', { name: optionPattern(optionText) }).first().click();
   await page.getByRole('button', { name: 'Submit' }).click();
   return asked!.stem;
 }
@@ -249,10 +235,9 @@ test.describe('Phase 1 exit — core loop demo', () => {
             loIds: [new ObjectId(loId)],
             themeIds: [new ObjectId(themeId)],
             type: 'mcq',
-            stem: q.stem,
             difficulty: 'easy',
             createdBy: 'e2e-core-loop-demo',
-            options: q.options,
+            ...q,
           });
           const res = await instructor.request.post(`/api/questions/${questionId.toString()}/transition`, {
             data: { to: 'pending-review' },

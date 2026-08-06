@@ -14,6 +14,13 @@ import {
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
+import {
+  NUMERIC_STEM,
+  correctOptionText,
+  numericQuestionFields,
+  optionPattern,
+  wrongOptionText,
+} from './numeric-fixture';
 
 // Happy-path e2e for Task 14 (ST-P01..P11, ST-R05): a student joins a course
 // by registration code, practices a question, deliberately misses a second
@@ -47,7 +54,12 @@ let courseId = '';
 let registrationCode = '';
 const THEME_NAME = 'Time Value of Money (E2E)';
 const LO_NAME = 'Compute present value (E2E)';
-const STEM = 'What is the present value of $100 received in 1 year at a 10% annual discount rate?';
+// Numerical questions must be parameterized and verified or the numeric gate
+// refuses to serve them (design spec 2026-08-05). The shared fixture supplies
+// the slots, formulas and proof; its stem's first 40 characters are
+// deliberately placeholder-free so the visibility assertion below still
+// matches the rendered text.
+const STEM = NUMERIC_STEM;
 
 test.describe('practice loop (student)', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
@@ -84,15 +96,9 @@ test.describe('practice loop (student)', () => {
       loIds: [new ObjectId(lo._id)],
       themeIds: [new ObjectId(theme._id)],
       type: 'mcq',
-      stem: STEM,
       difficulty: 'easy',
       createdBy: 'e2e-seed',
-      options: [
-        { key: 'A', text: '$90.91', role: 'correct', explanation: 'PV = 100 / 1.10 = 90.91.' },
-        { key: 'B', text: '$100.00', role: 'partially-correct', explanation: 'This ignores discounting entirely.' },
-        { key: 'C', text: '$110.00', role: 'clearly-wrong', explanation: 'That is the future value, not present value.' },
-        { key: 'D', text: '$95.00', role: 'common-misconception', explanation: 'Close, but not the exact discounted value.' },
-      ],
+      ...numericQuestionFields(),
     });
 
     await api.post(`/api/questions/${questionId.toString()}/transition`, { data: { to: 'pending-review' } });
@@ -147,9 +153,12 @@ test.describe('practice loop (student)', () => {
     // LO-list "Start Practice" hop needed.
     await page.getByRole('button', { name: /start/i }).click();
 
-    // First attempt: the correct option.
+    // First attempt: the correct option. The question is parameterized, so
+    // each serve draws its own numbers — read the stem the student is looking
+    // at and recompute, rather than hardcoding a value that no longer exists.
     await expect(page.locator('.practice-card')).toBeVisible();
-    await page.getByRole('button', { name: /90\.91/ }).click();
+    const firstStem = (await page.locator('.practice-card').innerText());
+    await page.getByRole('button', { name: optionPattern(correctOptionText(firstStem)) }).click();
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.getByText('Correct!')).toBeVisible();
 
@@ -161,7 +170,8 @@ test.describe('practice loop (student)', () => {
     // 'clearly-wrong' under the default adaptive strategy resolves to
     // Strategy B (full reveal, no retry), keeping this happy-path spec simple.
     await expect(page.locator('.practice-card')).toBeVisible();
-    await page.getByRole('button', { name: /110\.00/ }).click();
+    const secondStem = (await page.locator('.practice-card').innerText());
+    await page.getByRole('button', { name: optionPattern(wrongOptionText(secondStem)) }).click();
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.getByText(/not quite/i)).toBeVisible();
 

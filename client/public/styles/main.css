@@ -6184,6 +6184,204 @@ button.class-row--link:focus-visible .class-row__title {
   }
 }
 
+/* Variable Definitions table on the parameterization panel (design spec
+   2026-08-05). One table for both drawn slots and computed values, so an
+   instructor reads every number a student can see in one place. Column order
+   matches the header in param-config.ts. */
+.vardef__head,
+.vardef__row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.1fr) minmax(0, 1.7fr)
+    minmax(0, 0.6fr) minmax(0, 0.6fr) minmax(0, 1.9fr) minmax(0, 0.7fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+}
+
+.vardef__head {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.vardef__row {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The variable as it appears in the stem. `[NAME]` reads far better than the
+   stored `{{NAME}}`; the storage format is unchanged. */
+.slot-chip {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.vardef__var {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+}
+
+.vardef__warn {
+  font-size: 0.7rem;
+  color: var(--warn);
+}
+
+.vardef__na {
+  display: flex;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.vardef__type {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.verification-banner {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.verification-banner--ok {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.verification-banner--fail {
+  background: var(--err-bg);
+  color: var(--err-fg);
+}
+
+@media (max-width: 900px) {
+  .vardef__head {
+    display: none;
+  }
+
+  .vardef__row {
+    grid-template-columns: 1fr;
+    padding: 0.6rem 0;
+  }
+}
+
+/* Worked example on the question detail view: what a STUDENT sees, rendered
+   from one server-side sample draw. The editor above it shows the raw
+   {{placeholder}} template, which is right for editing and unreadable for
+   judging the question. */
+.question-sample {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.question-sample__stem {
+  margin: 0.5rem 0 0.75rem;
+  line-height: 1.55;
+}
+
+.question-sample__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.question-sample__option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.question-sample__key {
+  font-weight: 650;
+  min-width: 1.4rem;
+  color: var(--muted);
+}
+
+.question-sample__option--correct .question-sample__key {
+  color: var(--ok-fg);
+}
+
+.question-sample__badge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+/* Parameterization page layout. These class names were referenced in the
+   markup but never had any CSS, so every block sat flush against the next —
+   the add-variable buttons, the verification banner and the preview controls
+   ran together as one undifferentiated stack. Spacing is applied per block
+   rather than as a flex `gap` on the container, because the table header and
+   its two row groups (drawn, then computed) must stay tight against each
+   other to read as a single table. */
+.param-config-layout > .detail-section-title {
+  margin: 1.75rem 0 0.5rem;
+}
+
+.param-config-layout > .detail-section-title:first-child {
+  margin-top: 0;
+}
+
+.param-config-layout > .form-field__help {
+  margin: 0 0 0.75rem;
+}
+
+.param-config__stem {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  line-height: 1.8;
+}
+
+/* Clear of the table above and the banner below. */
+.param-config__add {
+  margin-top: 1rem;
+}
+
+.param-config__verification:not(:empty),
+.param-config__error:not(:empty) {
+  margin-top: 1.25rem;
+}
+
+.param-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.param-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.param-preview__warnings {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+
 /* =============================================================================
    Phase 5 — Course-as-Project experience
 

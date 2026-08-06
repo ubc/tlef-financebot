@@ -197,10 +197,28 @@ export interface QuestionOption {
 /** One variable slot in a parameterized question (IN-Q09). */
 export interface ParamSlot {
   name: string; // matches {{name}} placeholders in the stem
+  description?: string; // instructor-facing label, e.g. "Investment amount"
   min?: number;
   max?: number;
   step?: number;
   values?: number[]; // allowed value set alternative to min/max/step
+}
+
+/** A value COMPUTED from slots, not drawn. The correct answer and every
+ *  distractor of a numerical question are derived values. */
+export interface DerivedValue {
+  name: string; // referenced as {{name}} in stem/option text/explanations
+  formula: string; // e.g. "CF1/(1+RATE)^1 + CF2/(1+RATE)^2"
+  errorModel?: string; // distractors only: the mistake this option represents
+}
+
+/** R4: a machine-checked proof that a numerical question's values are sound
+ * across sampled draws. Absent means the question never serves. Cleared on
+ * any edit to stem/options/paramSlots/derivedValues. */
+export interface NumericVerification {
+  evaluatorVersion: number;
+  sampleSeeds: number[];
+  verifiedAt: Date;
 }
 
 /** Immutable snapshot: every edit creates a new version (PRD §2). */
@@ -213,6 +231,9 @@ export interface QuestionVersion {
   difficulty: Difficulty; // pinned at version level so recalibration never rewrites history (§9.2)
   paramSlots?: ParamSlot[];
   generateScript?: string; // instructor-authored generate() source (PrairieLearn convention)
+  numericKind?: 'numeric' | 'conceptual'; // declaration; conceptual does not bypass detection
+  derivedValues?: DerivedValue[];
+  verification?: NumericVerification; // absent => a numerical version never serves
   sourceRefs: Array<{ materialId: ObjectId; chunk?: string }>; // question reference view (§10)
   provenance?:
     | { kind: 'manual' }

@@ -16,6 +16,7 @@ import {
   editQuestion,
   getCourseTree,
   getQuestion,
+  getQuestionSample,
   listCourseFlags,
   notifyRemediation,
   regenerateQuestion as requestQuestionRegeneration,
@@ -29,10 +30,16 @@ import {
   type PublicationState,
   type QuestionDetail,
   type QuestionOption,
+  type QuestionSample,
   type QuestionVersion,
   type RegenerationVariant,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import {
+  declaredVariableNames,
+  toDisplayPlaceholders,
+  toStoredPlaceholders,
+} from '../../placeholders.js';
 import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
@@ -158,12 +165,70 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   let loIds: string[] = [...detail.loIds];
   let themeIds: string[] = [...detail.themeIds];
 
+  // Variables are STORED as {{NAME}} but EDITED as [NAME] — see
+  // placeholders.ts. Drafts and the edited-comparison baseline are both held
+  // in display form, so the "edited" highlighting compares like with like; the
+  // save path converts back.
+  const variableNames = declaredVariableNames(detail.current);
+  const toDisplay = toDisplayPlaceholders;
+  const toStored = (text: string): string => toStoredPlaceholders(text, variableNames);
+
   const baseline = {
-    stem: detail.current.stem,
+    stem: toDisplay(detail.current.stem),
     difficulty: detail.current.difficulty,
-    options: detail.current.options.map((o) => ({ ...o })),
+    options: detail.current.options.map((o) => ({
+      ...o,
+      text: toDisplay(o.text),
+      explanation: toDisplay(o.explanation),
+    })),
   };
-  const draftOptions: OptionDraft[] = detail.current.options.map((o) => ({ ...o }));
+  const draftOptions: OptionDraft[] = detail.current.options.map((o) => ({
+    ...o,
+    text: toDisplay(o.text),
+    explanation: toDisplay(o.explanation),
+  }));
+
+  // Worked example: what a STUDENT would see. The editor above shows the raw
+  // {{placeholder}} template, which is correct for editing but unreadable for
+  // judging whether the question is any good. Substitution is done server-side
+  // (GET .../sample) so this example and the real serve path can never drift.
+  const sampleSection = el('section', { class: 'question-sample' });
+
+  function renderSample(sample: QuestionSample): void {
+    if (!sample.parameterized) {
+      sampleSection.replaceChildren();
+      return;
+    }
+    sampleSection.replaceChildren(
+      el('h3', { class: 'detail-section-title', text: 'Example — what a student sees' }),
+      el('p', {
+        class: 'muted',
+        text: 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.',
+      }),
+      el('p', { class: 'question-sample__stem', text: sample.stem }),
+      el(
+        'ul',
+        { class: 'question-sample__options' },
+        ...sample.options.map((option) => {
+          const role = detail.current.options.find((o) => o.key === option.key)?.role;
+          return el(
+            'li',
+            { class: `question-sample__option${role === 'correct' ? ' question-sample__option--correct' : ''}` },
+            el('span', { class: 'question-sample__key', text: option.key }),
+            el('span', { text: option.text }),
+            role === 'correct' ? el('span', { class: 'question-sample__badge', text: 'correct' }) : null,
+          );
+        }),
+      ),
+    );
+  }
+
+  void getQuestionSample(questionId)
+    .then(renderSample)
+    .catch(() => {
+      // Best-effort: the example is an aid, not a gate. A failure just means
+      // the instructor works from the template, exactly as before.
+    });
   let draftStem = baseline.stem;
   let draftDifficulty: Difficulty = baseline.difficulty;
 
@@ -240,7 +305,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
                 class: 'btn btn--secondary btn--sm', type: 'button', text: 'Load into editor',
                 onclick: () => {
                   if (suggestion.patch.stem !== undefined) {
-                    draftStem = suggestion.patch.stem;
+                    draftStem = toDisplay(suggestion.patch.stem);
                     stemTextarea.value = draftStem;
                     stemTextarea.classList.toggle('edited', isFieldEdited(draftStem, baseline.stem));
                   }
@@ -325,10 +390,16 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   );
 
   function applySavedVersion(saved: QuestionVersion): void {
-    baseline.stem = saved.stem;
+    // `saved` comes from the server in STORED form; the editor works in
+    // display form, so convert on the way in.
+    baseline.stem = toDisplay(saved.stem);
     baseline.difficulty = saved.difficulty;
-    baseline.options = saved.options.map((option) => ({ ...option }));
-    draftStem = saved.stem;
+    baseline.options = saved.options.map((option) => ({
+      ...option,
+      text: toDisplay(option.text),
+      explanation: toDisplay(option.explanation),
+    }));
+    draftStem = toDisplay(saved.stem);
     draftDifficulty = saved.difficulty;
 
     stemTextarea.value = draftStem;
@@ -353,12 +424,17 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   async function save(): Promise<{ ok: boolean; changed: boolean }> {
     errorSlot.replaceChildren();
     const patch: { stem?: string; options?: QuestionOption[]; difficulty?: Difficulty } = {};
-    if (isFieldEdited(draftStem, baseline.stem)) patch.stem = draftStem;
+    if (isFieldEdited(draftStem, baseline.stem)) patch.stem = toStored(draftStem);
     const optionsChanged = draftOptions.some(
       (o, i) => isFieldEdited(o.text, baseline.options[i].text) || isFieldEdited(o.explanation, baseline.options[i].explanation),
     );
     if (optionsChanged) {
-      patch.options = draftOptions.map((o) => ({ key: o.key, text: o.text, role: o.role, explanation: o.explanation }));
+      patch.options = draftOptions.map((o) => ({
+        key: o.key,
+        text: toStored(o.text),
+        role: o.role,
+        explanation: toStored(o.explanation),
+      }));
     }
     if (isFieldEdited(draftDifficulty, baseline.difficulty)) patch.difficulty = draftDifficulty;
     if (Object.keys(patch).length === 0) return { ok: true, changed: false };
@@ -593,7 +669,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         'ol',
         {},
         ...question.options.map((option) =>
-          el('li', { text: `${option.key}. ${option.text}` }),
+          el('li', { text: `${option.key}. ${toDisplayPlaceholders(option.text)}` }),
         ),
       ),
     );
@@ -708,6 +784,15 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         stem: regenerationVariant.stem,
         options: regenerationVariant.options,
         difficulty: regenerationVariant.difficulty,
+        ...(regenerationVariant.paramSlots !== undefined
+          ? { paramSlots: regenerationVariant.paramSlots }
+          : {}),
+        ...(regenerationVariant.derivedValues !== undefined
+          ? { derivedValues: regenerationVariant.derivedValues }
+          : {}),
+        ...(regenerationVariant.numericKind !== undefined
+          ? { numericKind: regenerationVariant.numericKind }
+          : {}),
       });
       applySavedVersion(saved);
       regenerationVariant = null;
@@ -922,6 +1007,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         chipsContainer,
         el('h3', { class: 'detail-section-title', text: 'Question Stem' }),
         stemTextarea,
+        sampleSection,
         optionsSection,
         suggestionPanel,
         errorSlot,

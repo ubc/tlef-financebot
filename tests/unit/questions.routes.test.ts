@@ -393,6 +393,14 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
 describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
   beforeEach(() => {
     jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+    jest.mocked(getQuestionDetail).mockResolvedValue({
+      current: {
+        options: [
+          { key: 'A', text: 'Concept A', role: 'correct', explanation: '' },
+          { key: 'B', text: 'Concept B', role: 'common-misconception', explanation: '' },
+        ],
+      },
+    } as never);
   });
 
   it('403s a non-instructor', async () => {

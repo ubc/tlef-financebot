@@ -1,6 +1,7 @@
 import type { WithId, ObjectId } from 'mongodb';
 import { questionsCol, questionVersionsCol, themesCol, losCol } from '../components/mongodb/collections';
 import { getMasteryTier, getLoStatuses } from './mastery.service';
+import { isServable } from './numeric-gate.service';
 import type { Question, QuestionVersion, Difficulty, Theme, LearningObjective, MasteryStatus } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -55,7 +56,11 @@ async function approvedCandidatesForLo(courseId: ObjectId, loId: ObjectId): Prom
   const candidates: Candidate[] = [];
   for (const head of heads) {
     const version = versionById.get(head.currentVersionId.toString());
-    if (version) candidates.push({ question: head, version });
+    // The numeric gate: an approved-but-unverified numerical question stays
+    // in the bank and the review queue but never reaches a student. This is
+    // the single chokepoint for practice, Strategy A retry, and instructor
+    // preview — all three call this function.
+    if (version && isServable(version)) candidates.push({ question: head, version });
   }
   return candidates;
 }

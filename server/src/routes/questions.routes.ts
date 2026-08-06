@@ -20,7 +20,11 @@ import {
   bulkTransition,
 } from '../services/questions.service';
 import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
-import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot } from '../types/domain';
+import {
+  optionValueNamesForVerification,
+  verifyQuestionNumerics,
+} from '../services/numeric-verification.service';
+import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
 // browse/filter, review-queue, editing, and publication-transition surface,
@@ -112,7 +116,7 @@ const optionBody = z.object({
   explanation: z.string(),
 });
 
-const patchQuestionBody = z.object({
+const basePatchQuestionBody = z.object({
   stem: z.string().min(1).optional(),
   options: z.array(optionBody).optional(),
   difficulty: z.enum(DIFFICULTIES).optional(),
@@ -126,14 +130,35 @@ const patchQuestionBody = z.object({
 // subset is present).
 const paramSlotBody = z.object({
   name: z.string().min(1),
+  description: z.string().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
   step: z.number().optional(),
   values: z.array(z.number()).optional(),
 });
 
+// A derived value's name becomes a `{{name}}` placeholder and a formula
+// variable, so it must be a plain identifier — anything else could not be
+// referenced from a formula even if it were stored.
+const derivedValueBody = z.object({
+  name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  formula: z.string().min(1),
+  errorModel: z.string().optional(),
+});
+
+// Regeneration replacement must save its generated templates and proof in the
+// SAME version as the new stem/options. A two-request edit-then-params flow
+// briefly exposes an approved placeholder template without its gate metadata.
+const patchQuestionBody = basePatchQuestionBody.extend({
+  paramSlots: z.array(paramSlotBody).optional(),
+  derivedValues: z.array(derivedValueBody).optional(),
+  numericKind: z.enum(['numeric', 'conceptual']).optional(),
+});
+
 const patchQuestionParamsBody = z.object({
   paramSlots: z.array(paramSlotBody).optional(),
+  derivedValues: z.array(derivedValueBody).optional(),
+  numericKind: z.enum(['numeric', 'conceptual']).optional(),
   generateScript: z.string().optional(),
 });
 
@@ -143,9 +168,45 @@ const patchQuestionParamsBody = z.object({
 // stem (see the route below).
 const previewQuestionParamsBody = z.object({
   paramSlots: z.array(paramSlotBody).optional(),
+  // Derived values are previewed too: without them the draws would show only
+  // the raw slot values and none of the computed answers, which is the part an
+  // instructor most needs to eyeball.
+  derivedValues: z.array(derivedValueBody).optional(),
   generateScript: z.string().optional(),
   stem: z.string().optional(),
 });
+
+function verifyOptionFormulas(
+  options: Array<{ text: string }>,
+  slots: ParamSlot[],
+  derivedValues: DerivedValue[],
+  numericKind: 'numeric' | 'conceptual' | undefined,
+): { verification?: NumericVerification; verificationError?: string } {
+  if (numericKind === 'conceptual') return {};
+  if (derivedValues.length === 0) {
+    return numericKind === 'numeric'
+      ? { verificationError: 'A numerical question needs computed values for every option.' }
+      : {};
+  }
+
+  const optionValues = optionValueNamesForVerification(
+    options.map((option) => option.text),
+    derivedValues.map((derived) => derived.name),
+  );
+  if (!optionValues.ok) return { verificationError: optionValues.error };
+
+  const result = verifyQuestionNumerics({
+    slots,
+    derivedValues,
+    optionValueNames: optionValues.names,
+  });
+  if (result.ok) return { verification: result.verification };
+  return {
+    verificationError: result.failingSeed !== undefined
+      ? `${result.error} (seed ${result.failingSeed})`
+      : result.error,
+  };
+}
 
 const transitionBody = z.object({ to: z.enum(PUBLICATION_STATES) });
 const internalNoteBody = z.object({ text: z.string().trim().min(1).max(2000) });
@@ -312,18 +373,37 @@ questionsRouter.patch(
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const body = req.body as z.infer<typeof patchQuestionBody>;
+    let verification: NumericVerification | undefined;
+    let verificationError: string | undefined;
+    if (
+      body.paramSlots !== undefined
+      || body.derivedValues !== undefined
+      || body.numericKind !== undefined
+    ) {
+      const { current } = await getQuestionDetail(questionId);
+      ({ verification, verificationError } = verifyOptionFormulas(
+        body.options ?? current.options,
+        (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
+        (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
+        body.numericKind ?? current.numericKind,
+      ));
+    }
     const version = await editQuestion(
       questionId,
       {
         ...(body.stem !== undefined ? { stem: body.stem } : {}),
         ...(body.options !== undefined ? { options: body.options } : {}),
         ...(body.difficulty !== undefined ? { difficulty: body.difficulty } : {}),
+        ...(body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {}),
+        ...(body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {}),
+        ...(body.numericKind !== undefined ? { numericKind: body.numericKind } : {}),
         ...(body.loIds !== undefined ? { loIds: body.loIds.map((id) => new ObjectId(id)) } : {}),
         ...(body.themeIds !== undefined ? { themeIds: body.themeIds.map((id) => new ObjectId(id)) } : {}),
+        ...(verification !== undefined ? { verification } : {}),
       },
       req.user!.puid,
     );
-    res.json(version);
+    res.json({ ...version, ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
 
@@ -359,15 +439,95 @@ questionsRouter.patch(
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const body = req.body as z.infer<typeof patchQuestionParamsBody>;
+
+    // R4: verify every formula-definition save, and never carry a proof forward. An edit that
+    // fails verification must leave the question WITHOUT one, or the gate
+    // would keep serving numbers the current formulas no longer produce.
+    let verification: NumericVerification | undefined;
+    let verificationError: string | undefined;
+    if (
+      body.paramSlots !== undefined
+      || body.derivedValues !== undefined
+      || body.numericKind !== undefined
+    ) {
+      const { current } = await getQuestionDetail(questionId);
+      ({ verification, verificationError } = verifyOptionFormulas(
+        current.options,
+        (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
+        (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
+        body.numericKind ?? current.numericKind,
+      ));
+    }
+
     const version = await editQuestion(
       questionId,
       {
         ...(body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {}),
+        ...(body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {}),
+        ...(body.numericKind !== undefined ? { numericKind: body.numericKind } : {}),
         ...(body.generateScript !== undefined ? { generateScript: body.generateScript } : {}),
+        // editQuestion clears the previous proof on every content edit; only a
+        // freshly successful verification is allowed to replace it.
+        ...(verification !== undefined ? { verification } : {}),
       },
       req.user!.puid,
     );
-    res.json(version);
+    res.json({ ...version, ...(verificationError !== undefined ? { verificationError } : {}) });
+  },
+);
+
+/**
+ * GET /api/questions/:questionId/sample -> `{ seed, stem, options: [{key, text}],
+ * parameterized }`. Instructor-only, read-only, persists nothing.
+ *
+ * Renders ONE sample draw of the SAVED version so an instructor reviewing a
+ * parameterized question sees what a student would actually see, rather than
+ * the raw `{{PLACEHOLDER}}` template. Substitution (and therefore R3's
+ * rounding) happens server-side so the example can never drift from the real
+ * serve path.
+ *
+ * `parameterized: false` means the question has no slots or derived values, so
+ * the sample is just the stored text — the caller can skip rendering an
+ * example entirely.
+ */
+questionsRouter.get(
+  '/questions/:questionId/sample',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCapability('question.review'),
+  async (req, res) => {
+    const questionId = new ObjectId(String(req.params.questionId));
+    const { current } = await getQuestionDetail(questionId);
+
+    const seed = drawSeed();
+    let values: Record<string, number> | undefined;
+    try {
+      values = await resolveParamValues(current, seed);
+    } catch {
+      // An unverified question may carry a broken formula — show the raw
+      // template rather than failing the whole detail view.
+      values = undefined;
+    }
+    if (!values) {
+      res.json({
+        seed,
+        stem: current.stem,
+        options: current.options.map((option) => ({ key: option.key, text: option.text })),
+        parameterized: false,
+      });
+      return;
+    }
+
+    res.json({
+      seed,
+      stem: substituteParams(current.stem, values),
+      options: current.options.map((option) => ({
+        key: option.key,
+        text: substituteParams(option.text, values),
+      })),
+      parameterized: true,
+    });
   },
 );
 
@@ -397,12 +557,27 @@ questionsRouter.post(
       stem = current.stem;
     }
 
-    const candidate = { paramSlots: body.paramSlots as ParamSlot[] | undefined, generateScript: body.generateScript };
+    const candidate = {
+      paramSlots: body.paramSlots as ParamSlot[] | undefined,
+      derivedValues: body.derivedValues as DerivedValue[] | undefined,
+      generateScript: body.generateScript,
+    };
 
+    // A formula error is EXPECTED here — preview is where an instructor
+    // iterates on a half-written formula — so it becomes a warning rather than
+    // a 500. resolveParamValues throws on a bad formula because reaching the
+    // serving path with one is a bug; reaching preview with one is Tuesday.
     const draws = [];
+    const formulaErrors = new Set<string>();
     for (let i = 0; i < 5; i += 1) {
       const seed = drawSeed();
-      const values = await resolveParamValues(candidate, seed);
+      let values: Record<string, number> | undefined;
+      try {
+        values = await resolveParamValues(candidate, seed);
+      } catch (error) {
+        formulaErrors.add((error as Error).message);
+        values = undefined;
+      }
       draws.push({
         seed,
         values: values ?? {},
@@ -410,7 +585,10 @@ questionsRouter.post(
       });
     }
 
-    const warnings = candidate.paramSlots ? findUnusedParamSlots(stem, candidate.paramSlots) : [];
+    const warnings = [
+      ...(candidate.paramSlots ? findUnusedParamSlots(stem, candidate.paramSlots) : []),
+      ...formulaErrors,
+    ];
 
     res.json({ draws, warnings });
   },

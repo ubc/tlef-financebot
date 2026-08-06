@@ -1,5 +1,6 @@
+import { evaluateFormula, parseFormula } from '../components/formula';
 import { executeGenerate } from '../components/param-worker';
-import type { ParamSlot, QuestionVersion } from '../types/domain';
+import type { DerivedValue, ParamSlot, QuestionVersion } from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Parameterization service (Task 5, IN-Q09/ST-P03/ST-R04): seeded value
@@ -60,30 +61,76 @@ function drawSlot(slot: ParamSlot, rand: () => number): number {
 }
 
 /**
+ * Draws every slot, then evaluates every `derivedValue` formula in declaration
+ * order so a later formula may reference an earlier one by name. Returns drawn
+ * and derived values in one flat map — exactly what `substituteParams`
+ * consumes.
+ *
+ * **This is the single source of truth for resolution semantics.**
+ * Verification proves a question by calling this same function, so a proof and
+ * a serve can never diverge — which is the whole point of the proof. Do not
+ * reimplement the draw anywhere else.
+ *
+ * Throws on a bad formula rather than returning partial values: an unverified
+ * question should never have reached serving (see numeric-gate.service.ts), so
+ * a failure here is a bug, not an expected path.
+ */
+export function resolveSlotsAndDerived(
+  slots: ParamSlot[],
+  derivedValues: DerivedValue[],
+  seed: number,
+): Record<string, number> {
+  const rand = seededRandom(seed);
+  const values: Record<string, number> = {};
+  for (const slot of slots) values[slot.name] = drawSlot(slot, rand);
+
+  for (const derived of derivedValues) {
+    const parsed = parseFormula(derived.formula);
+    if (!parsed.ok) throw new Error(`${derived.name}: ${parsed.error}`);
+    const evaluated = evaluateFormula(parsed.ast, values);
+    if (!evaluated.ok) throw new Error(`${derived.name}: ${evaluated.error}`);
+    values[derived.name] = evaluated.value;
+  }
+  return values;
+}
+
+/**
  * Resolves a QuestionVersion's parameterized values for one `seed`:
  *  - `generateScript` present -> delegates to Task 4's sandbox
  *    (`executeGenerate`); its resolved `vars` are returned as-is.
- *  - else `paramSlots` present (non-empty) -> a seeded uniform draw per slot,
- *    all drawn from the SAME seeded PRNG instance (so `seed` alone
- *    determines the whole set, in slot order).
+ *  - else `paramSlots` or `derivedValues` present -> a seeded uniform draw per
+ *    slot, all drawn from the SAME seeded PRNG instance (so `seed` alone
+ *    determines the whole set, in slot order), followed by every derived
+ *    formula in declaration order.
  *  - else -> `undefined` (a conceptual, non-parameterized question).
  */
 export async function resolveParamValues(
-  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots'>,
+  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots' | 'derivedValues'>,
   seed: number,
 ): Promise<Record<string, number> | undefined> {
   if (version.generateScript) {
     return executeGenerate(version.generateScript, seed);
   }
-  if (version.paramSlots && version.paramSlots.length > 0) {
-    const rand = seededRandom(seed);
-    const values: Record<string, number> = {};
-    for (const slot of version.paramSlots) {
-      values[slot.name] = drawSlot(slot, rand);
-    }
-    return values;
+  const slots = version.paramSlots ?? [];
+  const derivedValues = version.derivedValues ?? [];
+  if (slots.length > 0 || derivedValues.length > 0) {
+    return resolveSlotsAndDerived(slots, derivedValues, seed);
   }
   return undefined;
+}
+
+/**
+ * R3 (design spec 2026-08-05): the ONE place a computed value becomes display
+ * text. Integers print bare; everything else rounds to 2 decimals, which is
+ * what a finance student writing dollars and cents expects. The formula
+ * evaluator itself never rounds — all arithmetic upstream of here runs at
+ * full double precision, so intermediate rounding can never compound into the
+ * answer. That compounding is exactly the `190.48 + 272.11` class of error
+ * this work exists to eliminate.
+ */
+export function formatParamValue(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return (Math.round(value * 100) / 100).toFixed(2);
 }
 
 /** Replaces every `{{name}}` placeholder in `text` with its resolved value
@@ -95,7 +142,7 @@ export async function resolveParamValues(
  * string out). */
 export function substituteParams(text: string, values: Record<string, number>): string {
   return text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match,
+    Object.prototype.hasOwnProperty.call(values, name) ? formatParamValue(values[name]) : match,
   );
 }
 

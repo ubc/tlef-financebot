@@ -1859,6 +1859,10 @@ export interface RegenerationVariant {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
+  numericKind?: 'numeric' | 'conceptual';
+  paramSlots?: ParamSlotInput[];
+  derivedValues?: DerivedValueInput[];
+  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
   agentDecision: {
     decision: 'pass' | 'flag' | 'reject';
@@ -2041,8 +2045,17 @@ export interface QuestionVersion {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
-  paramSlots?: Array<{ name: string; min?: number; max?: number; step?: number; values?: number[] }>;
+  paramSlots?: Array<{ name: string; description?: string; min?: number; max?: number; step?: number; values?: number[] }>;
   generateScript?: string;
+  /** Values COMPUTED from the slots — the correct answer and every distractor
+   * of a numerical question. */
+  derivedValues?: Array<{ name: string; formula: string; errorModel?: string }>;
+  /** The generator's declaration. It does not bypass independent detection. */
+  numericKind?: 'numeric' | 'conceptual';
+  /** Machine-checked proof that the computed values are sound across sampled
+   * draws. ABSENT on a numerical question means it never serves to a student
+   * (see the numeric gate). */
+  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
   provenance?:
     | { kind: 'manual' }
@@ -2157,6 +2170,9 @@ export function editQuestion(
     stem?: string;
     options?: QuestionOption[];
     difficulty?: Difficulty;
+    paramSlots?: ParamSlotInput[];
+    derivedValues?: DerivedValueInput[];
+    numericKind?: 'numeric' | 'conceptual';
     loIds?: string[];
     themeIds?: string[];
   },
@@ -2209,25 +2225,70 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
 
 export interface ParamSlotInput {
   name: string;
+  /** Instructor-facing label shown in the Description column. */
+  description?: string;
   min?: number;
   max?: number;
   step?: number;
   values?: number[];
 }
 
-/** PATCH /api/questions/:questionId/params { paramSlots?, generateScript? }
+/** A value COMPUTED from the slots — the correct answer and every distractor
+ * of a numerical question. `errorModel` names the specific mistake a
+ * distractor represents. */
+export interface DerivedValueInput {
+  name: string;
+  formula: string;
+  errorModel?: string;
+}
+
+/** The saved version, plus the outcome of the verification the server runs on
+ * every save. `verificationError` present means the question is NOT servable —
+ * the numeric gate refuses a numerical question with no proof. */
+export type ParamsSaveResult = QuestionVersion & {
+  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
+  verificationError?: string;
+};
+
+/** PATCH /api/questions/:questionId/params
+ * { paramSlots?, derivedValues?, numericKind?, generateScript? }
  * -> the new/unchanged current QuestionVersion (same versioning rules as
- * `editQuestion` — saves independently of approval state, IN-Q09).
+ * `editQuestion` — saves independently of approval state, IN-Q09), plus
+ * `verification` on success or `verificationError` on failure.
  * Instructor-only. */
 export function patchQuestionParams(
   questionId: string,
-  patch: { paramSlots?: ParamSlotInput[]; generateScript?: string },
-): Promise<QuestionVersion> {
-  return request<QuestionVersion>(`/api/questions/${encodeURIComponent(questionId)}/params`, {
+  patch: {
+    paramSlots?: ParamSlotInput[];
+    derivedValues?: DerivedValueInput[];
+    numericKind?: 'numeric' | 'conceptual';
+    generateScript?: string;
+  },
+): Promise<ParamsSaveResult> {
+  return request<ParamsSaveResult>(`/api/questions/${encodeURIComponent(questionId)}/params`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
+}
+
+/** One sample rendering of a saved parameterized question — what a student
+ * would actually see, as opposed to the raw {{placeholder}} template the
+ * instructor edits. */
+export interface QuestionSample {
+  seed: number;
+  stem: string;
+  options: Array<{ key: string; text: string }>;
+  /** False when the question has no slots or derived values, so the sample is
+   * just the stored text and showing an example adds nothing. */
+  parameterized: boolean;
+}
+
+/** GET /api/questions/:questionId/sample -> one sample draw of the SAVED
+ * version. Read-only; persists nothing. Substitution happens server-side so
+ * the example can never drift from the real serve path. */
+export function getQuestionSample(questionId: string): Promise<QuestionSample> {
+  return request<QuestionSample>(`/api/questions/${encodeURIComponent(questionId)}/sample`);
 }
 
 export interface ParamPreviewDraw {
