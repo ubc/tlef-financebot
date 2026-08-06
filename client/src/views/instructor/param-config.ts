@@ -157,10 +157,10 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       const linked = slot.name.trim().length > 0 && referenced.has(slot.name.trim());
 
       const nameInput = el('input', {
-        class: 'input param-slot__name',
+        class: 'input mono param-slot__name',
         type: 'text',
         id: `slot-name-${index}`,
-        placeholder: 'slot name',
+        placeholder: 'CASH_IN',
         value: slot.name,
         oninput: (e: Event) => {
           slot.name = (e.target as HTMLInputElement).value;
@@ -245,12 +245,13 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         el(
           'span',
           { class: 'vardef__var' },
-          el('span', { class: 'slot-chip', text: `[${slot.name || '…'}]` }),
+          // The name IS the variable, so it is edited here rather than in a
+          // separate column that repeated it.
+          nameInput,
           linked
             ? null
             : el('span', { class: 'vardef__warn', title: 'This slot is not referenced in the stem', text: 'not in stem' }),
         ),
-        nameInput,
         descriptionInput,
         minInput,
         maxInput,
@@ -271,11 +272,11 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   function renderDerived(): void {
     const rows = draftDerived.map((derived, index) => {
       const nameInput = el('input', {
-        class: 'input',
+        class: 'input mono',
         type: 'text',
         id: `derived-name-${index}`,
         value: derived.name,
-        placeholder: 'name, e.g. PV',
+        placeholder: 'NET_CASH_FLOW',
         oninput: (e: Event) => { derived.name = (e.target as HTMLInputElement).value.trim(); },
       });
       const formulaInput = el('input', {
@@ -307,8 +308,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       return el(
         'div',
         { class: 'vardef__row' },
-        el('span', { class: 'vardef__var' }, el('span', { class: 'slot-chip', text: `[${derived.name || '…'}]` })),
-        nameInput,
+        el('span', { class: 'vardef__var' }, nameInput),
         errorModelInput,
         el('span', { class: 'vardef__na', text: '—' }),
         el('span', { class: 'vardef__na', text: '—' }),
@@ -494,7 +494,6 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         'div',
         { class: 'vardef__head' },
         el('span', { text: 'Variable' }),
-        el('span', { text: 'Name' }),
         el('span', { text: 'Description' }),
         el('span', { text: 'Min' }),
         el('span', { text: 'Max' }),
