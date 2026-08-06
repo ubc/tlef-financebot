@@ -2136,6 +2136,25 @@ export function patchQuestionParams(
   });
 }
 
+/** One sample rendering of a saved parameterized question — what a student
+ * would actually see, as opposed to the raw {{placeholder}} template the
+ * instructor edits. */
+export interface QuestionSample {
+  seed: number;
+  stem: string;
+  options: Array<{ key: string; text: string }>;
+  /** False when the question has no slots or derived values, so the sample is
+   * just the stored text and showing an example adds nothing. */
+  parameterized: boolean;
+}
+
+/** GET /api/questions/:questionId/sample -> one sample draw of the SAVED
+ * version. Read-only; persists nothing. Substitution happens server-side so
+ * the example can never drift from the real serve path. */
+export function getQuestionSample(questionId: string): Promise<QuestionSample> {
+  return request<QuestionSample>(`/api/questions/${encodeURIComponent(questionId)}/sample`);
+}
+
 export interface ParamPreviewDraw {
   seed: number;
   values: Record<string, number>;

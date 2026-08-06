@@ -72,6 +72,21 @@ describe('GENERATOR_PROMPT', () => {
     expect(generatorPrompt).toMatch(/never coincide|must differ/i);
   });
 
+  it('forbids an errorModel on the correct value', () => {
+    // A real generation on 2026-08-05 put "Correct value measure is benefits
+    // minus costs" in the correct value's errorModel, polluting the field that
+    // is supposed to mean "this is the mistake".
+    expect(generatorPrompt).toMatch(/CORRECT value MUST NOT carry an "errorModel"/);
+  });
+
+  it('warns specifically about reversed subtraction', () => {
+    // The first real generation failed verification exactly this way:
+    // VALUE_MEASURE = A - B against INCORRECT_DIFFERENCE_REVERSED = B - A,
+    // which are both 0 wherever A equals B.
+    expect(generatorPrompt).toMatch(/REVERSED SUBTRACTION/);
+    expect(generatorPrompt).toMatch(/do NOT use "B - A" as a distractor/);
+  });
+
   it('still describes conceptual questions as a first-class option', () => {
     expect(generatorPrompt).toMatch(/conceptual/);
   });

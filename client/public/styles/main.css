@@ -5539,3 +5539,53 @@ button.class-row--link:focus-visible .class-row__title {
     grid-template-columns: 1fr;
   }
 }
+
+/* Worked example on the question detail view: what a STUDENT sees, rendered
+   from one server-side sample draw. The editor above it shows the raw
+   {{placeholder}} template, which is right for editing and unreadable for
+   judging the question. */
+.question-sample {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.question-sample__stem {
+  margin: 0.5rem 0 0.75rem;
+  line-height: 1.55;
+}
+
+.question-sample__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.question-sample__option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.question-sample__key {
+  font-weight: 650;
+  min-width: 1.4rem;
+  color: var(--muted);
+}
+
+.question-sample__option--correct .question-sample__key {
+  color: var(--ok-fg);
+}
+
+.question-sample__badge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}

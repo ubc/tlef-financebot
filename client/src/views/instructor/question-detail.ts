@@ -16,6 +16,7 @@ import {
   editQuestion,
   getCourseTree,
   getQuestion,
+  getQuestionSample,
   listCourseFlags,
   notifyRemediation,
   regenerateQuestion as requestQuestionRegeneration,
@@ -29,6 +30,7 @@ import {
   type PublicationState,
   type QuestionDetail,
   type QuestionOption,
+  type QuestionSample,
   type QuestionVersion,
   type RegenerationVariant,
 } from '../../api.js';
@@ -164,6 +166,48 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     options: detail.current.options.map((o) => ({ ...o })),
   };
   const draftOptions: OptionDraft[] = detail.current.options.map((o) => ({ ...o }));
+
+  // Worked example: what a STUDENT would see. The editor above shows the raw
+  // {{placeholder}} template, which is correct for editing but unreadable for
+  // judging whether the question is any good. Substitution is done server-side
+  // (GET .../sample) so this example and the real serve path can never drift.
+  const sampleSection = el('section', { class: 'question-sample' });
+
+  function renderSample(sample: QuestionSample): void {
+    if (!sample.parameterized) {
+      sampleSection.replaceChildren();
+      return;
+    }
+    sampleSection.replaceChildren(
+      el('h3', { class: 'detail-section-title', text: 'Example — what a student sees' }),
+      el('p', {
+        class: 'muted',
+        text: 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.',
+      }),
+      el('p', { class: 'question-sample__stem', text: sample.stem }),
+      el(
+        'ul',
+        { class: 'question-sample__options' },
+        ...sample.options.map((option) => {
+          const role = detail.current.options.find((o) => o.key === option.key)?.role;
+          return el(
+            'li',
+            { class: `question-sample__option${role === 'correct' ? ' question-sample__option--correct' : ''}` },
+            el('span', { class: 'question-sample__key', text: option.key }),
+            el('span', { text: option.text }),
+            role === 'correct' ? el('span', { class: 'question-sample__badge', text: 'correct' }) : null,
+          );
+        }),
+      ),
+    );
+  }
+
+  void getQuestionSample(questionId)
+    .then(renderSample)
+    .catch(() => {
+      // Best-effort: the example is an aid, not a gate. A failure just means
+      // the instructor works from the template, exactly as before.
+    });
   let draftStem = baseline.stem;
   let draftDifficulty: Difficulty = baseline.difficulty;
 
@@ -922,6 +966,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         chipsContainer,
         el('h3', { class: 'detail-section-title', text: 'Question Stem' }),
         stemTextarea,
+        sampleSection,
         optionsSection,
         suggestionPanel,
         errorSlot,

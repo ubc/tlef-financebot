@@ -135,6 +135,28 @@ test.describe('numeric parameterization', () => {
       await expect(page.locator('.verification-banner--fail')).toHaveCount(0);
     });
 
+    await test.step('the question detail view shows a worked example with real numbers', async () => {
+      await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
+      const sample = page.locator('.question-sample');
+      await expect(sample).toBeVisible();
+
+      // The stem the instructor EDITS still carries placeholders; the example
+      // below it must not — it is what a student would actually see.
+      const stemText = await sample.locator('.question-sample__stem').innerText();
+      expect(stemText).not.toContain('{{');
+      expect(stemText).toMatch(/payment of \$\d/);
+
+      // All four options render computed values, and they are distinct —
+      // which is exactly what verification proved across 100 draws.
+      const optionTexts = await sample.locator('.question-sample__option').allInnerTexts();
+      expect(optionTexts).toHaveLength(4);
+      for (const text of optionTexts) expect(text).not.toContain('{{');
+      const numbers = optionTexts
+        .map((t) => /\$([\d.]+)/.exec(t)?.[1])
+        .filter((n): n is string => Boolean(n));
+      expect(new Set(numbers).size).toBe(numbers.length);
+    });
+
     await test.step('the stored version now carries a proof', async () => {
       await connectMongo();
       const head = await questionsCol().findOne({ _id: new ObjectId(questionId) });

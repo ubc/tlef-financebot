@@ -21,7 +21,7 @@ import {
 } from '../services/questions.service';
 import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
 import { verifyQuestionNumerics } from '../services/numeric-verification.service';
-import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, NumericVerification } from '../types/domain';
+import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
 // browse/filter, review-queue, editing, and publication-transition surface,
@@ -155,6 +155,10 @@ const patchQuestionParamsBody = z.object({
 // stem (see the route below).
 const previewQuestionParamsBody = z.object({
   paramSlots: z.array(paramSlotBody).optional(),
+  // Derived values are previewed too: without them the draws would show only
+  // the raw slot values and none of the computed answers, which is the part an
+  // instructor most needs to eyeball.
+  derivedValues: z.array(derivedValueBody).optional(),
   generateScript: z.string().optional(),
   stem: z.string().optional(),
 });
@@ -417,6 +421,61 @@ questionsRouter.patch(
 );
 
 /**
+ * GET /api/questions/:questionId/sample -> `{ seed, stem, options: [{key, text}],
+ * parameterized }`. Instructor-only, read-only, persists nothing.
+ *
+ * Renders ONE sample draw of the SAVED version so an instructor reviewing a
+ * parameterized question sees what a student would actually see, rather than
+ * the raw `{{PLACEHOLDER}}` template. Substitution (and therefore R3's
+ * rounding) happens server-side so the example can never drift from the real
+ * serve path.
+ *
+ * `parameterized: false` means the question has no slots or derived values, so
+ * the sample is just the stored text — the caller can skip rendering an
+ * example entirely.
+ */
+questionsRouter.get(
+  '/questions/:questionId/sample',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCapability('question.review'),
+  async (req, res) => {
+    const questionId = new ObjectId(String(req.params.questionId));
+    const { current } = await getQuestionDetail(questionId);
+
+    const seed = drawSeed();
+    let values: Record<string, number> | undefined;
+    try {
+      values = await resolveParamValues(current, seed);
+    } catch {
+      // An unverified question may carry a broken formula — show the raw
+      // template rather than failing the whole detail view.
+      values = undefined;
+    }
+    if (!values) {
+      res.json({
+        seed,
+        stem: current.stem,
+        options: current.options.map((option) => ({ key: option.key, text: option.text })),
+        parameterized: false,
+      });
+      return;
+    }
+
+    res.json({
+      seed,
+      stem: substituteParams(current.stem, values),
+      options: current.options.map((option) => ({
+        key: option.key,
+        text: substituteParams(option.text, values),
+      })),
+      parameterized: true,
+    });
+  },
+);
+
+/**
  * POST /api/questions/:questionId/params/preview { paramSlots?, generateScript?, stem? }
  * -> `{ draws: [{ seed, values, stem? }] x5, warnings }`. Instructor-only.
  * Previews an EDIT-IN-PROGRESS candidate (the request body), never the
@@ -442,12 +501,27 @@ questionsRouter.post(
       stem = current.stem;
     }
 
-    const candidate = { paramSlots: body.paramSlots as ParamSlot[] | undefined, generateScript: body.generateScript };
+    const candidate = {
+      paramSlots: body.paramSlots as ParamSlot[] | undefined,
+      derivedValues: body.derivedValues as DerivedValue[] | undefined,
+      generateScript: body.generateScript,
+    };
 
+    // A formula error is EXPECTED here — preview is where an instructor
+    // iterates on a half-written formula — so it becomes a warning rather than
+    // a 500. resolveParamValues throws on a bad formula because reaching the
+    // serving path with one is a bug; reaching preview with one is Tuesday.
     const draws = [];
+    const formulaErrors = new Set<string>();
     for (let i = 0; i < 5; i += 1) {
       const seed = drawSeed();
-      const values = await resolveParamValues(candidate, seed);
+      let values: Record<string, number> | undefined;
+      try {
+        values = await resolveParamValues(candidate, seed);
+      } catch (error) {
+        formulaErrors.add((error as Error).message);
+        values = undefined;
+      }
       draws.push({
         seed,
         values: values ?? {},
@@ -455,7 +529,10 @@ questionsRouter.post(
       });
     }
 
-    const warnings = candidate.paramSlots ? findUnusedParamSlots(stem, candidate.paramSlots) : [];
+    const warnings = [
+      ...(candidate.paramSlots ? findUnusedParamSlots(stem, candidate.paramSlots) : []),
+      ...formulaErrors,
+    ];
 
     res.json({ draws, warnings });
   },
