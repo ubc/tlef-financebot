@@ -49,6 +49,7 @@ function makeApp(as?: User): Express {
 describe('GET /api/courses/:courseId/outline', () => {
   beforeEach(() => {
     (getCourseOutline as jest.Mock).mockResolvedValue({
+      course: { name: 'Corporate Finance', courseCode: 'COMM 298', section: '101', term: '2026W1' },
       themes: [{ _id: themeId, name: 'Time Value of Money', order: 0, los: [{ _id: loId, name: 'Discounting', order: 0 }] }],
     });
   });
@@ -74,11 +75,15 @@ describe('GET /api/courses/:courseId/outline', () => {
     expect(res.status).toBe(401);
   });
 
-  it('never leaks the course record fields a TA has no business seeing', async () => {
+  it('returns safe course identity without leaking private course settings', async () => {
     const res = await request(makeApp(user('ta'))).get(`/api/courses/${courseId.toString()}/outline`);
-    expect(Object.keys(res.body)).toEqual(['themes']);
+    expect(Object.keys(res.body).sort()).toEqual(['course', 'themes']);
+    expect(res.body.course).toEqual({
+      name: 'Corporate Finance', courseCode: 'COMM 298', section: '101', term: '2026W1',
+    });
     for (const key of ['registrationCode', 'termStart', 'termEnd', 'autoPause', 'feedbackStrategy', 'published']) {
       expect(res.body[key]).toBeUndefined();
+      expect(res.body.course[key]).toBeUndefined();
     }
   });
 });

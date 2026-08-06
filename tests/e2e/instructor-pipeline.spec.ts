@@ -175,17 +175,17 @@ test.describe('instructor pipeline', () => {
 
     await test.step('upload a fixture material', async () => {
       await page.getByRole('link', { name: 'Course Materials' }).click();
-      await expect(page.getByRole('heading', { name: 'Course Materials' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
 
       // The upload zone's real `<input type=file>` is intentionally hidden
       // (instructor-ui.ts's uploadZone) behind a "Browse files" button;
       // Playwright's setInputFiles does not require it to be visible.
       await page.locator('.upload-zone__input').setInputFiles(FIXTURE_PATH);
-      await expect(page.locator('.material-row__name')).toHaveText(FIXTURE_NAME);
+      await expect(page.locator('.workspace-file__name')).toHaveText(FIXTURE_NAME);
       // Ingest is async — the row's status may still read Processing here
       // (Task H brief: "status may be processing"); either is a pass.
-      const materialRow = page.locator('.material-row').filter({ hasText: FIXTURE_NAME });
-      await expect(materialRow.locator('.material-row__meta')).toContainText(/Processing|Ready/);
+      const materialRow = page.locator('.workspace-file').filter({ hasText: FIXTURE_NAME });
+      await expect(materialRow.locator('.workspace-file__meta')).toContainText(/processing|queued|parsing|chunking|embedding|indexing|classifying|ready/);
     });
 
     await test.step('seed a question ready to approve (no live LLM in this environment)', async () => {

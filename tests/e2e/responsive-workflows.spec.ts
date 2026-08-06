@@ -132,6 +132,7 @@ test.describe('responsive cross-role workflows', () => {
       { path: `/instructor/course/${courseId}/preseeding`, heading: 'Question Bank Coverage' },
       { path: `/instructor/course/${courseId}/tas`, heading: 'Teaching Assistants' },
       { path: `/instructor/course/${courseId}/analytics`, heading: 'Student Analytics' },
+      { path: `/instructor/course/${courseId}/materials`, heading: 'Course Knowledge Workspace' },
     ];
 
     for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {

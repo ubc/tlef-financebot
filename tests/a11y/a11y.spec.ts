@@ -238,6 +238,10 @@ test.describe('a11y across the signed-in surfaces', () => {
       await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
       await expectNoViolations(page, 'instructor course dashboard');
 
+      await page.goto(`/#/instructor/course/${courseId}/materials`);
+      await expect(page.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
+      await expectNoViolations(page, 'instructor knowledge workspace');
+
       await page.goto(`/#/instructor/course/${courseId}/bank`);
       await expect(page.getByRole('heading', { name: 'Question Bank' })).toBeVisible();
       await expectNoViolations(page, 'instructor question bank');

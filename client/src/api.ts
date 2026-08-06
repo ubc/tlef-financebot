@@ -981,13 +981,17 @@ export interface CourseOutlineTheme {
 }
 
 export interface CourseOutline {
+  course: {
+    name: string;
+    courseCode: string;
+    section?: string;
+    term: string;
+  };
   themes: CourseOutlineTheme[];
 }
 
-/** GET /api/courses/:courseId/outline -> theme/LO names + order only. The
- * TA-accessible subset of `getCourseTree` (which is instructor-only): a
- * `question.review` holder can call this, and it carries none of the course
- * record. */
+/** GET /api/courses/:courseId/outline -> safe course identity + theme/LO names.
+ * The TA-accessible subset of `getCourseTree` (which is instructor-only). */
 export function getCourseOutline(courseId: string): Promise<CourseOutline> {
   return request<CourseOutline>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
 }
@@ -1323,8 +1327,26 @@ export interface Material {
   storagePath?: string;
   assignments: MaterialAssignment[];
   classificationSuggestion?: { themeId: string; loId?: string; confidence: number };
+  classificationSuggestions?: Array<{ themeId: string; loId?: string; confidence: number; rationale?: string }>;
+  automation?: {
+    kind?: { value: MaterialKind; confidence: number; source: 'ai' | 'filename' | 'manual' };
+    assignment?: {
+      status: 'auto-applied' | 'needs-review' | 'unmatched';
+      confidence: number;
+      updatedAt: string;
+    };
+  };
+  knowledgeConcepts?: Array<{
+    name: string;
+    description?: string;
+    confidence: number;
+    evidence?: string;
+    relationships?: Array<{ targetName: string; type: string }>;
+  }>;
   excerpt?: string;
   activeRunId?: string;
+  deletedAt?: string;
+  deletedBy?: string;
   uploadedAt: string;
 }
 
@@ -1373,7 +1395,7 @@ export interface MaterialIngestRun extends ContentRunBase {
     materialId: string;
     sourceName: string;
     sourceFormat: Material['format'];
-    trigger: 'upload' | 'retry';
+    trigger: 'upload' | 'retry' | 'restore';
     previousRunId?: string;
   };
   result?: {
@@ -1529,6 +1551,45 @@ export function listMaterials(courseId: string): Promise<Material[]> {
   return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`);
 }
 
+export interface MaterialChunk {
+  index: number;
+  text: string;
+  characterCount: number;
+}
+
+export interface MaterialWorkspaceDetail {
+  material: Material;
+  chunks: MaterialChunk[];
+}
+
+export function getMaterialWorkspaceDetail(courseId: string, materialId: string): Promise<MaterialWorkspaceDetail> {
+  return request<MaterialWorkspaceDetail>(
+    `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/workspace`,
+  );
+}
+
+export function materialSourceUrl(courseId: string, materialId: string): string {
+  return `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`;
+}
+
+export function listTrashedMaterials(courseId: string): Promise<Material[]> {
+  return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials-trash`);
+}
+
+export function trashMaterial(courseId: string, materialId: string): Promise<Material> {
+  return request<Material>(
+    `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export function restoreMaterial(courseId: string, materialId: string): Promise<Material> {
+  return request<Material>(
+    `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/restore`,
+    { method: 'POST' },
+  );
+}
+
 /** POST /api/courses/:courseId/materials (multipart, field `files`) -> 201
  * [Material] (one per uploaded file, status 'processing'). */
 export function uploadMaterials(courseId: string, files: File[]): Promise<Material[]> {
@@ -1607,6 +1668,36 @@ export interface CourseContentMap {
 
 export function getCourseContentMap(courseId: string): Promise<CourseContentMap> {
   return request<CourseContentMap>(`/api/courses/${encodeURIComponent(courseId)}/content-map`);
+}
+
+export type KnowledgeNodeType = 'material' | 'evidence' | 'concept' | 'topic' | 'lo' | 'question';
+
+export interface KnowledgeGraphNode {
+  id: string;
+  type: KnowledgeNodeType;
+  label: string;
+  subtitle?: string;
+  materialId?: string;
+  confidence?: number;
+  trashed?: boolean;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: 'contains' | 'supports' | 'covers' | 'defines' | 'assesses' | 'sourced-from' | 'related-to';
+  label?: string;
+}
+
+export interface CourseKnowledgeGraph {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  truncated: boolean;
+}
+
+export function getCourseKnowledgeGraph(courseId: string): Promise<CourseKnowledgeGraph> {
+  return request<CourseKnowledgeGraph>(`/api/courses/${encodeURIComponent(courseId)}/knowledge-graph`);
 }
 
 /** POST /api/materials/:materialId/classification { action } -> Material

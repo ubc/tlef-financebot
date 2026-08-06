@@ -8,7 +8,10 @@
 //   3. ingest job success: parse -> chunk -> embed -> upsert (course-<id>), ready
 //   4. ingest job failure: sets failed + error message, never throws
 //   5. URL material stores sourceUrl
-jest.mock('../../server/src/components/mongodb/collections', () => ({ materialsCol: jest.fn() }));
+jest.mock('../../server/src/components/mongodb/collections', () => ({
+  materialsCol: jest.fn(),
+  materialChunksCol: jest.fn(),
+}));
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
 jest.mock('../../server/src/components/genai/chunking', () => ({ chunkText: jest.fn() }));
 jest.mock('../../server/src/components/genai/embeddings', () => ({
@@ -44,11 +47,15 @@ import {
   assignMaterial,
   retryMaterial,
   listMaterials,
+  listTrashedMaterials,
+  getMaterialWorkspaceDetail,
+  trashMaterial,
+  restoreMaterial,
   getMaterialCourseId,
   inferMaterialKind,
   updateMaterialKind,
 } from '../../server/src/services/materials.service';
-import { materialsCol } from '../../server/src/components/mongodb/collections';
+import { materialChunksCol, materialsCol } from '../../server/src/components/mongodb/collections';
 import { enqueueJob } from '../../server/src/components/jobs';
 import { chunkText } from '../../server/src/components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../../server/src/components/genai/embeddings';
@@ -98,6 +105,11 @@ const find = jest.fn(() => ({ sort: jest.fn(() => ({ toArray: sortToArray })) })
 const deleteOne = jest.fn();
 const deleteMany = jest.fn();
 const findOneAndDelete = jest.fn();
+const chunkDeleteMany = jest.fn();
+const chunkInsertMany = jest.fn();
+const chunkProjectToArray = jest.fn();
+const chunkProject = jest.fn(() => ({ toArray: chunkProjectToArray }));
+const chunkFind = jest.fn(() => ({ sort: jest.fn(() => ({ project: chunkProject })) }));
 
 beforeEach(() => {
   insertOne.mockReset();
@@ -109,6 +121,13 @@ beforeEach(() => {
   deleteOne.mockReset();
   deleteMany.mockReset();
   findOneAndDelete.mockReset();
+  chunkDeleteMany.mockReset();
+  chunkDeleteMany.mockResolvedValue({ deletedCount: 0 });
+  chunkInsertMany.mockReset();
+  chunkInsertMany.mockResolvedValue({ insertedCount: 1 });
+  chunkProjectToArray.mockReset();
+  chunkProjectToArray.mockResolvedValue([]);
+  chunkFind.mockClear();
   jest.mocked(materialsCol).mockReturnValue({
     insertOne,
     findOne,
@@ -118,6 +137,11 @@ beforeEach(() => {
     deleteOne,
     deleteMany,
     findOneAndDelete,
+  } as never);
+  jest.mocked(materialChunksCol).mockReturnValue({
+    deleteMany: chunkDeleteMany,
+    insertMany: chunkInsertMany,
+    find: chunkFind,
   } as never);
   insertOne.mockImplementation(async () => ({ insertedId: new ObjectId() }));
   jest.mocked(createMaterialIngestRun).mockImplementation(async (input) => {
@@ -278,7 +302,7 @@ describe('ingestMaterial — success path (IN-S04)', () => {
     );
 
     const [filter, update] = updateOne.mock.calls[0];
-    expect(filter).toEqual({ _id: materialId });
+    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false } });
     expect(update.$set.status).toBe('ready');
     // IN-S06: the first ~2000 chars are persisted as `excerpt`, and the
     // material is handed to the best-effort classifier after being marked ready.
@@ -960,8 +984,11 @@ describe('assignMaterial (IN-S05)', () => {
 
     expect(result).toBe(updated);
     const [filter, update, options] = findOneAndUpdate.mock.calls[0]!;
-    expect(filter).toEqual({ _id: materialId });
-    expect(update).toEqual({ $set: { assignments: [{ themeId, loId }] } });
+    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false } });
+    expect(update).toEqual({
+      $set: { assignments: [{ themeId, loId }] },
+      $unset: { classificationSuggestion: '', classificationSuggestions: '' },
+    });
     expect(options).toEqual({ returnDocument: 'after' });
     expect(deleteOne).not.toHaveBeenCalled();
     expect(deleteMany).not.toHaveBeenCalled();
@@ -1044,8 +1071,69 @@ describe('listMaterials', () => {
 
     const result = await listMaterials(courseId);
 
-    expect(find).toHaveBeenCalledWith({ courseId });
+    expect(find).toHaveBeenCalledWith({ courseId, deletedAt: { $exists: false } });
     expect(result).toEqual([{ ...materials[0], kind: 'other' }]);
+  });
+});
+
+describe('knowledge workspace material lifecycle', () => {
+  it('moves a material to Trash, preserves the record, and removes its vectors', async () => {
+    const materialId = new ObjectId();
+    const courseId = new ObjectId();
+    const deleted = materialFixture(materialId, courseId, 'week-1.pdf', { deletedAt: new Date() });
+    findOneAndUpdate.mockResolvedValue(deleted);
+
+    await expect(trashMaterial(courseId, materialId, 'PUID-INSTR')).resolves.toBe(deleted);
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: materialId, courseId, deletedAt: { $exists: false } },
+      { $set: { deletedAt: expect.any(Date), deletedBy: 'PUID-INSTR' } },
+      { returnDocument: 'after' },
+    );
+    expect(deletePointsByFilter).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, {
+      must: [{ key: 'materialId', match: { value: materialId.toHexString() } }],
+    });
+    expect(deleteOne).not.toHaveBeenCalled();
+  });
+
+  it('restores a trashed material by creating and enqueueing a restore run', async () => {
+    const materialId = new ObjectId();
+    const courseId = new ObjectId();
+    const deletedAt = new Date();
+    const current = materialFixture(materialId, courseId, 'week-1.pdf', { deletedAt, deletedBy: 'PUID-INSTR' });
+    const runId = new ObjectId();
+    const restored = materialFixture(materialId, courseId, 'week-1.pdf', { status: 'processing', activeRunId: runId });
+    findOne.mockResolvedValue(current);
+    jest.mocked(createMaterialIngestRun).mockResolvedValue({ _id: runId } as never);
+    findOneAndUpdate.mockResolvedValue(restored);
+
+    await expect(restoreMaterial(courseId, materialId, 'PUID-INSTR')).resolves.toBe(restored);
+
+    expect(createMaterialIngestRun).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'restore', materialId }));
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: materialId, courseId, deletedAt },
+      {
+        $set: { status: 'processing', activeRunId: runId },
+        $unset: { deletedAt: '', deletedBy: '', error: '' },
+      },
+      { returnDocument: 'after' },
+    );
+    expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { runId: runId.toHexString() });
+  });
+
+  it('lists Trash separately and returns persisted chunks for Preview', async () => {
+    const courseId = new ObjectId();
+    const material = materialFixture(new ObjectId(), courseId, 'week-1.pdf', { deletedAt: new Date() });
+    sortToArray.mockResolvedValueOnce([material]);
+    await expect(listTrashedMaterials(courseId)).resolves.toEqual([{ ...material, kind: 'other' }]);
+    expect(find).toHaveBeenCalledWith({ courseId, deletedAt: { $exists: true } });
+
+    findOne.mockResolvedValue(material);
+    chunkProjectToArray.mockResolvedValue([{ index: 0, text: 'Evidence', characterCount: 8 }]);
+    await expect(getMaterialWorkspaceDetail(courseId, material._id)).resolves.toEqual({
+      material: { ...material, kind: 'other' },
+      chunks: [{ index: 0, text: 'Evidence', characterCount: 8 }],
+    });
   });
 });
 
@@ -1071,7 +1159,7 @@ describe('material kind metadata', () => {
     await expect(updateMaterialKind(courseId, materialId, 'reading')).resolves.toBe(corrected);
     expect(findOneAndUpdate).toHaveBeenCalledWith(
       { _id: materialId, courseId },
-      { $set: { kind: 'reading' } },
+      { $set: { kind: 'reading', 'automation.kind': { value: 'reading', confidence: 1, source: 'manual' } } },
       { returnDocument: 'after' },
     );
   });

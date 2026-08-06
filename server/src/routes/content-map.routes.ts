@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
-import { getCourseContentMap } from '../services/content-map.service';
+import { getCourseContentMap, getCourseKnowledgeGraph } from '../services/content-map.service';
 
 export const contentMapRouter = Router();
 const courseParams = z.object({
@@ -16,5 +16,14 @@ contentMapRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await getCourseContentMap(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+contentMapRouter.get(
+  '/courses/:courseId/knowledge-graph',
+  validate({ params: courseParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await getCourseKnowledgeGraph(new ObjectId(String(req.params.courseId))));
   },
 );

@@ -72,7 +72,7 @@ beforeEach(() => {
 });
 
 describe('classifyMaterial (IN-S06)', () => {
-  it('stores a suggestion with resolved theme+lo ObjectIds when confident', async () => {
+  it('auto-applies a resolved theme+lo match at high confidence', async () => {
     const materialId = new ObjectId();
     const courseId = new ObjectId();
     const themeId = new ObjectId();
@@ -90,10 +90,10 @@ describe('classifyMaterial (IN-S06)', () => {
     expect(completeJson).toHaveBeenCalledTimes(1);
     expect(materialUpdateOne).toHaveBeenCalledTimes(1);
     const [filter, update] = materialUpdateOne.mock.calls[0];
-    expect(filter).toEqual({ _id: materialId });
-    expect(update.$set.classificationSuggestion.themeId).toEqual(themeId);
-    expect(update.$set.classificationSuggestion.loId).toEqual(loId);
-    expect(update.$set.classificationSuggestion.confidence).toBe(0.9);
+    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false } });
+    expect(update.$set.assignments).toEqual([{ themeId, loId }]);
+    expect(update.$set.automation.assignment.status).toBe('auto-applied');
+    expect(update.$unset).toEqual({ classificationSuggestion: '' });
   });
 
   it('stores a theme-only suggestion (no loId) when the LLM omits loName', async () => {
@@ -112,7 +112,7 @@ describe('classifyMaterial (IN-S06)', () => {
     expect(update.$set.classificationSuggestion).not.toHaveProperty('loId');
   });
 
-  it('stores NOTHING when confidence is below 0.5', async () => {
+  it('records an unmatched automation result when confidence is low', async () => {
     const materialId = new ObjectId();
     const courseId = new ObjectId();
     materialFindOne.mockResolvedValue({ _id: materialId, courseId, excerpt: 'text' });
@@ -122,10 +122,11 @@ describe('classifyMaterial (IN-S06)', () => {
 
     await classifyMaterial(materialId);
 
-    expect(materialUpdateOne).not.toHaveBeenCalled();
+    expect(materialUpdateOne.mock.calls[0][1].$set.automation.assignment.status).toBe('unmatched');
+    expect(materialUpdateOne.mock.calls[0][1].$set.assignments).toEqual([]);
   });
 
-  it('stores NOTHING when the suggested themeName matches no existing theme', async () => {
+  it('does not assign a model-invented theme name', async () => {
     const materialId = new ObjectId();
     const courseId = new ObjectId();
     materialFindOne.mockResolvedValue({ _id: materialId, courseId, excerpt: 'text' });
@@ -135,7 +136,8 @@ describe('classifyMaterial (IN-S06)', () => {
 
     await classifyMaterial(materialId);
 
-    expect(materialUpdateOne).not.toHaveBeenCalled();
+    expect(materialUpdateOne.mock.calls[0][1].$set.assignments).toEqual([]);
+    expect(materialUpdateOne.mock.calls[0][1].$set.automation.assignment.status).toBe('unmatched');
   });
 
   it('never calls the LLM when the material has no excerpt', async () => {
@@ -148,16 +150,23 @@ describe('classifyMaterial (IN-S06)', () => {
     expect(materialUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('never calls the LLM when the course has no themes to classify into', async () => {
+  it('still extracts kind and concepts when the course has no themes yet', async () => {
     const materialId = new ObjectId();
     materialFindOne.mockResolvedValue({ _id: materialId, courseId: new ObjectId(), excerpt: 'text' });
     themeToArray.mockResolvedValue([]);
     loToArray.mockResolvedValue([]);
+    jest.mocked(completeJson).mockResolvedValue({
+      materialKind: 'lecture',
+      materialKindConfidence: 0.92,
+      matches: [],
+      concepts: [{ name: 'Discounting', confidence: 0.88, evidence: 'present value' }],
+    });
 
     await classifyMaterial(materialId);
 
-    expect(completeJson).not.toHaveBeenCalled();
-    expect(materialUpdateOne).not.toHaveBeenCalled();
+    expect(completeJson).toHaveBeenCalledTimes(1);
+    expect(materialUpdateOne.mock.calls[0][1].$set.kind).toBe('lecture');
+    expect(materialUpdateOne.mock.calls[0][1].$set.knowledgeConcepts).toHaveLength(1);
   });
 });
 
@@ -390,7 +399,7 @@ describe('resolveClassification accept/reject (IN-S06)', () => {
     const [filter, update] = materialFindOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: materialId });
     expect(update.$set.assignments).toEqual([{ themeId, loId }]);
-    expect(update.$unset).toEqual({ classificationSuggestion: '' });
+    expect(update.$unset).toEqual({ classificationSuggestion: '', classificationSuggestions: '' });
   });
 
   it('reject clears the suggestion and leaves assignments untouched', async () => {
@@ -406,7 +415,7 @@ describe('resolveClassification accept/reject (IN-S06)', () => {
     await resolveClassification(materialId, 'reject');
 
     const update = materialFindOneAndUpdate.mock.calls[0][1];
-    expect(update.$unset).toEqual({ classificationSuggestion: '' });
+    expect(update.$unset).toEqual({ classificationSuggestion: '', classificationSuggestions: '' });
     expect(update.$set ?? {}).not.toHaveProperty('assignments');
   });
 
