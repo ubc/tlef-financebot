@@ -19,13 +19,56 @@ import {
   type InstructorCourse,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { pageHeader } from '../../instructor-ui.js';
+import { helpTip, pageHeader, sectionTitleWithHelp } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
 function fieldLabel(text: string, htmlFor: string): HTMLElement {
   return el('label', { class: 'form-field__label', for: htmlFor, text });
 }
+
+/** A field label with a `helpTip` beside it. The tip sits OUTSIDE the `<label>`
+ *  on purpose: nested in it, clicking the trigger would also activate the
+ *  label and steal focus into the input. */
+function fieldLabelWithHelp(text: string, htmlFor: string, tip: string): HTMLElement {
+  return el('div', { class: 'form-field__label-row' }, fieldLabel(text, htmlFor), helpTip(text, tip));
+}
+
+// Instructors could not tell what these three settings did from their labels
+// alone — reported 2026-08-06. Wording checked against the implementations, not
+// the labels: the auto-pause formula in server/src/services/flags.service.ts
+// (`meetsAutoPauseThreshold`), `decideStrategy` in attempts.service.ts, and
+// `enrollByCode` in enrollment.service.ts.
+const HELP = {
+  autoPause:
+    'Automatically hides an approved question from students once enough of them flag it, '
+    + 'and sends course staff an elevated-priority notification. A paused question is served in '
+    + 'neither practice nor exams until the flags are dealt with — resolving them as cleared can '
+    + 'un-pause it automatically.',
+  minAttempts:
+    'A small-sample guard for the flag-percentage rule only: the question needs this many distinct '
+    + 'students to have attempted it before a percentage can pause it. It does not restrain the '
+    + 'flag-count rule below.',
+  flagPercent:
+    'Pauses the question when this share of the students who attempted it have open flags on it — '
+    + 'but only once the minimum-attempts guard above is satisfied.',
+  flagCount:
+    'Pauses the question as soon as this many open flags exist on it, regardless of how many '
+    + 'students have attempted it. This rule stands on its own: either threshold alone is enough '
+    + 'to pause a question.',
+  feedbackStrategy:
+    'Controls what a student sees after answering. Strategy A reveals only the explanation for the '
+    + 'option they picked, then grants one retry. Strategy B reveals every option’s explanation '
+    + 'at once, with no retry. Adaptive decides per answer: picking a known misconception gets '
+    + 'Strategy A’s targeted retry, any other wrong answer gets Strategy B’s full '
+    + 'explanations. Exam mode defers all feedback to the end-of-exam summary, so no retry is '
+    + 'offered there.',
+  registrationCode:
+    'The 8-character code students enter to join this course. It never grants access on its own — '
+    + 'the student must also appear on the roster and the course must be published. Regenerating '
+    + 'takes effect immediately and invalidates the old code; students already enrolled keep their '
+    + 'access.',
+} as const;
 
 const FEEDBACK_STRATEGIES: Array<{
   value: InstructorCourse['feedbackStrategy'];
@@ -244,12 +287,12 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         el('div', { class: 'form-field' }, fieldLabel('Term Start Date', 'settings-term-start'), termStartInput),
         el('div', { class: 'form-field' }, fieldLabel('Term End Date', 'settings-term-end'), termEndInput),
 
-        el('h2', { class: 'section-title', text: 'Auto-pause' }),
-        el('div', { class: 'form-field' }, fieldLabel('Minimum attempts before auto-pause applies', 'settings-min-attempts'), minAttemptsInput),
-        el('div', { class: 'form-field' }, fieldLabel('Flag percentage threshold', 'settings-flag-percent'), flagPercentInput),
-        el('div', { class: 'form-field' }, fieldLabel('Flag count threshold', 'settings-flag-count'), flagCountInput),
+        sectionTitleWithHelp('Auto-pause', HELP.autoPause),
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Minimum attempts before auto-pause applies', 'settings-min-attempts', HELP.minAttempts), minAttemptsInput),
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag percentage threshold', 'settings-flag-percent', HELP.flagPercent), flagPercentInput),
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag count threshold', 'settings-flag-count', HELP.flagCount), flagCountInput),
 
-        el('h2', { class: 'section-title', text: 'Registration Code' }),
+        sectionTitleWithHelp('Registration Code', HELP.registrationCode),
         el(
           'div',
           { class: 'registration-code' },
@@ -274,7 +317,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
       el(
         'div',
         { class: 'settings-column stack' },
-        el('h2', { class: 'section-title', text: 'Feedback Strategy' }),
+        sectionTitleWithHelp('Feedback Strategy', HELP.feedbackStrategy),
         strategyGroup,
 
         el('h2', { class: 'section-title', text: 'Roster' }),

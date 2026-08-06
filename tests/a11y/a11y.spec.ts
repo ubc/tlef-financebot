@@ -253,6 +253,13 @@ test.describe('a11y across the signed-in surfaces', () => {
       await page.goto(`/#/instructor/course/${courseId}/analytics`);
       await expect(page.getByRole('heading', { name: /analytics/i }).first()).toBeVisible();
       await expectNoViolations(page, 'instructor analytics');
+
+      // Added 2026-08-06 with the setting help tips. This surface was never
+      // scanned, and it now carries six ⓘ buttons whose accessible names and
+      // contrast are exactly what these scans exist to catch.
+      await page.goto(`/#/instructor/course/${courseId}/settings`);
+      await expect(page.getByRole('heading', { name: 'Course Settings' })).toBeVisible();
+      await expectNoViolations(page, 'instructor course settings');
     } finally {
       await context.close();
     }
