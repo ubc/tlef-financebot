@@ -100,6 +100,10 @@ commonly need:
   `ensureRole()`. Use these rather than rolling your own course checks. They
   resolve the course from `req.params.courseId`, or from `res.locals.courseId`
   for routes that look up a child resource (Theme/LO) first.
+- Course Settings accepts a preview-first roster CSV import. It detects a CWL
+  or email column, reports unusable rows with spreadsheet line numbers, rejects
+  student numbers that cannot match the released SAML identity, and prevents
+  an all-rejected upload from replacing an existing roster with an empty one.
 - Question import (Phase 2 Tasks 8/9) is implemented: instructors can preview
   and commit partial-success CSV/JSON/QTI batches as Drafts, or sandbox-preview
   an existing parameterized `generate(random)` script and migrate it into one

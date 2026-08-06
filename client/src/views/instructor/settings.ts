@@ -11,15 +11,19 @@ import {
   archiveCourse,
   getCourseTree,
   getRoster,
+  previewRosterFile,
   putRoster,
   regenerateRegistrationCode,
   restoreCourse,
   updateCourse,
   type AutoPauseConfig,
   type InstructorCourse,
+  type RosterParseResult,
+  type RosterReject,
+  type RosterRejectReason,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { helpTip, pageHeader, sectionTitleWithHelp } from '../../instructor-ui.js';
+import { helpTip, pageHeader, sectionTitleWithHelp, uploadZone } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
@@ -68,6 +72,16 @@ const HELP = {
     + 'the student must also appear on the roster and the course must be published. Regenerating '
     + 'takes effect immediately and invalidates the old code; students already enrolled keep their '
     + 'access.',
+  roster:
+    'Who is allowed to join this course. A student needs both the registration code and a roster '
+    + 'entry, so this list is what actually controls access. Upload a CSV — the identifier column '
+    + 'is detected for you and anything unusable is listed before you save — or paste identifiers '
+    + 'directly. Saving replaces the whole roster.',
+  studentIdentifiers:
+    'CWL usernames or email addresses — NOT student numbers. Students sign in with CWL, which '
+    + 'tells FinanceBot their CWL username and email and nothing else, so a student number has '
+    + 'nothing to match against and that student could never join. Entries that cannot match are '
+    + 'skipped when you save, and listed so you can fix them.',
 } as const;
 
 const FEEDBACK_STRATEGIES: Array<{
@@ -79,6 +93,68 @@ const FEEDBACK_STRATEGIES: Array<{
   { value: 'strategy-a', title: 'Strategy A only', subtitle: "Always show only chosen option's explanation + 1 retry" },
   { value: 'strategy-b', title: 'Strategy B only', subtitle: 'Always show all explanations immediately' },
 ];
+
+const REJECT_REASON_LABEL: Record<RosterRejectReason, string> = {
+  'student-number': 'Looks like a student number',
+  'malformed-email': 'Not a valid email address',
+  'invalid-characters': 'Not a valid CWL username or email',
+  duplicate: 'Duplicate of an earlier row',
+};
+
+// Shown once, above the per-row list, when student numbers are the problem.
+// Naming the constraint matters more than naming the rows: the instructor's
+// next move is to re-export with a CWL/email column, and nothing in the UI
+// previously told them that was the requirement.
+const STUDENT_NUMBER_EXPLANATION =
+  'Students sign in with CWL, and a CWL login tells FinanceBot the person’s CWL username and '
+  + 'email — never their student number. A roster of student numbers therefore matches nobody. '
+  + 'Re-export the file with a CWL username or email column and upload it again.';
+
+/** The rejected rows, capped so a 250-row paste of the wrong column does not
+ *  bury the summary that explains it. */
+function rejectList(rejects: RosterReject[]): HTMLElement {
+  const shown = rejects.slice(0, 10);
+  return el(
+    'div',
+    { class: 'roster-rejects' },
+    rejects.some((reject) => reject.reason === 'student-number')
+      ? el('p', { class: 'roster-rejects__explanation', text: STUDENT_NUMBER_EXPLANATION })
+      : false,
+    el(
+      'ul',
+      { class: 'roster-rejects__list' },
+      ...shown.map((reject) =>
+        el(
+          'li',
+          { class: 'roster-rejects__row' },
+          el('span', { class: 'roster-rejects__line', text: `Row ${reject.line}` }),
+          el('span', { class: 'roster-rejects__value mono', text: reject.value }),
+          el('span', { class: 'roster-rejects__reason', text: REJECT_REASON_LABEL[reject.reason] }),
+        ),
+      ),
+    ),
+    rejects.length > shown.length
+      ? el('p', {
+          class: 'roster-rejects__more',
+          text: `…and ${rejects.length - shown.length} more.`,
+        })
+      : false,
+  );
+}
+
+/** A save/import outcome line followed by the rows that were dropped. */
+function rejectSummary(lead: string, rejects: RosterReject[]): HTMLElement {
+  return el(
+    'div',
+    { class: 'roster-import' },
+    el('p', {
+      class: 'roster-import__summary roster-import__summary--warn',
+      role: 'status',
+      text: `${lead} ${rejects.length} entr${rejects.length === 1 ? 'y was' : 'ies were'} skipped:`,
+    }),
+    rejectList(rejects),
+  );
+}
 
 /** yyyy-mm-dd for an `<input type="date">` from an ISO date string, or ''. */
 function toDateInputValue(iso: string | undefined): string {
@@ -127,7 +203,27 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     text: roster.map((r) => r.identifier).join('\n'),
   }) as HTMLTextAreaElement;
   const rosterErrorSlot = el('div', {});
+  const rosterImportSlot = el('div', { 'aria-live': 'polite' });
   const rosterListEl = el('div', { class: 'roster-list' });
+  // The last parsed file is kept so switching the identifier column re-parses
+  // it server-side instead of asking the instructor to pick the file again.
+  let lastPreview: RosterParseResult | null = null;
+  let lastFile: File | null = null;
+  const saveRosterButton = el(
+    'button',
+    { class: 'btn btn--ghost', type: 'button' },
+    'Save Roster',
+  ) as HTMLButtonElement;
+
+  rosterTextarea.addEventListener('input', () => {
+    // Once the instructor edits the preview by hand, the textarea becomes the
+    // source of truth again and an earlier all-rejected file must not keep the
+    // save control disabled.
+    lastPreview = null;
+    lastFile = null;
+    saveRosterButton.disabled = false;
+    rosterImportSlot.replaceChildren();
+  });
 
   function renderStrategyGroup(): void {
     strategyGroup.replaceChildren(
@@ -246,20 +342,113 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   const saveRoster = async (): Promise<void> => {
     rosterErrorSlot.replaceChildren();
+    if (lastPreview && lastPreview.identifiers.length === 0) {
+      rosterErrorSlot.replaceChildren(
+        errorState('This import has no usable CWL usernames or emails, so the existing roster was not replaced.'),
+      );
+      return;
+    }
     const identifiers = rosterTextarea.value
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
     try {
-      await putRoster(courseId, identifiers);
+      const { count, rejected } = await putRoster(courseId, identifiers);
       const refreshed = await getRoster(courseId);
       roster = refreshed;
       rosterTextarea.value = roster.map((r) => r.identifier).join('\n');
       renderRosterList();
+      lastPreview = null;
+      lastFile = null;
+      saveRosterButton.disabled = false;
+      // Saving used to be silent about entries it could not use, which is how
+      // a roster of student numbers looked like a success and then failed
+      // every enrolment. Say so, every time.
+      rosterImportSlot.replaceChildren(
+        rejected.length
+          ? rejectSummary(`Saved ${count} student${count === 1 ? '' : 's'}.`, rejected)
+          : el('p', {
+              class: 'preseeding-queued-message',
+              role: 'status',
+              text: `Saved ${count} student${count === 1 ? '' : 's'}.`,
+            }),
+      );
     } catch (error) {
       rosterErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
     }
   };
+
+  /** Loads a parsed file into the textarea and reports what was dropped. */
+  function applyPreview(result: RosterParseResult): void {
+    lastPreview = result;
+    rosterTextarea.value = result.identifiers.join('\n');
+    renderRosterImport();
+  }
+
+  const uploadRoster = async (file: File, column?: string): Promise<void> => {
+    rosterErrorSlot.replaceChildren();
+    rosterImportSlot.replaceChildren(loadingState(`Reading ${file.name}…`));
+    try {
+      lastFile = file;
+      applyPreview(await previewRosterFile(courseId, file, column));
+    } catch (error) {
+      lastFile = null;
+      rosterImportSlot.replaceChildren();
+      rosterErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+    }
+  };
+
+  /** The import panel: which column was read, what was rejected, and a way to
+   *  correct the column without re-exporting the file. */
+  function renderRosterImport(): void {
+    if (!lastPreview) {
+      saveRosterButton.disabled = false;
+      rosterImportSlot.replaceChildren();
+      return;
+    }
+    const { columns, selectedColumn, identifiers, rejects } = lastPreview;
+    saveRosterButton.disabled = identifiers.length === 0;
+
+    const columnPicker = columns.length > 1
+      ? (() => {
+          const select = el('select', { class: 'input', id: 'settings-roster-column' }) as HTMLSelectElement;
+          for (const column of columns) {
+            const option = el('option', { value: column, text: column }) as HTMLOptionElement;
+            option.selected = column === selectedColumn;
+            select.append(option);
+          }
+          select.addEventListener('change', () => {
+            if (lastFile) void uploadRoster(lastFile, select.value);
+          });
+          return el(
+            'div',
+            { class: 'form-field' },
+            fieldLabel('Identifier column', 'settings-roster-column'),
+            select,
+          );
+        })()
+      : false;
+
+    rosterImportSlot.replaceChildren(
+      el(
+        'div',
+        { class: 'roster-import' },
+        el('p', {
+          // Success-green on "0 of 4 rows ready" reads as a green light for a
+          // file that will enrol nobody. Tone follows the outcome.
+          class: `roster-import__summary${rejects.length ? ' roster-import__summary--warn' : ''}`,
+          role: 'status',
+          text: `${identifiers.length} of ${lastPreview.totalRows} row${lastPreview.totalRows === 1 ? '' : 's'} ready`
+            + `${selectedColumn ? ` from column “${selectedColumn}”` : ''}.`
+            + (identifiers.length
+              ? ' Review below, then Save Roster.'
+              : ' Nothing will be saved; choose a CWL/email column or edit the list.'),
+        }),
+        columnPicker,
+        rejects.length ? rejectList(rejects) : false,
+      ),
+    );
+  }
 
   body.replaceChildren(
     pageHeader('Course Settings', ''),
@@ -320,16 +509,24 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         sectionTitleWithHelp('Feedback Strategy', HELP.feedbackStrategy),
         strategyGroup,
 
-        el('h2', { class: 'section-title', text: 'Roster' }),
-        el('p', { class: 'view__lead', text: 'One student identifier per line. Saving replaces the full roster.' }),
-        fieldLabel('Student identifiers', 'settings-roster'),
+        sectionTitleWithHelp('Roster', HELP.roster),
+        el('p', {
+          class: 'view__lead',
+          text: 'Upload a CSV or paste one identifier per line. Saving replaces the full roster.',
+        }),
+        uploadZone('Drop a roster CSV here or browse', (files) => {
+          if (files[0]) void uploadRoster(files[0]);
+        }),
+        rosterImportSlot,
+        fieldLabelWithHelp('Student identifiers', 'settings-roster', HELP.studentIdentifiers),
         rosterTextarea,
         rosterErrorSlot,
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => void saveRoster() }, 'Save Roster'),
+        saveRosterButton,
         rosterListEl,
       ),
     ),
   );
+  saveRosterButton.addEventListener('click', () => void saveRoster());
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {

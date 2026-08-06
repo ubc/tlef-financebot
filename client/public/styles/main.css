@@ -4341,6 +4341,92 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.85rem;
 }
 
+/* ---- Roster import preview -------------------------------------------------
+   The result of parsing an uploaded CSV: which column was read, and which rows
+   cannot be used. Colours reuse the instructor amber/red badge tokens that
+   Phase 4 Task 2 (#58) already validated at AA on both shells. */
+
+.roster-import {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.roster-import__summary {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+  font-size: 0.85rem;
+}
+
+.roster-import__summary--warn {
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
+.roster-rejects {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+/* Carries the CWL-vs-student-number explanation. Reads as prose, not a badge:
+   it is the sentence that tells the instructor what to re-export. */
+.roster-rejects__explanation {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.roster-rejects__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 12rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.roster-rejects__row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.roster-rejects__line {
+  flex: 0 0 4.5rem;
+  color: var(--muted);
+}
+
+.roster-rejects__value {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.roster-rejects__reason {
+  color: var(--instr-red-fg);
+}
+
+.roster-rejects__more {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 /* ---- Question Bank browser (I7) --------------------------------------------- */
 
 .bank-summary {
