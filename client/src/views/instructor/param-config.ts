@@ -29,6 +29,27 @@ function navigate(path: string): void {
  * whose name is absent gets a warning (mirrors the server's
  * `findUnusedParamSlots`, computed client-side here for instant feedback
  * before Preview is ever clicked). */
+/**
+ * Renders the stem with each `{{NAME}}` placeholder shown as a highlighted
+ * `[NAME]` chip. DISPLAY ONLY — the stored stem keeps `{{NAME}}`, which is what
+ * `substituteParams` matches on the server. This panel shows the stem
+ * read-only, so the two can never be confused; never apply this to an editable
+ * field or the placeholders would be corrupted on save.
+ */
+function stemWithSlotChips(stem: string): HTMLElement {
+  const parts: Array<string | HTMLElement> = [];
+  const re = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+  let last = 0;
+  for (const match of stem.matchAll(re)) {
+    const at = match.index ?? 0;
+    if (at > last) parts.push(stem.slice(last, at));
+    parts.push(el('span', { class: 'slot-chip', text: `[${match[1]}]` }));
+    last = at + match[0].length;
+  }
+  if (last < stem.length) parts.push(stem.slice(last));
+  return el('p', { class: 'param-config__stem' }, ...parts);
+}
+
 function placeholdersIn(stem: string): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
@@ -50,6 +71,7 @@ interface DerivedDraft {
 
 interface SlotDraft {
   name: string;
+  description: string;
   min?: number;
   max?: number;
   step?: number;
@@ -65,10 +87,15 @@ function slotToInput(slot: SlotDraft): ParamSlotInput | null {
     .map(Number)
     .filter((n) => Number.isFinite(n));
   if (values.length > 0) {
-    return { name: slot.name.trim(), values };
+    return {
+      name: slot.name.trim(),
+      ...(slot.description ? { description: slot.description } : {}),
+      values,
+    };
   }
   return {
     name: slot.name.trim(),
+    ...(slot.description ? { description: slot.description } : {}),
     ...(slot.min !== undefined ? { min: slot.min } : {}),
     ...(slot.max !== undefined ? { max: slot.max } : {}),
     ...(slot.step !== undefined ? { step: slot.step } : {}),
@@ -94,6 +121,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
 
   const draftSlots: SlotDraft[] = (detail.current.paramSlots ?? []).map((s) => ({
     name: s.name,
+    description: s.description ?? '',
     min: s.min,
     max: s.max,
     step: s.step,
@@ -111,16 +139,16 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   }));
 
   const errorSlot = el('div', {});
-  const stemDisplay = el('p', { class: 'param-config__stem', text: stem });
+  const stemDisplay = stemWithSlotChips(stem);
   const slotsContainer = el('div', { class: 'param-slots' });
   const derivedContainer = el('div', { class: 'derived-values' });
   const verificationSlot = el('div', {});
   const previewSlot = el('div', { class: 'param-preview' });
 
-  const saveButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, 'Save Parameters') as HTMLButtonElement;
-  const previewButton = el('button', { class: 'btn btn--ghost', type: 'button' }, 'Preview 5 Draws') as HTMLButtonElement;
-  const addSlotButton = el('button', { class: 'btn btn--ghost btn--sm', type: 'button' }, '+ Add Slot') as HTMLButtonElement;
-  const addDerivedButton = el('button', { class: 'btn btn--ghost btn--sm', type: 'button' }, '+ Add Derived Value') as HTMLButtonElement;
+  const saveButton = el('button', { class: 'btn btn--instr-primary', type: 'button' }, 'Save Parameterization') as HTMLButtonElement;
+  const previewButton = el('button', { class: 'btn btn--ghost', type: 'button' }, '\u21bb Re-roll preview') as HTMLButtonElement;
+  const addSlotButton = el('button', { class: 'btn btn--ghost btn--sm', type: 'button' }, '+ Add Drawn Variable') as HTMLButtonElement;
+  const addDerivedButton = el('button', { class: 'btn btn--ghost btn--sm', type: 'button' }, '+ Add Computed Variable') as HTMLButtonElement;
 
   function renderSlots(): void {
     const referenced = new Set(placeholdersIn(stem));
@@ -176,6 +204,17 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         },
       });
 
+      const descriptionInput = el('input', {
+        class: 'input',
+        type: 'text',
+        id: `slot-description-${index}`,
+        placeholder: 'e.g. Investment amount',
+        value: slot.description,
+        oninput: (e: Event) => {
+          slot.description = (e.target as HTMLInputElement).value;
+        },
+      });
+
       const valuesInput = el('input', {
         class: 'input param-slot__values',
         type: 'text',
@@ -189,7 +228,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       const removeButton = el(
         'button',
         {
-          class: 'param-slot__remove',
+          class: 'btn btn--ghost btn--sm',
           type: 'button',
           'aria-label': `Remove slot ${slot.name || index + 1}`,
           onclick: () => {
@@ -197,21 +236,27 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
             renderSlots();
           },
         },
-        '×',
+        'Remove',
       );
 
       return el(
         'div',
-        { class: `param-slot${linked ? ' param-slot--linked' : ' param-slot--unlinked'}` },
-        el('span', {
-          class: 'param-slot__badge',
-          text: linked ? `linked to {{${slot.name}}}` : `no {{${slot.name || '…'}}} found in stem`,
-        }),
+        { class: `vardef__row${linked ? ' vardef__row--linked' : ' vardef__row--unlinked'}` },
+        el(
+          'span',
+          { class: 'vardef__var' },
+          el('span', { class: 'slot-chip', text: `[${slot.name || '…'}]` }),
+          linked
+            ? null
+            : el('span', { class: 'vardef__warn', title: 'This slot is not referenced in the stem', text: 'not in stem' }),
+        ),
         nameInput,
+        descriptionInput,
         minInput,
         maxInput,
-        stepInput,
-        valuesInput,
+        // Slots have no formula; the range columns carry their definition.
+        el('span', { class: 'vardef__na' }, stepInput, valuesInput),
+        el('span', { class: 'vardef__type', text: 'Drawn' }),
         removeButton,
       );
     });
@@ -230,7 +275,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         type: 'text',
         id: `derived-name-${index}`,
         value: derived.name,
-        placeholder: 'PV',
+        placeholder: 'name, e.g. PV',
         oninput: (e: Event) => { derived.name = (e.target as HTMLInputElement).value.trim(); },
       });
       const formulaInput = el('input', {
@@ -246,7 +291,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         type: 'text',
         id: `derived-error-${index}`,
         value: derived.errorModel,
-        placeholder: 'compounded forward instead of discounting back',
+        placeholder: 'what this option is, or the mistake it represents',
         oninput: (e: Event) => { derived.errorModel = (e.target as HTMLInputElement).value.trim(); },
       });
       const removeButton = el(
@@ -259,21 +304,21 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         },
         'Remove',
       );
-      return el('div', { class: 'derived-values__row' }, nameInput, formulaInput, errorModelInput, removeButton);
+      return el(
+        'div',
+        { class: 'vardef__row' },
+        el('span', { class: 'vardef__var' }, el('span', { class: 'slot-chip', text: `[${derived.name || '…'}]` })),
+        nameInput,
+        errorModelInput,
+        el('span', { class: 'vardef__na', text: '—' }),
+        el('span', { class: 'vardef__na', text: '—' }),
+        formulaInput,
+        el('span', { class: 'vardef__type', text: 'Computed' }),
+        removeButton,
+      );
     });
 
-    mount(
-      derivedContainer,
-      el(
-        'div',
-        { class: 'derived-values__head' },
-        el('span', { text: 'Name' }),
-        el('span', { text: 'Formula' }),
-        el('span', { text: 'Represents this mistake' }),
-        el('span', { text: '' }),
-      ),
-      ...rows,
-    );
+    mount(derivedContainer, ...rows);
   }
   renderDerived();
 
@@ -313,7 +358,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   });
 
   addSlotButton.addEventListener('click', () => {
-    draftSlots.push({ name: '', valuesText: '' });
+    draftSlots.push({ name: '', description: '', valuesText: '' });
     renderSlots();
   });
 
@@ -389,7 +434,14 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
         const saved = await patchQuestionParams(questionId, currentPatch());
         draftSlots.length = 0;
         for (const s of saved.paramSlots ?? []) {
-          draftSlots.push({ name: s.name, min: s.min, max: s.max, step: s.step, valuesText: (s.values ?? []).join(', ') });
+          draftSlots.push({
+            name: s.name,
+            description: s.description ?? '',
+            min: s.min,
+            max: s.max,
+            step: s.step,
+            valuesText: (s.values ?? []).join(', '),
+          });
         }
         draftDerived.length = 0;
         for (const d of saved.derivedValues ?? []) {
@@ -421,30 +473,50 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       },
       '← Back to Question',
     ),
-    pageHeader('Parameterization', 'Configure randomized {{slots}} for this question.'),
+    pageHeader(
+      'Parameterization Configuration',
+      'Define variable slots and value ranges so the system can generate structurally '
+        + 'identical variants with different numbers at serve time.',
+    ),
     el(
       'div',
       { class: 'param-config-layout' },
-      el('h3', { class: 'detail-section-title', text: 'Stem' }),
+      el('h3', { class: 'detail-section-title', text: 'Question stem (variable slots highlighted)' }),
       stemDisplay,
-      el('h3', { class: 'detail-section-title', text: 'Slots' }),
-      slotsContainer,
-      addSlotButton,
-      el('h3', { class: 'detail-section-title', text: 'Derived Values' }),
+      el('h3', { class: 'detail-section-title', text: 'Variable Definitions' }),
       el('p', {
         class: 'form-field__help',
-        text: 'The correct answer and every distractor, computed from the slots above. '
-          + 'Each distractor should name the specific mistake it represents.',
+        text: 'Drawn variables are randomised per student within their range. Computed '
+          + 'variables are calculated from them by formula — the correct answer and every '
+          + 'distractor. Every number a student sees comes from this table.',
       }),
+      el(
+        'div',
+        { class: 'vardef__head' },
+        el('span', { text: 'Variable' }),
+        el('span', { text: 'Name' }),
+        el('span', { text: 'Description' }),
+        el('span', { text: 'Min' }),
+        el('span', { text: 'Max' }),
+        el('span', { text: 'Step / values / formula' }),
+        el('span', { text: 'Type' }),
+        el('span', { text: '' }),
+      ),
+      slotsContainer,
       derivedContainer,
-      addDerivedButton,
+      el('div', { class: 'row row--wrap' }, addSlotButton, addDerivedButton),
       verificationSlot,
       el('h3', { class: 'detail-section-title', text: 'Generate Script (advanced, optional)' }),
       generateScriptTextarea,
       errorSlot,
       el('div', { class: 'param-config-actions' }, previewButton, saveButton),
-      el('h3', { class: 'detail-section-title', text: 'Preview' }),
+      el('h3', { class: 'detail-section-title', text: 'Preview — sample randomized variant' }),
       previewSlot,
+      el('p', {
+        class: 'form-field__help',
+        text: 'Saving does not change the question\u2019s approval state. The question must '
+          + 'still be approved to be served to students.',
+      }),
     ),
   );
 }

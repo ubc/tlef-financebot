@@ -5485,34 +5485,68 @@ button.class-row--link:focus-visible .class-row__title {
   }
 }
 
-/* Derived values on the parameterization panel (design spec 2026-08-05): the
-   correct answer and every distractor, each computed from the slots above.
-   Four-up grid matching .param-slots' conventions, collapsing on narrow
-   screens like .exam-template-fields does. */
-.derived-values {
+/* Variable Definitions table on the parameterization panel (design spec
+   2026-08-05). One table for both drawn slots and computed values, so an
+   instructor reads every number a student can see in one place. Column order
+   matches the header in param-config.ts. */
+.vardef__head,
+.vardef__row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.6fr)
+    minmax(0, 0.6fr) minmax(0, 0.6fr) minmax(0, 1.8fr) minmax(0, 0.7fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+}
+
+.vardef__head {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.vardef__row {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The variable as it appears in the stem. `[NAME]` reads far better than the
+   stored `{{NAME}}`; the storage format is unchanged. */
+.slot-chip {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.vardef__var {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.2rem;
+  align-items: flex-start;
 }
 
-.derived-values__head,
-.derived-values__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 2.5fr) auto;
-  gap: 0.6rem;
-  align-items: center;
+.vardef__warn {
+  font-size: 0.7rem;
+  color: var(--warn);
 }
 
-.derived-values__head {
+.vardef__na {
+  display: flex;
+  gap: 0.35rem;
+  color: var(--muted);
   font-size: 0.85rem;
-  font-weight: 650;
+}
+
+.vardef__type {
+  font-size: 0.8rem;
   color: var(--muted);
 }
 
-/* The single signal telling an instructor whether students can see this
-   question — absent proof is the numeric gate's refusal condition. Uses the
-   existing solid badge fills, which are chosen for AA contrast on any
-   surface, rather than introducing new colour tokens. */
 .verification-banner {
   padding: 0.65rem 0.85rem;
   border-radius: var(--radius-sm);
@@ -5530,13 +5564,14 @@ button.class-row--link:focus-visible .class-row__title {
   color: var(--err-fg);
 }
 
-@media (max-width: 640px) {
-  .derived-values__head {
+@media (max-width: 900px) {
+  .vardef__head {
     display: none;
   }
 
-  .derived-values__row {
+  .vardef__row {
     grid-template-columns: 1fr;
+    padding: 0.6rem 0;
   }
 }
 

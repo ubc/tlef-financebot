@@ -127,6 +127,7 @@ const patchQuestionBody = z.object({
 // subset is present).
 const paramSlotBody = z.object({
   name: z.string().min(1),
+  description: z.string().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
   step: z.number().optional(),

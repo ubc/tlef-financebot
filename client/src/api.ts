@@ -1914,7 +1914,7 @@ export interface QuestionVersion {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
-  paramSlots?: Array<{ name: string; min?: number; max?: number; step?: number; values?: number[] }>;
+  paramSlots?: Array<{ name: string; description?: string; min?: number; max?: number; step?: number; values?: number[] }>;
   generateScript?: string;
   /** Values COMPUTED from the slots — the correct answer and every distractor
    * of a numerical question. */
@@ -2091,6 +2091,8 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
 
 export interface ParamSlotInput {
   name: string;
+  /** Instructor-facing label shown in the Description column. */
+  description?: string;
   min?: number;
   max?: number;
   step?: number;

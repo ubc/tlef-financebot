@@ -195,6 +195,7 @@ export interface QuestionOption {
 /** One variable slot in a parameterized question (IN-Q09). */
 export interface ParamSlot {
   name: string; // matches {{name}} placeholders in the stem
+  description?: string; // instructor-facing label, e.g. "Investment amount"
   min?: number;
   max?: number;
   step?: number;

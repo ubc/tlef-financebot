@@ -89,16 +89,16 @@ test.describe('numeric parameterization', () => {
 
   test('a broken range is rejected with a reason; fixing it earns a proof', async ({ page }) => {
     await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}/params`);
-    await expect(page.getByRole('heading', { name: 'Parameterization' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Parameterization Configuration' })).toBeVisible();
 
     await test.step('add slots whose range lets the discount rate reach zero', async () => {
-      await page.getByRole('button', { name: '+ Add Slot' }).click();
+      await page.getByRole('button', { name: '+ Add Drawn Variable' }).click();
       await page.locator('#slot-name-0').fill('PAYMENT');
       await page.locator('#slot-min-0').fill('100');
       await page.locator('#slot-max-0').fill('900');
       await page.locator('#slot-step-0').fill('100');
 
-      await page.getByRole('button', { name: '+ Add Slot' }).click();
+      await page.getByRole('button', { name: '+ Add Drawn Variable' }).click();
       await page.locator('#slot-name-1').fill('RATE_PCT');
       // -100% makes (1 + RATE_PCT/100) exactly zero, so PV divides by zero.
       await page.locator('#slot-min-1').fill('-100');
@@ -107,18 +107,18 @@ test.describe('numeric parameterization', () => {
     });
 
     await test.step('add the derived values', async () => {
-      await page.getByRole('button', { name: '+ Add Derived Value' }).click();
+      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
       await page.locator('#derived-name-0').fill('PV');
       await page.locator('#derived-formula-0').fill('PAYMENT/(1+RATE_PCT/100)');
 
-      await page.getByRole('button', { name: '+ Add Derived Value' }).click();
+      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
       await page.locator('#derived-name-1').fill('PV_WRONG');
       await page.locator('#derived-formula-1').fill('PAYMENT*(1+RATE_PCT/100)');
       await page.locator('#derived-error-1').fill('compounded forward instead of discounting back');
     });
 
     await test.step('saving reports the division by zero and withholds the proof', async () => {
-      await page.getByRole('button', { name: 'Save Parameters' }).click();
+      await page.getByRole('button', { name: 'Save Parameterization' }).click();
       const banner = page.locator('.verification-banner--fail');
       await expect(banner).toBeVisible();
       await expect(banner).toContainText(/division by zero/);
@@ -129,7 +129,7 @@ test.describe('numeric parameterization', () => {
       await page.locator('#slot-min-1').fill('4');
       await page.locator('#slot-max-1').fill('12');
       await page.locator('#slot-step-1').fill('2');
-      await page.getByRole('button', { name: 'Save Parameters' }).click();
+      await page.getByRole('button', { name: 'Save Parameterization' }).click();
 
       await expect(page.locator('.verification-banner--ok')).toBeVisible();
       await expect(page.locator('.verification-banner--fail')).toHaveCount(0);
