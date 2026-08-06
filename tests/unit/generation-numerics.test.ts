@@ -79,12 +79,25 @@ describe('GENERATOR_PROMPT', () => {
     expect(generatorPrompt).toMatch(/CORRECT value MUST NOT carry an "errorModel"/);
   });
 
-  it('warns specifically about reversed subtraction', () => {
-    // The first real generation failed verification exactly this way:
-    // VALUE_MEASURE = A - B against INCORRECT_DIFFERENCE_REVERSED = B - A,
-    // which are both 0 wherever A equals B.
-    expect(generatorPrompt).toMatch(/REVERSED SUBTRACTION/);
-    expect(generatorPrompt).toMatch(/do NOT use "B - A" as a distractor/);
+  it('demands a pairwise collision check rather than listing shapes to avoid', () => {
+    // Two consecutive live generations were rejected for colliding options, each
+    // a DIFFERENT shape (A-B vs B-A, then A vs B with overlapping ranges).
+    // Enumerating shapes is whack-a-mole; the prompt asks the model to solve
+    // each pair for equality instead.
+    expect(generatorPrompt).toMatch(/PAIRWISE COLLISION CHECK/);
+    expect(generatorPrompt).toMatch(/set them\nequal, and solve/);
+  });
+
+  it('names the collision shapes seen in real generations', () => {
+    expect(generatorPrompt).toMatch(/two bare slot values.*OVERLAP/s);
+    expect(generatorPrompt).toMatch(/"A - B" and "B" are equal when A = 2\*B/);
+    expect(generatorPrompt).toMatch(/"A - B" and "B - A" are equal when A = B/);
+  });
+
+  it('prescribes disjoint slot ranges as the preferred remedy', () => {
+    // One tactic kills most collisions at once: if A is always far larger than
+    // B then A != B, A-B != B, and A+B differs from both.
+    expect(generatorPrompt).toMatch(/DISJOINT, WELL-SEPARATED ranges/);
   });
 
   it('still describes conceptual questions as a first-class option', () => {
