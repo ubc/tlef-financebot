@@ -1,6 +1,14 @@
 # Stephen — Phase 5 status
 
-_Last updated: 2026-08-05_
+_Last updated: 2026-08-07_
+
+## In progress
+
+- Guided Course Launch journey: turn the numbered Course Home path into
+  truthful stage states and make Next actions a progressive, in-context setup
+  guide with existing-LO and material-first entry paths. The implementation
+  reuses existing domain APIs and content-run SSE rather than persisting a
+  separate wizard state.
 
 ## Completed
 

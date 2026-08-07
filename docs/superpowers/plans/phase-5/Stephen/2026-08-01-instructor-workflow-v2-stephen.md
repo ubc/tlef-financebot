@@ -59,6 +59,43 @@ backed by one authoritative aggregate contract.
 After this slice is clean: LO Content Studio, unified Action Inbox,
 analytics-to-action links, course/team lifecycle, then Admin Operations.
 
+## Guided Course Launch journey — 2026-08-07
+
+### Product contract
+
+- [ ] Keep the numbered Sources → LOs → Questions → Review → Preview path as
+  freely navigable expert shortcuts, while deriving a truthful state for every
+  stage from existing course/content/run/question/preview data.
+- [ ] Make Next actions a progressive onboarding guide: one primary next-best
+  action at a time, with completed and upcoming work visible but not competing.
+- [ ] Never report an empty source library as "Knowledge ready"; reserve red
+  status for actual failure/blocking conditions rather than normal not-started
+  work.
+
+### Course Home guided actions
+
+- [ ] Keep course-date setup in the existing in-context dialog with standard
+  term anchors, validation, and a full-Settings escape hatch.
+- [ ] Replace the page jump for an empty course with a guided dialog that first
+  asks whether the instructor already has Learning Objectives.
+- [ ] Existing-LO path: accept pasted/manual LO text, create the hierarchy via
+  the authoritative course APIs, and offer material upload as the next step.
+- [ ] Material-first path: upload one or more sources, show durable content-run
+  progress, then surface the existing AI hierarchy proposal/review/apply flow.
+- [ ] Every dialog supports Cancel/close without losing completed work and a
+  direct "Open full workspace" escape hatch for advanced editing.
+
+### Automatic progression and verification
+
+- [ ] Recompute the workflow summary after each mutation/run update so the
+  primary action and numbered-stage states advance without a parallel wizard
+  record.
+- [ ] Add desktop/mobile, keyboard/focus, empty/error/retry and authorization
+  coverage for both entry paths.
+- [ ] Update PRD, API contract, AGENTS current-state, and Stephen status; run
+  lint, typecheck, Jest, build, Playwright and axe where the local services
+  permit, then sync the final plan evidence.
+
 ## Course-as-Project UX foundation — 2026-08-05
 
 - [x] Treat each course as a durable Project on the Instructor landing page.
