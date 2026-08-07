@@ -4,11 +4,8 @@ _Last updated: 2026-08-07_
 
 ## In progress
 
-- Guided Course Launch journey: turn the numbered Course Home path into
-  truthful stage states and make Next actions a progressive, in-context setup
-  guide with existing-LO and material-first entry paths. The implementation
-  reuses existing domain APIs and content-run SSE rather than persisting a
-  separate wizard state.
+- No Guided Course Preparation work remains. Task 2, the LO-centred Content
+  Studio, is the next Stephen-owned Phase 5 slice.
 
 ## Completed
 
@@ -19,6 +16,19 @@ _Last updated: 2026-08-07_
   `970b0fd`; the branch contains three verified commits and was 0 behind / 3
   ahead of `main` when the PR was created.
 - Task 1: Instructor Course Launch Cockpit — complete in `380cf0f`.
+- Task 1 Guided Course Preparation follow-up — complete in the current
+  `codex/course-knowledge-workspace` worktree. Course Home now derives five
+  truthful setup-stage states and exactly one primary Next Action. The
+  resumable in-context guide handles term-aware dates, an existing-LO path, a
+  materials-first path with durable SSE progress and explicit AI cost consent,
+  focused question approval, real isolated Student Preview, and publication.
+  It reuses course/content/question/preview sources of truth and stores no
+  parallel wizard record.
+- Retry and concurrency safety are included: outline upsert is name-idempotent,
+  paid generation accounts for all unapproved questions before enqueueing,
+  stale SSE revisions cannot rewind the guide, and focused approval uses the
+  expected question-version id so concurrent edits return the existing 409
+  conflict instead of silently approving an older version.
 - One course-scoped read model now aggregates lifecycle/readiness, unique
   Approved-question count, review backlog, active flags, thin LOs, unassigned
   materials, failed/partial content work, and low-engagement students without
@@ -68,6 +78,18 @@ _Last updated: 2026-08-07_
 - Course-as-Project role verification: 84 Jest suites / 888 tests passed; 28/28
   configured Playwright workflows passed with the one opt-in live-LLM test
   skipped; 5/5 axe WCAG A/AA scenarios passed.
+- Guided Course Preparation verification (2026-08-07): lint, typecheck, and
+  build passed; the full Jest suite passed 87 suites / 936 tests; the real
+  Instructor pipeline passed create → dates → existing LO → material upload →
+  approval → isolated Student Preview attempt → publish (the opt-in live-LLM
+  case skipped). A deterministic materials-first E2E passed upload → SSE
+  reconnect → failure → retry → completion → AI hierarchy review/edit/apply
+  without calling embeddings or an LLM. The combined guided browser regression
+  passed 4 tests with only the opt-in live-LLM case skipped, and the dedicated
+  guide axe WCAG A/AA scenario passed. Manual and automated QA at 390px showed
+  all five stages at once with no horizontal overflow; keyboard Enter/Escape,
+  focus restoration, and close-after-save persistence passed; the manual
+  browser run had no warning/error logs.
 
 ## Next
 
