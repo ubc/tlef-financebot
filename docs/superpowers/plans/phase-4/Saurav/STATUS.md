@@ -1,8 +1,6 @@
 # Saurav — Phase 4 progress
 
-_Last updated: 2026-08-05 (reconciliation against `main` @ `ecced1f`: PRs #60 and
-#62 had both merged while this file still described #60 as in flight and did not
-mention #62 at all)._
+_Last updated: 2026-08-02_
 
 Phase 4 carries **no owner map** — the core plan has no `**Owner:**` line on any
 of its six tasks, the same gap Phase 3 had. Rather than propose another map (the
@@ -13,27 +11,22 @@ them.
 
 ---
 
-## Where this stands at a glance (2026-08-05)
+## Where this stands at a glance (2026-08-02)
 
 | Task | State |
 |---|---|
-| 1 — Critical-path E2E | Steps 1, 2, 4 done (#55). **Step 3 unblocked 2026-08-05** — the allowlist question is answered; remaining work is the ~10-line role-aware spec fix |
+| 1 — Critical-path E2E | Steps 1, 2, 4 done (#55). **Step 3 blocked on a decision** — see below |
 | 2 — WCAG 2.1 AA scans | **Complete** (#58). 11 surfaces clean |
 | 3 — 250-session concurrency | Not started. Buildable locally now; the gated run needs staging |
-| 4 — Browser/device spot checks | Not started. **Bigger than the plan assumes — see the Chromium-only finding**, and it grew again with the TA workspace (#62) |
-| 5 — Instructor content week | Not started. Blocked on real COMM 298 content (Phase 2's open exit item). **Hard start Aug 24 — 19 days out** |
+| 4 — Browser/device spot checks | Not started. **Bigger than the plan assumes — see the Chromium-only finding** |
+| 5 — Instructor content week | Not started. Blocked on real COMM 298 content (Phase 2's open exit item) |
 | 6 — Launch readiness | Steps 1–2 effectively **done** (new info below); Step 3 is unbuilt work |
 
-**The UI-bug pause is over.** Both bugs it was called for are merged: the
-notification bell (#60, 2026-08-02) and TA workspace parity (#62, 2026-08-04).
-Bug fixes were in scope during the freeze by the phase doc's own rule ("every
-change in this phase is a test, a bug fix, or launch configuration"), and the
-point of sequencing them first was that the browser matrix and load numbers
-should describe the fixed build. **That build now exists** — Task 4 and Task 3
-can proceed against `ecced1f`.
-
-Baseline on `main` @ `ecced1f`, re-run 2026-08-05: `npm run typecheck` clean,
-`npx eslint .` clean, `npx jest` green at **83 suites / 862 tests**.
+**Paused deliberately on 2026-08-02:** Saurav is fixing UI bugs found while
+using the app before the remaining Phase 4 verification runs, so the browser
+matrix and the load numbers describe the fixed build rather than one about to
+change. Bug fixes are in scope during the freeze by the phase doc's own rule
+("every change in this phase is a test, a bug fix, or launch configuration").
 
 ## NEW — infrastructure facts the shared plan does not yet reflect
 
@@ -58,7 +51,7 @@ staging URL — see the open question at the end).
 |---|---|
 | 1. Audit coverage | **done** — PR #55 |
 | 2. `critical-paths.spec.ts` | **done** — PR #55 |
-| 3. Full suite 3× green | **UNBLOCKED 2026-08-05** — decision made; the role-aware spec fix is now ordinary work. See below |
+| 3. Full suite 3× green | **BLOCKED** — see below |
 | 4. Commit | done (PRs #55, and the fixes branch) |
 
 **Step 1 result.** All three required critical paths were already covered:
@@ -110,24 +103,10 @@ heading that differs.
   ambient database state. *Recommended.*
 - **Leave them and record**, deferring the Phase 0 specs to Stephen.
 
-**✅ ANSWERED 2026-08-05 — it was deliberate.** Saurav: *"The admin shell is
-fine, that's how I want my local machine's faculty."* So **reverting the
-allowlist is off the table**, and with it the first option above. The
-`isAdmin` flag on `12345678` is intended local configuration, not residue from
-the 2026-08-01 admin-landing check.
-
-**That settles Task 1 Step 3 on the recommended path: make both specs
-role-aware** (~10 lines). `app.spec.ts:9` and `walking-skeleton.spec.ts:13`
-assert the *instructor* shell — `nav "Instructor"`, the `My Courses` heading —
-while `main.ts:295-298` swap the whole route table and nav on `isAdmin` and
-`main.ts:386` sends `/` to `/admin/accounts`. The specs are asserting ambient
-state they do not own; the fix belongs in the specs, not in `.env`.
-
-**Reconfirmed on 2026-08-05** during PR #63's e2e run: both specs still fail,
-identically, on a clean `main`. A third failure, `classes.spec.ts:69`, is a
-**different** user (`staff`, puid `11223344`, `isAdmin: false`) and so is *not*
-explained by the allowlist — it has a separate, still-undiagnosed cause and
-should not be folded into the role-aware fix without its own look.
+**Open question for whoever returns to this:** was
+`ADMIN_CWL_ALLOWLIST=12345678` set deliberately, or is it a leftover from an
+ad-hoc check of the admin-landing behaviour on 2026-08-01? If the latter,
+reverting it is the honest fix and the specs' assumption becomes true again.
 
 ## Task 2 — WCAG 2.1 AA scans — COMPLETE (#58)
 
@@ -211,14 +190,10 @@ a launch-blocking bug fix now"), but it is unbuilt *feature* work, not a fix.
 Not verified: the in-practice disclaimer and the CWL-username watermark, which
 may or may not exist — the consent gating is the part confirmed absent.
 
-## UI bug fix — notification bell: navigate & dismiss — MERGED (#60)
+## UI bug fix — notification bell: navigate & dismiss (branch `saurav/fix-notification-bell`)
 
 The first of the UI bugs the freeze-legal pause above was called for. Plan:
-[`2026-08-02-notification-bell-navigate-and-dismiss.md`](2026-08-02-notification-bell-navigate-and-dismiss.md)
-(all 36 step checkboxes now ticked; reconciled 2026-08-05).
-
-**Merged 2026-08-02** as `f2b1aa5` — PR #60, branch `saurav/fix-notification-bell`,
-since deleted. The section below describes shipped code on `main`, not a branch.
+[`.superpowers/sdd/2026-08-02-notification-bell-navigate-and-dismiss/`](../../../../../.superpowers/sdd/2026-08-02-notification-bell-navigate-and-dismiss/).
 
 **The bug.** The bell was a dead end. Notification rows were inert — clicking
 one did nothing, so there was no way to get from "a question was flagged" to
@@ -423,10 +398,8 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 ## Open questions — these need a human, not a session
 
-1. ~~**Was `ADMIN_CWL_ALLOWLIST=12345678` deliberate?**~~ **ANSWERED
-   2026-08-05: yes, deliberate** — Saurav wants the local `faculty` user on the
-   admin shell. Task 1 Step 3 is therefore unblocked, and the fix is the
-   role-aware spec change (~10 lines), not an `.env` revert. Details above.
+1. **Was `ADMIN_CWL_ALLOWLIST=12345678` deliberate?** Decides Task 1 Step 3
+   (details above). One line either way.
 2. **Staging URL/host, and who deploys to it.** Needed to reconcile Task 6
    Steps 1–2 in the shared plan and to point the load run somewhere. Left out
    of the core plan deliberately rather than written as a placeholder.
@@ -437,14 +410,11 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 ## Suggested order when this resumes
 
-1. ~~**UI bug fixes**~~ — **done, 2026-08-05.** Both landed: notification bell
-   (#60) and TA workspace parity (#62). The fixed build the rest of this order
-   depends on is `main` @ `ecced1f`.
-2. **Task 4 cross-browser** — **now the top of the queue.** No staging or content
-   needed, and it is the first time this app will run in Safari/WebKit. Add the
-   TA review queue, TA flag triage and TA question page to the matrix, and fold
-   in the three unticked manual TA checks from #62's plan rather than running
-   them separately.
+1. **UI bug fixes** — in progress by Saurav, deliberately ahead of the remaining
+   verification so the browser matrix and load numbers describe the fixed build.
+   The notification bell one is done (section above); more may follow.
+2. **Task 4 cross-browser** — no staging or content needed, and it is the first
+   time this app will run in Safari/WebKit. May reclassify some of the UI bugs.
 3. **Task 3 scripts** — build and debug locally, check query plans, hold the
    gated staging run for Rich's go-ahead.
 4. **Task 6 doc reconciliation** — once the staging URL is known.
@@ -453,54 +423,53 @@ the default suite exercises it** — the only live-LLM test stays skipped unless
 
 ## Next session: read this first
 
-_Updated 2026-08-05._
-
-**Nothing is in flight. `main` @ `ecced1f` is clean, and every Saurav branch is
-merged and deleted** (`fix-notification-bell`, `phase-4-status-handoff`,
-`phase-4-task-2-a11y`, `phase-4-step-3-annotation` — all were 0 commits ahead).
-
-Read the bell section above before touching `notifications-bell.ts`,
-`notification-target.ts`, or the flag queue's highlight: the "opening clears the
-badge" behaviour is a deliberate reversal, not a regression.
-
-Also merged since this file was last written: **TA workspace parity** (PR #62) —
-see the Phase 3 section below.
+Everything Saurav did on 2026-08-01/02 up to #59 is merged. **One branch is in
+flight: `saurav/fix-notification-bell`** — the bell bug fix above, all six tasks
+landed and verified, not yet merged. Read its section before touching
+`notifications-bell.ts`, `notification-target.ts`, or the flag queue's
+highlight: the "opening clears the badge" behaviour is a deliberate reversal,
+not a regression.
 
 The four open questions above are the only things blocking forward progress
 that a session cannot resolve on its own.
 
-## Merged after this file went stale — TA workspace parity (#62, 2026-08-04)
+## 2026-08-06 — Numerical correctness PR #66 review
 
-Recorded here on 2026-08-05 because the work is Phase 3 lineage but lands inside
-the Phase 4 freeze. Plan:
-[`../../phase-3/Saurav/2026-08-04-ta-workspace-parity.md`](../../phase-3/Saurav/2026-08-04-ta-workspace-parity.md)
-(all 43 step checkboxes now ticked).
+Implementation and automated verification are complete: **49/52** plan checks
+are recorded in
+`2026-08-05-numerical-question-correctness-saurav.md`. The three intentionally
+open checks are live manual instructor/student confirmations, not missing code.
 
-**Why it counted as in-scope during the freeze:** it is a bug fix under the
-phase doc's own rule. Phase 3 Task 6 specified the TA review queue as the same
-data as the instructor queue minus approve/reject affordances; the server
-honoured that and the client did not, leaving two 90-line raw-textarea stacks
-against the instructor's 448- and 730-line views.
+Stephen's pre-merge review found and fixed two correctness holes before merge:
 
-**What shipped** (7 tasks): a read-only `GET /api/courses/:courseId/outline`
-endpoint for `question.review` holders; a client outline wrapper and shared TA
-presentation helpers (`client/src/views/ta/ta-ui.ts`); flag grouping extracted
-into a shared tested module (`client/src/flag-groups.ts`); the TA review queue
-and flag triage rebuilt to mirror the instructor views; a new TA question page
-with suggest-edit, notes and escalation; and TA escalations surfaced and
-prioritised in the instructor flag queue. Proactive *question* escalation was
-deliberately dropped late (`ea3af8a`) — **flags escalate, questions do not.**
+1. A numerical question could previously earn a proof while some answer
+   options remained literal LLM-written numbers, or while multiple options
+   reused one computed placeholder. Verification now requires exactly one
+   computed derived value per displayed option and checks the per-option list,
+   including duplicates and missing script outputs.
+2. Side-by-side regeneration returned only stem/options and dropped the
+   generated parameter definitions. Accepting a variant now writes its stem,
+   options, slots, derived values, numeric declaration, and fresh proof in one
+   QuestionVersion, so no approved intermediate version can expose unresolved
+   placeholders.
 
-**Verification state:** `typecheck`, `eslint .` and `jest` (83 suites / 862
-tests) are green on `main` as of 2026-08-05. **Three manual browser checks are
-still unticked** — real TA account, instructor account, and the
-capabilities-all-on TA invariant. The late fix commits (`ac8065d` missing
-styles, `873ba8d` `_id`→`id`, `95d1535` missing `loIds`/`themeIds`) are
-browser-only defects, so runs almost certainly happened, but the results were
-never recorded. **This overlaps Task 4's browser matrix — fold them into that
-run rather than doing them twice.**
+The review also synchronized `docs/api-contract.md`, the design's fail-closed
+conceptual-detection wording, this README, and root `AGENTS.md`. Verification:
+`npm run typecheck`, focused ESLint, 95 focused tests, and the full Jest suite
+(90 suites / 983 tests) pass. PR #66's recorded Playwright run has no new
+failures; the three existing environment/config failures remain documented in
+the PR.
 
-**Bearing on Task 4:** the TA workspace is new surface area that has never been
-opened in Safari/WebKit. Add the two TA views and the TA question page to the
-Task 4 matrix; the "bigger than the plan assumes" finding above now covers three
-more screens than when it was written.
+## 2026-08-06 — Course Settings PRs #67 and #68
+
+- #67 documents Auto-pause, Feedback Strategy, and Registration Code in the
+  product with keyboard-, hover-, touch-, and screen-reader-accessible help
+  tips. Course Settings is now included in the axe A/AA scan.
+- #68 adds preview-first roster CSV import, column detection/override, row-level
+  rejects, and the documented CWL/email-only identity constraint. It updates
+  `docs/api-contract.md` in the same change.
+- Stephen's pre-merge review closed two data-safety gaps in #68: a headerless
+  invalid first row is no longer mistaken for a header, and a preview with zero
+  usable identifiers disables Save Roster so it cannot silently wipe an
+  existing roster. Manual editing re-enables the intentional replace/clear
+  path.

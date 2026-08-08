@@ -4,8 +4,6 @@
 
 **Owner:** Saurav
 
-**Status:** **All 6 tasks implemented and merged** — PR #60 (`saurav/fix-notification-bell`), landed on `main` as `f2b1aa5`, 2026-08-02. Checkboxes reconciled 2026-08-05 against the merged code: `dismissedAt` on the domain type and service, the `/dismiss` and `/dismiss-all` routes, `client/src/notification-target.ts` + its unit tests, the rewritten bell, and the flag-queue scroll-and-highlight are all present on `main`, with `npm run typecheck`, `npx eslint .` and `npx jest` (83 suites / 862 tests) green. **Caveat:** the Playwright layer (`tests/e2e/notification-bell.spec.ts`) was confirmed present but **not re-run** during this reconciliation — it needs a live server and Mongo.
-
 **Goal:** Make the notification bell actionable — clicking a notification navigates to the relevant flag queue and dismisses it, opening the bell clears the unread badge, and a "Clear all" button empties the list for good.
 
 **Architecture:** Dismissal becomes server-side state (a `dismissedAt` timestamp on the `Notification` document) because the bell polls every 30s and would otherwise resurrect anything cleared only in the browser. Route resolution lives in a new pure client module, `client/src/notification-target.ts`, so it is unit-testable under Jest's Node environment — the bell's own DOM behaviour is covered by Playwright instead (see `tests/AGENTS.md`: units are server-side; client DOM belongs to the e2e layer). Both flag-queue views gain a query-param-driven scroll-and-highlight so a notification lands the user on the exact flag.
@@ -59,7 +57,7 @@
   - `dismissAllNotifications(puid: string): Promise<number>` — returns count modified.
   - `listNotifications` keeps its existing signature `(puid: string, opts?: { unreadOnly?: boolean })` but now excludes dismissed documents.
 
-- [x] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests**
 
 Add to `tests/unit/notifications.service.test.ts`, following the existing `jest.mock('../../server/src/components/mongodb/collections')` pattern already at the top of that file. Add `dismissNotification`, `dismissAllNotifications`, and `listNotifications` to the import block from `notifications.service`.
 
@@ -137,12 +135,12 @@ describe('dismissal', () => {
 
 Note: `Notification` is already imported as a type in that file's import block; if not, add `import type { Notification } from '../../server/src/types/domain';`.
 
-- [x] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx jest tests/unit/notifications.service.test.ts -t dismissal`
 Expected: FAIL — `dismissNotification is not a function` / `dismissAllNotifications is not a function`, and the two `listNotifications` cases failing on the missing `dismissedAt` filter.
 
-- [x] **Step 3: Add the field to the domain type**
+- [ ] **Step 3: Add the field to the domain type**
 
 In `server/src/types/domain.ts`, inside `interface Notification`, add `dismissedAt` immediately after `readAt`:
 
@@ -156,7 +154,7 @@ In `server/src/types/domain.ts`, inside `interface Notification`, add `dismissed
   createdAt: Date;
 ```
 
-- [x] **Step 4: Implement the service changes**
+- [ ] **Step 4: Implement the service changes**
 
 In `server/src/services/notifications.service.ts`, replace `listNotifications` and append the two new functions after `markAllNotificationsRead`:
 
@@ -200,12 +198,12 @@ export async function dismissAllNotifications(puid: string): Promise<number> {
 }
 ```
 
-- [x] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npx jest tests/unit/notifications.service.test.ts`
 Expected: PASS — the new `dismissal` block plus every pre-existing test in the file.
 
-- [x] **Step 6: Typecheck and commit**
+- [ ] **Step 6: Typecheck and commit**
 
 ```bash
 npm run typecheck:server
@@ -229,7 +227,7 @@ git commit -m "feat(notifications): server-side dismissal state"
 
 **Route-ordering note:** register `dismiss-all` BEFORE `:id/dismiss` is not required here (the paths differ in shape, and `:id` is regex-validated to a 24-hex ObjectId so `dismiss-all` cannot match it), but keep `dismiss-all` adjacent to `read-all` for readability.
 
-- [x] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests**
 
 In `tests/unit/notifications.routes.test.ts`, extend the `jest.mock` factory to include the two new service functions, add them to the import block, then append these describes:
 
@@ -291,12 +289,12 @@ describe('POST /api/notifications/dismiss-all', () => {
 });
 ```
 
-- [x] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx jest tests/unit/notifications.routes.test.ts`
 Expected: FAIL — 404s from Express for the unregistered routes.
 
-- [x] **Step 3: Implement the routes**
+- [ ] **Step 3: Implement the routes**
 
 In `server/src/routes/notifications.routes.ts`, extend the service import on line 7:
 
@@ -336,12 +334,12 @@ notificationsRouter.post('/notifications/dismiss-all', ensureApiAuthenticated(),
 
 The existing `NOTIFICATION_ERROR_STATUS` map already routes `'notification-not-found'` to 404, so the error path needs no change.
 
-- [x] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx jest tests/unit/notifications.routes.test.ts`
 Expected: PASS — all describes, old and new.
 
-- [x] **Step 5: Typecheck and commit**
+- [ ] **Step 5: Typecheck and commit**
 
 ```bash
 npm run typecheck:server
@@ -387,7 +385,7 @@ git commit -m "feat(notifications): dismiss and dismiss-all endpoints"
 
 This module is pure (no DOM, no imports beyond a type), which is what makes it unit-testable under Jest's `testEnvironment: 'node'` — see `tests/AGENTS.md`.
 
-- [x] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test**
 
 Create `tests/unit/notification-target.test.ts`:
 
@@ -481,12 +479,12 @@ describe('notificationTarget', () => {
 });
 ```
 
-- [x] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx jest tests/unit/notification-target.test.ts`
 Expected: FAIL — `Cannot find module '../../client/src/notification-target'`.
 
-- [x] **Step 3: Implement the module**
+- [ ] **Step 3: Implement the module**
 
 Create `client/src/notification-target.ts`:
 
@@ -543,12 +541,12 @@ export function notificationTarget(n: AppNotification, audience: NotificationAud
 }
 ```
 
-- [x] **Step 4: Run the test to verify it passes**
+- [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx jest tests/unit/notification-target.test.ts`
 Expected: PASS — 13 tests.
 
-- [x] **Step 5: Typecheck and commit**
+- [ ] **Step 5: Typecheck and commit**
 
 ```bash
 npm run typecheck:client
@@ -602,7 +600,7 @@ git commit -m "feat(notifications): map notifications to their in-app destinatio
 2. Clicking an item removes it from the list, closes the panel, navigates to its target (if any), and persists the dismissal.
 3. The panel header's "Mark all read" becomes **"Clear all"**, which empties the list.
 
-- [x] **Step 1: Add the API bindings**
+- [ ] **Step 1: Add the API bindings**
 
 Append to `client/src/api.ts` after `markAllNotificationsRead` (line 2491):
 
@@ -619,7 +617,7 @@ export function dismissAllNotifications(): Promise<{ count: number }> {
 }
 ```
 
-- [x] **Step 2: Update the bell's imports and signature**
+- [ ] **Step 2: Update the bell's imports and signature**
 
 In `client/src/notifications-bell.ts`, replace the import on line 10 and add the target import:
 
@@ -642,7 +640,7 @@ Then change the signature on line 42:
 export function createNotificationBell(audience: NotificationAudience): HTMLElement {
 ```
 
-- [x] **Step 3: Rewrite the doc comment that now contradicts the code**
+- [ ] **Step 3: Rewrite the doc comment that now contradicts the code**
 
 Replace the comment block at lines 34-41 with:
 
@@ -663,7 +661,7 @@ Replace the comment block at lines 34-41 with:
  */
 ```
 
-- [x] **Step 4: Replace the click / mark-all handlers**
+- [ ] **Step 4: Replace the click / mark-all handlers**
 
 Replace `handleOpenItem` and `handleMarkAll` (lines 115-139) with:
 
@@ -724,7 +722,7 @@ Replace `handleOpenItem` and `handleMarkAll` (lines 115-139) with:
   }
 ```
 
-- [x] **Step 5: Point the item and header at the new handlers**
+- [ ] **Step 5: Point the item and header at the new handlers**
 
 In `renderItem` (line 76), change the click handler:
 
@@ -752,7 +750,7 @@ In `toggle` (lines 141-144):
   }
 ```
 
-- [x] **Step 6: Update the three shell call sites**
+- [ ] **Step 6: Update the three shell call sites**
 
 In `client/src/main.ts`:
 - line 214 (TA shell): `createNotificationBell('ta'), createThemeToggle(),`
@@ -761,12 +759,12 @@ In `client/src/main.ts`:
 
 `createAnonymousNotificationBell()` is unchanged — it has no live inbox.
 
-- [x] **Step 7: Typecheck, lint, and run the full unit suite**
+- [ ] **Step 7: Typecheck, lint, and run the full unit suite**
 
 Run: `npm run typecheck:client && npm run lint && npx jest`
 Expected: PASS. The typecheck is the real gate here — it is what proves all three call sites were updated for the new required parameter.
 
-- [x] **Step 8: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add client/src/api.ts client/src/notifications-bell.ts client/src/main.ts
@@ -814,7 +812,7 @@ git commit -m "feat(notifications): bell navigates on click and clears on demand
 
 **Why data attributes:** the instructor view groups flags by question version, so a `?flag=` lookup has to find the *group containing* that flag. Stamping both the question id and the member flag ids onto `.flag-group` lets one lookup serve both param shapes.
 
-- [x] **Step 1: Instructor view — stamp identifiers onto each group**
+- [ ] **Step 1: Instructor view — stamp identifiers onto each group**
 
 In `client/src/views/instructor/flags.ts`, add `currentQuery` to the existing router import, then in `groupRow` (line 618) replace the return:
 
@@ -831,7 +829,7 @@ In `client/src/views/instructor/flags.ts`, add `currentQuery` to the existing ro
     );
 ```
 
-- [x] **Step 2: Instructor view — highlight after render**
+- [ ] **Step 2: Instructor view — highlight after render**
 
 Add this function inside `renderFlagQueueInner`, immediately above `renderResults`:
 
@@ -868,7 +866,7 @@ Then call it as the last statement of `renderResults()` (after the `mount(...)` 
     highlightFromQuery();
 ```
 
-- [x] **Step 3: TA view — stamp and highlight**
+- [ ] **Step 3: TA view — stamp and highlight**
 
 In `client/src/views/ta/flag-triage.ts`, add the router import:
 
@@ -899,7 +897,7 @@ Then, after the `body.replaceChildren(...)` call (line 54), add:
   }
 ```
 
-- [x] **Step 4: Add the highlight style**
+- [ ] **Step 4: Add the highlight style**
 
 Append to `client/public/styles/main.css`:
 
@@ -936,12 +934,12 @@ Append to `client/public/styles/main.css`:
 
 Before writing this, grep `client/public/styles/main.css` for `--accent` and confirm that token exists in both the instructor and student themes; if the codebase uses a different accent variable name, use that one instead. Both shells must show a visible ring — Phase 4 Task 2 established WCAG AA contrast in both, and this must not regress it.
 
-- [x] **Step 5: Verify the build and full suite**
+- [ ] **Step 5: Verify the build and full suite**
 
 Run: `npm run typecheck:client && npm run lint && npx jest`
 Expected: PASS.
 
-- [x] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add client/src/views/instructor/flags.ts client/src/views/ta/flag-triage.ts client/public/styles/main.css
@@ -962,11 +960,11 @@ git commit -m "feat(flags): scroll to and highlight the flag a notification poin
 
 This is where the bell's DOM behaviour gets its real coverage — Jest runs in the Node environment with no jsdom installed, so browser behaviour cannot be unit-tested here (`tests/AGENTS.md:66-69`).
 
-- [x] **Step 1: Read two existing specs before writing**
+- [ ] **Step 1: Read two existing specs before writing**
 
 Read `tests/e2e/app.spec.ts` (for the `test.use({ storageState: AUTH_FILE })` logged-in pattern) and `tests/e2e/flag-loop.spec.ts` (for how flags are seeded and how that suite avoids depending on ambient dev-database state — commit `315d1dd` fixed exactly that class of flakiness, so do not reintroduce it).
 
-- [x] **Step 2: Write the spec**
+- [ ] **Step 2: Write the spec**
 
 Create `tests/e2e/notification-bell.spec.ts` covering, with the bell opened from a logged-in instructor shell:
 
@@ -978,21 +976,21 @@ Create `tests/e2e/notification-bell.spec.ts` covering, with the bell opened from
 
 Seed the notifications the test needs rather than relying on whatever the dev database happens to hold.
 
-- [x] **Step 3: Run the e2e suite**
+- [ ] **Step 3: Run the e2e suite**
 
 Run: `npx playwright test tests/e2e/notification-bell.spec.ts`
 Expected: PASS. If the run cannot reach a live server in this environment, say so explicitly in the task report rather than marking the step done.
 
-- [x] **Step 4: Run the a11y suite**
+- [ ] **Step 4: Run the a11y suite**
 
 Run: `npm run test:a11y`
 Expected: PASS — the new outline/animation must not regress the WCAG AA contrast work landed in commit `6e3874a`.
 
-- [x] **Step 5: Update STATUS.md**
+- [ ] **Step 5: Update STATUS.md**
 
 Record in `docs/superpowers/plans/phase-4/Saurav/STATUS.md`: the bug fix, the three product decisions (click dismisses; opening clears the badge; "Clear all" clears everything), the rationale that the flag queue is the durable record, and the reversal of the old "opening marks nothing read" rule so the next reader does not "fix" it back.
 
-- [x] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add tests/e2e/notification-bell.spec.ts docs/superpowers/plans/phase-4/Saurav/STATUS.md
