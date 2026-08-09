@@ -430,9 +430,10 @@ Every stateful Preview request carries `previewSessionId` (UUID):
   `{ previewSessionId, reason?, sendToInstructorQueue? }` →
   `{ flagged: true, testQueued }`. The option defaults to false; when true it
   additionally creates a live queue item sourced as
-  `instructor-preview-test`. The Preview **UI** pre-checks the corresponding
-  checkbox (2026-08-08, PI feedback), so an instructor who takes no action on
-  the flag form files a TEST queue item; the API default itself is unchanged.
+  `instructor-preview-test`. The Preview **UI** always sends the option
+  (2026-08-08, PI feedback), so every flag filed from Preview files a TEST
+  queue item — there is no client control over it. The API default itself is
+  unchanged, and the live student path never sends the option.
 - `GET /api/courses/:courseId/preview/review-book?previewSessionId=...&sort=theme|date`
 - `POST /api/courses/:courseId/preview/questions/:questionId/bookmark`
   `{ previewSessionId }`
@@ -456,9 +457,12 @@ submissions write only `previewAttemptRecords`, while mutable Review Book and
 flag state lives only in `previewStudentSessions`. Both are keyed by Instructor,
 course, and Preview session and expire after 24 hours. Preview never writes live
 attempt, mastery, Review Book, summary, progression, or analytics collections.
-The explicit `sendToInstructorQueue` TEST option is the sole exception: it
-writes a live instructor-queue flag and staff notification, but never adds a
-student-flag label, contributes to auto-pause, or notifies a real student.
+The `sendToInstructorQueue` TEST option is the sole exception, and since
+2026-08-08 the Preview UI sends it on every flag — so a Preview walkthrough
+that flags a question always writes one live instructor-queue flag and one
+staff notification. It never adds a student-flag label, contributes to
+auto-pause, or notifies a real student, and it leaves every other live
+collection (attempts, mastery, Review Book, session summaries) untouched.
 
 ## Review Book (student)
 - `GET /api/courses/:courseId/review-book?sort=` → grouped-by-theme entries (ST-R05)

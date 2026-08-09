@@ -576,7 +576,79 @@ here so it is not lost: if Stephen re-introduces the `false` default from the
 other side without seeing this entry, the two of you will flip it back and
 forth.
 
-### Deliberately NOT fixed: the unchecked path is a black hole
+**Updated by Task 4 (below):** there is no longer a client line to flip — the
+checkbox is gone and Preview always TEST-queues, which makes this more of a
+reversal of `f08913c`, not less. The declaration comment that used to point
+back here went with the checkbox; this section is now the only record. The
+`false` that `f08913c` argued for survives as the server-side API default,
+which Task 4 deliberately left untouched.
+
+### Follow-on (same branch, 2026-08-08): the checkbox is GONE
+
+Reviewing the result of fixes 1–3, Saurav asked whether a control that needs
+two sentences of explanation should exist at all. It should not, and Task 4
+removed it. The argument: unchecked was indistinguishable from not flagging —
+the write went to `previewStudentSessions.flags`, which no route, service or
+view reads, on a 24h TTL — so the two positions were "file a TEST flag" and "do
+nothing", and an instructor who wants the second already has it by not clicking
+"Flag this question". Every protection the tip advertises comes from
+`source: 'instructor-preview-test'` (`flags.service.ts:139`), not from the
+checkbox, which decided only whether the flag existed.
+
+What changed:
+
+- The checkbox, the `sendToInstructorQueue` card state, and the `testFlagId` id
+  are deleted from `client/src/views/student/practice-card.ts`. The decision
+  moved to `createPreviewStudentExperience` (`client/src/views/student/experience.ts`),
+  which now passes `true` unconditionally, so the card knows nothing about it —
+  `options?: { sendToInstructorQueue?: boolean }` is gone from both the
+  `PracticeCardAdapter.flag` and `StudentExperience.flag` signatures.
+- `server/src` is untouched. The API keeps its optional `sendToInstructorQueue`
+  parameter defaulting to `false`; only the Preview client's use of it became
+  unconditional, and the live student path still never sends it.
+- The adapter field was **renamed, not deleted** —
+  `allowsInstructorTestFlag` → `sendsInstructorTestFlag`, still assigned
+  `experience.preview` at `practice.ts:61`. The card no longer needs permission
+  to render a control, but it still needs to know it is in Preview so the note
+  and tip stay Preview-only. The new name states what is true.
+- The tip survives, reattached. In the checkbox row's place the form renders a
+  static `Sends a Preview test flag` plus the ⓘ. `TEST_FLAG_HELP` is trimmed to
+  its first sentence; the second described an unchecked state that no longer
+  exists.
+- **The `aria-describedby` moved rather than being deleted.** The reason for it
+  was that a screen-reader user must hear the consequence of the DEFAULT action
+  before taking it. The action is now the **Send flag** button, so in Preview
+  that button carries the attribute pointing at the same bubble id (still
+  derived from the per-card-unique `flagFormId`, because the retry recursion
+  renders a second card into the same DOM). axe still cannot catch its loss —
+  the button keeps a valid accessible name either way — so the e2e assertion is
+  the only guard.
+- `.flag-test-option input` was removed from `client/public/styles/main.css` as
+  dead after the input disappeared; `.flag-test-option` itself still styles the
+  note row.
+
+**⚠️ Accepted consequence — Preview now always writes one live TEST flag.**
+`tests/e2e/instructor-preview.spec.ts` used to assert `[0,0,0,0,0,0]` across
+attempts, mastery, Review Book, flags, notifications and session summaries. It
+now asserts `[0,0,0,1,1,0]` plus that the one flag carries
+`source: 'instructor-preview-test'` and the typed reason. This is intended, not
+a regression — the same write happened whenever the box was checked, and
+`docs/api-contract.md` already recorded the TEST flag as the documented sole
+exception to Preview isolation; what changed is that the exception is now
+unconditional. The four zeros are load-bearing and were NOT weakened.
+
+One test-hygiene change fell out of this: both tests in that spec flag the same
+approved question as the same instructor, and `flagQuestion()` dedupes on
+(puid, current version, `state: 'open'`). With the first test now always
+leaving an open live flag behind, the second test's flag would have become a
+silent no-op and stopped covering the cross-tab broadcast. A `beforeEach` now
+clears live flags and notifications for the fixture course between tests.
+
+**This closes the deferred black hole below.** With one path, "Flagged ✓" is
+always true and no discarded-comment state remains. The deferral is kept on
+record because the reasoning still explains why the control went away.
+
+### Deliberately NOT fixed (CLOSED by the Task 4 removal above): the unchecked path is a black hole
 
 Whichever way the checkbox ends up, `preview.service.ts:513` pushes the flag
 into `previewStudentSessions.flags`, which no route, service, or view ever
@@ -599,6 +671,15 @@ assertion in that spec (the checked-by-default assertion, the removed-text/ⓘ
 assertion, and the Submit-hidden assertion respectively), and all three
 reversions were then restored. Final run with all three fixes in place: **2
 passed**. `npm run lint` and `npm run typecheck` clean.
+
+Task 4 re-ran the same protocol against the rewritten spec. Removing the
+`aria-describedby` from the **Send flag** button failed the new
+`toHaveAttribute` assertion (received `""`); forcing `flagFormOpen` to `false`
+failed the Submit-hidden assertion (expected 0 Submit buttons, received 1).
+Both were restored. Final: `tests/e2e/instructor-preview.spec.ts` **2 passed**,
+`tests/e2e/flag-loop.spec.ts` (live student flag path, whose interface
+signature this task changed) **1 passed**, `npx jest` **91 suites / 1001 tests
+passed**, lint and typecheck clean.
 
 ### Not scanned by axe
 
