@@ -62,8 +62,9 @@ const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
 // the label; this says the same thing behind a ⓘ, where it is on demand.
 const TEST_FLAG_HELP =
   'Checked, this files the flag in your Flag Queue tagged as a Preview test — it will not '
-  + 'pause the question, count toward student analytics, or notify any student. Unchecked, the '
-  + 'flag stays in this preview session only and no one else sees it.';
+  + 'pause the question, count toward student analytics, or notify any student. Unchecked, '
+  + 'nothing is filed anywhere — the flag is not sent to your queue and is discarded when this '
+  + 'preview session ends.';
 
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
 
@@ -236,6 +237,10 @@ export function makeQuestionCard(
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
     const testFlagId = `${flagFormId}-test`;
+    // Derived from `flagFormId`, which is already unique per card — the retry
+    // recursion renders a second card into the same DOM, so a shared literal id
+    // here would produce duplicates and point both checkboxes at one bubble.
+    const testFlagHelpId = `${testFlagId}-help`;
     const bookmarkControl = (): HTMLElement | false => {
       // Review Book entries retain the attempt/LO/theme context needed for
       // later repractice, so bookmarking becomes available as soon as this
@@ -338,12 +343,18 @@ export function makeQuestionCard(
                 id: testFlagId,
                 type: 'checkbox',
                 checked: sendToInstructorQueue ? 'checked' : undefined,
+                // The box is pre-checked in Preview, so sending is the DEFAULT
+                // action — a screen-reader user must hear what that does on
+                // focus, not only if they go looking for the ⓘ. Before the row
+                // was un-wrapped from its <label>, the explanation was part of
+                // the accessible NAME; describedby is how it survives.
+                'aria-describedby': testFlagHelpId,
                 onchange: (event: Event) => {
                   sendToInstructorQueue = (event.target as HTMLInputElement).checked;
                 },
               }),
               el('label', { for: testFlagId }, el('strong', { text: 'Send as a test flag to Instructor Queue' })),
-              helpTip('the test flag option', TEST_FLAG_HELP),
+              helpTip('the test flag option', TEST_FLAG_HELP, testFlagHelpId),
             )
           : false,
         flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,

@@ -483,7 +483,7 @@ form on the practice card. All three are fixed on branch
 **What shipped:**
 
 1. **The TEST checkbox now defaults ON in Preview.**
-   `client/src/views/student/practice-card.ts:106` —
+   `client/src/views/student/practice-card.ts:107` —
    `let sendToInstructorQueue = Boolean(adapter.allowsInstructorTestFlag);`.
    Preview exists to exercise the real flag loop end to end; an instructor who
    wants a preview-session-only flag now has to uncheck it, rather than opt in
@@ -495,8 +495,8 @@ form on the practice card. All three are fixed on branch
    real students." as a trailing `<small>`, which read as part of the label
    and only explained the checked state. `client/src/views/student/practice-card.ts:63`
    now holds a module-level `TEST_FLAG_HELP` string covering both states,
-   rendered via `helpTip('the test flag option', TEST_FLAG_HELP)` at
-   `client/src/views/student/practice-card.ts:346`. To put the tip outside the
+   rendered via `helpTip('the test flag option', TEST_FLAG_HELP, testFlagHelpId)`
+   at `client/src/views/student/practice-card.ts:357`. To put the tip outside the
    `<label>` (a `<button>` inside a `<label>` makes the click target
    ambiguous and can toggle the checkbox) the row was restructured from a
    wrapping `<label class="flag-test-option">` into a `<div>` holding
@@ -504,7 +504,7 @@ form on the practice card. All three are fixed on branch
    `instructor/settings.ts`. The now-dead `.flag-test-option small` CSS rule
    was deleted from `client/public/styles/main.css`.
 3. **The answer Submit button is hidden while the flag form is open.**
-   `client/src/views/student/practice-card.ts:366` —
+   `client/src/views/student/practice-card.ts:377` —
    `const flagFormOpen = flagState === 'editing' || flagState === 'submitting';`
    — the footer omits the primary Submit button while that is true, so "Send
    flag" is the only submit-looking control on screen. Submit returns once the
@@ -518,6 +518,43 @@ student module and could not depend on the instructor one.
 comment this left behind (`client/public/styles/main.css:2421`, "see
 `helpTip()` in `client/src/instructor-ui.ts`") is fixed in the same pass to
 point at `client/src/ui.ts`.
+
+**Whole-branch review follow-ups (2026-08-08, same branch).** Three findings
+from the final review, fixed in one pass on top of the above:
+
+- **The checkbox itself is now described by the tip bubble.** Un-wrapping the
+  row from its `<label>` (fix 2) dropped the explanation out of the checkbox's
+  accessible NAME, leaving it only on the sibling ⓘ button's
+  `aria-describedby`. On a control that fix 1 had just made pre-checked, that
+  meant a screen-reader user could hear "…checkbox, checked" and send a real
+  Flag Queue item having been told nothing about it — and axe cannot see it,
+  because a valid `<label for>` accname passes. `helpTip()` (`client/src/ui.ts:140`)
+  gained an OPTIONAL third parameter, `explicitBubbleId`; the counter path is
+  untouched (still one `helpTipSeq`, and the explicit path does not advance
+  it), so `sectionTitleWithHelp` and `views/instructor/settings.ts` keep their
+  auto-generated ids and needed no edit. `practice-card.ts:243` derives
+  `testFlagHelpId` from the already-per-card-unique `flagFormId` — needed
+  because the retry recursion renders a second card into the same DOM — and
+  `practice-card.ts:351` points the input's `aria-describedby` at it.
+- **The tip copy no longer claims the discarded flag is kept.** Its second
+  sentence used to read "the flag stays in this preview session only and no one
+  else sees it," which describes the black hole below as if it were a feature.
+  It now reads "Unchecked, nothing is filed anywhere — the flag is not sent to
+  your queue and is discarded when this preview session ends." Copy only; the
+  first sentence and all behaviour are unchanged, and the underlying bug stays
+  deferred.
+- **What a TEST flag DOES do to the instructor's own counters.** The list of
+  things a TEST flag does not do (no pause, no student analytics, no student
+  notification) is accurate but one-sided. `listFlags()`
+  (`server/src/services/flags.service.ts:404`) applies no `source` filter, so
+  `instructor-preview-test` flags DO count in the instructor's own views:
+  `instructor-workflow.service.ts:96` feeds them into `activeFlags`, which
+  drives the Launch Cockpit's "N open or escalated flags need a decision"
+  action (`:189-196`) and `summary.counts.openFlags` (`:270`), and
+  `notifications.service.ts:148` counts them in the daily summary's "N new
+  flags". With the box pre-checked, one such item lands per preview
+  walkthrough until it is resolved. This is a restoration of pre-`f08913c`
+  behaviour rather than anything net-new, but it was never written down.
 
 ### ⚠️ Fix 1 REVERSES `f08913c` — Stephen needs to be told
 
@@ -550,7 +587,7 @@ gets a confident-looking confirmation for a comment that is discarded. This is
 the same shape of bug as the flag-dedupe issue above (a uniform success state
 hiding two different outcomes), but it is **out of scope for this fix** and
 deliberately deferred by Saurav, 2026-08-08. A real fix would mirror the
-existing `duplicate` terminal state at `client/src/views/student/practice-card.ts:279-285`
+existing `duplicate` terminal state at `client/src/views/student/practice-card.ts:284-290`
 — a visually distinct "not sent anywhere" state instead of reusing "Flagged
 ✓".
 

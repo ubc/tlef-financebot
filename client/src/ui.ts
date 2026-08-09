@@ -127,9 +127,18 @@ let helpTipSeq = 0;
  * `label` names the setting for the accessible name ("About Auto-pause") — an
  * unlabelled row of identical "More information" buttons is what the Task 2
  * scans flagged on the Question Bank filters.
+ *
+ * `explicitBubbleId` is for the case where the tip explains a CONTROL, not just
+ * a label: the caller needs a stable id so it can point that control's own
+ * `aria-describedby` at this same bubble (see the TEST flag checkbox in
+ * `views/student/practice-card.ts`, which is pre-checked and must announce its
+ * consequence on focus). Callers that pass one own its uniqueness. Omit it and
+ * the id is minted from the single module counter exactly as before — the
+ * counter is not advanced by the explicit path, so existing auto-generated ids
+ * are unaffected by any caller opting in.
  */
-export function helpTip(label: string, text: string): HTMLElement {
-  const bubbleId = `help-tip-${++helpTipSeq}`;
+export function helpTip(label: string, text: string, explicitBubbleId?: string): HTMLElement {
+  const bubbleId = explicitBubbleId ?? `help-tip-${++helpTipSeq}`;
   const bubble = el('span', { class: 'help-tip__bubble', id: bubbleId, role: 'tooltip', text });
   const trigger = el('button', {
     class: 'help-tip__trigger',

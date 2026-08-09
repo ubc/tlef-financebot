@@ -188,12 +188,28 @@ test.describe('Instructor student preview', () => {
     const tipBubbleId = await testFlagTip.getAttribute('aria-describedby');
     expect(tipBubbleId).toBeTruthy();
     await expect(page.locator(`#${tipBubbleId}`))
-      .toContainText('Unchecked, the flag stays in this preview session only');
+      .toContainText('Unchecked, nothing is filed anywhere');
+
+    const testFlagCheckbox = page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i });
+
+    // The CHECKBOX's own description, which is a different element from the ⓘ
+    // trigger's above. The box is pre-checked, so sending is the default
+    // action: a screen-reader user must hear the consequence on focus rather
+    // than only if they hunt down the ⓘ. axe cannot catch the regression —
+    // dropping this attribute still leaves a valid <label for> accname.
+    const checkboxDescribedBy = await testFlagCheckbox.getAttribute('aria-describedby');
+    expect(checkboxDescribedBy).toBeTruthy();
+    await expect(page.locator(`#${checkboxDescribedBy}`))
+      .toContainText('files the flag in your Flag Queue tagged as a Preview test');
+    await expect(page.locator(`#${checkboxDescribedBy}`))
+      .toContainText('Unchecked, nothing is filed anywhere');
+    // One bubble per card, shared by trigger and input — not a stray duplicate.
+    await expect(page.locator(`#${checkboxDescribedBy}`)).toHaveCount(1);
 
     // Preview now pre-checks the TEST box, so this test has to opt OUT to keep
     // proving what it was written to prove: the unchecked path writes nothing
     // to the live collections (asserted on `liveCounts` below).
-    await page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i }).uncheck();
+    await testFlagCheckbox.uncheck();
     await page.getByRole('button', { name: 'Send flag', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Flagged');
     await expect(page.getByRole('button', { name: 'Submit', exact: true })).toBeVisible();
