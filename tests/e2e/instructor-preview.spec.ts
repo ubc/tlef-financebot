@@ -117,6 +117,22 @@ test.describe('Instructor student preview', () => {
     draftQuestionId = draft.questionId;
   });
 
+  // Both tests flag the SAME approved question as the same instructor, and
+  // Preview is now unconditionally TEST-queued, so the first test leaves an
+  // open live flag behind. `flagQuestion()` dedupes on (puid, current version,
+  // state:'open'), which would turn the second test's flag into a no-op: it
+  // would fail at its two reason assertions below, which look for
+  // 'Cross-tab test flag' and would find the first test's reason instead, while
+  // its notification-badge assertion passed for the wrong reason on the first
+  // test's leftover unread notification. Loud, but wrong about what broke.
+  // Clearing the live queue between tests keeps each one's counts its own.
+  test.beforeEach(async () => {
+    await Promise.all([
+      flagsCol().deleteMany({ courseId }),
+      notificationsCol().deleteMany({ courseId }),
+    ]);
+  });
+
   test.afterAll(async () => {
     const questionIds = [approvedQuestionId, draftQuestionId].filter(
       (id): id is ObjectId => id !== undefined,
@@ -176,8 +192,39 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: /Flag this question/i }).click();
     await page.getByRole('textbox', { name: /Why are you flagging/i })
       .fill('Anonymous preview isolation check');
-    await page.getByRole('button', { name: 'Send flag', exact: true }).click();
+
+    // Two submit-looking buttons at once is what made a PI reviewer click the
+    // answer Submit expecting it to send the flag (2026-08-08).
+    await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+
+    // The explanation moved off the label and behind the ⓘ, which describes it
+    // for screen readers whatever the pointer is doing.
+    await expect(page.getByText(/does not count toward student analytics/)).toHaveCount(0);
+    // There is no longer a choice to make: Preview always files the TEST flag.
+    await expect(page.locator('.practice-card').getByRole('checkbox')).toHaveCount(0);
+    await expect(page.getByText('Sends a Preview test flag')).toBeVisible();
+
+    const testFlagTip = page.getByRole('button', { name: 'About the Preview test flag' });
+    const tipBubbleId = await testFlagTip.getAttribute('aria-describedby');
+    expect(tipBubbleId).toBeTruthy();
+    await expect(page.locator(`#${tipBubbleId}`))
+      .toContainText('files the flag in your Flag Queue tagged as a Preview test');
+    // The second sentence described an unchecked state that no longer exists.
+    await expect(page.locator(`#${tipBubbleId}`)).not.toContainText('Unchecked');
+    // One bubble per card, shared by the ⓘ trigger and the Send flag button —
+    // not a stray duplicate from the retry-in-place recursion.
+    await expect(page.locator(`#${tipBubbleId}`)).toHaveCount(1);
+
+    // Sending is now the ONLY action, so the consequence has to be announced on
+    // the button that takes it — the pre-checked checkbox that used to carry
+    // this `aria-describedby` is gone, and the accessibility reason for it is
+    // not. axe cannot catch the regression: the button keeps a valid accname
+    // either way.
+    const sendFlag = page.getByRole('button', { name: 'Send flag', exact: true });
+    await expect(sendFlag).toHaveAttribute('aria-describedby', tipBubbleId ?? '');
+    await sendFlag.click();
     await expect(page.getByRole('status')).toContainText('Flagged');
+    await expect(page.getByRole('button', { name: 'Submit', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: /removes all market risk/ }).click();
     await page.getByRole('button', { name: 'Submit', exact: true }).click();
@@ -206,6 +253,11 @@ test.describe('Instructor student preview', () => {
     });
     expect(previewSession?.flags).toHaveLength(1);
     expect(previewSession?.reviewBookEntries).toHaveLength(1);
+    // Attempts, mastery, Review Book and session summaries stay at zero — that
+    // is the isolation guarantee and it is unchanged. Flags and notifications
+    // are 1 because Preview now always files the TEST queue item; that single
+    // exception is documented in docs/api-contract.md and asserted below to be
+    // genuinely a TEST flag rather than a leaked student one.
     const liveCounts = await Promise.all([
       attemptsCol().countDocuments({ courseId }),
       masteryCol().countDocuments({ courseId }),
@@ -214,7 +266,11 @@ test.describe('Instructor student preview', () => {
       notificationsCol().countDocuments({ courseId }),
       sessionSummariesCol().countDocuments({ courseId }),
     ]);
-    expect(liveCounts).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(liveCounts).toEqual([0, 0, 0, 1, 1, 0]);
+    const liveFlags = await flagsCol().find({ courseId }).toArray();
+    expect(liveFlags).toHaveLength(1);
+    expect(liveFlags[0]?.source).toBe('instructor-preview-test');
+    expect(liveFlags[0]?.reason).toBe('Anonymous preview isolation check');
 
     await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();
     await expect(page.locator('.sidebar--instructor')).toBeVisible();
@@ -246,7 +302,12 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: /Flag this question/i }).click();
     await page.getByRole('textbox', { name: /Why are you flagging/i })
       .fill('Cross-tab test flag');
-    await page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i }).check();
+    // No opt-in step: the checkbox is gone and Preview always TEST-queues, so
+    // the cross-tab broadcast below has to happen off the plain Send flag
+    // click. Assert the control's absence — a re-introduced checkbox defaulting
+    // to unchecked would otherwise make this test silently stop covering the
+    // broadcast.
+    await expect(page.locator('.practice-card').getByRole('checkbox')).toHaveCount(0);
     await page.getByRole('button', { name: 'Send flag', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Flagged');
 
