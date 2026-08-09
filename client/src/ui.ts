@@ -105,3 +105,69 @@ export function optionButton(
 export function watermark(uid: string): HTMLElement {
   return el('span', { class: 'watermark mono', 'aria-hidden': 'true', text: uid });
 }
+
+let helpTipSeq = 0;
+
+/**
+ * A small "ⓘ" affordance that explains the setting it sits beside.
+ *
+ * Deliberately not hover-only. WCAG 2.1 AA 1.4.13 (Content on Hover or Focus)
+ * requires such content to be reachable without a pointer, to stay put while
+ * the pointer travels onto it, and to be dismissable — so the trigger is a real
+ * `<button>` that reveals on `:hover` AND `:focus-visible`, the bubble lives
+ * inside the hovered wrapper (hoverable), and Escape hides it (dismissable).
+ * Phase 4 Task 2 (#58) cleared these surfaces at AA; a `title=` attribute or a
+ * bare `<span>` here would have regressed that.
+ *
+ * `aria-describedby` means screen readers announce `text` with the trigger
+ * whatever the visual state is, so the explanation is never pointer-gated.
+ * Click toggles the bubble pinned open, which is the only thing that works on
+ * touch, where `:hover` never fires.
+ *
+ * `label` names the setting for the accessible name ("About Auto-pause") — an
+ * unlabelled row of identical "More information" buttons is what the Task 2
+ * scans flagged on the Question Bank filters.
+ */
+export function helpTip(label: string, text: string): HTMLElement {
+  const bubbleId = `help-tip-${++helpTipSeq}`;
+  const bubble = el('span', { class: 'help-tip__bubble', id: bubbleId, role: 'tooltip', text });
+  const trigger = el('button', {
+    class: 'help-tip__trigger',
+    type: 'button',
+    'aria-label': `About ${label}`,
+    'aria-describedby': bubbleId,
+    text: 'i',
+  }) as HTMLButtonElement;
+
+  const wrap = el('span', { class: 'help-tip' }, trigger, bubble);
+
+  trigger.addEventListener('click', () => {
+    wrap.classList.remove('help-tip--dismissed');
+    wrap.classList.toggle('help-tip--pinned');
+  });
+
+  // Escape hides the bubble even while the trigger still holds focus (which
+  // would otherwise keep :focus-visible showing it). Cleared once the pointer
+  // or focus leaves, so the tip is available again on the next visit.
+  wrap.addEventListener('keydown', (event) => {
+    if ((event as KeyboardEvent).key !== 'Escape') return;
+    if (!wrap.classList.contains('help-tip--pinned') && !wrap.contains(document.activeElement)) return;
+    wrap.classList.remove('help-tip--pinned');
+    wrap.classList.add('help-tip--dismissed');
+    event.stopPropagation();
+    trigger.focus();
+  });
+  wrap.addEventListener('pointerleave', () => wrap.classList.remove('help-tip--dismissed'));
+  wrap.addEventListener('focusout', (event) => {
+    // `relatedTarget` is the element about to receive focus, so "did focus
+    // actually leave?" is answered synchronously. Reading `activeElement` from
+    // a deferred callback instead loses a race: tabbing away and straight back
+    // re-focuses the trigger before the timer runs, the guard then sees focus
+    // inside and bails, and the tip stays stuck dismissed for good.
+    const next = (event as FocusEvent).relatedTarget;
+    if (next instanceof Node && wrap.contains(next)) return;
+    wrap.classList.remove('help-tip--dismissed', 'help-tip--pinned');
+  });
+
+  return wrap;
+}
