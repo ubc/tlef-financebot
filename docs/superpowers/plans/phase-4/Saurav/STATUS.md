@@ -550,7 +550,7 @@ gets a confident-looking confirmation for a comment that is discarded. This is
 the same shape of bug as the flag-dedupe issue above (a uniform success state
 hiding two different outcomes), but it is **out of scope for this fix** and
 deliberately deferred by Saurav, 2026-08-08. A real fix would mirror the
-existing `duplicate` terminal state at `client/src/views/student/practice-card.ts:268-274`
+existing `duplicate` terminal state at `client/src/views/student/practice-card.ts:279-285`
 — a visually distinct "not sent anywhere" state instead of reusing "Flagged
 ✓".
 
