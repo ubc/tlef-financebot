@@ -4455,6 +4455,16 @@ button.class-row--link:focus-visible .class-row__title {
   flex: 1 1 10rem;
 }
 
+/* Page actions (Import / Generate Question) — deliberately not part of
+   `.bank-filters`: they act on the bank rather than narrowing it. */
+.bank-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
 .bank-table {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -4537,7 +4547,7 @@ button.class-row--link:focus-visible .class-row__title {
     width: 100%;
   }
 
-  .bank-filters .btn {
+  .bank-actions .btn {
     flex: 1 1 auto;
   }
 
