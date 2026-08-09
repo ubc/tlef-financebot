@@ -744,3 +744,53 @@ of the seven are caused by this work, whose entire non-doc diff is `bank.ts`,
 
 These want their own cleanup task; they are recorded here rather than fixed
 inside a scoped bug fix.
+
+## 2026-08-08 — "Blueprint" renamed to "Saved Setup" (Task 2)
+
+Branch `saurav/blueprint-saved-setup`, stacked on
+`saurav/bank-generate-filter-scope` (PR #70) because both touch
+`preseeding.ts`.
+
+**Task 2 complete.** The user-facing strings are now "Saved Setup" / "Setup
+name" / "Save setup" / "Run setup", with the `Saved setup “…”.` and
+`Setup run queued…` messages to match. "Custom request" stays the empty option.
+A `helpTip` beside the field says what the setup actually holds and that it can
+be re-run.
+
+`GenerationBlueprint`, `generation-blueprints.routes.ts`,
+`generation-blueprints.service.ts`, the collection and
+`/api/courses/:courseId/generation-blueprints` all keep the original name. The
+deliberate divergence is documented in a comment above `SAVED_SETUP_LABEL` in
+`preseeding.ts` so the next reader is not confused by the mismatch.
+
+"Saved Prompts" was rejected: `PRESET_TEMPLATES` renders the starter *prompt*
+buttons in the same form, inches away, and those are the "pre-done prompts" Jose
+praised. A blueprint is the whole request — LO + type + difficulty + prompt text
+— not a prompt.
+
+### Accessibility
+
+The tip sits OUTSIDE the `<label>`, following `fieldLabelWithHelp` in
+`views/instructor/settings.ts:37`. Nested inside it, clicking the trigger would
+also activate the label and steal focus into the select. The select therefore
+gained `id="preseeding-saved-setup"` so the label can point at it explicitly
+rather than relying on the implicit wrapping association it had before.
+
+### Verification (2026-08-08)
+
+`npm run lint` and `npm run typecheck` clean; `npx jest` **91 suites / 1001
+tests passed** — unchanged, which is the proof that only copy moved.
+`tests/e2e/generation-saved-setup.spec.ts` and the Task 1 spec both pass.
+
+Mutation-verified twice, and **the first attempt exposed a real gap in the
+spec**: reverting "Run setup" to "Run blueprint" did *not* fail, because that
+button only renders once a setup is SELECTED and the fixture had none, so the
+"no user-visible blueprint" sweep never saw it. The spec now seeds a saved setup
+via the API and selects it. Re-run, the same mutation failed as it should.
+Removing the `helpTip` failed the tip assertions. Both restored.
+
+### Task 3 is deferred, not forgotten
+
+Delete for never-used questions **does not jump the Aug 24 freeze** and moves to
+Phase 5. The design in the plan is settled and unchanged; nothing was built. The
+reasoning is recorded in the plan's freeze note.
