@@ -430,7 +430,9 @@ Every stateful Preview request carries `previewSessionId` (UUID):
   `{ previewSessionId, reason?, sendToInstructorQueue? }` →
   `{ flagged: true, testQueued }`. The option defaults to false; when true it
   additionally creates a live queue item sourced as
-  `instructor-preview-test`.
+  `instructor-preview-test`. The Preview **UI** pre-checks the corresponding
+  checkbox (2026-08-08, PI feedback), so an instructor who takes no action on
+  the flag form files a TEST queue item; the API default itself is unchanged.
 - `GET /api/courses/:courseId/preview/review-book?previewSessionId=...&sort=theme|date`
 - `POST /api/courses/:courseId/preview/questions/:questionId/bookmark`
   `{ previewSessionId }`
