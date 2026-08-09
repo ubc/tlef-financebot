@@ -1691,14 +1691,6 @@ button.class-row--link:focus-visible .class-row__title {
   line-height: 1.4;
 }
 
-.flag-test-option input {
-  margin-top: 0.2rem;
-}
-
-.flag-test-option small {
-  color: var(--muted);
-}
-
 .practice-recommendation,
 .practice-redirect,
 .practice-round-summary {
@@ -2422,7 +2414,7 @@ button.class-row--link:focus-visible .class-row__title {
 /* ---- Help tips (ⓘ) --------------------------------------------------------
    Explains a setting whose label alone is not self-describing. Shown on hover
    AND keyboard focus, and dismissable with Escape, per WCAG 2.1 AA 1.4.13 —
-   see helpTip() in client/src/instructor-ui.ts for why hover-only was not an
+   see helpTip() in client/src/ui.ts for why hover-only was not an
    option. Colours are token-based so both themes and the Task 2 (#58) contrast
    work carry over: bubble text is --text on --surface, the same pair the a11y
    scans already cleared. */

@@ -68,7 +68,6 @@ export interface StudentExperience {
     courseId: string,
     questionId: string,
     reason?: string,
-    options?: { sendToInstructorQueue?: boolean },
   ): Promise<{ flagged: true; duplicate?: boolean }>;
   skip(courseId: string, loId: string, attempted: boolean): Promise<void>;
   getSessionStart(courseId: string): Promise<SessionSummaryForStart>;
@@ -164,13 +163,20 @@ export function createPreviewStudentExperience(
       getNextPreviewQuestion(courseId, previewSessionId, input),
     submit: (courseId, input) =>
       submitPreviewAttempt(courseId, previewSessionId, input),
-    flag: async (courseId, questionId, reason, options) => {
+    // Always TEST-queued. Preview exists to exercise the real flag loop end to
+    // end, and the alternative — a flag written only to
+    // `previewStudentSessions.flags`, which nothing reads and which the 24h TTL
+    // discards — is indistinguishable from not flagging at all. The instructor
+    // who wants that already has it by not opening this form. The API keeps its
+    // optional parameter defaulting to false for the live student path; this is
+    // the one caller that opts in, unconditionally (2026-08-08 Task 4).
+    flag: async (courseId, questionId, reason) => {
       const result = await flagPreviewQuestion(
         courseId,
         previewSessionId,
         questionId,
         reason,
-        options?.sendToInstructorQueue,
+        true,
       );
       if (result.testQueued) {
         broadcastNotificationsChanged();

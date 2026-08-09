@@ -14,7 +14,7 @@ import {
 } from '../../api.js';
 import type { PracticeSession } from '../../practice-session.js';
 import { el, mount } from '../../dom.js';
-import { errorState, optionButton, watermark } from '../../ui.js';
+import { errorState, helpTip, optionButton, watermark } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 
 export interface PracticeCtx {
@@ -38,10 +38,13 @@ export interface PracticeCardAdapter {
   flag?: (
     questionId: string,
     reason?: string,
-    options?: { sendToInstructorQueue?: boolean },
   ) => Promise<{ flagged: true; duplicate?: boolean }>;
   bookmark?: (questionId: string) => Promise<{ bookmarked: boolean }>;
-  allowsInstructorTestFlag?: boolean;
+  // Preview only: flagging here files a TEST item in the instructor's own Flag
+  // Queue. The card no longer DECIDES that (the Preview experience does — see
+  // `createPreviewStudentExperience`); it only needs to know, so it can say so
+  // on the form. Live student practice leaves it unset.
+  sendsInstructorTestFlag?: boolean;
   updatesMastery: boolean;
   materialHref?: (courseId: string, loId: string, materialId: string) => string;
 }
@@ -55,6 +58,14 @@ const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
     `/los/${encodeURIComponent(loId)}` +
     `/materials/${encodeURIComponent(materialId)}/source`,
 };
+
+// A PI reviewer could not tell what flagging in Preview does (2026-08-08).
+// There is now only one outcome — the checkbox that used to offer a second one
+// was removed — so the card states it plainly and puts the consequences behind
+// a ⓘ, where they are on demand rather than crowding the form.
+const TEST_FLAG_HELP =
+  'This files the flag in your Flag Queue tagged as a Preview test — it will not '
+  + 'pause the question, count toward student analytics, or notify any student.';
 
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
 
@@ -86,14 +97,6 @@ export function makeQuestionCard(
   let flagReason = '';
   let bookmarkState: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let bookmarkError: string | undefined;
-  // Instructor Preview exists specifically to exercise the real flag loop.
-  // Default its explicit TEST option on (the instructor can still uncheck it
-  // for a preview-session-only flag); live student practice never exposes the
-  // option and therefore remains false.
-  // Preview exposes the explicit TEST-queue checkbox, but it is opt-in. Merely
-  // allowing the control must never pre-check it or leak Preview activity into
-  // live flags/notifications.
-  let sendToInstructorQueue = false;
   let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
@@ -146,7 +149,7 @@ export function makeQuestionCard(
     flagError = undefined;
     draw();
     try {
-      const result = await adapter.flag(question.questionId, flagReason, { sendToInstructorQueue });
+      const result = await adapter.flag(question.questionId, flagReason);
       flagState = result.duplicate ? 'duplicate' : 'flagged';
     } catch (error) {
       flagState = 'editing';
@@ -225,6 +228,11 @@ export function makeQuestionCard(
     let footer: HTMLElement;
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
+    // Derived from `flagFormId`, which is already unique per card — the retry
+    // recursion renders a second card into the same DOM, so a shared literal id
+    // here would produce duplicates and point both Send flag buttons at one
+    // bubble.
+    const testFlagHelpId = `${flagFormId}-test-help`;
     const bookmarkControl = (): HTMLElement | false => {
       // Review Book entries retain the attempt/LO/theme context needed for
       // later repractice, so bookmarking becomes available as soon as this
@@ -315,30 +323,37 @@ export function makeQuestionCard(
           },
         },
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Why are you flagging this question? (optional)' }), reasonInput),
-        adapter.allowsInstructorTestFlag
+        // A statement of what the one and only outcome is, not a control. The
+        // checkbox that used to sit here offered a second outcome that was
+        // indistinguishable from not flagging at all (the write went to
+        // `previewStudentSessions.flags`, which nothing reads, on a 24h TTL),
+        // so it was removed rather than explained again — 2026-08-08 Task 4.
+        adapter.sendsInstructorTestFlag
           ? el(
-              'label',
+              'div',
               { class: 'flag-test-option' },
-              el('input', {
-                type: 'checkbox',
-                checked: sendToInstructorQueue ? 'checked' : undefined,
-                onchange: (event: Event) => {
-                  sendToInstructorQueue = (event.target as HTMLInputElement).checked;
-                },
-              }),
-              el(
-                'span',
-                {},
-                el('strong', { text: 'Send as a test flag to Instructor Queue' }),
-                el('small', { text: ' This is marked TEST and does not count toward student analytics or notify real students.' }),
-              ),
+              el('strong', { text: 'Sends a Preview test flag' }),
+              helpTip('the Preview test flag', TEST_FLAG_HELP, testFlagHelpId),
             )
           : false,
         flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,
         el(
           'div',
           { class: 'row' },
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'submit' }, 'Send flag'),
+          el(
+            'button',
+            {
+              class: 'btn btn--ghost btn--sm',
+              type: 'submit',
+              // The pre-checked checkbox used to carry this: a screen-reader
+              // user must hear the consequence of the DEFAULT action before
+              // taking it, not only if they go hunting for the ⓘ. Deleting the
+              // checkbox moved the action here, so the description moves too.
+              // axe cannot catch its loss — the button keeps a valid accname.
+              ...(adapter.sendsInstructorTestFlag ? { 'aria-describedby': testFlagHelpId } : {}),
+            },
+            'Send flag',
+          ),
         ),
       );
 
@@ -346,12 +361,20 @@ export function makeQuestionCard(
     };
 
     if (!locked) {
+      // While the flag form is open the card shows two submit-looking buttons,
+      // and a PI reviewer clicked the answer one expecting it to send the flag
+      // (2026-08-08). Hide it until the flag resolves — to 'flagged',
+      // 'duplicate' or back to 'idle' via Cancel flag — so 'Send flag' is the
+      // only submit on screen.
+      const flagFormOpen = flagState === 'editing' || flagState === 'submitting';
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
         bookmarkControl(),
         flagControl(),
-        el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
+        flagFormOpen
+          ? false
+          : el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the

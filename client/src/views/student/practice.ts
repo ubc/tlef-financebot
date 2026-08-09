@@ -56,9 +56,9 @@ function runPracticeLoop(
   const endSessionHref = experience.routes.summary(ctx.courseId, session.startedAt);
   const cardAdapter: PracticeCardAdapter = {
     submit: (input) => experience.submit(ctx.courseId, input),
-    flag: (questionId, reason, options) => experience.flag(ctx.courseId, questionId, reason, options),
+    flag: (questionId, reason) => experience.flag(ctx.courseId, questionId, reason),
     bookmark: (questionId) => experience.bookmark(ctx.courseId, questionId),
-    allowsInstructorTestFlag: experience.preview,
+    sendsInstructorTestFlag: experience.preview,
     updatesMastery: true,
     materialHref: experience.materialHref,
   };
