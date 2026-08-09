@@ -130,9 +130,10 @@ let helpTipSeq = 0;
  *
  * `explicitBubbleId` is for the case where the tip explains a CONTROL, not just
  * a label: the caller needs a stable id so it can point that control's own
- * `aria-describedby` at this same bubble (see the TEST flag checkbox in
- * `views/student/practice-card.ts`, which is pre-checked and must announce its
- * consequence on focus). Callers that pass one own its uniqueness. Omit it and
+ * `aria-describedby` at this same bubble (see the **Send flag** button in
+ * `views/student/practice-card.ts`, which in Preview always files a TEST queue
+ * item and so must announce that consequence on focus, before it is pressed).
+ * Callers that pass one own its uniqueness. Omit it and
  * the id is minted from the single module counter exactly as before — the
  * counter is not advanced by the explicit path, so existing auto-generated ids
  * are unaffected by any caller opting in.

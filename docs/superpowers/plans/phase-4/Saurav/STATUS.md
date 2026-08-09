@@ -641,8 +641,15 @@ One test-hygiene change fell out of this: both tests in that spec flag the same
 approved question as the same instructor, and `flagQuestion()` dedupes on
 (puid, current version, `state: 'open'`). With the first test now always
 leaving an open live flag behind, the second test's flag would have become a
-silent no-op and stopped covering the cross-tab broadcast. A `beforeEach` now
-clears live flags and notifications for the fixture course between tests.
+no-op. To be precise about what that costs — the first draft of this entry
+overstated it — the second test would have gone **red**, not quietly green: its
+`/Cross-tab test flag/` notification assertion and its `.flag-row__reason`
+assertion would both have failed against the first test's
+`'Anonymous preview isolation check'`. What it would have lost is honesty about
+the cause, since its notification-badge assertion would additionally have
+passed for the wrong reason, on the first test's leftover unread notification.
+A `beforeEach` now clears live flags and notifications for the fixture course
+between tests, so each test's counts are its own.
 
 **This closes the deferred black hole below.** With one path, "Flagged ✓" is
 always true and no discarded-comment state remains. The deferral is kept on

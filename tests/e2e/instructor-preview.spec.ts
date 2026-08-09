@@ -120,9 +120,12 @@ test.describe('Instructor student preview', () => {
   // Both tests flag the SAME approved question as the same instructor, and
   // Preview is now unconditionally TEST-queued, so the first test leaves an
   // open live flag behind. `flagQuestion()` dedupes on (puid, current version,
-  // state:'open'), which would turn the second test's flag into a no-op and
-  // quietly delete its coverage of the cross-tab broadcast. Clearing the live
-  // queue between tests keeps each one's counts its own.
+  // state:'open'), which would turn the second test's flag into a no-op: it
+  // would fail at its two reason assertions below, which look for
+  // 'Cross-tab test flag' and would find the first test's reason instead, while
+  // its notification-badge assertion passed for the wrong reason on the first
+  // test's leftover unread notification. Loud, but wrong about what broke.
+  // Clearing the live queue between tests keeps each one's counts its own.
   test.beforeEach(async () => {
     await Promise.all([
       flagsCol().deleteMany({ courseId }),
