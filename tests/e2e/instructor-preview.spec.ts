@@ -176,8 +176,27 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: /Flag this question/i }).click();
     await page.getByRole('textbox', { name: /Why are you flagging/i })
       .fill('Anonymous preview isolation check');
+
+    // Two submit-looking buttons at once is what made a PI reviewer click the
+    // answer Submit expecting it to send the flag (2026-08-08).
+    await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+
+    // The explanation moved off the label and behind the ⓘ, which describes it
+    // for screen readers whatever the pointer is doing.
+    await expect(page.getByText(/does not count toward student analytics/)).toHaveCount(0);
+    const testFlagTip = page.getByRole('button', { name: 'About the test flag option' });
+    const tipBubbleId = await testFlagTip.getAttribute('aria-describedby');
+    expect(tipBubbleId).toBeTruthy();
+    await expect(page.locator(`#${tipBubbleId}`))
+      .toContainText('Unchecked, the flag stays in this preview session only');
+
+    // Preview now pre-checks the TEST box, so this test has to opt OUT to keep
+    // proving what it was written to prove: the unchecked path writes nothing
+    // to the live collections (asserted on `liveCounts` below).
+    await page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i }).uncheck();
     await page.getByRole('button', { name: 'Send flag', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Flagged');
+    await expect(page.getByRole('button', { name: 'Submit', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: /removes all market risk/ }).click();
     await page.getByRole('button', { name: 'Submit', exact: true }).click();
@@ -246,7 +265,13 @@ test.describe('Instructor student preview', () => {
     await page.getByRole('button', { name: /Flag this question/i }).click();
     await page.getByRole('textbox', { name: /Why are you flagging/i })
       .fill('Cross-tab test flag');
-    await page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i }).check();
+    // Preview opens with the TEST box already checked. The check() below stays
+    // as a statement of what this test needs, but must not be the thing that
+    // makes it true — assert the default first, or a regression to an unchecked
+    // default would hide behind an idempotent check().
+    const testFlagBox = page.getByRole('checkbox', { name: /Send as a test flag to Instructor Queue/i });
+    await expect(testFlagBox).toBeChecked();
+    await testFlagBox.check();
     await page.getByRole('button', { name: 'Send flag', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Flagged');
 

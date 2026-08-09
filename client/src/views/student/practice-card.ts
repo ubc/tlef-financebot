@@ -14,7 +14,7 @@ import {
 } from '../../api.js';
 import type { PracticeSession } from '../../practice-session.js';
 import { el, mount } from '../../dom.js';
-import { errorState, optionButton, watermark } from '../../ui.js';
+import { errorState, helpTip, optionButton, watermark } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 
 export interface PracticeCtx {
@@ -56,6 +56,15 @@ const LIVE_PRACTICE_ADAPTER: PracticeCardAdapter = {
     `/materials/${encodeURIComponent(materialId)}/source`,
 };
 
+// The label alone did not tell a PI reviewer what either state of the TEST
+// checkbox does (2026-08-08) — least of all the unchecked one, whose effect is
+// invisible from the card. A trailing sentence beside the label read as part of
+// the label; this says the same thing behind a ⓘ, where it is on demand.
+const TEST_FLAG_HELP =
+  'Checked, this files the flag in your Flag Queue tagged as a Preview test — it will not '
+  + 'pause the question, count toward student analytics, or notify any student. Unchecked, the '
+  + 'flag stays in this preview session only and no one else sees it.';
+
 export const currentLo = (ctx: PracticeCtx): CourseHomeLo => ctx.los[ctx.loIndex];
 
 function retryAsQuestion(retry: NonNullable<AttemptResult['feedback']['retry']>, watermarkUid: string, difficulty: PracticeQuestion['difficulty']): PracticeQuestion {
@@ -86,14 +95,15 @@ export function makeQuestionCard(
   let flagReason = '';
   let bookmarkState: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
   let bookmarkError: string | undefined;
-  // Instructor Preview exists specifically to exercise the real flag loop.
-  // Default its explicit TEST option on (the instructor can still uncheck it
-  // for a preview-session-only flag); live student practice never exposes the
-  // option and therefore remains false.
-  // Preview exposes the explicit TEST-queue checkbox, but it is opt-in. Merely
-  // allowing the control must never pre-check it or leak Preview activity into
-  // live flags/notifications.
-  let sendToInstructorQueue = false;
+  // Default ON in Preview, because Preview exists to exercise the real flag
+  // loop end to end — an instructor who wants a preview-session-only flag
+  // unchecks it. Live student practice never renders the control at all
+  // (`allowsInstructorTestFlag` is set only by the preview adapter), so the
+  // student path stays false. This deliberately reverses f08913c on Jose's PI
+  // feedback (2026-08-08); read
+  // docs/superpowers/plans/phase-4/Saurav/2026-08-08-preview-flag-ux-pi-feedback.md
+  // before flipping it back a third time.
+  let sendToInstructorQueue = Boolean(adapter.allowsInstructorTestFlag);
   let flagError: string | undefined;
   // Q-numbering (Figma 4/5/6): fixed at card-construction time, not
   // recomputed on every `draw()` — `submit()` pushes this same question
@@ -225,6 +235,7 @@ export function makeQuestionCard(
     let footer: HTMLElement;
 
     const flagFormId = `flag-${question.questionVersionId}-${questionNumber}`;
+    const testFlagId = `${flagFormId}-test`;
     const bookmarkControl = (): HTMLElement | false => {
       // Review Book entries retain the attempt/LO/theme context needed for
       // later repractice, so bookmarking becomes available as soon as this
@@ -315,23 +326,24 @@ export function makeQuestionCard(
           },
         },
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Why are you flagging this question? (optional)' }), reasonInput),
+        // The label is associated by `for=` rather than wrapping the row, so the
+        // ⓘ can sit outside it: a <button> inside a <label> makes the label's
+        // click target ambiguous and toggles the checkbox — the same trap
+        // `fieldLabelWithHelp` in instructor/settings.ts documents.
         adapter.allowsInstructorTestFlag
           ? el(
-              'label',
+              'div',
               { class: 'flag-test-option' },
               el('input', {
+                id: testFlagId,
                 type: 'checkbox',
                 checked: sendToInstructorQueue ? 'checked' : undefined,
                 onchange: (event: Event) => {
                   sendToInstructorQueue = (event.target as HTMLInputElement).checked;
                 },
               }),
-              el(
-                'span',
-                {},
-                el('strong', { text: 'Send as a test flag to Instructor Queue' }),
-                el('small', { text: ' This is marked TEST and does not count toward student analytics or notify real students.' }),
-              ),
+              el('label', { for: testFlagId }, el('strong', { text: 'Send as a test flag to Instructor Queue' })),
+              helpTip('the test flag option', TEST_FLAG_HELP),
             )
           : false,
         flagError ? el('p', { class: 'form-error', role: 'alert', text: flagError }) : false,
@@ -346,12 +358,20 @@ export function makeQuestionCard(
     };
 
     if (!locked) {
+      // While the flag form is open the card shows two submit-looking buttons,
+      // and a PI reviewer clicked the answer one expecting it to send the flag
+      // (2026-08-08). Hide it until the flag resolves — to 'flagged',
+      // 'duplicate' or back to 'idle' via Cancel flag — so 'Send flag' is the
+      // only submit on screen.
+      const flagFormOpen = flagState === 'editing' || flagState === 'submitting';
       footer = el(
         'div',
         { class: 'row practice-card__footer' },
         bookmarkControl(),
         flagControl(),
-        el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
+        flagFormOpen
+          ? false
+          : el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the

@@ -1695,10 +1695,6 @@ button.class-row--link:focus-visible .class-row__title {
   margin-top: 0.2rem;
 }
 
-.flag-test-option small {
-  color: var(--muted);
-}
-
 .practice-recommendation,
 .practice-redirect,
 .practice-round-summary {
