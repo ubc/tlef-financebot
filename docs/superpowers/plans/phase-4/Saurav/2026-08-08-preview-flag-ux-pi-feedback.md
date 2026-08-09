@@ -219,14 +219,106 @@ to the shared kit — `client/AGENTS.md:51` names `ui.ts` as exactly that.
 
 ---
 
+## Task 4 — remove the checkbox entirely (added 2026-08-08, after Tasks 1–3)
+
+**Owner:** Saurav
+
+Tasks 1–3 made the checkbox explicable. Reviewing the result, Saurav asked
+whether it was necessary at all. It is not, and this task removes it.
+
+**The argument.** Unchecked is indistinguishable from not flagging: the write
+goes to `previewStudentSessions.flags`, which nothing reads, on a 24h TTL. So
+the control's two positions are "file a TEST flag" and "do nothing" — and an
+instructor who wants the second already has it by not clicking "Flag this
+question". Every protection the tip advertises comes from
+`source: 'instructor-preview-test'` (`flags.service.ts:139`), not from the
+checkbox; it decides only whether the flag exists. A binary toggle that needs
+two sentences of explanation is carrying a decision the system should make.
+
+**This closes the deferred black hole** rather than deferring it again: with one
+path, "Flagged ✓" is truthful and no discarded-comment state remains.
+
+### ⚠️ Accepted consequence — Preview now always writes one live TEST flag
+
+`instructor-preview.spec.ts`'s isolation assertion currently expects
+`[0,0,0,0,0,0]` across attempts, mastery, Review Book, flags, notifications and
+session summaries. Flags and notifications become 1. **This is intended, not a
+regression** — the same thing happened whenever the box was checked, and
+`docs/api-contract.md:452-459` already records the TEST flag as the documented
+sole exception to Preview isolation. What changes is that the exception is now
+unconditional. Attempts, mastery, Review Book and session summaries stay
+isolated and their assertions must NOT be weakened.
+
+### Files
+
+- `client/src/views/student/practice-card.ts`
+- `client/src/views/student/experience.ts`
+- `tests/e2e/instructor-preview.spec.ts`
+- `docs/api-contract.md`, `STATUS.md`
+
+### Steps
+
+1. **Delete the checkbox.** Remove the `adapter.allowsInstructorTestFlag` block
+   from the flag form, the `sendToInstructorQueue` state variable, the
+   `testFlagId` id, and the now-unused `allowsInstructorTestFlag` adapter field
+   (and its assignment at `practice.ts:61`).
+2. **Move the decision to the Preview experience.** In
+   `createPreviewStudentExperience` (`experience.ts:167-180`), always pass
+   `true` for `sendToInstructorQueue`. The practice card then knows nothing
+   about it, so drop `options?: { sendToInstructorQueue?: boolean }` from both
+   the `PracticeCardAdapter.flag` and `StudentExperience.flag` signatures.
+   `LIVE_STUDENT_EXPERIENCE` already ignores the option.
+3. **Keep the tip, reattached.** In the same position the checkbox row
+   occupied, render a short static note plus a `helpTip`, still gated on
+   Preview. Suggested note text: `Sends a Preview test flag`. Trim
+   `TEST_FLAG_HELP` to its first sentence — the second describes an unchecked
+   state that no longer exists:
+   > This files the flag in your Flag Queue tagged as a Preview test — it will
+   > not pause the question, count toward student analytics, or notify any
+   > student.
+4. **Keep the consequence announced, not just available.** Task 1's fix put
+   `aria-describedby` on the checkbox so a screen-reader user heard what the
+   default action did. The action is now the **Send flag** button, so in
+   Preview that button takes the `aria-describedby` instead. Do not simply
+   delete the attribute with the checkbox — the accessibility reasoning
+   survives the control it was attached to.
+5. **Do not change `server/src`.** The API keeps its optional
+   `sendToInstructorQueue` parameter defaulting to `false`; only the Preview
+   client's use of it becomes unconditional. Removing the parameter is a
+   contract change and is out of scope.
+
+### Test changes
+
+6. Update the isolation test: it can no longer `.uncheck()` a control that does
+   not exist. Assert the new truth — attempts, mastery, Review Book and session
+   summaries still `0`, and exactly one flag exists carrying
+   `source: 'instructor-preview-test'`. Do not weaken the four that stay zero.
+7. Update the cross-tab test: drop the `.check()` and the already-checked
+   assertion; assert instead that no checkbox is rendered.
+8. Keep coverage for the surviving behaviour: the ⓘ is present in Preview, its
+   text no longer mentions an unchecked state, the **Send flag** button carries
+   `aria-describedby` resolving to it, and the answer **Submit** is still hidden
+   while the flag form is open.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck`, full `npx jest`.
+- `npx playwright test tests/e2e/instructor-preview.spec.ts`.
+- Mutation-verify the `aria-describedby` move and the Submit-hiding as before.
+- `docs/api-contract.md:429-435` — replace the "the UI pre-checks the box"
+  sentence with: the Preview UI always sends the option, so every Preview flag
+  files a TEST queue item. Reconcile the isolation paragraph at 452-459 so the
+  exception reads as unconditional rather than opt-in.
+- `STATUS.md` — append to the existing 2026-08-08 section: the checkbox is gone,
+  why, that this closes the deferred black hole, and the accepted isolation
+  consequence.
+
+---
+
 ## Not in scope (recorded so it is not lost)
 
-- **The unchecked path is a black hole.** `preview.service.ts:513` pushes to
-  `previewStudentSessions.flags`, which no route, service or view reads, and the
-  document expires after 24 hours. The card renders "Flagged ✓" either way, so
-  an instructor who unchecks gets a success tick for a discarded comment. Fix
-  would mirror the existing `duplicate` terminal state at
-  `practice-card.ts:268-274`. Deferred by Saurav, 2026-08-08.
+- ~~**The unchecked path is a black hole.**~~ **Closed by Task 4** — removing
+  the checkbox removes the discarding path, so "Flagged ✓" is now always true.
 - **The new help tip will be unscanned by axe.** `tests/a11y/a11y.spec.ts`
   covers real student practice (`#/course/:id/practice/:loId`) but no Preview
   surface, and `playwright.config.ts` sets `reducedMotion: 'reduce'` globally.
