@@ -250,13 +250,26 @@ export async function transitionQuestion(
   questionId: ObjectId,
   to: PublicationState,
   byPuid: string,
+  expectedVersionId?: ObjectId,
 ): Promise<WithId<Question>> {
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
+  // Callers that rendered a specific QuestionVersion may pin that version in
+  // the transition request. Reject before checking the state when the head has
+  // already moved, so a stale review cannot approve somebody else's newer
+  // edit. The same version id is also part of the update CAS below to cover an
+  // edit racing between this read and the write.
+  if (expectedVersionId !== undefined && !question.currentVersionId.equals(expectedVersionId)) {
+    throw new Error('question-conflict');
+  }
   if (!canTransition(question.state, to)) throw new Error(`invalid-transition:${question.state}->${to}`);
   const now = new Date();
   const result = await questionsCol().updateOne(
-    { _id: questionId, state: question.state },
+    {
+      _id: questionId,
+      state: question.state,
+      ...(expectedVersionId !== undefined ? { currentVersionId: expectedVersionId } : {}),
+    },
     { $set: { state: to, updatedAt: now } },
   );
   if (result.matchedCount !== 1) throw new Error('question-conflict');

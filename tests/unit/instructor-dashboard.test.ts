@@ -16,6 +16,13 @@ describe('course dashboard checklist actions', () => {
   it('leaves an unknown future checklist item without a misleading destination', () => {
     expect(checklistActionFor('Unknown requirement')).toBeUndefined();
   });
+
+  it('keeps the term-date fix in Course Home while retaining Settings as the fallback path', () => {
+    expect(checklistActionFor('Term dates set')).toMatchObject({
+      command: 'configure-dates',
+      path: '/instructor/course/:id/settings',
+    });
+  });
 });
 
 describe('course cockpit workflow destinations', () => {

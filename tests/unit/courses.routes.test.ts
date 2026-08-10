@@ -18,6 +18,7 @@ jest.mock('../../server/src/services/courses.service', () => ({
   archiveTheme: jest.fn(),
   getThemeCourseId: jest.fn(),
   addLo: jest.fn(),
+  upsertCourseOutline: jest.fn(),
   updateLo: jest.fn(),
   archiveLo: jest.fn(),
   getLoCourseId: jest.fn(),
@@ -32,6 +33,9 @@ jest.mock('../../server/src/services/courses.service', () => ({
 jest.mock('../../server/src/services/instructor-workflow.service', () => ({
   instructorWorkflowSummary: jest.fn(),
 }));
+jest.mock('../../server/src/services/course-deletion.service', () => ({
+  permanentlyDeleteCourse: jest.fn(),
+}));
 
 import { coursesRouter } from '../../server/src/routes/courses.routes';
 import {
@@ -40,12 +44,15 @@ import {
   publishChecklist,
   archiveCourse,
   restoreCourse,
+  upsertCourseOutline,
   getThemeCourseId,
   getLoCourseId,
 } from '../../server/src/services/courses.service';
 import { instructorWorkflowSummary } from '../../server/src/services/instructor-workflow.service';
+import { permanentlyDeleteCourse } from '../../server/src/services/course-deletion.service';
 
 const courseId = new ObjectId();
+const otherCourseId = new ObjectId();
 
 function userFixture(
   courseRoles: User['courseRoles'],
@@ -67,6 +74,10 @@ function userFixture(
 
 const instructor = userFixture([{ courseId, role: 'instructor' }]);
 const student = userFixture([{ courseId, role: 'student' }]);
+const ta = userFixture([{ courseId, role: 'ta' }]);
+const otherCourseInstructor = userFixture([{ courseId: otherCourseId, role: 'instructor' }]);
+const otherCourseStudent = userFixture([{ courseId: otherCourseId, role: 'student' }]);
+const otherCourseTa = userFixture([{ courseId: otherCourseId, role: 'ta' }]);
 const platformInstructor = userFixture([], { isAdmin: false, platformInstructor: true });
 const admin = userFixture([], { isAdmin: true });
 
@@ -189,9 +200,27 @@ describe('courses routes (auth + course-instructor gating)', () => {
         reviewQueue: 4,
         openFlags: 0,
         thinLos: 1,
+        materials: 1,
+        readyMaterials: 1,
+        processingMaterials: 0,
+        failedMaterials: 0,
+        materialsNeedingReview: 0,
+        totalQuestions: 7,
+        activeGenerationRuns: 0,
         unassignedMaterials: 0,
         contentIssues: 0,
         lowEngagementStudents: 0,
+      },
+      setup: {
+        steps: [],
+        primaryAction: {
+          id: 'preview-course',
+          priority: 'normal',
+          destination: 'student-preview',
+          title: 'Preview',
+          detail: 'Test the course.',
+          presentation: 'preview',
+        },
       },
       actions: [],
     });
@@ -205,8 +234,54 @@ describe('courses routes (auth + course-instructor gating)', () => {
 
     expect(allowed.status).toBe(200);
     expect(allowed.body.readiness.percent).toBe(20);
-    expect(instructorWorkflowSummary).toHaveBeenCalledWith(expect.any(ObjectId));
+    expect(instructorWorkflowSummary).toHaveBeenCalledWith(expect.any(ObjectId), instructor.puid);
     expect(denied.status).toBe(403);
+  });
+
+  it('401s a signed-out outline upsert before calling the service', async () => {
+    const response = await request(makeApp(undefined))
+      .post(`/api/courses/${courseId.toHexString()}/outline`)
+      .send({ themes: [{ name: 'Foundations', los: ['Explain cash flow'] }] });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBeDefined();
+    expect(upsertCourseOutline).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an Instructor assigned only to another course', otherCourseInstructor],
+    ['a Student in the target course', student],
+    ['a Student assigned only to another course', otherCourseStudent],
+    ['a TA in the target course', ta],
+    ['a TA assigned only to another course', otherCourseTa],
+  ])('403s an outline upsert from %s', async (_label, caller) => {
+    const response = await request(makeApp(caller))
+      .post(`/api/courses/${courseId.toHexString()}/outline`)
+      .send({ themes: [{ name: 'Foundations', los: ['Explain cash flow'] }] });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBeDefined();
+    expect(upsertCourseOutline).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the course Instructor', instructor],
+    ['an Admin without a course role', admin],
+  ])('batch-upserts a reviewed course outline for %s', async (_label, caller) => {
+    jest.mocked(upsertCourseOutline).mockResolvedValue({
+      themesCreated: 1,
+      losCreated: 2,
+      themes: [],
+    });
+
+    const response = await request(makeApp(caller))
+      .post(`/api/courses/${courseId.toHexString()}/outline`)
+      .send({ themes: [{ name: 'Foundations', los: ['Explain cash flow', 'Compare discount rates'] }] });
+
+    expect(response.status).toBe(201);
+    expect(upsertCourseOutline).toHaveBeenCalledWith(expect.any(ObjectId), {
+      themes: [{ name: 'Foundations', los: ['Explain cash flow', 'Compare discount rates'] }],
+    });
   });
 
   it('archives and restores a course through instructor-only endpoints', async () => {
@@ -232,6 +307,47 @@ describe('courses routes (auth + course-instructor gating)', () => {
     expect(archived.body.lifecycle).toBe('archived');
     expect(restored.status).toBe(200);
     expect(restored.body.lifecycle).toBe('draft');
+  });
+
+  it('permanently deletes a course only after a validated confirmation body', async () => {
+    jest.mocked(permanentlyDeleteCourse).mockResolvedValue({
+      deleted: true,
+      courseId: courseId.toHexString(),
+      deletedFiles: 1,
+      missingFiles: 0,
+      deletedVectorCollection: true,
+      cancelledJobs: 0,
+      deletedDocuments: { materials: 1 },
+    });
+
+    const allowed = await request(makeApp(instructor))
+      .delete(`/api/courses/${courseId.toHexString()}`)
+      .send({ confirmation: 'DELETE COMM 298 101' });
+    const invalid = await request(makeApp(instructor))
+      .delete(`/api/courses/${courseId.toHexString()}`)
+      .send({ confirmation: '' });
+    const denied = await request(makeApp(student))
+      .delete(`/api/courses/${courseId.toHexString()}`)
+      .send({ confirmation: 'DELETE COMM 298 101' });
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.deleted).toBe(true);
+    expect(permanentlyDeleteCourse).toHaveBeenCalledWith(
+      expect.any(ObjectId),
+      { puid: instructor.puid, isAdmin: false },
+      'DELETE COMM 298 101',
+    );
+    expect(invalid.status).toBe(400);
+    expect(denied.status).toBe(403);
+  });
+
+  it('maps active background work to a retryable conflict', async () => {
+    jest.mocked(permanentlyDeleteCourse).mockRejectedValue(new Error('course-delete-active-work'));
+    const res = await request(makeApp(instructor))
+      .delete(`/api/courses/${courseId.toHexString()}`)
+      .send({ confirmation: 'DELETE COMM 298 101' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'course-delete-active-work' });
   });
 });
 

@@ -29,6 +29,25 @@ after the Instructor control plane is usable end to end.
   lint/typecheck/Jest/build regression suite.
 - [x] Record completion evidence in Stephen's status and sync the plan.
 
+### Task 1 follow-up: Guided Course Preparation
+
+**Owner:** Stephen
+
+- [x] Extend the authoritative Instructor workflow summary with five derived
+  setup-step states, one primary next-best action, and explicit material and
+  question counts without persisting a parallel wizard record.
+- [x] Add an Instructor-only, retry-safe-by-name Topic/LO outline batch contract
+  so an interrupted existing-LO setup can resume without duplicate hierarchy.
+- [x] Present the derived state on Course Home as numbered, freely navigable
+  expert shortcuts plus one visually primary Next Action.
+- [x] Complete both in-context entry paths: reviewed existing LOs followed by
+  grounding materials, and materials-first ingest followed by hierarchy review.
+- [x] Advance guidance through generation/import, review/approval, Student
+  Preview, and publish while retaining full-workspace escape hatches.
+- [x] Verify empty, processing, partial/failed, retry/reconnect, published and
+  archived states at desktop/mobile, including keyboard/focus and axe coverage;
+  record regression evidence and sync Stephen's completed plan.
+
 ### Task 2: LO-centred Content Studio
 
 **Owner:** Stephen

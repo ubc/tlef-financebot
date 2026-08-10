@@ -3,7 +3,15 @@ import { ObjectId } from 'mongodb';
 import path from 'node:path';
 import { AUTH_FILE } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
-import { coursesCol, themesCol, losCol, questionsCol, questionVersionsCol } from '../../server/src/components/mongodb/collections';
+import {
+  coursesCol,
+  themesCol,
+  losCol,
+  questionsCol,
+  questionVersionsCol,
+  previewAttemptsCol,
+  previewStudentSessionsCol,
+} from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
 
 // Happy-path e2e for Task 15 Task H: an instructor creates a course, builds
@@ -36,12 +44,12 @@ const COURSE_CODE = 'FIN-INSTR-E2E';
 const COURSE_TERM = '2026W';
 const TOPIC_NAME = 'Capital Budgeting (E2E)';
 const LO_NAME = 'Evaluate NPV of a project (E2E)';
-// Exactly one bare `$` (no closing pair) — render.ts's renderRichText treats
-// a MATCHED `$...$` pair as inline KaTeX math (see its `delimiters` option),
-// which would otherwise mangle this stem's text between two dollar amounts
-// and break the row-text assertions below. practice-loop.spec.ts's STEM has
-// the same one-`$`-only shape for the same reason.
-const STEM = 'A project pays $1,200 in one year for an initial investment of 1,000 today. What is its NPV at a 10% discount rate?';
+// This fixture is deliberately conceptual: the pipeline spec verifies the
+// Instructor workflow, while dedicated numeric specs own parameterization and
+// evaluator proofs. A numerical stand-in without a proof is correctly rejected
+// by the fail-closed numeric serving gate.
+const STEM = 'Which statement best describes net present value when evaluating a project?';
+const CORRECT_OPTION = 'It discounts future cash flows and subtracts the initial investment.';
 
 let bootstrapCourseId = '';
 let courseId = '';
@@ -99,6 +107,8 @@ test.describe('instructor pipeline', () => {
     await Promise.all([
       questionVersionsCol().deleteMany({ questionId: { $in: questionIds } }),
       questionsCol().deleteMany({ courseId: { $in: ids } }),
+      previewAttemptsCol().deleteMany({ courseId: { $in: ids } }),
+      previewStudentSessionsCol().deleteMany({ courseId: { $in: ids } }),
       losCol().deleteMany({ courseId: { $in: ids } }),
       themesCol().deleteMany({ courseId: { $in: ids } }),
       coursesCol().deleteMany({ _id: { $in: ids } }),
@@ -150,23 +160,44 @@ test.describe('instructor pipeline', () => {
       await expect(duplicateResponse.json()).resolves.toEqual({ error: 'course-already-exists' });
     });
 
-    await test.step('add a Topic and a Learning Objective', async () => {
-      await page.getByRole('link', { name: 'Course Structure' }).click();
-      await expect(
-        page.getByRole('heading', { name: 'Course Structure', level: 1 }),
-      ).toBeVisible();
+    await test.step('keep blocked Preview inside the guide', async () => {
+      await page.getByRole('link', { name: /5\. Student preview: Waiting for Approved questions/ }).click();
+      const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
+      await expect(guide).toBeVisible();
+      await expect(guide.getByRole('heading', { name: 'Test the real student experience' })).toBeVisible();
+      await expect(guide.getByRole('button', { name: 'Approve a question before preview' })).toBeDisabled();
+      expect(page.url()).toContain(`/#/instructor/course/${courseId}`);
+      await guide.getByRole('button', { name: 'Close course setup guide' }).click();
+    });
 
-      await page.getByRole('button', { name: '+ Add Topic' }).click();
-      await page.getByPlaceholder('Topic name').fill(TOPIC_NAME);
-      await page.getByRole('button', { name: 'Add', exact: true }).click();
-      await expect(page.locator('.tree-theme__name')).toHaveText(`Topic 1: ${TOPIC_NAME}`);
+    await test.step('accept the term-aware suggested dates through the first Next Action', async () => {
+      await page.getByRole('button', { name: /Complete course settings/ }).click();
+      const datesDialog = page.getByRole('dialog', { name: 'Set course dates' });
+      await expect(datesDialog).toBeVisible();
+      await expect(datesDialog.getByLabel('Course starts')).toHaveValue('2026-09-08');
+      await expect(datesDialog.getByLabel('Course ends')).toHaveValue('2026-12-07');
+      await datesDialog.getByRole('button', { name: 'Save dates' }).click();
+      await expect(datesDialog).toBeHidden();
+      await expect(page.getByRole('button', { name: /Start building course knowledge/ })).toBeVisible();
+    });
 
-      await page.getByRole('button', { name: '+ Add LO' }).click();
-      await page.getByPlaceholder('Learning Objective name').fill(LO_NAME);
-      await page.getByRole('button', { name: 'Add', exact: true }).click();
-      await expect(page.locator('.tree-lo__name')).toHaveText(`LO 1: ${LO_NAME}`);
+    await test.step('add a Topic and Learning Objective through the next guided action', async () => {
+      await page.getByRole('button', { name: /Start building course knowledge/ }).click();
+      const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
+      await expect(guide.getByRole('heading', { name: 'How do you want to define the course?' })).toBeVisible();
+      await guide.getByRole('button', { name: /I already have Learning Objectives/ }).click();
+      await expect(guide.getByRole('heading', { name: 'Add your existing Learning Objectives' })).toBeVisible();
+      await guide.getByLabel('Topic name', { exact: true }).fill(TOPIC_NAME);
+      await guide.locator('.course-setup-guide__lo-input').fill(`1. ${LO_NAME}\n- ${LO_NAME.toLowerCase()}`);
+      await guide.getByRole('button', { name: 'Save Learning Objectives' }).click();
+      await expect(guide.getByRole('heading', { name: 'Add the sources the course should trust' })).toBeVisible();
+      await guide.getByRole('button', { name: 'Close course setup guide' }).click();
 
       const tree = await fetchTree(page, courseId);
+      expect(tree.themes).toHaveLength(1);
+      expect(tree.themes[0].name).toBe(TOPIC_NAME);
+      expect(tree.themes[0].los).toHaveLength(1);
+      expect(tree.themes[0].los?.[0].name).toBe(LO_NAME);
       themeId = tree.themes[0]._id;
       loId = tree.themes[0].los?.[0]._id ?? '';
       expect(themeId).toBeTruthy();
@@ -209,10 +240,10 @@ test.describe('instructor pipeline', () => {
         difficulty: 'easy',
         createdBy: 'e2e-seed',
         options: [
-          { key: 'A', text: '$90.91 (NPV)', role: 'correct', explanation: 'NPV = -1000 + 1200 / 1.10 = 90.91.' },
-          { key: 'B', text: '$200.00 (undiscounted profit)', role: 'partially-correct', explanation: 'This ignores discounting the future cash inflow.' },
-          { key: 'C', text: '$1,200.00 (raw cash inflow)', role: 'clearly-wrong', explanation: 'That is the undiscounted future cash inflow alone.' },
-          { key: 'D', text: '$0.00', role: 'common-misconception', explanation: 'Close to zero, but not the exact discounted NPV.' },
+          { key: 'A', text: CORRECT_OPTION, role: 'correct', explanation: 'NPV compares discounted future cash flows with the investment required today.' },
+          { key: 'B', text: 'It adds all future cash flows without discounting them.', role: 'common-misconception', explanation: 'Ignoring timing overstates cash flows received later.' },
+          { key: 'C', text: 'It reports only the project’s initial investment.', role: 'clearly-wrong', explanation: 'NPV also includes the discounted value of future cash flows.' },
+          { key: 'D', text: 'It measures accounting profit without considering cash flows.', role: 'partially-correct', explanation: 'NPV is a discounted cash-flow measure, not an accounting-profit measure.' },
         ],
       });
       const res = await page.request.post(`/api/questions/${questionId.toString()}/transition`, { data: { to: 'pending-review' } });
@@ -232,14 +263,39 @@ test.describe('instructor pipeline', () => {
       await expect(row).toHaveCount(0);
     });
 
-    await test.step('publish the course', async () => {
+    await test.step('complete the real isolated Student Preview stage', async () => {
       await page.getByRole('link', { name: 'Course Dashboard' }).click();
+      const previewStep = page.getByRole('link', { name: /5\. Student preview: Ready to test/ });
+      await expect(previewStep).toBeVisible();
+      await previewStep.click();
+
+      await expect(page).toHaveURL(new RegExp(`#\\/preview\\/course\\/${courseId}$`));
+      await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Start →', exact: true }).click();
+      await expect(page.getByText(STEM)).toBeVisible();
+      await page.getByRole('button', { name: new RegExp(`^A\\s+${CORRECT_OPTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+      await page.getByRole('button', { name: 'Submit', exact: true }).click();
+      await expect(page.getByText('Correct!', { exact: true })).toBeVisible();
+      await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();
+
+      await expect(page).toHaveURL(new RegExp(`#\\/instructor\\/course\\/${courseId}$`));
+      await expect(page.getByRole('link', { name: /5\. Student preview: Tested recently/ })).toBeVisible();
+    });
+
+    await test.step('publish the course', async () => {
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
       await expect(page.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
       await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Next actions' })).toBeVisible();
-      await expect(page.getByRole('button', { name: /Fill thin Learning Objectives/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /Student Analytics/i })).toBeVisible();
+
+      // Course Home derives the one next-best task from live state. After this
+      // fixture has dates, an LO, an Approved question, and a completed Preview,
+      // the still-unassigned uploaded source is correctly surfaced next.
+      const primaryAction = page.locator('.workflow-action--primary');
+      await expect(primaryAction).toHaveCount(1);
+      await expect(primaryAction).toBeVisible();
+      await expect(primaryAction).toContainText('Assign course materials');
+      await expect(page.getByText('NEXT STEP', { exact: true })).toBeVisible();
 
       await page.getByRole('button', { name: 'Publish Course', exact: false }).click();
       await expect(page.locator('.page-header__subtitle')).toContainText(

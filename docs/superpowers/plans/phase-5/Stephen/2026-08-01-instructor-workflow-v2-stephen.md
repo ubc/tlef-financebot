@@ -59,6 +59,63 @@ backed by one authoritative aggregate contract.
 After this slice is clean: LO Content Studio, unified Action Inbox,
 analytics-to-action links, course/team lifecycle, then Admin Operations.
 
+## Guided Course Launch journey — 2026-08-07
+
+### Product contract
+
+- [x] Keep the numbered Sources → LOs → Questions → Review → Preview path as
+  freely navigable expert shortcuts, while deriving a truthful state for every
+  stage from existing course/content/run/question/preview data.
+- [x] Make Next actions a progressive onboarding guide: one primary next-best
+  action at a time, with completed and upcoming work visible but not competing.
+- [x] Never report an empty source library as "Knowledge ready"; reserve red
+  status for actual failure/blocking conditions rather than normal not-started
+  work.
+
+### Authoritative contract and retry safety
+
+- [x] Extend `GET /api/courses/:courseId/instructor-workflow` with derived
+  `setup.steps`, one `setup.primaryAction`, and explicit material/question/run
+  counts while keeping the existing full action queue.
+- [x] Add `POST /api/courses/:courseId/outline` for Instructor-only Topic/LO
+  batch creation, reusing trimmed case-insensitive active names so a retry after
+  a partial write or lost response cannot duplicate completed hierarchy work.
+
+### Course Home guided actions
+
+- [x] Keep course-date setup in the existing in-context dialog with standard
+  term anchors, validation, and a full-Settings escape hatch.
+- [x] Replace the page jump for an empty course with a guided dialog that first
+  asks whether the instructor already has Learning Objectives.
+- [x] Existing-LO path: accept pasted/manual LO text, create the hierarchy via
+  the authoritative course APIs, and offer material upload as the next step.
+- [x] Material-first path: upload one or more sources, show durable content-run
+  progress, then surface the existing AI hierarchy proposal/review/apply flow.
+- [x] Every dialog supports Cancel/close without losing completed work and a
+  direct "Open full workspace" escape hatch for advanced editing.
+
+### End-to-end progression
+
+- [x] Once at least one LO has grounded ready material, make question
+  generation/import the primary task and show durable generation progress and
+  partial/failed retry states without ungrounded fallback.
+- [x] Advance Draft/Pending/TA-reviewed content to a focused Review action while
+  preserving the full Review Queue for batch or expert work.
+- [x] Advance courses with Approved content into real isolated Student Preview,
+  then to the authoritative publish checklist; after publication, replace setup
+  guidance with operational content/flag/engagement actions.
+
+### Automatic progression and verification
+
+- [x] Recompute the workflow summary after each mutation/run update so the
+  primary action and numbered-stage states advance without a parallel wizard
+  record.
+- [x] Add desktop/mobile, keyboard/focus, empty/error/retry and authorization
+  coverage for both entry paths.
+- [x] Update PRD, API contract, AGENTS current-state, and Stephen status; run
+  lint, typecheck, Jest, build, Playwright and axe where the local services
+  permit, then sync the final plan evidence.
+
 ## Course-as-Project UX foundation — 2026-08-05
 
 - [x] Treat each course as a durable Project on the Instructor landing page.

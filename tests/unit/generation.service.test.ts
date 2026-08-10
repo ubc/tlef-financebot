@@ -7,7 +7,7 @@
 //   1. the three steps run with the three DISTINCT configured models
 //   2. a reviewer `reject` STILL inserts a Draft carrying agentDecision.reject
 //   3. generator output failing option invariants is retried once, then skipped
-//   4. preseedingProgress counts approved/reviewed per LO
+//   4. preseedingProgress counts approved/reviewed/actionable-unapproved per LO
 jest.mock('../../server/src/config/env', () => ({
   env: {
     llmModelGenerator: 'gen-model',
@@ -536,15 +536,22 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
   });
 });
 
-describe('preseedingProgress — per-LO approved/reviewed counts (IN-Q10)', () => {
-  it('returns approved and reviewed counts per LO with target 5', async () => {
+describe('preseedingProgress — per-LO approved/reviewed/unapproved counts (IN-Q10)', () => {
+  it('returns approved, reviewed, and actionable unapproved counts per LO with target 5', async () => {
     const lo1 = new ObjectId();
     const lo2 = new ObjectId();
     loToArray.mockResolvedValue([
       { _id: lo1, courseId, name: 'LO one', order: 1 },
       { _id: lo2, courseId, name: 'LO two', order: 2 },
     ]);
-    countDocuments.mockImplementation(async (filter: { loIds: ObjectId; state: string }) => {
+    countDocuments.mockImplementation(async (filter: {
+      loIds: ObjectId;
+      state: string | { $in: string[] };
+    }) => {
+      if (typeof filter.state === 'object') {
+        expect(filter.state.$in).toEqual(['draft', 'pending-review', 'reviewed', 'paused']);
+        return filter.loIds.equals(lo1) ? 6 : 3;
+      }
       if (filter.loIds.equals(lo1)) return filter.state === 'approved' ? 4 : 2;
       if (filter.loIds.equals(lo2)) return filter.state === 'approved' ? 0 : 1;
       return 0;
@@ -553,8 +560,10 @@ describe('preseedingProgress — per-LO approved/reviewed counts (IN-Q10)', () =
     const result = await preseedingProgress(courseId);
 
     expect(result).toEqual([
-      { loId: lo1, loName: 'LO one', approved: 4, reviewed: 2, target: 5 },
-      { loId: lo2, loName: 'LO two', approved: 0, reviewed: 1, target: 5 },
+      { loId: lo1, loName: 'LO one', approved: 4, reviewed: 2, unapproved: 6, target: 5 },
+      { loId: lo2, loName: 'LO two', approved: 0, reviewed: 1, unapproved: 3, target: 5 },
     ]);
+
+    expect(countDocuments).toHaveBeenCalledTimes(6);
   });
 });

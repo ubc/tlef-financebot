@@ -55,16 +55,56 @@ grant attaches to the same PUID-backed User on first SAML login.
 - `GET /api/courses/:courseId/publish-checklist` →
   `[{ item, ok }]` from the same side-effect-free server check used at publish.
 - `GET /api/courses/:courseId/instructor-workflow` → the Instructor Launch
-  Cockpit read model: course lifecycle, publish-readiness percentage/checklist,
-  operational counts, and priority-ordered actions with stable destination
-  identifiers. It derives from existing course/content/review/flag/analytics
-  state and stores no parallel workflow state.
+  Cockpit read model: course lifecycle and optional `termStart`/`termEnd`,
+  publish-readiness percentage/checklist, operational counts, guided setup
+  state, and priority-ordered actions with stable destination identifiers.
+  `counts` includes Topic/LO and operational counts plus material state
+  (`materials`, `readyMaterials`, `processingMaterials`, `failedMaterials`,
+  `materialsNeedingReview`, `unassignedMaterials`) and question state
+  (`totalQuestions`, `approvedQuestions`, `reviewQueue`, `thinLos`,
+  `activeGenerationRuns`). `setup.steps` is the ordered five-step
+  Sources → Learning Objectives → Questions → Review → Student Preview path;
+  each row has `{ id, number, label, status, detail, destination, count?,
+  blockedBy? }`, where status is `not-started | blocked | in-progress |
+  needs-attention | ready | complete`. `setup.primaryAction` is the one
+  recommended next action and carries the normal action fields plus
+  `presentation: 'dialog'|'workspace'|'preview'`; `actions` remains the full
+  ordered queue. The dates let Course Home complete its blocking setup action
+  in context. All setup/action state derives from existing course, material,
+  content-run, hierarchy, question/review, flag, analytics, and isolated-preview
+  records and stores no parallel wizard state.
+- `POST /api/courses/:courseId/outline`
+  `{ themes: [{ name, los: string[] }] }` → `201 { themesCreated, losCreated,
+  themes: [{ _id, name, created, los: [{ _id, name, created }] }] }`. This
+  Instructor-only batch creates or reuses active Topics (domain `Theme`) by
+  trimmed, case-insensitive name within the course and active LOs by the same
+  rule within their Topic. Duplicate LO names in one request are collapsed.
+  Retrying after a partial write or lost response therefore fills only missing
+  names instead of duplicating the already-created outline. Input is limited to
+  1–50 Topics and 1–100 non-empty LOs per Topic; invalid outlines return 400.
 - `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
 - `POST /api/courses/:courseId/publish` / `POST .../unpublish` → `{ published, checklist: [{ item, ok }] }`
 - `POST /api/courses/:courseId/archive` → archived Course;
   `POST .../restore` → restored unpublished Draft. Archived courses remain
   instructor-readable, appear inactive to enrolled students, and reject
   student practice with `403 course-archived`.
+- `DELETE /api/courses/:courseId { confirmation }` →
+  `{ deleted: true, courseId, deletedFiles, missingFiles, deletedVectorCollection,
+  cancelledJobs, deletedDocuments }`. This is an irreversible owner/Admin-only
+  cascade, separate from Archive. `confirmation` must exactly equal
+  `DELETE <courseCode> <section>` (with the section omitted when absent). It
+  removes the course hierarchy, materials/chunks/uploaded files/Qdrant
+  collection, question versions, attempts and mastery, Review Book, exams,
+  flags/notifications/audit records, roster, TA/capability configuration,
+  generation state, and every user's role for the course. Active background
+  work returns `409 course-delete-active-work`; co-instructors receive
+  `403 course-delete-owner-required`. Current `uploads/` and the historical
+  `server/uploads/` location are allow-listed. Historical regression fixtures
+  are accepted only when they match the exact
+  `.claude/worktrees/<name>/uploads/<uuid>.<supported-extension>` or
+  `/[private/]tmp/tlef-*/uploads/<uuid>.<supported-extension>` shape.
+  Already-missing legacy files increment `missingFiles` without blocking
+  deletion, while an existing file outside those narrow rules still fails closed.
 - Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` →
   `{ count, rejected: [{ line, value, reason }] }`;
   `GET .../roster` → `[{ identifier, extendedUntil? }]`
@@ -223,9 +263,13 @@ material ids are rejected before hierarchy creation begins.
   question's currently-saved stem when omitted from the body; `warnings` lists
   any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
   stem. Never persists anything. (IN-Q09, Task 5)
-- `POST /api/questions/:questionId/transition { to }` → question (validated
-  against `PUBLICATION_TRANSITIONS`; Instructor `draft → approved` is a legal
-  one-click approval, and `archived → draft` is the only restore path)
+- `POST /api/questions/:questionId/transition { to, expectedVersionId? }` →
+  question (validated against `PUBLICATION_TRANSITIONS`; Instructor `draft →
+  approved` is a legal one-click approval, and `archived → draft` is the only
+  restore path). When supplied, `expectedVersionId` compare-and-sets both the
+  reviewed content version and publication state; a stale version or state
+  returns `409 { error: "question-conflict" }`. Omitting it preserves the
+  existing state-only transition contract.
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate`
@@ -257,7 +301,12 @@ material ids are rejected before hierarchy creation begins.
   assembly of new Exam Prep attempts fail closed for detected numerical
   versions without a current evaluator proof. Existing assembled exam sittings
   retain their pinned versions and values.
-- `GET /api/courses/:courseId/preseeding` → `[{ loId, loName, approved, reviewed, target: 5 }]`
+- `GET /api/courses/:courseId/preseeding` →
+  `[{ loId, loName, approved, reviewed, unapproved, target: 5 }]`, where
+  `unapproved` counts question heads in `draft`, `pending-review`, `reviewed`,
+  or `paused`. It excludes both `approved` and `archived`, so authoring clients
+  can avoid paying for a duplicate generation batch while existing work is
+  still awaiting review without letting discarded questions block generation.
 
 ## Instructor flag resolution
 

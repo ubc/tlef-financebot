@@ -571,6 +571,38 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(questionId.toHexString());
     expect(res.body.state).toBe('approved');
+    expect(transitionQuestion).toHaveBeenCalledWith(questionId, 'approved', instructor.puid);
+  });
+
+  it('forwards an optional expectedVersionId as an ObjectId for content-version CAS', async () => {
+    const expectedVersionId = new ObjectId();
+    jest.mocked(transitionQuestion).mockResolvedValue({
+      _id: questionId,
+      courseId,
+      currentVersionId: expectedVersionId,
+      state: 'approved',
+    } as never);
+
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/transition`)
+      .send({ to: 'approved', expectedVersionId: expectedVersionId.toHexString() });
+
+    expect(res.status).toBe(200);
+    expect(transitionQuestion).toHaveBeenCalledWith(
+      questionId,
+      'approved',
+      instructor.puid,
+      expectedVersionId,
+    );
+  });
+
+  it('400s a malformed expectedVersionId without calling the transition service', async () => {
+    const res = await request(makeApp(instructor))
+      .post(`/api/questions/${questionId.toHexString()}/transition`)
+      .send({ to: 'approved', expectedVersionId: 'not-an-object-id' });
+
+    expect(res.status).toBe(400);
+    expect(transitionQuestion).not.toHaveBeenCalled();
   });
 });
 

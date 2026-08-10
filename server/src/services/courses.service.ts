@@ -275,6 +275,97 @@ export async function addLo(
   return { _id: insertedId, ...lo };
 }
 
+export interface UpsertCourseOutlineInput {
+  themes: Array<{ name: string; los: string[] }>;
+}
+
+export interface UpsertCourseOutlineResult {
+  themesCreated: number;
+  losCreated: number;
+  themes: Array<{
+    _id: ObjectId;
+    name: string;
+    created: boolean;
+    los: Array<{ _id: ObjectId; name: string; created: boolean }>;
+  }>;
+}
+
+function normalizedOutlineName(name: string): string {
+  return name.trim().toLocaleLowerCase();
+}
+
+/**
+ * Idempotent-by-name outline creation for bulk paste/import and reviewed AI
+ * suggestions. Existing active Topics and LOs are reused, so retrying after a
+ * partial network/write failure fills the missing tail instead of duplicating
+ * everything that already succeeded.
+ */
+export async function upsertCourseOutline(
+  courseId: ObjectId,
+  input: UpsertCourseOutlineInput,
+): Promise<UpsertCourseOutlineResult> {
+  const requested = input.themes.map((theme) => ({
+    name: theme.name.trim(),
+    los: [...new Map(
+      theme.los
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => [normalizedOutlineName(name), name]),
+    ).values()],
+  }));
+  if (
+    requested.length === 0
+    || requested.some((theme) => theme.name === '' || theme.los.length === 0)
+  ) {
+    throw new Error('course-outline-invalid');
+  }
+
+  const existingThemes = await themesCol()
+    .find({ courseId, archivedAt: { $exists: false } })
+    .sort({ order: 1 })
+    .toArray();
+  const activeLos = await losCol()
+    .find({ courseId, archivedAt: { $exists: false } })
+    .sort({ order: 1 })
+    .toArray();
+  const themesByName = new Map(existingThemes.map((theme) => [normalizedOutlineName(theme.name), theme]));
+
+  let themesCreated = 0;
+  let losCreated = 0;
+  const themes: UpsertCourseOutlineResult['themes'] = [];
+  for (const requestedTheme of requested) {
+    const themeKey = normalizedOutlineName(requestedTheme.name);
+    let theme = themesByName.get(themeKey);
+    let themeCreated = false;
+    if (!theme) {
+      theme = await addTheme(courseId, { name: requestedTheme.name });
+      themesByName.set(themeKey, theme);
+      themesCreated += 1;
+      themeCreated = true;
+    }
+
+    const themeLos = activeLos.filter((lo) => lo.themeId.equals(theme!._id));
+    const losByName = new Map(themeLos.map((lo) => [normalizedOutlineName(lo.name), lo]));
+    const resultLos: UpsertCourseOutlineResult['themes'][number]['los'] = [];
+    for (const requestedLo of requestedTheme.los) {
+      const loKey = normalizedOutlineName(requestedLo);
+      let lo = losByName.get(loKey);
+      let created = false;
+      if (!lo) {
+        lo = await addLo(courseId, theme._id, { name: requestedLo });
+        losByName.set(loKey, lo);
+        activeLos.push(lo);
+        losCreated += 1;
+        created = true;
+      }
+      resultLos.push({ _id: lo._id, name: lo.name, created });
+    }
+    themes.push({ _id: theme._id, name: theme.name, created: themeCreated, los: resultLos });
+  }
+
+  return { themesCreated, losCreated, themes };
+}
+
 export async function updateLo(
   loId: ObjectId,
   patch: Partial<Pick<LearningObjective, 'name' | 'order'>>,

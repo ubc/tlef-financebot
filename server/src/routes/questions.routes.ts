@@ -208,7 +208,10 @@ function verifyOptionFormulas(
   };
 }
 
-const transitionBody = z.object({ to: z.enum(PUBLICATION_STATES) });
+const transitionBody = z.object({
+  to: z.enum(PUBLICATION_STATES),
+  expectedVersionId: objectIdParam.optional(),
+});
 const internalNoteBody = z.object({ text: z.string().trim().min(1).max(2000) });
 
 const bulkTransitionBody = z.object({
@@ -594,7 +597,9 @@ questionsRouter.post(
   },
 );
 
-/** POST /api/questions/:questionId/transition { to } -> question. Instructor-only. (IN-Q04/Q07) */
+/** POST /api/questions/:questionId/transition { to, expectedVersionId? } -> question.
+ * Instructor-only. The optional version id prevents approving a version that
+ * changed after the reviewer loaded it. (IN-Q04/Q07) */
 questionsRouter.post(
   '/questions/:questionId/transition',
   validate({ params: questionIdParams }),
@@ -604,8 +609,10 @@ questionsRouter.post(
   validate({ body: transitionBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
-    const { to } = req.body as z.infer<typeof transitionBody>;
-    const updated = await transitionQuestion(questionId, to, req.user!.puid);
+    const { to, expectedVersionId } = req.body as z.infer<typeof transitionBody>;
+    const updated = expectedVersionId === undefined
+      ? await transitionQuestion(questionId, to, req.user!.puid)
+      : await transitionQuestion(questionId, to, req.user!.puid, new ObjectId(expectedVersionId));
     res.json(toQuestionResponse(updated));
   },
 );

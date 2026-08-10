@@ -51,6 +51,56 @@ describe('config: LLM endpoint selection', () => {
   });
 });
 
+describe('config: embeddings provider selection', () => {
+  it('uses the OpenAI model default when only the embeddings provider changes', () => {
+    const { env } = loadEnv({
+      EMBEDDINGS_PROVIDER: 'openai',
+      EMBEDDINGS_MODEL: '',
+    });
+    expect(env.embeddingsModel).toBe('text-embedding-3-small');
+  });
+
+  it('does not inherit an Ollama LLM endpoint for hosted OpenAI embeddings', () => {
+    const { env } = loadEnv({
+      LLM_PROVIDER: 'ollama',
+      LLM_ENDPOINT: '',
+      EMBEDDINGS_PROVIDER: 'openai',
+      EMBEDDINGS_ENDPOINT: '',
+    });
+    expect(env.llmEndpoint).toBe('http://localhost:11434');
+    expect(env.embeddingsEndpoint).toBe('');
+  });
+
+  it('inherits a shared provider endpoint but honours an embedding override', () => {
+    const shared = loadEnv({
+      LLM_PROVIDER: 'openai',
+      LLM_ENDPOINT: 'https://shared.example.test/v1',
+      EMBEDDINGS_PROVIDER: 'openai',
+      EMBEDDINGS_ENDPOINT: '',
+    });
+    expect(shared.env.embeddingsEndpoint).toBe('https://shared.example.test/v1');
+
+    const separate = loadEnv({
+      LLM_PROVIDER: 'openai',
+      LLM_ENDPOINT: 'https://shared.example.test/v1',
+      EMBEDDINGS_PROVIDER: 'openai',
+      EMBEDDINGS_ENDPOINT: 'https://embeddings.example.test/v1',
+    });
+    expect(separate.env.embeddingsEndpoint).toBe('https://embeddings.example.test/v1');
+  });
+
+  it('reuses the LLM key unless an embedding-specific key is configured', () => {
+    expect(loadEnv({
+      LLM_API_KEY: 'shared-key',
+      EMBEDDINGS_API_KEY: '',
+    }).env.embeddingsApiKey).toBe('shared-key');
+    expect(loadEnv({
+      LLM_API_KEY: 'shared-key',
+      EMBEDDINGS_API_KEY: 'embedding-key',
+    }).env.embeddingsApiKey).toBe('embedding-key');
+  });
+});
+
 describe('config: admin allowlist and worker limits', () => {
   it('parses ADMIN_CWL_ALLOWLIST as a trimmed, non-empty list', () => {
     const { env } = loadEnv({ ADMIN_CWL_ALLOWLIST: ' PUID-A , PUID-B ,, ' });

@@ -17,8 +17,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 }));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
 jest.mock('../../server/src/services/courses.service', () => ({
-  addTheme: jest.fn(),
-  addLo: jest.fn(),
+  upsertCourseOutline: jest.fn(),
 }));
 
 import { ObjectId } from 'mongodb';
@@ -30,7 +29,7 @@ import {
 } from '../../server/src/services/classification.service';
 import { materialsCol, themesCol, losCol } from '../../server/src/components/mongodb/collections';
 import { completeJson } from '../../server/src/components/genai/llm';
-import { addLo, addTheme } from '../../server/src/services/courses.service';
+import { upsertCourseOutline } from '../../server/src/services/courses.service';
 
 const materialFindOne = jest.fn();
 const materialUpdateOne = jest.fn();
@@ -51,8 +50,7 @@ beforeEach(() => {
   themeToArray.mockReset();
   loToArray.mockReset();
   jest.mocked(completeJson).mockReset();
-  jest.mocked(addTheme).mockReset();
-  jest.mocked(addLo).mockReset();
+  jest.mocked(upsertCourseOutline).mockReset();
 
   // A real `find(...).toArray()` always resolves to an array; default the mocks
   // to [] so tests only set the ones they care about (individual tests override).
@@ -290,27 +288,20 @@ describe('applySuggestedHierarchy', () => {
       },
       { _id: material2Id, courseId, status: 'ready', assignments: [] },
     ]);
-    jest.mocked(addTheme).mockResolvedValue({
-      _id: createdThemeId,
-      courseId,
-      name: 'Forces',
-      order: 1,
-    });
     jest
-      .mocked(addLo)
-      .mockResolvedValueOnce({
-        _id: createdLo1Id,
-        courseId,
-        themeId: createdThemeId,
-        name: 'Net force',
-        order: 1,
-      })
-      .mockResolvedValueOnce({
-        _id: createdLo2Id,
-        courseId,
-        themeId: createdThemeId,
-        name: 'Friction',
-        order: 2,
+      .mocked(upsertCourseOutline)
+      .mockResolvedValue({
+        themesCreated: 1,
+        losCreated: 2,
+        themes: [{
+          _id: createdThemeId,
+          name: 'Forces',
+          created: true,
+          los: [
+            { _id: createdLo1Id, name: 'Net force', created: true },
+            { _id: createdLo2Id, name: 'Friction', created: true },
+          ],
+        }],
       });
 
     const result = await applySuggestedHierarchy(courseId, {
@@ -325,9 +316,9 @@ describe('applySuggestedHierarchy', () => {
       ],
     });
 
-    expect(addTheme).toHaveBeenCalledWith(courseId, { name: 'Forces' });
-    expect(addLo).toHaveBeenNthCalledWith(1, courseId, createdThemeId, { name: 'Net force' });
-    expect(addLo).toHaveBeenNthCalledWith(2, courseId, createdThemeId, { name: 'Friction' });
+    expect(upsertCourseOutline).toHaveBeenCalledWith(courseId, {
+      themes: [{ name: 'Forces', los: ['Net force', 'Friction'] }],
+    });
     expect(materialUpdateOne).toHaveBeenNthCalledWith(
       1,
       { _id: material1Id, courseId },
@@ -376,8 +367,7 @@ describe('applySuggestedHierarchy', () => {
       }),
     ).rejects.toThrow('suggested-hierarchy-material-not-found');
 
-    expect(addTheme).not.toHaveBeenCalled();
-    expect(addLo).not.toHaveBeenCalled();
+    expect(upsertCourseOutline).not.toHaveBeenCalled();
     expect(materialUpdateOne).not.toHaveBeenCalled();
   });
 });

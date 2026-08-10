@@ -34,6 +34,23 @@ import {
 const PREVIEW_PUID = 'anonymous-preview';
 const MASTERY_WINDOW = 10;
 
+/**
+ * A read-only launch-guide milestone. Preview attempts are already isolated
+ * from live student data and expire after 24 hours, so this answers whether
+ * the current instructor has recently exercised the real Student Preview
+ * without creating a preview session as a side effect.
+ */
+export async function hasRecentPreviewAttempt(
+  courseId: ObjectId,
+  instructorPuid: string,
+): Promise<boolean> {
+  const attempt = await previewAttemptsCol().findOne(
+    { courseId, instructorPuid },
+    { projection: { _id: 1 } },
+  );
+  return attempt !== null;
+}
+
 export interface PreviewContext {
   instructorPuid: string;
   previewSessionId: string;

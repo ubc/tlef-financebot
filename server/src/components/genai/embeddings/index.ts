@@ -14,8 +14,8 @@ import { createGenaiLogger } from '../logger';
 // promise and expose small async helpers. Two provider shapes are supported:
 //   - `fastembed`: a self-contained local model (downloads on first use).
 //   - any LLM provider name (ollama | openai | ...): embeddings are produced by
-//     the toolkit LLM module using EMBEDDINGS_MODEL, reusing LLM_ENDPOINT /
-//     LLM_API_KEY.
+//     the toolkit LLM module using EMBEDDINGS_MODEL. Embedding-specific
+//     endpoint/key settings take precedence and otherwise fall back safely.
 const logger = createGenaiLogger('genai:embeddings');
 
 function buildConfig(): Partial<EmbeddingsConfig> {
@@ -37,8 +37,8 @@ function buildConfig(): Partial<EmbeddingsConfig> {
     providerType: 'ubc-genai-toolkit-llm',
     llmConfig: {
       provider: env.embeddingsProvider as ProviderType,
-      endpoint: env.llmEndpoint || undefined,
-      apiKey: env.llmApiKey || undefined,
+      endpoint: env.embeddingsEndpoint || undefined,
+      apiKey: env.embeddingsApiKey || undefined,
       // defaultModel is required by LLMConfig but unused for embeddings; the
       // embedding model below is what actually drives embed().
       defaultModel: env.llmDefaultModel,

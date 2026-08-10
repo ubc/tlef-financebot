@@ -89,6 +89,7 @@ async function login(page: Page, username: string): Promise<void> {
 }
 
 const COURSE_NAME = 'A11y Scan Course';
+const GUIDE_COURSE_NAME = 'A11y Guided Setup Course';
 const THEME_NAME = 'Bond Pricing (A11y)';
 const LO_NAME = 'Discount a cash flow (A11y)';
 
@@ -106,6 +107,7 @@ const RICH_STEM = [
 ].join('\n');
 
 let courseId = '';
+let guideCourseId = '';
 let themeId = '';
 let loId = '';
 let registrationCode = '';
@@ -130,6 +132,30 @@ test.describe('a11y across the signed-in surfaces', () => {
     ).json()) as { _id: string; registrationCode: string };
     courseId = course._id;
     registrationCode = course.registrationCode;
+
+    // A separate empty Draft exercises the real first-run Next Action without
+    // invoking document processing or either paid AI operation. Dates are the
+    // only earlier launch blocker, so after this patch the dashboard's
+    // authoritative workflow selects `choose-authoring-path` and opens the
+    // Course Setup Guide at its LO-first / materials-first choice screen.
+    const guideCourse = (await (
+      await api.post('/api/courses', {
+        data: {
+          name: GUIDE_COURSE_NAME,
+          courseCode: `FIN-GUIDE-${Date.now().toString(36)}`,
+          section: 'A11Y',
+          term: '2026W1',
+        },
+      })
+    ).json()) as { _id: string };
+    guideCourseId = guideCourse._id;
+    const guideDates = await api.patch(`/api/courses/${guideCourseId}`, {
+      data: {
+        termStart: '2026-09-08T07:00:00.000Z',
+        termEnd: '2026-12-07T08:00:00.000Z',
+      },
+    });
+    expect(guideDates.ok()).toBe(true);
 
     const theme = (await (
       await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME } })
@@ -203,26 +229,56 @@ test.describe('a11y across the signed-in surfaces', () => {
   });
 
   test.afterAll(async () => {
-    if (!courseId) return;
+    if (!courseId && !guideCourseId) return;
     await connectMongo();
-    const cId = new ObjectId(courseId);
-    const questions = await questionsCol().find({ courseId: cId }).toArray();
-    const questionIds = questions.map((q) => q._id);
-    await Promise.all([
-      questionVersionsCol().deleteMany({ questionId: { $in: questionIds } }),
-      questionsCol().deleteMany({ courseId: cId }),
-      losCol().deleteMany({ courseId: cId }),
-      themesCol().deleteMany({ courseId: cId }),
-      rosterCol().deleteMany({ courseId: cId }),
-      attemptsCol().deleteMany({ courseId: cId }),
-      reviewBookCol().deleteMany({ courseId: cId }),
-      masteryCol().deleteMany({ courseId: cId }),
-      sessionSummariesCol().deleteMany({ courseId: cId }),
-      examTemplatesCol().deleteMany({ courseId: cId }),
-      examAttemptsCol().deleteMany({ courseId: cId }),
-      coursesCol().deleteOne({ _id: cId }),
-      usersCol().updateOne({ uid: 'student-user' }, { $pull: { courseRoles: { courseId: cId } } }),
-    ]);
+    if (courseId) {
+      const cId = new ObjectId(courseId);
+      const questions = await questionsCol().find({ courseId: cId }).toArray();
+      const questionIds = questions.map((q) => q._id);
+      await Promise.all([
+        questionVersionsCol().deleteMany({ questionId: { $in: questionIds } }),
+        questionsCol().deleteMany({ courseId: cId }),
+        losCol().deleteMany({ courseId: cId }),
+        themesCol().deleteMany({ courseId: cId }),
+        rosterCol().deleteMany({ courseId: cId }),
+        attemptsCol().deleteMany({ courseId: cId }),
+        reviewBookCol().deleteMany({ courseId: cId }),
+        masteryCol().deleteMany({ courseId: cId }),
+        sessionSummariesCol().deleteMany({ courseId: cId }),
+        examTemplatesCol().deleteMany({ courseId: cId }),
+        examAttemptsCol().deleteMany({ courseId: cId }),
+        coursesCol().deleteOne({ _id: cId }),
+        usersCol().updateMany({}, { $pull: { courseRoles: { courseId: cId } } }),
+      ]);
+    }
+    if (guideCourseId) {
+      const guideId = new ObjectId(guideCourseId);
+      await Promise.all([
+        coursesCol().deleteOne({ _id: guideId }),
+        usersCol().updateMany({}, { $pull: { courseRoles: { courseId: guideId } } }),
+      ]);
+    }
+  });
+
+  test('guided course setup choice dialog has no WCAG A/AA violations', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: AUTH_FILE });
+    const page = await context.newPage();
+    try {
+      await page.goto(`/#/instructor/course/${guideCourseId}`);
+      await expect(page.getByRole('heading', { name: GUIDE_COURSE_NAME })).toBeVisible();
+
+      // This is the actual server-derived first task, not a test-only shortcut.
+      // Scanning the open modal covers its focusable stage rail, close control,
+      // two authoring-path choices, and full-workspace escape hatch.
+      await page.getByRole('button', { name: /start building course knowledge/i }).click();
+      const guide = page.getByRole('dialog', { name: /prepare this course, one step at a time/i });
+      await expect(guide).toBeVisible();
+      await expect(guide.getByRole('button', { name: /i already have learning objectives/i })).toBeVisible();
+      await expect(guide.getByRole('button', { name: /create them from my course materials/i })).toBeVisible();
+      await expectNoViolations(page, 'guided course setup choice dialog');
+    } finally {
+      await context.close();
+    }
   });
 
   test('instructor surfaces have no WCAG A/AA violations', async ({ browser }) => {

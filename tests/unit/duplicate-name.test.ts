@@ -12,6 +12,7 @@ import type { InstructorCourse } from '../../client/src/api';
 function course(overrides: Partial<InstructorCourse> = {}): InstructorCourse {
   return {
     _id: 'course-1',
+    ownerPuid: 'PUID-OWNER',
     name: 'Introduction to Finance',
     courseCode: 'COMM 298',
     term: 'Winter Term 1, 2026/27',

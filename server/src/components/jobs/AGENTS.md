@@ -23,6 +23,7 @@ from `env` (`env.mongodbUri`, `env.mongodbDbName`); no `process.env` access here
 | `enqueueJob<T>(name, data)` | Run a job now. Throws if `startJobs()` has not run. |
 | `scheduleRecurring(name, interval)` | Schedule a defined job on a recurring interval (e.g. `'1 day'`). |
 | `hasPendingJob(name, runId)` | Startup-only check for a live Agenda job whose `data.runId` matches a durable content run. |
+| `cancelJobsByDataIds(runIds, examAttemptIds)` | Remove queued/stale jobs correlated to records being permanently deleted. Callers must reject already-active durable work first. |
 
 Phase 3 adds `exam.mastery-pass`, registered by
 `registerExamMasteryJobs()` in `server.ts` after `startJobs()`. The job consumes

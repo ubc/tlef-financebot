@@ -65,6 +65,21 @@ export async function hasPendingJob(name: string, runId: string): Promise<boolea
   return jobs.length > 0;
 }
 
+/** Remove queued/stale jobs that refer to records owned by a course being
+ * permanently deleted. Callers must first ensure no corresponding durable run
+ * is still active; cancelling an Agenda document cannot interrupt a handler
+ * that has already started executing. */
+export async function cancelJobsByDataIds(
+  runIds: string[],
+  examAttemptIds: string[],
+): Promise<number> {
+  const clauses: Array<Record<string, unknown>> = [];
+  if (runIds.length > 0) clauses.push({ 'data.runId': { $in: runIds } });
+  if (examAttemptIds.length > 0) clauses.push({ 'data.examAttemptId': { $in: examAttemptIds } });
+  if (clauses.length === 0) return 0;
+  return (await requireAgenda().cancel({ $or: clauses })) ?? 0;
+}
+
 export async function stopJobs(): Promise<void> {
   if (!agenda) return;
   await agenda.stop(); // unlock jobs + clear processing interval

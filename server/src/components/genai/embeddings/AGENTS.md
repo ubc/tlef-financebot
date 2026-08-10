@@ -14,11 +14,15 @@ helpers.
 | Variable | Meaning | Example |
 | --- | --- | --- |
 | `EMBEDDINGS_PROVIDER` | `fastembed` (local, self-contained) **or** an LLM provider name (`ollama` \| `openai` \| ...) | `fastembed` |
-| `EMBEDDINGS_MODEL` | Embedding model id used for configuration/health reporting | `fast-bge-small-en-v1.5` |
+| `EMBEDDINGS_MODEL` | Embedding model id; defaults by provider (`text-embedding-3-small` for OpenAI, `nomic-embed-text` for Ollama) | `fast-bge-small-en-v1.5` |
+| `EMBEDDINGS_ENDPOINT` | Optional embedding-provider endpoint; hosted OpenAI should leave this blank | |
+| `EMBEDDINGS_API_KEY` | Optional embedding-provider key; falls back to `LLM_API_KEY` | |
 
 When `EMBEDDINGS_PROVIDER` is an LLM provider name, the module routes through
-`ubc-genai-toolkit-llm` and reuses `LLM_ENDPOINT` / `LLM_API_KEY` from the `llm`
-component's env. Read in `config/env.ts`.
+`ubc-genai-toolkit-llm`. It reuses `LLM_API_KEY` when no embedding-specific key
+is set. It reuses `LLM_ENDPOINT` only when the generation and embedding
+providers match, preventing an Ollama generation endpoint from being sent to
+the hosted OpenAI embedding client. Read in `config/env.ts`.
 
 ## Public API (`index.ts`)
 

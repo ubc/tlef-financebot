@@ -95,6 +95,15 @@ export async function deletePointsByFilter(name: string, filter: QdrantFilter): 
   await qdrant.delete(name, { filter, wait: true });
 }
 
+/** Permanently remove a whole collection. Returns false when it was already
+ * absent, making course deletion safely retryable after a partial failure. */
+export async function deleteCollectionIfExists(name: string): Promise<boolean> {
+  const { collections } = await qdrant.getCollections();
+  if (!collections.some((collection) => collection.name === name)) return false;
+  await qdrant.deleteCollection(name);
+  return true;
+}
+
 /** Lightweight reachability check used by GET /api/health. Never throws. */
 export async function pingQdrant(): Promise<boolean> {
   try {

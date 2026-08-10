@@ -12,6 +12,7 @@ function optional(key: string, fallback: string): string {
 
 const llmDefaultModel = optional('LLM_DEFAULT_MODEL', 'ministral-3:latest');
 const llmProvider = optional('LLM_PROVIDER', 'ollama');
+const llmApiKey = optional('LLM_API_KEY', '');
 
 /**
  * Only Ollama has a useful local endpoint default. Hosted providers must leave
@@ -24,6 +25,41 @@ export function resolveLlmEndpoint(provider: string, configuredEndpoint?: string
 }
 
 const llmEndpoint = resolveLlmEndpoint(llmProvider, process.env.LLM_ENDPOINT);
+
+export function resolveEmbeddingsModel(provider: string, configuredModel?: string): string {
+  const model = configuredModel?.trim();
+  if (model) return model;
+  if (provider === 'openai') return 'text-embedding-3-small';
+  if (provider === 'ollama') return 'nomic-embed-text';
+  return 'fast-bge-small-en-v1.5';
+}
+
+/**
+ * Embeddings may use a different provider from the text-generation LLM. Only
+ * inherit LLM_ENDPOINT when both providers are the same; otherwise a local
+ * Ollama endpoint would accidentally be sent to the hosted OpenAI client.
+ */
+export function resolveEmbeddingsEndpoint(
+  provider: string,
+  configuredEndpoint: string | undefined,
+  generationProvider: string,
+  generationEndpoint: string,
+): string {
+  const endpoint = configuredEndpoint?.trim();
+  if (endpoint) return endpoint;
+  if (provider === generationProvider) return generationEndpoint;
+  return resolveLlmEndpoint(provider);
+}
+
+const embeddingsProvider = optional('EMBEDDINGS_PROVIDER', 'fastembed');
+const embeddingsModel = resolveEmbeddingsModel(embeddingsProvider, process.env.EMBEDDINGS_MODEL);
+const embeddingsEndpoint = resolveEmbeddingsEndpoint(
+  embeddingsProvider,
+  process.env.EMBEDDINGS_ENDPOINT,
+  llmProvider,
+  llmEndpoint,
+);
+const embeddingsApiKey = optional('EMBEDDINGS_API_KEY', llmApiKey);
 
 /** A per-pipeline-step model override that falls back to LLM_DEFAULT_MODEL. */
 function stepModel(key: string): string {
@@ -107,7 +143,7 @@ export const env = {
   llmProvider,
   llmDefaultModel,
   llmEndpoint,
-  llmApiKey: optional('LLM_API_KEY', ''),
+  llmApiKey,
 
   // Per-pipeline-step model selection (PRD §2 / AD-07): generator, structure
   // validator, reviewer, and mastery evaluator are independently assignable.
@@ -129,8 +165,10 @@ export const env = {
   // openai | ...) whose embedding model is used. The model fixes the vector
   // dimension, which MUST match the Qdrant collection size — the RAG service
   // derives it at runtime so they can never drift.
-  embeddingsProvider: optional('EMBEDDINGS_PROVIDER', 'fastembed'),
-  embeddingsModel: optional('EMBEDDINGS_MODEL', 'fast-bge-small-en-v1.5'),
+  embeddingsProvider,
+  embeddingsModel,
+  embeddingsEndpoint,
+  embeddingsApiKey,
 
   // When true, the genai toolkit modules log their full (verbose) debug/info
   // output. Off by default so only warnings/errors from the toolkit surface,

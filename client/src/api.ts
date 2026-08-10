@@ -818,6 +818,7 @@ export interface AutoPauseConfig {
 
 export interface InstructorCourse {
   _id: string;
+  ownerPuid: string;
   name: string;
   courseCode: string;
   section?: string;
@@ -863,6 +864,13 @@ export interface ChecklistItem {
 }
 
 export type InstructorWorkflowPriority = 'blocking' | 'high' | 'normal';
+export type InstructorWorkflowStageStatus =
+  | 'not-started'
+  | 'blocked'
+  | 'in-progress'
+  | 'needs-attention'
+  | 'ready'
+  | 'complete';
 export type InstructorWorkflowDestination =
   | 'settings'
   | 'structure'
@@ -885,6 +893,21 @@ export interface InstructorWorkflowAction {
   count?: number;
 }
 
+export interface InstructorWorkflowStage {
+  id: 'sources' | 'learning-objectives' | 'questions' | 'review' | 'student-preview';
+  number: 1 | 2 | 3 | 4 | 5;
+  label: string;
+  status: InstructorWorkflowStageStatus;
+  detail: string;
+  destination: InstructorWorkflowDestination;
+  count?: number;
+  blockedBy?: InstructorWorkflowStage['id'];
+}
+
+export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowAction {
+  presentation: 'dialog' | 'workspace' | 'preview';
+}
+
 export interface InstructorWorkflowSummary {
   course: {
     id: string;
@@ -892,6 +915,8 @@ export interface InstructorWorkflowSummary {
     courseCode: string;
     section?: string;
     term: string;
+    termStart?: string;
+    termEnd?: string;
     lifecycle: 'draft' | 'published' | 'archived';
   };
   readiness: {
@@ -907,9 +932,20 @@ export interface InstructorWorkflowSummary {
     reviewQueue: number;
     openFlags: number;
     thinLos: number;
+    materials: number;
+    readyMaterials: number;
+    processingMaterials: number;
+    failedMaterials: number;
+    materialsNeedingReview: number;
+    totalQuestions: number;
+    activeGenerationRuns: number;
     unassignedMaterials: number;
     contentIssues: number;
     lowEngagementStudents: number;
+  };
+  setup: {
+    steps: InstructorWorkflowStage[];
+    primaryAction: InstructorWorkflowPrimaryAction;
   };
   actions: InstructorWorkflowAction[];
 }
@@ -1047,6 +1083,28 @@ export function archiveCourse(courseId: string): Promise<InstructorCourse> {
 export function restoreCourse(courseId: string): Promise<InstructorCourse> {
   return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}/restore`, {
     method: 'POST',
+  });
+}
+
+export interface PermanentCourseDeletionResult {
+  deleted: true;
+  courseId: string;
+  deletedFiles: number;
+  missingFiles: number;
+  deletedVectorCollection: boolean;
+  cancelledJobs: number;
+  deletedDocuments: Record<string, number>;
+}
+
+/** Irreversibly remove a complete course project and its stored data. */
+export function permanentlyDeleteCourse(
+  courseId: string,
+  confirmation: string,
+): Promise<PermanentCourseDeletionResult> {
+  return request<PermanentCourseDeletionResult>(`/api/courses/${encodeURIComponent(courseId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmation }),
   });
 }
 
@@ -1268,6 +1326,32 @@ export function addLo(themeId: string, name: string): Promise<CourseTreeLo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
+}
+
+export interface CourseOutlineUpsertResult {
+  themesCreated: number;
+  losCreated: number;
+  themes: Array<{
+    _id: string;
+    name: string;
+    created: boolean;
+    los: Array<{ _id: string; name: string; created: boolean }>;
+  }>;
+}
+
+/** Retry-safe batch Topic/LO creation. Existing active names are reused. */
+export function upsertCourseOutline(
+  courseId: string,
+  themes: Array<{ name: string; los: string[] }>,
+): Promise<CourseOutlineUpsertResult> {
+  return request<CourseOutlineUpsertResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/outline`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ themes }),
+    },
+  );
 }
 
 /** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
@@ -1805,6 +1889,9 @@ export interface PreseedingLo {
   loName: string;
   approved: number;
   reviewed: number;
+  /** Draft + Pending review + Reviewed + Paused question heads. Archived and
+   * Approved questions are intentionally excluded. */
+  unapproved: number;
   target: number;
 }
 
@@ -2198,14 +2285,22 @@ export function addQuestionInternalNote(
   );
 }
 
-/** POST /api/questions/:questionId/transition { to } -> the updated question
- * head (validated against PUBLICATION_TRANSITIONS; 409 on an invalid move).
- * Instructor-only. (IN-Q04/Q07) */
-export function transitionQuestion(questionId: string, to: PublicationState): Promise<QuestionHead> {
+/** POST /api/questions/:questionId/transition { to, expectedVersionId? } -> the
+ * updated question head (validated against PUBLICATION_TRANSITIONS; 409 on an
+ * invalid move or a stale expected version). Omitting expectedVersionId keeps
+ * the existing state-only transition behavior. Instructor-only. (IN-Q04/Q07) */
+export function transitionQuestion(
+  questionId: string,
+  to: PublicationState,
+  expectedVersionId?: string,
+): Promise<QuestionHead> {
   return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to }),
+    body: JSON.stringify({
+      to,
+      ...(expectedVersionId !== undefined ? { expectedVersionId } : {}),
+    }),
   });
 }
 

@@ -27,6 +27,7 @@ import {
   archiveCourse,
   restoreCourse,
   putRoster,
+  upsertCourseOutline,
 } from '../../server/src/services/courses.service';
 
 // Per-collection method mocks, wired onto the mocked accessors in beforeEach —
@@ -42,7 +43,10 @@ const themesToArray = jest.fn();
 const themesInsertOne = jest.fn();
 const themesFindOneAndUpdate = jest.fn();
 const losFind = jest.fn();
+const losSort = jest.fn();
+const losLimit = jest.fn();
 const losToArray = jest.fn();
+const losInsertOne = jest.fn();
 const losUpdateMany = jest.fn();
 const questionsCountDocuments = jest.fn();
 const rosterDeleteMany = jest.fn();
@@ -60,16 +64,21 @@ beforeEach(() => {
   themesInsertOne.mockReset();
   themesFindOneAndUpdate.mockReset();
   losFind.mockReset();
+  losSort.mockReset();
+  losLimit.mockReset();
   losToArray.mockReset();
+  losInsertOne.mockReset();
   losUpdateMany.mockReset();
   questionsCountDocuments.mockReset();
   rosterDeleteMany.mockReset();
   rosterBulkWrite.mockReset();
 
-  themesSort.mockReturnValue({ limit: themesLimit });
+  themesSort.mockReturnValue({ limit: themesLimit, toArray: themesToArray });
   themesLimit.mockReturnValue({ toArray: themesToArray });
   themesFind.mockReturnValue({ sort: themesSort, toArray: themesToArray });
-  losFind.mockReturnValue({ toArray: losToArray });
+  losSort.mockReturnValue({ limit: losLimit, toArray: losToArray });
+  losLimit.mockReturnValue({ toArray: losToArray });
+  losFind.mockReturnValue({ sort: losSort, toArray: losToArray });
 
   jest.mocked(coursesCol).mockReturnValue({
     insertOne: coursesInsertOne,
@@ -82,7 +91,11 @@ beforeEach(() => {
     insertOne: themesInsertOne,
     findOneAndUpdate: themesFindOneAndUpdate,
   } as never);
-  jest.mocked(losCol).mockReturnValue({ find: losFind, updateMany: losUpdateMany } as never);
+  jest.mocked(losCol).mockReturnValue({
+    find: losFind,
+    insertOne: losInsertOne,
+    updateMany: losUpdateMany,
+  } as never);
   jest.mocked(questionsCol).mockReturnValue({ countDocuments: questionsCountDocuments } as never);
   jest.mocked(rosterCol).mockReturnValue({ deleteMany: rosterDeleteMany, bulkWrite: rosterBulkWrite } as never);
 });
@@ -225,6 +238,39 @@ describe('addTheme (hierarchy CRUD)', () => {
     expect(doc.order).toBe(3);
     expect(doc.courseId).toEqual(courseId);
     expect(doc.name).toBe('Time Value of Money');
+  });
+});
+
+describe('upsertCourseOutline (guided/bulk hierarchy)', () => {
+  it('reuses case-insensitive active Topic and LO names on retry', async () => {
+    const courseId = new ObjectId();
+    const themeId = new ObjectId();
+    const loId = new ObjectId();
+    themesToArray.mockResolvedValue([{ _id: themeId, courseId, name: 'Foundations', order: 1 }]);
+    losToArray.mockResolvedValue([{
+      _id: loId,
+      courseId,
+      themeId,
+      name: 'Explain cash flow',
+      order: 1,
+    }]);
+
+    const result = await upsertCourseOutline(courseId, {
+      themes: [{ name: ' foundations ', los: [' Explain cash flow ', 'explain CASH FLOW'] }],
+    });
+
+    expect(result).toEqual({
+      themesCreated: 0,
+      losCreated: 0,
+      themes: [{
+        _id: themeId,
+        name: 'Foundations',
+        created: false,
+        los: [{ _id: loId, name: 'Explain cash flow', created: false }],
+      }],
+    });
+    expect(themesInsertOne).not.toHaveBeenCalled();
+    expect(losInsertOne).not.toHaveBeenCalled();
   });
 });
 
