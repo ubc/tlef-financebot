@@ -28,6 +28,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 jest.mock('../../server/src/services/serving.service', () => ({
   selectPreviewQuestion: jest.fn(),
   selectPreviewRetryQuestion: jest.fn(),
+  servableApprovedCountByLo: jest.fn(),
 }));
 
 jest.mock('../../server/src/services/flags.service', () => ({
@@ -53,6 +54,7 @@ import {
 import {
   selectPreviewQuestion,
   selectPreviewRetryQuestion,
+  servableApprovedCountByLo,
 } from '../../server/src/services/serving.service';
 import { flagQuestion } from '../../server/src/services/flags.service';
 import {
@@ -235,6 +237,7 @@ beforeEach(() => {
     sessionSummariesCol,
     selectPreviewQuestion,
     selectPreviewRetryQuestion,
+    servableApprovedCountByLo,
     flagQuestion,
   ]) {
     jest.mocked(mock).mockReset();
@@ -245,6 +248,7 @@ beforeEach(() => {
   jest.mocked(losCol).mockReturnValue(collectionFake([lo]) as never);
   jest.mocked(questionsCol).mockReturnValue(collectionFake([question]) as never);
   jest.mocked(questionVersionsCol).mockReturnValue(collectionFake([version]) as never);
+  jest.mocked(servableApprovedCountByLo).mockResolvedValue(new Map([[loId.toHexString(), 1]]));
   previewCollection = collectionFake([]);
   jest.mocked(previewAttemptsCol).mockReturnValue(previewCollection as never);
   previewSessionCollection = collectionFake([]);
@@ -278,6 +282,12 @@ describe('Instructor student preview service', () => {
       status: 'not-attempted',
       approvedCount: 1,
     }));
+  });
+
+  it('hides an LO whose Approved heads have no student-servable current version', async () => {
+    jest.mocked(servableApprovedCountByLo).mockResolvedValue(new Map());
+
+    await expect(getPreviewHome(courseId)).resolves.toEqual([]);
   });
 
   it('returns only the sanitized Approved question selected for preview', async () => {

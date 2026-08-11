@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate';
 import {
   createCourse,
   getCourse,
+  listInstructorCourses,
   updateCourse,
   regenerateRegistrationCode,
   addTheme,
@@ -145,6 +146,18 @@ function stashCourseIdFromLo(paramName: 'loId'): (req: Request, res: Response, n
 }
 
 // --- Courses -------------------------------------------------------------------
+
+/** GET /api/courses -> the signed-in user's live Instructor courses. */
+coursesRouter.get(
+  '/courses',
+  ensureApiAuthenticated(),
+  async (req, res) => {
+    const courseIds = req.user!.courseRoles
+      .filter(({ role }) => role === 'instructor')
+      .map(({ courseId }) => courseId);
+    res.json(await listInstructorCourses(courseIds));
+  },
+);
 
 /** POST /api/courses { name, courseCode, term } -> 201 Course. Platform-Instructor-only. */
 coursesRouter.post(

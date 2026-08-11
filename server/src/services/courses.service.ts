@@ -77,6 +77,29 @@ export async function getCourse(courseId: ObjectId): Promise<WithId<Course>> {
 }
 
 /**
+ * Return the live courses referenced by an Instructor's course-role snapshot.
+ * Role entries can outlive a course in older/dev data, so missing courses are
+ * intentionally omitted. Preserve the user's role order and collapse duplicate
+ * entries without issuing one database query per course.
+ */
+export async function listInstructorCourses(courseIds: ObjectId[]): Promise<WithId<Course>[]> {
+  const uniqueIds = Array.from(
+    new Map(courseIds.map((courseId) => [courseId.toHexString(), courseId])).values(),
+  );
+  if (uniqueIds.length === 0) return [];
+
+  const courses = await coursesCol().find({ _id: { $in: uniqueIds } }).toArray();
+  const coursesById = new Map(
+    courses.map((course) => [course._id.toHexString(), normalizeCourse(course)]),
+  );
+
+  return uniqueIds.flatMap((courseId) => {
+    const course = coursesById.get(courseId.toHexString());
+    return course ? [course] : [];
+  });
+}
+
+/**
  * ST-instructor authoring entry point: create a sandboxed (unpublished) course
  * with the standard feedback/auto-pause defaults, a fresh registration code,
  * and grant the creator the 'instructor' role on it.

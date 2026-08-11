@@ -11,6 +11,7 @@ import {
   questionVersionsCol,
   previewAttemptsCol,
   previewStudentSessionsCol,
+  usersCol,
 } from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
 
@@ -91,11 +92,8 @@ test.describe('instructor pipeline', () => {
 
   // Cleans up the courses/themes/LOs/questions this run created against the
   // shared dev Mongo (see practice-loop.spec.ts's afterAll for the same
-  // rationale). Like that spec, this deliberately leaves the `instructor`
-  // courseRole grant(s) courses.service.createCourse's `$addToSet` put on the
-  // `faculty` user in place — harmless residue on a shared dev user, and it's
-  // what keeps `faculty` qualifying for the instructor shell on the very next
-  // run of this (or any other instructor) spec.
+  // rationale). Remove the matching Instructor role grants as well so repeated
+  // local runs do not leave stale course ids in the shared faculty user.
   test.afterAll(async () => {
     await connectMongo();
     const ids = [bootstrapCourseId, courseId].filter(Boolean).map((id) => new ObjectId(id));
@@ -112,6 +110,10 @@ test.describe('instructor pipeline', () => {
       losCol().deleteMany({ courseId: { $in: ids } }),
       themesCol().deleteMany({ courseId: { $in: ids } }),
       coursesCol().deleteMany({ _id: { $in: ids } }),
+      usersCol().updateMany(
+        { uid: 'faculty-user' },
+        { $pull: { courseRoles: { courseId: { $in: ids } } } },
+      ),
     ]);
   });
 

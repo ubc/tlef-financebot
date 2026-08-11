@@ -794,13 +794,11 @@ export async function removeReviewBookEntry(entryId: string): Promise<void> {
 //  - `CourseTreeTheme.los` is optional: `addTheme`/`updateTheme` return a bare
 //    Theme (no `los`); only a Theme nested inside `getCourseTree`'s response
 //    carries one.
-//  - No `GET /api/courses` (list) endpoint exists anywhere in the routes or
-//    contract. `listInstructorCourses` below derives the list client-side from
-//    the session's `courseRoles` (an `instructor` role per course, from
-//    `GET /api/auth/me`) plus one `getCourseTree` call per course — flagged as
-//    a concern in the report (N+1, and misses courses an admin has no
-//    `courseRoles` entry for; there is no "list all courses" endpoint for that
-//    case either).
+//  - `GET /api/courses` lists the signed-in user's live Instructor courses in
+//    one request. The service resolves session `courseRoles` server-side and
+//    silently omits historical role entries whose course has been deleted.
+//    Admin-only access without an explicit course role is intentionally not a
+//    list-all capability.
 //  - No `GET /api/courses/:courseId/publish-checklist` (or any other
 //    side-effect-free) endpoint exists — the checklist is only returned
 //    bundled with the side-effecting `POST .../publish` / `.../unpublish`.
@@ -950,33 +948,9 @@ export interface InstructorWorkflowSummary {
   actions: InstructorWorkflowAction[];
 }
 
-/**
- * No `GET /api/courses` endpoint exists (see the correction note above) — this
- * derives "my courses" from the session's `courseRoles` (role === 'instructor')
- * plus one `getCourseTree` call per course. Courses an admin can only reach via
- * `isAdmin` (no explicit `courseRoles` entry) are not covered; there is no
- * list-all endpoint for that case.
- *
- * `courseRoles` can outlive the course it points to (course deletion doesn't
- * cascade-clean the reference), so a single stale entry must not take down
- * the whole list — settle each fetch independently and drop 404s; any other
- * error (network, 5xx) still surfaces by rethrowing.
- */
-export async function listInstructorCourses(): Promise<InstructorCourse[]> {
-  const { user } = await getAuthState();
-  const courseIds = Array.from(
-    new Set((user?.courseRoles ?? []).filter((cr) => cr.role === 'instructor').map((cr) => cr.courseId)),
-  );
-  const results = await Promise.allSettled(courseIds.map((courseId) => getCourseTree(courseId)));
-  const trees: CourseTree[] = [];
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      trees.push(result.value);
-    } else if (!(result.reason instanceof ApiError) || result.reason.status !== 404) {
-      throw result.reason;
-    }
-  }
-  return trees.map((tree) => tree.course);
+/** GET /api/courses -> the signed-in user's live Instructor courses. */
+export function listInstructorCourses(): Promise<InstructorCourse[]> {
+  return request<InstructorCourse[]>('/api/courses');
 }
 
 /** POST /api/courses { name, courseCode, term } -> 201 Course. */

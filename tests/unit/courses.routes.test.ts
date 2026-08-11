@@ -11,6 +11,7 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/courses.service', () => ({
   createCourse: jest.fn(),
   getCourse: jest.fn(),
+  listInstructorCourses: jest.fn(),
   updateCourse: jest.fn(),
   regenerateRegistrationCode: jest.fn(),
   addTheme: jest.fn(),
@@ -40,6 +41,7 @@ jest.mock('../../server/src/services/course-deletion.service', () => ({
 import { coursesRouter } from '../../server/src/routes/courses.routes';
 import {
   createCourse,
+  listInstructorCourses,
   setPublished,
   publishChecklist,
   archiveCourse,
@@ -95,6 +97,37 @@ function makeApp(user?: User): Express {
 }
 
 describe('courses routes (auth + course-instructor gating)', () => {
+  it('lists only live courses resolved from the signed-in Instructor roles', async () => {
+    const staleCourseId = new ObjectId();
+    const caller = userFixture([
+      { courseId, role: 'instructor' },
+      { courseId: staleCourseId, role: 'instructor' },
+      { courseId: otherCourseId, role: 'student' },
+      { courseId, role: 'instructor' },
+    ]);
+    jest.mocked(listInstructorCourses).mockResolvedValue([
+      {
+        _id: courseId,
+        name: 'Intro to Finance',
+        courseCode: 'COMM 298',
+        term: '2026W1',
+      },
+    ] as never);
+
+    const res = await request(makeApp(caller)).get('/api/courses');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]._id).toBe(courseId.toHexString());
+    expect(listInstructorCourses).toHaveBeenCalledWith([courseId, staleCourseId, courseId]);
+  });
+
+  it('401s a signed-out course-list caller', async () => {
+    const res = await request(makeApp(undefined)).get('/api/courses');
+    expect(res.status).toBe(401);
+    expect(listInstructorCourses).not.toHaveBeenCalled();
+  });
+
   it('401s a signed-out caller', async () => {
     const res = await request(makeApp(undefined)).get(`/api/courses/${courseId.toHexString()}`);
     expect(res.status).toBe(401);

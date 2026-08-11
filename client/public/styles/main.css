@@ -7403,6 +7403,13 @@ button.class-row--link:focus-visible .class-row__title {
   justify-content: center;
 }
 
+/* Practice replaces the normal icon nav with a rich context card. That card
+ * has no meaningful 76px representation, so the desktop icon rail must hide
+ * it instead of squeezing sentences and action labels into vertical text. */
+.app-shell--role.is-collapsed .practice-context-slot {
+  display: none;
+}
+
 .app-shell--role.is-collapsed .nav__glyph {
   width: 2rem;
   height: 2rem;
@@ -7655,6 +7662,12 @@ button.class-row--link:focus-visible .class-row__title {
   .app-shell--role.is-collapsed .course-context__project,
   .app-shell--role.is-collapsed .nav__link {
     justify-content: flex-start;
+  }
+
+  /* On small screens the sidebar is an off-canvas drawer rather than an icon
+   * rail. A persisted desktop collapse preference must not hide its content. */
+  .app-shell--role.is-collapsed .practice-context-slot:not(:empty) {
+    display: block;
   }
 
   .student-course-hero {

@@ -189,6 +189,18 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByRole('heading', { name: LO_NAME, exact: true })).toBeVisible();
     await expect(page.getByText(APPROVED_STEM)).toBeVisible();
     await expect(page.getByText(DRAFT_STEM)).toHaveCount(0);
+
+    // The practice context is useful in the expanded sidebar but has no
+    // readable icon-rail form. Collapsing must hide it wholesale instead of
+    // squeezing every label and action into a 76px column.
+    await expect(page.locator('.practice-context')).toBeVisible();
+    await page.getByRole('button', { name: 'Collapse navigation' }).click();
+    await expect(page.locator('.app-shell--student')).toHaveClass(/is-collapsed/);
+    await expect(page.locator('.practice-context-slot')).toBeHidden();
+    await expect(page.locator('.sidebar--student')).toHaveCSS('width', '76px');
+    await page.getByRole('button', { name: 'Expand navigation' }).click();
+    await expect(page.locator('.practice-context')).toBeVisible();
+
     await page.getByRole('button', { name: /Flag this question/i }).click();
     await page.getByRole('textbox', { name: /Why are you flagging/i })
       .fill('Anonymous preview isolation check');

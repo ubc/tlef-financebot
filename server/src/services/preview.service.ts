@@ -28,6 +28,7 @@ import { getRedirectMaterialSource, hasRepeatedFailureCluster } from './progress
 import {
   selectPreviewQuestion,
   selectPreviewRetryQuestion,
+  servableApprovedCountByLo,
   type SelectResult,
 } from './serving.service';
 
@@ -242,22 +243,14 @@ export async function getPreviewHome(
   context?: PreviewContext,
 ): Promise<PreviewHomeTheme[]> {
   if (context) await ensurePreviewSession(courseId, context);
-  const [course, themes, los, approvedQuestions, statuses] = await Promise.all([
+  const [course, themes, los, approvedCountByLo, statuses] = await Promise.all([
     coursesCol().findOne({ _id: courseId }),
     themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
-    questionsCol().find({ courseId, state: 'approved' }).toArray(),
+    servableApprovedCountByLo(courseId),
     previewStatuses(courseId, context),
   ]);
   if (!course) throw new Error('course-not-found');
-
-  const approvedCountByLo = new Map<string, number>();
-  for (const question of approvedQuestions) {
-    for (const id of question.loIds) {
-      const key = id.toHexString();
-      approvedCountByLo.set(key, (approvedCountByLo.get(key) ?? 0) + 1);
-    }
-  }
 
   const now = new Date();
   const home: PreviewHomeTheme[] = [];

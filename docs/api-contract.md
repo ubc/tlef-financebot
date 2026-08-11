@@ -42,6 +42,10 @@ grant attaches to the same PUID-backed User on first SAML login.
   `409 course-already-exists` when the normalized `(courseCode, section, term)`
   identity already exists. Different sections remain separate courses.
   (platform-Instructor or Admin; faculty affiliation alone is insufficient)
+- `GET /api/courses` → the authenticated user's live Instructor-role
+  `[Course]`, preserving role order. Duplicate role entries are collapsed and
+  historical role entries for deleted courses are omitted without emitting a
+  per-course 404. Admin access alone is not a list-all capability.
 - `GET /api/courses/:courseId` → Course + `themes: [Theme & { los: LearningObjective[] }]`
 - `GET /api/courses/:courseId/outline` → `{ themes: [{ _id, name, order, los: [{ _id, name, order }] }] }`
   (capability `question.review` — the TA-accessible subset of the above: theme/LO
@@ -412,7 +416,8 @@ work becomes explicit retryable `failed: server-restarted` at startup instead
 of remaining indefinitely active.
 
 ## Practice (student)
-- `GET /api/courses/:courseId/home` → themes visible to the student (≥1 approved question,
+- `GET /api/courses/:courseId/home` → themes visible to the student (≥1 Approved
+  question whose current version passes the serving/numeric-verification gate,
   availableFrom passed, not archived) with per-LO mastery labels (ST-P01/P02)
 - `POST /api/courses/:courseId/practice/next { loId, sessionServedIds: string[] }` →
   `{ questionId, questionVersionId, type, stem, difficulty, degraded, options: [{ key, text }], watermark, paramValues?, seed? }`
