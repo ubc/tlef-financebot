@@ -59,6 +59,17 @@ meet that bar.** It is planned here so the design is settled, but it must not
 be implemented until Saurav explicitly signs off on jumping the freeze. If the
 answer is no, Tasks 1-2 ship alone and Task 3 moves to Phase 5.
 
+**Decided 2026-08-08: no. Task 3 does not jump the freeze — it moves to Phase
+5.** Tasks 1 and 2 shipped alone. The reasoning, so it does not get re-argued:
+the safety of a hard delete rests entirely on a five-condition server-side
+eligibility check, and the condition most likely to be got wrong (an archived
+question that was *once* approved) is exactly the one that breaks `PRD.md:34` by
+orphaning `AttemptRecord`s. Sixteen days before a freeze is the worst moment to
+find that out. The cost of waiting is low: Jose's complaint was about culling
+duds from a generation batch, and `Reject & Archive` already removes them from
+view, so he gets clutter rather than data loss. The design below is settled and
+carries forward unchanged.
+
 ## Global Constraints
 
 - Do not restructure the coverage page or merge it with the bank — Stephen's.
@@ -182,9 +193,12 @@ with the presets sitting inches away, and "Presets" is already taken.
 
 ---
 
-## Task 3 — Delete for never-used questions  ⚠️ NEEDS SIGN-OFF, see freeze note
+## Task 3 — Delete for never-used questions  ⛔ DEFERRED TO PHASE 5 (2026-08-08)
 
 **Owner:** Saurav
+**Status:** Not implemented. Sign-off was declined — see the freeze note above.
+Everything below is the settled design, kept here for whoever picks it up in
+Phase 5; nothing in it has been built.
 
 ### The constraint that shapes this
 

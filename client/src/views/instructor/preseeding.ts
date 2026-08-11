@@ -60,7 +60,7 @@ import {
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
-import { errorState, loadingState } from '../../ui.js';
+import { errorState, helpTip, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 
 function navigate(path: string): void {
@@ -210,6 +210,19 @@ const TYPE_LABEL: Record<GenerationQuestionType, string> = { mcq: 'MCQ', 'true-f
 const DIFFICULTIES: GenerationDifficulty[] = ['easy', 'medium', 'hard'];
 const DIFFICULTY_LABEL: Record<GenerationDifficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
+// DELIBERATE NAME DIVERGENCE — the UI says "Saved Setup", the code says
+// "blueprint". A PI reviewer could not tell what "Blueprint" meant (2026-08-08),
+// and "Saved Prompts" was rejected because `PRESET_TEMPLATES` below already owns
+// the word "prompt" in this same form — the starter prompt buttons sit inches
+// away. A blueprint is the whole request (LO + type + difficulty + prompt
+// text), not a prompt, so the UI name says so. `GenerationBlueprint`, the
+// service, the collection and `/api/courses/:courseId/generation-blueprints`
+// all keep the original name: renaming the contract is a far larger change with
+// no user benefit.
+const SAVED_SETUP_LABEL = 'Saved Setup';
+const SAVED_SETUP_HELP =
+  'Saves this Learning Objective, question type, difficulty and prompt together so you can re-run the same request later without setting it up again.';
+
 async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading pre-seeding coverage…'));
   const root = el('div', { class: 'view' }, body);
@@ -288,7 +301,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   const blueprintNameInput = el('input', {
     class: 'input',
     type: 'text',
-    placeholder: 'Blueprint name',
+    placeholder: 'Setup name',
   }) as HTMLInputElement;
 
   // Persistent — never recreated by `renderForm`, so typing in it doesn't get
@@ -405,7 +418,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   async function saveBlueprint(): Promise<void> {
     const name = blueprintNameInput.value.trim();
     if (!name || !formLoId) {
-      formError = 'Blueprint name and Target LO are required.';
+      formError = 'Setup name and Target LO are required.';
       renderForm();
       return;
     }
@@ -432,7 +445,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       });
       blueprints = [created, ...blueprints];
       selectedBlueprintId = created._id;
-      formQueuedMessage = `Saved blueprint “${created.name}”.`;
+      formQueuedMessage = `Saved setup “${created.name}”.`;
     } catch (error) {
       formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
@@ -448,7 +461,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     try {
       const queued = await runGenerationBlueprint(courseId, selectedBlueprintId);
       activeFormRunId = queued.runId;
-      formQueuedMessage = `Blueprint run queued as ${queued.runId.slice(-8)}.`;
+      formQueuedMessage = `Setup run queued as ${queued.runId.slice(-8)}.`;
     } catch (error) {
       formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
@@ -544,6 +557,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       'select',
       {
         class: 'input',
+        id: 'preseeding-saved-setup',
         onchange: (event: Event) => {
           selectedBlueprintId = (event.target as HTMLSelectElement).value;
           const selected = blueprints.find((blueprint) => blueprint._id === selectedBlueprintId);
@@ -616,8 +630,21 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       el(
         'div',
         { class: 'preseeding-form__row' },
-        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Saved blueprint' }), blueprintSelect),
-        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Blueprint name' }), blueprintNameInput),
+        el(
+          'div',
+          { class: 'form-field' },
+          // The tip sits OUTSIDE the `<label>` on purpose — nested in it,
+          // clicking the trigger would also activate the label and steal focus
+          // into the select (same reason as settings.ts's `fieldLabelWithHelp`).
+          el(
+            'div',
+            { class: 'form-field__label-row' },
+            el('label', { class: 'form-field__label', for: 'preseeding-saved-setup', text: SAVED_SETUP_LABEL }),
+            helpTip(SAVED_SETUP_LABEL, SAVED_SETUP_HELP),
+          ),
+          blueprintSelect,
+        ),
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Setup name' }), blueprintNameInput),
         el(
           'button',
           {
@@ -626,7 +653,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             disabled: formBusy ? 'disabled' : undefined,
             onclick: () => void saveBlueprint(),
           },
-          'Save blueprint',
+          'Save setup',
         ),
         selectedBlueprintId
           ? el(
@@ -637,7 +664,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
                 disabled: formBusy ? 'disabled' : undefined,
                 onclick: () => void runSelectedBlueprint(),
               },
-              'Run blueprint',
+              'Run setup',
             )
           : false,
       ),
