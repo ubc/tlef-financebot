@@ -131,6 +131,33 @@ test.describe('Generate Question "Saved Setup"', () => {
       await expect(savedSetupSelect).not.toBeFocused();
     });
 
+    await test.step('the open bubble is fully readable at every width', async () => {
+      // "Saved Setup" is the FIRST field in the form row, so the old centred
+      // bubble put half its width to the LEFT of a trigger sitting just inside
+      // the content area — and `main` / `.outlet` clip at that edge, so a slice
+      // of the text was unreadable (reported 2026-08-10).
+      //
+      // The viewport is NOT the binding constraint on desktop: `.outlet` starts
+      // at the sidebar edge (x=272 at >=900px), so a bubble at x=254 is clipped
+      // while still being "inside the viewport". Assert against the real
+      // clipping ancestor.
+      const trigger = page.getByRole('button', { name: 'About Saved Setup' });
+      const bubble = page.locator(`#${await trigger.getAttribute('aria-describedby')}`);
+
+      for (const width of [1440, 1024, 768, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await trigger.click();
+        await expect(bubble).toBeVisible();
+        const box = await bubble.boundingBox();
+        expect(box, `no bubble box at ${width}px`).toBeTruthy();
+        const clipLeft = await page.evaluate(() => document.querySelector('.outlet')?.getBoundingClientRect().left ?? 0);
+        expect(box!.x, `bubble clipped by the content edge at ${width}px`).toBeGreaterThanOrEqual(clipLeft);
+        expect(box!.x + box!.width, `bubble clipped off the RIGHT at ${width}px`).toBeLessThanOrEqual(width);
+        await trigger.click();
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    });
+
     await test.step('"prompt" still belongs to the preset buttons it always named', async () => {
       // The collision that ruled out "Saved Prompts": the starter prompt
       // buttons live in this same form, inches from the Saved Setup select.

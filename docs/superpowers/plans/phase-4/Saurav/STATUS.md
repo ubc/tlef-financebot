@@ -794,3 +794,51 @@ Removing the `helpTip` failed the tip assertions. Both restored.
 Delete for never-used questions **does not jump the Aug 24 freeze** and moves to
 Phase 5. The design in the plan is settled and unchanged; nothing was built. The
 reasoning is recorded in the plan's freeze note.
+
+### 2026-08-10 — help-tip bubble was clipped (fix on the same branch)
+
+Saurav reported the Saved Setup explanation running off the left edge, about a
+third of it unreadable. Confirmed and fixed on `saurav/blueprint-saved-setup`
+before PR #71 merged.
+
+**Cause — the shared rule, not the new tip.** `.help-tip__bubble` was
+`left: 50%; transform: translateX(-50%)`, centring the bubble on its trigger.
+"Saved Setup" is the first field in the generate form row, so half a 304px
+bubble hung to the LEFT of a trigger sitting just inside the content area — and
+`main` / `.outlet` clip there.
+
+**The viewport was not the binding constraint on desktop.** `.outlet` starts at
+the sidebar edge (x=272 at ≥900px), so the bubble sat at x=254 while still
+being "inside the viewport". Measured clipping before the fix:
+
+| Width | bubble x | clip edge | lost |
+|---|---|---|---|
+| 1440 | 254.0 | 272 | 18px |
+| 1024 | 248.8 | 272 | 23px |
+| 900 | 245.0 | 272 | 27px |
+| 768 | −30.9 | 0 | 31px |
+| 390 | −18.5 | 0 | 18px |
+
+**This was a pre-existing defect, not one the rename introduced.** Measuring
+every tip on Course Settings found `About Auto-pause` — shipped in #67 — clipped
+by the same rule at the same widths (9.6px at 1440, 14.8px at 1024, 22.5px at
+768). That is why the fix changes the shared rule instead of adding a third
+per-page override beside `.settings-column:last-child`.
+
+**Fix:** anchor the bubble to the trigger's left edge (`left: 0; transform:
+none`) rather than centring it. The right-edge opt-out for
+`.settings-column:last-child` stays and is now commented as being about the
+right edge specifically. After the change, zero tips overflow on either the
+generate form or Course Settings at 1440/1024/768, and the Saved Setup bubble
+sits fully inside its container at 390–1680px.
+
+**Verification.** The spec now asserts against the real clipping ancestor, not
+the viewport — a viewport-only assertion passed at 1440px while 18px was
+actually being cut. Mutation-verified: restoring the centred rule fails with
+`bubble clipped by the content edge at 1440px` (expected ≥272, received 254.0);
+restored. `npm run lint`, `npm run typecheck`, `npx jest` (91 suites / 1001
+tests) all green; the generate, bank-scope and instructor-preview specs pass.
+
+The axe suite passes on the instructor surfaces that carry these tips. Two
+student a11y scenarios fail on a missing `.practice-card` fixture — confirmed
+pre-existing by stashing this change and re-running, so not from this work.

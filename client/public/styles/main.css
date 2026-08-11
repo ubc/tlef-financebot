@@ -2471,11 +2471,19 @@ button.class-row--link:focus-visible .class-row__title {
   outline-offset: 2px;
 }
 
+/* Anchored to the trigger's LEFT edge, not centred on it. Centring pushed half
+   the bubble to the left of a trigger that usually sits just inside the content
+   area, and `main` / `.outlet` clip at that edge — so the first tip in any form
+   row lost a slice of its text. Reported 2026-08-10 against "Saved Setup"
+   (clipped 18-31px from 390px to 1440px); "About Auto-pause" in Course Settings
+   had the identical bug from #67, which is why this fixes the shared rule
+   rather than adding a third per-page override. The right-edge case still needs
+   the explicit opt-out below. */
 .help-tip__bubble {
   position: absolute;
   top: calc(100% + 0.45rem);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  transform: none;
   width: max-content;
   max-width: min(19rem, 70vw);
   padding: 0.6rem 0.7rem;
@@ -2507,7 +2515,7 @@ button.class-row--link:focus-visible .class-row__title {
   opacity: 1;
 }
 
-/* The last column would push its bubble off-screen when centred. */
+/* The last column would push its bubble off-screen to the RIGHT. */
 .settings-column:last-child .help-tip__bubble {
   left: auto;
   right: 0;
