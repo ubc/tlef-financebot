@@ -61,7 +61,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader, statTile, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -245,6 +245,22 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     (theme.los ?? []).map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} / LO ${loIndex + 1}: ${lo.name}` })),
   );
 
+  // Arrival from the Question Bank's "+ Generate Question" carries that page's
+  // Topic/LO/Type filters as query params (bank.ts's `generatePath`), so an
+  // instructor who had already narrowed the bank to one LO doesn't have to
+  // pick it out of the full coverage table again. Everything here is
+  // best-effort: an absent, malformed or unknown value (an LO from another
+  // course, a Topic with no LOs) falls straight through to the page's normal
+  // defaults rather than throwing or half-filling the form. Status is not
+  // carried — see bank.ts.
+  const arrival = currentQuery();
+  const arrivalLoId = losInScope.find((lo) => lo.id === arrival.get('loId'))?.id ?? '';
+  const arrivalThemeId = arrival.get('themeId');
+  const arrivalThemeLoId = arrivalThemeId
+    ? tree.themes.find((theme) => theme._id === arrivalThemeId)?.los?.[0]?._id ?? ''
+    : '';
+  const arrivalType = QUESTION_TYPES.find((type) => type === arrival.get('type'));
+
   const tilesContainer = el('div', {});
   const tableContainer = el('div', {});
   const runContainer = el('div', {});
@@ -253,14 +269,21 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 
   // --- Generate form state (I12) -------------------------------------------
 
-  let formLoId = losInScope[0]?.id ?? '';
-  let formType: GenerationQuestionType = 'mcq';
+  // A Topic-only arrival preselects that Topic's first LO but does NOT open
+  // the form (see the `openFormFor` call at the bottom): a Topic covers many
+  // LOs, so there is no one target to jump the instructor to — only a better
+  // starting point than the course's very first LO.
+  let formLoId = arrivalThemeLoId || losInScope[0]?.id || '';
+  let formType: GenerationQuestionType = arrivalType ?? 'mcq';
   let formDifficulty: GenerationDifficulty = 'medium';
   let formError: string | null = null;
   let formQueuedMessage: string | null = null;
   let formBusy = false;
   let activeFormRunId: string | null = null;
   let selectedBlueprintId = '';
+  // The current Target LO <select>; `renderForm` rebuilds it, so `openFormFor`
+  // reads it back rather than holding a stale node.
+  let formLoSelect: HTMLSelectElement | null = null;
   const retryingRuns = new Set<string>();
   const blueprintNameInput = el('input', {
     class: 'input',
@@ -330,12 +353,22 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     promptTextarea.focus();
   }
 
-  function openFormFor(loId: string): void {
+  /** Reveal the generate form targeting `loId`. `origin` decides how the
+   * instructor is taken there: a coverage-row click ('click') smooth-scrolls
+   * the form into view, as that button always has. Landing on the page with
+   * the Bank's LO filter in the URL ('arrival') instead moves keyboard focus
+   * onto the prefilled Target LO — the instructor did not scroll here, so
+   * animating the page under them while they are still orienting is
+   * disorienting, and focus (unlike a scroll) also lands keyboard and
+   * screen-reader users on the field that was chosen for them. The browser's
+   * own focus scrolling brings the form into view without the animation. */
+  function openFormFor(loId: string, origin: 'click' | 'arrival' = 'click'): void {
     formLoId = loId;
     formQueuedMessage = null;
     formError = null;
     renderForm();
-    formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (origin === 'arrival') formLoSelect?.focus();
+    else formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function submitGenerate(): Promise<void> {
@@ -547,6 +580,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         el('option', { value: lo.id, text: lo.label, selected: formLoId === lo.id ? 'selected' : undefined }),
       ),
     ) as HTMLSelectElement;
+    formLoSelect = loSelect;
 
     const typeSelect = el(
       'select',
@@ -885,6 +919,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   renderTable();
   renderRuns();
   renderForm();
+  // The coverage table above stays exactly as it is — an LO in the URL only
+  // means the instructor arrives with the form already targeting it.
+  if (arrivalLoId) openFormFor(arrivalLoId, 'arrival');
 
   const closeStream = subscribeContentRuns(courseId, {
     onSnapshot: (recent) => {

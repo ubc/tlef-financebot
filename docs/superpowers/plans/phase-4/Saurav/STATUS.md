@@ -1,6 +1,6 @@
 # Saurav — Phase 4 progress
 
-_Last updated: 2026-08-02_
+_Last updated: 2026-08-08_
 
 Phase 4 carries **no owner map** — the core plan has no `**Owner:**` line on any
 of its six tasks, the same gap Phase 3 had. Rather than propose another map (the
@@ -695,3 +695,52 @@ in #58, but that spec has no Preview surface in its route list, and
 `playwright.config.ts` sets `reducedMotion: 'reduce'` globally, so the claim
 here is "low risk," not "scanned" — the same open follow-up already recorded
 for the flag-queue highlight above.
+
+## 2026-08-08 — Question Bank generate scope (Jose's PI feedback, Task 1)
+
+Plan: [`2026-08-08-question-bank-pi-feedback.md`](2026-08-08-question-bank-pi-feedback.md).
+Branch `saurav/bank-generate-filter-scope` (the plan's declared branch name
+`saurav/question-bank-pi-feedback` was not the one used).
+
+**Task 1 complete.** `+ Generate Question` and the disabled `↑ Import` moved out
+of `.bank-filters` into their own `.bank-actions` row, and the Topic/LO/Type
+filters are carried to the coverage page as query parameters. `preseeding.ts`
+opens the generate form already targeting that LO with the type preset. Status
+is deliberately not carried — it is a bank-browsing filter with no meaning for
+generation, and passing it would imply it was honoured. Unknown or absent values
+fall through to today's defaults. On arrival the form takes keyboard focus on
+the prefilled Target LO rather than smooth-scrolling a page the instructor did
+not scroll; row clicks keep the existing scroll.
+
+The coverage table is untouched. Merging the bank, the table and the form into
+one journey is Jose's *"the first page is unnecessary"* — Phase 5 Task 2,
+`Owner: Stephen`, and out of scope here.
+
+### Verification (2026-08-08)
+
+`main` was merged in first (PR #69), so this runs against the post-#69 tree.
+`npm run lint` and `npm run typecheck` clean; `npx jest` **91 suites / 1001
+tests passed**; `tests/e2e/bank-generate-scope.spec.ts` **1 passed**.
+
+Mutation-verified as the plan requires: dropping `query.set('loId', …)` from
+`generatePath()` failed the carry assertion at
+`tests/e2e/bank-generate-scope.spec.ts:113`; restored, and the spec passes again
+with no residual diff.
+
+### Pre-existing failures in the full e2e run — not from this branch
+
+The full `npx playwright test` run is **30 passed, 1 skipped, 7 failed**. None
+of the seven are caused by this work, whose entire non-doc diff is `bank.ts`,
+`preseeding.ts`, `main.css` and one new spec:
+
+- `app.spec.ts`, `walking-skeleton.spec.ts`, `classes.spec.ts` (×3) — the local
+  faculty user is in `ADMIN_CWL_ALLOWLIST` on purpose, so
+  `main.ts:573` lands them on `/admin/accounts` ("User Accounts") rather than
+  "My Courses". Environment, not code.
+- `instructor-pipeline.spec.ts` — **passes in isolation**; it only fails inside
+  the serial full run, so it is shared-database ordering, not a regression.
+- `numeric-parameterization.spec.ts` — waits on `.verification-banner--fail`,
+  which needs the live LLM path that is not running locally.
+
+These want their own cleanup task; they are recorded here rather than fixed
+inside a scoped bug fix.

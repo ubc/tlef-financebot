@@ -142,9 +142,14 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
   // — rebuilding the whole layout on every keystroke would recreate the
   // search input and drop focus mid-word (the same class of bug
   // materials.ts/structure.ts's `urlInput`/`addNameForm` comments call out).
+  // Actions live in their own container, not in the filter bar: `↑ Import`
+  // and `+ Generate Question` act on the bank rather than narrowing it, and
+  // Generate reads the live `filters` at click time (see `generatePath`), so
+  // it is built once and never rebuilt by `renderFilters()`.
   const filterContainer = el('div', {});
+  const actionsContainer = el('div', {});
   const resultsContainer = el('div', {});
-  const layout = el('div', {}, filterContainer, resultsContainer);
+  const layout = el('div', {}, filterContainer, actionsContainer, resultsContainer);
   body.replaceChildren(pageHeader('Question Bank', tree.course.name), layout);
 
   async function loadSummary(): Promise<void> {
@@ -337,22 +342,33 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       ),
     ) as HTMLSelectElement;
 
+    return el('div', { class: 'bank-filters' }, searchInput, themeSelect, loSelect, typeSelect, statusSelect);
+  }
+
+  /** Where `+ Generate Question` goes: the coverage page, carrying whichever
+   * of the current filters generation can actually honour, so an instructor
+   * who narrowed the bank to one LO doesn't have to find it again on arrival
+   * (preseeding.ts reads these back). Topic/LO scope the target LO and Type
+   * presets the question type; Status is a bank-*browsing* filter with no
+   * meaning for generation, so it is dropped rather than passed and silently
+   * ignored. Search is client-side free text over stems — nothing to carry. */
+  function generatePath(): string {
+    const query = new URLSearchParams();
+    if (filters.themeId) query.set('themeId', filters.themeId);
+    if (filters.loId) query.set('loId', filters.loId);
+    if (filters.type) query.set('type', filters.type);
+    const suffix = query.toString();
+    return `/instructor/course/${encodeURIComponent(courseId)}/preseeding${suffix ? `?${suffix}` : ''}`;
+  }
+
+  function actionRow(): HTMLElement {
     return el(
       'div',
-      { class: 'bank-filters' },
-      searchInput,
-      themeSelect,
-      loSelect,
-      typeSelect,
-      statusSelect,
+      { class: 'bank-actions' },
       el('button', { class: 'btn btn--ghost', type: 'button', disabled: 'disabled', title: 'Coming soon' }, '↑ Import'),
       el(
         'button',
-        {
-          class: 'btn btn--instr-primary',
-          type: 'button',
-          onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/preseeding`),
-        },
+        { class: 'btn btn--instr-primary', type: 'button', onclick: () => navigate(generatePath()) },
         '+ Generate Question',
       ),
     );
@@ -448,6 +464,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     );
   }
 
+  actionsContainer.replaceChildren(actionRow());
   void reload();
 }
 
