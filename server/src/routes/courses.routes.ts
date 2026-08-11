@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate';
 import {
   createCourse,
   getCourse,
+  listInstructorCourses,
   updateCourse,
   regenerateRegistrationCode,
   addTheme,
@@ -15,6 +16,7 @@ import {
   archiveTheme,
   getThemeCourseId,
   addLo,
+  upsertCourseOutline,
   updateLo,
   archiveLo,
   getLoCourseId,
@@ -29,6 +31,7 @@ import {
 } from '../services/courses.service';
 import { instructorWorkflowSummary } from '../services/instructor-workflow.service';
 import { classifyIdentifierList, parseRosterFile } from '../services/roster-import.service';
+import { permanentlyDeleteCourse } from '../services/course-deletion.service';
 
 // Courses / Hierarchy / Roster endpoints (IN-S01/S02/S03, IN-L06) — the
 // instructor authoring surface, exactly as specified in docs/api-contract.md.
@@ -69,6 +72,7 @@ const updateCourseBody = z.object({
 });
 
 const rosterBody = z.object({ identifiers: z.array(z.string()) });
+const deleteCourseBody = z.object({ confirmation: z.string().min(1).max(120) });
 
 // A roster is a list of short strings; 2MB is far past the biggest UBC class
 // and still small enough that a stray PDF is rejected rather than parsed.
@@ -89,6 +93,12 @@ const updateThemeBody = z.object({
 });
 
 const loBody = z.object({ name: z.string().min(1) });
+const courseOutlineBody = z.object({
+  themes: z.array(z.object({
+    name: z.string().trim().min(1),
+    los: z.array(z.string().trim().min(1)).min(1).max(100),
+  })).min(1).max(50),
+});
 
 const updateLoBody = z.object({
   name: z.string().min(1).optional(),
@@ -137,6 +147,18 @@ function stashCourseIdFromLo(paramName: 'loId'): (req: Request, res: Response, n
 
 // --- Courses -------------------------------------------------------------------
 
+/** GET /api/courses -> the signed-in user's live Instructor courses. */
+coursesRouter.get(
+  '/courses',
+  ensureApiAuthenticated(),
+  async (req, res) => {
+    const courseIds = req.user!.courseRoles
+      .filter(({ role }) => role === 'instructor')
+      .map(({ courseId }) => courseId);
+    res.json(await listInstructorCourses(courseIds));
+  },
+);
+
 /** POST /api/courses { name, courseCode, term } -> 201 Course. Platform-Instructor-only. */
 coursesRouter.post(
   '/courses',
@@ -158,13 +180,26 @@ coursesRouter.get(
   },
 );
 
+/** POST /api/courses/:courseId/outline -> retry-safe Topic/LO batch upsert. */
+coursesRouter.post(
+  '/courses/:courseId/outline',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  validate({ body: courseOutlineBody }),
+  async (req, res) => {
+    res.status(201).json(
+      await upsertCourseOutline(new ObjectId(String(req.params.courseId)), req.body),
+    );
+  },
+);
+
 /** GET /api/courses/:courseId/instructor-workflow -> task-driven cockpit summary. */
 coursesRouter.get(
   '/courses/:courseId/instructor-workflow',
   validate({ params: courseIdParams }),
   ensureCourseInstructor(),
   async (req, res) => {
-    res.json(await instructorWorkflowSummary(new ObjectId(String(req.params.courseId))));
+    res.json(await instructorWorkflowSummary(new ObjectId(String(req.params.courseId)), req.user!.puid));
   },
 );
 
@@ -269,6 +304,23 @@ coursesRouter.post(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await restoreCourse(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+/** DELETE /api/courses/:courseId { confirmation } -> cascade summary.
+ * Irreversible and restricted to the course owner (or an Admin), even though
+ * co-instructors may manage the rest of the course. */
+coursesRouter.delete(
+  '/courses/:courseId',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  validate({ body: deleteCourseBody }),
+  async (req, res) => {
+    res.json(await permanentlyDeleteCourse(
+      new ObjectId(String(req.params.courseId)),
+      { puid: req.user!.puid, isAdmin: req.user!.isAdmin },
+      req.body.confirmation,
+    ));
   },
 );
 
@@ -424,6 +476,11 @@ const COURSE_ERROR_STATUS: Record<string, number> = {
   'term-end-before-start': 400,
   'course-archived': 409,
   'course-not-archived': 409,
+  'course-delete-owner-required': 403,
+  'course-delete-confirmation-mismatch': 400,
+  'course-delete-active-work': 409,
+  'course-delete-unsafe-storage-path': 409,
+  'course-outline-invalid': 400,
 };
 
 coursesRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

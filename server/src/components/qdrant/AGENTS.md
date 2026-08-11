@@ -31,6 +31,7 @@ plain `curl` can look "up" while the client fails. Set `QDRANT_API_KEY` to match
 | `upsertPoints(name, points): Promise<void>` | Insert/overwrite points (`{ id, vector, payload }`), waits for indexing. |
 | `search(name, vector, limit?, filter?): Promise<SearchHit[]>` | Nearest points with payloads, optionally restricted by a Qdrant payload filter. |
 | `deletePointsByFilter(name, filter): Promise<void>` | Delete matching points and wait for completion; used for clean material re-ingest. |
+| `deleteCollectionIfExists(name): Promise<boolean>` | Idempotently remove a complete vector collection; used by permanent course deletion. |
 | `pingQdrant(): Promise<boolean>` | Reachability check for `/api/health`. Never throws. |
 
 ## Init pattern (real, installed API)
@@ -71,6 +72,7 @@ must be an unsigned integer or a UUID (the RAG example uses `crypto.randomUUID`)
 - [x] Create the client + `ensureCollection` in `index.ts`.
 - [x] Add `upsertPoints` and `search` helpers.
 - [x] Add filter-aware search and waited delete-by-filter for strict grounding / clean re-ingest.
+- [x] Add idempotent whole-collection deletion for permanent course cleanup.
 - [x] Decide the vector `size` — derived from the embeddings model at runtime.
 - [x] Report reachability in `GET /api/health`.
 

@@ -183,12 +183,20 @@ describe('GET /api/courses/:courseId/preseeding (IN-Q10)', () => {
   it('200s an instructor and returns the per-LO progress', async () => {
     jest
       .mocked(preseedingProgress)
-      .mockResolvedValue([{ loId, loName: 'Compute IRR', approved: 4, reviewed: 1, target: 5 }] as never);
+      .mockResolvedValue([
+        { loId, loName: 'Compute IRR', approved: 4, reviewed: 1, unapproved: 3, target: 5 },
+      ] as never);
 
     const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/preseeding`);
 
     expect(res.status).toBe(200);
-    expect(res.body[0]).toMatchObject({ loName: 'Compute IRR', approved: 4, reviewed: 1, target: 5 });
+    expect(res.body[0]).toMatchObject({
+      loName: 'Compute IRR',
+      approved: 4,
+      reviewed: 1,
+      unapproved: 3,
+      target: 5,
+    });
     expect(preseedingProgress).toHaveBeenCalledWith(expect.any(ObjectId));
   });
 });

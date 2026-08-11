@@ -18,7 +18,7 @@ import {
 import type { PreseedingLo } from '../../client/src/api';
 
 function lo(overrides: Partial<PreseedingLo> = {}): PreseedingLo {
-  return { loId: 'lo-1', loName: 'LO 1', approved: 0, reviewed: 0, target: 5, ...overrides };
+  return { loId: 'lo-1', loName: 'LO 1', approved: 0, reviewed: 0, unapproved: 0, target: 5, ...overrides };
 }
 
 describe('coverageStatus', () => {

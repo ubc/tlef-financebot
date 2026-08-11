@@ -3,7 +3,7 @@ import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import type { LearningObjective, Material, MaterialKind, Theme } from '../types/domain';
-import { addLo, addTheme } from './courses.service';
+import { upsertCourseOutline } from './courses.service';
 
 // -----------------------------------------------------------------------------
 // Classification service (IN-S06): LLM-assisted material auto-classification and
@@ -300,16 +300,22 @@ export async function applySuggestedHierarchy(
     throw new Error('suggested-hierarchy-material-not-found');
   }
 
+  const outline = await upsertCourseOutline(courseId, {
+    themes: normalized.map((theme) => ({
+      name: theme.name,
+      los: theme.los.map((lo) => lo.name),
+    })),
+  });
   const assignmentsByMaterial = new Map<string, Array<{ themeId: ObjectId; loId: ObjectId }>>();
-  let losCreated = 0;
-  for (const theme of normalized) {
-    const createdTheme = await addTheme(courseId, { name: theme.name });
-    for (const lo of theme.los) {
-      const createdLo = await addLo(courseId, createdTheme._id, { name: lo.name });
-      losCreated += 1;
+  for (const [themeIndex, theme] of normalized.entries()) {
+    const upsertedTheme = outline.themes[themeIndex];
+    if (!upsertedTheme) throw new Error('suggested-hierarchy-invalid');
+    for (const [loIndex, lo] of theme.los.entries()) {
+      const upsertedLo = upsertedTheme.los[loIndex];
+      if (!upsertedLo) throw new Error('suggested-hierarchy-invalid');
       for (const materialId of lo.materialIds) {
         const bucket = assignmentsByMaterial.get(materialId) ?? [];
-        bucket.push({ themeId: createdTheme._id, loId: createdLo._id });
+        bucket.push({ themeId: upsertedTheme._id, loId: upsertedLo._id });
         assignmentsByMaterial.set(materialId, bucket);
       }
     }
@@ -339,8 +345,8 @@ export async function applySuggestedHierarchy(
   }
 
   return {
-    themesCreated: normalized.length,
-    losCreated,
+    themesCreated: outline.themesCreated,
+    losCreated: outline.losCreated,
     materialsAssigned: assignmentsByMaterial.size,
     assignmentsCreated,
   };

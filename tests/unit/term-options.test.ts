@@ -9,7 +9,8 @@ import {
   academicYearOptions,
   defaultTermSelection,
   formatTerm,
-} from '../../client/src/views/instructor/courses';
+  suggestedTermDates,
+} from '../../client/src/academic-terms';
 
 // September 2026 — inside the 2026/27 academic year.
 const inWinter1 = new Date(2026, 8, 15);
@@ -88,5 +89,36 @@ describe('defaultTermSelection', () => {
       expect(academicYearOptions(now)).toContain(academicYear);
       expect(UBC_TERM_NAMES).toContain(termName);
     }
+  });
+});
+
+describe('suggestedTermDates', () => {
+  it.each([
+    ['Winter Term 1, 2026/27', '2026-09-08', '2026-12-07'],
+    ['Winter Term 2, 2026/27', '2027-01-05', '2027-04-12'],
+    ['Summer Term 1, 2026/27', '2027-05-10', '2027-06-17'],
+    ['Summer Term 2, 2026/27', '2027-07-05', '2027-08-12'],
+  ])('uses the published 2026/27 dates for %s', (term, termStart, termEnd) => {
+    expect(suggestedTermDates(term)).toEqual({ termStart, termEnd, official: true });
+  });
+
+  it('provides nearby month/day anchors without calling future dates official', () => {
+    expect(suggestedTermDates('Winter Term 2, 2028/29')).toEqual({
+      termStart: '2029-01-05',
+      termEnd: '2029-04-12',
+      official: false,
+    });
+  });
+
+  it('supports compact legacy winter terms already stored in older courses', () => {
+    expect(suggestedTermDates('2026W1')).toEqual({
+      termStart: '2026-09-08',
+      termEnd: '2026-12-07',
+      official: true,
+    });
+  });
+
+  it('does not guess when the stored term cannot be understood', () => {
+    expect(suggestedTermDates('Independent study')).toBeUndefined();
   });
 });

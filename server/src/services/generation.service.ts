@@ -678,12 +678,26 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
 }
 
 /**
- * Per-LO pre-seeding progress (IN-Q10): how many Approved / Reviewed questions
- * each LO has, against the target of 5. Read-only.
+ * Per-LO pre-seeding progress (IN-Q10): how many Approved, Reviewed, and other
+ * still-actionable questions each LO has, against the target of 5. Read-only.
+ *
+ * `unapproved` deliberately names the four non-terminal teaching-team states
+ * instead of using `$ne: 'approved'`: archived questions must not suppress a
+ * new generation request, and a future publication state should not silently
+ * change this paid-generation guard's behaviour.
  */
 export async function preseedingProgress(
   courseId: ObjectId,
-): Promise<Array<{ loId: ObjectId; loName: string; approved: number; reviewed: number; target: number }>> {
+): Promise<
+  Array<{
+    loId: ObjectId;
+    loName: string;
+    approved: number;
+    reviewed: number;
+    unapproved: number;
+    target: number;
+  }>
+> {
   const los = await losCol()
     .find({ courseId, archivedAt: { $exists: false } })
     .sort({ order: 1 })
@@ -691,13 +705,25 @@ export async function preseedingProgress(
 
   const progress = [];
   for (const lo of los) {
-    // Two small counts per LO, awaited in parallel. LO counts are tiny at
+    // Three small counts per LO, awaited in parallel. LO counts are tiny at
     // Phase-1 scale; if this ever matters, one $unwind aggregation collapses it.
-    const [approved, reviewed] = await Promise.all([
+    const [approved, reviewed, unapproved] = await Promise.all([
       questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'approved' }),
       questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'reviewed' }),
+      questionsCol().countDocuments({
+        courseId,
+        loIds: lo._id,
+        state: { $in: ['draft', 'pending-review', 'reviewed', 'paused'] },
+      }),
     ]);
-    progress.push({ loId: lo._id, loName: lo.name, approved, reviewed, target: GENERATION_TARGET });
+    progress.push({
+      loId: lo._id,
+      loName: lo.name,
+      approved,
+      reviewed,
+      unapproved,
+      target: GENERATION_TARGET,
+    });
   }
   return progress;
 }

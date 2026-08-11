@@ -5,10 +5,17 @@ jest.mock('@qdrant/js-client-rest', () => ({
   QdrantClient: jest.fn().mockImplementation(() => ({
     search: jest.fn(),
     delete: jest.fn(),
+    getCollections: jest.fn(),
+    deleteCollection: jest.fn(),
   })),
 }));
 
-import { qdrant, search, deletePointsByFilter } from '../../server/src/components/qdrant';
+import {
+  qdrant,
+  search,
+  deletePointsByFilter,
+  deleteCollectionIfExists,
+} from '../../server/src/components/qdrant';
 
 const filter = {
   must: [{ key: 'materialId', match: { any: ['material-a', 'material-b'] } }],
@@ -18,6 +25,8 @@ describe('qdrant filtered point helpers', () => {
   beforeEach(() => {
     jest.mocked(qdrant.search).mockReset();
     jest.mocked(qdrant.delete).mockReset();
+    jest.mocked(qdrant.getCollections).mockReset();
+    jest.mocked(qdrant.deleteCollection).mockReset();
   });
 
   it('forwards an optional payload filter during similarity search', async () => {
@@ -54,5 +63,17 @@ describe('qdrant filtered point helpers', () => {
     await deletePointsByFilter('course-1', filter);
 
     expect(qdrant.delete).toHaveBeenCalledWith('course-1', { filter, wait: true });
+  });
+
+  it('deletes a complete collection idempotently', async () => {
+    jest.mocked(qdrant.getCollections)
+      .mockResolvedValueOnce({ collections: [{ name: 'course-1' }] })
+      .mockResolvedValueOnce({ collections: [] });
+    jest.mocked(qdrant.deleteCollection).mockResolvedValue({ result: true } as never);
+
+    await expect(deleteCollectionIfExists('course-1')).resolves.toBe(true);
+    await expect(deleteCollectionIfExists('course-1')).resolves.toBe(false);
+    expect(qdrant.deleteCollection).toHaveBeenCalledTimes(1);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith('course-1');
   });
 });

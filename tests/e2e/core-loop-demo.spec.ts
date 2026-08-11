@@ -206,6 +206,13 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await instructor.getByPlaceholder('Learning Objective name').fill(LO_NAME);
         await instructor.getByRole('button', { name: 'Add', exact: true }).click();
         await expect(instructor.locator('.tree-lo__name')).toHaveText(`LO 1: ${LO_NAME}`);
+        await expect(instructor.locator('.structure-detail')).toHaveCount(0);
+        await instructor.getByRole('button', { name: `Edit LO 1: ${LO_NAME}` }).click();
+        const structureEditor = instructor.getByRole('dialog', { name: 'Edit course structure item' });
+        await expect(structureEditor).toBeVisible();
+        await expect(structureEditor.getByRole('heading', { name: `LO 1: ${LO_NAME}` })).toBeVisible();
+        await structureEditor.getByRole('button', { name: 'Close editor' }).click();
+        await expect(structureEditor).toBeHidden();
 
         const tree = (await (await instructor.request.get(`/api/courses/${courseId}`)).json()) as {
           themes: Array<{ _id: string; los?: Array<{ _id: string }> }>;

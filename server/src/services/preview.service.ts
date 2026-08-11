@@ -28,11 +28,29 @@ import { getRedirectMaterialSource, hasRepeatedFailureCluster } from './progress
 import {
   selectPreviewQuestion,
   selectPreviewRetryQuestion,
+  servableApprovedCountByLo,
   type SelectResult,
 } from './serving.service';
 
 const PREVIEW_PUID = 'anonymous-preview';
 const MASTERY_WINDOW = 10;
+
+/**
+ * A read-only launch-guide milestone. Preview attempts are already isolated
+ * from live student data and expire after 24 hours, so this answers whether
+ * the current instructor has recently exercised the real Student Preview
+ * without creating a preview session as a side effect.
+ */
+export async function hasRecentPreviewAttempt(
+  courseId: ObjectId,
+  instructorPuid: string,
+): Promise<boolean> {
+  const attempt = await previewAttemptsCol().findOne(
+    { courseId, instructorPuid },
+    { projection: { _id: 1 } },
+  );
+  return attempt !== null;
+}
 
 export interface PreviewContext {
   instructorPuid: string;
@@ -225,22 +243,14 @@ export async function getPreviewHome(
   context?: PreviewContext,
 ): Promise<PreviewHomeTheme[]> {
   if (context) await ensurePreviewSession(courseId, context);
-  const [course, themes, los, approvedQuestions, statuses] = await Promise.all([
+  const [course, themes, los, approvedCountByLo, statuses] = await Promise.all([
     coursesCol().findOne({ _id: courseId }),
     themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
-    questionsCol().find({ courseId, state: 'approved' }).toArray(),
+    servableApprovedCountByLo(courseId),
     previewStatuses(courseId, context),
   ]);
   if (!course) throw new Error('course-not-found');
-
-  const approvedCountByLo = new Map<string, number>();
-  for (const question of approvedQuestions) {
-    for (const id of question.loIds) {
-      const key = id.toHexString();
-      approvedCountByLo.set(key, (approvedCountByLo.get(key) ?? 0) + 1);
-    }
-  }
 
   const now = new Date();
   const home: PreviewHomeTheme[] = [];

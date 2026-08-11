@@ -19,6 +19,17 @@ let facultyPuid = '';
 let originalIsAdmin = false;
 
 const LONG_LO = 'Explain how a deliberately long learning-objective label remains usable inside responsive filters and workflow cards.';
+const GUIDED_LO = 'Evaluate a responsive workflow without losing completed setup work.';
+
+async function expectNoPageHorizontalOverflow(page: Page): Promise<void> {
+  const result = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+  }));
+  expect(result.documentWidth).toBeLessThanOrEqual(result.viewportWidth + 1);
+  expect(result.bodyWidth).toBeLessThanOrEqual(result.viewportWidth + 1);
+}
 
 async function expectNoHorizontalClipping(page: Page): Promise<void> {
   const result = await page.locator('.outlet').evaluate((outlet) => {
@@ -66,6 +77,14 @@ test.describe('responsive cross-role workflows', () => {
     });
     expect(courseResponse.status()).toBe(201);
     courseId = ((await courseResponse.json()) as { _id: string })._id;
+
+    const datesResponse = await context.request.patch(`/api/courses/${courseId}`, {
+      data: {
+        termStart: '2026-09-08T07:00:00.000Z',
+        termEnd: '2026-12-07T08:00:00.000Z',
+      },
+    });
+    expect(datesResponse.ok()).toBe(true);
 
     const themeResponse = await context.request.post(`/api/courses/${courseId}/themes`, {
       data: { name: 'Responsive layout' },
@@ -133,6 +152,7 @@ test.describe('responsive cross-role workflows', () => {
       { path: `/instructor/course/${courseId}/tas`, heading: 'Teaching Assistants' },
       { path: `/instructor/course/${courseId}/analytics`, heading: 'Student Analytics' },
       { path: `/instructor/course/${courseId}/materials`, heading: 'Course Knowledge Workspace' },
+      { path: `/instructor/course/${courseId}/structure`, heading: 'Course Structure' },
     ];
 
     for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
@@ -144,5 +164,83 @@ test.describe('responsive cross-role workflows', () => {
         await expectNoHorizontalClipping(page);
       }
     }
+  });
+
+  test('Course Setup Guide is keyboard-safe and keeps all five stages usable at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/#/instructor/course/${courseId}`);
+    await expect(page.getByRole('heading', { name: 'Responsive Workflow Fixture' })).toBeVisible();
+
+    const courseStages = page.locator('.course-flow__step');
+    await expect(courseStages).toHaveCount(5);
+    for (let index = 0; index < 5; index += 1) {
+      await expect(courseStages.nth(index)).toBeVisible();
+    }
+    await expectNoHorizontalClipping(page);
+    await expectNoPageHorizontalOverflow(page);
+
+    const nextAction = page.getByRole('button', { name: /Add supporting course materials/i });
+    await nextAction.focus();
+    await expect(nextAction).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
+    await expect(guide).toBeVisible();
+    const guideHeading = guide.getByRole('heading', { name: 'Add the sources the course should trust' });
+    await expect(guideHeading).toBeFocused();
+
+    const guideStages = guide.locator('.course-setup-guide__stage');
+    await expect(guideStages).toHaveCount(5);
+    await expect(guideStages.locator('.course-setup-guide__stage-number')).toHaveText(['1', '2', '3', '4', '5']);
+    for (let index = 0; index < 5; index += 1) {
+      await expect(guideStages.nth(index)).toBeVisible();
+    }
+    const stageBounds = await guideStages.evaluateAll((stages) => stages.map((stage) => {
+      const rect = stage.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, viewportWidth: window.innerWidth };
+    }));
+    for (const bounds of stageBounds) {
+      expect(bounds.left).toBeGreaterThanOrEqual(0);
+      expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth + 1);
+    }
+    const guideSurface = guide.locator('.course-setup-guide__surface');
+    const guideOverflow = await guideSurface.evaluate((surface) => ({
+      clientWidth: surface.clientWidth,
+      scrollWidth: surface.scrollWidth,
+    }));
+    expect(guideOverflow.scrollWidth).toBeLessThanOrEqual(guideOverflow.clientWidth + 1);
+    await expectNoPageHorizontalOverflow(page);
+
+    // Escape closes the modal and returns keyboard focus to the exact action
+    // that opened it when the dashboard has not been rerendered.
+    await page.keyboard.press('Escape');
+    await expect(guide).toBeHidden();
+    await expect(nextAction).toBeFocused();
+
+    // Reopen from the keyboard, complete a real (non-AI) setup mutation, then
+    // close normally. The saved LO must still exist after the modal is gone.
+    await page.keyboard.press('Enter');
+    await expect(guide).toBeVisible();
+    // Wait for the guide's intentional initial-focus microtask before moving
+    // focus to a stage button; otherwise that microtask can race this very
+    // fast synthetic keyboard sequence and move focus back to the heading.
+    await expect(guideHeading).toBeFocused();
+    const learningObjectivesStage = guide.getByRole('button', { name: /2\. Learning objectives/i });
+    await learningObjectivesStage.focus();
+    await page.keyboard.press('Enter');
+    await expect(guide.getByRole('heading', { name: 'Add your existing Learning Objectives' })).toBeFocused();
+    await guide.getByLabel('Topic name', { exact: true }).fill('Guided responsive setup');
+    await guide.getByRole('textbox', { name: /Learning Objectives — one per line/i }).fill(GUIDED_LO);
+    await guide.getByRole('button', { name: 'Save Learning Objectives' }).click();
+    await expect(guideHeading).toBeFocused();
+    await guide.getByRole('button', { name: 'Close course setup guide' }).click();
+    await expect(guide).toBeHidden();
+
+    const treeResponse = await page.request.get(`/api/courses/${courseId}`);
+    expect(treeResponse.ok()).toBe(true);
+    const tree = (await treeResponse.json()) as {
+      themes: Array<{ los?: Array<{ name: string }> }>;
+    };
+    expect(tree.themes.flatMap((theme) => theme.los ?? []).map((lo) => lo.name)).toContain(GUIDED_LO);
   });
 });

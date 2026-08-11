@@ -87,6 +87,7 @@ interface BankSpec {
   difficulty: Difficulty;
   state: PublicationState;
   loIds: ObjectId[];
+  numericKind?: 'numeric' | 'conceptual';
 }
 
 /** Seeded bank builder (core doc, Task 10 Step 1): each spec becomes a
@@ -122,6 +123,7 @@ function bank(specs: BankSpec[]): { questions: WithId<Question>[]; versions: Wit
       sourceRefs: [],
       createdBy: 'seed',
       createdAt: new Date(),
+      ...(spec.numericKind ? { numericKind: spec.numericKind } : {}),
     });
   }
   return { questions, versions };
@@ -306,7 +308,7 @@ describe('selectPreviewQuestion', () => {
 });
 
 describe('studentCourseHome', () => {
-  it('case 9: hides a theme whose availableFrom is tomorrow, and an LO with 0 approved questions', async () => {
+  it('case 9: hides future themes and LOs without a servable Approved version', async () => {
     const availableTheme: WithId<Theme> = {
       _id: themeId,
       courseId,
@@ -324,6 +326,7 @@ describe('studentCourseHome', () => {
 
     const coveredLoId = new ObjectId();
     const uncoveredLoId = new ObjectId();
+    const blockedNumericLoId = new ObjectId();
     const coveredLo: WithId<LearningObjective> = {
       _id: coveredLoId,
       courseId,
@@ -338,6 +341,13 @@ describe('studentCourseHome', () => {
       name: 'Uncovered LO',
       order: 2,
     };
+    const blockedNumericLo: WithId<LearningObjective> = {
+      _id: blockedNumericLoId,
+      courseId,
+      themeId,
+      name: 'Approved but unverified numerical LO',
+      order: 3,
+    };
     const futureLo: WithId<LearningObjective> = {
       _id: new ObjectId(),
       courseId,
@@ -350,9 +360,17 @@ describe('studentCourseHome', () => {
       makeFindableFake([availableTheme, futureTheme] as unknown as Record<string, unknown>[]) as never,
     );
     jest.mocked(losCol).mockReturnValue(
-      makeFindableFake([coveredLo, uncoveredLo, futureLo] as unknown as Record<string, unknown>[]) as never,
+      makeFindableFake([coveredLo, uncoveredLo, blockedNumericLo, futureLo] as unknown as Record<string, unknown>[]) as never,
     );
-    seedBank([{ difficulty: 'easy', state: 'approved', loIds: [coveredLoId] }]);
+    seedBank([
+      { difficulty: 'easy', state: 'approved', loIds: [coveredLoId] },
+      {
+        difficulty: 'easy',
+        state: 'approved',
+        loIds: [blockedNumericLoId],
+        numericKind: 'numeric',
+      },
+    ]);
     jest.mocked(getLoStatuses).mockResolvedValue(new Map([[coveredLoId.toHexString(), 'in-progress']]));
 
     const result = await studentCourseHome(puid, courseId);

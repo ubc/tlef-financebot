@@ -371,6 +371,67 @@ describe('transitionQuestion (IN-Q07)', () => {
     expect(auditInsertOne).toHaveBeenCalledTimes(1);
   });
 
+  it('compare-and-sets the reviewed currentVersionId when the caller supplies one', async () => {
+    const courseId = new ObjectId();
+    const expectedVersionId = new ObjectId();
+    questionsFindOne.mockResolvedValue({
+      _id: questionId,
+      courseId,
+      currentVersionId: expectedVersionId,
+      state: 'draft',
+    });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
+
+    await expect(
+      transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001', expectedVersionId),
+    ).resolves.toMatchObject({ state: 'approved', currentVersionId: expectedVersionId });
+
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'draft', currentVersionId: expectedVersionId },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
+    );
+    expect(auditInsertOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a stale reviewed version before changing state or writing an audit', async () => {
+    const currentVersionId = new ObjectId();
+    const staleVersionId = new ObjectId();
+    questionsFindOne.mockResolvedValue({
+      _id: questionId,
+      courseId: new ObjectId(),
+      currentVersionId,
+      state: 'draft',
+    });
+
+    await expect(
+      transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001', staleVersionId),
+    ).rejects.toThrow('question-conflict');
+
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+    expect(auditInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects an edit that races after the reviewed-version check', async () => {
+    const expectedVersionId = new ObjectId();
+    questionsFindOne.mockResolvedValue({
+      _id: questionId,
+      courseId: new ObjectId(),
+      currentVersionId: expectedVersionId,
+      state: 'draft',
+    });
+    questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
+
+    await expect(
+      transitionQuestion(questionId, 'approved', 'PUID-INSTR-0001', expectedVersionId),
+    ).rejects.toThrow('question-conflict');
+
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'draft', currentVersionId: expectedVersionId },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
+    );
+    expect(auditInsertOne).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale concurrent transition without writing a contradictory audit', async () => {
     questionsFindOne.mockResolvedValue({
       _id: questionId,

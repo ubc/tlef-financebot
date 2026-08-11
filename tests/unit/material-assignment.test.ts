@@ -20,6 +20,7 @@ function tree(): CourseTree {
   return {
     course: {
       _id: 'course-1',
+      ownerPuid: 'PUID-OWNER',
       name: 'Intro to Finance',
       courseCode: 'COMM 298',
       term: 'Winter Term 1, 2026/27',

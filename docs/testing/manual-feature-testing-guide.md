@@ -162,14 +162,22 @@ npm run test:report
 3. 创建 Sandbox，记下 registration code。
 4. 创建同 term/code 的重复课程，确认 duplicate warning，而不是静默重复。
 
-### 4.2 Launch Cockpit / Dashboard
+### 4.2 Guided Course Preparation / Launch Cockpit
 
-1. 打开新课程 Dashboard。
-2. 检查 **Launch readiness**：dates、Topic、LO、question coverage 等 blocker 数量。
-3. 点击每个 blocker/action，确认进入 Settings、Structure、Materials、Coverage、Analytics 等正确目标。
-4. 不满足 checklist 时 Publish 必须失败并指出原因。
-5. 补齐条件后 Publish；Archived course 执行 Restore。
-6. 点击 **Preview as Student**，见第 7 节。
+1. 打开一门全新 Sandbox。顶部 1–5 必须同时显示 **Sources → Learning objectives → Questions → Review → Student preview**，每步都有文字状态；这些卡片始终可以作为高级用户的手动入口。
+2. **Next actions** 必须只显示一个 `NEXT STEP` 主任务，其余建议折叠在 `Up next`，不能同时出现多个相互竞争的主按钮。
+3. 首次点击 **Complete course settings**。日期弹窗应按所选 UBC term 预填相应年份附近的 start/end date；测试修改、Cancel、Save，以及 **Open full settings**。保存后 Next Action 应自动前进，而不是保留在日期任务。
+4. 点击 **Start building course knowledge**，分别测试两条入口：
+   - **I already have Learning Objectives**：输入一个 Topic，粘贴带编号/项目符号且含大小写重复项的 LO 列表。保存后应只创建去重后的 LO，再引导上传 grounding materials。
+   - **I want FinanceBot to help from materials**：上传文件或 URL，观察 Queued → Parsing → Chunking → Embedding → Indexing → Classifying/Completed。关闭弹窗再回来，进度必须仍在；SSE 暂时断开只显示 reconnecting，不能丢失后台任务。
+5. Materials-first 在 Ready source 后点击 **Generate an AI draft**。按钮旁必须先说明这是可能产生费用的 AI 动作；生成前不应自动扣费。逐项取消/选择、编辑 Topic/LO 名称，再 **Apply selected structure**。Discard 后课程结构不能改变；Apply 或重试不能产生同名重复项。
+6. 进入 Questions。只有存在 Ready 且已分配的 source 才能生成；同时确认 **Import questions** 能打开完整 Import workspace。连续关闭/重新打开向导不能因为已有 Draft/Pending/Reviewed 题而重复补到同一目标数量。
+7. 对 generation 的 queued/running/completed/partial/failed 状态分别检查刷新、离开再回来、Retry。失败的 LO 可重试，成功的 LO 不应被重复排队；旧 SSE revision 不能把较新的状态倒退。
+8. 在向导 Review 中检查完整 stem、四个 options、正确项、解释和 source-reference 数量。普通题可单题 Approve；student-flagged/paused 必须进入完整 Review Queue。另开一个窗口编辑同一题后再 Approve，旧版本应得到 conflict，而不是批准过时版本。
+9. 零 Approved 时顶部第 5 步和 **Preview as a student** 必须被拦在向导内。Approve 后进入真实隔离 Student Preview，完成至少一次作答，再 Exit Preview；返回后第 5 步应显示 `Complete · Tested recently`，且正式 student records/analytics 不应增加。
+10. 用键盘打开向导，依次 Tab 到 1–5、full-workspace、主按钮和 Close；按 Escape 后焦点应回到原 Next Action。再次打开时，服务端已经完成的日期、LO、run 和 approval 不能丢失。
+11. 在 desktop 与 390px 重测：五步必须全部可见、弹窗内部区域独立滚动、不能横向溢出。再点击每个 1–5 手动入口，确认仍能跳到完整 Materials、Structure、Generation、Review、Preview 工作区。
+12. 不满足 authoritative publish checklist 时 Publish 必须失败并逐项指出原因；补齐条件后 Publish。Published 课程的 Next Action 应变成运营建议，Archived course 只显示 Restore。
 
 ### 4.3 Course Structure
 

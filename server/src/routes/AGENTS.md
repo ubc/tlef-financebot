@@ -30,7 +30,7 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   the IdP). See `components/auth/AGENTS.md`.
 - `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, explicit
   draft/published/archived lifecycle, read-only publish checklist,
-  archive/restore, Theme and LO CRUD/archive, and roster
+  archive/restore, owner/Admin-only permanent cascade deletion, Theme and LO CRUD/archive, and roster
   put/get. `POST /api/courses` requires an explicit platform-Instructor grant
   (or Admin); every other
   route is **instructor-gated** for the course it targets via

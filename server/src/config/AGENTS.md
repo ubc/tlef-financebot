@@ -23,5 +23,5 @@ Currently read: core (`nodeEnv`, `port`), MongoDB (`mongodbUri`,
 `samlIdpMetadataUrl`, `samlIdpCertPath`, `samlForceAuthn`, `postLoginRedirect`,
 `postLogoutRedirect`), Qdrant (`qdrantUrl`, `qdrantApiKey`, `qdrantCollection`),
 GenAI LLM (`llmProvider`, `llmDefaultModel`, `llmEndpoint`, `llmApiKey`), GenAI
-embeddings (`embeddingsProvider`, `embeddingsModel`), and GenAI logging
-(`genaiDebug`).
+embeddings (`embeddingsProvider`, `embeddingsModel`, `embeddingsEndpoint`,
+`embeddingsApiKey`), and GenAI logging (`genaiDebug`).

@@ -82,6 +82,11 @@ objects directly.
   per-user course overrides over course-role overrides, platform settings, and
   defaults; `question.approve` and `flag.resolve` are hard-denied for TAs before
   any configurable value is considered.
+- `course-deletion.service.ts` — owner/Admin-only, confirmation-gated permanent
+  course deletion. It refuses active background work, validates uploaded-file
+  containment, cleans Agenda and the course Qdrant collection, cascades through
+  every course-scoped collection and question version, removes all user course
+  roles, and deletes the course record last for retryable failure semantics.
 
 Other services will appear as more components are built up.
 

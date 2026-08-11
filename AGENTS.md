@@ -104,6 +104,11 @@ commonly need:
   or email column, reports unusable rows with spreadsheet line numbers, rejects
   student numbers that cannot match the released SAML identity, and prevents
   an all-rejected upload from replacing an existing roster with an empty one.
+- Course Settings now distinguishes reversible Archive from an owner/Admin-only
+  permanent delete. The destructive path requires a typed, section-aware
+  confirmation, refuses active background work, and removes all course-scoped
+  Mongo records and user roles plus uploaded files, Agenda jobs, and the
+  course's Qdrant collection; the course record is deleted last.
 - Question import (Phase 2 Tasks 8/9) is implemented: instructors can preview
   and commit partial-success CSV/JSON/QTI batches as Drafts, or sandbox-preview
   an existing parameterized `generate(random)` script and migrate it into one
@@ -147,6 +152,13 @@ commonly need:
   review backlog, active flags, and engagement into a priority-ordered action
   queue with direct destinations. The Instructor shell now passes its current
   axe WCAG A/AA scans.
+- Guided Course Preparation is implemented on that same read model: Course
+  Home derives truthful Sources → Learning Objectives → Questions → Review →
+  Student Preview states and presents exactly one next-best action. An
+  in-context, resumable guide supports term-aware dates, existing-LO and
+  materials-first entry paths, durable SSE progress, explicit AI generation,
+  focused approval, isolated Student Preview, and the authoritative publish
+  checklist without persisting a parallel wizard state.
 - Phase 5's Course-as-Project UX foundation is implemented: My Courses is a
   searchable Project dashboard; course-only navigation appears only inside a
   selected course and collapses to an accessible icon rail; Course Home exposes

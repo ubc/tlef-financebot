@@ -9,10 +9,12 @@
 import {
   ApiError,
   archiveCourse,
+  getAuthState,
   getCourseTree,
   getRoster,
   previewRosterFile,
   putRoster,
+  permanentlyDeleteCourse,
   regenerateRegistrationCode,
   restoreCourse,
   updateCourse,
@@ -24,6 +26,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { helpTip, pageHeader, sectionTitleWithHelp, uploadZone } from '../../instructor-ui.js';
+import { textPromptDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
@@ -168,10 +171,16 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   let course: InstructorCourse;
   let roster: Array<{ identifier: string; extendedUntil?: string }>;
+  let canPermanentlyDelete: boolean;
   try {
-    const [tree, rosterList] = await Promise.all([getCourseTree(courseId), getRoster(courseId)]);
+    const [tree, rosterList, auth] = await Promise.all([
+      getCourseTree(courseId),
+      getRoster(courseId),
+      getAuthState(),
+    ]);
     course = tree.course;
     roster = rosterList;
+    canPermanentlyDelete = Boolean(auth.user && (auth.user.isAdmin || auth.user.puid === course.ownerPuid));
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderSettingsInner(outlet, courseId)));
@@ -224,6 +233,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     saveRosterButton.disabled = false;
     rosterImportSlot.replaceChildren();
   });
+  const deletionErrorSlot = el('div', {});
 
   function renderStrategyGroup(): void {
     strategyGroup.replaceChildren(
@@ -450,6 +460,41 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     );
   }
 
+  const permanentlyDelete = async (): Promise<void> => {
+    deletionErrorSlot.replaceChildren();
+    const requiredPhrase = `DELETE ${[course.courseCode.trim(), course.section?.trim()]
+      .filter(Boolean)
+      .join(' ')}`;
+    const confirmation = await textPromptDialog({
+      title: 'Permanently delete this course?',
+      message: 'This cannot be undone. It removes the course, roster, materials and source files, knowledge vectors, questions and versions, student and preview activity, analytics, exams, flags, notifications, TA access, and settings.',
+      fieldLabel: `Type ${requiredPhrase} to confirm`,
+      placeholder: requiredPhrase,
+      confirmLabel: 'Delete course permanently',
+      tone: 'danger',
+      maxLength: 120,
+    });
+    if (confirmation === null) return;
+    if (confirmation !== requiredPhrase) {
+      deletionErrorSlot.replaceChildren(errorState(`Confirmation did not match ${requiredPhrase}.`));
+      return;
+    }
+    try {
+      await permanentlyDeleteCourse(courseId, confirmation);
+      window.location.hash = '/instructor/courses';
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : (error as Error).message;
+      const friendly = message === 'course-delete-active-work'
+        ? 'This course still has background processing in progress. Wait for it to finish, then try again.'
+        : message === 'course-delete-owner-required'
+          ? 'Only the course owner or an administrator can permanently delete this course.'
+          : message === 'course-delete-unsafe-storage-path'
+            ? 'A source file is stored outside FinanceBot’s recognized upload folders. Nothing was deleted. An administrator must migrate that file before this course can be removed safely.'
+          : message;
+      deletionErrorSlot.replaceChildren(errorState(friendly));
+    }
+  };
+
   body.replaceChildren(
     pageHeader('Course Settings', ''),
     el(
@@ -524,6 +569,28 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         saveRosterButton,
         rosterListEl,
       ),
+    ),
+    el(
+      'section',
+      { class: 'settings-danger-zone stack', 'aria-labelledby': 'settings-danger-zone-title' },
+      el('div', {},
+        el('h2', { class: 'section-title', id: 'settings-danger-zone-title', text: 'Danger Zone' }),
+        el('p', {
+          class: 'view__lead',
+          text: 'Permanently delete this course and every record, uploaded file, and knowledge vector that belongs to it. This is different from Archive and cannot be reversed.',
+        }),
+      ),
+      deletionErrorSlot,
+      canPermanentlyDelete
+        ? el(
+            'button',
+            { class: 'btn btn--danger', type: 'button', onclick: () => void permanentlyDelete() },
+            'Delete course permanently',
+          )
+        : el('p', {
+            class: 'view__lead',
+            text: 'Only the course owner or an administrator can permanently delete this course.',
+          }),
     ),
   );
   saveRosterButton.addEventListener('click', () => void saveRoster());

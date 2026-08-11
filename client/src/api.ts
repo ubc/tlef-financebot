@@ -794,13 +794,11 @@ export async function removeReviewBookEntry(entryId: string): Promise<void> {
 //  - `CourseTreeTheme.los` is optional: `addTheme`/`updateTheme` return a bare
 //    Theme (no `los`); only a Theme nested inside `getCourseTree`'s response
 //    carries one.
-//  - No `GET /api/courses` (list) endpoint exists anywhere in the routes or
-//    contract. `listInstructorCourses` below derives the list client-side from
-//    the session's `courseRoles` (an `instructor` role per course, from
-//    `GET /api/auth/me`) plus one `getCourseTree` call per course — flagged as
-//    a concern in the report (N+1, and misses courses an admin has no
-//    `courseRoles` entry for; there is no "list all courses" endpoint for that
-//    case either).
+//  - `GET /api/courses` lists the signed-in user's live Instructor courses in
+//    one request. The service resolves session `courseRoles` server-side and
+//    silently omits historical role entries whose course has been deleted.
+//    Admin-only access without an explicit course role is intentionally not a
+//    list-all capability.
 //  - No `GET /api/courses/:courseId/publish-checklist` (or any other
 //    side-effect-free) endpoint exists — the checklist is only returned
 //    bundled with the side-effecting `POST .../publish` / `.../unpublish`.
@@ -818,6 +816,7 @@ export interface AutoPauseConfig {
 
 export interface InstructorCourse {
   _id: string;
+  ownerPuid: string;
   name: string;
   courseCode: string;
   section?: string;
@@ -863,6 +862,13 @@ export interface ChecklistItem {
 }
 
 export type InstructorWorkflowPriority = 'blocking' | 'high' | 'normal';
+export type InstructorWorkflowStageStatus =
+  | 'not-started'
+  | 'blocked'
+  | 'in-progress'
+  | 'needs-attention'
+  | 'ready'
+  | 'complete';
 export type InstructorWorkflowDestination =
   | 'settings'
   | 'structure'
@@ -885,6 +891,21 @@ export interface InstructorWorkflowAction {
   count?: number;
 }
 
+export interface InstructorWorkflowStage {
+  id: 'sources' | 'learning-objectives' | 'questions' | 'review' | 'student-preview';
+  number: 1 | 2 | 3 | 4 | 5;
+  label: string;
+  status: InstructorWorkflowStageStatus;
+  detail: string;
+  destination: InstructorWorkflowDestination;
+  count?: number;
+  blockedBy?: InstructorWorkflowStage['id'];
+}
+
+export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowAction {
+  presentation: 'dialog' | 'workspace' | 'preview';
+}
+
 export interface InstructorWorkflowSummary {
   course: {
     id: string;
@@ -892,6 +913,8 @@ export interface InstructorWorkflowSummary {
     courseCode: string;
     section?: string;
     term: string;
+    termStart?: string;
+    termEnd?: string;
     lifecycle: 'draft' | 'published' | 'archived';
   };
   readiness: {
@@ -907,40 +930,27 @@ export interface InstructorWorkflowSummary {
     reviewQueue: number;
     openFlags: number;
     thinLos: number;
+    materials: number;
+    readyMaterials: number;
+    processingMaterials: number;
+    failedMaterials: number;
+    materialsNeedingReview: number;
+    totalQuestions: number;
+    activeGenerationRuns: number;
     unassignedMaterials: number;
     contentIssues: number;
     lowEngagementStudents: number;
   };
+  setup: {
+    steps: InstructorWorkflowStage[];
+    primaryAction: InstructorWorkflowPrimaryAction;
+  };
   actions: InstructorWorkflowAction[];
 }
 
-/**
- * No `GET /api/courses` endpoint exists (see the correction note above) — this
- * derives "my courses" from the session's `courseRoles` (role === 'instructor')
- * plus one `getCourseTree` call per course. Courses an admin can only reach via
- * `isAdmin` (no explicit `courseRoles` entry) are not covered; there is no
- * list-all endpoint for that case.
- *
- * `courseRoles` can outlive the course it points to (course deletion doesn't
- * cascade-clean the reference), so a single stale entry must not take down
- * the whole list — settle each fetch independently and drop 404s; any other
- * error (network, 5xx) still surfaces by rethrowing.
- */
-export async function listInstructorCourses(): Promise<InstructorCourse[]> {
-  const { user } = await getAuthState();
-  const courseIds = Array.from(
-    new Set((user?.courseRoles ?? []).filter((cr) => cr.role === 'instructor').map((cr) => cr.courseId)),
-  );
-  const results = await Promise.allSettled(courseIds.map((courseId) => getCourseTree(courseId)));
-  const trees: CourseTree[] = [];
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      trees.push(result.value);
-    } else if (!(result.reason instanceof ApiError) || result.reason.status !== 404) {
-      throw result.reason;
-    }
-  }
-  return trees.map((tree) => tree.course);
+/** GET /api/courses -> the signed-in user's live Instructor courses. */
+export function listInstructorCourses(): Promise<InstructorCourse[]> {
+  return request<InstructorCourse[]>('/api/courses');
 }
 
 /** POST /api/courses { name, courseCode, term } -> 201 Course. */
@@ -1047,6 +1057,28 @@ export function archiveCourse(courseId: string): Promise<InstructorCourse> {
 export function restoreCourse(courseId: string): Promise<InstructorCourse> {
   return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}/restore`, {
     method: 'POST',
+  });
+}
+
+export interface PermanentCourseDeletionResult {
+  deleted: true;
+  courseId: string;
+  deletedFiles: number;
+  missingFiles: number;
+  deletedVectorCollection: boolean;
+  cancelledJobs: number;
+  deletedDocuments: Record<string, number>;
+}
+
+/** Irreversibly remove a complete course project and its stored data. */
+export function permanentlyDeleteCourse(
+  courseId: string,
+  confirmation: string,
+): Promise<PermanentCourseDeletionResult> {
+  return request<PermanentCourseDeletionResult>(`/api/courses/${encodeURIComponent(courseId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmation }),
   });
 }
 
@@ -1268,6 +1300,32 @@ export function addLo(themeId: string, name: string): Promise<CourseTreeLo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
+}
+
+export interface CourseOutlineUpsertResult {
+  themesCreated: number;
+  losCreated: number;
+  themes: Array<{
+    _id: string;
+    name: string;
+    created: boolean;
+    los: Array<{ _id: string; name: string; created: boolean }>;
+  }>;
+}
+
+/** Retry-safe batch Topic/LO creation. Existing active names are reused. */
+export function upsertCourseOutline(
+  courseId: string,
+  themes: Array<{ name: string; los: string[] }>,
+): Promise<CourseOutlineUpsertResult> {
+  return request<CourseOutlineUpsertResult>(
+    `/api/courses/${encodeURIComponent(courseId)}/outline`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ themes }),
+    },
+  );
 }
 
 /** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
@@ -1805,6 +1863,9 @@ export interface PreseedingLo {
   loName: string;
   approved: number;
   reviewed: number;
+  /** Draft + Pending review + Reviewed + Paused question heads. Archived and
+   * Approved questions are intentionally excluded. */
+  unapproved: number;
   target: number;
 }
 
@@ -2198,14 +2259,22 @@ export function addQuestionInternalNote(
   );
 }
 
-/** POST /api/questions/:questionId/transition { to } -> the updated question
- * head (validated against PUBLICATION_TRANSITIONS; 409 on an invalid move).
- * Instructor-only. (IN-Q04/Q07) */
-export function transitionQuestion(questionId: string, to: PublicationState): Promise<QuestionHead> {
+/** POST /api/questions/:questionId/transition { to, expectedVersionId? } -> the
+ * updated question head (validated against PUBLICATION_TRANSITIONS; 409 on an
+ * invalid move or a stale expected version). Omitting expectedVersionId keeps
+ * the existing state-only transition behavior. Instructor-only. (IN-Q04/Q07) */
+export function transitionQuestion(
+  questionId: string,
+  to: PublicationState,
+  expectedVersionId?: string,
+): Promise<QuestionHead> {
   return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to }),
+    body: JSON.stringify({
+      to,
+      ...(expectedVersionId !== undefined ? { expectedVersionId } : {}),
+    }),
   });
 }
 

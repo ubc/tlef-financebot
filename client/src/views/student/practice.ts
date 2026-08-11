@@ -45,6 +45,14 @@ const STATUS_LABELS: Record<string, string> = {
   struggling: 'Struggling',
 };
 
+function questionLoadMessage(error: unknown, preview: boolean): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message !== 'no-question-available') return message;
+  return preview
+    ? 'No student-ready Approved questions are available for this learning objective. Return to the Question Bank and approve a valid question; numerical questions must also pass verification.'
+    : 'No student-ready questions are currently available for this learning objective. Return to the topic and choose another learning objective.';
+}
+
 function runPracticeLoop(
   root: HTMLElement,
   courseName: string,
@@ -242,7 +250,10 @@ function runPracticeLoop(
         ),
       );
     } catch (error) {
-      questionSlot.replaceChildren(errorState((error as Error).message, () => void loadQuestion()));
+      questionSlot.replaceChildren(errorState(
+        questionLoadMessage(error, experience.preview),
+        () => void loadQuestion(),
+      ));
     }
   };
 

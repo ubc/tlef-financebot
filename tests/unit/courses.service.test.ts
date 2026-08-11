@@ -19,6 +19,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 
 import {
   createCourse,
+  listInstructorCourses,
   updateCourse,
   addTheme,
   archiveTheme,
@@ -27,12 +28,15 @@ import {
   archiveCourse,
   restoreCourse,
   putRoster,
+  upsertCourseOutline,
 } from '../../server/src/services/courses.service';
 
 // Per-collection method mocks, wired onto the mocked accessors in beforeEach —
 // follows the tests/unit/users.service.test.ts mocking pattern.
 const coursesInsertOne = jest.fn();
 const coursesFindOne = jest.fn();
+const coursesFind = jest.fn();
+const coursesToArray = jest.fn();
 const coursesUpdateOne = jest.fn();
 const usersUpdateOne = jest.fn();
 const themesFind = jest.fn();
@@ -42,7 +46,10 @@ const themesToArray = jest.fn();
 const themesInsertOne = jest.fn();
 const themesFindOneAndUpdate = jest.fn();
 const losFind = jest.fn();
+const losSort = jest.fn();
+const losLimit = jest.fn();
 const losToArray = jest.fn();
+const losInsertOne = jest.fn();
 const losUpdateMany = jest.fn();
 const questionsCountDocuments = jest.fn();
 const rosterDeleteMany = jest.fn();
@@ -51,6 +58,8 @@ const rosterBulkWrite = jest.fn();
 beforeEach(() => {
   coursesInsertOne.mockReset();
   coursesFindOne.mockReset();
+  coursesFind.mockReset();
+  coursesToArray.mockReset();
   coursesUpdateOne.mockReset();
   usersUpdateOne.mockReset();
   themesFind.mockReset();
@@ -60,19 +69,27 @@ beforeEach(() => {
   themesInsertOne.mockReset();
   themesFindOneAndUpdate.mockReset();
   losFind.mockReset();
+  losSort.mockReset();
+  losLimit.mockReset();
   losToArray.mockReset();
+  losInsertOne.mockReset();
   losUpdateMany.mockReset();
   questionsCountDocuments.mockReset();
   rosterDeleteMany.mockReset();
   rosterBulkWrite.mockReset();
 
-  themesSort.mockReturnValue({ limit: themesLimit });
+  coursesFind.mockReturnValue({ toArray: coursesToArray });
+
+  themesSort.mockReturnValue({ limit: themesLimit, toArray: themesToArray });
   themesLimit.mockReturnValue({ toArray: themesToArray });
   themesFind.mockReturnValue({ sort: themesSort, toArray: themesToArray });
-  losFind.mockReturnValue({ toArray: losToArray });
+  losSort.mockReturnValue({ limit: losLimit, toArray: losToArray });
+  losLimit.mockReturnValue({ toArray: losToArray });
+  losFind.mockReturnValue({ sort: losSort, toArray: losToArray });
 
   jest.mocked(coursesCol).mockReturnValue({
     insertOne: coursesInsertOne,
+    find: coursesFind,
     findOne: coursesFindOne,
     updateOne: coursesUpdateOne,
   } as never);
@@ -82,9 +99,52 @@ beforeEach(() => {
     insertOne: themesInsertOne,
     findOneAndUpdate: themesFindOneAndUpdate,
   } as never);
-  jest.mocked(losCol).mockReturnValue({ find: losFind, updateMany: losUpdateMany } as never);
+  jest.mocked(losCol).mockReturnValue({
+    find: losFind,
+    insertOne: losInsertOne,
+    updateMany: losUpdateMany,
+  } as never);
   jest.mocked(questionsCol).mockReturnValue({ countDocuments: questionsCountDocuments } as never);
   jest.mocked(rosterCol).mockReturnValue({ deleteMany: rosterDeleteMany, bulkWrite: rosterBulkWrite } as never);
+});
+
+describe('listInstructorCourses', () => {
+  it('deduplicates role ids, preserves role order, and omits deleted courses', async () => {
+    const firstId = new ObjectId();
+    const staleId = new ObjectId();
+    const secondId = new ObjectId();
+    coursesToArray.mockResolvedValue([
+      {
+        _id: secondId,
+        name: 'Second',
+        courseCode: 'COMM 299',
+        term: '2026W1',
+        ownerPuid: 'PUID-INSTR-0001',
+        published: true,
+      },
+      {
+        _id: firstId,
+        name: 'First',
+        courseCode: 'COMM 298',
+        term: '2026W1',
+        ownerPuid: 'PUID-INSTR-0001',
+        published: false,
+        identityKey: '[private]',
+      },
+    ]);
+
+    const result = await listInstructorCourses([firstId, staleId, secondId, firstId]);
+
+    expect(coursesFind).toHaveBeenCalledWith({ _id: { $in: [firstId, staleId, secondId] } });
+    expect(result.map(({ _id }) => _id)).toEqual([firstId, secondId]);
+    expect(result.map(({ lifecycle }) => lifecycle)).toEqual(['draft', 'published']);
+    expect(result[0].identityKey).toBeUndefined();
+  });
+
+  it('returns immediately when the user has no Instructor course roles', async () => {
+    await expect(listInstructorCourses([])).resolves.toEqual([]);
+    expect(coursesFind).not.toHaveBeenCalled();
+  });
 });
 
 describe('createCourse (IN-S01)', () => {
@@ -225,6 +285,39 @@ describe('addTheme (hierarchy CRUD)', () => {
     expect(doc.order).toBe(3);
     expect(doc.courseId).toEqual(courseId);
     expect(doc.name).toBe('Time Value of Money');
+  });
+});
+
+describe('upsertCourseOutline (guided/bulk hierarchy)', () => {
+  it('reuses case-insensitive active Topic and LO names on retry', async () => {
+    const courseId = new ObjectId();
+    const themeId = new ObjectId();
+    const loId = new ObjectId();
+    themesToArray.mockResolvedValue([{ _id: themeId, courseId, name: 'Foundations', order: 1 }]);
+    losToArray.mockResolvedValue([{
+      _id: loId,
+      courseId,
+      themeId,
+      name: 'Explain cash flow',
+      order: 1,
+    }]);
+
+    const result = await upsertCourseOutline(courseId, {
+      themes: [{ name: ' foundations ', los: [' Explain cash flow ', 'explain CASH FLOW'] }],
+    });
+
+    expect(result).toEqual({
+      themesCreated: 0,
+      losCreated: 0,
+      themes: [{
+        _id: themeId,
+        name: 'Foundations',
+        created: false,
+        los: [{ _id: loId, name: 'Explain cash flow', created: false }],
+      }],
+    });
+    expect(themesInsertOne).not.toHaveBeenCalled();
+    expect(losInsertOne).not.toHaveBeenCalled();
   });
 });
 

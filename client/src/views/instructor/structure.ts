@@ -1,5 +1,5 @@
-// Topic/LO Structure editor (I2) — a two-pane tree (left) + detail (right)
-// view for the course hierarchy (Task 15, Task C). See
+// Topic/LO Structure editor (I2) — one full-width hierarchy with item details
+// opened only when the instructor chooses Edit (Task 15, Task C). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-id `148:3582`) and `.superpowers/sdd/task-15/i2-hierarchy.png`.
 import {
@@ -25,7 +25,7 @@ import {
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
-import { emptyState, errorState, loadingState } from '../../ui.js';
+import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { addAssignment, removeAssignment } from './material-assign.js';
 
@@ -132,7 +132,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
 
   const themes: CourseTreeTheme[] = tree.themes;
   const expanded = new Set<string>(themes[0] ? [themes[0]._id] : []);
-  let selection: Selection | null = null;
+  let editorSelection: Selection | null = null;
+  let editorDialog: HTMLDialogElement | null = null;
   let addingTheme = false;
   let addingLoForTheme: string | null = null;
   let treeErrorMessage: string | null = null;
@@ -167,7 +168,78 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   function refresh(): void {
     const reviewingSuggestion = isReviewingSuggestion();
     layout.classList.toggle('structure-layout--suggestion', reviewingSuggestion);
-    layout.replaceChildren(buildTreePane(), ...(reviewingSuggestion ? [] : [buildDetailPane()]));
+    layout.replaceChildren(buildTreePane());
+    if (editorDialog?.open && editorSelection) renderEditorDialog();
+  }
+
+  function closeEditor(): void {
+    if (editorDialog?.open) editorDialog.close();
+    editorDialog?.remove();
+    editorDialog = null;
+    editorSelection = null;
+  }
+
+  function renderEditorDialog(): void {
+    if (!editorDialog || !editorSelection) return;
+
+    let detail: HTMLElement | null = null;
+    if (editorSelection.type === 'theme') {
+      const theme = findTheme(editorSelection.id);
+      if (theme) detail = buildThemeDetail(theme);
+    } else {
+      const found = findLo(editorSelection.id);
+      if (found) detail = buildLoDetail(found.lo, found.theme);
+    }
+
+    if (!detail) {
+      closeEditor();
+      refresh();
+      return;
+    }
+
+    editorDialog.replaceChildren(
+      el(
+        'div',
+        { class: 'app-dialog__surface structure-editor-dialog__surface' },
+        el(
+          'div',
+          { class: 'structure-editor-dialog__header' },
+          el('p', { class: 'eyebrow', text: 'EDIT COURSE STRUCTURE' }),
+          el(
+            'button',
+            {
+              class: 'icon-btn structure-editor-dialog__close',
+              type: 'button',
+              'aria-label': 'Close editor',
+              onclick: closeEditor,
+            },
+            '×',
+          ),
+        ),
+        detail,
+      ),
+    );
+  }
+
+  function openEditor(nextSelection: Selection): void {
+    editorSelection = nextSelection;
+    if (!editorDialog) {
+      editorDialog = el('dialog', {
+        class: 'app-dialog structure-editor-dialog',
+        'aria-label': 'Edit course structure item',
+      }) as HTMLDialogElement;
+      editorDialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closeEditor();
+      });
+      editorDialog.addEventListener('click', (event) => {
+        if (event.target === editorDialog) closeEditor();
+      });
+      document.body.append(editorDialog);
+    }
+    renderEditorDialog();
+    if (!editorDialog.open) editorDialog.showModal();
+    (editorDialog.querySelector('input') as HTMLInputElement | null)?.focus();
   }
 
   async function handleAddTheme(name: string): Promise<void> {
@@ -176,7 +248,6 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       themes.push({ ...created, los: created.los ?? [] });
       addingTheme = false;
       expanded.add(created._id);
-      selection = { type: 'theme', id: created._id };
       treeErrorMessage = null;
       refresh();
     } catch (error) {
@@ -194,7 +265,6 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       }
       addingLoForTheme = null;
       expanded.add(themeId);
-      selection = { type: 'lo', id: created._id };
       treeErrorMessage = null;
       refresh();
     } catch (error) {
@@ -396,10 +466,19 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function buildTreePane(): HTMLElement {
+    const loCount = themes.reduce((sum, theme) => sum + (theme.los?.length ?? 0), 0);
     return el(
       'div',
       { class: 'structure-tree' },
-      el('h2', { class: 'structure-tree__title', text: 'Course Structure' }),
+      el(
+        'div',
+        { class: 'structure-tree__heading' },
+        el('h2', { class: 'structure-tree__title', text: 'Course Structure' }),
+        el('p', {
+          class: 'structure-tree__summary',
+          text: `${themes.length} Topic${themes.length === 1 ? '' : 's'} · ${loCount} Learning Objective${loCount === 1 ? '' : 's'}`,
+        }),
+      ),
       treeErrorMessage ? errorState(treeErrorMessage) : false,
       el(
         'div',
@@ -451,19 +530,11 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
 
   function buildThemeNode(theme: CourseTreeTheme, index: number): HTMLElement {
     const isExpanded = expanded.has(theme._id);
-    const isSelected = selection?.type === 'theme' && selection.id === theme._id;
     const los = theme.los ?? [];
 
     const row = el(
       'div',
-      {
-        class: `tree-theme__row${isSelected ? ' tree-theme__row--selected' : ''}`,
-        onclick: () => {
-          selection = { type: 'theme', id: theme._id };
-          expanded.add(theme._id);
-          refresh();
-        },
-      },
+      { class: 'tree-theme__row' },
       el(
         'button',
         {
@@ -479,15 +550,38 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         },
         isExpanded ? '▾' : '▸',
       ),
-      el('span', { class: 'tree-theme__name', text: `Topic ${index + 1}: ${theme.name}` }),
+      el(
+        'button',
+        {
+          class: 'tree-theme__name',
+          type: 'button',
+          'aria-expanded': isExpanded ? 'true' : 'false',
+          onclick: () => {
+            if (isExpanded) expanded.delete(theme._id);
+            else expanded.add(theme._id);
+            refresh();
+          },
+        },
+        `Topic ${index + 1}: ${theme.name}`,
+      ),
       el('span', { class: 'tree-theme__count', text: `${los.length} LO${los.length === 1 ? '' : 's'}` }),
+      el(
+        'button',
+        {
+          class: 'btn btn--ghost btn--sm structure-item__edit',
+          type: 'button',
+          'aria-label': `Edit Topic ${index + 1}: ${theme.name}`,
+          onclick: () => openEditor({ type: 'theme', id: theme._id }),
+        },
+        'Edit',
+      ),
     );
 
     const childList = isExpanded
       ? el(
           'div',
           { class: 'tree-lo-list' },
-          ...los.map((lo, loIndex) => buildLoRow(lo, loIndex)),
+          ...los.map((lo, loIndex) => buildLoRow(lo, loIndex, theme)),
           addingLoForTheme === theme._id
             ? addNameForm({
                 placeholder: 'Learning Objective name',
@@ -516,40 +610,34 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     return el('div', { class: 'tree-theme' }, row, childList);
   }
 
-  function buildLoRow(lo: CourseTreeLo, index: number): HTMLElement {
-    const isSelected = selection?.type === 'lo' && selection.id === lo._id;
+  function buildLoRow(lo: CourseTreeLo, index: number, theme: CourseTreeTheme): HTMLElement {
+    const assignedCount = materials.filter((material) =>
+      material.assignments.some((assignment) => assignment.themeId === theme._id && assignment.loId === lo._id),
+    ).length;
+    const approved = preseeding.find((item) => item.loId === lo._id)?.approved ?? 0;
     return el(
       'div',
-      {
-        class: `tree-lo${isSelected ? ' tree-lo--selected' : ''}`,
-        onclick: (e: Event) => {
-          e.stopPropagation();
-          selection = { type: 'lo', id: lo._id };
-          refresh();
+      { class: 'tree-lo' },
+      el(
+        'div',
+        { class: 'tree-lo__body' },
+        el('span', { class: 'tree-lo__name', text: `LO ${index + 1}: ${lo.name}` }),
+        el('span', {
+          class: 'tree-lo__meta',
+          text: `${assignedCount} material${assignedCount === 1 ? '' : 's'} · ${approved} approved question${approved === 1 ? '' : 's'}`,
+        }),
+      ),
+      el(
+        'button',
+        {
+          class: 'btn btn--ghost btn--sm structure-item__edit',
+          type: 'button',
+          'aria-label': `Edit LO ${index + 1}: ${lo.name}`,
+          onclick: () => openEditor({ type: 'lo', id: lo._id }),
         },
-      },
-      el('span', { class: 'tree-lo__name', text: `LO ${index + 1}: ${lo.name}` }),
+        'Edit',
+      ),
     );
-  }
-
-  function buildDetailPane(): HTMLElement {
-    if (!selection) {
-      return el('div', { class: 'structure-detail' }, emptyState('Select a Topic or Learning Objective to view its details.'));
-    }
-    if (selection.type === 'theme') {
-      const theme = findTheme(selection.id);
-      if (!theme) {
-        selection = null;
-        return buildDetailPane();
-      }
-      return buildThemeDetail(theme);
-    }
-    const found = findLo(selection.id);
-    if (!found) {
-      selection = null;
-      return buildDetailPane();
-    }
-    return buildLoDetail(found.lo, found.theme);
   }
 
   function buildThemeDetail(theme: CourseTreeTheme): HTMLElement {
@@ -576,6 +664,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         });
         theme.name = updated.name;
         theme.availableFrom = updated.availableFrom;
+        closeEditor();
         refresh();
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -593,7 +682,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         await archiveTheme(theme._id);
         themes.splice(themes.indexOf(theme), 1);
         expanded.delete(theme._id);
-        selection = null;
+        closeEditor();
         refresh();
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -724,6 +813,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       try {
         const updated = await updateLo(lo._id, { name });
         lo.name = updated.name;
+        closeEditor();
         refresh();
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -740,7 +830,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       try {
         await archiveLo(lo._id);
         theme.los = (theme.los ?? []).filter((l) => l._id !== lo._id);
-        selection = null;
+        closeEditor();
         refresh();
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));

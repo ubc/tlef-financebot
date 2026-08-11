@@ -66,6 +66,35 @@ async function approvedCandidatesForLo(courseId: ObjectId, loId: ObjectId): Prom
 }
 
 /**
+ * Count the Approved questions whose current version can actually be served,
+ * grouped by LO. Instructor Preview and the live Student home must use the
+ * same numeric-safety gate as /practice/next; otherwise an LO can look
+ * available and then lead directly to `no-question-available`.
+ */
+export async function servableApprovedCountByLo(courseId: ObjectId): Promise<Map<string, number>> {
+  const heads = await questionsCol()
+    .find({ courseId, state: 'approved' })
+    .toArray();
+  if (heads.length === 0) return new Map();
+
+  const versions = await questionVersionsCol()
+    .find({ _id: { $in: heads.map((head) => head.currentVersionId) } })
+    .toArray();
+  const versionById = new Map(versions.map((version) => [version._id.toHexString(), version]));
+  const counts = new Map<string, number>();
+
+  for (const head of heads) {
+    const version = versionById.get(head.currentVersionId.toHexString());
+    if (!version || !isServable(version)) continue;
+    for (const loId of new Set(head.loIds.map((id) => id.toHexString()))) {
+      counts.set(loId, (counts.get(loId) ?? 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
+/**
  * Runs the tier-targeting + finite-round degradation ladder over an already-
  * fetched candidate pool. Every Approved question is offered at most once in
  * a round before a repeat is returned:
@@ -200,8 +229,8 @@ export interface StudentCourseHomeTheme {
 }
 
 /**
- * Student-facing course home (ST-P01/P02): only themes/LOs with ≥1 Approved
- * question are shown. Archived themes/LOs are excluded outright. A theme
+ * Student-facing course home (ST-P01/P02): only themes/LOs with ≥1 Approved,
+ * student-servable current version are shown. Archived themes/LOs are excluded outright. A theme
  * whose `availableFrom` is still in the future (progressive release) is
  * hidden entirely, not merely flagged — the `available` field it would carry
  * is therefore always `true` for every entry actually returned, kept on the
@@ -211,7 +240,7 @@ export async function studentCourseHome(
   puid: string,
   courseId: ObjectId,
 ): Promise<StudentCourseHomeTheme[]> {
-  const [themes, los, statuses, approvedQuestions] = await Promise.all([
+  const [themes, los, statuses, approvedCountByLoId] = await Promise.all([
     themesCol()
       .find({ courseId, archivedAt: { $exists: false } })
       .toArray(),
@@ -219,21 +248,8 @@ export async function studentCourseHome(
       .find({ courseId, archivedAt: { $exists: false } })
       .toArray(),
     getLoStatuses(puid, courseId),
-    questionsCol()
-      .find({ courseId, state: 'approved' })
-      .toArray(),
+    servableApprovedCountByLo(courseId),
   ]);
-
-  // Fetch once, tally in memory (avoids an N+1 countDocuments per LO — a
-  // question's `loIds` is many-to-many, IN-Q13, so one question can bump
-  // the count for several LOs).
-  const approvedCountByLoId = new Map<string, number>();
-  for (const question of approvedQuestions) {
-    for (const loId of question.loIds) {
-      const key = loId.toString();
-      approvedCountByLoId.set(key, (approvedCountByLoId.get(key) ?? 0) + 1);
-    }
-  }
 
   const now = new Date();
   const result: StudentCourseHomeTheme[] = [];

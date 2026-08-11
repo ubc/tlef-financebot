@@ -14,6 +14,8 @@ import { checklistRow, statTile } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
+import { suggestedTermDates } from '../../academic-terms.js';
+import { openCourseSetupGuide } from './course-setup-guide.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -22,13 +24,14 @@ function navigate(path: string): void {
 interface ChecklistAction {
   text: string;
   path: string;
+  command?: 'configure-dates';
 }
 
 /** Server checklist label -> the shortest screen that can resolve it. */
 export function checklistActionFor(label: string): ChecklistAction | undefined {
   const normalized = label.toLocaleLowerCase();
   if (normalized.includes('term date')) {
-    return { text: 'Set dates', path: '/instructor/course/:id/settings' };
+    return { text: 'Set dates', path: '/instructor/course/:id/settings', command: 'configure-dates' };
   }
   if (normalized.includes('theme') || normalized.includes('topic')) {
     return { text: 'Add Topic', path: '/instructor/course/:id/structure' };
@@ -110,67 +113,48 @@ function readinessCard(data: InstructorWorkflowSummary): HTMLElement {
   );
 }
 
-function courseFlow(data: InstructorWorkflowSummary): HTMLElement {
-  const { course, counts } = data;
-  const steps: Array<{
-    number: string;
-    label: string;
-    detail: string;
-    path?: string;
-    onClick?: () => void;
-  }> = [
-    {
-      number: '1',
-      label: 'Sources',
-      detail: `${counts.contentIssues ? `${counts.contentIssues} issue${counts.contentIssues === 1 ? '' : 's'}` : 'Knowledge ready'}`,
-      path: `/instructor/course/${encodeURIComponent(course.id)}/materials`,
-    },
-    {
-      number: '2',
-      label: 'Learning objectives',
-      detail: `${counts.learningObjectives} LO${counts.learningObjectives === 1 ? '' : 's'}`,
-      path: `/instructor/course/${encodeURIComponent(course.id)}/structure`,
-    },
-    {
-      number: '3',
-      label: 'Questions',
-      detail: `${counts.approvedQuestions} approved`,
-      path: `/instructor/course/${encodeURIComponent(course.id)}/preseeding`,
-    },
-    {
-      number: '4',
-      label: 'Review',
-      detail: `${counts.reviewQueue} waiting`,
-      path: `/instructor/course/${encodeURIComponent(course.id)}/queue`,
-    },
-    {
-      number: '5',
-      label: 'Student preview',
-      detail: 'Test the experience',
-      onClick: () => startAnonymousPreview(course.id),
-      path: `/preview/course/${encodeURIComponent(course.id)}`,
-    },
-  ];
+function courseFlow(data: InstructorWorkflowSummary, openBlockedPreview: () => void): HTMLElement {
+  const { course } = data;
+  const statusLabel = {
+    'not-started': 'Not started',
+    blocked: 'Blocked',
+    'in-progress': 'In progress',
+    'needs-attention': 'Needs attention',
+    ready: 'Ready',
+    complete: 'Complete',
+  } as const;
   return el(
     'nav',
     { class: 'course-flow', 'aria-label': 'Course authoring workflow' },
-    ...steps.map((step) =>
-      el(
+    ...data.setup.steps.map((step) => {
+      const path = workflowActionPath(step.destination, course.id)!;
+      const onClick = step.destination === 'student-preview'
+        ? (event: MouseEvent) => {
+            if (data.counts.approvedQuestions === 0) {
+              event.preventDefault();
+              openBlockedPreview();
+              return;
+            }
+            startAnonymousPreview(course.id);
+          }
+        : undefined;
+      return el(
         'a',
         {
-          class: 'course-flow__step',
-          href: `#${step.path}`,
-          onclick: step.onClick,
+          class: `course-flow__step course-flow__step--${step.status}`,
+          href: `#${path}`,
+          onclick: onClick,
+          'aria-label': `${step.number}. ${step.label}: ${step.detail}. Status: ${step.status.replace('-', ' ')}`,
         },
-        el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: step.number }),
+        el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: String(step.number) }),
         el(
           'span',
           { class: 'course-flow__body' },
           el('strong', { text: step.label }),
-          el('span', { text: step.detail }),
+          el('span', { text: `${statusLabel[step.status]} · ${step.detail}` }),
         ),
-      ),
-    ),
+      );
+    }),
   );
 }
 
@@ -184,15 +168,17 @@ function actionList(
   data: InstructorWorkflowSummary,
   onPublish: () => void,
   onRestore: () => void,
+  onConfigureDates: () => void,
+  onGuidedAction: (action: InstructorWorkflowAction) => void,
 ): HTMLElement {
-  return el(
-    'div',
-    { class: 'workflow-actions' },
-    ...data.actions.map((action) =>
+  const primary = data.setup.primaryAction;
+  const secondary = data.actions.filter((action) => action.id !== primary.id);
+
+  const actionButton = (action: InstructorWorkflowAction, isPrimary: boolean): HTMLElement =>
       el(
         'button',
         {
-          class: `workflow-action workflow-action--${action.priority}`,
+          class: `workflow-action workflow-action--${action.priority}${isPrimary ? ' workflow-action--primary' : ''}`,
           type: 'button',
           onclick: () => {
             if (action.id === 'publish-course') {
@@ -203,9 +189,23 @@ function actionList(
               onRestore();
               return;
             }
+            if (action.id === 'configure-course') {
+              onConfigureDates();
+              return;
+            }
+            if (isPrimary && data.setup.primaryAction.presentation === 'dialog') {
+              onGuidedAction(action);
+              return;
+            }
             const path = workflowActionPath(action.destination, data.course.id);
             if (!path) return;
-            if (action.destination === 'student-preview') startAnonymousPreview(data.course.id);
+            if (action.destination === 'student-preview') {
+              if (data.counts.approvedQuestions === 0) {
+                onGuidedAction(action);
+                return;
+              }
+              startAnonymousPreview(data.course.id);
+            }
             navigate(path);
           },
         },
@@ -228,12 +228,188 @@ function actionList(
           el('span', { class: `workflow-action__priority workflow-action__priority--${action.priority}`, text: priorityLabel(action) }),
           el('span', {
             class: 'workflow-action__open',
-            text: action.id === 'publish-course' ? 'Publish →' : action.id === 'restore-course' ? 'Restore →' : 'Open →',
+            text: action.id === 'publish-course'
+              ? 'Publish →'
+              : action.id === 'restore-course'
+                ? 'Restore →'
+                : action.id === 'configure-course'
+                  ? 'Set dates →'
+                  : isPrimary && data.setup.primaryAction.presentation === 'dialog'
+                    ? 'Continue setup →'
+                  : 'Open →',
           }),
         ),
+      );
+
+  return el(
+    'div',
+    { class: 'workflow-actions' },
+    el('p', { class: 'workflow-actions__next-label', text: 'NEXT STEP' }),
+    actionButton(primary, true),
+    secondary.length > 0
+      ? el(
+          'details',
+          { class: 'workflow-actions__upcoming' },
+          el('summary', { text: `Up next (${secondary.length})` }),
+          el('div', { class: 'workflow-actions workflow-actions--secondary' },
+            ...secondary.map((action) => actionButton(action, false)),
+          ),
+        )
+      : false,
+  );
+}
+
+function dateOnly(value?: string): string {
+  return value?.slice(0, 10) ?? '';
+}
+
+/** Dashboard-local setup dialog: complete the blocking date task without
+ * losing course-home context. Native date values also open their picker near
+ * the prefilled term instead of today's month. */
+function openCourseDatesDialog(
+  data: InstructorWorkflowSummary,
+  onSaved: () => void,
+): void {
+  const { course } = data;
+  const suggestion = suggestedTermDates(course.term);
+  const hasSavedDates = Boolean(course.termStart || course.termEnd);
+  const startInput = el('input', {
+    class: 'input',
+    id: 'course-dates-start',
+    name: 'termStart',
+    type: 'date',
+    required: 'true',
+    value: dateOnly(course.termStart) || suggestion?.termStart || '',
+  }) as HTMLInputElement;
+  const endInput = el('input', {
+    class: 'input',
+    id: 'course-dates-end',
+    name: 'termEnd',
+    type: 'date',
+    required: 'true',
+    value: dateOnly(course.termEnd) || suggestion?.termEnd || '',
+  }) as HTMLInputElement;
+  const error = el('p', {
+    class: 'course-dates-dialog__error',
+    role: 'alert',
+    'aria-live': 'polite',
+  });
+  const dialog = el('dialog', {
+    class: 'app-dialog course-dates-dialog',
+    'aria-labelledby': 'course-dates-title',
+    'aria-describedby': 'course-dates-description',
+  }) as HTMLDialogElement;
+  const cancelButton = el('button', { class: 'btn btn--ghost', type: 'button' }, 'Cancel') as HTMLButtonElement;
+  const settingsButton = el(
+    'button',
+    { class: 'btn btn--ghost course-dates-dialog__settings', type: 'button' },
+    'Open full settings',
+  ) as HTMLButtonElement;
+  const saveButton = el('button', { class: 'btn btn--instr-primary', type: 'submit' }, 'Save dates') as HTMLButtonElement;
+
+  const guidance = hasSavedDates
+    ? 'Your saved dates are shown below. Adjust them if this section follows a different schedule.'
+    : suggestion?.official
+      ? `We prefilled UBC’s published standard dates for ${course.term}. Adjust them for this section if needed.`
+      : suggestion
+        ? `We prefilled a typical ${course.term} window so the calendar opens nearby. Verify it against this section’s official schedule.`
+        : 'Choose the first and last day for this course section.';
+
+  const form = el(
+    'form',
+    { method: 'dialog' },
+    el('h2', { class: 'app-dialog__title', id: 'course-dates-title', text: 'Set course dates' }),
+    el('p', { class: 'app-dialog__message', id: 'course-dates-description', text: guidance }),
+    el(
+      'div',
+      { class: 'course-dates-dialog__term' },
+      el('span', { text: 'Selected term' }),
+      el('strong', { text: course.term }),
+    ),
+    el(
+      'div',
+      { class: 'course-dates-dialog__fields' },
+      el(
+        'label',
+        { class: 'form-field', for: 'course-dates-start' },
+        el('span', { class: 'form-field__label', text: 'Course starts' }),
+        startInput,
+      ),
+      el(
+        'label',
+        { class: 'form-field', for: 'course-dates-end' },
+        el('span', { class: 'form-field__label', text: 'Course ends' }),
+        endInput,
       ),
     ),
-  );
+    error,
+    el(
+      'p',
+      { class: 'course-dates-dialog__note' },
+      'You can change these dates any time in ',
+      el('strong', { text: 'Course Settings' }),
+      '. ',
+      el(
+        'a',
+        {
+          href: 'https://vancouver.calendar.ubc.ca/dates-and-deadlines',
+          target: '_blank',
+          rel: 'noreferrer',
+          text: 'Check the UBC calendar ↗',
+        },
+      ),
+    ),
+    el('div', { class: 'app-dialog__actions course-dates-dialog__actions' }, settingsButton, cancelButton, saveButton),
+  ) as HTMLFormElement;
+  dialog.append(el('div', { class: 'app-dialog__surface' }, form));
+
+  const close = (): void => {
+    dialog.close();
+    dialog.remove();
+  };
+  cancelButton.addEventListener('click', close);
+  settingsButton.addEventListener('click', () => {
+    close();
+    navigate(`/instructor/course/${encodeURIComponent(course.id)}/settings`);
+  });
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    close();
+  });
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) close();
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    if (!startInput.value || !endInput.value) {
+      error.textContent = 'Choose both a start date and an end date.';
+      return;
+    }
+    if (endInput.value <= startInput.value) {
+      error.textContent = 'The course end date must be after the start date.';
+      endInput.focus();
+      return;
+    }
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving…';
+    try {
+      await updateCourse(course.id, {
+        termStart: new Date(`${startInput.value}T00:00:00.000Z`).toISOString(),
+        termEnd: new Date(`${endInput.value}T23:59:59.999Z`).toISOString(),
+      });
+      close();
+      onSaved();
+    } catch (caught) {
+      error.textContent = caught instanceof ApiError ? caught.message : (caught as Error).message;
+      saveButton.disabled = false;
+      saveButton.textContent = 'Save dates';
+    }
+  });
+
+  document.body.append(dialog);
+  dialog.showModal();
+  startInput.focus();
 }
 
 function quickActionCard(
@@ -241,7 +417,7 @@ function quickActionCard(
   title: string,
   subtitle: string,
   destination: Exclude<InstructorWorkflowDestination, 'dashboard'>,
-  beforeNavigate?: () => void,
+  beforeNavigate?: () => boolean | void,
 ): HTMLElement {
   return el(
     'button',
@@ -249,7 +425,7 @@ function quickActionCard(
       class: 'quick-action',
       type: 'button',
       onclick: () => {
-        beforeNavigate?.();
+        if (beforeNavigate?.() === false) return;
         navigate(workflowActionPath(destination, courseId)!);
       },
     },
@@ -312,6 +488,23 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       }
     }
 
+    function configureDates(): void {
+      openCourseDatesDialog(data, () => void renderDashboardInner(outlet, courseId));
+    }
+
+    function openGuideById(actionId: string): void {
+      openCourseSetupGuide({
+        courseId,
+        actionId,
+        learningObjectiveCount: data.counts.learningObjectives,
+        onChanged: () => void renderDashboardInner(outlet, courseId),
+      });
+    }
+
+    function openGuide(action: InstructorWorkflowAction): void {
+      openGuideById(action.id);
+    }
+
     const header = el(
       'header',
       { class: 'project-hero' },
@@ -357,7 +550,9 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
           action
             ? {
                 text: action.text,
-                onClick: () => navigate(action.path.replace(':id', encodeURIComponent(courseId))),
+                onClick: action.command === 'configure-dates'
+                  ? configureDates
+                  : () => navigate(action.path.replace(':id', encodeURIComponent(courseId))),
               }
             : undefined,
         );
@@ -375,7 +570,14 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         'Preview as Student',
         'Switch into the isolated Approved-only student experience',
         'student-preview',
-        () => startAnonymousPreview(courseId),
+        () => {
+          if (data.counts.approvedQuestions === 0) {
+            openGuideById('preview-course');
+            return false;
+          }
+          startAnonymousPreview(courseId);
+          return true;
+        },
       ),
       pathActionCard(
         'View as TA',
@@ -386,7 +588,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
 
     body.replaceChildren(
       header,
-      courseFlow(data),
+      courseFlow(data, () => openGuideById('preview-course')),
       el(
         'div',
         { class: 'project-cockpit' },
@@ -398,9 +600,9 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
               el('p', { class: 'project-panel__eyebrow', text: 'CONTINUE WORKING' }),
               el('h2', { id: 'next-actions-title', class: 'section-title', text: 'Next actions' }),
             ),
-            el('span', { class: 'project-panel__count', text: String(data.actions.length) }),
+            el('span', { class: 'project-panel__count', text: '1', 'aria-label': 'One recommended next step' }),
           ),
-          actionList(data, () => void publish(), () => void restore()),
+          actionList(data, () => void publish(), () => void restore(), configureDates, openGuide),
           el('details', { class: 'cockpit-checklist' },
             el('summary', { text: 'View launch checklist' }),
             checklist,
