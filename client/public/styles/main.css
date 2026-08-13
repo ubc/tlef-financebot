@@ -1753,9 +1753,30 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 .practice-card__explanation {
+  display: flex;
+  gap: 0.35rem;
   margin: 0;
   font-size: 0.88rem;
   color: var(--muted);
+}
+
+.practice-card__explanation-key {
+  flex: none;
+}
+
+/* The body is rendered markdown, so it arrives wrapped in block elements.
+   Collapse the outer margins so a one-paragraph explanation still sits on the
+   same line as its key, the way the plain-text version did. */
+.practice-card__explanation-body {
+  min-width: 0;
+}
+
+.practice-card__explanation-body > :first-child {
+  margin-top: 0;
+}
+
+.practice-card__explanation-body > :last-child {
+  margin-bottom: 0;
 }
 
 .practice-card__retry {

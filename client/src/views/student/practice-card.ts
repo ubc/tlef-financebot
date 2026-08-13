@@ -211,12 +211,28 @@ export function makeQuestionCard(
         })
       : false;
 
+    // Explanations carry the worked solution, so they render as rich text
+    // (markdown + KaTeX) exactly as stems and options already do — exam review
+    // has always done this (exam-results.ts); practice was the odd one out.
+    // `div`, not `p`: marked wraps its output in a block-level `<p>`, which a
+    // `<p>` parent auto-closes. The `key.` prefix stays its own node so a `$`
+    // opening the explanation can never pair with one in the prefix — see
+    // currencyDollarIndices in render.ts.
     const explanations =
       locked && revealed
         ? el(
             'div',
             { class: 'practice-card__explanations' },
-            ...revealed.map((r) => el('p', { class: 'practice-card__explanation', text: `${r.key}. ${r.explanation}` })),
+            ...revealed.map((r) => {
+              const body = el('div', { class: 'practice-card__explanation-body' });
+              renderRichText(body, r.explanation);
+              return el(
+                'div',
+                { class: 'practice-card__explanation' },
+                el('span', { class: 'practice-card__explanation-key', text: `${r.key}.` }),
+                body,
+              );
+            }),
           )
         : false;
 

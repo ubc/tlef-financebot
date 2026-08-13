@@ -60,6 +60,14 @@ const OPTION_VALUE_NAMES = ['PV', 'PV_COMPOUNDED', 'PV_ONE_PERIOD', 'PV_UNDISCOU
 export const CORRECT_EXPLANATION = 'Discount each period: PAYMENT / (1 + r)^n.';
 export const MISCONCEPTION_EXPLANATION =
   'This compounds forward. A payment received later is worth less today, not more.';
+/** Deliberately carries inline LaTeX. Explanations render as markdown + KaTeX
+ * (GENERATOR_PROMPT's FORMATTING block), so a spec that finds a `.katex` node
+ * here has proved the renderer ran on this field rather than dumping it as
+ * text. This one is used because it is revealed by a clearly-wrong miss, which
+ * takes the full-reveal path and needs no retry gate. Both spans open with a
+ * command or a letter, never a digit — see the currency limit pinned in
+ * tests/unit/render-currency.test.ts. */
+export const CLEARLY_WRONG_EXPLANATION = String.raw`This ignores the time value of money entirely: discounting gives $\frac{C}{(1+r)^n}$, not $C$.`;
 
 const OPTIONS: QuestionOption[] = [
   { key: 'A', text: '${{PV}}', role: 'correct', explanation: CORRECT_EXPLANATION },
@@ -79,7 +87,7 @@ const OPTIONS: QuestionOption[] = [
     key: 'D',
     text: '${{PV_UNDISCOUNTED}}',
     role: 'clearly-wrong',
-    explanation: 'This ignores the time value of money entirely.',
+    explanation: CLEARLY_WRONG_EXPLANATION,
   },
 ];
 

@@ -111,6 +111,15 @@ describe('params.service', () => {
     it('is a no-op on text with no placeholders', () => {
       expect(substituteParams('plain text', { x: 1 })).toBe('plain text');
     });
+
+    it('substitutes a placeholder nested inside a LaTeX brace group', () => {
+      // Displayed text is markdown + KaTeX (GENERATOR_PROMPT's FORMATTING
+      // block), so a placeholder can legitimately sit inside `{}`. The name
+      // pattern must start with a letter, so in `{{{PV}}}` the match starts at
+      // the SECOND brace and LaTeX's own braces survive.
+      expect(substituteParams(String.raw`$\frac{{{PV}}}{2}$`, { PV: 429.07 })).toBe(String.raw`$\frac{429.07}{2}$`);
+      expect(substituteParams(String.raw`$\sqrt{{{X}}}$`, { X: 16 })).toBe(String.raw`$\sqrt{16}$`);
+    });
   });
 
   describe('findUnusedParamSlots — validation warnings', () => {
