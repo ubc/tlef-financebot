@@ -6520,6 +6520,23 @@ button.class-row--link:focus-visible .class-row__title {
   line-height: 1.55;
 }
 
+/* Stem and option text are rendered markdown, so they arrive wrapped in block
+   elements. Collapse the outer margins so the panel keeps the tight spacing it
+   had when these were plain strings. */
+.question-sample__stem > :first-child,
+.question-sample__text > :first-child {
+  margin-top: 0;
+}
+
+.question-sample__stem > :last-child,
+.question-sample__text > :last-child {
+  margin-bottom: 0;
+}
+
+.question-sample__text {
+  min-width: 0;
+}
+
 .question-sample__options {
   list-style: none;
   margin: 0;

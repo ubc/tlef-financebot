@@ -43,6 +43,7 @@ import {
 import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
+import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { STATUS_LABEL, TYPE_LABEL } from './bank.js';
 
@@ -192,7 +193,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // {{placeholder}} template, which is correct for editing but unreadable for
   // judging whether the question is any good. Substitution is done server-side
   // (GET .../sample) so this example and the real serve path can never drift.
+  //
+  // This panel renders markdown + KaTeX, like the student card does. It used to
+  // print raw strings, so an instructor approving a question saw LaTeX source
+  // where the student sees maths — which made it impossible to review the one
+  // thing this panel exists to show, and hid bad LaTeX until a student hit it.
   const sampleSection = el('section', { class: 'question-sample' });
+
+  /** `div`, not `p`: marked emits block-level HTML, which a `<p>` auto-closes. */
+  function sampleStem(stem: string): HTMLElement {
+    const node = el('div', { class: 'question-sample__stem' });
+    renderRichText(node, stem);
+    return node;
+  }
 
   function renderSample(sample: QuestionSample): void {
     if (!sample.parameterized) {
@@ -205,17 +218,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         class: 'muted',
         text: 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.',
       }),
-      el('p', { class: 'question-sample__stem', text: sample.stem }),
+      sampleStem(sample.stem),
       el(
         'ul',
         { class: 'question-sample__options' },
         ...sample.options.map((option) => {
           const role = detail.current.options.find((o) => o.key === option.key)?.role;
+          const text = el('div', { class: 'question-sample__text' });
+          renderRichText(text, option.text);
           return el(
             'li',
             { class: `question-sample__option${role === 'correct' ? ' question-sample__option--correct' : ''}` },
             el('span', { class: 'question-sample__key', text: option.key }),
-            el('span', { text: option.text }),
+            text,
             role === 'correct' ? el('span', { class: 'question-sample__badge', text: 'correct' }) : null,
           );
         }),

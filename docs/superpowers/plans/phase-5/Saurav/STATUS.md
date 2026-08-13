@@ -10,7 +10,7 @@ with **Task 7**, claimed in writing in the shared plan on 2026-08-13, plus the
 
 | Item | State |
 |---|---|
-| Task 7.1 — LaTeX formula rendering | **Code complete and verified.** One open item: nobody has read live-model output yet |
+| Task 7.1 — LaTeX formula rendering | **Live-tested 2026-08-13.** The prompt works; the test found 3 further bugs, 2 now fixed. See below |
 | Task 7.2 — shuffle answer options | Planned, not started. Distribution measured 2026-08-13: **inconclusive, dev DB is empty** — build anyway |
 | Task 7.3 — Strategy-A same-question retry | Planned, not started. **Blocked on telling Stephen** |
 | Phase-4 Task 3 — Delete for never-used questions | Design settled, nothing built. Deferred here by the Aug 24 freeze |
@@ -127,6 +127,77 @@ later.`, which is the case the function exists for.
   there. `ta/question-detail.ts` does not render explanations at all.
 - Playwright's chromium binary had to be reinstalled (`npx playwright install
   chromium`) — the bundled version had moved to `chromium_headless_shell-1228`.
+
+## 2026-08-13 — the live-model test, and what it found
+
+Saurav ran a real generation against `openai` / `gpt-5.4-nano` and reported the
+result "does not look like the LaTeX compiled." It had, in the sense that
+mattered — and the report surfaced three further defects.
+
+**The prompt change works.** The stored versions carry proper LaTeX throughout
+(`\text{}`, `\frac{}{}`, `\left(...\right)`, balanced `$$…$$`), and the check
+that mattered most passed: **`derivedValues[].formula` stayed evaluator syntax on
+every derived value across all three numeric questions.** No LaTeX leaked into
+the parsed field.
+
+**What Saurav was looking at was a surface Task 7.1 never touched.**
+`instructor/question-detail.ts` — the "Example — what a student sees" panel —
+did not import `renderRichText` at all. An instructor approving a question was
+reading LaTeX source where the student sees maths, which defeats the panel's
+whole purpose and hides broken LaTeX until a student meets it.
+
+### Fixed in this pass
+
+1. **`%` is now a currency terminator** (`render.ts`). A rate written `$16%` was
+   NOT protected (`%` was absent from the terminator set), so it became an
+   OPENING math delimiter — and because a `$12000 ` in the same sentence IS
+   protected, the live `$` count went odd and KaTeX swallowed the prose between
+   them. Observed in real generated output. `$50\%$` is unaffected: an escaped
+   LaTeX percent puts a backslash after the digits.
+2. **The instructor sample panel renders rich text**, matching the student card.
+
+### Still open — NOT fixed here
+
+- **A control character is corrupting slot names.** Slot `DISC_PCT` came back as
+  `\text{DISC⟪U+0002⟫PCT}`, and that math span fails to render (visible in the
+  panel now that it renders at all). `extractJson` does a plain `JSON.parse`
+  with no repair, so the model emitted a literal `` escape — almost
+  certainly fumbling LaTeX's `\_`. **Task 7.1's own prompt change made this
+  likely** by steering toward `\text{}` around underscored slot names. Candidate
+  fixes: forbid underscores in slot names, forbid slot names inside `\text{}`,
+  or strip control characters defensively on ingest of generated content.
+- **Model-written formulas can have unbalanced parentheses**, e.g.
+  `(-CF0) + (CF1*(1+R_PCT/100)) + (CF2*(1+R_PCT/100)^2`. Pre-existing generator
+  quality, not caused by this work.
+- **All three generated numeric questions have `verification: ABSENT`** and will
+  never serve. Worth a dedicated look — the batch is currently unusable.
+- `$50-$60` has the identical shape to the `%` bug and is pinned as a KNOWN
+  LIMIT test rather than fixed, only because it has not been seen in real
+  content. The remedy is the same one character.
+
+### ⚠️ Phase 4 STATUS misdiagnoses `numeric-parameterization.spec.ts`
+
+It is recorded there as *"waits on `.verification-banner--fail`, which needs the
+live LLM path"*. **That is wrong.** With a working LLM it still fails, and the
+reason is unrelated: the banner now reads `option 3 must display exactly one
+computed value` where the spec expects `/division by zero/`. The expectation went
+stale when PR #66's review added the per-option verification check — Stephen's
+change. The spec's fixture trips the new check before it reaches the range error.
+Left unfixed here (his territory), but the Phase 4 note should be corrected so
+nobody keeps waiting for an LLM that would not help.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck` clean; `npx jest` **94 suites / 1067 tests**.
+- New `tests/e2e/instructor-sample-render.spec.ts` seeds its own parameterized
+  question and asserts a rendered `.katex` node in the panel plus no `\frac` in
+  `innerText`. **Mutation-verified**: swapping `renderRichText` back to
+  `textContent` fails it (`element(s) not found`); restored.
+- Four new `render-currency` cases: percentage-terminated, the mixed
+  currency+percentage sentence, escaped `$50\%$`, and the pinned `$50-$60` limit.
+- Full e2e: **38 passed, 3 failed, 1 skipped** — the same three pre-existing
+  failures, previously confirmed by stashing.
+- Visually confirmed in the browser against the real generated question.
 
 ## ⚠️ Stephen needs to be told before Task 7.3 merges
 

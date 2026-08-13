@@ -172,6 +172,19 @@ pinned rather than folklore.
 - Mutation-verify: revert step 3, confirm the `.katex` assertion fails, restore.
 - Regenerate one question against the live model and read it. The prompt change
   cannot be proven by unit tests; a human has to look at the output.
+  **Done 2026-08-13 — the prompt works, and the run found three more defects.**
+  Two are fixed (the `%` currency terminator; the instructor sample panel now
+  renders rich text). Three remain open: a `` control character corrupting
+  underscored slot names inside `\text{}`, model-written formulas with
+  unbalanced parentheses, and all three generated numeric questions carrying no
+  verification proof. Full detail in STATUS.
+
+### Task 1 is NOT finished
+
+The live test proved the plumbing and the prompt, then showed the fix was scoped
+to one surface. Any further "explanations render flat" report should check
+whether the surface in question imports `renderRichText` BEFORE assuming a
+generation problem — that was the wrong first guess this time too.
 
 ---
 
