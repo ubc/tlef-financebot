@@ -96,3 +96,29 @@ after the Instructor control plane is usable end to end.
   replace infrastructure monitoring.
 - [ ] Complete AD-05 course rollout states and enrollment caps.
 - [ ] Add a readable audit-history surface over the existing AuditLog writes.
+
+### Task 7: Student practice correctness — rendering, option order, retry
+
+**Owner:** Saurav
+
+Claimed in writing on 2026-08-13 (Tasks 1–6 are all Stephen's). Full plan and
+the investigation behind it:
+`phase-5/Saurav/2026-08-13-practice-rendering-and-retry-fixes.md`.
+
+- [ ] Render question formulas as LaTeX: teach `GENERATOR_PROMPT` that stem,
+  options and explanations are markdown + KaTeX (`$…$` delimiters — `\(…\)` is
+  destroyed by the markdown pass), and route practice explanations through
+  `renderRichText` as exam results already do. `derivedValues[].formula` stays in
+  evaluator syntax; only displayed text becomes LaTeX.
+- [ ] Shuffle MCQ answer options once at version creation, reassigning keys by
+  position. Not at approval — `approved → paused → approved` would reorder a
+  version that already has AttemptRecords and silently corrupt
+  `answerDistributions`. True/False keeps `T,F`.
+- [ ] ⚠️ Change Strategy A to retry the SAME question with the chosen wrong
+  option eliminated, and amend `PRD.md:86` and `docs/api-contract.md` in the same
+  PR. **This reverses a written spec and Stephen's `selectRetryQuestion` design —
+  Saurav must discuss it with Stephen before merge.** Separate branch from the
+  two items above.
+- [ ] Carried from Phase 4 Task 3: Delete for never-used questions. Design is
+  settled in `phase-4/Saurav/2026-08-08-question-bank-pi-feedback.md`; deferred
+  out of Phase 4 by the Aug 24 freeze, nothing built.
