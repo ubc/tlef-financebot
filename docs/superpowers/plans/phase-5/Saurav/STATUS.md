@@ -156,6 +156,69 @@ whole purpose and hides broken LaTeX until a student meets it.
    LaTeX percent puts a backslash after the digits.
 2. **The instructor sample panel renders rich text**, matching the student card.
 
+### Why all three generated questions failed verification (root cause found)
+
+Replaying the real verification path against the stored versions: **none of the
+three reached the 100-draw proof.** All three died at the first check,
+`optionValueNamesForVerification` — *no option displays a computed value*.
+
+| Version | Placeholders in its options | Derived values among them |
+|---|---|---|
+| `…34d` | none at all | 0 |
+| `…34f` | `{{R}}` ×3 | 0 |
+| `…351` | `{{CF0}}`, `{{CF1}}`, `{{CF2}}`, `{{R_PCT}}` | 0 |
+
+Every option referenced INPUT slots — the formula — never the computed answer
+(`NPV_CORRECT` appears in no option anywhere).
+
+**⚠️ Correction to the earlier entry: the unbalanced parentheses were NOT the
+cause.** Verification never got as far as evaluating a formula. They are real
+but latent, and would only bite at step 2.
+
+**Two causes, and Task 7.1 is the bigger one.**
+
+1. **A prompt regression I introduced.** The FORMATTING block says it governs
+   *"the stem, every option, and every explanation"* and ended with *"prefer a
+   display line over describing the arithmetic in words"*. Meant for
+   explanations; applied to options it says "render the formula", which is
+   exactly what all three did.
+2. **A pre-existing gap it exposed.** `GENERATOR_PROMPT` **never stated the rule
+   `optionValueNamesForVerification` enforces.** The verifier has been rejecting
+   questions on a rule the generator was only ever shown by example — and worse,
+   the prompt actively contradicted it: *"an option may carry several
+   placeholders if the question asks for more than one value."*
+
+A third, subtler one: `…34d` is an Accept/Reject **decision** question declared
+`numeric`. Its options are decisions, so they can never display a computed
+value. "If answering requires ANY computation, set numeric" is genuinely
+ambiguous for decision questions, and the model fell into the gap.
+
+### Prompt fixes batched into one change (2026-08-13)
+
+Batched deliberately so they cost ONE paid verification run, not four:
+
+1. "Show the working" is scoped to the EXPLANATION; an option states an ANSWER,
+   never the formula.
+2. **THE OPTION CONTRACT** now states the verifier's rule explicitly, with the
+   three failing shapes as worked negatives. The contradictory
+   "several placeholders" line is gone.
+3. Decision-shaped questions are routed to `conceptual`, with an explicit
+   "pick one shape and commit" instruction.
+4. Slot names must not appear inside `\text{}` — the `` corruption above.
+
+Guarded by four new assertions in `tests/unit/generation-numerics.test.ts`. A
+prompt cannot be tested against the model, but it can be pinned to say the
+thing — which is what failed here.
+
+**Not yet re-run against the live model.** Until it is, these are unproven.
+
+### Observation while reading the assembled prompt
+
+`GENERATOR_PROMPT` ends with `.filter(Boolean)`, which strips every `''` entry —
+so the section separators in the source produce **no blank lines** in the real
+prompt. Anyone adding one expecting whitespace gets none. Left alone (changing
+it edits the whole prompt), but worth knowing before the next edit.
+
 ### Still open — NOT fixed here
 
 - **A control character is corrupting slot names.** Slot `DISC_PCT` came back as

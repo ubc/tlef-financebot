@@ -125,6 +125,38 @@ describe('GENERATOR_PROMPT', () => {
   it('still describes conceptual questions as a first-class option', () => {
     expect(generatorPrompt).toMatch(/conceptual/);
   });
+
+  // The rules below were added on 2026-08-13, after a live run produced THREE
+  // questions in a row that all failed verification at the same first check —
+  // no option displayed a computed value. The cause was this prompt: it never
+  // stated the rule optionValueNamesForVerification enforces, and the same
+  // day's FORMATTING block told the model to "show its working" in every
+  // option, which turns each one into a formula carrying input slots.
+
+  it('states the option contract the verifier actually enforces', () => {
+    expect(generatorPrompt).toMatch(/THE OPTION CONTRACT/);
+    expect(generatorPrompt).toMatch(/EXACTLY ONE \{\{NAME\}\} naming a/);
+    expect(generatorPrompt).toMatch(/an INPUT slot is not an answer/);
+  });
+
+  it('keeps the worked solution in the explanation, never in an option', () => {
+    expect(generatorPrompt).toMatch(/Show the working in the EXPLANATION/);
+    expect(generatorPrompt).toMatch(/an option states an ANSWER, never the formula/);
+  });
+
+  it('sends decision-shaped questions down the conceptual path', () => {
+    // "Accept the project" / "Reject the project" options can never satisfy the
+    // option contract, so declaring them numeric guarantees an unservable
+    // question.
+    expect(generatorPrompt).toMatch(/ALSO conceptual, even though arithmetic is involved/);
+    expect(generatorPrompt).toMatch(/Do not try to have both in one question/);
+  });
+
+  it('keeps slot names out of \\text{} so an escaped underscore cannot corrupt a span', () => {
+    // A live generation stored `\text{DISC<U+0002>PCT}` — the model fumbled the
+    // escaped underscore and emitted a control character, killing the span.
+    expect(generatorPrompt).toMatch(/Never write a slot or derived-value NAME inside/);
+  });
 });
 
 describe('generated numerics are verified before persisting', () => {
