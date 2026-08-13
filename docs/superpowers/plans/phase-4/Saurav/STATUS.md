@@ -1,6 +1,6 @@
 # Saurav — Phase 4 progress
 
-_Last updated: 2026-08-02_
+_Last updated: 2026-08-08_
 
 Phase 4 carries **no owner map** — the core plan has no `**Owner:**` line on any
 of its six tasks, the same gap Phase 3 had. Rather than propose another map (the
@@ -695,3 +695,150 @@ in #58, but that spec has no Preview surface in its route list, and
 `playwright.config.ts` sets `reducedMotion: 'reduce'` globally, so the claim
 here is "low risk," not "scanned" — the same open follow-up already recorded
 for the flag-queue highlight above.
+
+## 2026-08-08 — Question Bank generate scope (Jose's PI feedback, Task 1)
+
+Plan: [`2026-08-08-question-bank-pi-feedback.md`](2026-08-08-question-bank-pi-feedback.md).
+Branch `saurav/bank-generate-filter-scope` (the plan's declared branch name
+`saurav/question-bank-pi-feedback` was not the one used).
+
+**Task 1 complete.** `+ Generate Question` and the disabled `↑ Import` moved out
+of `.bank-filters` into their own `.bank-actions` row, and the Topic/LO/Type
+filters are carried to the coverage page as query parameters. `preseeding.ts`
+opens the generate form already targeting that LO with the type preset. Status
+is deliberately not carried — it is a bank-browsing filter with no meaning for
+generation, and passing it would imply it was honoured. Unknown or absent values
+fall through to today's defaults. On arrival the form takes keyboard focus on
+the prefilled Target LO rather than smooth-scrolling a page the instructor did
+not scroll; row clicks keep the existing scroll.
+
+The coverage table is untouched. Merging the bank, the table and the form into
+one journey is Jose's *"the first page is unnecessary"* — Phase 5 Task 2,
+`Owner: Stephen`, and out of scope here.
+
+### Verification (2026-08-08)
+
+`main` was merged in first (PR #69), so this runs against the post-#69 tree.
+`npm run lint` and `npm run typecheck` clean; `npx jest` **91 suites / 1001
+tests passed**; `tests/e2e/bank-generate-scope.spec.ts` **1 passed**.
+
+Mutation-verified as the plan requires: dropping `query.set('loId', …)` from
+`generatePath()` failed the carry assertion at
+`tests/e2e/bank-generate-scope.spec.ts:113`; restored, and the spec passes again
+with no residual diff.
+
+### Pre-existing failures in the full e2e run — not from this branch
+
+The full `npx playwright test` run is **30 passed, 1 skipped, 7 failed**. None
+of the seven are caused by this work, whose entire non-doc diff is `bank.ts`,
+`preseeding.ts`, `main.css` and one new spec:
+
+- `app.spec.ts`, `walking-skeleton.spec.ts`, `classes.spec.ts` (×3) — the local
+  faculty user is in `ADMIN_CWL_ALLOWLIST` on purpose, so
+  `main.ts:573` lands them on `/admin/accounts` ("User Accounts") rather than
+  "My Courses". Environment, not code.
+- `instructor-pipeline.spec.ts` — **passes in isolation**; it only fails inside
+  the serial full run, so it is shared-database ordering, not a regression.
+- `numeric-parameterization.spec.ts` — waits on `.verification-banner--fail`,
+  which needs the live LLM path that is not running locally.
+
+These want their own cleanup task; they are recorded here rather than fixed
+inside a scoped bug fix.
+
+## 2026-08-08 — "Blueprint" renamed to "Saved Setup" (Task 2)
+
+Branch `saurav/blueprint-saved-setup`, stacked on
+`saurav/bank-generate-filter-scope` (PR #70) because both touch
+`preseeding.ts`.
+
+**Task 2 complete.** The user-facing strings are now "Saved Setup" / "Setup
+name" / "Save setup" / "Run setup", with the `Saved setup “…”.` and
+`Setup run queued…` messages to match. "Custom request" stays the empty option.
+A `helpTip` beside the field says what the setup actually holds and that it can
+be re-run.
+
+`GenerationBlueprint`, `generation-blueprints.routes.ts`,
+`generation-blueprints.service.ts`, the collection and
+`/api/courses/:courseId/generation-blueprints` all keep the original name. The
+deliberate divergence is documented in a comment above `SAVED_SETUP_LABEL` in
+`preseeding.ts` so the next reader is not confused by the mismatch.
+
+"Saved Prompts" was rejected: `PRESET_TEMPLATES` renders the starter *prompt*
+buttons in the same form, inches away, and those are the "pre-done prompts" Jose
+praised. A blueprint is the whole request — LO + type + difficulty + prompt text
+— not a prompt.
+
+### Accessibility
+
+The tip sits OUTSIDE the `<label>`, following `fieldLabelWithHelp` in
+`views/instructor/settings.ts:37`. Nested inside it, clicking the trigger would
+also activate the label and steal focus into the select. The select therefore
+gained `id="preseeding-saved-setup"` so the label can point at it explicitly
+rather than relying on the implicit wrapping association it had before.
+
+### Verification (2026-08-08)
+
+`npm run lint` and `npm run typecheck` clean; `npx jest` **91 suites / 1001
+tests passed** — unchanged, which is the proof that only copy moved.
+`tests/e2e/generation-saved-setup.spec.ts` and the Task 1 spec both pass.
+
+Mutation-verified twice, and **the first attempt exposed a real gap in the
+spec**: reverting "Run setup" to "Run blueprint" did *not* fail, because that
+button only renders once a setup is SELECTED and the fixture had none, so the
+"no user-visible blueprint" sweep never saw it. The spec now seeds a saved setup
+via the API and selects it. Re-run, the same mutation failed as it should.
+Removing the `helpTip` failed the tip assertions. Both restored.
+
+### Task 3 is deferred, not forgotten
+
+Delete for never-used questions **does not jump the Aug 24 freeze** and moves to
+Phase 5. The design in the plan is settled and unchanged; nothing was built. The
+reasoning is recorded in the plan's freeze note.
+
+### 2026-08-10 — help-tip bubble was clipped (fix on the same branch)
+
+Saurav reported the Saved Setup explanation running off the left edge, about a
+third of it unreadable. Confirmed and fixed on `saurav/blueprint-saved-setup`
+before PR #71 merged.
+
+**Cause — the shared rule, not the new tip.** `.help-tip__bubble` was
+`left: 50%; transform: translateX(-50%)`, centring the bubble on its trigger.
+"Saved Setup" is the first field in the generate form row, so half a 304px
+bubble hung to the LEFT of a trigger sitting just inside the content area — and
+`main` / `.outlet` clip there.
+
+**The viewport was not the binding constraint on desktop.** `.outlet` starts at
+the sidebar edge (x=272 at ≥900px), so the bubble sat at x=254 while still
+being "inside the viewport". Measured clipping before the fix:
+
+| Width | bubble x | clip edge | lost |
+|---|---|---|---|
+| 1440 | 254.0 | 272 | 18px |
+| 1024 | 248.8 | 272 | 23px |
+| 900 | 245.0 | 272 | 27px |
+| 768 | −30.9 | 0 | 31px |
+| 390 | −18.5 | 0 | 18px |
+
+**This was a pre-existing defect, not one the rename introduced.** Measuring
+every tip on Course Settings found `About Auto-pause` — shipped in #67 — clipped
+by the same rule at the same widths (9.6px at 1440, 14.8px at 1024, 22.5px at
+768). That is why the fix changes the shared rule instead of adding a third
+per-page override beside `.settings-column:last-child`.
+
+**Fix:** anchor the bubble to the trigger's left edge (`left: 0; transform:
+none`) rather than centring it. The right-edge opt-out for
+`.settings-column:last-child` stays and is now commented as being about the
+right edge specifically. After the change, zero tips overflow on either the
+generate form or Course Settings at 1440/1024/768, and the Saved Setup bubble
+sits fully inside its container at 390–1680px.
+
+**Verification.** The spec now asserts against the real clipping ancestor, not
+the viewport — a viewport-only assertion passed at 1440px while 18px was
+actually being cut. Mutation-verified: restoring the centred rule fails with
+`bubble clipped by the content edge at 1440px` (expected ≥272, received 254.0);
+restored. `npm run lint`, `npm run typecheck`, `npx jest` (91 suites / 1001
+tests) all green; the generate, bank-scope and instructor-preview specs pass.
+
+The axe suite passes on the instructor surfaces that carry these tips. Two
+student a11y scenarios fail on a missing `.practice-card` fixture — confirmed
+pre-existing by stashing this change and re-running, so not from this work.
