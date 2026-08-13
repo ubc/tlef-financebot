@@ -11,7 +11,7 @@ with **Task 7**, claimed in writing in the shared plan on 2026-08-13, plus the
 | Item | State |
 |---|---|
 | Task 7.1 — LaTeX formula rendering | Planned, not started |
-| Task 7.2 — shuffle answer options | Planned, not started. **Measure the real key distribution first** |
+| Task 7.2 — shuffle answer options | Planned, not started. Distribution measured 2026-08-13: **inconclusive, dev DB is empty** — build anyway |
 | Task 7.3 — Strategy-A same-question retry | Planned, not started. **Blocked on telling Stephen** |
 | Phase-4 Task 3 — Delete for never-used questions | Design settled, nothing built. Deferred here by the Aug 24 freeze |
 
@@ -39,8 +39,16 @@ client; `practice.routes.ts:151` maps stored order straight through. Grading is
 already position-independent (`attempts.service.ts:130` resolves by `key`, then
 `role`), so shuffling is safe to add. What decides position is the generator, and
 its prompt never says to vary the correct key — 36 of 45 `role: 'correct'`
-fixtures sit at `key: 'A'`. **Not yet measured against the real database; do that
-before building.**
+fixtures sit at `key: 'A'`.
+
+**Measured against the real database on 2026-08-13 — inconclusive.** The local
+`financebot` DB holds 1 course, 3 LOs, 2 draft questions (zero approved) and 0
+attempt records. The one MCQ has its correct option at `A`, but n=1 is not
+evidence. A real sample needs the live-LLM content week or staging access;
+neither is worth blocking on, because the fix is cheap and is a no-op if the
+distribution turns out uniform. The stronger argument for building it regardless:
+without a shuffle, "the correct answer is not predictable from position" depends
+on undocumented model behaviour that changes with any model swap.
 
 **3. Strategy A serving a different question on retry is CORRECT per spec.**
 `PRD.md:86` mandates it explicitly and `serving.service.ts:164` implements it

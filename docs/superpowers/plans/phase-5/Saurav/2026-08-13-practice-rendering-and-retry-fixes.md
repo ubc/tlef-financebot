@@ -193,10 +193,39 @@ which key it is. LLMs asked for an MCQ overwhelmingly emit the correct answer
 first. Supporting signal: **36 of 45** `role: 'correct'` fixtures under `tests/`
 sit at `key: 'A'`.
 
-**Not yet measured against the real database.** Do that first — one aggregation
-over approved versions — so the fix is justified by data rather than by a prior
-about LLMs. If the real distribution is already near-uniform, this task shrinks
-to a regression test.
+### The measurement was attempted and could not be made (2026-08-13)
+
+Read-only aggregation over the local dev database, `financebot`:
+
+| | |
+|---|---|
+| courses | 1 |
+| learningObjectives | 3 |
+| questions | 2 — **both `draft`**, zero approved |
+| questionVersions | 2 (1 MCQ, 1 True/False) |
+| attemptRecords | 0 |
+
+The single MCQ has `role: 'correct'` at key `A`, in array position 1. **n=1 is
+not evidence.** The dev database has effectively no content, so the real
+distribution is unmeasured and the fixture ratio (36/45) remains the only signal.
+
+**Build the shuffle anyway, and do not spend effort measuring first.** The
+measurement was worth attempting because a near-uniform result would have shrunk
+this task to a regression test. It cannot be had cheaply: a real sample needs
+either a live-LLM generation batch against ingested material (Phase 4 Task 5's
+instructor content week) or staging access (still an open question in Phase 4
+STATUS). Neither is worth blocking on, because:
+
+- The fix is ~half a day and is a no-op if the distribution is already uniform.
+- More importantly, **an unshuffled bank makes a pedagogical property depend on
+  undocumented model behaviour.** Even if `gpt-5.4-nano` happened to be uniform
+  today, that is an external, unversioned behaviour that changes with any model
+  swap or prompt edit. Shuffling makes "the correct answer is not predictable
+  from position" structural instead of incidental.
+
+Re-run the query once the instructor content week produces a real bank; if the
+correct key is still concentrated at `A` in generated (pre-shuffle) output, that
+is also worth feeding back into `GENERATOR_PROMPT`.
 
 ### Why creation time, not approval time
 
@@ -244,8 +273,8 @@ reviewer sees the same order the student will.
 
 ### Steps
 
-1. Measure the current key distribution over approved versions in the dev DB.
-   Record the number here before changing anything.
+1. ~~Measure the current key distribution over approved versions in the dev DB.~~
+   Done 2026-08-13; inconclusive (dev DB is empty — see above). Proceed.
 2. Add a seeded Fisher-Yates shuffle + key relabel, applied to MCQ options at
    version creation. Comment *why* it is at creation and not at approval — the
    re-approval hazard above is not obvious from the call site.
