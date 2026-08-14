@@ -367,6 +367,41 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     expect(jest.mocked(completeJson).mock.calls[2][1]?.model).toBe('rev-model');
   });
 
+  it('strips control characters the generator emits into displayed text', async () => {
+    // Seen in two consecutive live runs: `\text{DISC<U+0002>PCT}` in a stem,
+    // then a U+001D inside an explanation. The model emits them as \uXXXX
+    // escapes so they survive JSON.parse, they are invisible in logs and in the
+    // DB shell, and they kill the KaTeX span they land in. Prompt guidance did
+    // not stop it recurring, hence a deterministic strip.
+    //
+    // Built with fromCharCode deliberately: a literal control character in this
+    // file would be invisible to the next reader and does not survive editors.
+    const STX = String.fromCharCode(0x02);
+    const GS = String.fromCharCode(0x1d);
+
+    const dirty = generatorOutput();
+    dirty.stem = `What is the ${STX}IRR?`;
+    dirty.options[0] = {
+      ...dirty.options[0],
+      text: `A${GS}B`,
+      // The newline must SURVIVE — explanations legitimately use them.
+      explanation: `line one\nline${STX} two`,
+    };
+
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(dirty)
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    const arg = jest.mocked(createQuestion).mock.calls[0][0];
+    expect(arg.stem).toBe('What is the IRR?');
+    expect(arg.options[0].text).toBe('AB');
+    expect(arg.options[0].explanation).toBe('line one\nline two');
+  });
+
   it('grounds retrieval in the course collection and records sourceRefs + agentDecision', async () => {
     jest
       .mocked(completeJson)

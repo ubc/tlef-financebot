@@ -868,13 +868,52 @@ async function generateValidQuestion(
       GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
       { model, temperature: GENERATOR_TEMPERATURE },
     );
-    if (candidate && optionShapeValid(type, candidate.options)) return candidate;
+    if (candidate && optionShapeValid(type, candidate.options)) return sanitizeGenerated(candidate);
     console.warn(
       `[generation] generator produced structurally-invalid options ` +
         `(attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS})`,
     );
   }
   return null;
+}
+
+/**
+ * Strips C0/C7 control characters from generated display text.
+ *
+ * The generator intermittently emits a stray control character mid-word —
+ * `\text{DISC<U+0002>PCT}` in a stem on 2026-08-13, then a U+001D inside an
+ * explanation on the next run. They survive `JSON.parse` (the model emits them
+ * as `\uXXXX` escapes), are invisible in logs and in the DB shell, and kill the
+ * KaTeX span they land in. Prompt guidance did NOT stop it recurring, so this
+ * is deterministic rather than advisory, and sits at the one place every
+ * generator output passes through.
+ *
+ * Tab and newline are deliberately kept: explanations legitimately use them.
+ */
+function stripControlChars(text: string): string {
+  // A code-point filter rather than a regex: a character class covering C0
+  // would have to contain literal control characters, which are invisible in
+  // the source and do not survive most editors intact.
+  return [...String(text)]
+    .filter((ch) => {
+      const cp = ch.codePointAt(0) ?? 0;
+      const isC0 = cp < 0x20 && cp !== 0x09 && cp !== 0x0a;
+      return !isC0 && cp !== 0x7f;
+    })
+    .join('');
+}
+
+/** Applied only after optionShapeValid, which guarantees the string fields. */
+function sanitizeGenerated(candidate: GeneratorOutput): GeneratorOutput {
+  return {
+    ...candidate,
+    stem: stripControlChars(candidate.stem),
+    options: candidate.options.map((option) => ({
+      ...option,
+      text: stripControlChars(option.text),
+      explanation: stripControlChars(option.explanation),
+    })),
+  };
 }
 
 /** Structural pre-check before spending validator/reviewer calls. createQuestion
@@ -1000,12 +1039,20 @@ export function GENERATOR_PROMPT(params: {
     '    formula is evaluated, so breaking it rejects the question before the',
     '    collision check below is even reached. Three consecutive live',
     '    generations died here.',
-    '    EVERY option text must contain EXACTLY ONE {{NAME}} naming a',
-    '    "derivedValues" entry — the value that option claims is the answer:',
+    '    An option text IS a value. Not a sentence containing a value — the whole',
+    '    option is the quantity, plus at most a currency symbol, unit or percent',
+    '    sign, and it carries EXACTLY ONE {{NAME}} from "derivedValues":',
     '      good:  "${{PV}}"',
+    '      good:  "{{IRR_PCT}}%"',
     '      bad:   "${{PAYMENT}}"                  an INPUT slot is not an answer',
     '      bad:   "-{{CF0}} + {{CF1}}/(1+r)"      the formula, not the answer',
     '      bad:   "Accept the project"            no computed value at all',
+    '      bad:   "Accept the project. {{NPV}}"   a sentence with a value stapled',
+    '             on. This is the worst of the four: it passes the automatic',
+    '             check and reaches a student as a decision followed by an',
+    '             unrelated number. If you find yourself appending a value to a',
+    '             sentence to satisfy this rule, the question is CONCEPTUAL —',
+    '             go and set "numericKind": "conceptual" instead.',
     '    Input-slot placeholders may also appear in an option, but they do not',
     '    count toward this rule and can never stand in for the derived value.',
     '    Two options must never name the same derived value.',
@@ -1019,6 +1066,12 @@ export function GENERATOR_PROMPT(params: {
     'These functions are shorthand, not a limit: any closed-form finance formula can be',
     'written with arithmetic alone (CAPM is RF + BETA*MRP; Gordon growth is D1/(R-G)).',
     'Transcribe the formula the course material itself uses.',
+    '',
+    'That list is the WHOLE grammar. There are no comparisons (> < >= <= == !=),',
+    'no conditionals, no ternary ?:, no booleans, and no if(). A formula like',
+    '"max(1, min(2, (PI_X>0?1:0) + (PI_Y>0?1:0)))" does not parse and the question',
+    'is rejected. If you are reaching for a comparison, you are encoding a DECISION',
+    'as a number — that question is "conceptual", not "numeric".',
     '',
     'Two rules the automatic verifier enforces — a question breaking either is rejected:',
     '  1. Ranges must never let a formula break. A rate a formula divides by must not',
@@ -1042,6 +1095,14 @@ export function GENERATOR_PROMPT(params: {
     '200..5000. Separated ranges are also more realistic than overlapping ones.',
     'If separation is impossible, change the mistake instead: use a wrong rate, a',
     'dropped term, or a wrong operand rather than a formula that can coincide.',
+    '',
+    'Two collision traps seen in real generations, both from distractors that are',
+    'RATIOS or PERCENTAGES rather than amounts — the sizes cancel, so widening the',
+    'ranges does not separate them:',
+    '  - a distractor that differs only by a factor which some draw makes 1;',
+    '  - two "wrong rate" distractors whose rates coincide where their ranges meet.',
+    'For a ratio-valued answer, separate it by the STRUCTURE of the mistake (a',
+    'dropped term, a wrong denominator), not by the input ranges.',
     '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',

@@ -135,7 +135,7 @@ describe('GENERATOR_PROMPT', () => {
 
   it('states the option contract the verifier actually enforces', () => {
     expect(generatorPrompt).toMatch(/THE OPTION CONTRACT/);
-    expect(generatorPrompt).toMatch(/EXACTLY ONE \{\{NAME\}\} naming a/);
+    expect(generatorPrompt).toMatch(/EXACTLY ONE \{\{NAME\}\} from "derivedValues"/);
     expect(generatorPrompt).toMatch(/an INPUT slot is not an answer/);
   });
 
@@ -150,6 +150,31 @@ describe('GENERATOR_PROMPT', () => {
     // question.
     expect(generatorPrompt).toMatch(/ALSO conceptual, even though arithmetic is involved/);
     expect(generatorPrompt).toMatch(/Do not try to have both in one question/);
+  });
+
+  // Added 2026-08-14 after the first post-fix live run. The option contract
+  // landed — questions stopped dying at step 1 — but the model satisfied it by
+  // APPENDING a derived value to a decision sentence ("Coffee shop: PI accepts
+  // …; Apparel store: … rejects. 7.36"). That earned a verification proof,
+  // because the four appended values were pairwise distinct, while being
+  // nonsense to a student. Structure passed; meaning did not.
+  it('requires an option to BE a value, closing the stapled-on loophole', () => {
+    expect(generatorPrompt).toMatch(/An option text IS a value/);
+    expect(generatorPrompt).toMatch(/a sentence with a value stapled/);
+    expect(generatorPrompt).toMatch(/the question is CONCEPTUAL/);
+  });
+
+  it('rules out comparisons and conditionals, which the grammar cannot parse', () => {
+    // A live formula used `(PI_X>0?1:0)`; the evaluator has no comparison or
+    // ternary operators, so it failed at the tokenizer.
+    expect(generatorPrompt).toMatch(/That list is the WHOLE grammar/);
+    expect(generatorPrompt).toMatch(/no ternary/);
+  });
+
+  it('warns about ratio-valued distractors, where wider ranges do not separate', () => {
+    // Collisions became the dominant failure once step 1 was fixed, and all
+    // three were percentage/ratio answers where the input sizes cancel.
+    expect(generatorPrompt).toMatch(/RATIOS or PERCENTAGES rather than amounts/);
   });
 
   it('keeps slot names out of \\text{} so an escaped underscore cannot corrupt a span', () => {
