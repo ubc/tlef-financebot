@@ -171,6 +171,27 @@ describe('GENERATOR_PROMPT', () => {
   // evaluated derivedValues in declaration order so a later formula can name an
   // earlier one — the prompt simply never said so, and the verifier already
   // exempts undisplayed helper values from the option contract.
+  // Added 2026-08-14 after the VanCorp batch — the first 3/3 to earn proofs,
+  // and the first where every failure was a JUDGEMENT problem the verifier
+  // cannot see. Distractors were operator mutations (SALES+MULT, MULT^2), one
+  // question's errorModels just restated the role, and one carried no
+  // common-misconception at all.
+  it('demands distractors be wrong methods rather than mutated operators', () => {
+    expect(generatorPrompt).toMatch(/DISTRACTORS ARE WRONG METHODS, NOT WRONG ARITHMETIC/);
+    expect(generatorPrompt).toMatch(/squaring a multiple is not a mistake anyone makes/);
+    expect(generatorPrompt).toMatch(/If you cannot name the student who would make the mistake/);
+  });
+
+  it('tells the generator an errorModel names the mistake, not the role', () => {
+    expect(generatorPrompt).toMatch(/Name the MISTAKE, never the role/);
+  });
+
+  it('requires an MCQ to carry a common-misconception, and says why', () => {
+    // The reason is load-bearing: decideStrategy gates Strategy A's retry on it.
+    expect(generatorPrompt).toMatch(/AT LEAST ONE option MUST be "common-misconception"/);
+    expect(generatorPrompt).toMatch(/offers its retry only when a student picks one/);
+  });
+
   it('tells the generator it can chain derived values into short named steps', () => {
     expect(generatorPrompt).toMatch(/BUILD THE ANSWER IN STEPS/);
     expect(generatorPrompt).toMatch(/evaluated IN ORDER/);

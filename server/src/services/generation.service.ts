@@ -868,7 +868,13 @@ async function generateValidQuestion(
       GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
       { model, temperature: GENERATOR_TEMPERATURE },
     );
-    if (candidate && optionShapeValid(type, candidate.options)) return sanitizeGenerated(candidate);
+    if (
+      candidate &&
+      optionShapeValid(type, candidate.options) &&
+      errorModelsNameMistakes(candidate)
+    ) {
+      return sanitizeGenerated(candidate);
+    }
     console.warn(
       `[generation] generator produced structurally-invalid options ` +
         `(attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS})`,
@@ -923,6 +929,19 @@ function optionShapeValid(type: QuestionType, options: unknown): boolean {
   if (!Array.isArray(options) || options.length !== expected) return false;
   const correct = options.filter((o) => o && (o as QuestionOption).role === 'correct');
   if (correct.length !== 1) return false;
+  // An MCQ must carry at least one common-misconception. This is not a style
+  // rule: decideStrategy (attempts.service.ts) applies Strategy A ONLY when the
+  // student picks a common-misconception, so an MCQ without one silently opts
+  // out of the retry gate and is Strategy B in every case. A real generation on
+  // 2026-08-14 produced correct/clearly-wrong/clearly-wrong/partially-correct
+  // and nothing noticed. True/False needs no check — assertOptionInvariants
+  // coerces its single wrong option to common-misconception by design.
+  if (type === 'mcq') {
+    const misconceptions = options.filter(
+      (o) => o && (o as QuestionOption).role === 'common-misconception',
+    );
+    if (misconceptions.length === 0) return false;
+  }
   return options.every((o) => {
     const opt = o as QuestionOption;
     return (
@@ -932,6 +951,27 @@ function optionShapeValid(type: QuestionType, options: unknown): boolean {
       typeof opt.explanation === 'string' &&
       OPTION_ROLES.has(opt.role)
     );
+  });
+}
+
+/**
+ * An `errorModel` must name the MISTAKE, not restate the option's role. A real
+ * generation returned `errorModel: "common-misconception"` on every distractor,
+ * which is the field's whole value thrown away — the reviewer and the
+ * instructor both read it to judge whether a distractor is honest.
+ *
+ * Deliberately narrow: only an errorModel that is NOTHING BUT a role name is
+ * rejected. `"common-misconception: inverting the multiple"` is noisy but does
+ * name the mistake, so it passes. Checked here rather than in
+ * verifyGeneratedNumerics because a failure there denies the proof and the
+ * question can never serve — disproportionate for a metadata wording problem.
+ * A retry is the proportionate response.
+ */
+function errorModelsNameMistakes(candidate: GeneratorOutput): boolean {
+  return (candidate.derivedValues ?? []).every((derived) => {
+    const model = String(derived.errorModel ?? '').trim().toLowerCase();
+    if (model === '') return true; // absent is the CORRECT value's contract
+    return !OPTION_ROLES.has(model as QuestionOption['role']);
   });
 }
 
@@ -982,6 +1022,23 @@ export function GENERATOR_PROMPT(params: {
     '  - "common-misconception": a plausible error a student commonly makes',
     '  - "partially-correct": right idea, incomplete or misapplied',
     '  - "clearly-wrong": obviously incorrect to a prepared student',
+    params.type === 'mcq'
+      ? 'AT LEAST ONE option MUST be "common-misconception". The practice loop offers '
+        + 'its retry only when a student picks one, so a question without it silently '
+        + 'loses that behaviour. A question is rejected and regenerated without one.'
+      : '',
+    '',
+    'DISTRACTORS ARE WRONG METHODS, NOT WRONG ARITHMETIC. A distractor must be the',
+    'number a student actually reaches by reasoning incorrectly — discounting the',
+    'wrong number of periods, compounding forward instead of back, dropping a term,',
+    'using the wrong rate. Do NOT take the correct formula and mutate an operator:',
+    '  good:  PAYMENT*(1+r)^n        compounded forward instead of discounting',
+    '  good:  PAYMENT/(1+r)^1        discounted one period regardless of the term',
+    '  bad:   SALES*(MULTIPLE^2)     squaring a multiple is not a mistake anyone makes',
+    '  bad:   SALES+MULTIPLE         swapping x for + is arithmetic noise',
+    '  bad:   (MULTIPLE+1)*SALES     an arbitrary tweak, not a misconception',
+    'If you cannot name the student who would make the mistake, it is not a',
+    'distractor — find a real one from the course material.',
     '',
     'FORMATTING. The stem, every option, and every explanation are rendered as',
     'markdown with KaTeX math. Write formulas as LaTeX, not as flat ASCII:',
@@ -1054,6 +1111,10 @@ export function GENERATOR_PROMPT(params: {
     '    divided the answer by zero on every draw.',
     '    Every distractor MUST carry an "errorModel" naming the specific mistake it',
     '    represents, and its formula must genuinely implement that mistake.',
+    '    Name the MISTAKE, never the role. "common-misconception" is a role, not an',
+    '    errorModel — a real generation returned exactly that on every distractor',
+    '    and the question was regenerated. Write "compounded forward instead of',
+    '    discounting back" or "used the coupon rate in place of the yield".',
     '    The CORRECT value MUST NOT carry an "errorModel" — it represents no mistake.',
     '    Omit the field entirely rather than describing the right answer in it.',
     '  - THE OPTION CONTRACT — read this twice. It is checked FIRST, before any',
