@@ -868,13 +868,58 @@ async function generateValidQuestion(
       GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
       { model, temperature: GENERATOR_TEMPERATURE },
     );
-    if (candidate && optionShapeValid(type, candidate.options)) return candidate;
+    if (
+      candidate &&
+      optionShapeValid(type, candidate.options) &&
+      errorModelsNameMistakes(candidate)
+    ) {
+      return sanitizeGenerated(candidate);
+    }
     console.warn(
       `[generation] generator produced structurally-invalid options ` +
         `(attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS})`,
     );
   }
   return null;
+}
+
+/**
+ * Strips C0/C7 control characters from generated display text.
+ *
+ * The generator intermittently emits a stray control character mid-word —
+ * `\text{DISC<U+0002>PCT}` in a stem on 2026-08-13, then a U+001D inside an
+ * explanation on the next run. They survive `JSON.parse` (the model emits them
+ * as `\uXXXX` escapes), are invisible in logs and in the DB shell, and kill the
+ * KaTeX span they land in. Prompt guidance did NOT stop it recurring, so this
+ * is deterministic rather than advisory, and sits at the one place every
+ * generator output passes through.
+ *
+ * Tab and newline are deliberately kept: explanations legitimately use them.
+ */
+function stripControlChars(text: string): string {
+  // A code-point filter rather than a regex: a character class covering C0
+  // would have to contain literal control characters, which are invisible in
+  // the source and do not survive most editors intact.
+  return [...String(text)]
+    .filter((ch) => {
+      const cp = ch.codePointAt(0) ?? 0;
+      const isC0 = cp < 0x20 && cp !== 0x09 && cp !== 0x0a;
+      return !isC0 && cp !== 0x7f;
+    })
+    .join('');
+}
+
+/** Applied only after optionShapeValid, which guarantees the string fields. */
+function sanitizeGenerated(candidate: GeneratorOutput): GeneratorOutput {
+  return {
+    ...candidate,
+    stem: stripControlChars(candidate.stem),
+    options: candidate.options.map((option) => ({
+      ...option,
+      text: stripControlChars(option.text),
+      explanation: stripControlChars(option.explanation),
+    })),
+  };
 }
 
 /** Structural pre-check before spending validator/reviewer calls. createQuestion
@@ -884,6 +929,19 @@ function optionShapeValid(type: QuestionType, options: unknown): boolean {
   if (!Array.isArray(options) || options.length !== expected) return false;
   const correct = options.filter((o) => o && (o as QuestionOption).role === 'correct');
   if (correct.length !== 1) return false;
+  // An MCQ must carry at least one common-misconception. This is not a style
+  // rule: decideStrategy (attempts.service.ts) applies Strategy A ONLY when the
+  // student picks a common-misconception, so an MCQ without one silently opts
+  // out of the retry gate and is Strategy B in every case. A real generation on
+  // 2026-08-14 produced correct/clearly-wrong/clearly-wrong/partially-correct
+  // and nothing noticed. True/False needs no check — assertOptionInvariants
+  // coerces its single wrong option to common-misconception by design.
+  if (type === 'mcq') {
+    const misconceptions = options.filter(
+      (o) => o && (o as QuestionOption).role === 'common-misconception',
+    );
+    if (misconceptions.length === 0) return false;
+  }
   return options.every((o) => {
     const opt = o as QuestionOption;
     return (
@@ -893,6 +951,27 @@ function optionShapeValid(type: QuestionType, options: unknown): boolean {
       typeof opt.explanation === 'string' &&
       OPTION_ROLES.has(opt.role)
     );
+  });
+}
+
+/**
+ * An `errorModel` must name the MISTAKE, not restate the option's role. A real
+ * generation returned `errorModel: "common-misconception"` on every distractor,
+ * which is the field's whole value thrown away — the reviewer and the
+ * instructor both read it to judge whether a distractor is honest.
+ *
+ * Deliberately narrow: only an errorModel that is NOTHING BUT a role name is
+ * rejected. `"common-misconception: inverting the multiple"` is noisy but does
+ * name the mistake, so it passes. Checked here rather than in
+ * verifyGeneratedNumerics because a failure there denies the proof and the
+ * question can never serve — disproportionate for a metadata wording problem.
+ * A retry is the proportionate response.
+ */
+function errorModelsNameMistakes(candidate: GeneratorOutput): boolean {
+  return (candidate.derivedValues ?? []).every((derived) => {
+    const model = String(derived.errorModel ?? '').trim().toLowerCase();
+    if (model === '') return true; // absent is the CORRECT value's contract
+    return !OPTION_ROLES.has(model as QuestionOption['role']);
   });
 }
 
@@ -943,7 +1022,54 @@ export function GENERATOR_PROMPT(params: {
     '  - "common-misconception": a plausible error a student commonly makes',
     '  - "partially-correct": right idea, incomplete or misapplied',
     '  - "clearly-wrong": obviously incorrect to a prepared student',
+    params.type === 'mcq'
+      ? 'AT LEAST ONE option MUST be "common-misconception". The practice loop offers '
+        + 'its retry only when a student picks one, so a question without it silently '
+        + 'loses that behaviour. A question is rejected and regenerated without one.'
+      : '',
     '',
+    'DISTRACTORS ARE WRONG METHODS, NOT WRONG ARITHMETIC. A distractor must be the',
+    'number a student actually reaches by reasoning incorrectly — discounting the',
+    'wrong number of periods, compounding forward instead of back, dropping a term,',
+    'using the wrong rate. Do NOT take the correct formula and mutate an operator:',
+    '  good:  PAYMENT*(1+r)^n        compounded forward instead of discounting',
+    '  good:  PAYMENT/(1+r)^1        discounted one period regardless of the term',
+    '  bad:   SALES*(MULTIPLE^2)     squaring a multiple is not a mistake anyone makes',
+    '  bad:   SALES+MULTIPLE         swapping x for + is arithmetic noise',
+    '  bad:   (MULTIPLE+1)*SALES     an arbitrary tweak, not a misconception',
+    'If you cannot name the student who would make the mistake, it is not a',
+    'distractor — find a real one from the course material.',
+    '',
+    'FORMATTING. The stem, every option, and every explanation are rendered as',
+    'markdown with KaTeX math. Write formulas as LaTeX, not as flat ASCII:',
+    '  - inline math between single dollars: $PV = \\frac{C}{(1+r)^n}$',
+    '  - display math between double dollars for a full worked line:',
+    '      $$PV = \\sum_{t=1}^{n} \\frac{C_t}{(1+r)^t}$$',
+    'Two rules the renderer imposes, and both fail SILENTLY when broken — the',
+    'math renders as literal source text rather than erroring:',
+    '  1. Never use \\( \\) or \\[ \\]. The markdown pass runs first and strips',
+    '     their backslashes, so KaTeX never sees a delimiter.',
+    '  2. A math span must never contain a dollar followed by digits and then a',
+    '     space: that reads as a currency amount, not as math. In practice, start',
+    '     math with a symbol or a command — never a digit — and keep currency',
+    '     symbols OUTSIDE the math:',
+    '       good:  A payment of $500 grows to $P \\times 1.05$.',
+    '       good:  $\\text{FV} = 500 \\times 1.05$',
+    '       bad:   $500 \\times 1.05$      (opens with a digit)',
+    '       bad:   $\\$500 \\times 1.05$   (escaped amount, then a space)',
+    '     The same applies right after $$: write $$\\text{PV} = \\sum ...$$, never',
+    '     $$500 \\times ...$$',
+    '  3. Never write a slot or derived-value NAME inside \\text{}. Those names',
+    '     contain underscores, and escaping an underscore inside math is where',
+    '     stray characters creep in and break the whole span. Use a short symbol',
+    '     and let the placeholder carry the number:',
+    '       good:  $r = \\frac{R}{100}$ where the rate is {{RATE_PCT}}%',
+    '       bad:   $r = \\frac{\\text{RATE_PCT}}{100}$',
+    'Prose stays prose; only the formulas are LaTeX.',
+    'Show the working in the EXPLANATION — that is what that field is for, so a',
+    'display line there beats describing the arithmetic in words. Do NOT put the',
+    'working in an option: an option states an ANSWER, never the formula that',
+    'produces it. See THE OPTION CONTRACT below.',
     '',
     'NUMERICAL QUESTIONS — MANDATORY.',
     'If answering requires ANY computation, set "numericKind": "numeric".',
@@ -958,13 +1084,61 @@ export function GENERATOR_PROMPT(params: {
     '      [ { "name": "PV", "formula": "PAYMENT/(1+RATE_PCT/100)^2" },',
     '        { "name": "PV_COMPOUNDED", "formula": "PAYMENT*(1+RATE_PCT/100)^2",',
     '          "errorModel": "compounded forward instead of discounting back" } ]',
+    '    These formulas are EVALUATOR syntax and are NEVER LaTeX: they are parsed',
+    '    and computed, not displayed. Keep writing PAYMENT/(1+RATE_PCT/100)^2 —',
+    '    a \\frac{}{} here fails to parse and the question is rejected. LaTeX',
+    '    belongs only in the stem, option and explanation TEXT.',
+    '  - BUILD THE ANSWER IN STEPS. "derivedValues" are evaluated IN ORDER, and a',
+    '    later formula may use any earlier one BY NAME. Prefer several short named',
+    '    steps to one long expression:',
+    '      good:',
+    '        DEBT_VALUE   = PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)',
+    '        EQUITY_VALUE = SHARES*PRICE',
+    '        V            = DEBT_VALUE + EQUITY_VALUE',
+    '        COST_EQUITY  = RF_PCT/100 + BETA*MRP_PCT/100',
+    '        WACC         = (EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)',
+    '      bad:  all of that inlined as one 400-character expression with the two',
+    '            PV(...) calls repeated six times.',
+    '    A step that no option displays is perfectly allowed and is exempt from',
+    '    the option contract below — name it and reuse it.',
+    '    This is not a style preference. Long nested expressions are exactly where',
+    '    real generations drop a parenthesis; the parser then reports "trailing',
+    '    input after formula" and the question is rejected outright. If a formula',
+    '    runs past roughly 100 characters, or nests more than three deep, SPLIT IT.',
+    '    If you cannot express a quantity inline, give it its OWN step. Never fill',
+    '    the gap with a stand-in: (PV(1,1,1) - PV(1,1,1)) and a hardcoded 2.2e6',
+    '    were both produced in real runs — the first is identically zero, so it',
+    '    divided the answer by zero on every draw.',
     '    Every distractor MUST carry an "errorModel" naming the specific mistake it',
     '    represents, and its formula must genuinely implement that mistake.',
+    '    Name the MISTAKE, never the role. "common-misconception" is a role, not an',
+    '    errorModel — a real generation returned exactly that on every distractor',
+    '    and the question was regenerated. Write "compounded forward instead of',
+    '    discounting back" or "used the coupon rate in place of the yield".',
     '    The CORRECT value MUST NOT carry an "errorModel" — it represents no mistake.',
     '    Omit the field entirely rather than describing the right answer in it.',
-    '  - Option and stem text reference values as {{NAME}} placeholders, e.g. a dollar sign',
-    '    followed by {{PV}}. An option may carry several placeholders if the question asks',
-    '    for more than one value.',
+    '  - THE OPTION CONTRACT — read this twice. It is checked FIRST, before any',
+    '    formula is evaluated, so breaking it rejects the question before the',
+    '    collision check below is even reached. Three consecutive live',
+    '    generations died here.',
+    '    An option text IS a value. Not a sentence containing a value — the whole',
+    '    option is the quantity, plus at most a currency symbol, unit or percent',
+    '    sign, and it carries EXACTLY ONE {{NAME}} from "derivedValues":',
+    '      good:  "${{PV}}"',
+    '      good:  "{{IRR_PCT}}%"',
+    '      bad:   "${{PAYMENT}}"                  an INPUT slot is not an answer',
+    '      bad:   "-{{CF0}} + {{CF1}}/(1+r)"      the formula, not the answer',
+    '      bad:   "Accept the project"            no computed value at all',
+    '      bad:   "Accept the project. {{NPV}}"   a sentence with a value stapled',
+    '             on. This is the worst of the four: it passes the automatic',
+    '             check and reaches a student as a decision followed by an',
+    '             unrelated number. If you find yourself appending a value to a',
+    '             sentence to satisfy this rule, the question is CONCEPTUAL —',
+    '             go and set "numericKind": "conceptual" instead.',
+    '    Input-slot placeholders may also appear in an option, but they do not',
+    '    count toward this rule and can never stand in for the derived value.',
+    '    Two options must never name the same derived value.',
+    '    The STEM may use slot placeholders freely — this rule is about options.',
     '',
     'Formula syntax: + - * / ^ ( ), variable names, and these functions only:',
     '  PV(rate, periods, amount), FV(rate, periods, amount), PMT(rate, periods, principal),',
@@ -974,6 +1148,12 @@ export function GENERATOR_PROMPT(params: {
     'These functions are shorthand, not a limit: any closed-form finance formula can be',
     'written with arithmetic alone (CAPM is RF + BETA*MRP; Gordon growth is D1/(R-G)).',
     'Transcribe the formula the course material itself uses.',
+    '',
+    'That list is the WHOLE grammar. There are no comparisons (> < >= <= == !=),',
+    'no conditionals, no ternary ?:, no booleans, and no if(). A formula like',
+    '"max(1, min(2, (PI_X>0?1:0) + (PI_Y>0?1:0)))" does not parse and the question',
+    'is rejected. If you are reaching for a comparison, you are encoding a DECISION',
+    'as a number — that question is "conceptual", not "numeric".',
     '',
     'Two rules the automatic verifier enforces — a question breaking either is rejected:',
     '  1. Ranges must never let a formula break. A rate a formula divides by must not',
@@ -998,8 +1178,25 @@ export function GENERATOR_PROMPT(params: {
     'If separation is impossible, change the mistake instead: use a wrong rate, a',
     'dropped term, or a wrong operand rather than a formula that can coincide.',
     '',
+    'Two collision traps seen in real generations, both from distractors that are',
+    'RATIOS or PERCENTAGES rather than amounts — the sizes cancel, so widening the',
+    'ranges does not separate them:',
+    '  - a distractor that differs only by a factor which some draw makes 1;',
+    '  - two "wrong rate" distractors whose rates coincide where their ranges meet.',
+    'For a ratio-valued answer, separate it by the STRUCTURE of the mistake (a',
+    'dropped term, a wrong denominator), not by the input ranges.',
+    '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',
+    '',
+    'ALSO conceptual, even though arithmetic is involved: a question whose OPTIONS',
+    'are decisions or statements rather than values — "Accept the project" /',
+    '"Reject the project", "The NPV rule and the IRR rule agree", and so on. Those',
+    'options cannot satisfy the option contract, because there is no single',
+    'computed value for them to display. Pick one shape and commit to it:',
+    '  - want the decision tested? -> "conceptual", no slots, no derivedValues;',
+    '  - want the arithmetic tested? -> "numeric", and every option is a VALUE.',
+    'Do not try to have both in one question.',
     '',
     'Respond with ONLY this JSON shape:',
     '{ "stem": string, "difficulty": "easy"|"medium"|"hard",',

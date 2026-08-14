@@ -175,6 +175,17 @@ test.describe('practice loop (student)', () => {
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.getByText(/not quite/i)).toBeVisible();
 
+    // The revealed explanation is rich text, not a plain string: the
+    // clearly-wrong option's explanation carries inline math, so a rendered
+    // `.katex` node proves renderRichText ran on this field. Practice used to
+    // dump it as textContent while exam review already rendered it.
+    const explanation = page.locator('.practice-card__explanation').filter({ hasText: /time value of money/ });
+    await expect(explanation.locator('.katex').first()).toBeVisible();
+    // ...and the TeX source is not on screen. This must read innerText: KaTeX
+    // keeps the original source in a visually-hidden MathML annotation, so a
+    // textContent check matches `\frac` even on a correct render.
+    await expect(explanation).not.toContainText('\\frac', { useInnerText: true });
+
     await page.goto(`/#/course/${courseId}/review-book`);
     // Topic groups (Task 4's rebuild) are no longer collapsible themselves —
     // the theme name is always visible; the collapse now lives one level

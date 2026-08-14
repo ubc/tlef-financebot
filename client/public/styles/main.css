@@ -1753,9 +1753,30 @@ button.class-row--link:focus-visible .class-row__title {
 }
 
 .practice-card__explanation {
+  display: flex;
+  gap: 0.35rem;
   margin: 0;
   font-size: 0.88rem;
   color: var(--muted);
+}
+
+.practice-card__explanation-key {
+  flex: none;
+}
+
+/* The body is rendered markdown, so it arrives wrapped in block elements.
+   Collapse the outer margins so a one-paragraph explanation still sits on the
+   same line as its key, the way the plain-text version did. */
+.practice-card__explanation-body {
+  min-width: 0;
+}
+
+.practice-card__explanation-body > :first-child {
+  margin-top: 0;
+}
+
+.practice-card__explanation-body > :last-child {
+  margin-bottom: 0;
 }
 
 .practice-card__retry {
@@ -6497,6 +6518,23 @@ button.class-row--link:focus-visible .class-row__title {
 .question-sample__stem {
   margin: 0.5rem 0 0.75rem;
   line-height: 1.55;
+}
+
+/* Stem and option text are rendered markdown, so they arrive wrapped in block
+   elements. Collapse the outer margins so the panel keeps the tight spacing it
+   had when these were plain strings. */
+.question-sample__stem > :first-child,
+.question-sample__text > :first-child {
+  margin-top: 0;
+}
+
+.question-sample__stem > :last-child,
+.question-sample__text > :last-child {
+  margin-bottom: 0;
+}
+
+.question-sample__text {
+  min-width: 0;
 }
 
 .question-sample__options {

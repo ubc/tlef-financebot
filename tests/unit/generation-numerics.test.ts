@@ -125,6 +125,105 @@ describe('GENERATOR_PROMPT', () => {
   it('still describes conceptual questions as a first-class option', () => {
     expect(generatorPrompt).toMatch(/conceptual/);
   });
+
+  // The rules below were added on 2026-08-13, after a live run produced THREE
+  // questions in a row that all failed verification at the same first check —
+  // no option displayed a computed value. The cause was this prompt: it never
+  // stated the rule optionValueNamesForVerification enforces, and the same
+  // day's FORMATTING block told the model to "show its working" in every
+  // option, which turns each one into a formula carrying input slots.
+
+  it('states the option contract the verifier actually enforces', () => {
+    expect(generatorPrompt).toMatch(/THE OPTION CONTRACT/);
+    expect(generatorPrompt).toMatch(/EXACTLY ONE \{\{NAME\}\} from "derivedValues"/);
+    expect(generatorPrompt).toMatch(/an INPUT slot is not an answer/);
+  });
+
+  it('keeps the worked solution in the explanation, never in an option', () => {
+    expect(generatorPrompt).toMatch(/Show the working in the EXPLANATION/);
+    expect(generatorPrompt).toMatch(/an option states an ANSWER, never the formula/);
+  });
+
+  it('sends decision-shaped questions down the conceptual path', () => {
+    // "Accept the project" / "Reject the project" options can never satisfy the
+    // option contract, so declaring them numeric guarantees an unservable
+    // question.
+    expect(generatorPrompt).toMatch(/ALSO conceptual, even though arithmetic is involved/);
+    expect(generatorPrompt).toMatch(/Do not try to have both in one question/);
+  });
+
+  // Added 2026-08-14 after the first post-fix live run. The option contract
+  // landed — questions stopped dying at step 1 — but the model satisfied it by
+  // APPENDING a derived value to a decision sentence ("Coffee shop: PI accepts
+  // …; Apparel store: … rejects. 7.36"). That earned a verification proof,
+  // because the four appended values were pairwise distinct, while being
+  // nonsense to a student. Structure passed; meaning did not.
+  it('requires an option to BE a value, closing the stapled-on loophole', () => {
+    expect(generatorPrompt).toMatch(/An option text IS a value/);
+    expect(generatorPrompt).toMatch(/a sentence with a value stapled/);
+    expect(generatorPrompt).toMatch(/the question is CONCEPTUAL/);
+  });
+
+  // Added 2026-08-14 after the Aerotech batch. All 12 options came back as bare
+  // values (the option contract held), but two of three questions failed to
+  // PARSE: ~400-character WACC formulas, six levels deep, with PV(...) repeated
+  // six times and a dropped parenthesis. resolveSlotsAndDerived has always
+  // evaluated derivedValues in declaration order so a later formula can name an
+  // earlier one — the prompt simply never said so, and the verifier already
+  // exempts undisplayed helper values from the option contract.
+  // Added 2026-08-14 after the VanCorp batch — the first 3/3 to earn proofs,
+  // and the first where every failure was a JUDGEMENT problem the verifier
+  // cannot see. Distractors were operator mutations (SALES+MULT, MULT^2), one
+  // question's errorModels just restated the role, and one carried no
+  // common-misconception at all.
+  it('demands distractors be wrong methods rather than mutated operators', () => {
+    expect(generatorPrompt).toMatch(/DISTRACTORS ARE WRONG METHODS, NOT WRONG ARITHMETIC/);
+    expect(generatorPrompt).toMatch(/squaring a multiple is not a mistake anyone makes/);
+    expect(generatorPrompt).toMatch(/If you cannot name the student who would make the mistake/);
+  });
+
+  it('tells the generator an errorModel names the mistake, not the role', () => {
+    expect(generatorPrompt).toMatch(/Name the MISTAKE, never the role/);
+  });
+
+  it('requires an MCQ to carry a common-misconception, and says why', () => {
+    // The reason is load-bearing: decideStrategy gates Strategy A's retry on it.
+    expect(generatorPrompt).toMatch(/AT LEAST ONE option MUST be "common-misconception"/);
+    expect(generatorPrompt).toMatch(/offers its retry only when a student picks one/);
+  });
+
+  it('tells the generator it can chain derived values into short named steps', () => {
+    expect(generatorPrompt).toMatch(/BUILD THE ANSWER IN STEPS/);
+    expect(generatorPrompt).toMatch(/evaluated IN ORDER/);
+    expect(generatorPrompt).toMatch(/may use any earlier one BY NAME/);
+    expect(generatorPrompt).toMatch(/SPLIT IT/);
+  });
+
+  it('forbids stand-in sub-expressions when a quantity is hard to express', () => {
+    // `(PV(1,1,1) - PV(1,1,1))` is identically zero and divided a real
+    // question's answer by zero on every draw.
+    expect(generatorPrompt).toMatch(/Never fill/);
+    expect(generatorPrompt).toMatch(/PV\(1,1,1\) - PV\(1,1,1\)/);
+  });
+
+  it('rules out comparisons and conditionals, which the grammar cannot parse', () => {
+    // A live formula used `(PI_X>0?1:0)`; the evaluator has no comparison or
+    // ternary operators, so it failed at the tokenizer.
+    expect(generatorPrompt).toMatch(/That list is the WHOLE grammar/);
+    expect(generatorPrompt).toMatch(/no ternary/);
+  });
+
+  it('warns about ratio-valued distractors, where wider ranges do not separate', () => {
+    // Collisions became the dominant failure once step 1 was fixed, and all
+    // three were percentage/ratio answers where the input sizes cancel.
+    expect(generatorPrompt).toMatch(/RATIOS or PERCENTAGES rather than amounts/);
+  });
+
+  it('keeps slot names out of \\text{} so an escaped underscore cannot corrupt a span', () => {
+    // A live generation stored `\text{DISC<U+0002>PCT}` — the model fumbled the
+    // escaped underscore and emitted a control character, killing the span.
+    expect(generatorPrompt).toMatch(/Never write a slot or derived-value NAME inside/);
+  });
 });
 
 describe('generated numerics are verified before persisting', () => {

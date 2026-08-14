@@ -17,14 +17,22 @@ declare function renderMathInElement(
 /** Finance prose commonly contains `$10,000 ... $10,000`. KaTeX's permissive
  * `$...$` delimiter otherwise treats the entire sentence between those two
  * currency symbols as math. A dollar is considered currency when it starts a
- * plain numeric amount that is not immediately closed by another `$`. */
+ * plain numeric amount that is not immediately closed by another `$`.
+ *
+ * `%` is in the terminator set because a rate written `$16%` is currency-shaped
+ * prose, not math: leaving it unprotected made it an OPENING delimiter, and
+ * since a neighbouring `$12000 ` in the same sentence IS protected, the live
+ * `$` count went odd and KaTeX swallowed the prose between it and the next
+ * delimiter. Observed in real generated content, 2026-08-13. Note `$50\%$` is
+ * unaffected — a LaTeX percent is escaped, so the character after the digits is
+ * a backslash. */
 export function currencyDollarIndices(text: string): number[] {
   const indices: number[] = [];
   for (let index = text.indexOf('$'); index >= 0; index = text.indexOf('$', index + 1)) {
     const amount = text.slice(index + 1).match(/^\d[\d,]*(?:\.\d{1,2})?/);
     if (!amount) continue;
     const next = text[index + 1 + amount[0].length];
-    if (next === undefined || /[\s.,;:!?)/]/.test(next)) {
+    if (next === undefined || /[\s.,;:!?)/%]/.test(next)) {
       indices.push(index);
     }
   }

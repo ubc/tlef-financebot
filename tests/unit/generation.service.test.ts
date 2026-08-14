@@ -367,6 +367,117 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     expect(jest.mocked(completeJson).mock.calls[2][1]?.model).toBe('rev-model');
   });
 
+  it('retries when an MCQ carries no common-misconception option', async () => {
+    // decideStrategy applies Strategy A ONLY on a common-misconception pick, so
+    // an MCQ without one silently opts out of the retry gate. A real generation
+    // on 2026-08-14 returned correct/clearly-wrong/clearly-wrong/
+    // partially-correct and nothing noticed.
+    const noMisconception: QuestionOption[] = [
+      { key: 'A', text: '10%', role: 'correct', explanation: 'right' },
+      { key: 'B', text: '5%', role: 'clearly-wrong', explanation: 'no' },
+      { key: 'C', text: '8%', role: 'clearly-wrong', explanation: 'no' },
+      { key: 'D', text: '99%', role: 'partially-correct', explanation: 'close' },
+    ];
+
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput(noMisconception))
+      .mockResolvedValueOnce(generatorOutput()) // retry returns a sound one
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    const arg = jest.mocked(createQuestion).mock.calls[0][0];
+    expect(arg.options.some((o) => o.role === 'common-misconception')).toBe(true);
+  });
+
+  it('retries when an errorModel merely restates the option role', async () => {
+    // A real generation returned errorModel: "common-misconception" on every
+    // distractor — the field's whole purpose discarded.
+    const roleAsErrorModel = {
+      ...generatorOutput(),
+      numericKind: 'numeric' as const,
+      paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
+      derivedValues: [
+        { name: 'PV', formula: 'CF' },
+        { name: 'PV_BAD', formula: 'CF*2', errorModel: 'common-misconception' },
+      ],
+    };
+
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(roleAsErrorModel)
+      .mockResolvedValueOnce(generatorOutput()) // retry returns a sound one
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    // The retried (sound) candidate is what was persisted, not the first.
+    const arg = jest.mocked(createQuestion).mock.calls[0][0];
+    expect(arg.derivedValues).toBeUndefined();
+  });
+
+  it('accepts an errorModel that names the mistake after a role prefix', async () => {
+    // Deliberately narrow: only an errorModel that is NOTHING BUT a role name
+    // is rejected. This one is noisy but does name the mistake.
+    const prefixed = {
+      ...generatorOutput(),
+      numericKind: 'numeric' as const,
+      paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
+      derivedValues: [
+        { name: 'PV', formula: 'CF' },
+        { name: 'PV_BAD', formula: 'CF*2', errorModel: 'common-misconception: doubled instead of halving' },
+      ],
+    };
+
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(prefixed)
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    expect(jest.mocked(createQuestion).mock.calls[0][0].derivedValues).toHaveLength(2);
+  });
+
+  it('strips control characters the generator emits into displayed text', async () => {
+    // Seen in two consecutive live runs: `\text{DISC<U+0002>PCT}` in a stem,
+    // then a U+001D inside an explanation. The model emits them as \uXXXX
+    // escapes so they survive JSON.parse, they are invisible in logs and in the
+    // DB shell, and they kill the KaTeX span they land in. Prompt guidance did
+    // not stop it recurring, hence a deterministic strip.
+    //
+    // Built with fromCharCode deliberately: a literal control character in this
+    // file would be invisible to the next reader and does not survive editors.
+    const STX = String.fromCharCode(0x02);
+    const GS = String.fromCharCode(0x1d);
+
+    const dirty = generatorOutput();
+    dirty.stem = `What is the ${STX}IRR?`;
+    dirty.options[0] = {
+      ...dirty.options[0],
+      text: `A${GS}B`,
+      // The newline must SURVIVE — explanations legitimately use them.
+      explanation: `line one\nline${STX} two`,
+    };
+
+    jest
+      .mocked(completeJson)
+      .mockResolvedValueOnce(dirty)
+      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+    const arg = jest.mocked(createQuestion).mock.calls[0][0];
+    expect(arg.stem).toBe('What is the IRR?');
+    expect(arg.options[0].text).toBe('AB');
+    expect(arg.options[0].explanation).toBe('line one\nline two');
+  });
+
   it('grounds retrieval in the course collection and records sourceRefs + agentDecision', async () => {
     jest
       .mocked(completeJson)
