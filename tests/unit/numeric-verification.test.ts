@@ -74,6 +74,39 @@ describe('resolveDerivedValues', () => {
     if (!result.ok) return;
     expect(result.values.DOUBLED).toBe(20);
   });
+
+  it('resolves a multi-step chain whose later steps reference several earlier ones', () => {
+    // GENERATOR_PROMPT's "BUILD THE ANSWER IN STEPS" block tells the model to
+    // decompose a WACC exactly like this, because the single-expression version
+    // is where real generations dropped a parenthesis and failed to parse. That
+    // guidance is only sound if a chain of this shape actually resolves, so pin
+    // the shape rather than extrapolating from the single hop above. Every slot
+    // is pinned to one value, making the arithmetic hand-checkable:
+    // E = 5000, D = 5000, V = 10000, Re = 0.14, WACC = 0.5*0.14 + 0.5*0.06.
+    const slots = [
+      { name: 'SHARES', min: 100, max: 100 },
+      { name: 'PRICE', min: 50, max: 50 },
+      { name: 'FACE_DEBT', min: 5000, max: 5000 },
+      { name: 'RF_PCT', min: 4, max: 4 },
+      { name: 'BETA', min: 2, max: 2 },
+      { name: 'MRP_PCT', min: 5, max: 5 },
+      { name: 'YTM_PCT', min: 6, max: 6 },
+    ];
+    const chain: DerivedValue[] = [
+      { name: 'EQUITY_VALUE', formula: 'SHARES*PRICE' },
+      { name: 'DEBT_VALUE', formula: 'FACE_DEBT' },
+      { name: 'V', formula: 'DEBT_VALUE + EQUITY_VALUE' },
+      { name: 'COST_EQUITY', formula: 'RF_PCT/100 + BETA*MRP_PCT/100' },
+      { name: 'WACC', formula: '(EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)' },
+    ];
+
+    const result = resolveDerivedValues(slots, chain, 7);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.values.V).toBe(10000);
+    expect(result.values.COST_EQUITY).toBeCloseTo(0.14, 10);
+    expect(result.values.WACC).toBeCloseTo(0.1, 10);
+  });
 });
 
 describe('verifyQuestionNumerics', () => {

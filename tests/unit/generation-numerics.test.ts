@@ -164,6 +164,27 @@ describe('GENERATOR_PROMPT', () => {
     expect(generatorPrompt).toMatch(/the question is CONCEPTUAL/);
   });
 
+  // Added 2026-08-14 after the Aerotech batch. All 12 options came back as bare
+  // values (the option contract held), but two of three questions failed to
+  // PARSE: ~400-character WACC formulas, six levels deep, with PV(...) repeated
+  // six times and a dropped parenthesis. resolveSlotsAndDerived has always
+  // evaluated derivedValues in declaration order so a later formula can name an
+  // earlier one — the prompt simply never said so, and the verifier already
+  // exempts undisplayed helper values from the option contract.
+  it('tells the generator it can chain derived values into short named steps', () => {
+    expect(generatorPrompt).toMatch(/BUILD THE ANSWER IN STEPS/);
+    expect(generatorPrompt).toMatch(/evaluated IN ORDER/);
+    expect(generatorPrompt).toMatch(/may use any earlier one BY NAME/);
+    expect(generatorPrompt).toMatch(/SPLIT IT/);
+  });
+
+  it('forbids stand-in sub-expressions when a quantity is hard to express', () => {
+    // `(PV(1,1,1) - PV(1,1,1))` is identically zero and divided a real
+    // question's answer by zero on every draw.
+    expect(generatorPrompt).toMatch(/Never fill/);
+    expect(generatorPrompt).toMatch(/PV\(1,1,1\) - PV\(1,1,1\)/);
+  });
+
   it('rules out comparisons and conditionals, which the grammar cannot parse', () => {
     // A live formula used `(PI_X>0?1:0)`; the evaluator has no comparison or
     // ternary operators, so it failed at the tokenizer.

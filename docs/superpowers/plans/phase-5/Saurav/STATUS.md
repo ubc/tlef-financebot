@@ -298,6 +298,67 @@ tests catching my own prompt edit is them working as designed.
 
 **Not yet re-run against the live model.** Same standing caveat.
 
+## 2026-08-14 — Aerotech batch: option contract holds, formulas now fail to PARSE
+
+Third live run, after the "an option IS a value" pass.
+
+**Both prompt fixes confirmed working.** All 12 options across the three
+questions came back as bare values — `{{NPV}}`, `{{WACC_PCT}}%` — with no prose
+wrapper and nothing stapled on. No control characters (the code-level strip is
+also in place now). The gaming loophole is closed.
+
+**All three still failed, with a new dominant error:**
+
+| Version | Failure |
+|---|---|
+| `…39e` | `division by zero` |
+| `…3a0` | `trailing input after formula` — a PARSE error |
+| `…3a2` | `trailing input after formula` |
+
+The formulas explain both. The WACC one is ~400 characters, six levels deep,
+with the same `PV(...)` subexpression repeated **six times**, and its parentheses
+do not balance — the parser consumes a valid expression, meets a stray `)`, and
+rejects. The division-by-zero one is worse: its denominator is
+`(DEBT_YTM_PCT/100)*(PV(1,1,1) - PV(1,1,1))`, a self-cancelling stand-in that is
+zero on every draw. The model could not express bond value inline and filled the
+gap with a dummy. The same version also hardcodes `2.2e6` for debt.
+
+### The capability the prompt never mentioned
+
+`resolveSlotsAndDerived` has always evaluated `derivedValues` **in declaration
+order, so a later formula may reference an earlier one by name**, and
+`verifyGeneratedNumerics` already exempts helper values that no option displays
+from the option contract. **`GENERATOR_PROMPT` never said so** — so the model
+inlined an entire WACC instead of naming five short steps.
+
+Added a `BUILD THE ANSWER IN STEPS` block with the WACC decomposition as a worked
+example, an explicit split threshold (~100 characters or three levels), the note
+that undisplayed helper steps are allowed, and a ban on stand-in sub-expressions
+and hardcoded literals citing both real instances.
+
+Short formulas cannot have unbalanced parentheses, do not repeat subexpressions,
+and give the model somewhere to put an intermediate it would otherwise fake — so
+this plausibly addresses all three failures at once.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **94 suites / 1078 tests**.
+Two new prompt guards, plus a `numeric-verification` test pinning a five-step
+chain whose later steps reference several earlier ones — the existing coverage
+coverd only a single hop, and the prompt now instructs the model to write the
+longer shape, so the shape itself is now proven rather than extrapolated.
+
+**Not yet re-run against the live model.**
+
+### Also noticed: Generate produces THREE questions per click
+
+The form never sends `count` (`preseeding.ts:403`); the server fills in
+`DEFAULT_GENERATION_COUNT = 3` (`generation.routes.ts:52`). Deliberate — there is
+a comment at `preseeding.ts:33` explaining the Task G brief listed no count field
+— but the button reads **"Generate Question →"**, singular, and it is 3x the LLM
+spend per click. Not changed; needs a decision between relabelling and adding a
+count field.
+
 ### Still open — NOT fixed here
 
 - **A control character is corrupting slot names.** Slot `DISC_PCT` came back as
