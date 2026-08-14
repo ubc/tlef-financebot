@@ -359,6 +359,70 @@ a comment at `preseeding.ts:33` explaining the Task G brief listed no count fiel
 spend per click. Not changed; needs a decision between relabelling and adding a
 count field.
 
+## 2026-08-14 — VanCorp batch: 3/3 proofs, and the failures move to judgement
+
+Fourth live run, and the first clean sweep: **all three earned verification
+proofs.** Options were bare values, no control characters, no unbalanced
+parentheses, everything parsed. The pipeline now produces servable numerical
+questions.
+
+**Decomposition is still unproven.** These needed none — formulas were 11–28
+characters, nesting 0–1, zero helper steps (`EV = EBITDA * MULT`). The questions
+got simpler, which sidestepped the parse failures rather than exercising the new
+guidance.
+
+### The reviewer flagged all three, correctly
+
+Every remaining problem is a judgement one that verification structurally cannot
+see. This is the point where the reviewer stops being a backstop and becomes the
+main quality gate.
+
+1. **Distractors were operator mutations, not misconceptions.** `EBITDA/MULT`,
+   `EBITDA+MULT`, `SALES*(MULT^2)`, `(MULT+1)*SALES`. The reviewer named it:
+   *"more of a contrived arithmetic tweak than a common misconception."* Nobody
+   squares a multiple. Contrast the e2e fixture's distractors — compounded
+   forward, dropped a period — which diagnose a METHOD error.
+2. **One question's `errorModel` fields just restated the role** — literally
+   `"common-misconception"`, `"clearly-wrong"`. The prompt already required the
+   specific mistake; nothing checked it.
+3. **One question had NO `common-misconception` option** (correct /
+   clearly-wrong / clearly-wrong / partially-correct). `decideStrategy`
+   (`attempts.service.ts:34`) applies Strategy A only on a common-misconception
+   pick, so that question silently opts out of the retry gate and is Strategy B
+   in every case. Nothing noticed.
+4. All three were labelled `hard` and are one-step substitutions. Not addressed.
+5. One declared a `YEAR` slot, used it in the stem, and referenced it in no
+   formula. `findUnusedParamSlots` catches the inverse (declared but absent from
+   the stem), so nothing catches this.
+
+### Fixed in this pass — two of them in CODE, not prompt
+
+- **An MCQ must carry at least one `common-misconception`** (Saurav's call,
+  2026-08-14). Enforced in `optionShapeValid`, so the generator retries rather
+  than persisting a question with a dead retry gate. True/False needs no check —
+  `assertOptionInvariants` already coerces its single wrong option to
+  common-misconception. Deliberately NOT added to `assertOptionInvariants`
+  itself: that would also reject manually authored and imported questions, which
+  is a wider product decision than this task.
+- **An `errorModel` may not merely restate a role.** New
+  `errorModelsNameMistakes`, also a retry rather than a proof denial — a failure
+  in `verifyGeneratedNumerics` means the question can never serve, which is
+  disproportionate for a metadata wording problem. Narrow by design:
+  `"common-misconception: inverting the multiple"` passes, because it does name
+  the mistake.
+- Prompt: **distractors are wrong METHODS, not mutated operators**, with the
+  three real bad shapes as worked negatives and the test *"if you cannot name
+  the student who would make the mistake, it is not a distractor."*
+- Prompt: errorModel names the mistake, never the role; and the
+  common-misconception requirement is stated with its reason.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **94 suites / 1084 tests**.
+Three new behavioural tests and three prompt guards. **Both new code checks
+mutation-verified**: relaxing the common-misconception requirement fails its
+test, and accepting any errorModel fails its own — each restored.
+
 ### Still open — NOT fixed here
 
 - **A control character is corrupting slot names.** Slot `DISC_PCT` came back as
