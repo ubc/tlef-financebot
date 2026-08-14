@@ -7,10 +7,10 @@ _Last updated: 2026-08-14_
 **Task 7.1 is merged** — [PR #73](https://github.com/ubc/tlef-financebot/pull/73)
 landed on `main` as `21519df` on 2026-08-14.
 
-**Task 7.2 (shuffle answer options) is built** on branch
-`saurav/shuffle-answer-options`, cut from `main` at `21519df`. Not yet pushed or
-PR'd. See the 2026-08-14 entry below for what shipped and the one new finding it
-turned up.
+**Task 7.2 is shipped and in review — [PR #74](https://github.com/ubc/tlef-financebot/pull/74)**,
+branch `saurav/shuffle-answer-options`, cut from `main` at `21519df`, pushed,
+**not merged**. Do not continue committing to that branch; it is under review.
+See the 2026-08-14 entry below for what shipped and the two follow-ups it found.
 
 **Task 7.3 is the next slice, and is still blocked on telling Stephen** — it
 reverses `PRD.md:86` and Stephen's `selectRetryQuestion`. Nothing in 7.1 or 7.2
@@ -48,7 +48,7 @@ with **Task 7**, claimed in writing in the shared plan on 2026-08-13, plus the
 | Item | State |
 |---|---|
 | Task 7.1 — LaTeX formula rendering | **Merged 2026-08-14** as `21519df` (PR #73) |
-| Task 7.2 — shuffle answer options | **Built 2026-08-14** on `saurav/shuffle-answer-options`; unit-tested and mutation-verified, not pushed |
+| Task 7.2 — shuffle answer options | **In review 2026-08-14** — [PR #74](https://github.com/ubc/tlef-financebot/pull/74). Live-confirmed, mutation-verified |
 | Task 7.3 — Strategy-A same-question retry | Planned, not started. **Blocked on telling Stephen** |
 | Phase-4 Task 3 — Delete for never-used questions | Design settled, nothing built. Deferred here by the Aug 24 freeze |
 
