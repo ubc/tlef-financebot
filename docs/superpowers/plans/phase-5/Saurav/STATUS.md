@@ -1,6 +1,50 @@
 # Saurav — Phase 5 status
 
-_Last updated: 2026-08-13_
+_Last updated: 2026-08-14_
+
+## Next session: read this first
+
+**Task 7.1 is shipped and in review — [PR #73](https://github.com/ubc/tlef-financebot/pull/73)**,
+branch `saurav/practice-rendering-and-retry`, 8 commits, pushed, **not merged**.
+Do not continue committing to that branch; it is under review.
+
+**Task 7.2 (shuffle answer options) is the next slice and is ready to start.**
+Its plan section is complete — finding, the measurement attempt and why it was
+inconclusive, why creation time rather than approval time, design, files, steps,
+verification. Nothing is blocked on a decision.
+
+Starting it:
+
+- **Branch from `main`, not from the 7.1 branch.** The two do not overlap: 7.1
+  is `generation.service.ts` + client rendering; 7.2 is `questions.service.ts`
+  (`createQuestion` / `editQuestion`). If #73 has merged by then, just branch
+  from an updated `main`.
+- Rebase or merge `main` first if #73 has landed, so `npx jest` numbers are
+  comparable to the ones recorded here.
+
+Two interactions with 7.1's work that the Task 7.2 section predates:
+
+1. **`optionShapeValid` now requires an MCQ to carry a `common-misconception`**
+   and rejects an `errorModel` that only restates a role. Shuffling changes
+   option ORDER, never roles, so neither check is affected — but expect them in
+   the file when you read it.
+2. **The e2e specs match options by TEXT, not by key** —
+   `optionPattern(correctOptionText(...))` in `numeric-fixture.ts`. That is why
+   shuffling should not break `practice-loop`, `core-loop-demo` or
+   `critical-paths`. Confirm it rather than assume it; if a spec does key-match
+   anywhere, that is the one to fix first.
+
+Deliberately NOT part of 7.2, recorded so it is not lost:
+
+- Four surfaces still render question text as plain strings — `param-config.ts`,
+  `question-detail.ts`'s regeneration preview (both Saurav's), and `import.ts` +
+  `course-setup-guide.ts` (both Stephen's, flagged in #73). The proposed fix is a
+  shared `questionPreview(stem, options)` helper so the next view cannot get it
+  wrong by omission.
+- A further **prompt-only pass** is planned separately (Saurav, 2026-08-14) to
+  address difficulty calibration — every recent question is labelled `hard` and
+  is a one-step substitution — and the stray `$$` seen mid-stem.
+- Task 7.3 still needs the Stephen conversation before any code is written.
 
 ## Where this stands
 
@@ -470,8 +514,8 @@ nobody keeps waiting for an LLM that would not help.
 
 Task 7.3 reverses `PRD.md:86` and the `selectRetryQuestion` design. **Saurav
 decided on 2026-08-13 to change the behaviour and amend the PRD in the same PR.**
-Stephen has not been told. Tasks 7.1–7.2 are on a separate branch specifically so
-they do not wait on that conversation.
+Stephen has not been told. Task 7.1 shipped on its own branch (PR #73)
+specifically so it did not wait on that conversation; 7.2 will do the same.
 
 The open sub-decision inside 7.3: `PRD.md:86` also requires the retry to be a
 full-weight independent mastery attempt. Once the chosen option is eliminated the
