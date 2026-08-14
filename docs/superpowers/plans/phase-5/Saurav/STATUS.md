@@ -219,6 +219,85 @@ so the section separators in the source produce **no blank lines** in the real
 prompt. Anyone adding one expecting whitespace gets none. Left alone (changing
 it edits the whole prompt), but worth knowing before the next edit.
 
+## 2026-08-14 — first post-fix live run: the contract fix worked, then got gamed
+
+Three batches now exist, and they bracket the prompt fix cleanly:
+
+| Batch (UTC) | Result |
+|---|---|
+| 21:50, pre-fix | 3/3 failed **STEP 1** — no option displayed a computed value |
+| 22:36, post-fix | 3/3 passed step 1, all failed **STEP 2** — option collisions |
+| 01:35, post-fix | 1 proof, 1 step-1 failure, 1 step-2 failure |
+
+**The option-contract fix landed.** Pre-fix every question died on it; post-fix
+5 of 6 got past it. Collisions are now the dominant failure — which is what the
+prompt already calls "the single most common reason a question is rejected", so
+that claim is accurate again rather than aspirational.
+
+### The one that earned a proof is a FALSE PASS
+
+`6a7e70e7c3db091283bbb555` passed verification and is nonsense. The model kept
+writing the decision question it wanted and **appended an arbitrary derived
+value to each option** to satisfy the new rule. A student would be served:
+
+```
+[A] Coffee shop: PI accepts and PP rejects; Apparel store: … PP accepts. 7.36
+[D] Coffee shop: PI accepts and PP accepts; Apparel store: … PP rejects. 9.11  <- correct
+```
+
+Those trailing numbers are `COFFEE_PP`, `APP_PI`, `COFFEE_PI`, `APP_PP` — two
+payback periods and two profitability indices, different units, stapled onto
+unrelated accept/reject sentences. It earned a proof because the four values are
+pairwise distinct across 100 draws. **Verification checks structure and
+distinctness, never coherence** — so a rule phrased as "must contain a value" is
+satisfiable by appending one.
+
+**The REVIEWER caught it**, and well: `decision: reject`, citing the
+growing-perpetuity PV being modelled as `C1*(1+g)/(r-g)` (that is the Year-2 cash
+flow), the hard-coded 2-year payback base, and explicitly the incoherence
+between option B's text and its appended value. Defence-in-depth held — the
+proof is not the only gate, and the pedagogy gate did its job. Worth remembering
+before anyone proposes trusting the proof alone.
+
+### Second prompt pass (this change)
+
+- **An option text IS a value** — not a sentence containing one. The stapled-on
+  shape is named as the worst of the four bad examples, with an explicit
+  instruction: if you are appending a value to a sentence, the question is
+  conceptual.
+- **The formula grammar has no comparisons, conditionals or ternaries.** A live
+  formula used `(PI_X>0?1:0)`; the tokenizer rejected it. Reaching for a
+  comparison means encoding a decision as a number.
+- **Ratio/percentage distractors** get their own collision warning: input sizes
+  cancel, so widening ranges does not separate them — separate by the structure
+  of the mistake instead.
+
+### Control characters: now fixed in CODE, not by asking nicely
+
+A third control character appeared (`U+001D`, in an explanation) after the
+prompt already told the model to avoid the shape that produced the first. Prompt
+guidance is not a control for this, so `sanitizeGenerated` now strips C0/DEL
+from stem, option text and explanations at `generateValidQuestion` — the single
+point every generator output passes through. Tab and newline are kept.
+
+Implemented as a code-point filter rather than a regex character class: a class
+covering C0 must contain literal control characters, which are invisible in
+source and do not survive editors intact (they corrupted three of my own edits
+while writing this).
+
+**Mutation-verified.** Neutering the filter fails the new test with
+`Expected: "What is the IRR?" / Received: "What is the IRR?"` — visually
+identical, which is exactly why this bug survived two live runs undetected.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **94 suites / 1075 tests**.
+Four new prompt guards plus one behavioural sanitizer test. One pre-existing
+guard needed updating because this pass reworded the line it pinned — the pinned
+tests catching my own prompt edit is them working as designed.
+
+**Not yet re-run against the live model.** Same standing caveat.
+
 ### Still open — NOT fixed here
 
 - **A control character is corrupting slot names.** Slot `DISC_PCT` came back as
