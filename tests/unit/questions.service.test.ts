@@ -15,6 +15,7 @@ import {
   transitionQuestion,
   bulkTransition,
 } from '../../server/src/services/questions.service';
+import { shuffleOptions } from '../../server/src/services/option-order.service';
 import type { QuestionOption, QuestionVersion } from '../../server/src/types/domain';
 
 // Per-collection method mocks, wired onto the mocked accessors in beforeEach —
@@ -149,6 +150,99 @@ describe('createQuestion (IN-Q03/Q04)', () => {
   });
 });
 
+// --- shuffleOptions ---------------------------------------------------------
+
+// The fixtures label every field with the option's ORIGINAL key ('Option A',
+// 'Why A'), so after a shuffle the text is what identifies an option and the
+// key is what moved. That is what makes set-preservation assertable at all.
+function identity(options: QuestionOption[]): Array<[string, string, string]> {
+  return options.map((o) => [o.text, o.role, o.explanation] as [string, string, string]).sort();
+}
+
+describe('shuffleOptions', () => {
+  it('preserves the option set exactly — only the keys move', () => {
+    const original = mcqOptions();
+
+    const shuffled = shuffleOptions(original, 12345);
+
+    expect(identity(shuffled)).toEqual(identity(original));
+    expect(shuffled).toHaveLength(4);
+  });
+
+  it('relabels keys A,B,C,D by new position so the list still reads in order', () => {
+    const shuffled = shuffleOptions(mcqOptions(), 12345);
+
+    expect(shuffled.map((o) => o.key)).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('moves the correct role off key A for at least one seed', () => {
+    // The whole point of the task: position must stop predicting correctness.
+    const seeds = [1, 2, 3, 4, 5, 6, 7, 8];
+
+    const correctKeys = seeds.map((seed) => shuffleOptions(mcqOptions(), seed).find((o) => o.role === 'correct')?.key);
+
+    expect(correctKeys.some((key) => key !== 'A')).toBe(true);
+  });
+
+  it('is deterministic for a given seed', () => {
+    expect(shuffleOptions(mcqOptions(), 999)).toEqual(shuffleOptions(mcqOptions(), 999));
+  });
+
+  it('relabels from the option set\'s own keys, not a hardcoded A-D', () => {
+    // An import may use another alphabet; it should keep it.
+    const numbered = mcqOptions().map((o, index) => ({ ...o, key: String(index + 1) }));
+
+    const shuffled = shuffleOptions(numbered, 4242);
+
+    expect(shuffled.map((o) => o.key)).toEqual(['1', '2', '3', '4']);
+  });
+});
+
+describe('createQuestion option shuffling', () => {
+  it('does not leave the correct answer pinned to key A across many questions', async () => {
+    // Loose bounds on purpose. The seed is drawn per call (drawSeed), so this is
+    // a real random sample: expected count at 'A' is 25/100, sd ~4.3, and each
+    // key is missed entirely with probability (3/4)^100 ~ 3e-13. Tight bounds
+    // here would flake; these will not.
+    const correctKeys: string[] = [];
+    for (let index = 0; index < 100; index += 1) {
+      const result = await createQuestion(baseInput());
+      correctKeys.push(result.version.options.find((o) => o.role === 'correct')!.key);
+    }
+
+    expect(new Set(correctKeys)).toEqual(new Set(['A', 'B', 'C', 'D']));
+    expect(correctKeys.filter((key) => key === 'A').length).toBeLessThan(50);
+  });
+
+  it('carries text, role and explanation together so the shuffle cannot change the answer', async () => {
+    const input = baseInput();
+
+    const result = await createQuestion(input);
+
+    expect(identity(result.version.options)).toEqual(identity(input.options));
+    // 'Option A' is the correct one in the fixture, wherever it landed.
+    expect(result.version.options.find((o) => o.role === 'correct')?.text).toBe('Option A');
+  });
+
+  it('stores the given order when the caller says it already shuffled', async () => {
+    // The generation pipeline shuffles upstream of its validator/reviewer,
+    // whose prose names the resulting letters — a second shuffle here would
+    // reassign every key after that prose was written.
+    const input = baseInput({ optionsAlreadyShuffled: true });
+
+    const result = await createQuestion(input);
+
+    expect(result.version.options).toEqual(input.options);
+  });
+
+  it('leaves true-false as T then F', async () => {
+    const result = await createQuestion(baseInput({ type: 'true-false', options: tfOptions() }));
+
+    expect(result.version.options.map((o) => o.key)).toEqual(['T', 'F']);
+    expect(result.version.options[0].text).toBe('True');
+  });
+});
+
 // --- editQuestion -----------------------------------------------------------
 
 describe('editQuestion (IN-Q03)', () => {
@@ -206,6 +300,17 @@ describe('editQuestion (IN-Q03)', () => {
     expect(versionDoc.type).toBe(currentVersion.type);
     expect(versionDoc.sourceRefs).toEqual(currentVersion.sourceRefs);
     expect(result.version).toBe(2);
+  });
+
+  it('stores an options patch in the order it was given — an edit is never reshuffled', async () => {
+    // Only createQuestion shuffles. An edit is a human stating the order they
+    // want, and every question has already been shuffled once on the way in.
+    const reordered = [mcqOptions()[2], mcqOptions()[0], mcqOptions()[3], mcqOptions()[1]];
+
+    await editQuestion(questionId, { options: reordered }, 'PUID-INSTR-0002');
+
+    const [versionDoc] = versionsInsertOne.mock.calls[0];
+    expect(versionDoc.options).toEqual(reordered);
   });
 
   it('versions a generateScript-only patch (Task 5, IN-Q09), mirroring the paramSlots content-key pattern', async () => {

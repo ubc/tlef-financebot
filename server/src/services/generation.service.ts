@@ -13,6 +13,8 @@ import {
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
+import { shuffleOptions } from './option-order.service';
+import { drawSeed } from './params.service';
 import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
@@ -312,6 +314,9 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         type,
         stem: generated.stem,
         options: generated.options,
+        // Already shuffled in generateValidQuestion, upstream of the validator
+        // and reviewer whose prose names the resulting letters.
+        optionsAlreadyShuffled: true,
         difficulty: normalizeDifficulty(input.difficulty ?? generated.difficulty),
         sourceRefs,
         createdBy: byPuid,
@@ -604,6 +609,9 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           type,
           stem: candidate.generated.stem,
           options: candidate.generated.options,
+          // Already shuffled in generateValidQuestion, upstream of the validator
+          // and reviewer whose prose names the resulting letters.
+          optionsAlreadyShuffled: true,
           difficulty: normalizeDifficulty(input.difficulty ?? candidate.generated.difficulty),
           sourceRefs,
           createdBy: byPuid,
@@ -873,7 +881,17 @@ async function generateValidQuestion(
       optionShapeValid(type, candidate.options) &&
       errorModelsNameMistakes(candidate)
     ) {
-      return sanitizeGenerated(candidate);
+      const clean = sanitizeGenerated(candidate);
+      // Shuffled HERE, not in createQuestion, for the same reason
+      // sanitizeGenerated is here: this is the one point every generator output
+      // passes through. It has to be upstream of the validator and the reviewer
+      // specifically, because both of them cite options by LETTER
+      // ("Option C (clearly-wrong)..."). Shuffling downstream of them —
+      // observed on run 6a7e9b9f0dbc47057d634fdc — reassigns every key after
+      // the prose is written, so an instructor reads a review that names the
+      // wrong option. Callers pass optionsAlreadyShuffled so createQuestion
+      // does not shuffle a second time and undo this alignment.
+      return type === 'mcq' ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
     }
     console.warn(
       `[generation] generator produced structurally-invalid options ` +

@@ -421,7 +421,10 @@ of remaining indefinitely active.
   availableFrom passed, not archived) with per-LO mastery labels (ST-P01/P02)
 - `POST /api/courses/:courseId/practice/next { loId, sessionServedIds: string[] }` →
   `{ questionId, questionVersionId, type, stem, difficulty, degraded, options: [{ key, text }], watermark, paramValues?, seed? }`
-  — never includes roles/explanations/correctness. `stem`/`options` are already substituted
+  — never includes roles/explanations/correctness. `options` are served in stored order, which
+  for an MCQ was shuffled once when the version was created (questions.service.ts,
+  `shuffleOptions`) and relabelled A–D by position, so a key does NOT identify the same option
+  across two versions of a question. True/False keeps `T` then `F`. `stem`/`options` are already substituted
   against a freshly-drawn `seed` for a parameterized question (`paramValues`/`seed` present
   only in that case — see params.service.ts's `resolveParamValues`/`substituteParams`, Task 5,
   IN-Q09/ST-P03). A fresh `seed` is drawn on every call, including Review-Book re-practice

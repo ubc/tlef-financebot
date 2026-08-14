@@ -1,6 +1,8 @@
 import type { WithId } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import { questionsCol, questionVersionsCol, auditCol } from '../components/mongodb/collections';
+import { drawSeed } from './params.service';
+import { shuffleOptions } from './option-order.service';
 import { canTransition } from '../types/domain';
 import type {
   Question,
@@ -70,8 +72,31 @@ export async function createQuestion(input: {
   labels?: QuestionLabel[];
   templateFamilyId?: ObjectId;
   provenance?: QuestionVersion['provenance'];
+  // Set by callers that have ALREADY shuffled, so the order they shuffled is
+  // the order stored. The generation pipeline needs this: its validator and
+  // reviewer cite options by letter, so they must read the final order, which
+  // means the shuffle has to happen upstream of them (generateValidQuestion).
+  // Defaults to false, so a caller that forgets it still gets a shuffle — the
+  // safe direction, since shuffling twice is harmless but never shuffling is
+  // the bug this exists to prevent.
+  optionsAlreadyShuffled?: boolean;
 }): Promise<{ questionId: ObjectId; version: WithId<QuestionVersion> }> {
-  const options = assertOptionInvariants(input.type, input.options);
+  const validated = assertOptionInvariants(input.type, input.options);
+  // Shuffled HERE, at version creation, and nowhere else. The hook that reads
+  // naturally is approval, and it is the wrong one: PUBLICATION_TRANSITIONS
+  // allows approved -> paused -> approved, so a re-approval would reorder a
+  // version that has already been served and already has AttemptRecords. That
+  // silently corrupts answerDistributions (analytics.service.ts), which maps
+  // historical `selectedKey` counts onto the CURRENT version's options and
+  // roles — the counts survive, their pairing with roles does not, and the
+  // chart still renders. Versions are immutable and nothing is served before
+  // approval, so shuffling at creation is once-and-only-once by construction:
+  // no guard is needed, and it can never touch a version that has attempts.
+  // True/False keeps T then F — "False. True." reads as a mistake, and with two
+  // positions a shuffle buys nothing anyway.
+  const options = input.type === 'mcq' && !input.optionsAlreadyShuffled
+    ? shuffleOptions(validated, drawSeed())
+    : validated;
 
   const questionId = new ObjectId();
   const versionId = new ObjectId();
@@ -171,6 +196,11 @@ export async function editQuestion(
     editedFields.push('stem');
   }
   if (patch.options !== undefined) {
+    // Deliberately NOT shuffled here. Every question originates in
+    // createQuestion (generation and import are its only callers), so it has
+    // already been shuffled once; an edit is a human stating the order they
+    // want, and re-randomizing that on every save would undo a deliberate
+    // reorder and move the options out from under the form that submitted them.
     contentPatch.options = assertOptionInvariants(current.type, patch.options);
     editedFields.push('options');
   }
