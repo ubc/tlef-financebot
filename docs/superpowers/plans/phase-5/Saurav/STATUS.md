@@ -46,6 +46,80 @@ Deliberately NOT part of 7.2, recorded so it is not lost:
   is a one-step substitution — and the stray `$$` seen mid-stem.
 - Task 7.3 still needs the Stephen conversation before any code is written.
 
+## 2026-08-14 — Task 8.1 + 8.3: model capability profiles (branch `saurav/model-capability-profiles`)
+
+**Why it exists.** Switching to `gpt-5.6-luna` breaks EVERY LLM call. Measured
+against the live API: `temperature` at any value → 400 while reasoning is
+active; `max_tokens` → 400 `Use 'max_completion_tokens' instead`.
+`completeJson` always sent `temperature`, so the failure is total.
+
+**The rule, measured on both models and worth not re-deriving:** temperature is
+legal only while the *effective* reasoning effort is `none`. That is a property
+of the REQUEST, not the model. `gpt-5.4-nano` defaults to effort `none` (the only
+reason temperature has ever worked here); `gpt-5.6-luna` defaults to `medium`.
+**luna accepts `temperature: 0.7` if you also pass `reasoning_effort: 'none'`.**
+
+`reasoning_effort` accepts exactly `none | low | medium | high | xhigh`. **Both
+OpenAI doc pages are wrong** — the model page lists `max`, the reasoning guide
+lists `minimal`, the API rejects both. Probe, do not read.
+
+### Two pre-existing bugs this uncovered
+
+- **`rag.service.ts:118` has been 400ing in production.** It passed
+  `maxTokens: 500`, which reaches OpenAI as `max_tokens`, which `gpt-5.4-nano`
+  — the configured model — rejects. Unnoticed because RAG is demo surface.
+- **`gpt-5.4-nano` is not a legacy model.** It has the same reasoning channel as
+  luna. Nobody had noticed because nothing ever sent it an effort.
+
+### What shipped
+
+`components/genai/llm/model-capabilities.ts` — three profiles, two known models,
+`modelRequestOptions()` that every LLM call site shapes through. `completeJson`
+requests effort `none` by default so its determinism contract survives a model
+swap; `rag.service` does the same, deliberately.
+
+### The review found four things the live tests had not
+
+Recorded because three of them would have shipped silently:
+
+1. `completeJson` would have lost `temperature: 0` for classification, the
+   validator, the reviewer and import — nondeterministic, nothing logged.
+2. **`max_completion_tokens` is not a renamed `max_tokens`** — it budgets
+   reasoning AND output together. Measured: luna burned all 500 tokens reasoning
+   and returned `''` with `finish_reason: 'length'`. `rag.service` returns
+   `answer` unchecked, so the "fix" would have turned a loud 400 into a blank
+   answer beside real citations.
+3. The unknown-model fallback to `classic` was unsafe: a dated snapshot id like
+   `gpt-5.4-nano-2026-08-01` would have got `max_tokens` and 400'd. Ids matching
+   `/^(gpt-|o\d)/i` now get the conservative reasoning shape.
+4. The module was in `config/`; integration knowledge belongs in
+   `components/genai/llm/`. The mocking hazard that seemed to force `config/`
+   was overstated — `jest.mock` on a barrel does not shadow a sibling module.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck` clean; `npx jest` **95 suites / 1109
+  tests** (1103 before).
+- **Mutation-verified:** restoring the unconditional `temperature` fails three
+  tests; restored.
+- **Live-verified end to end** on both models — a mocked unit test cannot show
+  that `temperature: undefined` is dropped from the JSON body rather than sent.
+  Every profile, plus the RAG shape, issues real requests that succeed.
+- ⚠️ **Not yet run through a real generation.** Only direct API calls.
+
+### Still open
+
+- `GENERATOR_TEMPERATURE = 0.7` and the "validator and reviewer stay
+  deterministic" comment at `generation.service.ts:70-74` are now conditional on
+  the effort in play. Comment not yet updated — it is accurate while
+  `completeJson` defaults to `none`, but a future per-step effort setting
+  (Task 2/4) will make it false.
+- Nothing surfaces a model's resolved profile. `/api/health` reports the raw id,
+  so a misconfigured model is undiagnosable until the first call.
+- Tasks 2 + 4 (PlatformSettings schema, `utility` step, admin console UI) are
+  unstarted. Plan:
+  [`2026-08-14-model-capability-profiles.md`](2026-08-14-model-capability-profiles.md).
+
 ## Where this stands
 
 Phase 5's six core tasks are all `Owner: Stephen`. Saurav's Phase 5 work starts

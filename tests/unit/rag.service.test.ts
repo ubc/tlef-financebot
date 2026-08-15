@@ -46,8 +46,16 @@ describe('rag.service query()', () => {
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].sourceId).toBe('facts');
     // The retrieved chunk must be passed to the LLM as grounding context.
-    const [userPrompt] = jest.mocked(llm.sendMessage).mock.calls[0];
+    const [userPrompt, options] = jest.mocked(llm.sendMessage).mock.calls[0];
     expect(userPrompt).toContain('UBC was founded in 1908.');
+    // The options must be SHAPED, never literal. Passing `maxTokens` straight
+    // through sent `max_tokens`, which every GPT-5 model rejects — this call had
+    // been 400ing in production and nothing here noticed, because the options
+    // argument was not asserted at all. `reasoningEffort: 'none'` matters just
+    // as much: `max_completion_tokens` budgets reasoning AND output together, so
+    // without it the model can spend all 500 tokens thinking and return ''.
+    expect(options).toMatchObject({ reasoning_effort: 'none' });
+    expect(options).not.toHaveProperty('maxTokens');
   });
 
   it('short-circuits (no LLM call) when nothing has been ingested', async () => {
