@@ -23,6 +23,7 @@ import {
   updatePlatformSettings,
 } from '../services/admin.service';
 import { CAPABILITIES } from '../services/capabilities.service';
+import { STEP_TEMPERATURE_DEFAULTS } from '../services/step-models';
 import type { Capability, CapabilityProfile, CapabilityRole } from '../types/domain';
 
 export const adminRouter = Router();
@@ -198,7 +199,16 @@ adminRouter.get(
   // plus the risk of the client caching a stale copy of it.
   async (_req, res) => {
     const settings = await getPlatformSettings();
-    res.json({ ...settings, catalogue: modelCatalogue(settings.customModels) });
+    res.json({
+      ...settings,
+      catalogue: {
+        ...modelCatalogue(settings.customModels),
+        // What each step uses when the admin sets nothing, so the console can
+        // SHOW the effective value rather than pre-fill a box — pre-filling
+        // would persist a temperature that overrides the step's own default.
+        stepTemperatureDefaults: STEP_TEMPERATURE_DEFAULTS,
+      },
+    });
   },
 );
 

@@ -15,7 +15,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import type { RouteParams } from '../../router.js';
-import { errorState, loadingState } from '../../ui.js';
+import { errorState, helpTip, loadingState } from '../../ui.js';
 
 const STEP_LABEL: Record<PipelineStep, string> = {
   generator: 'Generator',
@@ -25,13 +25,40 @@ const STEP_LABEL: Record<PipelineStep, string> = {
   utility: 'Utility',
 };
 
-const STEP_HINT: Record<PipelineStep, string> = {
-  generator: 'Drafts each question. Runs warm so a batch of questions differs.',
-  validator: 'Checks every option plays the role it claims.',
-  reviewer: 'Judges pedagogical quality. The main quality gate — worth spending effort on.',
-  masteryEvaluator: 'Not yet wired: saved, but no code reads it.',
-  utility: 'Material classification, hierarchy suggestions, and import conversion.',
+// Prose moved off the page and behind `helpTip` (2026-08-15): five steps each
+// carrying a sentence of explanation made the panel unreadable, and the
+// explanations matter only when someone is deciding, not every visit.
+const STEP_HELP: Record<PipelineStep, string> = {
+  generator:
+    'Drafts each question from the retrieved course material. It runs warm — a higher temperature — '
+    + 'so that asking for several questions at once yields genuinely different ones rather than three '
+    + 'near-copies. Leave the temperature blank to keep that behaviour.',
+  validator:
+    'Checks that every option plays the role it claims: exactly one correct answer, and distractors '
+    + 'that are wrong for the reason their error model states. Wants reproducible output, so leave it '
+    + 'deterministic unless you are deliberately experimenting.',
+  reviewer:
+    'Judges pedagogical quality against the five review criteria and returns pass, flag or reject. '
+    + 'This is the gate that catches problems structural checks cannot see, so it is the step where '
+    + 'spending reasoning effort is most likely to pay for itself.',
+  masteryEvaluator:
+    'Not yet wired. This setting is saved and audited, but no code reads it — there is no '
+    + 'mastery-evaluator model call anywhere in the pipeline today.',
+  utility:
+    'Everything that is not one of the three question agents: classifying uploaded material, '
+    + 'suggesting a course hierarchy, and converting imported short-answer questions. These ran on '
+    + 'the environment default with no admin control until this step existed.',
 };
+
+const TEMPERATURE_HELP =
+  'How much the model varies its wording between runs. 0 is reproducible; higher is more varied. '
+  + 'Leave blank to use the step default — a saved value overrides it, which for the generator '
+  + 'would switch off the batch variety it depends on.';
+
+const EFFORT_HELP =
+  'How long the model reasons before answering. Higher effort costs more tokens and takes longer, '
+  + 'and it is not a determinism control. Setting anything other than "none" makes temperature '
+  + 'unavailable, because the provider rejects an explicit temperature while a model is reasoning.';
 
 /**
  * Which parameters a model accepts is measured server-side, so the console never
@@ -61,8 +88,17 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       ?? 'classic';
   }
 
+  /** A control's label with its `helpTip` beside it, matching instructor Settings.
+   *  The tip sits OUTSIDE the `<label>`: nested, clicking it would activate the
+   *  label and steal focus into the control. */
+  function labelRow(text: string, tip: string): HTMLElement {
+    return el('div', { class: 'form-field__label-row' },
+      el('span', { class: 'form-field__label', text }), helpTip(text, tip),
+    );
+  }
+
   /** One step: a model select plus whichever parameter control that model allows. */
-  function stepField(step: PipelineStep): HTMLElement {
+  function stepCard(step: PipelineStep): HTMLElement {
     const params = el('div', { class: 'admin-step__params' });
     const select = el('select', { class: 'input', 'aria-label': `${STEP_LABEL[step]} model` }) as HTMLSelectElement;
 
@@ -73,7 +109,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       if (caps.reasoningEffort) {
         const effort = el('select', { class: 'input', 'aria-label': `${STEP_LABEL[step]} reasoning effort` }) as HTMLSelectElement;
         for (const value of caps.reasoningEffort) {
-          const label = value === caps.defaultEffort ? `${value} (model default)` : value;
+          const label = value === caps.defaultEffort ? `${value} — model default` : value;
           effort.append(el('option', { value, text: label }));
         }
         effort.value = draft[step].reasoningEffort ?? caps.defaultEffort;
@@ -85,26 +121,35 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
           if (!temperatureAllowed(caps, next)) delete draft[step].temperature;
           renderParams();
         };
-        children.push(el('label', { class: 'form-field' },
-          el('span', { class: 'form-field__label', text: 'Reasoning effort' }), effort,
-        ));
+        children.push(el('div', { class: 'form-field' }, labelRow('Reasoning effort', EFFORT_HELP), effort));
       }
 
       const effortNow = draft[step].reasoningEffort;
       if (temperatureAllowed(caps, effortNow)) {
-        const { min, max, default: fallback } = caps.temperature!;
+        const { min, max } = caps.temperature!;
+        const stepDefault = settings.catalogue.stepTemperatureDefaults[step] ?? caps.temperature!.default;
         const temp = el('input', {
           class: 'input', type: 'number', step: '0.1', min: String(min), max: String(max),
-          value: String(draft[step].temperature ?? fallback),
+          // NOT pre-filled. A saved value spreads over the step's own default,
+          // so a box showing "0" that anyone nudges would persist 0 for the
+          // generator and silently kill the batch variety it runs warm for.
+          placeholder: `${stepDefault} — step default`,
           'aria-label': `${STEP_LABEL[step]} temperature`,
         }) as HTMLInputElement;
-        temp.onchange = () => { draft[step] = { ...draft[step], temperature: Number(temp.value) }; };
-        children.push(el('label', { class: 'form-field' },
-          el('span', { class: 'form-field__label', text: `Temperature (${min}–${max})` }), temp,
-        ));
+        if (draft[step].temperature !== undefined) temp.value = String(draft[step].temperature);
+        temp.onchange = () => {
+          const raw = temp.value.trim();
+          const next = { ...draft[step] };
+          // Clearing the box means "back to the step default", which is the
+          // only way to undo an override once one is saved.
+          if (raw === '') delete next.temperature;
+          else next.temperature = Number(raw);
+          draft[step] = next;
+        };
+        children.push(el('div', { class: 'form-field' }, labelRow(`Temperature (${min}–${max})`, TEMPERATURE_HELP), temp));
       } else if (caps.temperature) {
         children.push(el('p', { class: 'muted admin-step__note',
-          text: 'Temperature is unavailable while this model is reasoning. Set effort to “none” to use it.' }));
+          text: 'Temperature unavailable while reasoning — set effort to “none” to use it.' }));
       }
       params.replaceChildren(...children);
     }
@@ -130,16 +175,21 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     renderOptions();
     renderParams();
 
-    return el('div', { class: 'admin-step' },
-      el('label', { class: 'form-field' },
-        el('span', { class: 'form-field__label', text: STEP_LABEL[step] }), select,
+    // Each step is its own bordered card rather than a cell in a flat grid:
+    // with five steps and up to two parameter controls each, a single grid
+    // gave no visual boundary between one step's controls and the next's.
+    return el('section', { class: 'admin-step card' },
+      el('header', { class: 'admin-step__header' },
+        el('h3', { class: 'admin-step__title', text: STEP_LABEL[step] }),
+        helpTip(STEP_LABEL[step], STEP_HELP[step]),
+        ...(step === 'masteryEvaluator' ? [el('span', { class: 'badge badge--muted', text: 'not yet wired' })] : []),
       ),
-      el('p', { class: 'muted admin-step__hint', text: STEP_HINT[step] }),
+      el('div', { class: 'form-field' }, labelRow('Model', STEP_HELP[step]), select),
       params,
     );
   }
 
-  const stepsGrid = el('div', { class: 'admin-settings-grid' }, ...PIPELINE_STEPS.map(stepField));
+  const stepsGrid = el('div', { class: 'admin-step-list' }, ...PIPELINE_STEPS.map(stepCard));
   const maxDaily = el('input', { class: 'input', type: 'number', min: '1', value: String(settings.costControls.maxGenerationsPerDay) }) as HTMLInputElement;
   const reviewer = el('input', { type: 'checkbox' }) as HTMLInputElement;
   reviewer.checked = settings.featureFlags.reviewerAgent;
@@ -160,7 +210,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       el('button', { class: 'btn btn--ghost', type: 'button', text: 'Remove', onclick: () => {
         customModels.splice(index, 1);
         renderCustom();
-        stepsGrid.replaceChildren(...PIPELINE_STEPS.map(stepField));
+        stepsGrid.replaceChildren(...PIPELINE_STEPS.map(stepCard));
       } }),
     )));
     if (customModels.length === 0) {
@@ -218,7 +268,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
         customModels.push({ id, profile: customProfile.value as CapabilityProfile });
         customId.value = '';
         renderCustom();
-        stepsGrid.replaceChildren(...PIPELINE_STEPS.map(stepField));
+        stepsGrid.replaceChildren(...PIPELINE_STEPS.map(stepCard));
       } }),
     ),
     el('section', { class: 'card stack admin-settings-panel' },

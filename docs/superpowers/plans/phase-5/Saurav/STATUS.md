@@ -75,6 +75,39 @@ temperature with an explanation; setting effort `none` brings it back; setting
 `high` withdraws it again. Saving persisted
 `reviewer: {model: 'gpt-5.6-luna', reasoningEffort: 'high'}`.
 
+### 2026-08-15 follow-up — console cleanup, and why there is no default temperature
+
+Saurav: the panel read as a wall of text and the five steps ran together. Each
+step is now its own bordered card in `.admin-step-list`, and every sentence of
+explanation moved behind the existing `helpTip` info icon (the same control
+instructor Settings uses), so the prose is there when someone is deciding and
+absent every other visit.
+
+**Saurav asked whether the console should default a temperature for
+`gpt-5.4-nano`. It must not, and the reason is a real trap.** A step config
+spreads OVER the step's own default —
+`{ temperature: GENERATOR_TEMPERATURE, ...step }` in `generateValidQuestion` —
+so a saved `temperature: 0` on the generator **overrides the 0.7 that exists to
+make a batch of questions differ**, and all three come back near-identical. The
+old UI pre-filled the box with the profile default (`0`), which meant one nudge
+would have persisted exactly that.
+
+Fixed: the temperature input is now **empty with a placeholder showing the
+effective step default** (`0.7 — step default` on the generator, `0` elsewhere),
+and clearing it deletes the key, which is the only way to undo an override once
+saved. `GENERATOR_TEMPERATURE` moved into `step-models.STEP_TEMPERATURE_DEFAULTS`
+so the console can *show* it rather than duplicate it, and the catalogue carries
+it to the client. Round-trip verified in the browser: `1.2` persists, clearing
+returns the stored config to `{ model }` alone.
+
+Also fixed while there: cards in a grid were staggered because `.card + .card`
+adds a stacking margin the grid then honours — same fix and same reason as the
+existing `.stack > .card + .card` rule.
+
+**Verification:** 96 suites / 1123 tests still green; a11y 4 passed / 2 failed
+(the same pre-existing student surfaces); `responsive-workflows.spec.ts` 2
+passed against the reworked DOM.
+
 ### Deliberate calls
 
 - **The run record still stores model IDS only.** Widening it to carry per-step

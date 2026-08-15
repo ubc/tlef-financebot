@@ -196,6 +196,12 @@ export interface ModelCapabilities {
 export interface ModelCatalogue {
   models: Array<{ id: string; profile: CapabilityProfile; custom: boolean }>;
   profiles: Record<CapabilityProfile, ModelCapabilities>;
+  /**
+   * What a step uses when the admin sets no temperature (the generator runs
+   * warm for batch diversity). Shown, never pre-filled: a saved value spreads
+   * OVER the step default, so persisting it would switch that behaviour off.
+   */
+  stepTemperatureDefaults: Partial<Record<PipelineStep, number>>;
 }
 
 export interface PlatformSettings {

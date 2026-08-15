@@ -20,6 +20,7 @@ import {
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
 import {
+  STEP_TEMPERATURE_DEFAULTS,
   configuredGenerationModels,
   persistedModels,
   resolvedFromPersisted,
@@ -78,8 +79,11 @@ const GENERATOR_MAX_ATTEMPTS = 2;
 /** The generator runs warm so a batch (count > 1) yields DISTINCT questions —
  * completeJson defaults to temperature 0, which would make every question in
  * the batch identical. The validator and reviewer stay deterministic (the
- * completeJson default). */
-const GENERATOR_TEMPERATURE = 0.7;
+ * completeJson default).
+ *
+ * Lives in `step-models` so the admin console can show it as the generator's
+ * effective default instead of pre-filling a `0` that would override it. */
+const GENERATOR_TEMPERATURE = STEP_TEMPERATURE_DEFAULTS.generator;
 
 export const PRESET_PROMPTS: ReadonlyArray<{ label: string; text: string }> = [
   {

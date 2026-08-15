@@ -1,5 +1,10 @@
 import { env } from '../config/env';
-import type { PlatformSettings, QuestionGenerationRun, StepModelConfig } from '../types/domain';
+import type {
+  PipelineStep,
+  PlatformSettings,
+  QuestionGenerationRun,
+  StepModelConfig,
+} from '../types/domain';
 
 /**
  * Conversions between the two shapes a step's model takes: the in-memory config
@@ -11,6 +16,24 @@ import type { PlatformSettings, QuestionGenerationRun, StepModelConfig } from '.
  * `undefined` under those mocks, and mirroring the implementation inside a mock
  * factory would mean the tests stop tracking the real behaviour.
  */
+
+/**
+ * The temperature a step uses when the admin has NOT set one.
+ *
+ * The generator runs warm so a batch (`count > 1`) yields DISTINCT questions;
+ * every other step wants reproducible output and takes `completeJson`'s 0.
+ *
+ * ⚠️ This is why the console must not pre-fill a temperature. A step config
+ * spreads OVER this default (`{ temperature: DEFAULT, ...step }` in
+ * `generateValidQuestion`), so persisting an explicit `0` for the generator —
+ * which is what a pre-filled "0" box would save the moment anyone touched it —
+ * silently turns batch diversity off and makes all three questions near
+ * identical. Absent means "use the step's own default", and that is the only
+ * value that keeps this constant meaningful.
+ */
+export const STEP_TEMPERATURE_DEFAULTS: Readonly<Partial<Record<PipelineStep, number>>> = Object.freeze({
+  generator: 0.7,
+});
 
 /** The three agents' models plus their per-step parameters, as used in memory. */
 export interface ResolvedStepModels {
