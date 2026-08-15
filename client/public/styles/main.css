@@ -2760,11 +2760,58 @@ button.class-row--link:focus-visible .class-row__title {
 /* Pipeline steps: one bordered card each rather than cells in a flat grid.
    With five steps and up to two parameter controls apiece, a single grid gave
    no boundary between one step's controls and the next's. */
+/* Two fixed columns like the sibling `.admin-settings-grid`, not `auto-fit`: the
+   column COUNT has to be knowable for the right-edge tip rule below to target
+   the right-hand cards. */
 .admin-step-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
   align-items: start;
+}
+
+/* A help bubble hangs below and outside its card, but `.card` sets
+   `overflow: hidden`, which clipped every tip at the card's own border.
+   The enclosing panel is also a `.card`, so both have to let it through. */
+.admin-settings-panel,
+.admin-step {
+  overflow: visible;
+}
+
+/* The right-hand column would push its bubble off the page. Same remedy as
+   `.settings-column:last-child` above; scoped past the breakpoint where this
+   grid collapses to one column and every card is therefore a left-hand one. */
+@media (min-width: 521px) {
+  .admin-step-list > .admin-step:nth-child(even) .help-tip__bubble {
+    left: auto;
+    right: 0;
+  }
+}
+
+/* On a phone the shared rule cannot win: the bubble is left-anchored to its
+   trigger and up to 70vw wide, so any trigger past ~30% of the width overflows
+   to the right — and `.card`'s `overflow: hidden` used to hide that by clipping
+   the tip, which is the bug this section removes. Anchoring it to the CARD
+   instead makes it unconditionally in-bounds. Making `.help-tip` static is what
+   moves the containing block up to `.admin-step`; the cost is that `top: 100%`
+   then resolves against the card, so the bubble sits below the card rather than
+   below the trigger. On a one-column phone layout that reads fine, and it is
+   the difference between a readable tip and a horizontally scrolling page. */
+@media (max-width: 520px) {
+  .admin-step {
+    position: relative;
+  }
+
+  .admin-step .help-tip {
+    position: static;
+  }
+
+  .admin-step .help-tip__bubble {
+    left: 0.9rem;
+    right: 0.9rem;
+    width: auto;
+    max-width: none;
+  }
 }
 
 /* Cards in a grid are laid out by the grid, not by flow, so the stacking margin
