@@ -1,8 +1,8 @@
 import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
-import { env } from '../config/env';
 import type { LearningObjective, Material, MaterialKind, Theme } from '../types/domain';
+import { utilityStepConfig } from './admin.service';
 import { upsertCourseOutline } from './courses.service';
 
 // -----------------------------------------------------------------------------
@@ -85,8 +85,10 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
     losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
   ]);
   const result = await completeJson<ClassificationResult>(buildClassificationPrompt(material, themes, los), {
-    model: env.llmDefaultModel,
+    // temperature 0 is what this step has always used; an admin who sets one on
+    // the utility step is overriding it deliberately, so the spread comes last.
     temperature: 0,
+    ...(await utilityStepConfig()),
   });
 
   const rawMatches = Array.isArray(result.matches)
@@ -210,8 +212,10 @@ export async function suggestHierarchy(courseId: ObjectId): Promise<SuggestedHie
 
   const existing = await themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray();
   const raw = await completeJson<HierarchyResult>(buildHierarchyPrompt(sourceMaterials, existing), {
-    model: env.llmDefaultModel,
+    // temperature 0 is what this step has always used; an admin who sets one on
+    // the utility step is overriding it deliberately, so the spread comes last.
     temperature: 0,
+    ...(await utilityStepConfig()),
   });
 
   // Shape the untrusted LLM JSON into the public contract. Material numbers

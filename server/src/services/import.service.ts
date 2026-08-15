@@ -2,6 +2,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import { XMLParser } from 'fast-xml-parser';
 import type { ObjectId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
+import { utilityStepConfig } from './admin.service';
 import { losCol, themesCol } from '../components/mongodb/collections';
 import { executeGenerate } from '../components/param-worker';
 import {
@@ -469,6 +470,7 @@ async function convertOther(candidate: ImportCandidate): Promise<ImportCandidate
       systemPrompt:
         'You convert instructor-supplied questions without adding publication approval. Preserve the learning intent.',
       temperature: 0,
+      ...(await utilityStepConfig()),
     },
   );
   const normalized = normalizeCandidate(converted as RawCandidate);

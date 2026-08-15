@@ -20,6 +20,13 @@ import {
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
 import {
+  configuredGenerationModels,
+  persistedModels,
+  resolvedFromPersisted,
+  stepModelsFrom,
+  type ResolvedStepModels,
+} from './step-models';
+import {
   createQuestionGenerationRun,
   failContentRun,
   getContentRun,
@@ -36,6 +43,7 @@ import type {
   ParamSlot,
   DerivedValue,
   NumericVerification,
+  StepModelConfig,
 } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -109,7 +117,7 @@ export interface GenerationInput {
   difficulty?: Difficulty;
   prompt?: string;
   byPuid: string;
-  models?: QuestionGenerationRun['input']['models'];
+  models?: ResolvedStepModels;
   blueprintId?: ObjectId;
   retryOfRunId?: ObjectId;
   pinnedMaterialIds?: ObjectId[];
@@ -163,15 +171,6 @@ export interface RegenerationVariant {
   };
 }
 
-export function configuredGenerationModels(): QuestionGenerationRun['input']['models'] {
-  return {
-    embedding: env.embeddingsModel,
-    generator: env.llmModelGenerator,
-    validator: env.llmModelValidator,
-    reviewer: env.llmModelReviewer,
-  };
-}
-
 /** Validate the target synchronously, persist one unique run, then enqueue it. */
 export async function enqueueGenerationRun(input: GenerationInput): Promise<ObjectId> {
   const lo = await losCol().findOne({ _id: input.loId });
@@ -212,12 +211,7 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
       allowedMaterialIds: resolvedMaterialIds,
       retrievedChunkCount: 0,
     },
-    models: input.models ?? {
-      embedding: env.embeddingsModel,
-      generator: platformSettings.models.generator,
-      validator: platformSettings.models.validator,
-      reviewer: platformSettings.models.reviewer,
-    },
+    models: persistedModels(input.models ?? stepModelsFrom(platformSettings)),
   });
   try {
     await enqueueJob<GenerationJobData>(GENERATION_JOB, { runId: run._id.toHexString() });
@@ -253,12 +247,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
   const platformSettings = await getPlatformSettings();
-  const models = input.models ?? {
-    embedding: env.embeddingsModel,
-    generator: platformSettings.models.generator,
-    validator: platformSettings.models.validator,
-    reviewer: platformSettings.models.reviewer,
-  };
+  const models = input.models ?? stepModelsFrom(platformSettings);
 
   const lo = await losCol().findOne({ _id: loId });
   if (!lo) throw new Error('lo-not-found');
@@ -289,12 +278,12 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
       VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
-      { model: models.validator },
+      { ...models.validator },
     );
     const review = platformSettings.featureFlags.reviewerAgent
       ? await completeJson<ReviewerOutput>(
           REVIEWER_PROMPT({ loName: lo.name, question: generated }),
-          { model: models.reviewer },
+          { ...models.reviewer },
         )
       : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
 
@@ -389,12 +378,12 @@ export async function regenerateQuestion(
 
   const validation = await completeJson<ValidatorOutput>(
     VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
-    { model: platformSettings.models.validator },
+    { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
     ? await completeJson<ReviewerOutput>(
         REVIEWER_PROMPT({ loName: lo.name, question: generated }),
-        { model: platformSettings.models.reviewer },
+        { ...platformSettings.models.reviewer },
       )
     : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
   const numerics = verifyGeneratedNumerics(generated);
@@ -533,7 +522,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
           VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated }),
-          { model: models.validator },
+          { ...models.validator },
         );
         validated.push(candidate);
       } catch (error) {
@@ -562,7 +551,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
         candidate.review = platformSettings.featureFlags.reviewerAgent
           ? await completeJson<ReviewerOutput>(
               REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
-              { model: models.reviewer },
+              { ...models.reviewer },
             )
           : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
         reviewed.push(candidate);
@@ -749,7 +738,7 @@ export function registerGenerationJobs(): void {
         ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
-        models: run.input.models,
+        models: resolvedFromPersisted(run.input.models),
         ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
         ...(run.input.retryOfRunId ? { retryOfRunId: run.input.retryOfRunId } : {}),
         ...(run.grounding?.allowedMaterialIds
@@ -861,12 +850,16 @@ async function generateValidQuestion(
   difficulty: Difficulty | undefined,
   prompt: string | undefined,
   chunks: RetrievedChunk[],
-  model = env.llmModelGenerator,
+  step: StepModelConfig = { model: env.llmModelGenerator },
 ): Promise<GeneratorOutput | null> {
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
     const candidate = await completeJson<GeneratorOutput>(
       GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
-      { model, temperature: GENERATOR_TEMPERATURE },
+      // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
+      // a temperature for this step means it, and one who sets a reasoning
+      // effort has knowingly given the temperature up (it is only legal at
+      // effort `none`), so passing it anyway would be dropped either way.
+      { temperature: GENERATOR_TEMPERATURE, ...step },
     );
     if (
       candidate &&

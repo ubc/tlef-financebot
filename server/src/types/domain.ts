@@ -123,14 +123,49 @@ export interface CapabilitySettings {
   updatedAt: Date;
 }
 
+/**
+ * The request SHAPE a model accepts. Declared here because an admin picks one
+ * and it is persisted; the authoritative table of which model has which profile,
+ * and what each profile means on the wire, is measured ground truth in
+ * `components/genai/llm/model-capabilities` and stays there.
+ */
+export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed';
+
+/** How hard a reasoning-capable model thinks before answering. */
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+
+/** The pipeline steps an admin can point at a model independently (PRD §2 / AD-07). */
+export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+
+/**
+ * One step's model and the parameters that model accepts. Which parameters are
+ * legal depends on the model — see `components/genai/llm/model-capabilities`.
+ * Both are optional because most steps want the model's own defaults.
+ */
+export interface StepModelConfig {
+  model: string;
+  /** Only legal while the effective reasoning effort is `none`. */
+  temperature?: number;
+  /** Reasoning-capable models only. Omitted means "let the model decide". */
+  reasoningEffort?: ReasoningEffort;
+}
+
 export interface PlatformSettings {
   _id: 'platform';
-  models: {
-    generator: string;
-    validator: string;
-    reviewer: string;
-    masteryEvaluator: string;
-  };
+  /**
+   * Persisted as `StepModelConfig`, but **a legacy document may hold a bare
+   * `string` per step** — the shape shipped before per-step parameters existed.
+   * `getPlatformSettings` normalizes on read rather than migrating, so an
+   * un-upgraded database keeps working. Never read this field raw.
+   */
+  models: Record<PipelineStep, StepModelConfig>;
+  /**
+   * Models an admin added that are not in the shipped catalogue, each assigned
+   * an existing capability profile. There is no way to declare a NEW profile:
+   * a profile is behaviour, and behaviour is code.
+   */
+  customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
   featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean };
   updatedBy: string;

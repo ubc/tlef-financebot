@@ -46,6 +46,60 @@ Deliberately NOT part of 7.2, recorded so it is not lost:
   is a one-step substitution — and the stray `$$` seen mid-stem.
 - Task 7.3 still needs the Stephen conversation before any code is written.
 
+## 2026-08-15 — Tasks 2 + 4: per-step params and the capability-driven console
+
+Built on top of PR #75's branch. **Not yet a PR.**
+
+**Schema.** `PlatformSettings.models.<step>` is now `{ model, temperature?,
+reasoningEffort? }` for five steps — the fourth existing one plus a new
+**`utility`** step that finally puts classification, hierarchy suggestion and
+import conversion under admin control (they read `LLM_DEFAULT_MODEL` directly
+before). `customModels` carries the escape hatch: a model id plus one of the
+implemented profiles.
+
+**Back-compat is read-time, not a migration**, so a rollback stays safe — and it
+was proven against the real dev DB, which held a legacy document: it came back
+normalized with `utility` invented from `LLM_DEFAULT_MODEL`.
+
+**Validation is server-side, not just UI.** The console will not offer an
+illegal combination, but the endpoint takes JSON, and an incoherent save is a
+400 inside a background job with nothing pointing at the settings change.
+Verified live: `{reviewer: {model: luna, temperature: 0.7}}` → **400
+`step-rejects-temperature:reviewer`**; the same body plus
+`reasoningEffort: 'none'` → **200**.
+
+**Console.** One `<select>` per step from the server catalogue, plus a single
+conditional control that swaps as capabilities change. Verified in the browser:
+reviewer on nano shows effort + temperature; switching to luna replaces
+temperature with an explanation; setting effort `none` brings it back; setting
+`high` withdraws it again. Saving persisted
+`reviewer: {model: 'gpt-5.6-luna', reasoningEffort: 'high'}`.
+
+### Deliberate calls
+
+- **The run record still stores model IDS only.** Widening it to carry per-step
+  parameters needs its own read-normalization for every existing run, so a
+  replay reuses the recorded models with their defaults. Recorded here rather
+  than left as a silent gap.
+- **`masteryEvaluator` and `layer2Evaluator` are labelled "not yet wired"** in
+  the UI, per Saurav's call — both are saved and neither is read by anything.
+- `step-models.ts` exists because this is the **third** time a pure helper in a
+  wholesale-mocked barrel came back `undefined` under tests (after
+  `option-order.service` in 7.2 and `model-capabilities`). Pure helpers do not
+  belong in a heavily-mocked module.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **96 suites / 1123 tests**
+(1109 before). 14 new tests covering legacy normalization, the invented
+`utility` step, every capability rejection, and custom-model profile borrowing.
+Browser-verified end to end against the real DB.
+
+**a11y: 4 passed, 2 failed** — the admin surface passes with the reworked DOM.
+The two failures (student practice, student exam) were **confirmed pre-existing
+by stashing this branch and re-running: identical two failures.** Full e2e
+(`responsive-workflows.spec.ts` also visits this page) not yet re-run.
+
 ## 2026-08-14 — Model capability profiles — [PR #75](https://github.com/ubc/tlef-financebot/pull/75)
 
 Branch `saurav/model-capability-profiles`, cut from `main` at `21519df`, pushed

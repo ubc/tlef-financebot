@@ -7,12 +7,19 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
   getCourseContentRun: jest.fn(),
 }));
 jest.mock('../../server/src/services/generation.service', () => ({
-  configuredGenerationModels: jest.fn(() => ({
-    generator: 'generator-v1',
-    validator: 'validator-v1',
-    reviewer: 'reviewer-v1',
-  })),
   enqueueGenerationRun: jest.fn(),
+}));
+// step-models is deliberately NOT mocked. Its persisted <-> in-memory
+// conversions are pure, and re-implementing them in a mock factory would stop
+// these tests tracking the real shapes — which is exactly how the run-record
+// shape could drift unnoticed. Only the env-derived defaults are stubbed.
+jest.mock('../../server/src/config/env', () => ({
+  env: {
+    embeddingsModel: 'embed-v1',
+    llmModelGenerator: 'generator-v1',
+    llmModelValidator: 'validator-v1',
+    llmModelReviewer: 'reviewer-v1',
+  },
 }));
 
 import { ObjectId } from 'mongodb';
@@ -22,10 +29,8 @@ import {
   materialsCol,
 } from '../../server/src/components/mongodb/collections';
 import { getCourseContentRun } from '../../server/src/services/content-runs.service';
-import {
-  configuredGenerationModels,
-  enqueueGenerationRun,
-} from '../../server/src/services/generation.service';
+import { enqueueGenerationRun } from '../../server/src/services/generation.service';
+import { configuredGenerationModels } from '../../server/src/services/step-models';
 import {
   createGenerationBlueprint,
   enqueueBlueprintRun,
@@ -77,13 +82,21 @@ describe('saved generation blueprints', () => {
       loId,
       count: 8,
       materialIds,
+      // A blueprint pins model IDS, not per-step parameters: it answers "which
+      // model produced this", and replaying it uses the models' own defaults.
       models: {
+        embedding: 'embed-v1',
         generator: 'generator-v1',
         validator: 'validator-v1',
         reviewer: 'reviewer-v1',
       },
     });
-    expect(configuredGenerationModels).toHaveBeenCalled();
+    expect(configuredGenerationModels()).toEqual({
+      embedding: 'embed-v1',
+      generator: { model: 'generator-v1' },
+      validator: { model: 'validator-v1' },
+      reviewer: { model: 'reviewer-v1' },
+    });
     expect(materialCountDocuments).toHaveBeenCalledWith({
       _id: { $in: materialIds },
       courseId,
@@ -135,6 +148,7 @@ describe('saved generation blueprints', () => {
       prompt: 'Use edge cases.',
       materialIds,
       models: {
+        embedding: 'embed-v1',
         generator: 'generator-v1',
         validator: 'validator-v1',
         reviewer: 'reviewer-v1',
@@ -151,10 +165,12 @@ describe('saved generation blueprints', () => {
       difficulty: 'hard',
       prompt: 'Use edge cases.',
       byPuid: 'PUID-INSTR',
+      // Rehydrated to the in-memory shape the pipeline calls with.
       models: {
-        generator: 'generator-v1',
-        validator: 'validator-v1',
-        reviewer: 'reviewer-v1',
+        embedding: 'embed-v1',
+        generator: { model: 'generator-v1' },
+        validator: { model: 'validator-v1' },
+        reviewer: { model: 'reviewer-v1' },
       },
       blueprintId,
       pinnedMaterialIds: materialIds,
@@ -211,6 +227,7 @@ describe('exact generation retry', () => {
         difficulty: 'easy',
         prompt: 'Original prompt',
         models: {
+          embedding: 'old-embed',
           generator: 'old-generator',
           validator: 'old-validator',
           reviewer: 'old-reviewer',
@@ -230,10 +247,13 @@ describe('exact generation retry', () => {
       difficulty: 'easy',
       prompt: 'Original prompt',
       byPuid: 'PUID-INSTR',
+      // A retry reuses the ORIGINAL run's models, not today's settings — but it
+      // recovers ids only, so any per-step parameters that run used are lost.
       models: {
-        generator: 'old-generator',
-        validator: 'old-validator',
-        reviewer: 'old-reviewer',
+        embedding: 'old-embed',
+        generator: { model: 'old-generator' },
+        validator: { model: 'old-validator' },
+        reviewer: { model: 'old-reviewer' },
       },
       blueprintId,
       retryOfRunId: runId,

@@ -22,8 +22,9 @@
  */
 import type { LLMOptions } from 'ubc-genai-toolkit-llm';
 import { env } from '../../../config/env';
+import type { CapabilityProfile, ReasoningEffort } from '../../../types/domain';
 
-export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed';
+export type { CapabilityProfile, ReasoningEffort };
 
 /**
  * Measured, NOT copied from documentation. Both OpenAI doc pages are wrong: the
@@ -34,11 +35,12 @@ export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fix
  *   model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.
  *
  * Identical on `gpt-5.4-nano` and `gpt-5.6-luna`. Re-probe before adding a model.
- * The type is derived from the array so the two can never drift apart.
+ *
+ * `satisfies` makes a value the `ReasoningEffort` union does not have a compile
+ * error; the reverse direction (a union member missing here) is pinned by
+ * `model-capabilities.test.ts`, so the two cannot drift either way.
  */
-export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'] as const;
-
-export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'] as const satisfies readonly ReasoningEffort[];
 
 export interface ModelCapabilities {
   readonly profile: CapabilityProfile;
@@ -152,6 +154,44 @@ export function capabilitiesFor(model: string | undefined): ModelCapabilities {
   // and index CAPABILITY_PROFILES with it, yielding undefined.
   if (Object.hasOwn(KNOWN_MODELS, id)) return CAPABILITY_PROFILES[KNOWN_MODELS[id]!];
   return CAPABILITY_PROFILES[OPENAI_MODEL_ID.test(id) ? 'reasoning-tunable' : 'classic'];
+}
+
+/** A model an admin added, assigned one of the profiles the code implements. */
+export interface CustomModel {
+  id: string;
+  profile: CapabilityProfile;
+}
+
+/**
+ * As `capabilitiesFor`, but an admin-registered custom model wins over both the
+ * shipped table and the OpenAI-prefix guess. This is the escape hatch: a new
+ * model can be used without a deploy, as long as its behaviour matches a profile
+ * the code already implements.
+ */
+export function capabilitiesForConfigured(
+  model: string | undefined,
+  customModels?: readonly CustomModel[],
+): ModelCapabilities {
+  const id = typeof model === 'string' ? model.trim() : '';
+  const custom = customModels?.find((entry) => entry.id.trim() === id);
+  if (custom && Object.hasOwn(CAPABILITY_PROFILES, custom.profile)) return CAPABILITY_PROFILES[custom.profile];
+  return capabilitiesFor(id);
+}
+
+/**
+ * Everything the admin console needs to render capability-driven controls, so
+ * the client never hardcodes a model id or a parameter range. Shipped models
+ * first, then custom ones.
+ */
+export function modelCatalogue(customModels?: readonly CustomModel[]): {
+  models: Array<CustomModel & { custom: boolean }>;
+  profiles: Record<CapabilityProfile, ModelCapabilities>;
+} {
+  const shipped = Object.entries(KNOWN_MODELS).map(([id, profile]) => ({ id, profile, custom: false }));
+  const custom = (customModels ?? [])
+    .filter((entry) => !Object.hasOwn(KNOWN_MODELS, entry.id.trim()))
+    .map((entry) => ({ id: entry.id.trim(), profile: entry.profile, custom: true }));
+  return { models: [...shipped, ...custom], profiles: CAPABILITY_PROFILES };
 }
 
 /**
