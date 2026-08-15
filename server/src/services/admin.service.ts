@@ -6,6 +6,11 @@ import {
   platformSettingsCol,
   usersCol,
 } from '../components/mongodb/collections';
+import {
+  CAPABILITY_PROFILES,
+  capabilitiesForConfigured,
+  temperatureAllowed,
+} from '../components/genai/llm/model-capabilities';
 import { env } from '../config/env';
 import {
   CAPABILITIES,
@@ -13,12 +18,15 @@ import {
   effectivePermission,
   saveCapabilitySettings,
 } from './capabilities.service';
+import { PIPELINE_STEPS } from '../types/domain';
 import type {
   CapabilityRole,
   CapabilitySettings,
   CourseRole,
+  PipelineStep,
   PlatformInstructorGrant,
   PlatformSettings,
+  StepModelConfig,
   User,
 } from '../types/domain';
 
@@ -329,11 +337,13 @@ export function defaultPlatformSettings(): PlatformSettings {
   return {
     _id: 'platform',
     models: {
-      generator: env.llmModelGenerator,
-      validator: env.llmModelValidator,
-      reviewer: env.llmModelReviewer,
-      masteryEvaluator: env.llmModelMasteryEvaluator,
+      generator: { model: env.llmModelGenerator },
+      validator: { model: env.llmModelValidator },
+      reviewer: { model: env.llmModelReviewer },
+      masteryEvaluator: { model: env.llmModelMasteryEvaluator },
+      utility: { model: env.llmDefaultModel },
     },
+    customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
     featureFlags: { reviewerAgent: true, layer2Evaluator: true },
     updatedBy: 'environment-default',
@@ -341,19 +351,83 @@ export function defaultPlatformSettings(): PlatformSettings {
   };
 }
 
+/**
+ * Bring a stored document up to the current shape.
+ *
+ * Two migrations happen on READ rather than as a script, so a database written
+ * by an older deploy keeps working and a rollback stays safe:
+ *
+ * 1. **A step used to be a bare model-id `string`.** Documents saved before
+ *    per-step parameters existed hold `models.generator: 'gpt-5.4-nano'`.
+ * 2. **`utility` did not exist.** Classification, import and RAG ran on
+ *    `LLM_DEFAULT_MODEL` with no admin control, so that is what it inherits.
+ */
+export function normalizePlatformSettings(stored: PlatformSettings): PlatformSettings {
+  const fallback = defaultPlatformSettings();
+  const models = {} as PlatformSettings['models'];
+  for (const step of PIPELINE_STEPS) {
+    const value = (stored.models as Record<string, StepModelConfig | string | undefined>)[step];
+    if (typeof value === 'string') models[step] = { model: value };
+    else if (value?.model) models[step] = value;
+    else models[step] = fallback.models[step];
+  }
+  return { ...stored, models, customModels: stored.customModels ?? [] };
+}
+
 export async function getPlatformSettings(): Promise<PlatformSettings> {
-  return (await platformSettingsCol().findOne({ _id: 'platform' })) ?? defaultPlatformSettings();
+  const stored = await platformSettingsCol().findOne({ _id: 'platform' });
+  return stored ? normalizePlatformSettings(stored) : defaultPlatformSettings();
+}
+
+/**
+ * The model + parameters for everything that is not one of the three question
+ * agents: material classification, hierarchy suggestion, and import conversion.
+ * These ran on `LLM_DEFAULT_MODEL` with no admin control at all until the
+ * `utility` step existed.
+ */
+export async function utilityStepConfig(): Promise<StepModelConfig> {
+  return (await getPlatformSettings()).models.utility;
+}
+
+/**
+ * Reject a step whose parameters the chosen model will not accept.
+ *
+ * The console will not offer an illegal combination, but the console is not the
+ * only way in — this endpoint takes JSON — and an incoherent save is a hard 400
+ * on the first generation call, discovered inside a background job with nothing
+ * pointing back at the settings change. So the rule is enforced here too.
+ */
+function assertStepConfigValid(step: PipelineStep, config: StepModelConfig, customModels: PlatformSettings['customModels']): void {
+  if (!config.model?.trim()) throw new Error('invalid-model-selector');
+  const caps = capabilitiesForConfigured(config.model, customModels);
+  if (config.reasoningEffort && !caps.reasoningEffort?.includes(config.reasoningEffort)) {
+    throw new Error(`step-rejects-reasoning-effort:${step}`);
+  }
+  if (config.temperature !== undefined) {
+    if (!temperatureAllowed(caps, config.reasoningEffort)) throw new Error(`step-rejects-temperature:${step}`);
+    const { min, max } = caps.temperature!;
+    if (!Number.isFinite(config.temperature) || config.temperature < min || config.temperature > max) {
+      throw new Error(`temperature-out-of-range:${step}`);
+    }
+  }
 }
 
 export async function updatePlatformSettings(
-  patch: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags'> & { confirmQualityImpact?: boolean },
+  patch: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags'>
+    & Partial<Pick<PlatformSettings, 'customModels'>>
+    & { confirmQualityImpact?: boolean },
   actorPuid: string,
 ): Promise<PlatformSettings> {
   if (!Number.isInteger(patch.costControls.maxGenerationsPerDay) || patch.costControls.maxGenerationsPerDay <= 0) {
     throw new Error('invalid-cost-controls');
   }
-  for (const model of Object.values(patch.models)) {
-    if (!model.trim()) throw new Error('invalid-model-selector');
+  const customModels = patch.customModels ?? [];
+  for (const custom of customModels) {
+    if (!custom.id?.trim()) throw new Error('invalid-model-selector');
+    if (!(custom.profile in CAPABILITY_PROFILES)) throw new Error(`unknown-capability-profile:${custom.profile}`);
+  }
+  for (const step of PIPELINE_STEPS) {
+    assertStepConfigValid(step, patch.models[step], customModels);
   }
   const current = await getPlatformSettings();
   if (current.featureFlags.reviewerAgent && !patch.featureFlags.reviewerAgent && !patch.confirmQualityImpact) {
@@ -362,6 +436,7 @@ export async function updatePlatformSettings(
   const updated: PlatformSettings = {
     _id: 'platform',
     models: patch.models,
+    customModels,
     costControls: patch.costControls,
     featureFlags: patch.featureFlags,
     updatedBy: actorPuid,

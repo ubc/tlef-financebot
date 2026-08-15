@@ -4,6 +4,10 @@ import { embed, embedOne, getEmbeddingDimension } from '../components/genai/embe
 import { parseFile } from '../components/genai/document-parsing';
 import { llm } from '../components/genai/llm';
 import { ensureCollection, upsertPoints, search } from '../components/qdrant';
+// Imported by its own path, not from the component barrel: rag.service.test
+// mocks `components/genai/llm` wholesale, which would make anything re-exported
+// from its index.ts `undefined` under that mock.
+import { modelRequestOptions } from '../components/genai/llm/model-capabilities';
 import { env } from '../config/env';
 
 // -----------------------------------------------------------------------------
@@ -112,10 +116,19 @@ export async function query(question: string, topK = 4): Promise<QueryResult> {
     'the sources you use with their bracketed number, e.g. [1].';
   const userPrompt = `Context:\n${context}\n\nQuestion: ${question}`;
 
+  // Shaped rather than passed literally: `maxTokens` reaches OpenAI as
+  // `max_tokens`, which every GPT-5 model rejects outright — this call had been
+  // failing with a 400 against the configured default model.
+  //
+  // `reasoningEffort: 'none'` is load-bearing, not decoration. The cap becomes
+  // `max_completion_tokens`, which budgets reasoning AND visible output
+  // together: measured, a reasoning model spent all 500 tokens thinking and
+  // returned `''` with `finish_reason: 'length'`. Since `answer` is returned
+  // unchecked, that would surface as a blank answer beside real citations — a
+  // silent failure, strictly worse than the 400 this replaces.
   const response = await llm.sendMessage(userPrompt, {
     systemPrompt,
-    temperature: 0.2,
-    maxTokens: 500,
+    ...modelRequestOptions({ temperature: 0.2, maxTokens: 500, reasoningEffort: 'none' }),
   });
 
   return { answer: response.content, sources };

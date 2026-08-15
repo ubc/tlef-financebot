@@ -2,6 +2,11 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { ensureAdmin } from '../components/auth';
+import {
+  CAPABILITY_PROFILES,
+  REASONING_EFFORTS,
+  modelCatalogue,
+} from '../components/genai/llm/model-capabilities';
 import { validate } from '../middleware/validate';
 import {
   grantPlatformInstructor,
@@ -18,7 +23,8 @@ import {
   updatePlatformSettings,
 } from '../services/admin.service';
 import { CAPABILITIES } from '../services/capabilities.service';
-import type { Capability, CapabilityRole } from '../types/domain';
+import { STEP_TEMPERATURE_DEFAULTS } from '../services/step-models';
+import type { Capability, CapabilityProfile, CapabilityRole } from '../types/domain';
 
 export const adminRouter = Router();
 
@@ -48,13 +54,26 @@ const assignmentsBody = z.object({
   courseId: objectId.optional(),
   assignments: z.record(z.enum(CAPABILITIES), roleAssignments).default({}),
 });
+// Shape only. WHICH parameters a given model actually accepts is capability
+// knowledge, enforced in admin.service — zod cannot know that a temperature is
+// legal on one model and a 400 on another.
+const stepModelConfig = z.object({
+  model: z.string().trim().min(1),
+  temperature: z.number().optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
+});
 const platformSettingsBody = z.object({
   models: z.object({
-    generator: z.string().trim().min(1),
-    validator: z.string().trim().min(1),
-    reviewer: z.string().trim().min(1),
-    masteryEvaluator: z.string().trim().min(1),
+    generator: stepModelConfig,
+    validator: stepModelConfig,
+    reviewer: stepModelConfig,
+    masteryEvaluator: stepModelConfig,
+    utility: stepModelConfig,
   }),
+  customModels: z.array(z.object({
+    id: z.string().trim().min(1),
+    profile: z.enum(Object.keys(CAPABILITY_PROFILES) as [CapabilityProfile, ...CapabilityProfile[]]),
+  })).optional(),
   costControls: z.object({ maxGenerationsPerDay: z.number().int().positive() }),
   featureFlags: z.object({ reviewerAgent: z.boolean(), layer2Evaluator: z.boolean() }),
   confirmQualityImpact: z.boolean().optional(),
@@ -175,7 +194,22 @@ adminRouter.put(
 adminRouter.get(
   '/admin/platform-settings',
   ensureAdmin(),
-  async (_req, res) => res.json(await getPlatformSettings()),
+  // The catalogue rides along with the settings: the console renders one control
+  // per model capability, so it needs the table, and one round trip beats two
+  // plus the risk of the client caching a stale copy of it.
+  async (_req, res) => {
+    const settings = await getPlatformSettings();
+    res.json({
+      ...settings,
+      catalogue: {
+        ...modelCatalogue(settings.customModels),
+        // What each step uses when the admin sets nothing, so the console can
+        // SHOW the effective value rather than pre-fill a box — pre-filling
+        // would persist a temperature that overrides the step's own default.
+        stepTemperatureDefaults: STEP_TEMPERATURE_DEFAULTS,
+      },
+    });
+  },
 );
 
 adminRouter.put(
@@ -196,9 +230,21 @@ const ADMIN_ERROR_STATUS: Record<string, number> = {
   'reviewer-disable-confirmation-required': 409,
 };
 
+/** Capability rejections are per-step, so they carry the step name as a suffix. */
+const STEP_ERROR_PREFIXES = [
+  'step-rejects-reasoning-effort',
+  'step-rejects-temperature',
+  'temperature-out-of-range',
+  'unknown-capability-profile',
+];
+
 adminRouter.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
   if (error instanceof Error && Object.hasOwn(ADMIN_ERROR_STATUS, error.message)) {
     res.status(ADMIN_ERROR_STATUS[error.message]).json({ error: error.message });
+    return;
+  }
+  if (error instanceof Error && STEP_ERROR_PREFIXES.some((prefix) => error.message.startsWith(`${prefix}:`))) {
+    res.status(400).json({ error: error.message });
     return;
   }
   next(error);

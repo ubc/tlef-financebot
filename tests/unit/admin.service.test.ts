@@ -108,7 +108,13 @@ describe('Phase 3 Admin essentials', () => {
 
   it('rejects non-positive cost controls and audits a valid settings mutation', async () => {
     const base = {
-      models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm' },
+      models: {
+        generator: { model: 'gpt-5.4-nano' },
+        validator: { model: 'gpt-5.4-nano' },
+        reviewer: { model: 'gpt-5.4-nano' },
+        masteryEvaluator: { model: 'gpt-5.4-nano' },
+        utility: { model: 'gpt-5.4-nano' },
+      },
       costControls: { maxGenerationsPerDay: 10 },
       featureFlags: { reviewerAgent: true, layer2Evaluator: true },
     };
@@ -126,7 +132,13 @@ describe('Phase 3 Admin essentials', () => {
 
   it('requires explicit quality-impact confirmation before disabling reviewer', async () => {
     const patch = {
-      models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm' },
+      models: {
+        generator: { model: 'gpt-5.4-nano' },
+        validator: { model: 'gpt-5.4-nano' },
+        reviewer: { model: 'gpt-5.4-nano' },
+        masteryEvaluator: { model: 'gpt-5.4-nano' },
+        utility: { model: 'gpt-5.4-nano' },
+      },
       costControls: { maxGenerationsPerDay: 10 },
       featureFlags: { reviewerAgent: false, layer2Evaluator: true },
     };

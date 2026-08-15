@@ -39,6 +39,193 @@ Deliberately NOT part of 7.2, recorded so it is not lost:
   is a one-step substitution — and the stray `$$` seen mid-stem.
 - Task 7.3 still needs the Stephen conversation before any code is written.
 
+## 2026-08-15 — Tasks 2 + 4: per-step params and the capability-driven console
+
+Built on top of PR #75's branch. **Not yet a PR.**
+
+**Schema.** `PlatformSettings.models.<step>` is now `{ model, temperature?,
+reasoningEffort? }` for five steps — the fourth existing one plus a new
+**`utility`** step that finally puts classification, hierarchy suggestion and
+import conversion under admin control (they read `LLM_DEFAULT_MODEL` directly
+before). `customModels` carries the escape hatch: a model id plus one of the
+implemented profiles.
+
+**Back-compat is read-time, not a migration**, so a rollback stays safe — and it
+was proven against the real dev DB, which held a legacy document: it came back
+normalized with `utility` invented from `LLM_DEFAULT_MODEL`.
+
+**Validation is server-side, not just UI.** The console will not offer an
+illegal combination, but the endpoint takes JSON, and an incoherent save is a
+400 inside a background job with nothing pointing at the settings change.
+Verified live: `{reviewer: {model: luna, temperature: 0.7}}` → **400
+`step-rejects-temperature:reviewer`**; the same body plus
+`reasoningEffort: 'none'` → **200**.
+
+**Console.** One `<select>` per step from the server catalogue, plus a single
+conditional control that swaps as capabilities change. Verified in the browser:
+reviewer on nano shows effort + temperature; switching to luna replaces
+temperature with an explanation; setting effort `none` brings it back; setting
+`high` withdraws it again. Saving persisted
+`reviewer: {model: 'gpt-5.6-luna', reasoningEffort: 'high'}`.
+
+### 2026-08-15 follow-up — console cleanup, and why there is no default temperature
+
+Saurav: the panel read as a wall of text and the five steps ran together. Each
+step is now its own bordered card in `.admin-step-list`, and every sentence of
+explanation moved behind the existing `helpTip` info icon (the same control
+instructor Settings uses), so the prose is there when someone is deciding and
+absent every other visit.
+
+**Saurav asked whether the console should default a temperature for
+`gpt-5.4-nano`. It must not, and the reason is a real trap.** A step config
+spreads OVER the step's own default —
+`{ temperature: GENERATOR_TEMPERATURE, ...step }` in `generateValidQuestion` —
+so a saved `temperature: 0` on the generator **overrides the 0.7 that exists to
+make a batch of questions differ**, and all three come back near-identical. The
+old UI pre-filled the box with the profile default (`0`), which meant one nudge
+would have persisted exactly that.
+
+Fixed: the temperature input is now **empty with a placeholder showing the
+effective step default** (`0.7 — step default` on the generator, `0` elsewhere),
+and clearing it deletes the key, which is the only way to undo an override once
+saved. `GENERATOR_TEMPERATURE` moved into `step-models.STEP_TEMPERATURE_DEFAULTS`
+so the console can *show* it rather than duplicate it, and the catalogue carries
+it to the client. Round-trip verified in the browser: `1.2` persists, clearing
+returns the stored config to `{ model }` alone.
+
+Also fixed while there: cards in a grid were staggered because `.card + .card`
+adds a stacking margin the grid then honours — same fix and same reason as the
+existing `.stack > .card + .card` rule.
+
+**Verification:** 96 suites / 1123 tests still green; a11y 4 passed / 2 failed
+(the same pre-existing student surfaces); `responsive-workflows.spec.ts` 2
+passed against the reworked DOM.
+
+### Deliberate calls
+
+- **The run record still stores model IDS only.** Widening it to carry per-step
+  parameters needs its own read-normalization for every existing run, so a
+  replay reuses the recorded models with their defaults. Recorded here rather
+  than left as a silent gap.
+- **`masteryEvaluator` and `layer2Evaluator` are labelled "not yet wired"** in
+  the UI, per Saurav's call — both are saved and neither is read by anything.
+- `step-models.ts` exists because this is the **third** time a pure helper in a
+  wholesale-mocked barrel came back `undefined` under tests (after
+  `option-order.service` in 7.2 and `model-capabilities`). Pure helpers do not
+  belong in a heavily-mocked module.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **96 suites / 1123 tests**
+(1109 before). 14 new tests covering legacy normalization, the invented
+`utility` step, every capability rejection, and custom-model profile borrowing.
+Browser-verified end to end against the real DB.
+
+**a11y: 4 passed, 2 failed** — the admin surface passes with the reworked DOM.
+The two failures (student practice, student exam) were **confirmed pre-existing
+by stashing this branch and re-running: identical two failures.**
+
+**Full e2e: 38 passed, 3 failed, 1 skipped — the recorded baseline exactly**,
+with the same three pre-existing failures (`app.spec.ts` and
+`walking-skeleton.spec.ts`, the `ADMIN_CWL_ALLOWLIST` landing issue;
+`numeric-parameterization.spec.ts`, the stale expectation that is Stephen's).
+`responsive-workflows.spec.ts` visits this page and passed unchanged, so the
+reworked DOM broke no selectors.
+
+### The e2e suite costs no model tokens, and that is by construction
+
+Worth recording, because it is not obvious and someone will ask before a run:
+the only spec that generates for real is `instructor-pipeline.spec.ts:310`, and
+it is `test.skip(!process.env.LLM_AVAILABLE)` — that is the "1 skipped".
+`custom-generation.spec.ts` intercepts `/generate` and `/regenerate` with
+`page.route`; `course-setup-guide-material-first.spec.ts` intercepts material
+upload, the SSE stream and `/suggest-hierarchy`. `numeric-parameterization`
+builds slots by hand and exercises server-side verification only, and
+`import.spec` has no short-answer item so `convertOther` never fires.
+
+**Do not set `LLM_AVAILABLE` casually.** It unskips a real run, and because the
+form never sends `count` the server fills in `DEFAULT_GENERATION_COUNT = 3` —
+3 questions x (generator + validator + reviewer).
+
+## 2026-08-14 — Model capability profiles — [PR #75](https://github.com/ubc/tlef-financebot/pull/75)
+
+Branch `saurav/model-capability-profiles`, cut from `main` at `21519df`, pushed
+as `a9691d6`, **not merged**. Tasks 1 + 3 of the plan; Tasks 2 + 4 (the admin
+console) are deliberately a separate PR so this could land without waiting.
+
+
+**Why it exists.** Switching to `gpt-5.6-luna` breaks EVERY LLM call. Measured
+against the live API: `temperature` at any value → 400 while reasoning is
+active; `max_tokens` → 400 `Use 'max_completion_tokens' instead`.
+`completeJson` always sent `temperature`, so the failure is total.
+
+**The rule, measured on both models and worth not re-deriving:** temperature is
+legal only while the *effective* reasoning effort is `none`. That is a property
+of the REQUEST, not the model. `gpt-5.4-nano` defaults to effort `none` (the only
+reason temperature has ever worked here); `gpt-5.6-luna` defaults to `medium`.
+**luna accepts `temperature: 0.7` if you also pass `reasoning_effort: 'none'`.**
+
+`reasoning_effort` accepts exactly `none | low | medium | high | xhigh`. **Both
+OpenAI doc pages are wrong** — the model page lists `max`, the reasoning guide
+lists `minimal`, the API rejects both. Probe, do not read.
+
+### Two pre-existing bugs this uncovered
+
+- **`rag.service.ts:118` has been 400ing in production.** It passed
+  `maxTokens: 500`, which reaches OpenAI as `max_tokens`, which `gpt-5.4-nano`
+  — the configured model — rejects. Unnoticed because RAG is demo surface.
+- **`gpt-5.4-nano` is not a legacy model.** It has the same reasoning channel as
+  luna. Nobody had noticed because nothing ever sent it an effort.
+
+### What shipped
+
+`components/genai/llm/model-capabilities.ts` — three profiles, two known models,
+`modelRequestOptions()` that every LLM call site shapes through. `completeJson`
+requests effort `none` by default so its determinism contract survives a model
+swap; `rag.service` does the same, deliberately.
+
+### The review found four things the live tests had not
+
+Recorded because three of them would have shipped silently:
+
+1. `completeJson` would have lost `temperature: 0` for classification, the
+   validator, the reviewer and import — nondeterministic, nothing logged.
+2. **`max_completion_tokens` is not a renamed `max_tokens`** — it budgets
+   reasoning AND output together. Measured: luna burned all 500 tokens reasoning
+   and returned `''` with `finish_reason: 'length'`. `rag.service` returns
+   `answer` unchecked, so the "fix" would have turned a loud 400 into a blank
+   answer beside real citations.
+3. The unknown-model fallback to `classic` was unsafe: a dated snapshot id like
+   `gpt-5.4-nano-2026-08-01` would have got `max_tokens` and 400'd. Ids matching
+   `/^(gpt-|o\d)/i` now get the conservative reasoning shape.
+4. The module was in `config/`; integration knowledge belongs in
+   `components/genai/llm/`. The mocking hazard that seemed to force `config/`
+   was overstated — `jest.mock` on a barrel does not shadow a sibling module.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck` clean; `npx jest` **95 suites / 1109
+  tests** (1103 before).
+- **Mutation-verified:** restoring the unconditional `temperature` fails three
+  tests; restored.
+- **Live-verified end to end** on both models — a mocked unit test cannot show
+  that `temperature: undefined` is dropped from the JSON body rather than sent.
+  Every profile, plus the RAG shape, issues real requests that succeed.
+- ⚠️ **Not yet run through a real generation.** Only direct API calls.
+
+### Still open
+
+- `GENERATOR_TEMPERATURE = 0.7` and the "validator and reviewer stay
+  deterministic" comment at `generation.service.ts:70-74` are now conditional on
+  the effort in play. Comment not yet updated — it is accurate while
+  `completeJson` defaults to `none`, but a future per-step effort setting
+  (Task 2/4) will make it false.
+- Nothing surfaces a model's resolved profile. `/api/health` reports the raw id,
+  so a misconfigured model is undiagnosable until the first call.
+- Tasks 2 + 4 (PlatformSettings schema, `utility` step, admin console UI) are
+  unstarted. Plan:
+  [`2026-08-14-model-capability-profiles.md`](2026-08-14-model-capability-profiles.md).
+
 ## Where this stands
 
 Phase 5's six core tasks are all `Owner: Stephen`. Saurav's Phase 5 work starts

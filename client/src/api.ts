@@ -169,20 +169,67 @@ export function saveAdminCapabilities(
   });
 }
 
+export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed';
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+
+export interface StepModelConfig {
+  model: string;
+  temperature?: number;
+  reasoningEffort?: ReasoningEffort;
+}
+
+/**
+ * What a profile accepts. The server sends this with the settings so the console
+ * renders controls from measured capabilities rather than from a copy of the
+ * table that would drift the first time a model is added.
+ */
+export interface ModelCapabilities {
+  profile: CapabilityProfile;
+  temperature: { min: number; max: number; default: number } | null;
+  reasoningEffort: ReasoningEffort[] | null;
+  defaultEffort: ReasoningEffort;
+  tokenLimitParam: string;
+}
+
+export interface ModelCatalogue {
+  models: Array<{ id: string; profile: CapabilityProfile; custom: boolean }>;
+  profiles: Record<CapabilityProfile, ModelCapabilities>;
+  /**
+   * What a step uses when the admin sets no temperature (the generator runs
+   * warm for batch diversity). Shown, never pre-filled: a saved value spreads
+   * OVER the step default, so persisting it would switch that behaviour off.
+   */
+  stepTemperatureDefaults: Partial<Record<PipelineStep, number>>;
+}
+
 export interface PlatformSettings {
-  models: { generator: string; validator: string; reviewer: string; masteryEvaluator: string };
+  models: Record<PipelineStep, StepModelConfig>;
+  customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
   featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: string;
 }
 
-export function getAdminPlatformSettings(): Promise<PlatformSettings> {
-  return request<PlatformSettings>('/api/admin/platform-settings');
+/** GET returns the settings plus the capability catalogue in one round trip. */
+export function getAdminPlatformSettings(): Promise<PlatformSettings & { catalogue: ModelCatalogue }> {
+  return request<PlatformSettings & { catalogue: ModelCatalogue }>('/api/admin/platform-settings');
+}
+
+/**
+ * Mirrors the server rule, so the UI can grey out a control before a save is
+ * attempted: a temperature is legal only while the effective effort is `none`.
+ */
+export function temperatureAllowed(caps: ModelCapabilities, effort?: ReasoningEffort): boolean {
+  if (!caps.temperature) return false;
+  if (!caps.reasoningEffort) return true;
+  return (effort ?? caps.defaultEffort) === 'none';
 }
 
 export function saveAdminPlatformSettings(
-  settings: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags'>,
+  settings: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags' | 'customModels'>,
   confirmQualityImpact = false,
 ): Promise<PlatformSettings> {
   return request<PlatformSettings>('/api/admin/platform-settings', {

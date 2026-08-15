@@ -47,11 +47,16 @@ export const llm = new LLMModule(config);
 
 ## Usage
 
+**Always shape options through `modelRequestOptions` — never pass `temperature`
+or `maxTokens` literally.** See the first gotcha below for why.
+
 ```ts
+import { llm } from '.';
+import { modelRequestOptions } from './model-capabilities';
+
 // Single message
 const response = await llm.sendMessage('What is the UBC GenAI Toolkit?', {
-  temperature: 0.5,
-  maxTokens: 400,
+  ...modelRequestOptions({ temperature: 0.5, maxTokens: 400, reasoningEffort: 'none' }),
 });
 console.log(response.content, response.usage);
 
@@ -59,8 +64,12 @@ console.log(response.content, response.usage);
 const conversation = llm.createConversation();
 conversation.addMessage('system', 'You are a helpful assistant.');
 conversation.addMessage('user', 'What is the capital of France?');
-const reply = await conversation.send({ maxTokens: 100 });
+const reply = await conversation.send(modelRequestOptions({ maxTokens: 100, reasoningEffort: 'none' }));
 ```
+
+`reasoningEffort: 'none'` is what keeps a temperature legal and keeps a small
+token budget spendable on visible output rather than on hidden reasoning. Drop
+it only when you want the model to think.
 
 Streaming is supported via `streamConversation` / `conversation.stream()`.
 
@@ -74,6 +83,21 @@ Streaming is supported via `streamConversation` / `conversation.stream()`.
       the system/user messages.
 
 ## Gotchas
+
+- **Never pass `temperature` / `maxTokens` to `sendMessage` literally.** Shape
+  them through `modelRequestOptions` (`./model-capabilities.ts`) first. Every
+  GPT-5 model rejects `max_tokens` outright (`Use 'max_completion_tokens'
+  instead`), and rejects any explicit `temperature` while reasoning is active.
+  `completeJson` already does this; `rag.service` had been failing a 400 on every
+  call because it did not.
+- **`max_completion_tokens` is not a renamed `max_tokens`.** It budgets reasoning
+  AND visible output together, so a reasoning model can spend the whole cap
+  thinking and return `''` with `finish_reason: 'length'`. Measured: luna burned
+  all 500 tokens on reasoning. Pair a small cap with `reasoningEffort: 'none'`.
+- **An unknown model id that looks like OpenAI's** (`gpt-*`, `o1`/`o3`…) resolves
+  to `reasoning-tunable`, not `classic` — dated snapshots like
+  `gpt-5.4-nano-2026-08-01` would otherwise get `max_tokens` and 400. Anything
+  else (Ollama, local models) still falls back to `classic`.
 
 - **Thinking models return empty content on a small token budget.** Models like
   `qwen3.*`, `gemma3/4`, `gpt-oss`, `glm-*` emit their reasoning into a hidden

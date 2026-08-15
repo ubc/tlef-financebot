@@ -1,5 +1,6 @@
 import { LLMModule, type LLMConfig, type LLMOptions, type ProviderType } from 'ubc-genai-toolkit-llm';
 import { env } from '../../../config/env';
+import { modelRequestOptions, type ModelRequestOptions } from './model-capabilities';
 import { createGenaiLogger } from '../logger';
 
 // Chat / text generation via ubc-genai-toolkit-llm. A single, process-wide
@@ -24,13 +25,8 @@ function buildConfig(): LLMConfig {
 /** The configured LLM module. Use `sendMessage` / `createConversation`. */
 export const llm = new LLMModule(buildConfig());
 
-export interface CompleteJsonOptions {
-  /** Model override (falls back to the module's LLM_DEFAULT_MODEL). */
-  model?: string;
+export interface CompleteJsonOptions extends ModelRequestOptions {
   systemPrompt?: string;
-  /** Defaults to 0 — classification/suggestion want deterministic JSON. */
-  temperature?: number;
-  maxTokens?: number;
 }
 
 /**
@@ -68,12 +64,19 @@ function extractJson<T>(content: string): T {
  * "Unclassified").
  */
 export async function completeJson<T>(prompt: string, options: CompleteJsonOptions = {}): Promise<T> {
+  // Effort `none` unless the caller asks otherwise. Every caller of this helper
+  // passes `temperature: 0` (or relies on its default) BECAUSE it wants a
+  // reproducible JSON answer — and a temperature is only legal while the
+  // effective effort is `none`. Without this, switching the configured model to
+  // one that reasons by default would silently drop every caller's temperature
+  // and make classification, structure validation and review nondeterministic,
+  // with nothing raised and nothing logged. Callers wanting the model to think
+  // (a reviewer at `high`, say) pass `reasoningEffort` and knowingly give up the
+  // temperature in exchange.
   const sendOptions: LLMOptions = {
-    temperature: options.temperature ?? 0,
+    ...modelRequestOptions({ ...options, reasoningEffort: options.reasoningEffort ?? 'none' }),
     responseFormat: 'json',
-    ...(options.model ? { model: options.model } : {}),
     ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
-    ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
   };
 
   const first = await llm.sendMessage(prompt, sendOptions);

@@ -10,10 +10,12 @@ import type {
   QuestionType,
 } from '../types/domain';
 import { getCourseContentRun } from './content-runs.service';
+import { enqueueGenerationRun } from './generation.service';
 import {
   configuredGenerationModels,
-  enqueueGenerationRun,
-} from './generation.service';
+  persistedModels,
+  resolvedFromPersisted,
+} from './step-models';
 
 export interface GenerationBlueprintInput {
   name: string;
@@ -75,7 +77,7 @@ export async function createGenerationBlueprint(
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.materialIds?.length ? { materialIds: input.materialIds } : {}),
-    models: configuredGenerationModels(),
+    models: persistedModels(configuredGenerationModels()),
     createdBy: byPuid,
     createdAt: now,
     updatedAt: now,
@@ -156,7 +158,7 @@ export async function enqueueBlueprintRun(
     ...(blueprint.difficulty ? { difficulty: blueprint.difficulty } : {}),
     ...(blueprint.prompt !== undefined ? { prompt: blueprint.prompt } : {}),
     byPuid,
-    models: blueprint.models,
+    models: resolvedFromPersisted(blueprint.models),
     blueprintId,
     ...(blueprint.materialIds ? { pinnedMaterialIds: blueprint.materialIds } : {}),
   });
@@ -181,7 +183,7 @@ export async function retryGenerationRun(
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,
-    models: run.input.models,
+    models: resolvedFromPersisted(run.input.models),
     ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
     retryOfRunId: runId,
     ...(run.grounding?.allowedMaterialIds

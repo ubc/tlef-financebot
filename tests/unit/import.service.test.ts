@@ -14,6 +14,11 @@ import { createQuestion } from '../../server/src/services/questions.service';
 jest.mock('../../server/src/components/genai/llm', () => ({
   completeJson: jest.fn(),
 }));
+// classification/import now run on the admin-configurable `utility` step, so
+// they read platform settings; stub that seam rather than the whole DB layer.
+jest.mock('../../server/src/services/admin.service', () => ({
+  utilityStepConfig: jest.fn(async () => ({ model: 'utility-model-v1' })),
+}));
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
