@@ -97,8 +97,29 @@ Browser-verified end to end against the real DB.
 
 **a11y: 4 passed, 2 failed** — the admin surface passes with the reworked DOM.
 The two failures (student practice, student exam) were **confirmed pre-existing
-by stashing this branch and re-running: identical two failures.** Full e2e
-(`responsive-workflows.spec.ts` also visits this page) not yet re-run.
+by stashing this branch and re-running: identical two failures.**
+
+**Full e2e: 38 passed, 3 failed, 1 skipped — the recorded baseline exactly**,
+with the same three pre-existing failures (`app.spec.ts` and
+`walking-skeleton.spec.ts`, the `ADMIN_CWL_ALLOWLIST` landing issue;
+`numeric-parameterization.spec.ts`, the stale expectation that is Stephen's).
+`responsive-workflows.spec.ts` visits this page and passed unchanged, so the
+reworked DOM broke no selectors.
+
+### The e2e suite costs no model tokens, and that is by construction
+
+Worth recording, because it is not obvious and someone will ask before a run:
+the only spec that generates for real is `instructor-pipeline.spec.ts:310`, and
+it is `test.skip(!process.env.LLM_AVAILABLE)` — that is the "1 skipped".
+`custom-generation.spec.ts` intercepts `/generate` and `/regenerate` with
+`page.route`; `course-setup-guide-material-first.spec.ts` intercepts material
+upload, the SSE stream and `/suggest-hierarchy`. `numeric-parameterization`
+builds slots by hand and exercises server-side verification only, and
+`import.spec` has no short-answer item so `convertOther` never fires.
+
+**Do not set `LLM_AVAILABLE` casually.** It unskips a real run, and because the
+form never sends `count` the server fills in `DEFAULT_GENERATION_COUNT = 3` —
+3 questions x (generator + validator + reviewer).
 
 ## 2026-08-14 — Model capability profiles — [PR #75](https://github.com/ubc/tlef-financebot/pull/75)
 
