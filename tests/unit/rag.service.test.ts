@@ -18,6 +18,17 @@ jest.mock('../../server/src/components/qdrant', () => ({
   upsertPoints: jest.fn(),
   search: jest.fn(),
 }));
+// Pin the model the request is shaped for. `modelRequestOptions` resolves
+// capabilities from `env.llmDefaultModel`, and `config/env` reads the developer's
+// real `.env` at import time — so without this the assertions below depend on
+// ambient environment: a local `.env` naming a GPT-5 model produces
+// `max_completion_tokens`, while CI (no `.env`, so the `ministral-3:latest`
+// default) produces `maxTokens` and no reasoning effort. That is exactly how
+// this suite passed locally and failed in CI.
+jest.mock('../../server/src/config/env', () => {
+  const actual = jest.requireActual('../../server/src/config/env');
+  return { ...actual, env: { ...actual.env, llmDefaultModel: 'gpt-5.4-nano' } };
+});
 
 import { query, ingestText } from '../../server/src/services/rag.service';
 import { chunkText } from '../../server/src/components/genai/chunking';
