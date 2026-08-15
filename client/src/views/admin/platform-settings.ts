@@ -5,6 +5,7 @@ import {
   saveAdminPlatformSettings,
   temperatureAllowed,
   type CapabilityProfile,
+  type ModelCapabilities,
   type ModelCatalogue,
   type PipelineStep,
   type PlatformSettings,
@@ -60,6 +61,34 @@ const EFFORT_HELP =
   + 'and it is not a determinism control. Setting anything other than "none" makes temperature '
   + 'unavailable, because the provider rejects an explicit temperature while a model is reasoning.';
 
+/**
+ * What each capability profile means, in terms an admin can act on.
+ *
+ * Keyed by profile id and merged with a description DERIVED from the
+ * catalogue, so a profile added server-side still gets an accurate (if drier)
+ * explanation rather than silently appearing with none.
+ */
+const PROFILE_BLURB: Record<string, string> = {
+  classic:
+    'takes a temperature and has no reasoning channel at all — the shape this platform sent before '
+    + 'reasoning models existed, and what local Ollama models still want',
+  'reasoning-tunable':
+    'can reason, but does not by default — so a temperature works until you switch reasoning on, and '
+    + 'switching it on takes the temperature away',
+  'reasoning-fixed':
+    'reasons by default, so a temperature is rejected unless you explicitly set effort to “none”',
+};
+
+/** A plain-language sentence built from a profile's measured capabilities. */
+function describeProfile(caps: ModelCapabilities): string {
+  const parts = [
+    caps.temperature ? 'accepts a temperature' : 'accepts no temperature',
+    caps.reasoningEffort ? `reasons at ${caps.defaultEffort} by default` : 'does not reason',
+    `sends its token limit as ${caps.tokenLimitParam}`,
+  ];
+  return parts.join(', ');
+}
+
 // Panel descriptions live behind the section heading's own info icon, for the
 // same reason the per-step ones do — four paragraphs of standing prose is what
 // made this page hard to scan.
@@ -110,6 +139,23 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return settings.catalogue.models.find((m) => m.id === modelId)?.profile
       ?? customModels.find((m) => m.id === modelId)?.profile
       ?? 'classic';
+  }
+
+  /**
+   * The profile explanation, assembled from the catalogue rather than written
+   * out, so it names whatever profiles the server actually offers and which
+   * shipped models use each — the list cannot go stale against the table.
+   */
+  function profileHelpText(): string {
+    const entries = Object.entries(settings.catalogue.profiles).map(([id, caps]) => {
+      const users = settings.catalogue.models.filter((m) => m.profile === id).map((m) => m.id);
+      const blurb = PROFILE_BLURB[id] ?? describeProfile(caps);
+      return `${id} — ${blurb}${users.length ? ` (${users.join(', ')})` : ''}.`;
+    });
+    return 'Pick the profile whose behaviour matches the model you are adding. '
+      + `${entries.join(' ')} `
+      + 'Choosing the wrong one is safe to correct — the server rejects a saved combination the '
+      + 'model would refuse, so a mismatch shows up on save rather than mid-generation.';
   }
 
   /** A control's label with its `helpTip` beside it, matching instructor Settings.
@@ -281,8 +327,11 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       ),
       customList,
       el('div', { class: 'admin-settings-grid' },
-        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Model id' }), customId),
-        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Capability profile' }), customProfile),
+        el('div', { class: 'form-field' },
+          labelRow('Model id', 'The exact id the provider expects, as it would appear in an API request — a typo here is only caught when the model is first called.'),
+          customId,
+        ),
+        el('div', { class: 'form-field' }, labelRow('Capability profile', profileHelpText()), customProfile),
       ),
       el('button', { class: 'btn', type: 'button', text: 'Add model', onclick: () => {
         const id = customId.value.trim();

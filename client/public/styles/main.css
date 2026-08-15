@@ -2782,7 +2782,8 @@ button.class-row--link:focus-visible .class-row__title {
    `.settings-column:last-child` above; scoped past the breakpoint where this
    grid collapses to one column and every card is therefore a left-hand one. */
 @media (min-width: 521px) {
-  .admin-step-list > .admin-step:nth-child(even) .help-tip__bubble {
+  .admin-step-list > .admin-step:nth-child(even) .help-tip__bubble,
+  .view--admin .admin-settings-grid > *:nth-child(even) .help-tip__bubble {
     left: auto;
     right: 0;
   }
