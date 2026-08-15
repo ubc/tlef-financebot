@@ -46,7 +46,12 @@ Deliberately NOT part of 7.2, recorded so it is not lost:
   is a one-step substitution — and the stray `$$` seen mid-stem.
 - Task 7.3 still needs the Stephen conversation before any code is written.
 
-## 2026-08-14 — Task 8.1 + 8.3: model capability profiles (branch `saurav/model-capability-profiles`)
+## 2026-08-14 — Model capability profiles — [PR #75](https://github.com/ubc/tlef-financebot/pull/75)
+
+Branch `saurav/model-capability-profiles`, cut from `main` at `21519df`, pushed
+as `a9691d6`, **not merged**. Tasks 1 + 3 of the plan; Tasks 2 + 4 (the admin
+console) are deliberately a separate PR so this could land without waiting.
+
 
 **Why it exists.** Switching to `gpt-5.6-luna` breaks EVERY LLM call. Measured
 against the live API: `temperature` at any value → 400 while reasoning is
