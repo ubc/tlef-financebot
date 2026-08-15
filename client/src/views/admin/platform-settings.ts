@@ -12,7 +12,7 @@ import {
   type StepModelConfig,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { pageHeader } from '../../instructor-ui.js';
+import { pageHeader, sectionTitleWithHelp } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import type { RouteParams } from '../../router.js';
 import { errorState, helpTip, loadingState } from '../../ui.js';
@@ -59,6 +59,30 @@ const EFFORT_HELP =
   'How long the model reasons before answering. Higher effort costs more tokens and takes longer, '
   + 'and it is not a determinism control. Setting anything other than "none" makes temperature '
   + 'unavailable, because the provider rejects an explicit temperature while a model is reasoning.';
+
+// Panel descriptions live behind the section heading's own info icon, for the
+// same reason the per-step ones do — four paragraphs of standing prose is what
+// made this page hard to scan.
+const PANEL_HELP = {
+  pipeline:
+    'Each stage of question generation can run on its own model. A change applies to work that '
+    + 'STARTS after it is saved — anything already queued keeps the models it was enqueued with. '
+    + 'Which parameters a model accepts is measured from the provider and enforced by the server, '
+    + 'so a combination it would reject cannot be selected here.',
+  custom:
+    'Use a model that is not in the shipped list by telling the platform which behaviour it has: '
+    + 'whether it takes a temperature, whether it reasons, and what it calls its token limit. '
+    + 'There is deliberately no way to describe a NEW behaviour — that is code, not configuration, '
+    + 'so a model whose API differs from the profiles here needs a release.',
+  cost:
+    'A platform-wide ceiling on generated questions per day, counted across every course. It counts '
+    + 'QUESTIONS, not tokens, so it does not bound what reasoning effort costs — a reviewer at high '
+    + 'effort spends more per question without changing this number.',
+  flags:
+    'Quality stages applied to new work. Turning the reviewer off means generated questions skip '
+    + 'semantic review entirely and arrive flagged for manual attention, which is why it asks for '
+    + 'confirmation.',
+};
 
 /**
  * Which parameters a model accepts is measured server-side, so the console never
@@ -247,15 +271,13 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     pageHeader('Platform Settings', 'Model selection, generation cost limits, and quality feature flags.'),
     el('section', { class: 'card stack admin-settings-panel' },
       el('div', { class: 'admin-settings-panel__heading' },
-        el('h2', { text: 'Pipeline models' }),
-        el('p', { class: 'muted', text: 'Model and parameters used when new background work starts. Which parameters a model accepts is enforced by the server — a combination it rejects cannot be selected here.' }),
+        sectionTitleWithHelp('Pipeline models', PANEL_HELP.pipeline),
       ),
       stepsGrid,
     ),
     el('section', { class: 'card stack admin-settings-panel' },
       el('div', { class: 'admin-settings-panel__heading' },
-        el('h2', { text: 'Custom models' }),
-        el('p', { class: 'muted', text: 'Use a model that is not in the shipped catalogue by assigning it an existing capability profile. A profile is behaviour, so a genuinely new one needs a code change.' }),
+        sectionTitleWithHelp('Custom models', PANEL_HELP.custom),
       ),
       customList,
       el('div', { class: 'admin-settings-grid' },
@@ -273,15 +295,13 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     ),
     el('section', { class: 'card stack admin-settings-panel' },
       el('div', { class: 'admin-settings-panel__heading' },
-        el('h2', { text: 'Cost controls' }),
-        el('p', { class: 'muted', text: 'Platform-wide guardrails for AI generation volume. Counts questions, not tokens — reasoning effort is not bounded by this.' }),
+        sectionTitleWithHelp('Cost controls', PANEL_HELP.cost),
       ),
       el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Maximum generations per day' }), maxDaily),
     ),
     el('section', { class: 'card stack admin-settings-panel' },
       el('div', { class: 'admin-settings-panel__heading' },
-        el('h2', { text: 'Feature flags' }),
-        el('p', { class: 'muted', text: 'Quality stages applied to new work. Disabling review requires confirmation.' }),
+        sectionTitleWithHelp('Feature flags', PANEL_HELP.flags),
       ),
       el('div', { class: 'admin-feature-list' },
         el('label', { class: 'checkbox-row admin-feature' }, reviewer,

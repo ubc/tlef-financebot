@@ -2791,24 +2791,30 @@ button.class-row--link:focus-visible .class-row__title {
 /* On a phone the shared rule cannot win: the bubble is left-anchored to its
    trigger and up to 70vw wide, so any trigger past ~30% of the width overflows
    to the right — and `.card`'s `overflow: hidden` used to hide that by clipping
-   the tip, which is the bug this section removes. Anchoring it to the CARD
-   instead makes it unconditionally in-bounds. Making `.help-tip` static is what
-   moves the containing block up to `.admin-step`; the cost is that `top: 100%`
-   then resolves against the card, so the bubble sits below the card rather than
-   below the trigger. On a one-column phone layout that reads fine, and it is
-   the difference between a readable tip and a horizontally scrolling page. */
+   the tip, which is the bug this section removes. `responsive-workflows.spec`
+   catches it as a horizontally scrolling outlet, because a bubble extends the
+   scroll area even while invisible.
+
+   The fix spans the bubble across its own label row or heading instead, which
+   is in-bounds by construction whatever the trigger's x position. Making
+   `.help-tip` static is what moves the containing block up to that row; every
+   tip on this page sits inside one of the three selectors below, so each bubble
+   still lands directly under the thing it explains rather than under the whole
+   card. */
 @media (max-width: 520px) {
-  .admin-step {
+  .view--admin .admin-settings-panel__heading,
+  .view--admin .admin-step__header,
+  .view--admin .form-field__label-row {
     position: relative;
   }
 
-  .admin-step .help-tip {
+  .view--admin .help-tip {
     position: static;
   }
 
-  .admin-step .help-tip__bubble {
-    left: 0.9rem;
-    right: 0.9rem;
+  .view--admin .help-tip__bubble {
+    left: 0;
+    right: 0;
     width: auto;
     max-width: none;
   }
