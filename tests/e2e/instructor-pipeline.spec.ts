@@ -275,7 +275,11 @@ test.describe('instructor pipeline', () => {
       await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Start →', exact: true }).click();
       await expect(page.getByText(STEM)).toBeVisible();
-      await page.getByRole('button', { name: new RegExp(`^A\\s+${CORRECT_OPTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+      // Matched by TEXT, with the key left open: createQuestion shuffles MCQ
+      // options and relabels the keys, so the correct answer is no longer at
+      // 'A' just because it was seeded there. `^[A-D]\s+` still pins that a key
+      // prefix renders at all, which is the part of the shape worth asserting.
+      await page.getByRole('button', { name: new RegExp(`^[A-D]\\s+${CORRECT_OPTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
       await page.getByRole('button', { name: 'Submit', exact: true }).click();
       await expect(page.getByText('Correct!', { exact: true })).toBeVisible();
       await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();

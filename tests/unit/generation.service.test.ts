@@ -474,8 +474,11 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
 
     const arg = jest.mocked(createQuestion).mock.calls[0][0];
     expect(arg.stem).toBe('What is the IRR?');
-    expect(arg.options[0].text).toBe('AB');
-    expect(arg.options[0].explanation).toBe('line one\nline two');
+    // Located by ROLE, not by position: generateValidQuestion shuffles MCQ
+    // options, so the dirtied option (the correct one) is no longer at index 0.
+    const dirtied = arg.options.find((o) => o.role === 'correct')!;
+    expect(dirtied.text).toBe('AB');
+    expect(dirtied.explanation).toBe('line one\nline two');
   });
 
   it('grounds retrieval in the course collection and records sourceRefs + agentDecision', async () => {
@@ -676,5 +679,64 @@ describe('preseedingProgress — per-LO approved/reviewed/unapproved counts (IN-
     ]);
 
     expect(countDocuments).toHaveBeenCalledTimes(6);
+  });
+});
+
+// --- option order alignment (Phase 5 Task 7.2) ------------------------------
+
+describe('option order alignment', () => {
+  // The invariant: the validator and reviewer cite options by LETTER, so the
+  // order they are shown must be the order that is persisted. Shuffling
+  // downstream of them reassigns every key after the prose is written — seen
+  // for real on generation run 6a7e9b9f0dbc47057d634fdc, where a roleAssessment
+  // reading "Option A (correct)" was stored against an A that was
+  // partially-correct. createQuestion is mocked here, so any variation in the
+  // persisted order can only have come from generation itself.
+  const ITEMS = 12;
+
+  function runPipelineWithCannedAgents() {
+    let call = 0;
+    jest.mocked(completeJson).mockImplementation(async () => {
+      // Per item the pipeline calls generator, then validator, then reviewer.
+      const step = call % 3;
+      call += 1;
+      if (step === 0) return generatorOutput() as never;
+      if (step === 1) return { valid: true, roleAssessment: 'roles valid' } as never;
+      return { decision: 'pass', reasoning: 'fine' } as never;
+    });
+    return runGenerationPipeline({ courseId, loId, count: ITEMS, byPuid: 'PUID-INSTR' });
+  }
+
+  it('shows the validator and reviewer the exact order it persists', async () => {
+    await runPipelineWithCannedAgents();
+
+    const prompts = jest.mocked(completeJson).mock.calls.map((c) => String(c[0]));
+    const persistedCalls = jest.mocked(createQuestion).mock.calls;
+    expect(persistedCalls).toHaveLength(ITEMS);
+
+    persistedCalls.forEach((persisted, item) => {
+      const texts = persisted[0].options.map((o) => o.text);
+      // Sorting the persisted texts by where each first appears in the prompt
+      // reproduces the prompt's own order — so the two agree iff it is a no-op.
+      for (const prompt of [prompts[item * 3 + 1], prompts[item * 3 + 2]]) {
+        const asShownToAgent = [...texts].sort((a, b) => prompt.indexOf(a) - prompt.indexOf(b));
+        expect(asShownToAgent).toEqual(texts);
+      }
+    });
+  });
+
+  it('shuffles upstream of persistence and tells createQuestion not to repeat it', async () => {
+    await runPipelineWithCannedAgents();
+
+    const correctKeys = jest
+      .mocked(createQuestion)
+      .mock.calls.map((c) => c[0].options.find((o) => o.role === 'correct')!.key);
+
+    // The fixture always generates the correct option at 'A'. Over 12 items the
+    // chance of a real shuffle leaving every one there is (1/4)^12.
+    expect(correctKeys.some((key) => key !== 'A')).toBe(true);
+    for (const call of jest.mocked(createQuestion).mock.calls) {
+      expect(call[0].optionsAlreadyShuffled).toBe(true);
+    }
   });
 });

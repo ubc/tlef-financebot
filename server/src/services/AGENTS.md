@@ -49,6 +49,12 @@ objects directly.
   existing `generate(random)` templates through the real parameter worker.
   Script migration validates one deterministic sample, returns placeholder
   mismatches without writing, and creates only Draft question versions.
+- `option-order.service.ts` — one pure function, `shuffleOptions`: seeded
+  Fisher-Yates over MCQ answer options with the keys relabelled by new position.
+  Called from `generateValidQuestion` (upstream of the validator and reviewer,
+  whose prose cites options by letter) and from `createQuestion` (covering the
+  import path). Callers that shuffled already pass `optionsAlreadyShuffled` so
+  the order is not randomized twice.
 - `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
   Uses PUID as the canonical identity, updates an existing matching User when
   present, leaves a pending grant otherwise, lists safe persisted User fields,

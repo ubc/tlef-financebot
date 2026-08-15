@@ -288,15 +288,59 @@ reviewer sees the same order the student will.
 
 1. ~~Measure the current key distribution over approved versions in the dev DB.~~
    Done 2026-08-13; inconclusive (dev DB is empty — see above). Proceed.
-2. Add a seeded Fisher-Yates shuffle + key relabel, applied to MCQ options at
-   version creation. Comment *why* it is at creation and not at approval — the
-   re-approval hazard above is not obvious from the call site.
-3. Confirm no invariant assumes sorted or generator-order keys: `questions.service.ts`
-   validates option invariants, and the numerical verifier requires exactly one
-   computed derived value per displayed option (per the #66 review). Both are
-   key-set checks, not order checks — verify that rather than assuming it.
-4. Leave `attempts`, `mastery`, `review-book`, and `exam` untouched. All are
-   key- or role-keyed against a pinned version and are unaffected.
+2. ~~Add a seeded Fisher-Yates shuffle + key relabel, applied to MCQ options at
+   version creation.~~ Done 2026-08-14 — `shuffleOptions`, called from
+   `createQuestion`, with the re-approval hazard written out at the call site.
+3. ~~Confirm no invariant assumes sorted or generator-order keys.~~ Done. Both
+   are key-set checks. The one the plan did NOT anticipate is the stored
+   verification proof: `NumericVerification` is `{evaluatorVersion, sampleSeeds,
+   verifiedAt}` (`domain.ts:218-222`) — no keys, no positions — so shuffling
+   *after* `verifyGeneratedNumerics` cannot invalidate a proof.
+4. ~~Leave `attempts`, `mastery`, `review-book`, and `exam` untouched.~~ Done;
+   all resolve by key or role against a pinned version.
+
+### Two deviations from this section, both deliberate
+
+- **`editQuestion` does NOT shuffle**, despite "one choke point: version
+  creation in `createQuestion` / `editQuestion`" above. `createQuestion` has
+  exactly four callers — `generation.service.ts:308,600` and
+  `import.service.ts:548,683` — and there is no manual-create route, so it is
+  the *only* origination path and already covers every question. An edit is a
+  human stating the order they want; re-randomizing it on every save would undo
+  a deliberate reorder and move the options out from under the form that just
+  submitted them. Pinned by a test.
+- **The helper lives in `questions.service.ts`, not `params.service.ts`.** It is
+  question-domain logic and `seededRandom` is imported, so no PRNG is
+  duplicated. `exam-attempts.service.ts:100-107` still has its own private
+  Fisher-Yates over the same PRNG; unifying them is a cosmetic refactor of a
+  file this task has no other reason to touch, so it was left alone.
+
+### Where the shuffle actually happens (revised 2026-08-14)
+
+Not `createQuestion` alone. The validator and reviewer both cite options by
+LETTER, and both run before persistence, so a shuffle at `createQuestion`
+reassigned every key after their prose was written — **confirmed on real
+generated content**, not theorised; see STATUS. The shuffle therefore happens
+at the generator boundary, in `generateValidQuestion`, which is upstream of both
+agents and is the one point every generator output passes through.
+`createQuestion` still shuffles for the import path and takes
+`optionsAlreadyShuffled` (default false — a forgotten flag still shuffles).
+
+### The key-distribution measurement the plan said could not be had cheaply
+
+It arrived for free. Reading `provenance` over the dev DB after two live
+generation runs:
+
+| Run | Correct-answer keys |
+|---|---|
+| 02:58, pre-shuffle | A, A |
+| 03:17, pre-shuffle | A, A, A |
+| 04:38, post-shuffle | A, D, C |
+
+**Five of five live `gpt-5.4-nano` questions put the correct answer at `A`
+before the shuffle.** n=5 is small, but it is real model output rather than the
+36/45 hand-written fixtures, and it is the first direct evidence that the bias
+this task assumes is actually there.
 
 ### Verification
 
