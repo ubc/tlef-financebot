@@ -1026,6 +1026,19 @@ export function GENERATOR_PROMPT(params: {
     `for the learning objective: "${params.loName}".`,
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
     difficultyGuidance,
+    // Measured 2026-08-16: TWELVE OF TWELVE generated questions came back
+    // labelled `medium` while the reviewer judged every one of them a one-step
+    // substitution. The rule above already said that is too easy — the model was
+    // not breaking it so much as echoing the target back as a label. So the fix
+    // is not restating the standard, it is asking for a self-assessment.
+    'The "difficulty" you RETURN must describe the question you actually wrote, not the',
+    'target you were given. Grade your own question honestly: if the stem supplies the',
+    'formula and the student performs one substitution, that is "easy" however large the',
+    'arithmetic looks. If your question comes out easier than the target, prefer to make',
+    'it genuinely harder — require choosing between two approaches, or a step the stem',
+    'does not hand over — and only if you cannot, return the honest lower label. A',
+    'mislabelled question is worse than an easy one: it is served to students as',
+    'evidence of a mastery they have not shown.',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
@@ -1184,6 +1197,23 @@ export function GENERATOR_PROMPT(params: {
     '  - "A - B" and "B" are equal when A = 2*B.',
     '  - "A - B" and "B - A" are equal when A = B (both 0).',
     '  - "A * (1+r)^n" and "A" are equal when n can draw 0.',
+    // The identity-element family. Added 2026-08-16 after it caused FIVE OF SIX
+    // verification failures in one measured batch, every time via BETA=1.0 — the
+    // list above covers overlapping slots, doubling and a zero exponent, and the
+    // model checked those faithfully while missing this one entirely.
+    '  - A MULTIPLIER that can draw exactly 1. "RF + BETA*(M - RF)" and the "ignored',
+    '    beta" distractor "RF + (M - RF)" are the same expression when BETA = 1, so a',
+    '    beta range of 0.5..2.0 step 0.5 is unservable — 1.0 is one of its draws.',
+    '  - An ADDEND or a rate that can draw exactly 0, which makes a "forgot this term"',
+    '    distractor identical to the correct answer on that draw.',
+    'This family is the one that gets missed: the two formulas look different because',
+    'one has a factor the other lacks, and they are still identical at the draw where',
+    'that factor is the identity. Whenever a distractor differs from the correct answer',
+    'by REMOVING a multiplier, check whether that multiplier can draw 1; by removing an',
+    'added term, whether it can draw 0. If it can, EXCLUDE that value from the range or',
+    'change the mistake. Check the exclusion by listing the draws, because min/max alone',
+    'hides it: BETA 1.1..2.0 step 0.3 gives 1.1, 1.4, 1.7, 2.0 and never draws 1.0, but',
+    'BETA 0.6..2.0 step 0.4 gives 0.6, 1.0, ... and still does.',
     '',
     'THE FIX, and prefer this one: give the slots DISJOINT, WELL-SEPARATED ranges. If A',
     'is always far larger than B, then A never equals B, A-B never equals B, and A+B',

@@ -64,6 +64,53 @@ describe('REVIEWER_PROMPT', () => {
   });
 });
 
+// Both blocks below pin a rule the prompt ALREADY implied and the model still
+// broke, measured 2026-08-16 (docs/prompt-engineering-tests.md). In each case
+// what was missing was specific, so the assertions target that specific thing —
+// a vaguer prompt would satisfy a vaguer test and change nothing.
+describe('GENERATOR_PROMPT — degenerate slot draws', () => {
+  it('names the identity-element collision, not just overlapping ranges', () => {
+    // 5 of 6 numeric questions in one batch died on BETA=1.0 making the
+    // "ignored beta" distractor identical to the correct answer. The existing
+    // examples covered overlaps, doubling and a zero exponent — every family
+    // EXCEPT the one that kept happening.
+    expect(generatorPrompt).toMatch(/MULTIPLIER that can draw exactly 1/i);
+    expect(generatorPrompt).toMatch(/BETA = 1/);
+  });
+
+  it('tells the generator to EXCLUDE the degenerate value from the range', () => {
+    // Detecting the collision is useless without the remedy: shift the range so
+    // the identity value is never drawn.
+    expect(generatorPrompt).toMatch(/EXCLUDE that value from the range/i);
+    expect(generatorPrompt).toMatch(/gives 1.1, 1.4, 1.7, 2.0/i);
+  });
+
+  it('covers the additive twin of the same trap', () => {
+    expect(generatorPrompt).toMatch(/ADDEND or a rate that can draw exactly 0/i);
+  });
+});
+
+describe('GENERATOR_PROMPT — difficulty self-assessment', () => {
+  it('asks the generator to label what it WROTE, not the target it was given', () => {
+    // 12 of 12 questions returned `medium` while the reviewer called every one a
+    // one-step substitution. The standard was already in the prompt; the model
+    // was echoing the requested label rather than grading its own output, so the
+    // fix is the instruction to self-assess.
+    expect(generatorPrompt).toMatch(/must describe the question you actually wrote/i);
+    expect(generatorPrompt).toMatch(/not the/i);
+  });
+
+  it('states the one-step rule in the terms the reviewer already applies', () => {
+    // The reviewer's criterion 5 rejects a one-step substitution labelled medium.
+    // The generator was being graded against a standard it was never shown.
+    expect(generatorPrompt).toMatch(/one substitution, that is "easy"/i);
+  });
+
+  it('prefers making the question harder over relabelling it', () => {
+    expect(generatorPrompt).toMatch(/genuinely harder/i);
+  });
+});
+
 describe('GENERATOR_PROMPT', () => {
   it('instructs the generator to emit slots and formulas, not numbers', () => {
     expect(generatorPrompt).toMatch(/paramSlots/);

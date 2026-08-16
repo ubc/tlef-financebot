@@ -2970,3 +2970,78 @@ branch on the conceptual test and cost far less.
 
 The two faults with the strongest evidence — degenerate slot ranges and
 difficulty labelling — were not on the original plan at all.
+
+---
+
+# Experiment 5 — tasks 2 and 3 measured against their own baselines
+
+Same LO (CAPM), same instructor prompt, same settings as experiment 2, after the
+prompt gained an explicit identity-element collision rule and a difficulty
+self-assessment instruction. **4 generations.**
+
+| Metric | Baseline (exp 2) | After tasks 2+3 |
+|---|---|---|
+| Verification proof | 0/3 (A2), 1/3 (B2) | **0/4** |
+| Difficulty returned | `medium` 3/3 | **`medium` 4/4** |
+| Reviewer | flag ×3 | reject ×2, flag ×2 |
+
+**Neither fix worked.** This is a negative result and is recorded as one.
+
+## Task 2 half-worked, and the failure moved rather than went away
+
+Two of four generations still declared a beta range that draws exactly 1.0
+(`0.6..1.8 step 0.2`) — the precise mistake the prompt now warns about by name,
+with a worked remedy. The reviewer caught it and said so:
+
+> *"the parameter range includes beta = 1.0. In that case, the correct CAPM
+> formula RF + beta(MARKET − RF)…"*
+
+The other two **did** shift the range away from 1.0 (`0.6..0.9`) — and then
+collided anyway, in a new way:
+
+> *"Options B and C are algebraically identical for every parameter set: B
+> computes RF + (MARKET − RF), which always equals MARKET, exactly matching
+> option C."*
+
+`RF + (M - RF) ≡ M` is an identity for **every** draw, not a degenerate one. So
+the model followed the new rule, avoided the named trap, and produced a worse
+collision that no range choice could fix. Narrowing the guidance moved the error
+rather than removing it.
+
+## Task 3 did not move at all
+
+All four still returned `medium`, and the reviewer still flagged the calibration:
+
+> *"the stated medium difficulty is mi[scalibrated]"*
+
+Asking the model to grade its own output changed nothing measurable.
+
+## What this actually establishes
+
+**Three separate attempts have now failed to fix option collisions by prompt** —
+the original PAIRWISE COLLISION CHECK, its ratio/percentage addendum, and this
+identity-element rule. The instruction is explicit, worked and correct, and the
+model still writes colliding formulas. That is enough evidence to stop treating
+this as a prompt problem.
+
+**The gates are working; the loop is not.** The verifier caught 4/4 and the
+reviewer caught 4/4, so nothing unservable can reach a student. But the pipeline
+produced **zero servable questions**, which is a throughput failure rather than a
+safety one.
+
+**The structural cause:** `generateValidQuestion` retries on
+`optionShapeValid` and `errorModelsNameMistakes` only. `verifyGeneratedNumerics`
+runs in the CALLER, after generation is finished — so a collision never triggers
+a retry. The generator is never told it failed, and never gets a second attempt
+at the one fault that accounts for nearly every dead question.
+
+**Proposed fix, and it is code rather than prose:** move verification inside the
+generator's retry loop and feed the failure string back into the retry prompt —
+*"your option X and option Y are identical at seed N; fix that specific
+collision"*. The evaluator already produces that sentence; nobody shows it to the
+model. This is the same shape as the planned regeneration change, which feeds the
+reviewer's critique back for the same reason.
+
+The prompt changes from tasks 2 and 3 are kept — they are accurate, they cost
+little, and the reviewer's own reasoning now echoes them — but they are **not**
+the fix, and this file should not be read as saying they were.
