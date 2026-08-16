@@ -3171,3 +3171,85 @@ unchanged and remains the one open quality problem. The reviewer now passes
 these questions rather than flagging calibration, which is consistent with the
 retried questions being genuinely better — but that is inference, and the honest
 statement is that the difficulty instruction still does not measurably work.
+
+---
+
+# Experiment 9 — generator reasoning effort vs temperature
+
+The two are mutually exclusive: any effort above `none` withdraws the temperature,
+and `GENERATOR_TEMPERATURE = 0.7` is the only mechanism making a batch differ. One
+batch of 3 per arm, same LO (CAPM), reviewer at `high` in both.
+
+| Arm | proofs | reviewer | retries | diversity |
+|---|---|---|---|---|
+| **effort none** (temp 0.7) | 2/3 | reject, reject, reject | 3 | 3/3 distinct slot sets, 3/3 distinct stem openings |
+| **effort high** (no temp) | 3/3 | pass, pass, pass | 0 | 3/3 distinct slot sets, 3/3 distinct stem openings |
+
+### Stems generated
+
+**effort none**
+
+1. `slots[B1,B2,B3,RF,RM,W1,W2]` A portfolio invests $W_1$ of its value in Asset 1, $W_2$ in Asset 2, and the remainder in 
+2. `slots[BETA1,BETA2,BETA3,MARKET_PCT,RF_PCT,W1_PCT,W2_PCT]` A portfolio invests ${{W1_PCT}}%$ in Stock 1, ${{W2_PCT}}%$ in Stock 2, and the remainder 
+3. `slots[BETA,MR_PCT,RF_PCT]` A stock has beta $\beta$, the risk-free rate is $R_f$, and the market's expected return is
+
+**effort high**
+
+1. `slots[BETA1,BETA2,BETA3,MARKET_PCT,RF_PCT]` A portfolio invests $w_1=0.5$, $w_2=0.25$, and $w_3=0.25$ in three assets with estimated b
+2. `slots[COVARIANCE_M,MARKET_PCT,REALIZED_PCT,RF_PCT,VARIANCE_M]` A stock has covariance with the market of $C_{iM} = {{COVARIANCE_M}}$ and market-return va
+3. `slots[BETA_1,BETA_2,MKT_PCT,PORT_SD_PCT,RF_PCT,WEIGHT_1]` A portfolio invests {{WEIGHT_1}}% in Asset 1 and the remainder in Asset 2. Asset 1 has bet
+
+
+## Result — reasoning wins, and my objection was based on a wrong premise
+
+| Arm | proofs | reviewer | retries | diversity |
+|---|---|---|---|---|
+| effort `none` (temp 0.7) | 2/3 | **reject, reject, reject** | **3** | 3/3 distinct |
+| effort `high` (no temp) | **3/3** | **pass, pass, pass** | **0** | 3/3 distinct |
+
+Reasoning was better on every axis measured, and the margin is not subtle.
+
+**Zero retries.** Effort `high` produced no option collisions at all — first
+attempt clean, three times running — against three collisions at effort `none`.
+The fault that has dominated every measurement in this document, that three
+prompt revisions failed to prevent and that the retry loop exists to catch,
+simply did not occur when the model was allowed to think.
+
+**Diversity did not collapse, which is what I predicted and got wrong.** Both
+arms produced three genuinely different scenarios (a three-asset portfolio, a
+covariance/variance derivation, a two-asset portfolio with standard deviation).
+
+### Why the prediction was wrong
+
+`GENERATOR_TEMPERATURE = 0.7` exists because **`completeJson` defaults to
+temperature 0** — its comment says so explicitly, and at 0 a batch really would
+come back identical. I carried that reasoning onto reasoning models without
+rechecking the premise.
+
+But withdrawing the temperature on a reasoning model does not fall back to 0. It
+falls back to **the provider default, which is 1.0** — measured directly on
+2026-08-14: *"'temperature' does not support 0 with this model. Only the default
+(1) value is supported."* So effort `high` runs HOTTER than 0.7, not colder.
+There was never a diversity risk to trade away.
+
+The six identical CAPM questions on 2026-08-15 were real, but they are not
+evidence for this: that batch ran on the old prompt, with no collision guidance,
+no retry loop and reviewer v1. I generalised a single observation into a
+mechanism, and the mechanism was wrong.
+
+### Cost
+
+Effort `high` bills reasoning tokens as output, but it consumed **3 fewer
+generation calls** in this arm by not needing retries. On these numbers it is
+plausibly cheaper per servable question, not more expensive — though that is
+inference from one batch, not a measurement.
+
+### Recommendation, reversed
+
+**Run the generator at effort `high`.** Reviewer `high` as well, which was
+already the case. `GENERATOR_TEMPERATURE` becomes dead weight on reasoning
+models — it is silently dropped, and the comment explaining it is now misleading
+for the models actually in use.
+
+Caveats: n=3 per arm, one LO, one run. The reject ×3 versus pass ×3 split is
+stark enough to act on, and cheap enough to re-run if it matters.
