@@ -3095,3 +3095,79 @@ Difficulty still returns `medium` on all four, so experiment 5's task-3 finding
 stands unchanged. The difference is that the reviewer now passes them, having
 previously flagged the calibration — consistent with the retried questions being
 genuinely better, though that is inference rather than measurement.
+
+### Arm: A-baseline-no-exemplar
+
+| LO kind | numericKind | proof | difficulty | reviewer |
+|---|---|---|---|---|
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `pass` |
+
+### Arm: B-with-conceptual-exemplar
+
+| LO kind | numericKind | proof | difficulty | reviewer |
+|---|---|---|---|---|
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| COMPUTATIONAL | `numeric` | **PROOF** | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `pass` |
+| CONCEPTUAL | `conceptual` | none | medium | `flag` |
+
+## Task 5 result — the exemplar is NOT shipped
+
+| Arm | Computational LO | Conceptual LO |
+|---|---|---|
+| **A** current pipeline, no exemplar | numeric 3/3, **proof 3/3**, pass ×3 | conceptual 3/3, pass ×3 |
+| **B** + conceptual exemplar | numeric 3/3, **proof 3/3**, pass ×3 | conceptual 3/3, pass ×2, **flag ×1** |
+
+**Numeric is unharmed** — the regression this test existed to detect did not
+happen, and the exemplar can be ruled out as a cause of experiment 2's worse
+numeric verdicts.
+
+**But it shows no benefit either, and it cannot.** The exemplar's original
+evidence was 0/3 → 3/3 reviewer passes on conceptual questions (experiment 1).
+That baseline no longer exists: the retry loop and reviewer v2 have moved the
+current pipeline to **3/3 passes without it**. There is no headroom left for an
+exemplar to demonstrate value against, at any sample size.
+
+**Decision: do not ship it.** ~250 tokens on every call, including numeric ones
+it has nothing to say about, in exchange for nothing measurable.
+
+Worth stating plainly: the plan's pre-registered rule was *"ship the exemplar
+only if numeric output is unharmed"*, and numeric IS unharmed — so the rule as
+written says ship. The rule was written when conceptual had a measured benefit,
+and that premise is gone. Applying it mechanically would mean shipping an
+addition whose entire justification has been absorbed by other fixes.
+
+**The wider lesson from experiment 1 still holds, and it is the one that
+mattered:** demonstration beat description. It just turned out the same problem
+was better solved by showing the model its OWN failure (the retry loop, 0/4 →
+4/4) than by showing it someone else's good example.
+
+## Task 6 result — combined verification against the recorded baselines
+
+Arm A above is the task 6 measurement. Against the numbers written down before
+any of these changes:
+
+| Metric | Before (exp 2 / exp 5) | **Now** |
+|---|---|---|
+| Verification proof, computational LO | 0/3, then 0/4 | **3/3** |
+| Reviewer, computational LO | flag ×3, then reject ×2 + flag ×2 | **pass ×3** |
+| Reviewer, conceptual LO | flag ×2 + reject ×1 (exp 1 baseline) | **pass ×3** |
+| Conceptual questions that can serve at all | 2 of 6 stems (gate) | **6 of 6** |
+
+One retry fired and succeeded during arm A —
+`options CAPM_RETURN and MARKET_ONLY_RETURN are identical (seed 1000020)` — the
+loop doing exactly its job on a fault that would previously have produced a dead
+question.
+
+**Difficulty is still returned as `medium` throughout**, so task 3's finding is
+unchanged and remains the one open quality problem. The reviewer now passes
+these questions rather than flagging calibration, which is consistent with the
+retried questions being genuinely better — but that is inference, and the honest
+statement is that the difficulty instruction still does not measurably work.
