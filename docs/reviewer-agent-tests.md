@@ -360,3 +360,35 @@ actionable than v1's.
    proof runs first, and the reviewer currently guesses at servability.
 3. **Re-run F1 without the verifier hint** before claiming criterion 7 works.
 4. Keep treating verdicts as signal at n≥3 — but not at n=1.
+
+---
+
+# Follow-up — criterion 7 validated WITHOUT the hint
+
+The earlier F1 result proved nothing about criterion 7: the reviewer was handed
+the verifier's failure string, so naming the collision was not a detection. That
+limitation was recorded rather than glossed, and this closes it.
+
+**Fixture:** the subtle case the generator actually produced on 2026-08-16 —
+`IGNORED_BETA = RF + (M - RF)`, which is identically `MARKET_ONLY = M`. Two
+DISTRACTORS identical for every draw, so no range choice can separate them. The
+beta range here deliberately excludes 1.0, so the obvious trap is absent.
+
+**No `verificationFailure` was passed.** The reviewer was on its own.
+
+| Runs | Verdict | Collision found |
+|---|---|---|
+| 4 | **reject ×4** | **4/4** |
+
+> *"IGNORED_BETA has the formula RF_PCT + (MARKET_PCT - RF_PCT), which is
+> identically MARKET_PCT. Thus options B and C always display the same value for
+> every allowed draw"*
+
+All four found it, named both options, and showed the algebra. For comparison,
+reviewer v1 reviewing this same shape in experiment 2 returned `flag` with no
+mention of the collision — it saw a question that was merely too easy.
+
+**Criterion 7 is validated.** The reviewer now catches, unaided, the fault class
+that accounted for nearly every unservable question — which matters because the
+verifier only reports the FIRST collision it finds, and because on the
+regeneration path there may be no verifier result to hand over at all.

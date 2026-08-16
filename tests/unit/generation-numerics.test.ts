@@ -55,6 +55,54 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).toMatch(/judge the model, not the arithmetic/i);
   });
 
+  // Criteria 7-9 added 2026-08-16. Each mirrors a gate that already decides
+  // servability and that the reviewer could not see. Measured on a fixture
+  // missing a common-misconception: named 0/4 before, 4/4 after, and a clean
+  // control still passed 4/4 — discrimination, not severity inflation.
+  // See docs/reviewer-agent-tests.md.
+  it('asks the reviewer to check slot ranges for a degenerate draw', () => {
+    expect(reviewerPrompt).toMatch(/SLOT-RANGE DEGENERACY/);
+    expect(reviewerPrompt).toMatch(/beta range that includes exactly 1\.0/i);
+    // The always-identical case too, which no range choice can fix.
+    expect(reviewerPrompt).toMatch(/identical as EXPRESSIONS/i);
+  });
+
+  it('asks the reviewer to enforce the option contract', () => {
+    expect(reviewerPrompt).toMatch(/Option contract/i);
+    expect(reviewerPrompt).toMatch(/exactly one\s+computed value/i);
+  });
+
+  it('asks the reviewer to check the Strategy-A retry gate', () => {
+    // decideStrategy offers the retry only on a common-misconception pick, so an
+    // MCQ without one silently loses the behaviour for every student.
+    expect(reviewerPrompt).toMatch(/Retry gate/i);
+    expect(reviewerPrompt).toMatch(/common-misconception/);
+  });
+
+  it('does not let criterion 7 be mistaken for the arithmetic ban', () => {
+    // The prompt forbids evaluating arithmetic. Criterion 7 asks about formula
+    // IDENTITY, which is a different act, and without this the two instructions
+    // read as contradictory.
+    expect(reviewerPrompt).toMatch(/Criterion 7 is NOT arithmetic/i);
+  });
+
+  it('tells the reviewer when the verifier has already rejected the question', () => {
+    const rejected = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      verificationFailure: 'options PV and PV_DUP are identical (seed 1000003)',
+    });
+    expect(rejected).toMatch(/ALREADY REJECTED/);
+    expect(rejected).toMatch(/options PV and PV_DUP are identical/);
+    expect(rejected).toMatch(/cannot serve a student in this state/i);
+  });
+
+  it('omits the verifier block entirely when there is no failure', () => {
+    // A reviewer told "the verifier rejected this" about a sound question would
+    // be actively misled, so the block must be absent rather than empty.
+    expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
+  });
+
   it('keeps the judgement criteria an LLM is actually good at', () => {
     expect(reviewerPrompt).toMatch(/Factual accuracy/i);
     expect(reviewerPrompt).toMatch(/alignment/i);

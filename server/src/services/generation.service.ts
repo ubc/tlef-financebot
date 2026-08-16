@@ -280,6 +280,11 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       continue;
     }
 
+    // Verified BEFORE the review, not after, so the reviewer can be told what
+    // the deterministic verifier already decided. Pure and cheap; the ordering
+    // is the only thing that changed.
+    const numerics = verifyGeneratedNumerics(generated);
+
     // Validator and reviewer each run on their own model. Structure validation
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
@@ -288,7 +293,11 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     );
     const review = platformSettings.featureFlags.reviewerAgent
       ? await completeJson<ReviewerOutput>(
-          REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+          REVIEWER_PROMPT({
+            loName: lo.name,
+            question: generated,
+            ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
+          }),
           { ...models.reviewer },
         )
       : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
@@ -296,8 +305,6 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     const sourceRefs = chunks
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
-
-    const numerics = verifyGeneratedNumerics(generated);
 
     try {
       const { questionId } = await createQuestion({
@@ -385,17 +392,22 @@ export async function regenerateQuestion(
   );
   if (!generated) throw new Error('generation-invalid-options');
 
+  // Verified before the review so the reviewer sees the verifier's verdict.
+  const numerics = verifyGeneratedNumerics(generated);
   const validation = await completeJson<ValidatorOutput>(
     VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
     { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
     ? await completeJson<ReviewerOutput>(
-        REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+        REVIEWER_PROMPT({
+          loName: lo.name,
+          question: generated,
+          ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
+        }),
         { ...platformSettings.models.reviewer },
       )
     : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
-  const numerics = verifyGeneratedNumerics(generated);
   const variant: RegenerationVariant = {
     stem: generated.stem,
     options: generated.options,
@@ -557,9 +569,18 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const reviewed: TrackedCandidate[] = [];
     for (const candidate of validated) {
       try {
+        // Verified here as well as at persistence below. The two calls answer
+        // different questions — this one decides what to TELL the reviewer, the
+        // later one decides what to STORE — and the function is pure, so the
+        // repeat costs nothing but keeps the reviewer from guessing.
+        const candidateNumerics = verifyGeneratedNumerics(candidate.generated);
         candidate.review = platformSettings.featureFlags.reviewerAgent
           ? await completeJson<ReviewerOutput>(
-              REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
+              REVIEWER_PROMPT({
+                loName: lo.name,
+                question: candidate.generated,
+                ...(candidateNumerics.failure ? { verificationFailure: candidateNumerics.failure } : {}),
+              }),
               { ...models.reviewer },
             )
           : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
@@ -1391,10 +1412,19 @@ export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOu
   ].join('\n');
 }
 
-export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
+export function REVIEWER_PROMPT(params: {
+  loName: string;
+  question: GeneratorOutput;
+  /**
+   * The deterministic verifier's rejection, when it already has one. Measured
+   * 2026-08-16: the reviewer was guessing at servability with this information
+   * sitting unused one function away.
+   */
+  verificationFailure?: string;
+}): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
-    `LO "${params.loName}". Judge it against these six criteria (IN-Q05):`,
+    `LO "${params.loName}". Judge it against these criteria (IN-Q05):`,
     '  1. Factual accuracy — every statement is correct.',
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
@@ -1406,6 +1436,28 @@ export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOut
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
     '     Check too that each distractor\'s errorModel describes a mistake a student would',
     '     really make, and that its formula genuinely implements that mistake.',
+    // Criteria 7-9 added 2026-08-16. Each mirrors a gate that already decides
+    // whether a question can serve, and that the reviewer could not see: it was
+    // judging pedagogy while three structural faults passed underneath it.
+    // Measured on a fixture missing a common-misconception, the reviewer named
+    // the fault 0/4 times before and 4/4 after, and still passed a clean
+    // control 4/4 — so this is discrimination, not severity inflation.
+    // See docs/reviewer-agent-tests.md.
+    '  7. SLOT-RANGE DEGENERACY — the most common reason a question can never be served.',
+    '     For a numerical question, check every distractor against the correct answer at',
+    '     the extremes AND the round middle of each slot range. If any allowed draw makes',
+    '     a distractor equal the correct answer, the question is unservable. The classic',
+    '     case: a beta range that includes exactly 1.0, where a distractor that "ignores',
+    '     beta" becomes identical to the correct CAPM answer. Two formulas can also be',
+    '     identical as EXPRESSIONS for every draw — "RF + (M - RF)" is just "M" — which no',
+    '     range choice can fix. Reject either, and name the value or the identity.',
+    '  8. Option contract — in a numerical question EVERY option must display exactly one',
+    '     computed value from derivedValues, never a formula and never a sentence with a',
+    '     value appended. A question whose options are decisions or statements should have',
+    '     been conceptual, with no slots at all.',
+    '  9. Retry gate — an MCQ must carry at least one option with role',
+    '     "common-misconception". The practice loop offers its retry only on that role, so',
+    '     a question without one silently loses the behaviour for every student.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
     // check out." It passed every arithmetically-wrong question in 2026-08-05
@@ -1416,8 +1468,19 @@ export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOut
     'DO NOT attempt to evaluate any arithmetic. Every number a student sees is computed by',
     'a deterministic evaluator from the formulas below, so arithmetic errors are',
     'structurally impossible and "checking" them here only produces false confidence.',
-    'Judge modelling and pedagogy.',
+    'Judge modelling and pedagogy. Criterion 7 is NOT arithmetic: it asks whether two',
+    'FORMULAS become the same expression at a draw the ranges allow.',
     '',
+    // The verifier runs before this call and its verdict was being thrown away.
+    // Without it the reviewer can only guess whether a question is servable, and
+    // "flag" on a question that can never reach a student is the wrong verdict.
+    ...(params.verificationFailure
+      ? ['The deterministic verifier has ALREADY REJECTED this question:',
+         `  "${params.verificationFailure}"`,
+         'It cannot serve a student in this state, whatever its pedagogical merits.',
+         'Say specifically what must change to fix it.',
+         '']
+      : []),
     'Question JSON:',
     JSON.stringify(params.question),
     '',

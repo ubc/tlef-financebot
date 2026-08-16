@@ -494,6 +494,35 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
       expect(jest.mocked(createQuestion).mock.calls[0]![0].verification).toBeUndefined();
     });
 
+    it('tells the REVIEWER what the verifier decided, not just the generator', async () => {
+      // The verifier's verdict used to be computed after the review and thrown
+      // away. A reviewer that cannot see it can only guess at servability, and
+      // "flag" on a question that can never reach a student is the wrong call.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'collides' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const reviewerPrompt = jest.mocked(completeJson).mock.calls[3]![0] as string;
+      expect(reviewerPrompt).toMatch(/ALREADY REJECTED/);
+      expect(reviewerPrompt).toMatch(/(PV_DUP and PV|PV and PV_DUP) are identical/);
+    });
+
+    it('does not tell the reviewer of a failure when the question verifies', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(sound)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const reviewerPrompt = jest.mocked(completeJson).mock.calls[2]![0] as string;
+      expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
+    });
+
     it('does not quote a verifier failure after a SHAPE failure', async () => {
       // A shape failure carries no diagnosis worth repeating, and any earlier
       // verification note describes a candidate that attempt already replaced.
