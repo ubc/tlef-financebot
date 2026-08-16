@@ -3045,3 +3045,53 @@ reviewer's critique back for the same reason.
 The prompt changes from tasks 2 and 3 are kept — they are accurate, they cost
 little, and the reviewer's own reasoning now echoes them — but they are **not**
 the fix, and this file should not be read as saying they were.
+
+---
+
+# Experiment 6 — the retry loop (code, not prompt)
+
+Same LO (CAPM), same instructor prompt, same settings, through the real
+`runGenerationPipeline` so the retry, validator and reviewer all ran as in
+production. **4 questions.**
+
+| Metric | Baseline (exp 2) | After prompt fixes (exp 5) | **After the retry loop** |
+|---|---|---|---|
+| Verification proof | 0/3 | 0/4 | **4/4** |
+| Reviewer | flag ×3 | reject ×2, flag ×2 | **pass ×4** |
+
+**Zero to four.** The pipeline had never produced a servable numeric question in
+any measured run; it now produced four out of four, and the reviewer passed all
+of them.
+
+## Why this worked when three prompt attempts did not
+
+Verification used to run in the CALLER, after generation had finished. A question
+whose options collide was never retried, and **the model was never told**. The
+generator retried only on option SHAPE — a check that almost never fires — so the
+one fault responsible for nearly every dead question had no feedback path at all.
+
+The loop now verifies before returning and, on failure, quotes the verifier's own
+sentence back into the retry prompt:
+
+> *"YOUR PREVIOUS ATTEMPT WAS REJECTED by the deterministic verifier… 'options
+> PV_DUP and PV are identical (seed 1000003)'… Fix THAT fault specifically."*
+
+The general rule was already in `GENERATOR_PROMPT`, stated three different ways,
+and the model followed it and collided anyway. **What had never been tried was
+telling it which two values collided in the question it had just written.**
+
+Deliberately preserved: a question that fails every attempt is still persisted as
+an unproven Draft, exactly as before, so an instructor can widen a range and
+rescue it. Discarding it would have quietly lowered the count a run reports and
+removed the only path to fixing it.
+
+## The lesson worth keeping
+
+Three prompt revisions moved the metric by nothing. One feedback path moved it
+from 0 to 4. **The model was not failing to understand the rule; it was failing
+to notice it had broken it** — and no amount of restating the rule fixes that.
+
+Difficulty still returns `medium` on all four, so experiment 5's task-3 finding
+stands unchanged. The difference is that the reviewer now passes them, having
+previously flagged the calibration — consistent with the retried questions being
+genuinely better, though that is inference rather than measurement.

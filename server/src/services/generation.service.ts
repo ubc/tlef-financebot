@@ -864,9 +864,15 @@ async function generateValidQuestion(
   chunks: RetrievedChunk[],
   step: StepModelConfig = { model: env.llmModelGenerator },
 ): Promise<GeneratorOutput | null> {
+  /** The last structurally-valid candidate, returned unproven if attempts run out. */
+  let lastValid: GeneratorOutput | null = null;
+  /** The verifier's own sentence about the previous attempt, quoted back on retry. */
+  let lastFailure: string | undefined;
+
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
+    const basePrompt = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
     const candidate = await completeJson<GeneratorOutput>(
-      GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
+      lastFailure ? `${basePrompt}\n\n${RETRY_FEEDBACK(lastFailure)}` : basePrompt,
       // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
       // a temperature for this step means it, and one who sets a reasoning
       // effort has knowingly given the temperature up (it is only legal at
@@ -888,14 +894,63 @@ async function generateValidQuestion(
       // the prose is written, so an instructor reads a review that names the
       // wrong option. Callers pass optionsAlreadyShuffled so createQuestion
       // does not shuffle a second time and undo this alignment.
-      return type === 'mcq' ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
+      const shaped = type === 'mcq' ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
+
+      // Verify INSIDE the loop, so a collision gets another attempt with the
+      // reason attached. Previously verification ran only in the caller, after
+      // generation had finished: a question whose distractors coincide was
+      // never retried and the model was never told what was wrong. Measured
+      // 2026-08-16, that single fault accounted for 5 of 6 unservable questions,
+      // and three separate attempts to prevent it by prompt wording all failed
+      // (docs/prompt-engineering-tests.md). Telling the model the specific
+      // failure is the thing that had never been tried.
+      const verification = verifyGeneratedNumerics(shaped);
+      if (!verification.failure) return shaped;
+
+      // Keep it anyway. A question that cannot earn a proof is still persisted
+      // as a Draft today so the instructor can widen a range and rescue it;
+      // discarding it here would be a behaviour change that removes that
+      // option and silently lowers the count a run reports.
+      lastValid = shaped;
+      lastFailure = verification.failure;
+      console.warn(
+        `[generation] verification failed (attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS}): ` +
+          verification.failure,
+      );
+      continue;
     }
+    // A shape failure carries no specific diagnosis worth quoting back, and the
+    // previous verification note would be about a candidate this attempt has
+    // already replaced.
+    lastFailure = undefined;
     console.warn(
       `[generation] generator produced structurally-invalid options ` +
         `(attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS})`,
     );
   }
-  return null;
+  return lastValid;
+}
+
+/**
+ * What the generator is told after the deterministic verifier rejects an
+ * attempt. Quotes the verifier's own sentence rather than paraphrasing it: the
+ * evaluator already names the two colliding values and the seed, and that
+ * specificity is the entire point — the general rule is in GENERATOR_PROMPT
+ * already and the model follows it while still colliding.
+ */
+export function RETRY_FEEDBACK(failure: string): string {
+  return [
+    'YOUR PREVIOUS ATTEMPT WAS REJECTED by the deterministic verifier that decides',
+    'whether a question can be served at all:',
+    `  "${failure}"`,
+    'This is not a style note. A question that fails this check can never reach a',
+    'student, however good it reads. Fix THAT fault specifically.',
+    'If two option values came out identical, they are identical either as',
+    'expressions — "RF + (M - RF)" is just "M", whatever the draw — or at some draw',
+    'the ranges permit. So either change one distractor to a different mistake, or',
+    'move the slot range so the coinciding draw cannot occur, and list the draws to',
+    'check it rather than trusting the bounds. Do not resubmit the same formulas.',
+  ].join('\n');
 }
 
 /**
