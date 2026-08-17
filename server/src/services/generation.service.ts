@@ -315,6 +315,7 @@ async function retryRejectedCandidate(args: {
       loName: args.lo.name,
       question: retried,
       chunks: args.chunks,
+      roleAssessment: String(validation.roleAssessment ?? ''),
       ...reviewerVerificationParams(numerics),
     }),
     { ...args.reviewerStep },
@@ -370,6 +371,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             loName: lo.name,
             question: generated,
             chunks,
+            roleAssessment: String(validation.roleAssessment ?? ''),
             ...reviewerVerificationParams(numerics),
           }),
           { ...models.reviewer },
@@ -488,6 +490,7 @@ export async function regenerateQuestion(
           loName: lo.name,
           question: generated,
           chunks: grounding.chunks,
+          roleAssessment: String(validation.roleAssessment ?? ''),
           ...reviewerVerificationParams(numerics),
         }),
         { ...platformSettings.models.reviewer },
@@ -665,6 +668,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 loName: lo.name,
                 question: candidate.generated,
                 chunks,
+                roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
                 ...reviewerVerificationParams(candidateNumerics),
               }),
               { ...models.reviewer },
@@ -1610,6 +1614,16 @@ export function REVIEWER_PROMPT(params: {
    * follows a simpler treatment than the one it has in mind.
    */
   chunks?: RetrievedChunk[];
+  /**
+   * The structure validator's per-option role assessment, measured 2026-08-17
+   * to catch what the reviewer misses: subtle role mislabels on questions that
+   * are factually sound (planted-fault fixtures: validator 2/3, reviewer 0/3 —
+   * the reviewer checks that a misconception option EXISTS, not that it fits,
+   * and one run even endorsed the mislabeled option as "plausible"). Roles are
+   * not cosmetic: decideStrategy keys the Strategy-A retry on the
+   * common-misconception role, so a swap changes student behaviour.
+   */
+  roleAssessment?: string;
 }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
@@ -1725,6 +1739,22 @@ export function REVIEWER_PROMPT(params: {
          'display precision across its sampled draws, and the serving path redraws any',
          'rare colliding draw before a student sees it. Collisions are settled — judge',
          'this question on pedagogy alone.',
+         '']
+      : []),
+    // The role-fit hand-off, measured 2026-08-17: on planted role-swap fixtures
+    // the reviewer endorsed a mislabeled misconception as "plausible" while the
+    // validator named the swap — its per-option format interrogates fit, this
+    // prompt's criteria check existence. The FLAG-not-reject policy is Saurav's
+    // call: roles are one edit in the question editor, so a label problem on a
+    // sound question should reach the instructor as fixable, not be discarded —
+    // and reject-only retries should not be spent on it.
+    ...(params.roleAssessment
+      ? ['The structure validator assessed each option\'s role fit:',
+         `  "${params.roleAssessment}"`,
+         'Weigh it. If it identifies a MISLABELED ROLE on an otherwise sound question,',
+         'FLAG the question and name the exact swap so the instructor can relabel it —',
+         'do not reject over role labels alone. An option marked "correct" that is not',
+         'actually correct remains a reject: that is a wrong answer key, not a label.',
          '']
       : []),
     'Question JSON:',

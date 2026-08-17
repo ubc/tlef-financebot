@@ -392,3 +392,49 @@ mention of the collision — it saw a question that was merely too easy.
 that accounted for nearly every unservable question — which matters because the
 verifier only reports the FIRST collision it finds, and because on the
 regeneration path there may be no verifier result to hand over at all.
+
+---
+
+# Follow-up — the validator earns its call, and its output now reaches the reviewer
+
+Saurav asked whether the validator's and reviewer's outputs should be wired
+together. The overlap test that answered it used planted role faults:
+
+| Fixture | Validator named the fault | Reviewer named it |
+|---|---|---|
+| Reversed answer key (factually wrong) | 3/3 | 3/3 (reject) |
+| Subtle role swaps (question factually sound) | 2/3 | **0/3** — one run endorsed the mislabeled option as "plausible" |
+| Clean control | 0 false alarms | 0 false alarms |
+
+(The first pass of this test scored the reviewer 3/3 on the swaps via a broken
+case-insensitive regex — `(D|…)` matches any letter d. A full-text re-probe
+exposed it; harness regexes are now treated as hints, verdicts read in full.)
+
+**Conclusion: reviewer ⊉ validator.** The reviewer catches role faults only when
+they make the question factually wrong; when the labels are merely swapped it
+checks that a misconception option EXISTS and moves on. Role fit is not
+cosmetic — `decideStrategy` keys the Strategy-A retry on the
+common-misconception role, so a swap silently changes student behaviour. The
+merge/retire idea is dead; the validator stays.
+
+## The wiring, and Saurav's policy
+
+`roleAssessment` now flows into `REVIEWER_PROMPT` at all four call sites (zero
+extra model calls — the validator already runs first), with the policy Saurav
+set: **a mislabeled role on an otherwise sound question is a FLAG that names the
+exact swap** — one edit for the instructor in the question editor — never a
+reject, and therefore never a spent reject-retry. A wrong answer key remains a
+reject: that is not a label problem.
+
+## Measured end to end (validator's real output → reviewer)
+
+| | Before wiring | After |
+|---|---|---|
+| Role-swap fixture | flag ×3 for difficulty, swap unmentioned | **flag ×3, each naming the fix: "Relabel D from partially-correct to clearly-wrong"** |
+| Policy (flag, not reject) | — | held 3/3 |
+| Clean control | pass ×3 | pass ×3, zero role complaints |
+
+Honest bound: the hand-off surfaces what the validator's single run caught. In
+this measurement the validator draw named D but not C, so C stayed missed —
+detection is the union of the two agents, not perfection. The measured failure
+class (swaps surfacing to nobody) is closed.

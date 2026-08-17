@@ -307,6 +307,28 @@ describe('GENERATOR_PROMPT', () => {
     });
   });
 
+  // Measured 2026-08-17: on planted role-swap fixtures the validator named the
+  // swap 2/3 while the reviewer caught it 0/3 — one run endorsed the mislabeled
+  // option as "plausible". The validator's assessment was being stored and
+  // gated on by nobody; it now reaches the reviewer, with Saurav's policy:
+  // a mislabeled role on a sound question is a FLAG the instructor can fix in
+  // one edit, never a reject — and so never burns a reject-retry.
+  it('hands the validator\'s role assessment to the reviewer, flag-not-reject', () => {
+    const withRoles = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      roleAssessment: 'C is mislabeled: fees are not a misconception; D is the real misconception.',
+    });
+    expect(withRoles).toMatch(/structure validator assessed each option/);
+    expect(withRoles).toMatch(/C is mislabeled: fees are not a misconception/);
+    expect(withRoles).toMatch(/FLAG the question and name the exact swap/);
+    expect(withRoles).toMatch(/do not reject over role labels alone/i);
+    // the wrong-answer-key case stays a reject — that is not a label problem
+    expect(withRoles).toMatch(/not\s+actually correct remains a reject/i);
+    // and the block is absent when no assessment is passed
+    expect(reviewerPrompt).not.toMatch(/structure validator assessed/);
+  });
+
   it('gives the reviewer the full difficulty rubric, not just the heuristic', () => {
     // Until 2026-08-17 the reviewer had only "a one-step substitution should
     // not pass as medium or hard" — grading against definitions it had never
