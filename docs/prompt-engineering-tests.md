@@ -3315,3 +3315,56 @@ with this in mind.
 Criteria 7-9 were added to this same prompt earlier the same day, and the review
 of that change never asked whether criterion 2 was answerable. Attention went to
 what was being added rather than to what was already there and unsupported.
+
+---
+
+# Experiment 11 — three rejects, three different causes
+
+A live run on 2026-08-17 returned `reject` on all three questions. They were not
+one problem, and only one was a defect in the pipeline.
+
+**1. A false reject I introduced.** Criterion 8 said *"never a sentence with a
+value appended"*, and the reviewer read the `%` in `{{HPR_PCT}}%` as appended
+text:
+
+> *"The question violates the option contract: every numerical option must
+> display exactly one computed value from derivedValues, but the options append
+> '%' and therefore display a value with extra text."*
+
+That question **had earned a verification proof.** The rule criterion 8 mirrors,
+`optionValueNamesForVerification`, counts PLACEHOLDERS rather than characters —
+a unit attached to one placeholder was always legal, and `{{WACC_PCT}}%` is a
+shape `GENERATOR_PROMPT` itself teaches. **The prompt was stricter than the gate
+it was written to mirror**, which manufactures rejects that no code would agree
+with.
+
+Criterion 8 now states the rule in placeholders and names both the legal shapes
+(`{{NPV}}`, `{{WACC_PCT}}%`, `${{PRICE}}`) and the broken ones (two placeholders,
+none, a formula, a sentence with a number stapled on).
+
+**2. A correct reject.** The verifier found a real degeneracy and the reviewer
+relayed it accurately — *"HPR and NO_REINVESTMENT are algebraically identical for
+every allowed draw"*. Working as designed, and the retry loop had already spent
+its attempts on it.
+
+**3. An arguable reject** about gross versus net return, where the reviewer cited
+the material directly — *"the material distinguishes gross compounding when
+reinvestment is involved"*. That is the chunks fix working: it is now arguing
+from the course rather than from its own theory. Whether it is right is a
+question for an instructor, which is what `reject` is for.
+
+## After the criterion 8 fix, same LO
+
+| | Result |
+|---|---|
+| Proofs | **3/3** |
+| Reviewer | **pass, pass, pass** |
+| Option format | every option `{{VALUE}}%` — the shape previously rejected |
+
+## The pattern worth noticing
+
+This is the second false positive from a criterion I added on 2026-08-16, after
+criterion 2 being unanswerable. Both came from the same habit: writing a rule
+for the reviewer in prose without checking it against the code that enforces the
+same thing. A prompt rule that is stricter than its gate does not add safety —
+it invents failures.

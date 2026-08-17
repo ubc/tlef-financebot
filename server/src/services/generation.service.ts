@@ -1478,10 +1478,19 @@ export function REVIEWER_PROMPT(params: {
     '     beta" becomes identical to the correct CAPM answer. Two formulas can also be',
     '     identical as EXPRESSIONS for every draw — "RF + (M - RF)" is just "M" — which no',
     '     range choice can fix. Reject either, and name the value or the identity.',
-    '  8. Option contract — in a numerical question EVERY option must display exactly one',
-    '     computed value from derivedValues, never a formula and never a sentence with a',
-    '     value appended. A question whose options are decisions or statements should have',
-    '     been conceptual, with no slots at all.',
+    // Wording corrected 2026-08-17 after a live false reject: this said "never a
+    // sentence with a value appended", and the reviewer read a "%" suffix as
+    // appended text and rejected a question that had EARNED a proof. The rule it
+    // mirrors (optionValueNamesForVerification) counts PLACEHOLDERS, not
+    // characters, so a unit attached to one placeholder was always legal — and
+    // "{{WACC_PCT}}%" is a shape the generator prompt itself teaches.
+    '  8. Option contract — in a numerical question every option must contain EXACTLY ONE',
+    '     {{placeholder}} from derivedValues. A unit or symbol attached to it is fine and',
+    '     expected: "{{NPV}}", "{{WACC_PCT}}%", "${{PRICE}}" all satisfy this. What breaks',
+    '     it is an option carrying TWO placeholders, none at all, a formula instead of a',
+    '     value, or a sentence with a number stapled on ("Accept the project. 7.36").',
+    '     A question whose options are decisions or statements should have been',
+    '     conceptual, with no slots at all.',
     '  9. Retry gate — an MCQ must carry at least one option with role',
     '     "common-misconception". The practice loop offers its retry only on that role, so',
     '     a question without one silently loses the behaviour for every student.',

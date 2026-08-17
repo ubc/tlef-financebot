@@ -70,7 +70,21 @@ describe('REVIEWER_PROMPT', () => {
 
   it('asks the reviewer to enforce the option contract', () => {
     expect(reviewerPrompt).toMatch(/Option contract/i);
-    expect(reviewerPrompt).toMatch(/exactly one\s+computed value/i);
+    expect(reviewerPrompt).toMatch(/EXACTLY ONE/);
+  });
+
+  it('states the option contract in PLACEHOLDERS, the unit the code counts', () => {
+    // A live run on 2026-08-17 rejected a question that had EARNED a proof,
+    // because the criterion said "never a sentence with a value appended" and
+    // the reviewer read a "%" suffix as appended text.
+    // optionValueNamesForVerification counts placeholders, not characters, so a
+    // unit attached to one placeholder was always legal. The prompt must not be
+    // stricter than the gate it mirrors, or it manufactures false rejects.
+    expect(reviewerPrompt).toMatch(/\{\{WACC_PCT\}\}%/);
+    expect(reviewerPrompt).toMatch(/unit or symbol attached to it is fine/i);
+    // and the shapes that DO break it are still named
+    expect(reviewerPrompt).toMatch(/TWO placeholders/);
+    expect(reviewerPrompt).toMatch(/sentence with a number stapled on/i);
   });
 
   it('asks the reviewer to check the Strategy-A retry gate', () => {
