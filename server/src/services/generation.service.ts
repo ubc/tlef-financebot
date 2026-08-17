@@ -1491,9 +1491,18 @@ export function REVIEWER_PROMPT(params: {
     '     value, or a sentence with a number stapled on ("Accept the project. 7.36").',
     '     A question whose options are decisions or statements should have been',
     '     conceptual, with no slots at all.',
-    '  9. Retry gate — an MCQ must carry at least one option with role',
-    '     "common-misconception". The practice loop offers its retry only on that role, so',
-    '     a question without one silently loses the behaviour for every student.',
+    // The T/F exemption is explicit because omitting it cost 3/3 false rejects on
+    // a legitimate two-option question, measured 2026-08-17. optionShapeValid
+    // skips this check for true-false, and assertOptionInvariants COERCES the
+    // wrong option to common-misconception — but inside createQuestion, which
+    // runs after this review. So the reviewer sees a role set the platform is
+    // about to fix and rejects the question for it.
+    '  9. Retry gate — a FOUR-OPTION multiple-choice question must carry at least one',
+    '     option with role "common-misconception". The practice loop offers its retry only',
+    '     on that role, so an MCQ without one silently loses the behaviour for every',
+    '     student. This does NOT apply to a two-option true/false question: the platform',
+    '     relabels its single wrong option to "common-misconception" automatically after',
+    '     this review, so whatever role it carries here is correct and is not a defect.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
     // check out." It passed every arithmetically-wrong question in 2026-08-05

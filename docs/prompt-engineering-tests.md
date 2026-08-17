@@ -3368,3 +3368,55 @@ criterion 2 being unanswerable. Both came from the same habit: writing a rule
 for the reviewer in prose without checking it against the code that enforces the
 same thing. A prompt rule that is stricter than its gate does not add safety —
 it invents failures.
+
+---
+
+# Experiment 12 — criterion 9 audited against its own gate
+
+After criterion 8 turned out to be stricter than the code it mirrored, the same
+check was run on criterion 9 rather than waiting for it to surface in a live run.
+
+**It was also wrong, and worse.** Criterion 9 said *"an MCQ must carry at least
+one option with role common-misconception"*. The threshold matches
+`optionShapeValid` exactly. What it omitted is that the code **exempts
+true/false**, and that `assertOptionInvariants` COERCES a T/F question's wrong
+option to `common-misconception` — inside `createQuestion`, which runs **after**
+the review.
+
+So at review time a legitimate two-option question can carry
+`correct` + `clearly-wrong`, and the reviewer rejects it for a role set the
+platform is about to fix by itself.
+
+## Measured, before and after
+
+| Fixture | Before | After |
+|---|---|---|
+| Legitimate true/false (`correct` + `clearly-wrong`) | **reject 3/3**, criterion 9 fired 3/3 | **pass 3/3**, fired **0/3** |
+| Real MCQ with no common-misconception | — | **reject 3/3**, fired **3/3** |
+
+The second row is the control that makes the first meaningful: the exemption
+discriminates rather than switching the criterion off.
+
+Every one of the three false rejects confirmed the content first —
+*"factually accurate, aligned with the material, and appropriately easy.
+However, no option has the required 'common-misconception' role"* — which is the
+signature of a rule misfiring rather than a question being bad.
+
+## Three for three
+
+All three criteria added on 2026-08-16 were wrong in the same way:
+
+| Criterion | Fault | Found by |
+|---|---|---|
+| 2 (pre-existing) | asked about material the reviewer was never given | Saurav, from a live run |
+| 8 | stricter than the gate: read `%` as "appended text" | Saurav, from a live run |
+| 9 | omitted the true/false exemption the code makes | this audit |
+
+Only criterion 7 was validated against its enforcement at the time, and it is
+the only one that has not misfired.
+
+**The rule this yields:** a criterion written for an agent that mirrors a code
+gate must be checked against that gate — read the function, and test a fixture
+it deliberately allows. Prose that is stricter than its enforcement does not add
+safety; it manufactures rejects no code would agree with, and they cost a full
+generation to discover.

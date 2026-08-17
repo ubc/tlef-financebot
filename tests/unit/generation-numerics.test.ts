@@ -94,6 +94,21 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).toMatch(/common-misconception/);
   });
 
+  it('exempts true/false from the retry gate, as optionShapeValid does', () => {
+    // Measured 2026-08-17: without this the reviewer rejected a legitimate
+    // two-option question 3/3, every time confirming the content was accurate
+    // first. optionShapeValid skips this check for true-false, and
+    // assertOptionInvariants coerces the wrong option to common-misconception —
+    // but inside createQuestion, which runs AFTER this review. The reviewer was
+    // rejecting a role set the platform was about to fix.
+    // With the exemption: 0/3 on the T/F question, still 3/3 on a real MCQ
+    // violation, so it discriminates rather than switching the criterion off.
+    expect(reviewerPrompt).toMatch(/does NOT apply to a two-option true\/false/i);
+    expect(reviewerPrompt).toMatch(/relabels its single wrong option/i);
+    // and it is still scoped to real MCQs
+    expect(reviewerPrompt).toMatch(/FOUR-OPTION multiple-choice question must carry/);
+  });
+
   it('does not let criterion 7 be mistaken for the arithmetic ban', () => {
     // The prompt forbids evaluating arithmetic. Criterion 7 asks about formula
     // IDENTITY, which is a different act, and without this the two instructions
