@@ -3524,3 +3524,70 @@ after its T/F exemption), one survives reworded in the code's own units (option
 contract), and one is deleted as redundant with better machinery. That is the
 honest scorecard for a day of prompt criteria written faster than they were
 checked.
+
+---
+
+# Experiment 14 — generator effort on the LO family that kept failing
+
+Saurav ran the same EBITDA/multiples LO through the UI twice: three questions at
+generator effort `medium`, then three at `high` (reviewer at `high` both times,
+post-chunks, post-criterion-removal pipeline).
+
+| Same LO | `medium` | `high` |
+|---|---|---|
+| Verdicts | reject, reject, flag | **pass, flag, pass** |
+| Proofs | 2/3 | **3/3** |
+| Retries burned | 2 (one question collided through both attempts) | **0** |
+| Junk distractors | squared multiple, `EBITDA+MULTIPLE`, one lying errorModel | one (`MULTIPLE+1`, lying errorModel) |
+
+The `medium` batch also demonstrated the full defense chain working end to end:
+display-precision verifier caught `EV_EBITDA` vs `EV_SALES` colliding (two
+estimates of the SAME quantity — structurally collision-prone, since realistic
+ranges put them near each other by construction), the retry rewrote the question
+and collided again, the unproven draft was persisted, and the reviewer — told
+the failure — rejected with the concrete fix.
+
+**The standout `high` result is qualitative:** one pass was a genuinely
+multi-step question (EV from the multiple, then the equity bridge `EV − debt +
+cash`) with bridge-specific misconception distractors — the first question in
+this record whose `medium` label is arguably earned rather than echoed.
+
+**Reviewer variance note, recorded for honesty:** "applied the multiple twice"
+passed at `high` while near-identical squaring was rejected at `medium`. The
+reviewer is consistent on identical input (11/12, experiment 4a); on judgement
+calls across different questions the pass/flag boundary wobbles. That is
+inherent to an LLM judge and is why the deterministic gates carry the safety.
+
+Decision: generator stays at `high`. Residual failures (one-step questions
+labelled `medium`, occasional lying errorModel) are reviewer-visible but never
+fed back — option B's territory.
+
+## Experiment 15 — xhigh, same LO
+
+| Same LO | `high` (Saurav's run) | `xhigh` |
+|---|---|---|
+| Verdicts | pass, flag, pass | **flag, pass, pass** |
+| Proofs | 3/3 | 3/3 |
+| Retries | 0 | 0 |
+| Latency | ~40s/question (est.) | **~80s/question** |
+
+**Verdict distribution identical; latency roughly doubled.** Two observations
+worth more than the headline:
+
+1. **The difficulty problem is dissolving at high efforts — from the other
+   side.** No xhigh verdict complains about difficulty, but not because
+   labelling got honest: the questions ROSE to the label. Two of three are
+   genuine multi-step builds — one chains `PV(FCF1) + PV(FCF2) + discounted
+   terminal value` through three helper steps, the first real use of the
+   BUILD-THE-ANSWER-IN-STEPS capability in this record. One-step questions
+   labelled `medium` still occur at `high`; they just occur less as effort makes
+   the model more ambitious.
+2. **The residual flags are metadata nits, not reasoning failures** — here, a
+   distractor displaying a helper value that carries no errorModel; earlier, a
+   lying errorModel. More thinking does not reliably fix bookkeeping; being told
+   exactly which field is wrong would. That is option B's mechanism.
+
+Decision: **generator stays at `high`; xhigh is not worth 2× latency and
+reasoning spend for an identical verdict distribution.** Option B remains the
+right tool for the residue — and its expected cost has shrunk, since it fires
+only on reject and rejects are now rare at `high`.
