@@ -983,11 +983,14 @@ export function RETRY_FEEDBACK(failure: string): string {
     `  "${failure}"`,
     'This is not a style note. A question that fails this check can never reach a',
     'student, however good it reads. Fix THAT fault specifically.',
-    'If two option values came out identical, they are identical either as',
-    'expressions — "RF + (M - RF)" is just "M", whatever the draw — or at some draw',
-    'the ranges permit. So either change one distractor to a different mistake, or',
-    'move the slot range so the coinciding draw cannot occur, and list the draws to',
-    'check it rather than trusting the bounds. Do not resubmit the same formulas.',
+    'If two option values came out identical, they are identical as expressions —',
+    '"RF + (M - RF)" is just "M", whatever the draw — or at some draw the ranges',
+    'permit, or they ROUND to the same displayed value: options render at two',
+    'decimals, so 7.3591 and 7.3644 are the same option to a student. Separate',
+    'option values by more than a cent, not by a rounding hair. Either change one',
+    'distractor to a different mistake, or move the slot range so the coinciding',
+    'draw cannot occur, and list the draws to check it rather than trusting the',
+    'bounds. Do not resubmit the same formulas.',
   ].join('\n');
 }
 

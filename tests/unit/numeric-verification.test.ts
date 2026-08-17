@@ -121,6 +121,36 @@ describe('verifyQuestionNumerics', () => {
     expect(result.sampleSeeds).toHaveLength(VERIFICATION_SAMPLE_COUNT);
   });
 
+  // The proof compares DISPLAYED values, not raw doubles. Students see values
+  // through formatParamValue (2 decimals), so raw 7.359 vs 7.361 are distinct
+  // to a raw comparison while both options render as 7.36 — a student-visible
+  // collision the proof used to wave through. Found 2026-08-17.
+  it('rejects two options that differ raw but round to the same displayed value', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [
+        { name: 'A', formula: 'X*7.359' },
+        { name: 'B', formula: 'X*7.361' },
+      ],
+      optionValueNames: ['A', 'B'],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/at display precision \(both show 7\.36\)/);
+  });
+
+  it('accepts options a full displayed cent apart', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [
+        { name: 'A', formula: 'X*7.35' },
+        { name: 'B', formula: 'X*7.36' },
+      ],
+      optionValueNames: ['A', 'B'],
+    });
+    expect(result.ok).toBe(true);
+  });
+
   // The exact shape that killed 5 of 6 numeric questions in the 2026-08-16 batch
   // (docs/prompt-engineering-tests.md). GENERATOR_PROMPT now warns about this
   // family by name; this pins that the verifier still CATCHES it, so warning and

@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 import { EVALUATOR_VERSION } from '../components/formula';
 import { executeGenerate } from '../components/param-worker';
-import { resolveSlotsAndDerived } from './params.service';
+import { formatParamValue, resolveSlotsAndDerived } from './params.service';
 import type { DerivedValue, NumericVerification, ParamSlot } from '../types/domain';
 
 /** Draws sampled per verification run. Every one must pass every check. */
@@ -130,10 +130,17 @@ function checkDraw(values: Record<string, number>, optionValueNames: string[]): 
     if (!Number.isFinite(value)) return `option value ${name} is not finite`;
     optionValues.push(value);
   }
-  for (let a = 0; a < optionValues.length; a += 1) {
-    for (let b = a + 1; b < optionValues.length; b += 1) {
-      if (optionValues[a] === optionValues[b]) {
-        return `options ${optionValueNames[a]} and ${optionValueNames[b]} are identical`;
+  // Compared at DISPLAY precision, not as raw doubles. Students see values
+  // through formatParamValue (2 decimals), so raw 7.3591 vs 7.3644 are
+  // "distinct" to a raw comparison while both options render as 7.36 — a
+  // student-visible collision the proof waved through. Found 2026-08-17 while
+  // designing the serve-time reroll; the proof must prove what students see.
+  const displayed = optionValues.map(formatParamValue);
+  for (let a = 0; a < displayed.length; a += 1) {
+    for (let b = a + 1; b < displayed.length; b += 1) {
+      if (displayed[a] === displayed[b]) {
+        return `options ${optionValueNames[a]} and ${optionValueNames[b]} are identical ` +
+          `at display precision (both show ${displayed[a]})`;
       }
     }
   }
