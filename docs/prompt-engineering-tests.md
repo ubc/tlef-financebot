@@ -3679,3 +3679,40 @@ shipped), difficulty self-assessment (no effect), preset rewording (refuted).
 Against: retry feedback, chunks-to-reviewer, criteria-vs-gates, serve guard —
 all measured wins. The pattern has held without exception: **structure and
 feedback move this system; wording does not.**
+
+## Experiment 17 — the same A/B at MEDIUM, retries on
+
+Saurav's reframed hypothesis: a better preset might allow dropping generator
+effort to `medium` for cost. Also answers whether "two dependent steps" needs
+preset coverage — it is already in the prompt at lines 1237 (the medium
+definition) and 1253-55 (the self-assessment block), conditional on the target,
+which is the right place.
+
+| Generator `medium`, retries ON | A — current preset | B — method-choice |
+|---|---|---|
+| Verdicts | **pass ×3** | **pass ×3** |
+| Proofs | 3/3 | 3/3 |
+| Extra cycles (verifier + reject retries) | **0** | **0** |
+| Elapsed | 122s | 95s |
+
+**The preset hypothesis is now dead at both efforts** — 12 questions across
+experiments 16-17, no measurable preset effect anywhere. Closed.
+
+**The finding that matters: medium hit the ceiling too.** Compare yesterday's
+medium run on this same LO and pipeline: reject, reject, flag, with a
+double-collision. Today, six for six clean. Nothing changed in between except
+run-to-run variance — at effort `medium` the temperature is withdrawn and the
+provider default (1.0) applies, so batches genuinely wobble. `high` has been
+consistently clean across every measured run; `medium` oscillates between
+ceiling and reject-heavy.
+
+**But the downside at medium is now bounded**, which changes the economics: a
+collision triggers the verifier retry, a reject triggers the critique retry,
+and both log every extra cycle they spend. Latency measured near-identical
+(~36s/q vs ~40s/q — validator and reviewer dominate, not the generator).
+
+Recommendation: this is an operational choice, not an experimental one. Run
+`medium` and watch the retry logs — if reject-retries stay rare, medium is the
+cheaper setting with a bounded worst case; if they fire often, the one-click
+switch back to `high` is the answer. The system now reports its own failure
+cost, which is what makes trying it safe.
