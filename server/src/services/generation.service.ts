@@ -1489,28 +1489,28 @@ export function REVIEWER_PROMPT(params: {
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
     '     Check too that each distractor\'s errorModel describes a mistake a student would',
     '     really make, and that its formula genuinely implements that mistake.',
-    // Criteria 7-9 added 2026-08-16. Each mirrors a gate that already decides
-    // whether a question can serve, and that the reviewer could not see: it was
-    // judging pedagogy while three structural faults passed underneath it.
-    // Measured on a fixture missing a common-misconception, the reviewer named
-    // the fault 0/4 times before and 4/4 after, and still passed a clean
-    // control 4/4 — so this is discrimination, not severity inflation.
-    // See docs/reviewer-agent-tests.md.
-    '  7. SLOT-RANGE DEGENERACY — the most common reason a question can never be served.',
-    '     For a numerical question, check every distractor against the correct answer at',
-    '     the extremes AND the round middle of each slot range. If any allowed draw makes',
-    '     a distractor equal the correct answer, the question is unservable. The classic',
-    '     case: a beta range that includes exactly 1.0, where a distractor that "ignores',
-    '     beta" becomes identical to the correct CAPM answer. Two formulas can also be',
-    '     identical as EXPRESSIONS for every draw — "RF + (M - RF)" is just "M" — which no',
-    '     range choice can fix. Reject either, and name the value or the identity.',
+    // Criteria 7-8 mirror gates that already decide whether a question can
+    // serve, and that the reviewer could not see: it was judging pedagogy while
+    // structural faults passed underneath it. Measured on a fixture missing a
+    // common-misconception, the reviewer named the fault 0/4 times before and
+    // 4/4 after, and still passed a clean control 4/4 — discrimination, not
+    // severity inflation. See docs/reviewer-agent-tests.md.
+    //
+    // A slot-range degeneracy criterion lived here for one day (2026-08-16/17)
+    // and was REMOVED, deliberately: the verifier now compares option values at
+    // display precision across its sampled draws, and the serve-time reroll
+    // guard (drawCollisionFreeParams) redraws any rare collision the sample
+    // missed — so both halves of that job are done deterministically. Asking
+    // the reviewer to hunt collisions too is how it produced hedged
+    // "may coincide under particular combinations" rejects against proven
+    // questions. Do not re-add it without new evidence.
     // Wording corrected 2026-08-17 after a live false reject: this said "never a
     // sentence with a value appended", and the reviewer read a "%" suffix as
     // appended text and rejected a question that had EARNED a proof. The rule it
     // mirrors (optionValueNamesForVerification) counts PLACEHOLDERS, not
     // characters, so a unit attached to one placeholder was always legal — and
     // "{{WACC_PCT}}%" is a shape the generator prompt itself teaches.
-    '  8. Option contract — in a numerical question every option must contain EXACTLY ONE',
+    '  7. Option contract — in a numerical question every option must contain EXACTLY ONE',
     '     {{placeholder}} from derivedValues. A unit or symbol attached to it is fine and',
     '     expected: "{{NPV}}", "{{WACC_PCT}}%", "${{PRICE}}" all satisfy this. What breaks',
     '     it is an option carrying TWO placeholders, none at all, a formula instead of a',
@@ -1523,7 +1523,7 @@ export function REVIEWER_PROMPT(params: {
     // wrong option to common-misconception — but inside createQuestion, which
     // runs after this review. So the reviewer sees a role set the platform is
     // about to fix and rejects the question for it.
-    '  9. Retry gate — a FOUR-OPTION multiple-choice question must carry at least one',
+    '  8. Retry gate — a FOUR-OPTION multiple-choice question must carry at least one',
     '     option with role "common-misconception". The practice loop offers its retry only',
     '     on that role, so an MCQ without one silently loses the behaviour for every',
     '     student. This does NOT apply to a two-option true/false question: the platform',
@@ -1539,8 +1539,9 @@ export function REVIEWER_PROMPT(params: {
     'DO NOT attempt to evaluate any arithmetic. Every number a student sees is computed by',
     'a deterministic evaluator from the formulas below, so arithmetic errors are',
     'structurally impossible and "checking" them here only produces false confidence.',
-    'Judge modelling and pedagogy. Criterion 7 is NOT arithmetic: it asks whether two',
-    'FORMULAS become the same expression at a draw the ranges allow.',
+    'Judge modelling and pedagogy. Option COLLISIONS are not your job either: the',
+    'verifier proves option distinctness at display precision, and the serving path',
+    'redraws any rare colliding draw, so never reject over values that might coincide.',
     '',
     ...(params.chunks?.length
       ? ['THE COURSE MATERIAL the question was written from, and the only treatment the',
@@ -1563,15 +1564,16 @@ export function REVIEWER_PROMPT(params: {
          '']
       : []),
     // The success is passed as deliberately as the failure. Without it the
-    // reviewer re-litigates collisions from vibes on questions the verifier has
+    // reviewer re-litigated collisions from vibes on questions the verifier had
     // already cleared — hedged "may coincide under particular combinations"
-    // objections that no draw supports.
+    // objections that no draw supports. With the collision criterion removed
+    // outright (2026-08-17), this block closes the subject rather than raising
+    // the bar for it.
     ...(params.verificationProven
-      ? ['The deterministic verifier has PROVEN every option value pairwise distinct across',
-         '100 sampled draws. An always-identical pair of formulas is therefore impossible —',
-         'it would have failed on every draw. Do not reject for a collision you merely',
-         'suspect: a criterion 7 objection to THIS question must name a specific allowed',
-         'draw at which two formulas coincide, not a possibility.',
+      ? ['The deterministic verifier has PROVEN every option value pairwise distinct at',
+         'display precision across its sampled draws, and the serving path redraws any',
+         'rare colliding draw before a student sees it. Collisions are settled — judge',
+         'this question on pedagogy alone.',
          '']
       : []),
     'Question JSON:',

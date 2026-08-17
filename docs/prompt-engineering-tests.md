@@ -3501,3 +3501,26 @@ place pending Saurav's call.
 
 Verified: unit 96 suites / 1176 tests (guard mutation-verified: disabling the
 reroll fails 2 tests); full e2e 38/3/1 — the recorded baseline exactly.
+
+## Criterion 7 removed (2026-08-17, Saurav's call)
+
+With the proof at display precision and the serve-time reroll in place, both
+halves of the collision job are deterministic. The reviewer's collision
+criterion — added 2026-08-16, and the source of the hedged "may coincide"
+rejects — is deleted rather than softened, and the prompt now states the
+opposite duty explicitly: *"Option COLLISIONS are not your job… never reject
+over values that might coincide."* The proven block closes the subject
+("Collisions are settled — judge this question on pedagogy alone") instead of
+setting a bar for objections. An absence guard pins the criterion out so it
+cannot quietly return.
+
+Live check after removal: 3 questions, proofs 3/3, collision language 0/3, and
+one reject on other grounds — the reviewer still discriminates rather than
+rubber-stamping proven questions. Criteria renumbered 8→7 (option contract),
+9→8 (retry gate); neither test pinned a number, deliberately.
+
+Of the three criteria added on 2026-08-16, one survives unchanged (retry gate,
+after its T/F exemption), one survives reworded in the code's own units (option
+contract), and one is deleted as redundant with better machinery. That is the
+honest scorecard for a day of prompt criteria written faster than they were
+checked.

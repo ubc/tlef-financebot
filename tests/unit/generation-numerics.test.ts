@@ -61,11 +61,16 @@ describe('REVIEWER_PROMPT', () => {
   // missing a common-misconception: named 0/4 before, 4/4 after, and a clean
   // control still passed 4/4 — discrimination, not severity inflation.
   // See docs/reviewer-agent-tests.md.
-  it('asks the reviewer to check slot ranges for a degenerate draw', () => {
-    expect(reviewerPrompt).toMatch(/SLOT-RANGE DEGENERACY/);
-    expect(reviewerPrompt).toMatch(/beta range that includes exactly 1\.0/i);
-    // The always-identical case too, which no range choice can fix.
-    expect(reviewerPrompt).toMatch(/identical as EXPRESSIONS/i);
+  it('has NO collision-hunting criterion — that job is deterministic now', () => {
+    // Removed 2026-08-17 (Saurav's call). The verifier proves option
+    // distinctness at display precision, and drawCollisionFreeParams redraws
+    // any rare draw the sample missed — both halves of the job the criterion
+    // asked for, done by code. Asking the reviewer to hunt collisions as well
+    // is how it produced hedged "may coincide under particular combinations"
+    // rejects against proven questions. This guard keeps it from returning.
+    expect(reviewerPrompt).not.toMatch(/SLOT-RANGE DEGENERACY/);
+    expect(reviewerPrompt).toMatch(/Option COLLISIONS are not your job/i);
+    expect(reviewerPrompt).toMatch(/never reject over values that might coincide/i);
   });
 
   it('asks the reviewer to enforce the option contract', () => {
@@ -109,13 +114,6 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).toMatch(/FOUR-OPTION multiple-choice question must carry/);
   });
 
-  it('does not let criterion 7 be mistaken for the arithmetic ban', () => {
-    // The prompt forbids evaluating arithmetic. Criterion 7 asks about formula
-    // IDENTITY, which is a different act, and without this the two instructions
-    // read as contradictory.
-    expect(reviewerPrompt).toMatch(/Criterion 7 is NOT arithmetic/i);
-  });
-
   it('tells the reviewer when the verifier has already rejected the question', () => {
     const rejected = REVIEWER_PROMPT({
       loName: 'Compute present value',
@@ -133,19 +131,21 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
   });
 
-  it('tells the reviewer when distinctness is PROVEN, and raises criterion 7\'s bar', () => {
+  it('tells the reviewer when distinctness is PROVEN, and closes the subject', () => {
     // The mirror of the failure hand-off. Without it a live reject opened with
     // "the PV1 and PV2 distractors MAY coincide under particular parameter
-    // combinations" against a question the verifier had already cleared across
-    // 100 draws — collisions re-litigated from vibes. On a proven question a
-    // criterion 7 objection must name a specific allowed draw, not a suspicion.
+    // combinations" against a question the verifier had already cleared —
+    // collisions re-litigated from vibes. With the collision criterion removed
+    // (2026-08-17), the proven block no longer sets a bar for objections; it
+    // states that collisions are settled and directs the reviewer to pedagogy.
     const proven = REVIEWER_PROMPT({
       loName: 'Compute present value',
       question: { stem: 'x', options: [] },
       verificationProven: true,
     });
     expect(proven).toMatch(/PROVEN every option value pairwise distinct/);
-    expect(proven).toMatch(/must name a specific allowed\s+draw/i);
+    expect(proven).toMatch(/Collisions are settled/);
+    expect(proven).toMatch(/pedagogy alone/i);
     expect(proven).not.toMatch(/ALREADY REJECTED/);
   });
 
