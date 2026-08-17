@@ -3774,3 +3774,44 @@ Excel-shaped rejects today.
 The week's rule, refined by its own exception: feedback beats instruction —
 **but only when the parties share ground truth.** Where they do not, no loop
 converges, and the fix is the missing information itself.
+
+---
+
+# Experiment 19 — diagnose-then-prescribe in the failure block (not shipped)
+
+Saurav's proposal: when the verifier has rejected a question, have the reviewer
+diagnose WHY the values coincide and prescribe the specific fix — range change
+vs different mistake — so the option-B retry gets steering instead of a menu.
+The channel already exists (the critique is quoted verbatim to the retry), so
+the change would be pure prompt wording in the failure block.
+
+Fixture: the real rejected question in the queue (NPV vs NPV_FACE_WEIGHT — the
+par-bond degeneracy, where coupon = YTM makes face weights equal market
+weights). Four runs per arm.
+
+| | A — current wording | B — diagnose-then-prescribe |
+|---|---|---|
+| Diagnosed the par condition | **4/4** | **4/4** |
+| Prescribed a concrete range fix | 2/4 | 2/4 |
+
+**No measurable difference — not shipped.** Two corrections to the premises,
+both worth keeping:
+
+1. **The current reviewer already diagnoses.** The live run's menu-style
+   critique ("changing the parameter ranges, seed/instance generation, or
+   distractor formula") turns out to be the tail outcome, not the norm: on the
+   same fixture the unchanged prompt named the par condition four times out of
+   four, with the algebra. The premise "it gives menus" was built on n=1.
+2. **Better prescriptions would not have converged this slot anyway.** The
+   failed retry was steered by the critique of the ORIGINAL's collision
+   (NPV_PRETAX_EQUITY) — it fixed that pair and introduced a NEW degeneracy
+   (the par bond). The WACC family is dense with same-quantity misconceptions
+   (book vs market, pre-tax vs after-tax, face vs market), each a near-identity
+   with its own degenerate draw. Serial feedback fixes collision N while
+   collision N+1 lies waiting — sharper wording for N does not prevent N+1.
+
+The honest operational picture: on the hardest LO family, roughly one slot per
+batch exhausts its retries against this misconception density, and the system
+persists it as an honest reject whose fix is one range edit for an instructor.
+That is acceptable behaviour, not a defect to engineer against — and the
+alternative (more retries per slot) buys convergence slowly at real cost.
