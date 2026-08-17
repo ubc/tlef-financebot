@@ -3631,3 +3631,51 @@ replacement **passed**. Zero rejects survived to the queue.
 Mutation-verified (disabling the branch fails 2 tests), admin toggle verified in
 the browser end to end (off → save → API false → on → save → API true), CI
 parity green at 96 suites / 1181 tests.
+
+---
+
+# Experiment 16 — A/B of the calculation preset (hypothesis refuted)
+
+Saurav asked whether the preset prompts should be strengthened, and a close read
+produced a plausible hypothesis: the calculation preset — *"select and apply the
+correct finance formula… one unambiguous answer"* — literally describes a
+one-step substitution, the exact shape behind 12/12 difficulty complaints. So
+variant B asked for method choice and deferred to the difficulty target.
+
+Both arms ran with `retryOnReject` OFF so first-pass verdicts were measured raw.
+
+| Same LO, generator `high` | A — current | B — method-choice |
+|---|---|---|
+| Verdicts | **pass ×3** | flag, pass, flag |
+| Proofs | 3/3 | 3/3 |
+| Difficulty complaints | 1, inside a pass | 0 |
+| Helper steps | 0 / 1 / 6 | 1 / 1 / 4 |
+
+**No measured benefit, directionally worse.** The plausible-sounding hypothesis
+does not survive: at generator `high` the current preset already yields pass ×3,
+because high effort overrides the preset's one-step framing on its own — the
+6-helper-step question in arm A is the proof. The one-step framing mattered at
+low effort; effort fixed it from the other side, and rewording the preset now
+buys nothing.
+
+**Decision: the preset stays as it is.** At n=3 the two flags in B may be
+reviewer wobble at the pass/flag boundary (documented in experiment 14), but
+there is no version of this data that argues FOR shipping B.
+
+**On difficulty-conditional presets** (Saurav's question): no. The chip fills
+the textarea at click time while the difficulty target travels separately — a
+preset with a baked-in difficulty demand goes stale the moment the dropdown
+changes afterwards, the same staleness trap that killed the preset-as-branch-
+trigger design. If preset text ever needs difficulty awareness, it should DEFER
+to the target in prose, not encode it.
+
+**Harness defect, recorded:** the A/B script did not capture the flag REASONS
+before cleaning up, so why B flagged twice is unknowable. Future harnesses print
+reasoning before deletion, always.
+
+Scorecard of prompt-change hypotheses this week: routing bias (refuted),
+worked distractor pairs (no effect), exemplars-for-numeric (unproven, not
+shipped), difficulty self-assessment (no effect), preset rewording (refuted).
+Against: retry feedback, chunks-to-reviewer, criteria-vs-gates, serve guard —
+all measured wins. The pattern has held without exception: **structure and
+feedback move this system; wording does not.**
