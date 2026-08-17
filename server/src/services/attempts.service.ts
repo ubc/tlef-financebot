@@ -3,7 +3,7 @@ import type { WithId } from 'mongodb';
 import { attemptsCol, questionsCol, questionVersionsCol, coursesCol, reviewBookCol, losCol } from '../components/mongodb/collections';
 import { recordAttemptInMastery, getLoStatuses, themeCoverage } from './mastery.service';
 import { selectRetryQuestion } from './serving.service';
-import { resolveParamValues, substituteParams, drawSeed } from './params.service';
+import { drawCollisionFreeParams, substituteParams } from './params.service';
 import { repeatedFailureRedirect, type RedirectPayload } from './progression.service';
 import type {
   AppliedStrategy,
@@ -292,8 +292,9 @@ export async function submitAttempt(input: SubmitAttemptInput): Promise<AttemptR
       // parameterized it needs its own freshly-resolved seed/paramValues,
       // exactly like /practice/next (never reuses input.paramValues, which
       // belongs to the just-answered question).
-      const retrySeed = drawSeed();
-      const retryParamValues = await resolveParamValues(retryResult.version, retrySeed);
+      // Collision-guarded like /practice/next — same hazard, same guard.
+      const { seed: retrySeed, paramValues: retryParamValues } =
+        await drawCollisionFreeParams(retryResult.version);
       retry = {
         questionId: retryResult.question._id.toString(),
         questionVersionId: retryResult.version._id.toString(),

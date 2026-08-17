@@ -3462,3 +3462,42 @@ touched the difficulty problem, which simply did not fire this run. **Difficulty
 calibration remains open**, and the candidate fix with actual evidence behind it
 is the reviewer-reject retry (option B): quote the reviewer's critique back to
 the generator, the same mechanism that took verification proofs from 0/4 to 4/4.
+
+---
+
+# Layered collision defense (2026-08-17) — code, not prompt
+
+Saurav asked two questions that reshaped the collision work: *"do we even need
+collision claims in reviewer if we already have the sampled draw?"* and *"when
+the student is served, can we check there and change the numbers slightly?"*
+
+Investigating them found a bug no proof could catch: **`checkDraw` compared raw
+doubles, but students see values rounded to 2 decimals** — raw 7.3591 vs 7.3644
+were "distinct" to the verifier while both options rendered as 7.36.
+
+Two layers shipped (exhaustive enumeration deliberately skipped — Saurav's
+server-load call):
+
+1. **The proof now compares displayed values** (`formatParamValue`), and its
+   failure message names the shared rendering — which the retry loop then quotes
+   back to the generator.
+2. **Serve-time reroll** (`drawCollisionFreeParams`): every student-facing draw
+   site — practice, exam assembly, Strategy-A retry, preview, and the
+   instructor's "what a student sees" panel — renders the options and redraws
+   the seed if any two display identically, capped at 8 attempts, then serves
+   anyway with a warning (never worse than before; a question colliding on most
+   draws cannot hold a proof). Rerolling the SEED is the sound version of
+   "change the numbers slightly": displayed values are formula outputs, so a
+   nudged number would contradict the working shown in the explanation.
+
+The 5-draw diagnostic preview is left unguarded on purpose — its job is showing
+real draw behaviour, collisions included.
+
+Why serve-time still matters given the proof: the proof samples 100 draws, and a
+collision at exactly one combo of a typical 135-combo slot space has a ~48%
+chance of never being sampled — plus every proof stored before today was
+raw-compared. Criterion 7 in the reviewer is now redundant in principle; left in
+place pending Saurav's call.
+
+Verified: unit 96 suites / 1176 tests (guard mutation-verified: disabling the
+reroll fails 2 tests); full e2e 38/3/1 — the recorded baseline exactly.

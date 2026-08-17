@@ -23,7 +23,7 @@ import type {
 import { gradeAnswer, type AttemptResult } from './attempts.service';
 import { flagQuestion } from './flags.service';
 import { computeProfile } from './mastery.service';
-import { drawSeed, resolveParamValues, substituteParams } from './params.service';
+import { drawCollisionFreeParams, substituteParams } from './params.service';
 import { getRedirectMaterialSource, hasRepeatedFailureCluster } from './progression.service';
 import {
   selectPreviewQuestion,
@@ -150,8 +150,9 @@ async function sanitizeQuestion(
   selected: SelectResult,
   watermarkUid: string,
 ): Promise<PreviewQuestion> {
-  const seed = drawSeed();
-  const paramValues = await resolveParamValues(selected.version, seed);
+  // Collision-guarded like the real student serve — preview exists to show
+  // what a student would see, so it must guard the same way.
+  const { seed, paramValues } = await drawCollisionFreeParams(selected.version);
   return {
     questionId: selected.question._id.toHexString(),
     questionVersionId: selected.version._id.toHexString(),

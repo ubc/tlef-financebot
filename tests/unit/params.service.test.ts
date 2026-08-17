@@ -5,7 +5,7 @@ jest.mock('../../server/src/components/param-worker', () => ({
 }));
 
 import { executeGenerate } from '../../server/src/components/param-worker';
-import { resolveParamValues, substituteParams, findUnusedParamSlots, seededRandom } from '../../server/src/services/params.service';
+import { drawCollisionFreeParams, resolveParamValues, substituteParams, findUnusedParamSlots, seededRandom, SERVE_DRAW_ATTEMPTS } from '../../server/src/services/params.service';
 
 const mockExecuteGenerate = executeGenerate as jest.Mock;
 
@@ -158,6 +158,82 @@ describe('params.service', () => {
         expect(v).toBeGreaterThanOrEqual(0);
         expect(v).toBeLessThan(1);
       }
+    });
+  });
+
+  // Serve-time guard (Saurav's design, 2026-08-17): redraw when two options
+  // would DISPLAY identically. Two collision classes reach a serve despite a
+  // proof — the proof samples 100 draws rather than enumerating, and proofs
+  // stored before display-precision checking compared raw doubles.
+  describe('drawCollisionFreeParams', () => {
+    const option = (key: string, text: string) =>
+      ({ key, text, role: 'correct' as const, explanation: '' });
+
+    // X draws 1 or 2. B is the constant 2, so X=2 renders options A and B
+    // identically ("2" vs "2") while X=1 is clean ("1" vs "2").
+    const version = {
+      paramSlots: [{ name: 'X', min: 1, max: 2, step: 1 }],
+      derivedValues: [
+        { name: 'A', formula: 'X' },
+        { name: 'B', formula: '2' },
+      ],
+      options: [option('A', '{{A}}'), option('B', '{{B}}')],
+    };
+
+    /** Finds real seeds producing each X, so the test drives the guard through
+     * the genuine resolution path instead of mocking it. */
+    async function seedsFor(): Promise<{ colliding: number; clean: number }> {
+      let colliding = -1;
+      let clean = -1;
+      for (let seed = 0; seed < 100 && (colliding < 0 || clean < 0); seed += 1) {
+        const values = await resolveParamValues(version, seed);
+        if (values!.X === 2 && colliding < 0) colliding = seed;
+        if (values!.X === 1 && clean < 0) clean = seed;
+      }
+      return { colliding, clean };
+    }
+
+    it('returns the first draw when nothing collides', async () => {
+      const { clean } = await seedsFor();
+      const seedFn = jest.fn(() => clean);
+      const result = await drawCollisionFreeParams(version, seedFn);
+      expect(result.seed).toBe(clean);
+      expect(seedFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('redraws past a display collision and returns the clean seed', async () => {
+      const { colliding, clean } = await seedsFor();
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const seeds = [colliding, clean];
+      const result = await drawCollisionFreeParams(version, () => seeds.shift()!);
+      expect(result.seed).toBe(clean);
+      expect(result.paramValues!.X).toBe(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('gives up after SERVE_DRAW_ATTEMPTS and serves the last draw anyway', async () => {
+      // A always equals B ("X" vs "X") — no reroll can fix it. Serving anyway
+      // is deliberate: never worse than the behaviour this replaces, and a
+      // question colliding on EVERY draw cannot hold a verification proof.
+      const hopeless = { ...version, derivedValues: [{ name: 'A', formula: 'X' }, { name: 'B', formula: 'X' }] };
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      let calls = 0;
+      const result = await drawCollisionFreeParams(hopeless, () => { calls += 1; return calls; });
+      expect(calls).toBe(SERVE_DRAW_ATTEMPTS);
+      expect(result.paramValues).toBeDefined();
+      expect(warn).toHaveBeenCalledTimes(SERVE_DRAW_ATTEMPTS);
+      warn.mockRestore();
+    });
+
+    it('returns immediately for a conceptual question', async () => {
+      const seedFn = jest.fn(() => 7);
+      const result = await drawCollisionFreeParams(
+        { options: [option('A', 'Statement one'), option('B', 'Statement two')] },
+        seedFn,
+      );
+      expect(result.paramValues).toBeUndefined();
+      expect(seedFn).toHaveBeenCalledTimes(1);
     });
   });
 });

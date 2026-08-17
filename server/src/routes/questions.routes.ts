@@ -19,7 +19,7 @@ import {
   transitionQuestion,
   bulkTransition,
 } from '../services/questions.service';
-import { resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
+import { drawCollisionFreeParams, resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
 import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
@@ -503,10 +503,15 @@ questionsRouter.get(
     const questionId = new ObjectId(String(req.params.questionId));
     const { current } = await getQuestionDetail(questionId);
 
-    const seed = drawSeed();
+    // Collision-guarded: this panel is "what a student sees", so it draws the
+    // way a student serve draws. (The 5-draw diagnostic preview below is left
+    // raw ON PURPOSE — its job is to show real draw behaviour, collisions
+    // included, so an instructor can see what the verifier is complaining
+    // about.)
+    let seed = drawSeed();
     let values: Record<string, number> | undefined;
     try {
-      values = await resolveParamValues(current, seed);
+      ({ seed, paramValues: values } = await drawCollisionFreeParams(current));
     } catch {
       // An unverified question may carry a broken formula — show the raw
       // template rather than failing the whole detail view.

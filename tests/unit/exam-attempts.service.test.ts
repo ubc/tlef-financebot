@@ -23,6 +23,16 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 jest.mock('../../server/src/services/params.service', () => ({
   drawSeed: jest.fn(() => 1234),
   resolveParamValues: jest.fn(),
+  // The serve-time guard delegates to the same mocked resolution, so tests keep
+  // pinning values through resolveParamValues exactly as before — this suite
+  // exercises exam assembly, not the collision reroll, which has its own tests
+  // in params.service.test.ts.
+  drawCollisionFreeParams: jest.fn(async (version: unknown) => ({
+    seed: 1234,
+    paramValues: await (jest.requireMock('../../server/src/services/params.service') as {
+      resolveParamValues: jest.Mock;
+    }).resolveParamValues(version, 1234),
+  })),
   substituteParams: jest.fn((text: string, values: Record<string, number>) =>
     text.replace('{{rate}}', String(values.rate))),
 }));
