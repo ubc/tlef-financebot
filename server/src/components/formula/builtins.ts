@@ -40,6 +40,34 @@ function irrObjective(rate: number, flows: number[]): number {
   return flows[0] + npv(rate, flows.slice(1));
 }
 
+/**
+ * The one-line manual for each builtin, shown VERBATIM to both the generator
+ * and the reviewer prompts. It lives beside the implementations so the two
+ * cannot drift, and a test pins that every BUILTINS key appears in it.
+ *
+ * Written after a live failure (2026-08-17): the name `PV` reads as Excel's
+ * annuity function to anything trained on finance material, but the builtin
+ * discounts a SINGLE amount. The generator composed bond values that dropped
+ * all but one coupon; the reviewer rejected them with Excel-based reasoning —
+ * both wrong about the same undocumented name, so even the critique-retry
+ * loop could not converge: the critique told the generator to fix the wrong
+ * thing. Names do not carry semantics. This reference does.
+ */
+export const BUILTIN_REFERENCE = [
+  "EXACT function semantics — these are NOT Excel's functions, whatever the names suggest:",
+  '  PV(rate, periods, amount) = amount/(1+rate)^periods — discounts ONE single amount.',
+  "    NOT Excel's PV: it is not an annuity function. For the value of a level stream,",
+  '    use the closed form PAYMENT*(1-(1+rate)^-periods)/rate, or NPV, or SUM.',
+  '  FV(rate, periods, amount) = amount*(1+rate)^periods — compounds ONE single amount.',
+  '  PMT(rate, periods, principal) — the level payment that amortizes `principal` over',
+  '    `periods` at `rate` (rate 0 gives principal/periods).',
+  '  NPV(rate, cf1, cf2, ...) — discounts cf1 at t=1, cf2 at t=2, and so on. There is NO',
+  '    t=0 term: subtract the initial outlay OUTSIDE the call, as -C0 + NPV(rate, ...).',
+  '  IRR(cf0, cf1, ...) — unlike NPV, cf0 IS the t=0 flow. Fails without a sign change.',
+  '  ln(x), exp(x), sqrt(x), abs(x), min(...), max(...), round(value, decimals), and',
+  '  N(x) — the standard normal CDF.',
+].join('\n');
+
 export const BUILTINS: Record<string, (args: number[]) => number> = {
   PV: (args) => {
     requireArgs('PV', args, 3);

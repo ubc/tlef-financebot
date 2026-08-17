@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb';
+import { BUILTIN_REFERENCE } from '../components/formula';
 import { completeJson } from '../components/genai/llm';
 import { embedOne } from '../components/genai/embeddings';
 import { search } from '../components/qdrant';
@@ -1223,6 +1224,18 @@ function renderChunks(chunks: RetrievedChunk[]): string {
   return chunks.map((chunk, i) => `[${i + 1}] ${chunk.text}`).join('\n\n');
 }
 
+/**
+ * One rubric, two audiences. The generator sees its TARGET's line; the reviewer
+ * sees all three, because it judges whether the label matches. Until 2026-08-17
+ * the reviewer had only "a one-step substitution should not pass as medium or
+ * hard" — it was grading against definitions it had never been shown.
+ */
+export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
+  easy: 'Easy means one direct recall or one-step application with no irrelevant information.',
+  medium: 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.',
+  hard: 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.',
+};
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
@@ -1231,13 +1244,7 @@ export function GENERATOR_PROMPT(params: {
   chunks: RetrievedChunk[];
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
-  const difficultyGuidance = params.difficulty === 'easy'
-    ? 'Easy means one direct recall or one-step application with no irrelevant information.'
-    : params.difficulty === 'medium'
-      ? 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.'
-      : params.difficulty === 'hard'
-        ? 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.'
-        : '';
+  const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
   return [
     `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
     `for the learning objective: "${params.loName}".`,
@@ -1336,14 +1343,20 @@ export function GENERATOR_PROMPT(params: {
     '  - BUILD THE ANSWER IN STEPS. "derivedValues" are evaluated IN ORDER, and a',
     '    later formula may use any earlier one BY NAME. Prefer several short named',
     '    steps to one long expression:',
+    // Example corrected 2026-08-17. The previous version modelled DEBT_VALUE as
+    // PV(y, 16, COUPON) + PV(y, 16, FACE) — under the evaluator's single-sum PV
+    // that discounts ONE coupon and drops the other fifteen. This prompt was
+    // teaching wrong bond valuation as its own worked "good" example, and three
+    // live questions were rejected reproducing it.
     '      good:',
-    '        DEBT_VALUE   = PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)',
+    '        COUPON_PMT   = FACE_DEBT*COUPON_PCT/100',
+    '        DEBT_VALUE   = COUPON_PMT*(1-(1+YTM_PCT/100)^-16)/(YTM_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)',
     '        EQUITY_VALUE = SHARES*PRICE',
     '        V            = DEBT_VALUE + EQUITY_VALUE',
     '        COST_EQUITY  = RF_PCT/100 + BETA*MRP_PCT/100',
     '        WACC         = (EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)',
-    '      bad:  all of that inlined as one 400-character expression with the two',
-    '            PV(...) calls repeated six times.',
+    '      bad:  all of that inlined as one 400-character expression with the',
+    '            debt-value sub-expression repeated six times.',
     '    A step that no option displays is perfectly allowed and is exempt from',
     '    the option contract below — name it and reuse it.',
     '    This is not a style preference. Long nested expressions are exactly where',
@@ -1386,9 +1399,11 @@ export function GENERATOR_PROMPT(params: {
     '    The STEM may use slot placeholders freely — this rule is about options.',
     '',
     'Formula syntax: + - * / ^ ( ), variable names, and these functions only:',
-    '  PV(rate, periods, amount), FV(rate, periods, amount), PMT(rate, periods, principal),',
-    '  NPV(rate, cf1, cf2, ...), IRR(cf0, cf1, ...), ln, exp, sqrt, abs, min, max,',
-    '  round(value, decimals), N(x) for the standard normal CDF, and',
+    // The semantics block replaced a bare signature list on 2026-08-17, after a
+    // live batch modelled bond value as PV(y, n, COUPON) + PV(y, n, FACE) —
+    // Excel's reading of PV, which drops all but one coupon here. A name is not
+    // a definition; the model fills undocumented signatures from its training.
+    BUILTIN_REFERENCE,
     '  SUM(index, from, to, body) for series such as duration or amortization.',
     'These functions are shorthand, not a limit: any closed-form finance formula can be',
     'written with arithmetic alone (CAPM is RF + BETA*MRP; Gordon growth is D1/(R-G)).',
@@ -1603,8 +1618,15 @@ export function REVIEWER_PROMPT(params: {
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
     '  4. Clarity — the stem and options are unambiguous.',
-    '  5. Difficulty calibration — the actual reasoning demand matches the stated difficulty;',
-    '     a one-step substitution should not pass as medium or hard.',
+    // Until 2026-08-17 the reviewer had only the one-step heuristic — it was
+    // grading labels against a rubric it had never been shown. Same rubric the
+    // generator gets, all three levels, because grading needs the whole scale.
+    '  5. Difficulty calibration — the actual reasoning demand matches the stated',
+    '     difficulty, judged against the same rubric the generator was given:',
+    `       ${DIFFICULTY_RUBRIC.easy}`,
+    `       ${DIFFICULTY_RUBRIC.medium}`,
+    `       ${DIFFICULTY_RUBRIC.hard}`,
+    '     A one-step substitution should not pass as medium or hard.',
     '  6. Formula modelling — for a numerical question, does each formula in derivedValues',
     '     actually model what the stem asks? A present value of a two-period stream must',
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
@@ -1663,6 +1685,14 @@ export function REVIEWER_PROMPT(params: {
     'Judge modelling and pedagogy. Option COLLISIONS are not your job either: the',
     'verifier proves option distinctness at display precision, and the serving path',
     'redraws any rare colliding draw, so never reject over values that might coincide.',
+    '',
+    // Added 2026-08-17 after three live rejects whose reasoning assumed Excel's
+    // PV. The formulas are evaluated by THIS grammar, and one reject even
+    // hedged "depending on the evaluator's PV convention" — the reviewer asked
+    // for this block by name. Criterion 6 is judged against these semantics.
+    'The formulas in derivedValues are evaluated with THESE functions. Judge criterion 6',
+    'against these exact semantics, never against what the same names mean in Excel:',
+    BUILTIN_REFERENCE,
     '',
     ...(params.chunks?.length
       ? ['THE COURSE MATERIAL the question was written from, and the only treatment the',

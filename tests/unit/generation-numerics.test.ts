@@ -26,6 +26,7 @@ import {
   VALIDATOR_PROMPT,
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
+import { BUILTINS, BUILTIN_REFERENCE } from '../../server/src/components/formula';
 
 const reviewerPrompt = REVIEWER_PROMPT({
   loName: 'Compute present value',
@@ -274,6 +275,45 @@ describe('GENERATOR_PROMPT', () => {
     for (const fn of ['PV', 'FV', 'PMT', 'NPV', 'IRR', 'sqrt']) {
       expect(generatorPrompt).toContain(fn);
     }
+  });
+
+  // The PV incident, 2026-08-17: three live questions modelled bond value as
+  // PV(y, n, COUPON) + PV(y, n, FACE) — Excel's reading of PV, which under the
+  // evaluator's single-sum semantics drops all but one coupon. The reviewer
+  // rejected them with Excel-based reasoning, so the critique-retry could not
+  // converge: both agents were wrong about the same undocumented name.
+  describe('builtin function semantics reach BOTH agents', () => {
+    it('tells the generator PV is a single-sum discount, not Excel PV', () => {
+      expect(generatorPrompt).toMatch(/NOT Excel's PV: it is not an annuity function/);
+      expect(generatorPrompt).toMatch(/discounts ONE single amount/);
+    });
+
+    it('tells the reviewer the same semantics, framed for judging', () => {
+      expect(reviewerPrompt).toMatch(/never against what the same names mean in Excel/);
+      expect(reviewerPrompt).toMatch(/discounts ONE single amount/);
+    });
+
+    it('mentions every implemented builtin, so the manual cannot silently lag', () => {
+      for (const name of Object.keys(BUILTINS)) {
+        expect(BUILTIN_REFERENCE).toContain(name);
+      }
+    });
+
+    it('teaches the corrected worked example, not the one that dropped coupons', () => {
+      // The prompt's own "good" example carried the bug: a single-sum PV of one
+      // coupon standing in for the whole coupon stream.
+      expect(generatorPrompt).toContain('COUPON_PMT*(1-(1+YTM_PCT/100)^-16)/(YTM_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)');
+      expect(generatorPrompt).not.toContain('PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100)');
+    });
+  });
+
+  it('gives the reviewer the full difficulty rubric, not just the heuristic', () => {
+    // Until 2026-08-17 the reviewer had only "a one-step substitution should
+    // not pass as medium or hard" — grading against definitions it had never
+    // seen. The generator sees its target's line; the judge needs all three.
+    expect(reviewerPrompt).toMatch(/Easy means one direct recall/);
+    expect(reviewerPrompt).toMatch(/Medium means the student must choose or connect/);
+    expect(reviewerPrompt).toMatch(/Hard means multi-step synthesis/);
   });
 
   it('warns about the two failure modes verification actually rejects', () => {

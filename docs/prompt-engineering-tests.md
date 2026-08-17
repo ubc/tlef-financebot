@@ -3716,3 +3716,61 @@ Recommendation: this is an operational choice, not an experimental one. Run
 cheaper setting with a bounded worst case; if they fire often, the one-click
 switch back to `high` is the answer. The system now reports its own failure
 cost, which is what makes trying it safe.
+
+---
+
+# Experiment 18 — the PV incident: undocumented semantics defeat every loop
+
+Saurav's difficulty-`hard` run on the WACC LO returned reject ×3, each having
+ALSO survived a critique-retry. Investigation found the first failure that no
+retry loop could fix, because it was an information gap shared by everyone:
+
+- The evaluator's `PV(rate, n, amount)` is a SINGLE-SUM discount
+  (`amount/(1+rate)^n`). **Excel's `PV` is an annuity function.** The prompt
+  listed the signature with no definition.
+- The GENERATOR filled the gap from its training: `PV(y, n, COUPON) +
+  PV(y, n, FACE)` for bond value — one coupon discounted, fifteen dropped.
+- The REVIEWER filled the gap the same way and rejected with Excel-based
+  reasoning — right verdict, wrong theory, and one reject literally hedged
+  *"depending on the evaluator's PV convention"*: it asked for the manual by
+  name.
+- The critique-retry therefore COULD NOT converge: the critique told the
+  generator to fix the wrong thing. Feedback loops fail when both parties share
+  a false premise.
+- Worst: `GENERATOR_PROMPT`'s own worked "good" example (added 2026-08-14 from
+  the live Aerotech decomposition) contained the same bug — the prompt was
+  teaching wrong bond valuation as its exemplar. This also reframes the
+  2026-08-14 Aerotech failures: the model was flailing with functions whose
+  semantics it had to guess.
+
+The verifier cannot catch any of this — proofs check distinctness, not finance —
+so the reviewer is the only modelling gate, which is why its Excel assumption
+mattered.
+
+## The fix — a manual, not a mechanism
+
+`BUILTIN_REFERENCE` lives in `components/formula/builtins.ts` NEXT TO the
+implementations (a drift test pins that every builtin appears in it) and is
+shown verbatim to BOTH agents: one line of exact semantics per function, with
+the Excel contrast stated. The worked example now composes debt value correctly
+(coupon annuity closed form + single-sum face). And the same audit closed a
+sibling gap Saurav spotted: the reviewer had been grading difficulty with only
+the one-step heuristic — `DIFFICULTY_RUBRIC` is now shared, the generator seeing
+its target's line, the reviewer all three.
+
+## Same LO, same difficulty, one hour apart
+
+| | Before (Saurav's run) | After |
+|---|---|---|
+| Verdicts | **reject ×3** (retries also rejected) | **pass ×3** |
+| Reject-retries fired | 3, none converging | **0** |
+| Difficulty | `hard` rejected as substitutions | **`hard` accepted** |
+| PV misuse in formulas | every question | none detected |
+
+First fully clean run on the WACC LO in the entire record — the family that
+produced 400-character formulas and dummy sub-expressions on 2026-08-14 and
+Excel-shaped rejects today.
+
+The week's rule, refined by its own exception: feedback beats instruction —
+**but only when the parties share ground truth.** Where they do not, no loop
+converges, and the fix is the missing information itself.
