@@ -249,6 +249,20 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
  * (a question skipped for repeatedly-invalid options is not counted). Always
  * inserts as Draft — never publishes.
  */
+/**
+ * What the reviewer is told about the verifier's verdict: the failure when there
+ * is one, the proof when one was earned, nothing for a conceptual question
+ * (which has neither). One helper rather than a ternary chain at three call
+ * sites, so the failure/success symmetry cannot drift apart again.
+ */
+function reviewerVerificationParams(
+  numerics: ReturnType<typeof verifyGeneratedNumerics>,
+): { verificationFailure?: string; verificationProven?: boolean } {
+  if (numerics.failure) return { verificationFailure: numerics.failure };
+  if (numerics.fields.verification) return { verificationProven: true };
+  return {};
+}
+
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
@@ -297,7 +311,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             loName: lo.name,
             question: generated,
             chunks,
-            ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
+            ...reviewerVerificationParams(numerics),
           }),
           { ...models.reviewer },
         )
@@ -405,7 +419,7 @@ export async function regenerateQuestion(
           loName: lo.name,
           question: generated,
           chunks: grounding.chunks,
-          ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
+          ...reviewerVerificationParams(numerics),
         }),
         { ...platformSettings.models.reviewer },
       )
@@ -582,7 +596,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 loName: lo.name,
                 question: candidate.generated,
                 chunks,
-                ...(candidateNumerics.failure ? { verificationFailure: candidateNumerics.failure } : {}),
+                ...reviewerVerificationParams(candidateNumerics),
               }),
               { ...models.reviewer },
             )
@@ -1436,6 +1450,15 @@ export function REVIEWER_PROMPT(params: {
    */
   verificationFailure?: string;
   /**
+   * The mirror image, added 2026-08-17 after the asymmetry showed up live: the
+   * failure was passed but a SUCCESS was not, so on a proven question the
+   * reviewer re-litigated collisions from vibes — a live reject opened with
+   * "the PV1 and PV2 distractors… MAY coincide under particular parameter
+   * combinations" against a question whose distinctness the verifier had just
+   * demonstrated across 100 draws.
+   */
+  verificationProven?: boolean;
+  /**
    * The grounding the generator wrote from. Criterion 2 asks whether the
    * question is "grounded in the material" and the reviewer was never shown any
    * — it was answering that from general finance knowledge alone.
@@ -1534,6 +1557,18 @@ export function REVIEWER_PROMPT(params: {
          `  "${params.verificationFailure}"`,
          'It cannot serve a student in this state, whatever its pedagogical merits.',
          'Say specifically what must change to fix it.',
+         '']
+      : []),
+    // The success is passed as deliberately as the failure. Without it the
+    // reviewer re-litigates collisions from vibes on questions the verifier has
+    // already cleared — hedged "may coincide under particular combinations"
+    // objections that no draw supports.
+    ...(params.verificationProven
+      ? ['The deterministic verifier has PROVEN every option value pairwise distinct across',
+         '100 sampled draws. An always-identical pair of formulas is therefore impossible —',
+         'it would have failed on every draw. Do not reject for a collision you merely',
+         'suspect: a criterion 7 objection to THIS question must name a specific allowed',
+         'draw at which two formulas coincide, not a possibility.',
          '']
       : []),
     'Question JSON:',

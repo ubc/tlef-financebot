@@ -511,7 +511,12 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
       expect(reviewerPrompt).toMatch(/(PV_DUP and PV|PV and PV_DUP) are identical/);
     });
 
-    it('does not tell the reviewer of a failure when the question verifies', async () => {
+    it('tells the reviewer about the PROOF when the question verifies', async () => {
+      // The mirror of the failure case, added 2026-08-17 after the asymmetry
+      // showed up live: with the failure passed but a success not, the reviewer
+      // re-litigated collisions from vibes — "the PV1 and PV2 distractors MAY
+      // coincide under particular parameter combinations" — against a question
+      // whose distinctness the verifier had just demonstrated across 100 draws.
       jest.mocked(completeJson)
         .mockResolvedValueOnce(sound)
         .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
@@ -520,6 +525,7 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
       await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
 
       const reviewerPrompt = jest.mocked(completeJson).mock.calls[2]![0] as string;
+      expect(reviewerPrompt).toMatch(/PROVEN every option value pairwise distinct/);
       expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
     });
 

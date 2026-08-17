@@ -133,6 +133,28 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
   });
 
+  it('tells the reviewer when distinctness is PROVEN, and raises criterion 7\'s bar', () => {
+    // The mirror of the failure hand-off. Without it a live reject opened with
+    // "the PV1 and PV2 distractors MAY coincide under particular parameter
+    // combinations" against a question the verifier had already cleared across
+    // 100 draws — collisions re-litigated from vibes. On a proven question a
+    // criterion 7 objection must name a specific allowed draw, not a suspicion.
+    const proven = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      verificationProven: true,
+    });
+    expect(proven).toMatch(/PROVEN every option value pairwise distinct/);
+    expect(proven).toMatch(/must name a specific allowed\s+draw/i);
+    expect(proven).not.toMatch(/ALREADY REJECTED/);
+  });
+
+  it('a question with neither verdict gets neither verifier block', () => {
+    // Conceptual questions have no failure AND no proof; telling the reviewer
+    // either would be false.
+    expect(reviewerPrompt).not.toMatch(/PROVEN every option value/);
+  });
+
   // Found 2026-08-16 by Saurav: criterion 2 asks whether the question is
   // "grounded in the material" and the reviewer had never been shown any. Three
   // questions were rejected for modelling holding-period return "incorrectly" —

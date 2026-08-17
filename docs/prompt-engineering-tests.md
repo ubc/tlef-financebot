@@ -3420,3 +3420,45 @@ gate must be checked against that gate — read the function, and test a fixture
 it deliberately allows. Prose that is stricter than its enforcement does not add
 safety; it manufactures rejects no code would agree with, and they cost a full
 generation to discover.
+
+---
+
+# Experiment 13 — pass the PROOF to the reviewer, not just the failure
+
+A live calculation run (Saurav, 2026-08-17, "Apply NPV and IRR") returned 2/3
+rejects. Investigation split them three ways: the dominant complaint in both was
+**difficulty calibration** — the known-unfixed problem, correctly enforced by the
+reviewer against a generator that still labels one-step substitutions `medium` —
+plus legitimate distractor role-fit objections, plus one genuine information gap:
+
+> *"Criterion 7 fails: the PV1 and PV2 distractors… **may coincide** with another
+> option **only under particular parameter combinations**"*
+
+— on a question whose distinctness the verifier had **proven across 100 draws**.
+The verifier's verdict was passed to the reviewer only on failure; on success the
+reviewer was told nothing, and re-litigated collisions from vibes.
+
+## The fix
+
+`REVIEWER_PROMPT` now takes `verificationProven` as the mirror of
+`verificationFailure`, rendered as: distinctness is proven, an always-identical
+pair is therefore impossible, and a criterion 7 objection to this question must
+name a **specific allowed draw**, not a possibility. A single
+`reviewerVerificationParams` helper feeds all three call sites so the
+failure/success symmetry cannot drift apart again. A conceptual question, which
+has neither verdict, gets neither block.
+
+## Measured, same LO and settings
+
+| | Saurav's run (before) | After |
+|---|---|---|
+| Verdicts | reject, reject, pass | **pass ×3** |
+| Hedged collision claims on proven questions | 1/3 | **0/3** |
+| Proofs | 3/3 | 3/3 |
+
+The 0/3 on speculation is the change this fix targeted. The verdict swing to
+pass ×3 should be read cautiously — n=3 generation variance, and nothing here
+touched the difficulty problem, which simply did not fire this run. **Difficulty
+calibration remains open**, and the candidate fix with actual evidence behind it
+is the reviewer-reject retry (option B): quote the reviewer's critique back to
+the generator, the same mechanism that took verification proofs from 0/4 to 4/4.
