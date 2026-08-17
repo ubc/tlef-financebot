@@ -3253,3 +3253,65 @@ for the models actually in use.
 
 Caveats: n=3 per arm, one LO, one run. The reject ×3 versus pass ×3 split is
 stark enough to act on, and cheap enough to re-run if it matters.
+
+---
+
+# Experiment 10 — the reviewer had never seen the course material
+
+Found by Saurav on 2026-08-16 after a real run returned `reject` on all three
+questions: *"do you know if the reviewer agent also is passed the chunks or it is
+just going off of vibes?"*
+
+**It was going off vibes.** `REVIEWER_PROMPT` took `{loName, question}` and
+nothing else. Its criterion 2 — *"LO & material alignment — it tests this LO and
+is grounded in the material"* — was the only mention of material anywhere in the
+function. The six retrieved chunks the generator wrote from were never passed on.
+Same for `VALIDATOR_PROMPT`.
+
+All three rejected questions **had earned verification proofs**, so the
+arithmetic, the option contract and the collision checks were all fine. Every
+objection was criterion 6, and every one was the reviewer's own theory of
+dividend reinvestment:
+
+> *"the second dividend is received after nine months and should be reinvested at
+> PRICE_2; the intervening price path and timing are not modeled consistently"*
+
+Whether that is a defect depends entirely on how the course teaches HPR — which
+the reviewer could not see. It was rejecting questions for following a simpler
+treatment than the one it happened to know.
+
+## Result — same LO, same settings
+
+| Run | Reviewer verdicts | Proofs |
+|---|---|---|
+| Reviewer blind (Saurav's run) | **reject, reject, reject** | 3/3 |
+| Reviewer sees chunks, generator `medium` | **pass, pass, flag** | 3/3 |
+| Reviewer sees chunks, generator `high` | **pass, pass, flag** | 3/3 |
+
+The rejects are gone. The surviving flags now open by confirming the model is
+sound — *"The core HPR model, options, distractors, difficulty, retry role, and
+slot ranges are sound; no allowed slot draw makes a distractor equal the correct
+formula. However…"* — a caveat rather than a repudiation.
+
+The prompt also now tells the reviewer explicitly to judge against the course
+rather than a fuller treatment: *"a question that follows the course's
+simplification faithfully is correct here… Reject for contradicting the material,
+not for being simpler than the literature."*
+
+## Two things this changes
+
+**Generator effort barely matters here.** `medium` and `high` produced identical
+verdict distributions once the reviewer could see the material. The effort
+question that experiment 9 answered is real but second-order next to this.
+
+**And it reframes experiment 9's own result.** That comparison ran with a blind
+reviewer, so its `reject ×3` vs `pass ×3` split was measured through a judge
+applying its own theory. The retry/proof/diversity numbers there stand — those
+come from the deterministic verifier — but the reviewer column should be read
+with this in mind.
+
+## How it was missed
+
+Criteria 7-9 were added to this same prompt earlier the same day, and the review
+of that change never asked whether criterion 2 was answerable. Attention went to
+what was being added rather than to what was already there and unsupported.

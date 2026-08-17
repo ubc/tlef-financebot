@@ -288,7 +288,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // Validator and reviewer each run on their own model. Structure validation
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
-      VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
+      VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks }),
       { ...models.validator },
     );
     const review = platformSettings.featureFlags.reviewerAgent
@@ -296,6 +296,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
           REVIEWER_PROMPT({
             loName: lo.name,
             question: generated,
+            chunks,
             ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
           }),
           { ...models.reviewer },
@@ -395,7 +396,7 @@ export async function regenerateQuestion(
   // Verified before the review so the reviewer sees the verifier's verdict.
   const numerics = verifyGeneratedNumerics(generated);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
+    VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks: grounding.chunks }),
     { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
@@ -403,6 +404,7 @@ export async function regenerateQuestion(
         REVIEWER_PROMPT({
           loName: lo.name,
           question: generated,
+          chunks: grounding.chunks,
           ...(numerics.failure ? { verificationFailure: numerics.failure } : {}),
         }),
         { ...platformSettings.models.reviewer },
@@ -542,7 +544,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of generated) {
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
-          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated }),
+          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated, chunks }),
           { ...models.validator },
         );
         validated.push(candidate);
@@ -579,6 +581,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
               REVIEWER_PROMPT({
                 loName: lo.name,
                 question: candidate.generated,
+                chunks,
                 ...(candidateNumerics.failure ? { verificationFailure: candidateNumerics.failure } : {}),
               }),
               { ...models.reviewer },
@@ -1397,13 +1400,24 @@ function withVerificationNote(reasoning: string, failure?: string): string {
   return failure ? `${reasoning}\n\nNumeric verification FAILED: ${failure}` : reasoning;
 }
 
-export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
+export function VALIDATOR_PROMPT(params: {
+  loName: string;
+  question: GeneratorOutput;
+  /** The same grounding the generator was given. See REVIEWER_PROMPT for why. */
+  chunks?: RetrievedChunk[];
+}): string {
   return [
     'You are a structure validator for finance practice questions. For the question below,',
     `written for the LO "${params.loName}", assess whether EACH option's assigned role`,
     'genuinely fits its text (is the "correct" option actually correct? is each',
     '"common-misconception" a realistic misconception? etc.).',
     '',
+    ...(params.chunks?.length
+      ? ['Judge against the COURSE MATERIAL below — it is what the question was written',
+         'from and what the student has been taught:',
+         renderChunks(params.chunks),
+         '']
+      : []),
     'Question JSON:',
     JSON.stringify(params.question),
     '',
@@ -1421,6 +1435,19 @@ export function REVIEWER_PROMPT(params: {
    * sitting unused one function away.
    */
   verificationFailure?: string;
+  /**
+   * The grounding the generator wrote from. Criterion 2 asks whether the
+   * question is "grounded in the material" and the reviewer was never shown any
+   * — it was answering that from general finance knowledge alone.
+   *
+   * Found 2026-08-16 when three questions were rejected for modelling
+   * holding-period return "incorrectly": all three had earned verification
+   * proofs, and the objection was the reviewer's own theory of dividend
+   * reinvestment, not a mismatch with what the course teaches. A reviewer that
+   * cannot see the material cannot tell a wrong question from a question that
+   * follows a simpler treatment than the one it has in mind.
+   */
+  chunks?: RetrievedChunk[];
 }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
@@ -1471,6 +1498,16 @@ export function REVIEWER_PROMPT(params: {
     'Judge modelling and pedagogy. Criterion 7 is NOT arithmetic: it asks whether two',
     'FORMULAS become the same expression at a draw the ranges allow.',
     '',
+    ...(params.chunks?.length
+      ? ['THE COURSE MATERIAL the question was written from, and the only treatment the',
+         'student has been taught. Judge criteria 1, 2 and 6 against THIS, not against a',
+         'more complete model you happen to know: a question that follows the course\'s',
+         'simplification faithfully is correct here, even where a fuller treatment would',
+         'add terms the material never introduces. Reject for contradicting the material,',
+         'not for being simpler than the literature.',
+         renderChunks(params.chunks),
+         '']
+      : []),
     // The verifier runs before this call and its verdict was being thrown away.
     // Without it the reviewer can only guess whether a question is servable, and
     // "flag" on a question that can never reach a student is the wrong verdict.

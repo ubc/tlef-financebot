@@ -23,6 +23,7 @@ jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enq
 import {
   GENERATOR_PROMPT,
   REVIEWER_PROMPT,
+  VALIDATOR_PROMPT,
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
 
@@ -101,6 +102,49 @@ describe('REVIEWER_PROMPT', () => {
     // A reviewer told "the verifier rejected this" about a sound question would
     // be actively misled, so the block must be absent rather than empty.
     expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
+  });
+
+  // Found 2026-08-16 by Saurav: criterion 2 asks whether the question is
+  // "grounded in the material" and the reviewer had never been shown any. Three
+  // questions were rejected for modelling holding-period return "incorrectly" —
+  // all three had earned verification proofs, and the objection was the
+  // reviewer's own theory of dividend reinvestment rather than a mismatch with
+  // what the course teaches.
+  it('shows the reviewer the material it is asked to judge alignment against', () => {
+    const grounded = REVIEWER_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
+    });
+    expect(grounded).toMatch(/COURSE MATERIAL/);
+    expect(grounded).toMatch(/HPR is measured over one holding period/);
+  });
+
+  it('tells the reviewer to judge against the course, not a fuller treatment', () => {
+    // Without this the reviewer applies textbook finance to a course that may
+    // teach a deliberate simplification, and rejects correct-for-this-course
+    // questions for omitting terms the material never introduces.
+    const grounded = REVIEWER_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'material' }],
+    });
+    expect(grounded).toMatch(/not against a\s+more complete model you happen to know/i);
+    expect(grounded).toMatch(/not for being simpler than the literature/i);
+  });
+
+  it('omits the material block when there is no grounding to show', () => {
+    expect(reviewerPrompt).not.toMatch(/COURSE MATERIAL/);
+  });
+
+  it('shows the validator the same material', () => {
+    const grounded = VALIDATOR_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
+    });
+    expect(grounded).toMatch(/COURSE MATERIAL/);
+    expect(grounded).toMatch(/HPR is measured over one holding period/);
   });
 
   it('keeps the judgement criteria an LLM is actually good at', () => {
