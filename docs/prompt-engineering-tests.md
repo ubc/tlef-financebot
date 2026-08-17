@@ -3591,3 +3591,43 @@ Decision: **generator stays at `high`; xhigh is not worth 2× latency and
 reasoning spend for an identical verdict distribution.** Option B remains the
 right tool for the residue — and its expected cost has shrunk, since it fires
 only on reject and rejects are now rare at `high`.
+
+---
+
+# Option B shipped — retry on reviewer reject, behind a toggle
+
+The last measured problem class was judgement faults the reviewer sees and
+nobody acts on: inflated difficulty labels, weak distractors, lying errorModels.
+Three prompt revisions had failed on these by instruction; the verifier retry
+had proven feedback works (0/4 → 4/4 proofs). Option B applies the same
+mechanism one layer up: **on a reviewer REJECT — never a flag — regenerate once
+with the critique quoted back**, then judge the replacement exactly as the
+original was judged.
+
+Policy decisions, deliberate:
+
+- **The retry is kept even if also rejected** — it incorporated the critique,
+  and the instructor reading the run sees the best-informed version, honestly
+  marked.
+- **A structurally failed retry keeps the original reject** — never worse than
+  before.
+- **`retryOnReject` platform flag** (admin console, Feature flags) gates the
+  mechanism; default ON, normalized ON for documents predating the flag, since
+  the cost-saving direction is an explicit opt-out. Cost: one extra
+  generator+validator+reviewer cycle per rejected question — and rejects are
+  rare at generator effort `high`.
+
+## Live measurement, reject-prone configuration (generator `medium`, same LO)
+
+| | Baseline (exp 14, medium) | With option B |
+|---|---|---|
+| Verdicts | reject, reject, flag | **pass, pass, flag** |
+| Proofs | 2/3 | **3/3** |
+| Reject-retries fired | — | 1 |
+
+One reject occurred mid-run; the retry consumed the critique and the
+replacement **passed**. Zero rejects survived to the queue.
+
+Mutation-verified (disabling the branch fails 2 tests), admin toggle verified in
+the browser end to end (off → save → API false → on → save → API true), CI
+parity green at 96 suites / 1181 tests.

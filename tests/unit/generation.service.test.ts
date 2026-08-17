@@ -545,6 +545,110 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     });
   });
 
+  // Option B (2026-08-17): a reviewer REJECT triggers one regeneration with the
+  // critique quoted back, gated by the retryOnReject platform flag. The
+  // judgement faults the reviewer keeps finding — inflated difficulty labels,
+  // weak or lying distractors — were reviewer-visible but never fed back; the
+  // verifier retry proved feedback beats instruction (0/4 -> 4/4 proofs), and
+  // this applies the same mechanism to the judgement class.
+  describe('option B — retry on reviewer reject', () => {
+    const rejectedQuestion = generatorOutput();
+    const improvedQuestion = { ...generatorOutput(), stem: 'What is the IRR, improved?' };
+
+    it('regenerates once with the critique quoted back, and persists the retry', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)                                   // gen 1
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })                     // val 1
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'one-step substitution labelled medium' }) // rev 1
+        .mockResolvedValueOnce(improvedQuestion)                                   // gen 2 (retry)
+        .mockResolvedValueOnce({ roleAssessment: 'roles still ok' })               // val 2
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fixed' });          // rev 2
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      // The retry generator prompt carries the reviewer's own words and the
+      // rejected question, and says what fixing each fault class means.
+      const retryPrompt = jest.mocked(completeJson).mock.calls[3]![0] as string;
+      expect(retryPrompt).toMatch(/REJECTED BY THE REVIEWING INSTRUCTOR/);
+      expect(retryPrompt).toMatch(/one-step substitution labelled medium/);
+      expect(retryPrompt).toMatch(/do NOT resubmit it with cosmetic edits/);
+      // The persisted question is the retry, carrying the retry's verdicts.
+      expect(createQuestion).toHaveBeenCalledTimes(1);
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe('What is the IRR, improved?');
+      expect(arg.agentDecision!.decision).toBe('pass');
+    });
+
+    it('does NOT retry on a flag — a flagged question is usable', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'flag', reasoning: 'minor' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(completeJson).toHaveBeenCalledTimes(3);
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].agentDecision!.decision).toBe('flag');
+    });
+
+    it('does NOT retry when the platform flag is off', async () => {
+      // The cost toggle: one extra generator+validator+reviewer cycle per
+      // rejected question is real money, and an admin can decline it.
+      jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+        _id: 'platform',
+        models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm', utility: 'u' },
+        costControls: { maxGenerationsPerDay: 100 },
+        featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: false },
+        updatedBy: 'ADMIN', updatedAt: new Date(),
+      })) } as never);
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'still rejected' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(completeJson).toHaveBeenCalledTimes(3);
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].agentDecision!.decision).toBe('reject');
+    });
+
+    it('keeps the original reject when the retry fails structurally', async () => {
+      // generateValidQuestion returns null after two shape-invalid attempts;
+      // the original reject persists — never worse than before option B.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'rejected' })
+        .mockResolvedValueOnce({ ...generatorOutput([]), options: [] })            // retry attempt 1: bad shape
+        .mockResolvedValueOnce({ ...generatorOutput([]), options: [] });           // retry attempt 2: bad shape
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(createQuestion).toHaveBeenCalledTimes(1);
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe(rejectedQuestion.stem);
+      expect(arg.agentDecision!.decision).toBe('reject');
+    });
+
+    it('persists the retry even when it is ALSO rejected', async () => {
+      // The later attempt incorporated the critique; an instructor reading the
+      // run sees the best-informed version, still honestly marked reject.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'first critique' })
+        .mockResolvedValueOnce(improvedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'second critique' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe('What is the IRR, improved?');
+      expect(arg.agentDecision!.reasoning).toMatch(/second critique/);
+    });
+  });
+
   it('accepts an errorModel that names the mistake after a role prefix', async () => {
     // Deliberately narrow: only an errorModel that is NOTHING BUT a role name
     // is rejected. This one is noisy but does name the mistake.

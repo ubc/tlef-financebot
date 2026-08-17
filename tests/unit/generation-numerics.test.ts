@@ -475,7 +475,10 @@ describe('generated numerics are verified before persisting', () => {
   });
 
   it('spreads the verified parameterization into both persisted questions', () => {
-    const spreads = source.match(/\.\.\.numerics\.fields,/g) ?? [];
+    // `outcome.numerics` is the sync pipeline's binding since option B made the
+    // persisted candidate switchable (original vs post-reject retry) — the same
+    // verified fields, one level of indirection deeper.
+    const spreads = source.match(/\.\.\.(outcome\.)?numerics\.fields,/g) ?? [];
     expect(spreads.length).toBeGreaterThanOrEqual(3);
   });
 

@@ -263,6 +263,64 @@ function reviewerVerificationParams(
   return {};
 }
 
+/**
+ * Option B: after a reviewer REJECT, regenerate once with the critique quoted
+ * back, then judge the replacement exactly as the original was judged.
+ *
+ * Returns the replacement with its own verdicts, or null when regeneration
+ * failed structurally — in which case the caller keeps the original reject,
+ * which is never worse than before. If the replacement is ALSO rejected, the
+ * replacement is kept: it incorporated the critique, and persisting the later
+ * attempt matches what an instructor reading the run expects to see.
+ *
+ * Fires only on `reject`, never `flag` — a flag is "usable, needs attention",
+ * and regenerating it would spend money replacing a usable question. The
+ * `retryOnReject` platform flag gates the whole mechanism (admin console →
+ * Feature flags), because the cost is one extra generator+validator+reviewer
+ * cycle per rejected question.
+ */
+async function retryRejectedCandidate(args: {
+  lo: { name: string };
+  type: QuestionType;
+  difficulty?: Difficulty;
+  prompt?: string;
+  chunks: RetrievedChunk[];
+  models: ResolvedStepModels;
+  reviewerStep: StepModelConfig;
+  rejected: GeneratorOutput;
+  critique: string;
+}): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
+  // Same observability as the verifier retry's warn: the reject-retry is a paid
+  // extra cycle, and an admin watching logs should see each one it spends.
+  console.warn(`[generation] reviewer rejected — retrying with the critique: ${args.critique.slice(0, 120)}`);
+  const retried = await generateValidQuestion(
+    args.type,
+    args.lo.name,
+    args.difficulty,
+    args.prompt,
+    args.chunks,
+    args.models.generator,
+    REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+  );
+  if (!retried) return null;
+
+  const numerics = verifyGeneratedNumerics(retried);
+  const validation = await completeJson<ValidatorOutput>(
+    VALIDATOR_PROMPT({ loName: args.lo.name, question: retried, chunks: args.chunks }),
+    { ...args.models.validator },
+  );
+  const review = await completeJson<ReviewerOutput>(
+    REVIEWER_PROMPT({
+      loName: args.lo.name,
+      question: retried,
+      chunks: args.chunks,
+      ...reviewerVerificationParams(numerics),
+    }),
+    { ...args.reviewerStep },
+  );
+  return { generated: retried, numerics, validation, review };
+}
+
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
@@ -317,6 +375,16 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         )
       : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
 
+    // Option B: one retry with the critique quoted back, on reject only.
+    let outcome = { generated, numerics, validation, review };
+    if (platformSettings.featureFlags.retryOnReject && normalizeDecision(review.decision) === 'reject') {
+      const retried = await retryRejectedCandidate({
+        lo, type, difficulty: input.difficulty, prompt, chunks, models,
+        reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
+      });
+      if (retried) outcome = retried;
+    }
+
     const sourceRefs = chunks
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
@@ -327,20 +395,20 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         loIds: [loId],
         themeIds: [lo.themeId],
         type,
-        stem: generated.stem,
-        options: generated.options,
+        stem: outcome.generated.stem,
+        options: outcome.generated.options,
         // Already shuffled in generateValidQuestion, upstream of the validator
         // and reviewer whose prose names the resulting letters.
         optionsAlreadyShuffled: true,
-        difficulty: normalizeDifficulty(input.difficulty ?? generated.difficulty),
+        difficulty: normalizeDifficulty(input.difficulty ?? outcome.generated.difficulty),
         sourceRefs,
         createdBy: byPuid,
         ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
-        ...numerics.fields,
+        ...outcome.numerics.fields,
         agentDecision: {
-          decision: normalizeDecision(review.decision),
-          reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
-          roleAssessment: String(validation.roleAssessment ?? ''),
+          decision: normalizeDecision(outcome.review.decision),
+          reasoning: withVerificationNote(String(outcome.review.reasoning ?? ''), outcome.numerics.failure),
+          roleAssessment: String(outcome.validation.roleAssessment ?? ''),
         },
       });
       created.push(questionId);
@@ -601,6 +669,29 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
               { ...models.reviewer },
             )
           : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
+
+        // Option B: one retry with the critique quoted back, on reject only.
+        // Persistence below recomputes numerics from candidate.generated, so
+        // replacing the candidate here is the whole change.
+        if (platformSettings.featureFlags.retryOnReject && normalizeDecision(candidate.review.decision) === 'reject') {
+          await updateContentRun(runId, {
+            status: 'running',
+            stage,
+            completedUnits: result.failures.length,
+            result,
+            message: `Reviewer rejected candidate ${candidate.item + 1} — retrying with the critique`,
+          });
+          const retried = await retryRejectedCandidate({
+            lo, type, difficulty: input.difficulty, prompt, chunks, models,
+            reviewerStep: models.reviewer, rejected: candidate.generated,
+            critique: String(candidate.review.reasoning ?? ''),
+          });
+          if (retried) {
+            candidate.generated = retried.generated;
+            candidate.validation = retried.validation;
+            candidate.review = retried.review;
+          }
+        }
         reviewed.push(candidate);
       } catch (error) {
         result.failures.push(generationFailure(candidate.item, 'reviewing', error, 'generation-review-failed'));
@@ -901,6 +992,10 @@ async function generateValidQuestion(
   prompt: string | undefined,
   chunks: RetrievedChunk[],
   step: StepModelConfig = { model: env.llmModelGenerator },
+  /** Option B: the reviewer's critique of a rejected earlier question, carried
+   * on EVERY attempt this call makes (the verifier's own retry feedback stacks
+   * on top when a collision also occurs). */
+  extraInstruction?: string,
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -908,9 +1003,11 @@ async function generateValidQuestion(
   let lastFailure: string | undefined;
 
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
-    const basePrompt = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
+    const withExtra = extraInstruction
+      ? `${GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks })}\n\n${extraInstruction}`
+      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
     const candidate = await completeJson<GeneratorOutput>(
-      lastFailure ? `${basePrompt}\n\n${RETRY_FEEDBACK(lastFailure)}` : basePrompt,
+      lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
       // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
       // a temperature for this step means it, and one who sets a reasoning
       // effort has knowingly given the temperature up (it is only legal at
@@ -991,6 +1088,30 @@ export function RETRY_FEEDBACK(failure: string): string {
     'distractor to a different mistake, or move the slot range so the coinciding',
     'draw cannot occur, and list the draws to check it rather than trusting the',
     'bounds. Do not resubmit the same formulas.',
+  ].join('\n');
+}
+
+/**
+ * Option B (Saurav, 2026-08-17): what the generator is told when the REVIEWER
+ * rejects a question. The same mechanism as RETRY_FEEDBACK — quote the judge's
+ * own words rather than paraphrasing — applied to the judgement faults only the
+ * reviewer can see. Three prompt revisions failed to prevent these faults by
+ * instruction; the verifier retry then proved that telling the model what it
+ * got wrong is what works (0/4 -> 4/4 proofs). This extends that to difficulty
+ * labels, weak distractors and lying errorModels.
+ */
+export function REVIEWER_REJECT_FEEDBACK(reasoning: string, rejected: GeneratorOutput): string {
+  return [
+    'YOUR PREVIOUS QUESTION WAS REJECTED BY THE REVIEWING INSTRUCTOR. The critique:',
+    `  "${reasoning}"`,
+    'The rejected question, for reference — do NOT resubmit it with cosmetic edits:',
+    JSON.stringify(rejected),
+    'Write a NEW question for the same learning objective that fixes every fault the',
+    'critique names. If it says the difficulty label was inflated, either make the',
+    'question genuinely harder — require choosing between approaches, or a step the',
+    'stem does not hand over — or return the honest lower label. If it names a weak',
+    'or implausible distractor, replace it with a mistake a real student makes, and',
+    'make its errorModel describe exactly what its formula does.',
   ].join('\n');
 }
 

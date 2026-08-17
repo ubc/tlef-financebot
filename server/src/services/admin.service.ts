@@ -345,7 +345,7 @@ export function defaultPlatformSettings(): PlatformSettings {
     },
     customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
-    featureFlags: { reviewerAgent: true, layer2Evaluator: true },
+    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
     updatedBy: 'environment-default',
     updatedAt: new Date(0),
   };
@@ -371,7 +371,14 @@ export function normalizePlatformSettings(stored: PlatformSettings): PlatformSet
     else if (value?.model) models[step] = value;
     else models[step] = fallback.models[step];
   }
-  return { ...stored, models, customModels: stored.customModels ?? [] };
+  return {
+    ...stored,
+    models,
+    customModels: stored.customModels ?? [],
+    // Flags added after a document was written default ON — retryOnReject
+    // landed 2026-08-17, and the cost-saving direction is an explicit opt-out.
+    featureFlags: { ...fallback.featureFlags, ...stored.featureFlags },
+  };
 }
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
