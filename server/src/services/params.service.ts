@@ -128,7 +128,11 @@ export const SERVE_DRAW_ATTEMPTS = 8;
 export interface QuestionSampleDraw {
   seed: number;
   stem: string;
-  options: Array<{ key: string; text: string }>;
+  /** `explanation` is carried so instructor surfaces can RENDER the rationale
+   * (markdown + KaTeX) instead of showing its LaTeX source. The editor's
+   * textarea necessarily shows source; a long `\frac{...}` derivation is close
+   * to unreadable that way, which is the whole reason this field is here. */
+  options: Array<{ key: string; text: string; explanation: string }>;
   parameterized: boolean;
 }
 
@@ -157,7 +161,11 @@ export async function drawQuestionSample(
     return {
       seed,
       stem: version.stem,
-      options: version.options.map((option) => ({ key: option.key, text: option.text })),
+      options: version.options.map((option) => ({
+        key: option.key,
+        text: option.text,
+        explanation: option.explanation ?? '',
+      })),
       parameterized: false,
     };
   }
@@ -167,6 +175,11 @@ export async function drawQuestionSample(
     options: version.options.map((option) => ({
       key: option.key,
       text: substituteParams(option.text, values),
+      // Substituted like the text: an explanation quotes the same numbers, and
+      // the student's card substitutes it too (practice-card.ts), so an
+      // instructor previewing raw `{{RATE}}` here would be reading something no
+      // student ever sees.
+      explanation: substituteParams(option.explanation ?? '', values),
     })),
     parameterized: true,
   };

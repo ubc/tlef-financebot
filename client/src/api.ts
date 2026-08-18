@@ -2401,7 +2401,10 @@ export function patchQuestionParams(
 export interface QuestionSample {
   seed: number;
   stem: string;
-  options: Array<{ key: string; text: string }>;
+  /** `explanation` is carried so the detail page can RENDER the rationale
+   * (markdown + KaTeX) rather than leaving it as the LaTeX source the editing
+   * textarea necessarily shows. */
+  options: Array<{ key: string; text: string; explanation: string }>;
   /** False when the question has no slots or derived values, so the sample is
    * just the stored text and showing an example adds nothing. */
   parameterized: boolean;
