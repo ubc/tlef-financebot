@@ -75,7 +75,13 @@ const platformSettingsBody = z.object({
     profile: z.enum(Object.keys(CAPABILITY_PROFILES) as [CapabilityProfile, ...CapabilityProfile[]]),
   })).optional(),
   costControls: z.object({ maxGenerationsPerDay: z.number().int().positive() }),
-  featureFlags: z.object({ reviewerAgent: z.boolean(), layer2Evaluator: z.boolean() }),
+  featureFlags: z.object({
+    reviewerAgent: z.boolean(),
+    layer2Evaluator: z.boolean(),
+    // default(true) rather than required: clients predating the flag (and any
+    // scripted caller) keep working, and the cost-saving direction is opt-OUT.
+    retryOnReject: z.boolean().default(true),
+  }),
   confirmQualityImpact: z.boolean().optional(),
 });
 

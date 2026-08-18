@@ -5,7 +5,7 @@ import { ensureCourseStudent } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { selectNextQuestion, studentCourseHome } from '../services/serving.service';
 import { submitAttempt, getCourseIdForQuestionVersion } from '../services/attempts.service';
-import { resolveParamValues, substituteParams, drawSeed } from '../services/params.service';
+import { drawCollisionFreeParams, substituteParams } from '../services/params.service';
 import { recordSkip } from '../services/mastery.service';
 import { storeDeferredSummary, getSessionSummaryForStart } from '../services/review-book.service';
 import { getRedirectMaterialSource } from '../services/progression.service';
@@ -138,8 +138,11 @@ practiceRouter.post(
     // `undefined` for a conceptual (non-parameterized) question — `stem`/
     // `options` then pass through unsubstituted, and `paramValues`/`seed`
     // are omitted from the response entirely rather than sent as `undefined`.
-    const seed = drawSeed();
-    const paramValues = await resolveParamValues(result.version, seed);
+    // Collision-guarded (2026-08-17): redraws when two options would display
+    // identically. The proof SAMPLES draws, so a rare-combo collision can reach
+    // a serve, and proofs stored before display-precision checking never
+    // compared rounded values at all.
+    const { seed, paramValues } = await drawCollisionFreeParams(result.version);
 
     res.json({
       questionId: result.question._id.toString(),

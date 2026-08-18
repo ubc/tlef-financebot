@@ -167,7 +167,7 @@ export interface PlatformSettings {
    */
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean };
+  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean; retryOnReject: boolean };
   updatedBy: string;
   updatedAt: Date;
 }

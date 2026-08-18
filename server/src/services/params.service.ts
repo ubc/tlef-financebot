@@ -119,6 +119,51 @@ export async function resolveParamValues(
   return undefined;
 }
 
+/** Rerolls before the serve-time guard gives up and serves the draw anyway. */
+export const SERVE_DRAW_ATTEMPTS = 8;
+
+/**
+ * Serve-time guard (Saurav's design, 2026-08-17): draw a seed, render the
+ * options, and REDRAW if any two would display identically to the student.
+ *
+ * Two collision classes reach a serve despite the verification proof: the proof
+ * samples 100 draws rather than enumerating (a collision at exactly one combo
+ * of a typical 135-combo slot space has a ~48% chance of never being sampled),
+ * and proofs stored before 2026-08-17 compared raw doubles, so a pair that
+ * rounds to the same displayed cent passed them. Rerolling the SEED is the
+ * sound version of "change the numbers slightly": every displayed value is a
+ * formula output, so nudging one number directly would break the working shown
+ * in the explanation — a redraw regenerates the whole consistent set.
+ *
+ * Comparison is on the fully rendered option TEXT — exactly what the student
+ * sees — via the same substituteParams the serve itself uses. On exhaustion the
+ * last draw is served anyway with a warning: never worse than the behaviour
+ * this replaces, and a question colliding on most draws cannot hold a proof, so
+ * exhaustion implies something verification would already have rejected.
+ *
+ * `seedFn` is injectable for tests only; production callers use the default.
+ */
+export async function drawCollisionFreeParams(
+  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots' | 'derivedValues' | 'options'>,
+  seedFn: () => number = drawSeed,
+): Promise<{ seed: number; paramValues: Record<string, number> | undefined }> {
+  let last: { seed: number; paramValues: Record<string, number> | undefined } | undefined;
+  for (let attempt = 1; attempt <= SERVE_DRAW_ATTEMPTS; attempt += 1) {
+    const seed = seedFn();
+    const paramValues = await resolveParamValues(version, seed);
+    // Conceptual question: nothing substituted, nothing to collide.
+    if (!paramValues) return { seed, paramValues };
+    const rendered = version.options.map((option) => substituteParams(option.text, paramValues));
+    if (new Set(rendered).size === rendered.length) return { seed, paramValues };
+    last = { seed, paramValues };
+    console.warn(
+      `[params] two options display identically at seed ${seed} ` +
+        `(attempt ${attempt}/${SERVE_DRAW_ATTEMPTS}); redrawing`,
+    );
+  }
+  return last!;
+}
+
 /**
  * R3 (design spec 2026-08-05): the ONE place a computed value becomes display
  * text. Integers print bare; everything else rounds to 2 decimals, which is

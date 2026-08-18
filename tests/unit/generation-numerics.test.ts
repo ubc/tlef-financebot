@@ -23,8 +23,10 @@ jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enq
 import {
   GENERATOR_PROMPT,
   REVIEWER_PROMPT,
+  VALIDATOR_PROMPT,
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
+import { BUILTINS, BUILTIN_REFERENCE } from '../../server/src/components/formula';
 
 const reviewerPrompt = REVIEWER_PROMPT({
   loName: 'Compute present value',
@@ -55,12 +57,201 @@ describe('REVIEWER_PROMPT', () => {
     expect(reviewerPrompt).toMatch(/judge the model, not the arithmetic/i);
   });
 
+  // Criteria 7-9 added 2026-08-16. Each mirrors a gate that already decides
+  // servability and that the reviewer could not see. Measured on a fixture
+  // missing a common-misconception: named 0/4 before, 4/4 after, and a clean
+  // control still passed 4/4 — discrimination, not severity inflation.
+  // See docs/reviewer-agent-tests.md.
+  it('has NO collision-hunting criterion — that job is deterministic now', () => {
+    // Removed 2026-08-17 (Saurav's call). The verifier proves option
+    // distinctness at display precision, and drawCollisionFreeParams redraws
+    // any rare draw the sample missed — both halves of the job the criterion
+    // asked for, done by code. Asking the reviewer to hunt collisions as well
+    // is how it produced hedged "may coincide under particular combinations"
+    // rejects against proven questions. This guard keeps it from returning.
+    expect(reviewerPrompt).not.toMatch(/SLOT-RANGE DEGENERACY/);
+    expect(reviewerPrompt).toMatch(/Option COLLISIONS are not your job/i);
+    expect(reviewerPrompt).toMatch(/never reject over values that might coincide/i);
+  });
+
+  it('asks the reviewer to enforce the option contract', () => {
+    expect(reviewerPrompt).toMatch(/Option contract/i);
+    expect(reviewerPrompt).toMatch(/EXACTLY ONE/);
+  });
+
+  it('states the option contract in PLACEHOLDERS, the unit the code counts', () => {
+    // A live run on 2026-08-17 rejected a question that had EARNED a proof,
+    // because the criterion said "never a sentence with a value appended" and
+    // the reviewer read a "%" suffix as appended text.
+    // optionValueNamesForVerification counts placeholders, not characters, so a
+    // unit attached to one placeholder was always legal. The prompt must not be
+    // stricter than the gate it mirrors, or it manufactures false rejects.
+    expect(reviewerPrompt).toMatch(/\{\{WACC_PCT\}\}%/);
+    expect(reviewerPrompt).toMatch(/unit or symbol attached to it is fine/i);
+    // and the shapes that DO break it are still named
+    expect(reviewerPrompt).toMatch(/TWO placeholders/);
+    expect(reviewerPrompt).toMatch(/sentence with a number stapled on/i);
+  });
+
+  it('asks the reviewer to check the Strategy-A retry gate', () => {
+    // decideStrategy offers the retry only on a common-misconception pick, so an
+    // MCQ without one silently loses the behaviour for every student.
+    expect(reviewerPrompt).toMatch(/Retry gate/i);
+    expect(reviewerPrompt).toMatch(/common-misconception/);
+  });
+
+  it('exempts true/false from the retry gate, as optionShapeValid does', () => {
+    // Measured 2026-08-17: without this the reviewer rejected a legitimate
+    // two-option question 3/3, every time confirming the content was accurate
+    // first. optionShapeValid skips this check for true-false, and
+    // assertOptionInvariants coerces the wrong option to common-misconception —
+    // but inside createQuestion, which runs AFTER this review. The reviewer was
+    // rejecting a role set the platform was about to fix.
+    // With the exemption: 0/3 on the T/F question, still 3/3 on a real MCQ
+    // violation, so it discriminates rather than switching the criterion off.
+    expect(reviewerPrompt).toMatch(/does NOT apply to a two-option true\/false/i);
+    expect(reviewerPrompt).toMatch(/relabels its single wrong option/i);
+    // and it is still scoped to real MCQs
+    expect(reviewerPrompt).toMatch(/FOUR-OPTION multiple-choice question must carry/);
+  });
+
+  it('tells the reviewer when the verifier has already rejected the question', () => {
+    const rejected = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      verificationFailure: 'options PV and PV_DUP are identical (seed 1000003)',
+    });
+    expect(rejected).toMatch(/ALREADY REJECTED/);
+    expect(rejected).toMatch(/options PV and PV_DUP are identical/);
+    expect(rejected).toMatch(/cannot serve a student in this state/i);
+  });
+
+  it('omits the verifier block entirely when there is no failure', () => {
+    // A reviewer told "the verifier rejected this" about a sound question would
+    // be actively misled, so the block must be absent rather than empty.
+    expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
+  });
+
+  it('tells the reviewer when distinctness is PROVEN, and closes the subject', () => {
+    // The mirror of the failure hand-off. Without it a live reject opened with
+    // "the PV1 and PV2 distractors MAY coincide under particular parameter
+    // combinations" against a question the verifier had already cleared —
+    // collisions re-litigated from vibes. With the collision criterion removed
+    // (2026-08-17), the proven block no longer sets a bar for objections; it
+    // states that collisions are settled and directs the reviewer to pedagogy.
+    const proven = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      verificationProven: true,
+    });
+    expect(proven).toMatch(/PROVEN every option value pairwise distinct/);
+    expect(proven).toMatch(/Collisions are settled/);
+    expect(proven).toMatch(/pedagogy alone/i);
+    expect(proven).not.toMatch(/ALREADY REJECTED/);
+  });
+
+  it('a question with neither verdict gets neither verifier block', () => {
+    // Conceptual questions have no failure AND no proof; telling the reviewer
+    // either would be false.
+    expect(reviewerPrompt).not.toMatch(/PROVEN every option value/);
+  });
+
+  // Found 2026-08-16 by Saurav: criterion 2 asks whether the question is
+  // "grounded in the material" and the reviewer had never been shown any. Three
+  // questions were rejected for modelling holding-period return "incorrectly" —
+  // all three had earned verification proofs, and the objection was the
+  // reviewer's own theory of dividend reinvestment rather than a mismatch with
+  // what the course teaches.
+  it('shows the reviewer the material it is asked to judge alignment against', () => {
+    const grounded = REVIEWER_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
+    });
+    expect(grounded).toMatch(/COURSE MATERIAL/);
+    expect(grounded).toMatch(/HPR is measured over one holding period/);
+  });
+
+  it('tells the reviewer to judge against the course, not a fuller treatment', () => {
+    // Without this the reviewer applies textbook finance to a course that may
+    // teach a deliberate simplification, and rejects correct-for-this-course
+    // questions for omitting terms the material never introduces.
+    const grounded = REVIEWER_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'material' }],
+    });
+    expect(grounded).toMatch(/not against a\s+more complete model you happen to know/i);
+    expect(grounded).toMatch(/not for being simpler than the literature/i);
+  });
+
+  it('omits the material block when there is no grounding to show', () => {
+    expect(reviewerPrompt).not.toMatch(/COURSE MATERIAL/);
+  });
+
+  it('shows the validator the same material', () => {
+    const grounded = VALIDATOR_PROMPT({
+      loName: 'Compute holding period return',
+      question: { stem: 'x', options: [] },
+      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
+    });
+    expect(grounded).toMatch(/COURSE MATERIAL/);
+    expect(grounded).toMatch(/HPR is measured over one holding period/);
+  });
+
   it('keeps the judgement criteria an LLM is actually good at', () => {
     expect(reviewerPrompt).toMatch(/Factual accuracy/i);
     expect(reviewerPrompt).toMatch(/alignment/i);
     expect(reviewerPrompt).toMatch(/Distractor quality/i);
     expect(reviewerPrompt).toMatch(/Clarity/i);
     expect(reviewerPrompt).toMatch(/Difficulty calibration/i);
+  });
+});
+
+// Both blocks below pin a rule the prompt ALREADY implied and the model still
+// broke, measured 2026-08-16 (docs/prompt-engineering-tests.md). In each case
+// what was missing was specific, so the assertions target that specific thing —
+// a vaguer prompt would satisfy a vaguer test and change nothing.
+describe('GENERATOR_PROMPT — degenerate slot draws', () => {
+  it('names the identity-element collision, not just overlapping ranges', () => {
+    // 5 of 6 numeric questions in one batch died on BETA=1.0 making the
+    // "ignored beta" distractor identical to the correct answer. The existing
+    // examples covered overlaps, doubling and a zero exponent — every family
+    // EXCEPT the one that kept happening.
+    expect(generatorPrompt).toMatch(/MULTIPLIER that can draw exactly 1/i);
+    expect(generatorPrompt).toMatch(/BETA = 1/);
+  });
+
+  it('tells the generator to EXCLUDE the degenerate value from the range', () => {
+    // Detecting the collision is useless without the remedy: shift the range so
+    // the identity value is never drawn.
+    expect(generatorPrompt).toMatch(/EXCLUDE that value from the range/i);
+    expect(generatorPrompt).toMatch(/gives 1.1, 1.4, 1.7, 2.0/i);
+  });
+
+  it('covers the additive twin of the same trap', () => {
+    expect(generatorPrompt).toMatch(/ADDEND or a rate that can draw exactly 0/i);
+  });
+});
+
+describe('GENERATOR_PROMPT — difficulty self-assessment', () => {
+  it('asks the generator to label what it WROTE, not the target it was given', () => {
+    // 12 of 12 questions returned `medium` while the reviewer called every one a
+    // one-step substitution. The standard was already in the prompt; the model
+    // was echoing the requested label rather than grading its own output, so the
+    // fix is the instruction to self-assess.
+    expect(generatorPrompt).toMatch(/must describe the question you actually wrote/i);
+    expect(generatorPrompt).toMatch(/not the/i);
+  });
+
+  it('states the one-step rule in the terms the reviewer already applies', () => {
+    // The reviewer's criterion 5 rejects a one-step substitution labelled medium.
+    // The generator was being graded against a standard it was never shown.
+    expect(generatorPrompt).toMatch(/one substitution, that is "easy"/i);
+  });
+
+  it('prefers making the question harder over relabelling it', () => {
+    expect(generatorPrompt).toMatch(/genuinely harder/i);
   });
 });
 
@@ -84,6 +275,67 @@ describe('GENERATOR_PROMPT', () => {
     for (const fn of ['PV', 'FV', 'PMT', 'NPV', 'IRR', 'sqrt']) {
       expect(generatorPrompt).toContain(fn);
     }
+  });
+
+  // The PV incident, 2026-08-17: three live questions modelled bond value as
+  // PV(y, n, COUPON) + PV(y, n, FACE) — Excel's reading of PV, which under the
+  // evaluator's single-sum semantics drops all but one coupon. The reviewer
+  // rejected them with Excel-based reasoning, so the critique-retry could not
+  // converge: both agents were wrong about the same undocumented name.
+  describe('builtin function semantics reach BOTH agents', () => {
+    it('tells the generator PV is a single-sum discount, not Excel PV', () => {
+      expect(generatorPrompt).toMatch(/NOT Excel's PV: it is not an annuity function/);
+      expect(generatorPrompt).toMatch(/discounts ONE single amount/);
+    });
+
+    it('tells the reviewer the same semantics, framed for judging', () => {
+      expect(reviewerPrompt).toMatch(/never against what the same names mean in Excel/);
+      expect(reviewerPrompt).toMatch(/discounts ONE single amount/);
+    });
+
+    it('mentions every implemented builtin, so the manual cannot silently lag', () => {
+      for (const name of Object.keys(BUILTINS)) {
+        expect(BUILTIN_REFERENCE).toContain(name);
+      }
+    });
+
+    it('teaches the corrected worked example, not the one that dropped coupons', () => {
+      // The prompt's own "good" example carried the bug: a single-sum PV of one
+      // coupon standing in for the whole coupon stream.
+      expect(generatorPrompt).toContain('COUPON_PMT*(1-(1+YTM_PCT/100)^-16)/(YTM_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)');
+      expect(generatorPrompt).not.toContain('PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100)');
+    });
+  });
+
+  // Measured 2026-08-17: on planted role-swap fixtures the validator named the
+  // swap 2/3 while the reviewer caught it 0/3 — one run endorsed the mislabeled
+  // option as "plausible". The validator's assessment was being stored and
+  // gated on by nobody; it now reaches the reviewer, with Saurav's policy:
+  // a mislabeled role on a sound question is a FLAG the instructor can fix in
+  // one edit, never a reject — and so never burns a reject-retry.
+  it('hands the validator\'s role assessment to the reviewer, flag-not-reject', () => {
+    const withRoles = REVIEWER_PROMPT({
+      loName: 'Compute present value',
+      question: { stem: 'x', options: [] },
+      roleAssessment: 'C is mislabeled: fees are not a misconception; D is the real misconception.',
+    });
+    expect(withRoles).toMatch(/structure validator assessed each option/);
+    expect(withRoles).toMatch(/C is mislabeled: fees are not a misconception/);
+    expect(withRoles).toMatch(/FLAG the question and name the exact swap/);
+    expect(withRoles).toMatch(/do not reject over role labels alone/i);
+    // the wrong-answer-key case stays a reject — that is not a label problem
+    expect(withRoles).toMatch(/not\s+actually correct remains a reject/i);
+    // and the block is absent when no assessment is passed
+    expect(reviewerPrompt).not.toMatch(/structure validator assessed/);
+  });
+
+  it('gives the reviewer the full difficulty rubric, not just the heuristic', () => {
+    // Until 2026-08-17 the reviewer had only "a one-step substitution should
+    // not pass as medium or hard" — grading against definitions it had never
+    // seen. The generator sees its target's line; the judge needs all three.
+    expect(reviewerPrompt).toMatch(/Easy means one direct recall/);
+    expect(reviewerPrompt).toMatch(/Medium means the student must choose or connect/);
+    expect(reviewerPrompt).toMatch(/Hard means multi-step synthesis/);
   });
 
   it('warns about the two failure modes verification actually rejects', () => {
@@ -285,7 +537,10 @@ describe('generated numerics are verified before persisting', () => {
   });
 
   it('spreads the verified parameterization into both persisted questions', () => {
-    const spreads = source.match(/\.\.\.numerics\.fields,/g) ?? [];
+    // `outcome.numerics` is the sync pipeline's binding since option B made the
+    // persisted candidate switchable (original vs post-reject retry) — the same
+    // verified fields, one level of indirection deeper.
+    const spreads = source.match(/\.\.\.(outcome\.)?numerics\.fields,/g) ?? [];
     expect(spreads.length).toBeGreaterThanOrEqual(3);
   });
 

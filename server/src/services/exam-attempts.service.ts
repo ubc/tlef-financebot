@@ -21,7 +21,7 @@ import { decideStrategy, upsertReviewBookEntry } from './attempts.service';
 import { enqueueExamMasteryPass } from './exam-mastery.service';
 import { notifyCourseStaff } from './notifications.service';
 import { isServable } from './numeric-gate.service';
-import { drawSeed, resolveParamValues, substituteParams } from './params.service';
+import { drawCollisionFreeParams, substituteParams } from './params.service';
 
 type QuestionHead = WithId<Question>;
 type Version = WithId<QuestionVersion>;
@@ -173,7 +173,8 @@ async function createAttempt(
         && !selectedIds.has(candidate.question._id.toHexString())
       ));
       for (const candidate of shuffle(pool, rand).slice(0, count)) {
-        const paramValues = await resolveParamValues(candidate.version, drawSeed());
+        // Collision-guarded like practice serves — same hazard, same guard.
+        const { paramValues } = await drawCollisionFreeParams(candidate.version);
         selectedIds.add(candidate.question._id.toHexString());
         selected.push({
           questionId: candidate.question._id,

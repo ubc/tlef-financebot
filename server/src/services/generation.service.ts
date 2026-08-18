@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb';
+import { BUILTIN_REFERENCE } from '../components/formula';
 import { completeJson } from '../components/genai/llm';
 import { embedOne } from '../components/genai/embeddings';
 import { search } from '../components/qdrant';
@@ -249,6 +250,79 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
  * (a question skipped for repeatedly-invalid options is not counted). Always
  * inserts as Draft — never publishes.
  */
+/**
+ * What the reviewer is told about the verifier's verdict: the failure when there
+ * is one, the proof when one was earned, nothing for a conceptual question
+ * (which has neither). One helper rather than a ternary chain at three call
+ * sites, so the failure/success symmetry cannot drift apart again.
+ */
+function reviewerVerificationParams(
+  numerics: ReturnType<typeof verifyGeneratedNumerics>,
+): { verificationFailure?: string; verificationProven?: boolean } {
+  if (numerics.failure) return { verificationFailure: numerics.failure };
+  if (numerics.fields.verification) return { verificationProven: true };
+  return {};
+}
+
+/**
+ * Option B: after a reviewer REJECT, regenerate once with the critique quoted
+ * back, then judge the replacement exactly as the original was judged.
+ *
+ * Returns the replacement with its own verdicts, or null when regeneration
+ * failed structurally — in which case the caller keeps the original reject,
+ * which is never worse than before. If the replacement is ALSO rejected, the
+ * replacement is kept: it incorporated the critique, and persisting the later
+ * attempt matches what an instructor reading the run expects to see.
+ *
+ * Fires only on `reject`, never `flag` — a flag is "usable, needs attention",
+ * and regenerating it would spend money replacing a usable question. The
+ * `retryOnReject` platform flag gates the whole mechanism (admin console →
+ * Feature flags), because the cost is one extra generator+validator+reviewer
+ * cycle per rejected question.
+ */
+async function retryRejectedCandidate(args: {
+  lo: { name: string };
+  type: QuestionType;
+  difficulty?: Difficulty;
+  prompt?: string;
+  chunks: RetrievedChunk[];
+  models: ResolvedStepModels;
+  reviewerStep: StepModelConfig;
+  rejected: GeneratorOutput;
+  critique: string;
+}): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
+  // Same observability as the verifier retry's warn: the reject-retry is a paid
+  // extra cycle, and an admin watching logs should see each one it spends.
+  console.warn(`[generation] reviewer rejected — retrying with the critique: ${args.critique.slice(0, 120)}`);
+  const retried = await generateValidQuestion(
+    args.type,
+    args.lo.name,
+    args.difficulty,
+    args.prompt,
+    args.chunks,
+    args.models.generator,
+    REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+  );
+  if (!retried) return null;
+
+  const numerics = verifyGeneratedNumerics(retried);
+  const validation = await completeJson<ValidatorOutput>(
+    VALIDATOR_PROMPT({ loName: args.lo.name, question: retried, chunks: args.chunks }),
+    { ...args.models.validator },
+  );
+  const review = await completeJson<ReviewerOutput>(
+    REVIEWER_PROMPT({
+      loName: args.lo.name,
+      question: retried,
+      chunks: args.chunks,
+      roleAssessment: String(validation.roleAssessment ?? ''),
+      ...reviewerVerificationParams(numerics),
+    }),
+    { ...args.reviewerStep },
+  );
+  return { generated: retried, numerics, validation, review };
+}
+
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
   const { courseId, loId, count, prompt, byPuid } = input;
   const type: QuestionType = input.type ?? 'mcq';
@@ -280,24 +354,43 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       continue;
     }
 
+    // Verified BEFORE the review, not after, so the reviewer can be told what
+    // the deterministic verifier already decided. Pure and cheap; the ordering
+    // is the only thing that changed.
+    const numerics = verifyGeneratedNumerics(generated);
+
     // Validator and reviewer each run on their own model. Structure validation
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
-      VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
+      VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks }),
       { ...models.validator },
     );
     const review = platformSettings.featureFlags.reviewerAgent
       ? await completeJson<ReviewerOutput>(
-          REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+          REVIEWER_PROMPT({
+            loName: lo.name,
+            question: generated,
+            chunks,
+            roleAssessment: String(validation.roleAssessment ?? ''),
+            ...reviewerVerificationParams(numerics),
+          }),
           { ...models.reviewer },
         )
       : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
 
+    // Option B: one retry with the critique quoted back, on reject only.
+    let outcome = { generated, numerics, validation, review };
+    if (platformSettings.featureFlags.retryOnReject && normalizeDecision(review.decision) === 'reject') {
+      const retried = await retryRejectedCandidate({
+        lo, type, difficulty: input.difficulty, prompt, chunks, models,
+        reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
+      });
+      if (retried) outcome = retried;
+    }
+
     const sourceRefs = chunks
       .filter((chunk) => chunk.materialId)
       .map((chunk) => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
-
-    const numerics = verifyGeneratedNumerics(generated);
 
     try {
       const { questionId } = await createQuestion({
@@ -305,20 +398,20 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         loIds: [loId],
         themeIds: [lo.themeId],
         type,
-        stem: generated.stem,
-        options: generated.options,
+        stem: outcome.generated.stem,
+        options: outcome.generated.options,
         // Already shuffled in generateValidQuestion, upstream of the validator
         // and reviewer whose prose names the resulting letters.
         optionsAlreadyShuffled: true,
-        difficulty: normalizeDifficulty(input.difficulty ?? generated.difficulty),
+        difficulty: normalizeDifficulty(input.difficulty ?? outcome.generated.difficulty),
         sourceRefs,
         createdBy: byPuid,
         ...(prompt !== undefined ? { generationPrompt: prompt } : {}),
-        ...numerics.fields,
+        ...outcome.numerics.fields,
         agentDecision: {
-          decision: normalizeDecision(review.decision),
-          reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
-          roleAssessment: String(validation.roleAssessment ?? ''),
+          decision: normalizeDecision(outcome.review.decision),
+          reasoning: withVerificationNote(String(outcome.review.reasoning ?? ''), outcome.numerics.failure),
+          roleAssessment: String(outcome.validation.roleAssessment ?? ''),
         },
       });
       created.push(questionId);
@@ -385,17 +478,24 @@ export async function regenerateQuestion(
   );
   if (!generated) throw new Error('generation-invalid-options');
 
+  // Verified before the review so the reviewer sees the verifier's verdict.
+  const numerics = verifyGeneratedNumerics(generated);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: lo.name, question: generated }),
+    VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks: grounding.chunks }),
     { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
     ? await completeJson<ReviewerOutput>(
-        REVIEWER_PROMPT({ loName: lo.name, question: generated }),
+        REVIEWER_PROMPT({
+          loName: lo.name,
+          question: generated,
+          chunks: grounding.chunks,
+          roleAssessment: String(validation.roleAssessment ?? ''),
+          ...reviewerVerificationParams(numerics),
+        }),
         { ...platformSettings.models.reviewer },
       )
     : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
-  const numerics = verifyGeneratedNumerics(generated);
   const variant: RegenerationVariant = {
     stem: generated.stem,
     options: generated.options,
@@ -530,7 +630,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of generated) {
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
-          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated }),
+          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated, chunks }),
           { ...models.validator },
         );
         validated.push(candidate);
@@ -557,12 +657,46 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const reviewed: TrackedCandidate[] = [];
     for (const candidate of validated) {
       try {
+        // Verified here as well as at persistence below. The two calls answer
+        // different questions — this one decides what to TELL the reviewer, the
+        // later one decides what to STORE — and the function is pure, so the
+        // repeat costs nothing but keeps the reviewer from guessing.
+        const candidateNumerics = verifyGeneratedNumerics(candidate.generated);
         candidate.review = platformSettings.featureFlags.reviewerAgent
           ? await completeJson<ReviewerOutput>(
-              REVIEWER_PROMPT({ loName: lo.name, question: candidate.generated }),
+              REVIEWER_PROMPT({
+                loName: lo.name,
+                question: candidate.generated,
+                chunks,
+                roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
+                ...reviewerVerificationParams(candidateNumerics),
+              }),
               { ...models.reviewer },
             )
           : { decision: 'flag', reasoning: 'Reviewer agent disabled at generation time.' };
+
+        // Option B: one retry with the critique quoted back, on reject only.
+        // Persistence below recomputes numerics from candidate.generated, so
+        // replacing the candidate here is the whole change.
+        if (platformSettings.featureFlags.retryOnReject && normalizeDecision(candidate.review.decision) === 'reject') {
+          await updateContentRun(runId, {
+            status: 'running',
+            stage,
+            completedUnits: result.failures.length,
+            result,
+            message: `Reviewer rejected candidate ${candidate.item + 1} — retrying with the critique`,
+          });
+          const retried = await retryRejectedCandidate({
+            lo, type, difficulty: input.difficulty, prompt, chunks, models,
+            reviewerStep: models.reviewer, rejected: candidate.generated,
+            critique: String(candidate.review.reasoning ?? ''),
+          });
+          if (retried) {
+            candidate.generated = retried.generated;
+            candidate.validation = retried.validation;
+            candidate.review = retried.review;
+          }
+        }
         reviewed.push(candidate);
       } catch (error) {
         result.failures.push(generationFailure(candidate.item, 'reviewing', error, 'generation-review-failed'));
@@ -863,10 +997,22 @@ async function generateValidQuestion(
   prompt: string | undefined,
   chunks: RetrievedChunk[],
   step: StepModelConfig = { model: env.llmModelGenerator },
+  /** Option B: the reviewer's critique of a rejected earlier question, carried
+   * on EVERY attempt this call makes (the verifier's own retry feedback stacks
+   * on top when a collision also occurs). */
+  extraInstruction?: string,
 ): Promise<GeneratorOutput | null> {
+  /** The last structurally-valid candidate, returned unproven if attempts run out. */
+  let lastValid: GeneratorOutput | null = null;
+  /** The verifier's own sentence about the previous attempt, quoted back on retry. */
+  let lastFailure: string | undefined;
+
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
+    const withExtra = extraInstruction
+      ? `${GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks })}\n\n${extraInstruction}`
+      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
     const candidate = await completeJson<GeneratorOutput>(
-      GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks }),
+      lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
       // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
       // a temperature for this step means it, and one who sets a reasoning
       // effort has knowingly given the temperature up (it is only legal at
@@ -888,14 +1034,90 @@ async function generateValidQuestion(
       // the prose is written, so an instructor reads a review that names the
       // wrong option. Callers pass optionsAlreadyShuffled so createQuestion
       // does not shuffle a second time and undo this alignment.
-      return type === 'mcq' ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
+      const shaped = type === 'mcq' ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
+
+      // Verify INSIDE the loop, so a collision gets another attempt with the
+      // reason attached. Previously verification ran only in the caller, after
+      // generation had finished: a question whose distractors coincide was
+      // never retried and the model was never told what was wrong. Measured
+      // 2026-08-16, that single fault accounted for 5 of 6 unservable questions,
+      // and three separate attempts to prevent it by prompt wording all failed
+      // (docs/prompt-engineering-tests.md). Telling the model the specific
+      // failure is the thing that had never been tried.
+      const verification = verifyGeneratedNumerics(shaped);
+      if (!verification.failure) return shaped;
+
+      // Keep it anyway. A question that cannot earn a proof is still persisted
+      // as a Draft today so the instructor can widen a range and rescue it;
+      // discarding it here would be a behaviour change that removes that
+      // option and silently lowers the count a run reports.
+      lastValid = shaped;
+      lastFailure = verification.failure;
+      console.warn(
+        `[generation] verification failed (attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS}): ` +
+          verification.failure,
+      );
+      continue;
     }
+    // A shape failure carries no specific diagnosis worth quoting back, and the
+    // previous verification note would be about a candidate this attempt has
+    // already replaced.
+    lastFailure = undefined;
     console.warn(
       `[generation] generator produced structurally-invalid options ` +
         `(attempt ${attempt}/${GENERATOR_MAX_ATTEMPTS})`,
     );
   }
-  return null;
+  return lastValid;
+}
+
+/**
+ * What the generator is told after the deterministic verifier rejects an
+ * attempt. Quotes the verifier's own sentence rather than paraphrasing it: the
+ * evaluator already names the two colliding values and the seed, and that
+ * specificity is the entire point — the general rule is in GENERATOR_PROMPT
+ * already and the model follows it while still colliding.
+ */
+export function RETRY_FEEDBACK(failure: string): string {
+  return [
+    'YOUR PREVIOUS ATTEMPT WAS REJECTED by the deterministic verifier that decides',
+    'whether a question can be served at all:',
+    `  "${failure}"`,
+    'This is not a style note. A question that fails this check can never reach a',
+    'student, however good it reads. Fix THAT fault specifically.',
+    'If two option values came out identical, they are identical as expressions —',
+    '"RF + (M - RF)" is just "M", whatever the draw — or at some draw the ranges',
+    'permit, or they ROUND to the same displayed value: options render at two',
+    'decimals, so 7.3591 and 7.3644 are the same option to a student. Separate',
+    'option values by more than a cent, not by a rounding hair. Either change one',
+    'distractor to a different mistake, or move the slot range so the coinciding',
+    'draw cannot occur, and list the draws to check it rather than trusting the',
+    'bounds. Do not resubmit the same formulas.',
+  ].join('\n');
+}
+
+/**
+ * Option B (Saurav, 2026-08-17): what the generator is told when the REVIEWER
+ * rejects a question. The same mechanism as RETRY_FEEDBACK — quote the judge's
+ * own words rather than paraphrasing — applied to the judgement faults only the
+ * reviewer can see. Three prompt revisions failed to prevent these faults by
+ * instruction; the verifier retry then proved that telling the model what it
+ * got wrong is what works (0/4 -> 4/4 proofs). This extends that to difficulty
+ * labels, weak distractors and lying errorModels.
+ */
+export function REVIEWER_REJECT_FEEDBACK(reasoning: string, rejected: GeneratorOutput): string {
+  return [
+    'YOUR PREVIOUS QUESTION WAS REJECTED BY THE REVIEWING INSTRUCTOR. The critique:',
+    `  "${reasoning}"`,
+    'The rejected question, for reference — do NOT resubmit it with cosmetic edits:',
+    JSON.stringify(rejected),
+    'Write a NEW question for the same learning objective that fixes every fault the',
+    'critique names. If it says the difficulty label was inflated, either make the',
+    'question genuinely harder — require choosing between approaches, or a step the',
+    'stem does not hand over — or return the honest lower label. If it names a weak',
+    'or implausible distractor, replace it with a mistake a real student makes, and',
+    'make its errorModel describe exactly what its formula does.',
+  ].join('\n');
 }
 
 /**
@@ -1006,6 +1228,18 @@ function renderChunks(chunks: RetrievedChunk[]): string {
   return chunks.map((chunk, i) => `[${i + 1}] ${chunk.text}`).join('\n\n');
 }
 
+/**
+ * One rubric, two audiences. The generator sees its TARGET's line; the reviewer
+ * sees all three, because it judges whether the label matches. Until 2026-08-17
+ * the reviewer had only "a one-step substitution should not pass as medium or
+ * hard" — it was grading against definitions it had never been shown.
+ */
+export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
+  easy: 'Easy means one direct recall or one-step application with no irrelevant information.',
+  medium: 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.',
+  hard: 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.',
+};
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
@@ -1014,18 +1248,25 @@ export function GENERATOR_PROMPT(params: {
   chunks: RetrievedChunk[];
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
-  const difficultyGuidance = params.difficulty === 'easy'
-    ? 'Easy means one direct recall or one-step application with no irrelevant information.'
-    : params.difficulty === 'medium'
-      ? 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.'
-      : params.difficulty === 'hard'
-        ? 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.'
-        : '';
+  const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
   return [
     `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
     `for the learning objective: "${params.loName}".`,
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
     difficultyGuidance,
+    // Measured 2026-08-16: TWELVE OF TWELVE generated questions came back
+    // labelled `medium` while the reviewer judged every one of them a one-step
+    // substitution. The rule above already said that is too easy — the model was
+    // not breaking it so much as echoing the target back as a label. So the fix
+    // is not restating the standard, it is asking for a self-assessment.
+    'The "difficulty" you RETURN must describe the question you actually wrote, not the',
+    'target you were given. Grade your own question honestly: if the stem supplies the',
+    'formula and the student performs one substitution, that is "easy" however large the',
+    'arithmetic looks. If your question comes out easier than the target, prefer to make',
+    'it genuinely harder — require choosing between two approaches, or a step the stem',
+    'does not hand over — and only if you cannot, return the honest lower label. A',
+    'mislabelled question is worse than an easy one: it is served to students as',
+    'evidence of a mastery they have not shown.',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
@@ -1106,14 +1347,20 @@ export function GENERATOR_PROMPT(params: {
     '  - BUILD THE ANSWER IN STEPS. "derivedValues" are evaluated IN ORDER, and a',
     '    later formula may use any earlier one BY NAME. Prefer several short named',
     '    steps to one long expression:',
+    // Example corrected 2026-08-17. The previous version modelled DEBT_VALUE as
+    // PV(y, 16, COUPON) + PV(y, 16, FACE) — under the evaluator's single-sum PV
+    // that discounts ONE coupon and drops the other fifteen. This prompt was
+    // teaching wrong bond valuation as its own worked "good" example, and three
+    // live questions were rejected reproducing it.
     '      good:',
-    '        DEBT_VALUE   = PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)',
+    '        COUPON_PMT   = FACE_DEBT*COUPON_PCT/100',
+    '        DEBT_VALUE   = COUPON_PMT*(1-(1+YTM_PCT/100)^-16)/(YTM_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)',
     '        EQUITY_VALUE = SHARES*PRICE',
     '        V            = DEBT_VALUE + EQUITY_VALUE',
     '        COST_EQUITY  = RF_PCT/100 + BETA*MRP_PCT/100',
     '        WACC         = (EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)',
-    '      bad:  all of that inlined as one 400-character expression with the two',
-    '            PV(...) calls repeated six times.',
+    '      bad:  all of that inlined as one 400-character expression with the',
+    '            debt-value sub-expression repeated six times.',
     '    A step that no option displays is perfectly allowed and is exempt from',
     '    the option contract below — name it and reuse it.',
     '    This is not a style preference. Long nested expressions are exactly where',
@@ -1156,9 +1403,11 @@ export function GENERATOR_PROMPT(params: {
     '    The STEM may use slot placeholders freely — this rule is about options.',
     '',
     'Formula syntax: + - * / ^ ( ), variable names, and these functions only:',
-    '  PV(rate, periods, amount), FV(rate, periods, amount), PMT(rate, periods, principal),',
-    '  NPV(rate, cf1, cf2, ...), IRR(cf0, cf1, ...), ln, exp, sqrt, abs, min, max,',
-    '  round(value, decimals), N(x) for the standard normal CDF, and',
+    // The semantics block replaced a bare signature list on 2026-08-17, after a
+    // live batch modelled bond value as PV(y, n, COUPON) + PV(y, n, FACE) —
+    // Excel's reading of PV, which drops all but one coupon here. A name is not
+    // a definition; the model fills undocumented signatures from its training.
+    BUILTIN_REFERENCE,
     '  SUM(index, from, to, body) for series such as duration or amortization.',
     'These functions are shorthand, not a limit: any closed-form finance formula can be',
     'written with arithmetic alone (CAPM is RF + BETA*MRP; Gordon growth is D1/(R-G)).',
@@ -1184,6 +1433,23 @@ export function GENERATOR_PROMPT(params: {
     '  - "A - B" and "B" are equal when A = 2*B.',
     '  - "A - B" and "B - A" are equal when A = B (both 0).',
     '  - "A * (1+r)^n" and "A" are equal when n can draw 0.',
+    // The identity-element family. Added 2026-08-16 after it caused FIVE OF SIX
+    // verification failures in one measured batch, every time via BETA=1.0 — the
+    // list above covers overlapping slots, doubling and a zero exponent, and the
+    // model checked those faithfully while missing this one entirely.
+    '  - A MULTIPLIER that can draw exactly 1. "RF + BETA*(M - RF)" and the "ignored',
+    '    beta" distractor "RF + (M - RF)" are the same expression when BETA = 1, so a',
+    '    beta range of 0.5..2.0 step 0.5 is unservable — 1.0 is one of its draws.',
+    '  - An ADDEND or a rate that can draw exactly 0, which makes a "forgot this term"',
+    '    distractor identical to the correct answer on that draw.',
+    'This family is the one that gets missed: the two formulas look different because',
+    'one has a factor the other lacks, and they are still identical at the draw where',
+    'that factor is the identity. Whenever a distractor differs from the correct answer',
+    'by REMOVING a multiplier, check whether that multiplier can draw 1; by removing an',
+    'added term, whether it can draw 0. If it can, EXCLUDE that value from the range or',
+    'change the mistake. Check the exclusion by listing the draws, because min/max alone',
+    'hides it: BETA 1.1..2.0 step 0.3 gives 1.1, 1.4, 1.7, 2.0 and never draws 1.0, but',
+    'BETA 0.6..2.0 step 0.4 gives 0.6, 1.0, ... and still does.',
     '',
     'THE FIX, and prefer this one: give the slots DISJOINT, WELL-SEPARATED ranges. If A',
     'is always far larger than B, then A never equals B, A-B never equals B, and A+B',
@@ -1291,13 +1557,24 @@ function withVerificationNote(reasoning: string, failure?: string): string {
   return failure ? `${reasoning}\n\nNumeric verification FAILED: ${failure}` : reasoning;
 }
 
-export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
+export function VALIDATOR_PROMPT(params: {
+  loName: string;
+  question: GeneratorOutput;
+  /** The same grounding the generator was given. See REVIEWER_PROMPT for why. */
+  chunks?: RetrievedChunk[];
+}): string {
   return [
     'You are a structure validator for finance practice questions. For the question below,',
     `written for the LO "${params.loName}", assess whether EACH option's assigned role`,
     'genuinely fits its text (is the "correct" option actually correct? is each',
     '"common-misconception" a realistic misconception? etc.).',
     '',
+    ...(params.chunks?.length
+      ? ['Judge against the COURSE MATERIAL below — it is what the question was written',
+         'from and what the student has been taught:',
+         renderChunks(params.chunks),
+         '']
+      : []),
     'Question JSON:',
     JSON.stringify(params.question),
     '',
@@ -1306,21 +1583,109 @@ export function VALIDATOR_PROMPT(params: { loName: string; question: GeneratorOu
   ].join('\n');
 }
 
-export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOutput }): string {
+export function REVIEWER_PROMPT(params: {
+  loName: string;
+  question: GeneratorOutput;
+  /**
+   * The deterministic verifier's rejection, when it already has one. Measured
+   * 2026-08-16: the reviewer was guessing at servability with this information
+   * sitting unused one function away.
+   */
+  verificationFailure?: string;
+  /**
+   * The mirror image, added 2026-08-17 after the asymmetry showed up live: the
+   * failure was passed but a SUCCESS was not, so on a proven question the
+   * reviewer re-litigated collisions from vibes — a live reject opened with
+   * "the PV1 and PV2 distractors… MAY coincide under particular parameter
+   * combinations" against a question whose distinctness the verifier had just
+   * demonstrated across 100 draws.
+   */
+  verificationProven?: boolean;
+  /**
+   * The grounding the generator wrote from. Criterion 2 asks whether the
+   * question is "grounded in the material" and the reviewer was never shown any
+   * — it was answering that from general finance knowledge alone.
+   *
+   * Found 2026-08-16 when three questions were rejected for modelling
+   * holding-period return "incorrectly": all three had earned verification
+   * proofs, and the objection was the reviewer's own theory of dividend
+   * reinvestment, not a mismatch with what the course teaches. A reviewer that
+   * cannot see the material cannot tell a wrong question from a question that
+   * follows a simpler treatment than the one it has in mind.
+   */
+  chunks?: RetrievedChunk[];
+  /**
+   * The structure validator's per-option role assessment, measured 2026-08-17
+   * to catch what the reviewer misses: subtle role mislabels on questions that
+   * are factually sound (planted-fault fixtures: validator 2/3, reviewer 0/3 —
+   * the reviewer checks that a misconception option EXISTS, not that it fits,
+   * and one run even endorsed the mislabeled option as "plausible"). Roles are
+   * not cosmetic: decideStrategy keys the Strategy-A retry on the
+   * common-misconception role, so a swap changes student behaviour.
+   */
+  roleAssessment?: string;
+}): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
-    `LO "${params.loName}". Judge it against these six criteria (IN-Q05):`,
+    `LO "${params.loName}". Judge it against these criteria (IN-Q05):`,
     '  1. Factual accuracy — every statement is correct.',
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
     '  4. Clarity — the stem and options are unambiguous.',
-    '  5. Difficulty calibration — the actual reasoning demand matches the stated difficulty;',
-    '     a one-step substitution should not pass as medium or hard.',
+    // Until 2026-08-17 the reviewer had only the one-step heuristic — it was
+    // grading labels against a rubric it had never been shown. Same rubric the
+    // generator gets, all three levels, because grading needs the whole scale.
+    '  5. Difficulty calibration — the actual reasoning demand matches the stated',
+    '     difficulty, judged against the same rubric the generator was given:',
+    `       ${DIFFICULTY_RUBRIC.easy}`,
+    `       ${DIFFICULTY_RUBRIC.medium}`,
+    `       ${DIFFICULTY_RUBRIC.hard}`,
+    '     A one-step substitution should not pass as medium or hard.',
     '  6. Formula modelling — for a numerical question, does each formula in derivedValues',
     '     actually model what the stem asks? A present value of a two-period stream must',
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
     '     Check too that each distractor\'s errorModel describes a mistake a student would',
     '     really make, and that its formula genuinely implements that mistake.',
+    // Criteria 7-8 mirror gates that already decide whether a question can
+    // serve, and that the reviewer could not see: it was judging pedagogy while
+    // structural faults passed underneath it. Measured on a fixture missing a
+    // common-misconception, the reviewer named the fault 0/4 times before and
+    // 4/4 after, and still passed a clean control 4/4 — discrimination, not
+    // severity inflation. See docs/reviewer-agent-tests.md.
+    //
+    // A slot-range degeneracy criterion lived here for one day (2026-08-16/17)
+    // and was REMOVED, deliberately: the verifier now compares option values at
+    // display precision across its sampled draws, and the serve-time reroll
+    // guard (drawCollisionFreeParams) redraws any rare collision the sample
+    // missed — so both halves of that job are done deterministically. Asking
+    // the reviewer to hunt collisions too is how it produced hedged
+    // "may coincide under particular combinations" rejects against proven
+    // questions. Do not re-add it without new evidence.
+    // Wording corrected 2026-08-17 after a live false reject: this said "never a
+    // sentence with a value appended", and the reviewer read a "%" suffix as
+    // appended text and rejected a question that had EARNED a proof. The rule it
+    // mirrors (optionValueNamesForVerification) counts PLACEHOLDERS, not
+    // characters, so a unit attached to one placeholder was always legal — and
+    // "{{WACC_PCT}}%" is a shape the generator prompt itself teaches.
+    '  7. Option contract — in a numerical question every option must contain EXACTLY ONE',
+    '     {{placeholder}} from derivedValues. A unit or symbol attached to it is fine and',
+    '     expected: "{{NPV}}", "{{WACC_PCT}}%", "${{PRICE}}" all satisfy this. What breaks',
+    '     it is an option carrying TWO placeholders, none at all, a formula instead of a',
+    '     value, or a sentence with a number stapled on ("Accept the project. 7.36").',
+    '     A question whose options are decisions or statements should have been',
+    '     conceptual, with no slots at all.',
+    // The T/F exemption is explicit because omitting it cost 3/3 false rejects on
+    // a legitimate two-option question, measured 2026-08-17. optionShapeValid
+    // skips this check for true-false, and assertOptionInvariants COERCES the
+    // wrong option to common-misconception — but inside createQuestion, which
+    // runs after this review. So the reviewer sees a role set the platform is
+    // about to fix and rejects the question for it.
+    '  8. Retry gate — a FOUR-OPTION multiple-choice question must carry at least one',
+    '     option with role "common-misconception". The practice loop offers its retry only',
+    '     on that role, so an MCQ without one silently loses the behaviour for every',
+    '     student. This does NOT apply to a two-option true/false question: the platform',
+    '     relabels its single wrong option to "common-misconception" automatically after',
+    '     this review, so whatever role it carries here is correct and is not a defect.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
     // check out." It passed every arithmetically-wrong question in 2026-08-05
@@ -1331,8 +1696,67 @@ export function REVIEWER_PROMPT(params: { loName: string; question: GeneratorOut
     'DO NOT attempt to evaluate any arithmetic. Every number a student sees is computed by',
     'a deterministic evaluator from the formulas below, so arithmetic errors are',
     'structurally impossible and "checking" them here only produces false confidence.',
-    'Judge modelling and pedagogy.',
+    'Judge modelling and pedagogy. Option COLLISIONS are not your job either: the',
+    'verifier proves option distinctness at display precision, and the serving path',
+    'redraws any rare colliding draw, so never reject over values that might coincide.',
     '',
+    // Added 2026-08-17 after three live rejects whose reasoning assumed Excel's
+    // PV. The formulas are evaluated by THIS grammar, and one reject even
+    // hedged "depending on the evaluator's PV convention" — the reviewer asked
+    // for this block by name. Criterion 6 is judged against these semantics.
+    'The formulas in derivedValues are evaluated with THESE functions. Judge criterion 6',
+    'against these exact semantics, never against what the same names mean in Excel:',
+    BUILTIN_REFERENCE,
+    '',
+    ...(params.chunks?.length
+      ? ['THE COURSE MATERIAL the question was written from, and the only treatment the',
+         'student has been taught. Judge criteria 1, 2 and 6 against THIS, not against a',
+         'more complete model you happen to know: a question that follows the course\'s',
+         'simplification faithfully is correct here, even where a fuller treatment would',
+         'add terms the material never introduces. Reject for contradicting the material,',
+         'not for being simpler than the literature.',
+         renderChunks(params.chunks),
+         '']
+      : []),
+    // The verifier runs before this call and its verdict was being thrown away.
+    // Without it the reviewer can only guess whether a question is servable, and
+    // "flag" on a question that can never reach a student is the wrong verdict.
+    ...(params.verificationFailure
+      ? ['The deterministic verifier has ALREADY REJECTED this question:',
+         `  "${params.verificationFailure}"`,
+         'It cannot serve a student in this state, whatever its pedagogical merits.',
+         'Say specifically what must change to fix it.',
+         '']
+      : []),
+    // The success is passed as deliberately as the failure. Without it the
+    // reviewer re-litigated collisions from vibes on questions the verifier had
+    // already cleared — hedged "may coincide under particular combinations"
+    // objections that no draw supports. With the collision criterion removed
+    // outright (2026-08-17), this block closes the subject rather than raising
+    // the bar for it.
+    ...(params.verificationProven
+      ? ['The deterministic verifier has PROVEN every option value pairwise distinct at',
+         'display precision across its sampled draws, and the serving path redraws any',
+         'rare colliding draw before a student sees it. Collisions are settled — judge',
+         'this question on pedagogy alone.',
+         '']
+      : []),
+    // The role-fit hand-off, measured 2026-08-17: on planted role-swap fixtures
+    // the reviewer endorsed a mislabeled misconception as "plausible" while the
+    // validator named the swap — its per-option format interrogates fit, this
+    // prompt's criteria check existence. The FLAG-not-reject policy is Saurav's
+    // call: roles are one edit in the question editor, so a label problem on a
+    // sound question should reach the instructor as fixable, not be discarded —
+    // and reject-only retries should not be spent on it.
+    ...(params.roleAssessment
+      ? ['The structure validator assessed each option\'s role fit:',
+         `  "${params.roleAssessment}"`,
+         'Weigh it. If it identifies a MISLABELED ROLE on an otherwise sound question,',
+         'FLAG the question and name the exact swap so the instructor can relabel it —',
+         'do not reject over role labels alone. An option marked "correct" that is not',
+         'actually correct remains a reject: that is a wrong answer key, not a label.',
+         '']
+      : []),
     'Question JSON:',
     JSON.stringify(params.question),
     '',

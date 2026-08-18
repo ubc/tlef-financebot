@@ -419,16 +419,263 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     expect(arg.derivedValues).toBeUndefined();
   });
 
-  it('accepts an errorModel that names the mistake after a role prefix', async () => {
-    // Deliberately narrow: only an errorModel that is NOTHING BUT a role name
-    // is rejected. This one is noisy but does name the mistake.
-    const prefixed = {
-      ...generatorOutput(),
+  // Added 2026-08-16. Verification used to run only in the CALLER, after
+  // generation finished, so a question whose options collide was never retried
+  // and the model was never told what was wrong. That single fault accounted
+  // for 5 of 6 unservable questions in a measured batch, and three separate
+  // attempts to prevent it by prompt wording all failed
+  // (docs/prompt-engineering-tests.md).
+  describe('verification inside the generator retry loop', () => {
+    const colliding = {
+      ...generatorOutput([
+        { key: 'A', text: '{{PV}}', role: 'correct', explanation: 'right' },
+        { key: 'B', text: '{{PV_DUP}}', role: 'common-misconception', explanation: 'mix-up' },
+        { key: 'C', text: '{{PV_C}}', role: 'partially-correct', explanation: 'close' },
+        { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
+      ]),
       numericKind: 'numeric' as const,
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       derivedValues: [
         { name: 'PV', formula: 'CF' },
+        // Identical to PV as an EXPRESSION, so no range choice can separate them.
+        { name: 'PV_DUP', formula: 'CF*1', errorModel: 'forgot to discount' },
+        { name: 'PV_C', formula: 'CF*3', errorModel: 'tripled' },
+        { name: 'PV_D', formula: 'CF*4', errorModel: 'quadrupled' },
+      ],
+    };
+    const sound = {
+      ...colliding,
+      derivedValues: [
+        { name: 'PV', formula: 'CF' },
+        { name: 'PV_DUP', formula: 'CF*2', errorModel: 'doubled instead of discounting' },
+        { name: 'PV_C', formula: 'CF*3', errorModel: 'tripled' },
+        { name: 'PV_D', formula: 'CF*4', errorModel: 'quadrupled' },
+      ],
+    };
+
+    it('retries a colliding question and quotes the verifier back to the model', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce(sound)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      // The retry prompt carries the verifier's OWN sentence, naming the two
+      // colliding values — the specificity is the whole point, since the general
+      // rule is already in GENERATOR_PROMPT and the model follows it and still
+      // collides.
+      const retryPrompt = jest.mocked(completeJson).mock.calls[1]![0] as string;
+      expect(retryPrompt).toMatch(/YOUR PREVIOUS ATTEMPT WAS REJECTED/);
+      // Order-agnostic: the verifier names the pair in whichever order it found
+      // them, and pinning that order would make this test about the verifier's
+      // internals rather than about the feedback reaching the model.
+      expect(retryPrompt).toMatch(/(PV_DUP and PV|PV and PV_DUP) are identical/);
+      // and the SOUND candidate is what gets persisted
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].derivedValues)
+        .toEqual(expect.arrayContaining([expect.objectContaining({ name: 'PV_DUP', formula: 'CF*2' })]));
+    });
+
+    it('still persists an unproven question when every attempt collides', async () => {
+      // Deliberately NOT discarded. A question that cannot earn a proof is
+      // persisted as a Draft so an instructor can widen a range and rescue it;
+      // dropping it here would silently lower the count a run reports and
+      // remove the only path to fixing it.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'flag', reasoning: 'collides' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(createQuestion).toHaveBeenCalledTimes(1);
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].verification).toBeUndefined();
+    });
+
+    it('tells the REVIEWER what the verifier decided, not just the generator', async () => {
+      // The verifier's verdict used to be computed after the review and thrown
+      // away. A reviewer that cannot see it can only guess at servability, and
+      // "flag" on a question that can never reach a student is the wrong call.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'collides' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const reviewerPrompt = jest.mocked(completeJson).mock.calls[3]![0] as string;
+      expect(reviewerPrompt).toMatch(/ALREADY REJECTED/);
+      expect(reviewerPrompt).toMatch(/(PV_DUP and PV|PV and PV_DUP) are identical/);
+    });
+
+    it('tells the reviewer about the PROOF when the question verifies', async () => {
+      // The mirror of the failure case, added 2026-08-17 after the asymmetry
+      // showed up live: with the failure passed but a success not, the reviewer
+      // re-litigated collisions from vibes — "the PV1 and PV2 distractors MAY
+      // coincide under particular parameter combinations" — against a question
+      // whose distinctness the verifier had just demonstrated across 100 draws.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(sound)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const reviewerPrompt = jest.mocked(completeJson).mock.calls[2]![0] as string;
+      expect(reviewerPrompt).toMatch(/PROVEN every option value pairwise distinct/);
+      expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
+    });
+
+    it('does not quote a verifier failure after a SHAPE failure', async () => {
+      // A shape failure carries no diagnosis worth repeating, and any earlier
+      // verification note describes a candidate that attempt already replaced.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce({ ...generatorOutput([]), options: [] })
+        .mockResolvedValueOnce(sound)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fine' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const retryPrompt = jest.mocked(completeJson).mock.calls[1]![0] as string;
+      expect(retryPrompt).not.toMatch(/YOUR PREVIOUS ATTEMPT WAS REJECTED/);
+    });
+  });
+
+  // Option B (2026-08-17): a reviewer REJECT triggers one regeneration with the
+  // critique quoted back, gated by the retryOnReject platform flag. The
+  // judgement faults the reviewer keeps finding — inflated difficulty labels,
+  // weak or lying distractors — were reviewer-visible but never fed back; the
+  // verifier retry proved feedback beats instruction (0/4 -> 4/4 proofs), and
+  // this applies the same mechanism to the judgement class.
+  describe('option B — retry on reviewer reject', () => {
+    const rejectedQuestion = generatorOutput();
+    const improvedQuestion = { ...generatorOutput(), stem: 'What is the IRR, improved?' };
+
+    it('regenerates once with the critique quoted back, and persists the retry', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)                                   // gen 1
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })                     // val 1
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'one-step substitution labelled medium' }) // rev 1
+        .mockResolvedValueOnce(improvedQuestion)                                   // gen 2 (retry)
+        .mockResolvedValueOnce({ roleAssessment: 'roles still ok' })               // val 2
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'fixed' });          // rev 2
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      // The retry generator prompt carries the reviewer's own words and the
+      // rejected question, and says what fixing each fault class means.
+      const retryPrompt = jest.mocked(completeJson).mock.calls[3]![0] as string;
+      expect(retryPrompt).toMatch(/REJECTED BY THE REVIEWING INSTRUCTOR/);
+      expect(retryPrompt).toMatch(/one-step substitution labelled medium/);
+      expect(retryPrompt).toMatch(/do NOT resubmit it with cosmetic edits/);
+      // The persisted question is the retry, carrying the retry's verdicts.
+      expect(createQuestion).toHaveBeenCalledTimes(1);
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe('What is the IRR, improved?');
+      expect(arg.agentDecision!.decision).toBe('pass');
+    });
+
+    it('does NOT retry on a flag — a flagged question is usable', async () => {
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'flag', reasoning: 'minor' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(completeJson).toHaveBeenCalledTimes(3);
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].agentDecision!.decision).toBe('flag');
+    });
+
+    it('does NOT retry when the platform flag is off', async () => {
+      // The cost toggle: one extra generator+validator+reviewer cycle per
+      // rejected question is real money, and an admin can decline it.
+      jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+        _id: 'platform',
+        models: { generator: 'g', validator: 'v', reviewer: 'r', masteryEvaluator: 'm', utility: 'u' },
+        costControls: { maxGenerationsPerDay: 100 },
+        featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: false },
+        updatedBy: 'ADMIN', updatedAt: new Date(),
+      })) } as never);
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'still rejected' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(completeJson).toHaveBeenCalledTimes(3);
+      expect(jest.mocked(createQuestion).mock.calls[0]![0].agentDecision!.decision).toBe('reject');
+    });
+
+    it('keeps the original reject when the retry fails structurally', async () => {
+      // generateValidQuestion returns null after two shape-invalid attempts;
+      // the original reject persists — never worse than before option B.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'rejected' })
+        .mockResolvedValueOnce({ ...generatorOutput([]), options: [] })            // retry attempt 1: bad shape
+        .mockResolvedValueOnce({ ...generatorOutput([]), options: [] });           // retry attempt 2: bad shape
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      expect(createQuestion).toHaveBeenCalledTimes(1);
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe(rejectedQuestion.stem);
+      expect(arg.agentDecision!.decision).toBe('reject');
+    });
+
+    it('persists the retry even when it is ALSO rejected', async () => {
+      // The later attempt incorporated the critique; an instructor reading the
+      // run sees the best-informed version, still honestly marked reject.
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(rejectedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'first critique' })
+        .mockResolvedValueOnce(improvedQuestion)
+        .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
+        .mockResolvedValueOnce({ decision: 'reject', reasoning: 'second critique' });
+
+      await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
+
+      const arg = jest.mocked(createQuestion).mock.calls[0]![0];
+      expect(arg.stem).toBe('What is the IRR, improved?');
+      expect(arg.agentDecision!.reasoning).toMatch(/second critique/);
+    });
+  });
+
+  it('accepts an errorModel that names the mistake after a role prefix', async () => {
+    // Deliberately narrow: only an errorModel that is NOTHING BUT a role name
+    // is rejected. This one is noisy but does name the mistake.
+    // The options must DISPLAY the computed values. Since 2026-08-16 the
+    // generator verifies inside its own retry loop, so a numeric question whose
+    // options show no computed value is retried rather than persisted
+    // unservable — and this fixture's stock "10%" options tripped exactly that,
+    // consuming the validator's mocked reply as a second generator attempt.
+    // That is the new behaviour working; the fixture just has to be a question
+    // that could actually serve.
+    const prefixed = {
+      ...generatorOutput([
+        { key: 'A', text: '{{PV}}', role: 'correct', explanation: 'right' },
+        { key: 'B', text: '{{PV_BAD}}', role: 'common-misconception', explanation: 'mix-up' },
+        { key: 'C', text: '{{PV_C}}', role: 'partially-correct', explanation: 'close' },
+        { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
+      ]),
+      numericKind: 'numeric' as const,
+      paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
+      // Four DISTINCT values, one per option: two options displaying the same
+      // derived value collide by definition, which the verifier now catches
+      // inside the generator loop.
+      derivedValues: [
+        { name: 'PV', formula: 'CF' },
         { name: 'PV_BAD', formula: 'CF*2', errorModel: 'common-misconception: doubled instead of halving' },
+        { name: 'PV_C', formula: 'CF*3', errorModel: 'tripled the cash flow' },
+        { name: 'PV_D', formula: 'CF*4', errorModel: 'quadrupled the cash flow' },
       ],
     };
 
@@ -440,7 +687,7 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
 
     await runGenerationPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
 
-    expect(jest.mocked(createQuestion).mock.calls[0][0].derivedValues).toHaveLength(2);
+    expect(jest.mocked(createQuestion).mock.calls[0][0].derivedValues).toHaveLength(4);
   });
 
   it('strips control characters the generator emits into displayed text', async () => {

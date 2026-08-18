@@ -265,6 +265,8 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   reviewer.checked = settings.featureFlags.reviewerAgent;
   const layer2 = el('input', { type: 'checkbox' }) as HTMLInputElement;
   layer2.checked = settings.featureFlags.layer2Evaluator;
+  const retryOnReject = el('input', { type: 'checkbox' }) as HTMLInputElement;
+  retryOnReject.checked = settings.featureFlags.retryOnReject;
 
   // --- custom models -------------------------------------------------------
   const customList = el('div', { class: 'admin-feature-list' });
@@ -304,7 +306,11 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
         models: draft,
         customModels,
         costControls: { maxGenerationsPerDay: Number(maxDaily.value) },
-        featureFlags: { reviewerAgent: reviewer.checked, layer2Evaluator: layer2.checked },
+        featureFlags: {
+          reviewerAgent: reviewer.checked,
+          layer2Evaluator: layer2.checked,
+          retryOnReject: retryOnReject.checked,
+        },
       }, confirmQualityImpact);
       settings = { ...saved, catalogue: settings.catalogue };
       status.textContent = 'Applied to new generation/evaluation work.';
@@ -359,6 +365,10 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
         el('label', { class: 'checkbox-row admin-feature' }, layer2,
           el('span', {}, el('strong', { text: 'Layer 2 Mastery Evaluator' }),
             el('small', { text: 'Not yet wired: this flag is saved but no code reads it.' })),
+        ),
+        el('label', { class: 'checkbox-row admin-feature' }, retryOnReject,
+          el('span', {}, el('strong', { text: 'Retry on Reviewer Reject' }),
+            el('small', { text: 'Regenerates once with the reviewer’s critique when a question is rejected. Costs one extra generation per rejected question — turn off to save cost.' })),
         ),
       ),
     ),

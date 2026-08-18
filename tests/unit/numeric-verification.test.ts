@@ -121,6 +121,82 @@ describe('verifyQuestionNumerics', () => {
     expect(result.sampleSeeds).toHaveLength(VERIFICATION_SAMPLE_COUNT);
   });
 
+  // The proof compares DISPLAYED values, not raw doubles. Students see values
+  // through formatParamValue (2 decimals), so raw 7.359 vs 7.361 are distinct
+  // to a raw comparison while both options render as 7.36 — a student-visible
+  // collision the proof used to wave through. Found 2026-08-17.
+  it('rejects two options that differ raw but round to the same displayed value', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [
+        { name: 'A', formula: 'X*7.359' },
+        { name: 'B', formula: 'X*7.361' },
+      ],
+      optionValueNames: ['A', 'B'],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/at display precision \(both show 7\.36\)/);
+  });
+
+  it('accepts options a full displayed cent apart', () => {
+    const result = verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [
+        { name: 'A', formula: 'X*7.35' },
+        { name: 'B', formula: 'X*7.36' },
+      ],
+      optionValueNames: ['A', 'B'],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // The exact shape that killed 5 of 6 numeric questions in the 2026-08-16 batch
+  // (docs/prompt-engineering-tests.md). GENERATOR_PROMPT now warns about this
+  // family by name; this pins that the verifier still CATCHES it, so warning and
+  // enforcement cannot drift apart — a prompt rule nothing enforces is advice,
+  // and an enforcement nothing warns about is a mystery.
+  it('catches a distractor that degenerates onto the correct answer at BETA = 1', () => {
+    const result = verifyQuestionNumerics({
+      // 0.5..2.0 step 0.5 — 1.0 is a legal draw, and at that draw the "ignored
+      // beta" distractor IS the CAPM answer.
+      slots: [
+        { name: 'BETA', min: 0.5, max: 2, step: 0.5 },
+        { name: 'RF_PCT', min: 3, max: 5, step: 1 },
+        { name: 'MARKET_PCT', min: 8, max: 12, step: 1 },
+      ],
+      derivedValues: [
+        { name: 'CAPM', formula: 'RF_PCT+BETA*(MARKET_PCT-RF_PCT)' },
+        { name: 'NO_BETA', formula: 'RF_PCT+(MARKET_PCT-RF_PCT)' },
+      ],
+      optionValueNames: ['CAPM', 'NO_BETA'],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/identical/i);
+  });
+
+  it('accepts the same question once the range excludes the degenerate draw', () => {
+    // The remedy the prompt prescribes: shift the range so 1.0 is never drawn.
+    // 1.1, 1.4, 1.7, 2.0 — and note the near miss this test already caught once:
+    // 0.6..2.2 step 0.4 LOOKS like it skips 1.0 and does not (0.6 + 0.4 = 1.0),
+    // which is why the prompt now tells the generator to list the draws rather
+    // than eyeball the bounds.
+    const result = verifyQuestionNumerics({
+      slots: [
+        { name: 'BETA', min: 1.1, max: 2.0, step: 0.3 },
+        { name: 'RF_PCT', min: 3, max: 5, step: 1 },
+        { name: 'MARKET_PCT', min: 8, max: 12, step: 1 },
+      ],
+      derivedValues: [
+        { name: 'CAPM', formula: 'RF_PCT+BETA*(MARKET_PCT-RF_PCT)' },
+        { name: 'NO_BETA', formula: 'RF_PCT+(MARKET_PCT-RF_PCT)' },
+      ],
+      optionValueNames: ['CAPM', 'NO_BETA'],
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('refuses a proof that names fewer than two answer values', () => {
     const result = verifyQuestionNumerics({
       slots: [{ name: 'X', min: 1, max: 1 }],

@@ -116,7 +116,7 @@ describe('Phase 3 Admin essentials', () => {
         utility: { model: 'gpt-5.4-nano' },
       },
       costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { reviewerAgent: true, layer2Evaluator: true },
+      featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
     };
     findPlatformSettings.mockResolvedValue({ _id: 'platform', ...base });
 
@@ -140,9 +140,9 @@ describe('Phase 3 Admin essentials', () => {
         utility: { model: 'gpt-5.4-nano' },
       },
       costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { reviewerAgent: false, layer2Evaluator: true },
+      featureFlags: { reviewerAgent: false, layer2Evaluator: true, retryOnReject: true },
     };
-    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...patch, featureFlags: { reviewerAgent: true, layer2Evaluator: true } });
+    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...patch, featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true } });
 
     await expect(updatePlatformSettings(patch, 'ADMIN')).rejects.toThrow('reviewer-disable-confirmation-required');
     await expect(updatePlatformSettings({ ...patch, confirmQualityImpact: true }, 'ADMIN')).resolves.toMatchObject(patch);
