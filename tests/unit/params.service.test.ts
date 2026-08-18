@@ -5,7 +5,16 @@ jest.mock('../../server/src/components/param-worker', () => ({
 }));
 
 import { executeGenerate } from '../../server/src/components/param-worker';
-import { drawCollisionFreeParams, resolveParamValues, substituteParams, findUnusedParamSlots, seededRandom, SERVE_DRAW_ATTEMPTS } from '../../server/src/services/params.service';
+import {
+  drawCollisionFreeParams,
+  drawQuestionSample,
+  resolveParamValues,
+  stableSeedsForId,
+  substituteParams,
+  findUnusedParamSlots,
+  seededRandom,
+  SERVE_DRAW_ATTEMPTS,
+} from '../../server/src/services/params.service';
 
 const mockExecuteGenerate = executeGenerate as jest.Mock;
 
@@ -235,5 +244,131 @@ describe('params.service', () => {
       expect(result.paramValues).toBeUndefined();
       expect(seedFn).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+// The list-row student preview (2026-08-17). Saurav asked for rows to read as a
+// student sees them, "so it's easier on the eyes without the variables".
+describe('drawQuestionSample — the instructor-facing student preview', () => {
+  const version = {
+    stem: 'Discount {{AMOUNT}} at {{RATE}}%.',
+    paramSlots: [
+      { name: 'AMOUNT', min: 100, max: 900, step: 100 },
+      { name: 'RATE', min: 3, max: 9, step: 1 },
+    ] as ParamSlot[],
+    derivedValues: [],
+    options: [
+      { key: 'A', text: '{{AMOUNT}} at {{RATE}}%', role: 'correct' as const, explanation: '' },
+      { key: 'B', text: 'half of {{AMOUNT}}', role: 'clearly-wrong' as const, explanation: '' },
+    ],
+  };
+
+  it('substitutes every placeholder out of the stem and options', async () => {
+    const sample = await drawQuestionSample(version, () => 4242);
+    expect(sample.parameterized).toBe(true);
+    // No placeholder survives, in EITHER notation — the whole point of the row.
+    expect(sample.stem).not.toMatch(/\{\{|\}\}/);
+    expect(sample.stem).toMatch(/^Discount \d+ at \d+%\.$/);
+    expect(sample.options.map((o) => o.text).join(' ')).not.toMatch(/\{\{/);
+  });
+
+  // Explanations are carried so instructor surfaces can RENDER the rationale
+  // instead of showing LaTeX source (Saurav, 2026-08-17: a `\frac{...}` chain
+  // in the editing textarea "can be very hard to read").
+  it('carries each option EXPLANATION, substituted like the text', async () => {
+    const withExplanations = {
+      ...version,
+      options: [
+        { key: 'A', text: '{{AMOUNT}}', role: 'correct' as const, explanation: 'Discount {{AMOUNT}} once at {{RATE}}%.' },
+        { key: 'B', text: 'half', role: 'clearly-wrong' as const, explanation: 'Halving ignores the {{RATE}}% rate.' },
+      ],
+    };
+    const sample = await drawQuestionSample(withExplanations, () => 4242);
+    // Substituted, not raw: the student's card substitutes explanations too, so
+    // an instructor reading `{{RATE}}` here would see something no student does.
+    expect(sample.options[0].explanation).toMatch(/^Discount \d+ once at \d+%\.$/);
+    expect(sample.options.map((o) => o.explanation).join(' ')).not.toMatch(/\{\{/);
+  });
+
+  it('carries explanations for a conceptual question too, unsubstituted', async () => {
+    const conceptual = {
+      stem: 'Why does diversification reduce unsystematic risk?',
+      paramSlots: [] as ParamSlot[],
+      derivedValues: [],
+      options: [{ key: 'A', text: 'Shocks offset', role: 'correct' as const, explanation: 'Uncorrelated shocks cancel.' }],
+    };
+    const sample = await drawQuestionSample(conceptual, () => 7);
+    expect(sample.options[0].explanation).toBe('Uncorrelated shocks cancel.');
+  });
+
+  it('tolerates an option with no explanation at all', async () => {
+    const noExplanation = {
+      ...version,
+      options: [{ key: 'A', text: '{{AMOUNT}}', role: 'correct' as const }],
+    } as unknown as Parameters<typeof drawQuestionSample>[0];
+    const sample = await drawQuestionSample(noExplanation, () => 1);
+    expect(sample.options[0].explanation).toBe('');
+  });
+
+  it('returns the stored text for a CONCEPTUAL question rather than nothing', async () => {
+    // question-detail's panel renders nothing when !parameterized, which is
+    // right for an "example" but wrong for a row: a conceptual row must still
+    // print its stem instead of going blank.
+    const conceptual = {
+      stem: 'Why does diversification reduce unsystematic risk?',
+      paramSlots: [] as ParamSlot[],
+      derivedValues: [],
+      options: [{ key: 'A', text: 'Shocks offset', role: 'correct' as const, explanation: '' }],
+    };
+    const sample = await drawQuestionSample(conceptual, () => 7);
+    expect(sample.parameterized).toBe(false);
+    expect(sample.stem).toBe('Why does diversification reduce unsystematic risk?');
+    expect(sample.options[0].text).toBe('Shocks offset');
+  });
+
+  it('falls back to the template instead of throwing when a formula is broken', async () => {
+    const broken = {
+      stem: 'Value is {{BAD}}.',
+      paramSlots: [] as ParamSlot[],
+      derivedValues: [{ name: 'BAD', formula: 'NOPE(' }],
+      options: [{ key: 'A', text: '{{BAD}}', role: 'correct' as const, explanation: '' }],
+    };
+    const sample = await drawQuestionSample(broken, () => 1);
+    expect(sample.parameterized).toBe(false);
+    expect(sample.stem).toBe('Value is {{BAD}}.');
+  });
+});
+
+describe('stableSeedsForId — why list rows do not churn', () => {
+  const version = {
+    stem: 'Discount {{AMOUNT}} at {{RATE}}%.',
+    paramSlots: [
+      { name: 'AMOUNT', min: 100, max: 900, step: 100 },
+      { name: 'RATE', min: 3, max: 9, step: 1 },
+    ] as ParamSlot[],
+    derivedValues: [],
+    options: [{ key: 'A', text: '{{AMOUNT}}', role: 'correct' as const, explanation: '' }],
+  };
+  const ID = '507f1f77bcf86cd799439011';
+
+  it('gives the same question the same sample on every render', async () => {
+    const first = await drawQuestionSample(version, stableSeedsForId(ID));
+    const second = await drawQuestionSample(version, stableSeedsForId(ID));
+    // The test that fails if someone swaps in drawSeed(): the numbers would
+    // change on every page load, which reads as instability to an instructor
+    // re-reading the same row.
+    expect(second.stem).toBe(first.stem);
+  });
+
+  it('gives DIFFERENT questions different draws, not one shared constant', () => {
+    expect(stableSeedsForId(ID)()).not.toBe(stableSeedsForId('507f1f77bcf86cd799439012')());
+  });
+
+  it('advances, so the collision guard can still reroll — deterministically', () => {
+    const seeds = stableSeedsForId(ID);
+    const drawn = [seeds(), seeds(), seeds()];
+    expect(new Set(drawn).size).toBe(3);
+    const again = stableSeedsForId(ID);
+    expect([again(), again(), again()]).toEqual(drawn);
   });
 });

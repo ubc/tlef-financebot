@@ -208,15 +208,18 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   function renderSample(sample: QuestionSample): void {
-    if (!sample.parameterized) {
-      sampleSection.replaceChildren();
-      return;
-    }
+    // Rendered for CONCEPTUAL questions too (2026-08-17). This used to bail
+    // when `!parameterized`, which was defensible while the panel only showed
+    // substituted numbers — but it now also renders explanations, and a
+    // conceptual question's explanation is just as full of LaTeX as a numeric
+    // one's. Bailing left half the bank with no readable view of its rationale.
     sampleSection.replaceChildren(
       el('h3', { class: 'detail-section-title', text: 'Example — what a student sees' }),
       el('p', {
         class: 'muted',
-        text: 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.',
+        text: sample.parameterized
+          ? 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.'
+          : 'This question has no generated values, so every student sees exactly this.',
       }),
       sampleStem(sample.stem),
       el(
@@ -226,12 +229,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           const role = detail.current.options.find((o) => o.key === option.key)?.role;
           const text = el('div', { class: 'question-sample__text' });
           renderRichText(text, option.text);
+          // The rationale, rendered. The editor's textarea above shows its
+          // LaTeX source — necessarily, since it is being edited — and a long
+          // `\frac{...}\left(...\right)` derivation is close to unreadable that
+          // way. This is the surface an instructor judges the explanation on.
+          const explanation = el('div', { class: 'question-sample__explanation' });
+          if (option.explanation) renderRichText(explanation, option.explanation);
           return el(
             'li',
             { class: `question-sample__option${role === 'correct' ? ' question-sample__option--correct' : ''}` },
             el('span', { class: 'question-sample__key', text: option.key }),
             text,
             role === 'correct' ? el('span', { class: 'question-sample__badge', text: 'correct' }) : null,
+            option.explanation ? explanation : null,
           );
         }),
       ),

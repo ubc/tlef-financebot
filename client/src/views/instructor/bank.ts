@@ -19,6 +19,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
+import { rowStemText } from '../../placeholders.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
@@ -376,7 +377,10 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
 
   function questionRow(q: BankQuestion): HTMLElement {
     const stemCell = el('div', { class: 'bank-row__stem' });
-    renderRichText(stemCell, q.current.stem);
+    // The STUDENT's view of the question. This row used to print the stored
+    // stem verbatim, so a parameterized question showed raw `{{RATE_PCT}}` —
+    // the bank was the only surface leaking the storage format at all.
+    renderRichText(stemCell, rowStemText(q));
 
     const sourceChanged = q.labels.includes('source-changed');
 

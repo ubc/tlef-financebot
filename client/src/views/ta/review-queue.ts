@@ -22,7 +22,7 @@ import {
   type TaReviewQueueItem,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { toDisplayPlaceholders } from '../../placeholders.js';
+import { rowStemText } from '../../placeholders.js';
 import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
@@ -166,7 +166,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   function questionRow(item: TaReviewQueueItem): HTMLElement {
     const stemCell = el('div', { class: 'queue-row__stem' });
-    renderRichText(stemCell, toDisplayPlaceholders(item.current.stem));
+    renderRichText(stemCell, rowStemText(item));
     const pending = pendingSuggestionCount(item);
 
     return el('div', { class: 'queue-row queue-row--ta' },

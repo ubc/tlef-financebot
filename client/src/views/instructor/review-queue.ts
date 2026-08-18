@@ -51,7 +51,7 @@ import {
   type ReviewQueueItem,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { toDisplayPlaceholders } from '../../placeholders.js';
+import { rowStemText } from '../../placeholders.js';
 import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
@@ -329,8 +329,10 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   function questionRow(item: ReviewQueueItem): HTMLElement {
     const stemCell = el('div', { class: 'queue-row__stem' });
-    // Read-only surface: show variables as [NAME], never {{NAME}}.
-    renderRichText(stemCell, toDisplayPlaceholders(item.current.stem));
+    // The STUDENT's view of the question, not the template — real numbers read
+    // far better than `[RATE_PCT]` when triaging a queue. Falls back to `[NAME]`
+    // placeholders (never `{{NAME}}`) when the server drew no sample.
+    renderRichText(stemCell, rowStemText(item));
 
     const approveTo = approveTarget(item.state);
     const checkbox = el('input', {

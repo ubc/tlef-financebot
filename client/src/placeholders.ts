@@ -18,6 +18,22 @@ export function toDisplayPlaceholders(text: string): string {
 }
 
 /**
+ * What a LIST ROW should print for a question: the drawn student sample when the
+ * server sent one, otherwise the template with readable `[NAME]` placeholders.
+ *
+ * Saurav, 2026-08-17: rows show the student view rather than the template,
+ * "so it's easier on the eyes without the variables". The raw template still
+ * has a home — the detail page, where it is the thing being edited.
+ *
+ * The fallback is not decoration. A `generateScript` question is never sampled
+ * for a list (it would cost a worker thread per row), so those rows depend on
+ * it, and a row must never render blank because a preview was unavailable.
+ */
+export function rowStemText(question: { current: { stem: string }; sample?: { stem: string } }): string {
+  return question.sample ? question.sample.stem : toDisplayPlaceholders(question.current.stem);
+}
+
+/**
  * `[NAME]` -> `{{NAME}}`, but ONLY for names in `knownNames`.
  *
  * The restriction is the whole safety argument. Square brackets appear in

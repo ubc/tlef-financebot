@@ -122,6 +122,97 @@ export async function resolveParamValues(
 /** Rerolls before the serve-time guard gives up and serves the draw anyway. */
 export const SERVE_DRAW_ATTEMPTS = 8;
 
+/** One rendered draw of a saved version — what a student would actually see.
+ * `parameterized: false` means the version has no slots/derived values (or its
+ * formulas could not resolve), so `stem`/`options` are the stored text. */
+export interface QuestionSampleDraw {
+  seed: number;
+  stem: string;
+  /** `explanation` is carried so instructor surfaces can RENDER the rationale
+   * (markdown + KaTeX) instead of showing its LaTeX source. The editor's
+   * textarea necessarily shows source; a long `\frac{...}` derivation is close
+   * to unreadable that way, which is the whole reason this field is here. */
+  options: Array<{ key: string; text: string; explanation: string }>;
+  parameterized: boolean;
+}
+
+/**
+ * Renders ONE sample draw of a saved version. Substitution happens here, on the
+ * server, through the same `substituteParams` the serve path uses, so an
+ * instructor-facing example can never drift from what a student receives.
+ *
+ * Collision-guarded, because this claims to be "what a student sees" and a
+ * student's draw is guarded. A version carrying a broken formula resolves to
+ * the raw template rather than throwing: the example is an aid, and failing it
+ * must not take the surrounding view down with it.
+ */
+export async function drawQuestionSample(
+  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots' | 'derivedValues' | 'options' | 'stem'>,
+  seedFn: () => number = drawSeed,
+): Promise<QuestionSampleDraw> {
+  let seed = seedFn();
+  let values: Record<string, number> | undefined;
+  try {
+    ({ seed, paramValues: values } = await drawCollisionFreeParams(version, seedFn));
+  } catch {
+    values = undefined;
+  }
+  if (!values) {
+    return {
+      seed,
+      stem: version.stem,
+      options: version.options.map((option) => ({
+        key: option.key,
+        text: option.text,
+        explanation: option.explanation ?? '',
+      })),
+      parameterized: false,
+    };
+  }
+  return {
+    seed,
+    stem: substituteParams(version.stem, values),
+    options: version.options.map((option) => ({
+      key: option.key,
+      text: substituteParams(option.text, values),
+      // Substituted like the text: an explanation quotes the same numbers, and
+      // the student's card substitutes it too (practice-card.ts), so an
+      // instructor previewing raw `{{RATE}}` here would be reading something no
+      // student ever sees.
+      explanation: substituteParams(option.explanation ?? '', values),
+    })),
+    parameterized: true,
+  };
+}
+
+/**
+ * A STABLE seed sequence derived from a question id (FNV-1a), for previews that
+ * are rendered repeatedly — list rows.
+ *
+ * Deliberately not `drawSeed()`: a fresh random seed would change every number
+ * on every page load, so the same question reads as $12,400 now and $9,180 after
+ * a refresh. That is a bug report waiting to happen ("didn't that say…?"), and
+ * it makes two instructors describing the same row to each other disagree. The
+ * serve path and the detail page still draw fresh, where varying numbers are
+ * the whole point.
+ *
+ * Each call returns the NEXT seed in the sequence rather than a constant, so the
+ * collision guard's rerolls still explore different draws — deterministically.
+ */
+export function stableSeedsForId(questionId: string): () => number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < questionId.length; i += 1) {
+    hash ^= questionId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const base = hash >>> 0;
+  let attempt = 0;
+  return () => {
+    attempt += 1;
+    return (base + attempt) >>> 0;
+  };
+}
+
 /**
  * Serve-time guard (Saurav's design, 2026-08-17): draw a seed, render the
  * options, and REDRAW if any two would display identically to the student.
