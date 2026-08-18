@@ -2209,6 +2209,13 @@ export interface BankQuestion {
   loIds: string[];
   themeIds: string[];
   current: QuestionVersion;
+  /** One STABLE drawn sample — what a student sees — so list rows can show real
+   * numbers instead of a `{{PLACEHOLDER}}` template. Absent when the server
+   * declined to draw one (a `generateScript` question, whose resolution costs a
+   * worker thread, or a version whose formulas do not resolve); the row falls
+   * back to the template in that case. The same question always samples the
+   * same way, so numbers do not churn between page loads. */
+  sample?: QuestionSample;
 }
 
 /** GET /api/questions/:questionId's full shape: the head plus its `current`

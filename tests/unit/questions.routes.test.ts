@@ -169,6 +169,79 @@ describe('GET /api/courses/:courseId/questions (browse, IN-Q08)', () => {
     expect(res.body.questions[0]._id).toBeUndefined();
     expect(res.body.questions[0].current.stem).toBe('x');
   });
+
+  // The list-row student preview (2026-08-17): rows render what a student sees
+  // instead of a `{{PLACEHOLDER}}` template nobody can read.
+  const bankRow = (current: Record<string, unknown>) => ({
+    _id: questionId,
+    courseId,
+    currentVersionId: current._id,
+    currentVersion: 1,
+    state: 'draft',
+    loIds: [],
+    themeIds: [],
+    labels: [],
+    internalNotes: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    current,
+  });
+
+  const parameterized = () => ({
+    _id: new ObjectId(),
+    version: 1,
+    stem: 'Discount {{AMOUNT}} at {{RATE}}%.',
+    paramSlots: [
+      { name: 'AMOUNT', min: 100, max: 900, step: 100 },
+      { name: 'RATE', min: 3, max: 9, step: 1 },
+    ],
+    derivedValues: [],
+    options: [{ key: 'A', text: '{{AMOUNT}}', role: 'correct', explanation: '' }],
+  });
+
+  it('carries a drawn student sample so the row can show real numbers', async () => {
+    jest.mocked(browseBank).mockResolvedValue({ total: 1, questions: [bankRow(parameterized())] } as never);
+
+    const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions`);
+
+    expect(res.status).toBe(200);
+    const [row] = res.body.questions;
+    expect(row.sample.parameterized).toBe(true);
+    expect(row.sample.stem).toMatch(/^Discount \d+ at \d+%\.$/);
+    // The template is still on the wire — the detail page edits it.
+    expect(row.current.stem).toBe('Discount {{AMOUNT}} at {{RATE}}%.');
+  });
+
+  it('SKIPS sampling a generateScript question — one worker thread per row is not affordable', async () => {
+    // param-worker spawns a real worker_threads worker per resolution. Fine for
+    // one detail page; ruinous for a bank list, and up to SERVE_DRAW_ATTEMPTS
+    // times that when the collision guard rerolls. Those rows fall back to the
+    // template client-side, exactly as before this feature.
+    const current = {
+      _id: new ObjectId(),
+      version: 1,
+      stem: 'Discount {{AMOUNT}}.',
+      generateScript: 'function generate(random){ return { vars: { AMOUNT: 10 } }; }',
+      options: [{ key: 'A', text: '{{AMOUNT}}', role: 'correct', explanation: '' }],
+    };
+    jest.mocked(browseBank).mockResolvedValue({ total: 1, questions: [bankRow(current)] } as never);
+
+    const res = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.questions[0].sample).toBeUndefined();
+  });
+
+  it('samples the same question identically across two requests (stable seed)', async () => {
+    jest.mocked(browseBank).mockResolvedValue({ total: 1, questions: [bankRow(parameterized())] } as never);
+
+    const first = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions`);
+    const second = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/questions`);
+
+    // Fails if someone swaps in drawSeed(): an instructor re-reading a row
+    // after a refresh would see different numbers and doubt the first read.
+    expect(second.body.questions[0].sample.stem).toBe(first.body.questions[0].sample.stem);
+  });
 });
 
 // Review finding 2: questions.routes.ts's browse route is the first use of

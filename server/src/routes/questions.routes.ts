@@ -19,7 +19,15 @@ import {
   transitionQuestion,
   bulkTransition,
 } from '../services/questions.service';
-import { drawCollisionFreeParams, resolveParamValues, substituteParams, findUnusedParamSlots, drawSeed } from '../services/params.service';
+import {
+  resolveParamValues,
+  substituteParams,
+  findUnusedParamSlots,
+  drawSeed,
+  drawQuestionSample,
+  stableSeedsForId,
+  type QuestionSampleDraw,
+} from '../services/params.service';
 import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
@@ -307,6 +315,42 @@ export function toBankItem(item: BankItem): {
   };
 }
 
+/**
+ * The list-row student preview: the same drawn sample the detail page shows,
+ * attached to every row so the queue and bank can render what a student sees
+ * instead of a `{{PLACEHOLDER}}` template nobody can read.
+ *
+ * Two deliberate restrictions, both about cost:
+ *
+ * 1. `generateScript` versions are SKIPPED. Resolving one spawns a real
+ *    worker_threads worker (param-worker/index.ts) — fine for one detail page,
+ *    ruinous for a bank list that would spawn one per row on every load, and up
+ *    to SERVE_DRAW_ATTEMPTS times that when the collision guard rerolls. Those
+ *    rows fall back to the template, exactly as today. Slot/derived questions —
+ *    which is everything the generator produces — are pure arithmetic on a
+ *    version the query already loaded, so they cost no I/O at all.
+ * 2. The seed is STABLE per question (`stableSeedsForId`), so a row shows the
+ *    same numbers on every load. See that function for why.
+ *
+ * `undefined` means "no preview available" and the client keeps rendering the
+ * template — the preview is an aid, never a gate.
+ */
+async function sampleForList(item: BankItem): Promise<QuestionSampleDraw | undefined> {
+  if (item.current.generateScript) return undefined;
+  try {
+    return await drawQuestionSample(item.current, stableSeedsForId(item._id.toString()));
+  } catch {
+    return undefined;
+  }
+}
+
+/** `toBankItem` plus the student preview. Separate from `toBankItem` because
+ * that one is a documented pure field-pick used by non-list responses too. */
+export async function toBankItemWithSample(item: BankItem): Promise<ReturnType<typeof toBankItem> & { sample?: QuestionSampleDraw }> {
+  const sample = await sampleForList(item);
+  return { ...toBankItem(item), ...(sample ? { sample } : {}) };
+}
+
 /** Same id-mapping for a bare (non-joined) Question head, e.g. the
  * transition response. */
 export function toQuestionResponse(question: WithId<Question>): Record<string, unknown> {
@@ -333,7 +377,7 @@ questionsRouter.get(
       ...(q.difficulty !== undefined ? { difficulty: q.difficulty } : {}),
       ...(q.label !== undefined ? { label: q.label } : {}),
     });
-    res.json({ total, questions: questions.map(toBankItem) });
+    res.json({ total, questions: await Promise.all(questions.map(toBankItemWithSample)) });
   },
 );
 
@@ -345,7 +389,9 @@ questionsRouter.get(
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
     const queue = await reviewQueue(courseId);
-    res.json(queue.map((item) => ({ ...toBankItem(item), priority: item.priority })));
+    res.json(await Promise.all(
+      queue.map(async (item) => ({ ...(await toBankItemWithSample(item)), priority: item.priority })),
+    ));
   },
 );
 
@@ -503,39 +549,13 @@ questionsRouter.get(
     const questionId = new ObjectId(String(req.params.questionId));
     const { current } = await getQuestionDetail(questionId);
 
-    // Collision-guarded: this panel is "what a student sees", so it draws the
-    // way a student serve draws. (The 5-draw diagnostic preview below is left
-    // raw ON PURPOSE — its job is to show real draw behaviour, collisions
+    // Collision-guarded, and drawn FRESH: the detail page is where varying
+    // numbers are the point. List rows deliberately draw a STABLE sample
+    // instead — see `sampleForList`. (The 5-draw diagnostic preview below is
+    // left raw ON PURPOSE — its job is to show real draw behaviour, collisions
     // included, so an instructor can see what the verifier is complaining
     // about.)
-    let seed = drawSeed();
-    let values: Record<string, number> | undefined;
-    try {
-      ({ seed, paramValues: values } = await drawCollisionFreeParams(current));
-    } catch {
-      // An unverified question may carry a broken formula — show the raw
-      // template rather than failing the whole detail view.
-      values = undefined;
-    }
-    if (!values) {
-      res.json({
-        seed,
-        stem: current.stem,
-        options: current.options.map((option) => ({ key: option.key, text: option.text })),
-        parameterized: false,
-      });
-      return;
-    }
-
-    res.json({
-      seed,
-      stem: substituteParams(current.stem, values),
-      options: current.options.map((option) => ({
-        key: option.key,
-        text: substituteParams(option.text, values),
-      })),
-      parameterized: true,
-    });
+    res.json(await drawQuestionSample(current));
   },
 );
 

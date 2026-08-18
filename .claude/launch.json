@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "financebot-dev",
+      "runtimeExecutable": "cmd.exe",
+      "runtimeArgs": [
+        "/c",
+        "set PATH=C:\\Users\\Saurav\\AppData\\Local\\node-portable\\node-v24.19.0-win-x64;%PATH% && npm run dev"
+      ],
+      "port": 6118
+    }
+  ]
+}
