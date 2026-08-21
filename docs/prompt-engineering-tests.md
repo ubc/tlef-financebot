@@ -3894,3 +3894,69 @@ from the party who owns them; the token cost buys provenance, not a metric.
 Worth re-testing on the failing LO family (experiment 14's) where hardness
 does not fall out of the material — the CAPM chunks handed both arms the hard
 construction, which made this the easiest possible test to tie.
+
+# Experiment 21 — the hardness-moves menu on the failing LO family (R2 A/B)
+
+_Run 2026-08-21, branch `saurav/instructor-difficulty-rubric` (commit 927ac4f).
+Provenance of the moves: docs/difficulty-ratings-analysis.md §2 and R2._
+
+## Method
+
+Arm `base` = the shipped prompt with `HARDNESS_MOVES` stripped from the built
+string by exact match; arm `moves` = as built. Everything else identical and
+both arms under the instructor's rubric (R1): LO "Distinguish firm vs
+enterprise value" (experiment 14's failing EV/EBITDA family), target `hard`,
+chunks fixed from the recorded experiment-B3 prompt, no instructor preset,
+`gpt-5.6-luna`, generator+reviewer effort `high`, single-shot. n=4 per arm.
+
+## Results
+
+| | base | moves |
+|---|---|---|
+| routing | 2 numeric, 2 conceptual | **4 conceptual** |
+| self-label == target | 4/4 (but see below) | 4/4 |
+| reviewer | 2 pass, **2 flag** | **4 pass** |
+| difficulty complaints | **2/4** | **0/4** |
+
+**Both base flags are the residual fault this change targets, named in the
+reviewer's own words:** *"a straightforward comparable-multiple calculation
+followed by adding non-core assets… no strategic or backward reasoning…
+better calibrated as medium calculation"* and *"not a hard chain of more than
+two distinct concepts or formula types. Relabel the difficulty as medium."*
+On this LO family, numeric-hard may simply not be constructible from the
+material — its EV/EBITDA arithmetic tops out at about two concepts, which the
+rubric calls medium — and the base generator kept attempting it and inflating
+the label, exactly the experiment-14 pattern.
+
+**The moves arm did not force fake-hard numerics. It routed around the
+impossible ask** — 4/4 conceptual — and executed R2's conceptual instruction
+precisely: every question is a minimal-pair discrimination requiring BOTH
+asset-scope AND capital-structure-neutrality rules at once, with distractors
+each built from a single wrong step. The reviewer's criterion-5 language
+tracks the construction: *"defensible rather than mere definition recall"*,
+*"must apply both related rules simultaneously"*. Zero difficulty complaints.
+
+Read together with experiment 20: on a material-supported hard LO (CAPM) the
+menu is inert (both arms found the hard construction anyway); on a family
+where hard calculation exceeds the material, the menu converts inflated-label
+numerics into honestly-hard conceptuals. Both directions are the behaviour we
+want from a construction menu that costs nothing at easy/medium.
+
+## Caveats
+
+- n=4/arm, one LO, no preset. **Untested: `hard` + the calculation preset on
+  this family** — an instructor explicitly asking for hard calculation here
+  would pit the preset against the menu's routing pressure, and which wins is
+  unmeasured. Worth a cell before relying on it.
+- The 4/4 conceptual monoculture is also a diversity observation: all four
+  stems are variations of one V-vs-EV comparison scenario. That is largely
+  the LO's own shape, and batch diversity was already an open problem
+  (experiment 1), but the menu plausibly narrows it further on
+  distinguish-type LOs.
+
+## Decision — ship R2
+
+It produced the first zero-difficulty-complaint batch recorded on this LO
+family, by the honest route (construct real hardness where it is
+constructible) rather than the dishonest one (inflate the label). Gated to
+`hard` targets, so the cost at easy/medium is zero tokens.
