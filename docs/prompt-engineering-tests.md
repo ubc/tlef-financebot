@@ -4033,3 +4033,60 @@ template the flags keep catching.
    generation) is the escalation, not a bigger prompt.
 
 n=4/arm, one LO, one prerequisite pairing — directional, not conclusive.
+
+# Experiment 23 — R7 as implemented: widening enables, the connector does not compel
+
+_Run 2026-08-21, branch `saurav/instructor-difficulty-rubric` (commit ab4fc86 —
+R7 shipped: 4/2 split retrieval, labeled supporting chunks via renderChunks,
+connector line in GENERATOR_PROMPT). Same fixtures, arms and n as experiment
+22, but the widened arm now flows through the REAL implementation surface:
+chunks flagged `supporting: true`, shipped label, shipped connector._
+
+## Results
+
+| | narrow | widened (real impl.) |
+|---|---|---|
+| routing | 4/4 conceptual | 2 numeric, 2 conceptual |
+| reviewer | 4 pass | 2 pass, 1 flag, **1 reject** |
+| difficulty complaints | 0/4 | 2/4 (the flag and the reject) |
+| CAPM chain taken | — | **0/4** |
+
+Narrow replicated a third consecutive time (4/4 conceptual pass).
+
+**The reject is the system working, not failing.** Widened #2 built a DCF +
+EV-bridge — the same shape as experiment 22's pass — but WITHOUT any hardness
+move applied (plain FCF1..3, rate given), and the reviewer rejected it in the
+rubric's own terms: *"does not involve more than two distinct concepts or
+formula types, backward/strategic solving…"*. Experiment 22's passing version
+had the deferred-timing move; this draw skipped it. In production the reject
+fires Option B's retry with that critique quoted back — a mitigation this
+single-shot harness deliberately does not capture.
+
+**Across both widened arms (n=8): 5 numeric attempts, 1 genuinely hard pass,
+4 honestly flagged/rejected as medium-labelled-hard, and the offered CAPM
+chain taken 0/8.** The connector line did not change the inclination at this
+n. What the R1+R2+R7 stack now reliably does on this family: enables numeric
+attempts (0/8 without widening), and catches every inflated label
+(no medium-work-labelled-hard PASSED in any widened run).
+
+## Reading, and the escalation path
+
+Option 1 stands: it is the difference between "cannot attempt numeric-hard"
+and "attempts it with honest filtering", it costs nothing at easy/medium, and
+it degrades gracefully. But demonstration-by-material plus description-by-
+connector has not made the model chain the OFFERED concept — consistent with
+this document's oldest lesson that description alone underperforms. The
+escalation candidates, in cost order:
+
+1. **A required `hardnessMove` output field at target hard** — the generator
+   must NAME the move it applied and what it chains; the reviewer checks the
+   claim against the question. Structure over exhortation, same mechanism as
+   the self-assessment fix.
+2. **Move-first two-pass generation** (R7 option 2): a cheap first call picks
+   the move and the prerequisite concept, the second call generates with both
+   pinned. Strongest expected effect, most machinery.
+
+Production note: rejects on this path now carry rubric-specific critiques, so
+Option B's retry loop — which turned 0/4 into 4/4 on verification failures —
+gets its first real chance at difficulty faults. Worth measuring with
+retryOnReject on before adding either escalation.
