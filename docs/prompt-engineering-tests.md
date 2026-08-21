@@ -3815,3 +3815,82 @@ batch exhausts its retries against this misconception density, and the system
 persists it as an honest reject whose fix is one range edit for an instructor.
 That is acceptable behaviour, not a defect to engineer against — and the
 alternative (more retries per slot) buys convergence slowly at real cost.
+
+# Experiment 20 — the instructor's rubric vs. the generic one-liners (R1 A/B)
+
+_Run 2026-08-21, on branch `saurav/instructor-difficulty-rubric` (commit
+c837f4b). Background and the rubric's provenance:
+docs/difficulty-ratings-analysis.md (R1)._
+
+## Method
+
+- **Arms:** OLD = the three generic one-liner definitions (main, d7d50fc);
+  NEW = the instructor's operational rubric, split calculation/conceptual
+  per level. Arms switched by mutating `DIFFICULTY_RUBRIC` in place, so the
+  generator AND reviewer of each question judge by the same arm's rubric —
+  each arm is internally consistent, as it would be if shipped.
+- **Cells:** CAPM ("Estimate expected returns with CAPM") × hard, CAPM ×
+  medium, FX-conceptual ("Analyze macro drivers of exchange rates") × hard.
+  n=3 per cell per arm — 18 questions.
+- **Controls:** grounding chunks fixed per LO (reused from the recorded
+  prompts of experiments 1 and 2), `gpt-5.6-luna`, generator and reviewer at
+  effort `high`, validator at defaults, NO instructor preset (difficulty
+  signal isolated), single-shot generation (no retry loop — the metric is
+  calibration, not collision recovery). Full transcripts persisted to JSONL
+  before any aggregation, per the experiment-16 harness rule.
+
+## Results
+
+| | OLD | NEW |
+|---|---|---|
+| self-label == target | **9/9** | **9/9** |
+| numeric routing (CAPM) / conceptual routing (FX) | 6/6 · 3/3 | 6/6 · 3/3 |
+| verification proofs (numeric) | 6/6 | 6/6 |
+| reviewer | 8 pass, 1 flag | 8 pass, 1 flag |
+
+Both flags are wobble-class faults unrelated to the rubric: OLD's is a role
+mislabel ("partially-correct" that should be "common-misconception"), NEW's an
+internally-inconsistent option explanation. Neither mentions difficulty.
+
+**No separation, and the reason is the one Task 5 already taught:** the
+baseline this change was aimed at is gone. The 12/12 miscalibration lived in
+an effort-`none`, pre-self-assessment, reviewer-v1 pipeline; at effort `high`
+with the self-assessment instruction, both arms label honestly and both arms
+reached the genuinely-hard construction on their own. On the CAPM×hard cell,
+ALL SIX questions (both arms) converged on the same backward-inference
+template — infer RF and MRP from two correctly-priced stocks, then apply to a
+third asset — which is rubric-HIGH by the instructor's own "backward/strategic
+solving" marker, and is taught by the grounding chunks themselves.
+
+**What did change is the reviewer's language.** NEW-arm verdicts cite the
+rubric's specific boundary markers — "multi-step backward inference…
+appropriately supports the stated hard difficulty", "students must apply two
+related rules simultaneously", "justify the stated hard difficulty under the
+rubric" — where OLD-arm verdicts assert "suitably hard" more generically.
+Same verdicts, more auditable reasoning. At n=9/arm that is an observation,
+not a measurement.
+
+**Artifact noticed in passing:** one NEW-arm generation put the literal string
+"none" in helper-step `errorModel` fields. Harmless (helper steps display
+nowhere) and `errorModelsNameMistakes` correctly ignores it, but it is the
+kind of thing the narrow check deliberately tolerates.
+
+## Decision — ship, on alignment grounds, not measurement grounds
+
+The measurement says: no effect on this sample, at a cost of roughly 200
+extra tokens per generator/reviewer call. The experiment-16 precedent
+(conceptual exemplar, ~250 tokens, unshipped for exactly this) argues to
+revert.
+
+The difference: the exemplar was OUR OWN synthetic artifact whose only
+justification was moving a metric. The rubric is the course owner's published
+definition of the construct — the standard the instructor will apply when
+they review generated labels. An LLM-judge A/B cannot measure
+system-vs-instructor agreement, and that is the risk this change actually
+addresses: with the generic one-liners, a question could pass our reviewer
+while carrying a label the instructor would dispute. Definitions should come
+from the party who owns them; the token cost buys provenance, not a metric.
+
+Worth re-testing on the failing LO family (experiment 14's) where hardness
+does not fall out of the material — the CAPM chunks handed both arms the hard
+construction, which made this the easiest possible test to tie.

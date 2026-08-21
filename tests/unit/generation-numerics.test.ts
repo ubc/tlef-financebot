@@ -333,9 +333,9 @@ describe('GENERATOR_PROMPT', () => {
     // Until 2026-08-17 the reviewer had only "a one-step substitution should
     // not pass as medium or hard" — grading against definitions it had never
     // seen. The generator sees its target's line; the judge needs all three.
-    expect(reviewerPrompt).toMatch(/Easy means one direct recall/);
-    expect(reviewerPrompt).toMatch(/Medium means the student must choose or connect/);
-    expect(reviewerPrompt).toMatch(/Hard means multi-step synthesis/);
+    expect(reviewerPrompt).toMatch(/Easy \(calculation\): one formula, one concept/);
+    expect(reviewerPrompt).toMatch(/Medium \(calculation\): one genuine rate conversion/);
+    expect(reviewerPrompt).toMatch(/Hard \(calculation\): chains MORE THAN TWO distinct concepts/);
   });
 
   it('warns about the two failure modes verification actually rejects', () => {
