@@ -43,6 +43,7 @@ import { ObjectId } from 'mongodb';
 import {
   enqueueGenerationRun,
   GENERATOR_PROMPT,
+  HARDNESS_MOVES,
   preseedingProgress,
   registerGenerationJobs,
   REVIEWER_PROMPT,
@@ -195,6 +196,20 @@ describe('difficulty calibration prompts', () => {
       question: generatorOutput(),
     });
     expect(prompt).toContain('Difficulty calibration');
+  });
+
+  it('gives the generator the hardness-moves menu ONLY at target hard', () => {
+    // The block is conditional so easy/medium calls pay no tokens for it — the
+    // experiment-2 lesson that global prompt additions are not free.
+    const build = (difficulty: 'easy' | 'medium' | 'hard') => GENERATOR_PROMPT({
+      type: 'mcq',
+      loName: 'Calculate present value',
+      difficulty,
+      chunks: [{ text: 'PV and FV formulas' }],
+    });
+    expect(build('hard')).toContain(HARDNESS_MOVES);
+    expect(build('medium')).not.toContain('HOW TO MAKE IT HARD');
+    expect(build('easy')).not.toContain('HOW TO MAKE IT HARD');
   });
 });
 

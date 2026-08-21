@@ -1269,6 +1269,49 @@ export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
     + 'question must remain solvable from the supplied material.',
 };
 
+/**
+ * How a HARD question is manufactured, not just what one is. The rubric above
+ * defines the standard; this is the construction menu behind it — in the
+ * instructor's released bank, nearly every HIGH calculation question is a MID
+ * question plus exactly ONE of these complications (docs/
+ * difficulty-ratings-analysis.md §2). Included in GENERATOR_PROMPT only when
+ * the target is `hard`, so easy/medium calls pay nothing for it — the
+ * experiment-2 lesson that global prompt additions are not free.
+ *
+ * A single pre-joined string, exported by name, so an A/B harness can remove
+ * the block from a built prompt by exact match.
+ */
+export const HARDNESS_MOVES: string = [
+  'HOW TO MAKE IT HARD. In this course\'s own released question bank, a hard question',
+  'is a medium question plus ONE deliberate complication that hides the approach.',
+  'Pick the ONE move that best fits this learning objective and apply it. Do NOT',
+  'enlarge the arithmetic — hardness is connections across concepts, and what the',
+  'stem withholds, never bigger numbers:',
+  '  1. Off-cycle timing: the event happens mid-stream, so a count or remaining term',
+  '     must be re-derived rather than read off the stem (value a loan just after',
+  '     payment 14 of 36; sell the asset one year after purchase).',
+  '  2. Hidden parameter: a needed input (an original payment, a remaining maturity,',
+  '     an implied rate) is not given and must be reconstructed from other stated',
+  '     terms before the asked-for quantity can even be set up.',
+  '  3. Value = benefit minus cost: the computed value is one LEG of a trade; the',
+  '     answer is the difference, and identifying the two legs is the real work.',
+  '  4. Regime change: a growth rate or rate environment switches partway (fast',
+  '     growth for some years, then a steady state), chaining two formulas across',
+  '     the boundary and discounting the far side back through the near side.',
+  '  5. Deferred start: the stream begins some periods from now, so its standard',
+  '     formula value lands at the wrong date and must be discounted again.',
+  '  6. Reinvestment chain: interim cash flows are reinvested at a DIFFERENT rate;',
+  '     the answer needs their future value plus the terminal piece, then a return.',
+  '  7. Two-approach comparison: the same quantity valued two ways (a multiple vs. a',
+  '     discounted value), with the question living in the reconciliation.',
+  '  8. Payments due today rather than at period-end — combined with another move,',
+  '     never alone.',
+  'For a CONCEPTUAL hard question, sharpen instead of complicating: the correct',
+  'answer must require holding two related-but-easily-confused rules in mind at',
+  'once, and every distractor must be built from a SINGLE wrong step a student',
+  'takes when the rules blur.',
+].join('\n');
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
@@ -1296,6 +1339,7 @@ export function GENERATOR_PROMPT(params: {
     'does not hand over — and only if you cannot, return the honest lower label. A',
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
+    params.difficulty === 'hard' ? HARDNESS_MOVES : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
