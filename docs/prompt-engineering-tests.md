@@ -4090,3 +4090,60 @@ Production note: rejects on this path now carry rubric-specific critiques, so
 Option B's retry loop — which turned 0/4 into 4/4 on verification failures —
 gets its first real chance at difficulty faults. Worth measuring with
 retryOnReject on before adding either escalation.
+
+# Experiment 24 — the Option-B retry never fired: difficulty residue lives in flags
+
+_Run 2026-08-21 on the standardized harness (scripts/prompt-ab — first
+experiment on it; every prior experiment ran on ad-hoc scratchpad scripts).
+The measurement experiment 23 asked for before escalating. Real token usage
+captured per call via completeJson's new onUsage hook._
+
+## Method
+
+Shipped stack (R1+R2+R7 at 6+2) on the reject-prone family: EV/EBITDA ×
+hard, production-shaped grounding (6 EV chunks + 2 CAPM supporting), n=8,
+mode retry-on-reject (production Option B mirrored: one regeneration with
+the critique quoted back, replacement judged identically). Pre-registered:
+the retry converts at least half the difficulty rejects into genuinely
+harder questions.
+
+## Results
+
+| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | retries fired → converted | tokens in/out |
+|---|---|---|---|---|---|---|---|
+| shipped-6+2 | 6/2 | 8/8 | 6/6 | 6/2/0 | 2 | 0 → 0 | 105,924/58,682 |
+
+**1. The hypothesis is untestable — zero rejects in eight draws.** Experiment
+23's reject did not recur; the difficulty residue surfaced as two FLAGS, and
+Option B fires on reject only, by design. Whatever fixes the remaining
+medium-labelled-hard questions, it is not the reject-retry: the event it
+needs is too rare, and the faults land in a verdict tier it never touches.
+
+**2. The offered chain was finally taken — once, and it passed.** Question #1
+chains CAPM (from the supporting chunks) → required return → NPV of three
+FCFs → enterprise value → firm-value bridge, with a chain-specific distractor
+(discounting at the risk-free rate). The reviewer passed it, noting the
+question "appropriately incorporat[es] the taught CAPM treatment". That is
+1 take in 16 widened draws across experiments 22-24 — rare, not impossible.
+
+**3. The two flags are reviewer wobble on a known boundary.** Both flag a
+deferred-timing DCF plus non-core bridge as "roughly a medium-level
+combination" — the SAME construction experiment 22's pass endorsed as hard
+("delayed cash-flow timing… sufficiently multi-step"). Consistent with
+experiment 14's note: identical inputs judge consistently, judgment calls
+across different questions wobble at the boundary. Read flag counts
+accordingly.
+
+**4. Real cost, measured at last:** 105.9k in / 58.7k out for 8 questions ×
+3 calls at generator+reviewer `high` — about $0.092 per run, ~1.2¢ per
+question at luna's post-cut rates. Prior experiments' cost reconstructions
+were within range.
+
+## Decision
+
+Option B stays as it is — it was never the lever for difficulty faults, and
+extending it to fire on flags would burn a full generation cycle on a
+verdict tier that (a) wobbles and (b) is deliberately kept instructor-fixable.
+Next per the cost ladder from experiment 23: the declared `hardnessMove`
+output field — prevention at generation time, verified by the reviewer, the
+same structure-over-exhortation mechanism that fixed self-labels.
