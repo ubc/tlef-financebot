@@ -4147,3 +4147,59 @@ verdict tier that (a) wobbles and (b) is deliberately kept instructor-fixable.
 Next per the cost ladder from experiment 23: the declared `hardnessMove`
 output field — prevention at generation time, verified by the reviewer, the
 same structure-over-exhortation mechanism that fixed self-labels.
+
+# Experiment 25 — the declared hardnessMove field: visibility won, prevention unproven
+
+_Run 2026-08-21 on the harness. Arms: `no-field` (HARDNESS_MOVE_DECLARATION
+stripped — exp 24's condition, doubling as its same-day replication) vs
+`declared` (as shipped, criterion 9 active). EV/EBITDA × hard, 6+2 grounding,
+single-shot, n=8/arm._
+
+## Results
+
+| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | tokens in/out |
+|---|---|---|---|---|---|---|
+| no-field | 4/4 | 8/8 | 4/4 | 8/0/0 | 0 | 104,654/55,266 |
+| declared | 4/4 | 8/8 | 4/4 | 6/2/0 | 2 | 106,067/48,301 |
+
+**Compliance: 8/8.** Every declared-arm question carries a well-formed
+declaration; the deterministic absence-gate never had to fire. All four
+conceptual declarations name genuine two-rule combinations and passed.
+
+**The primary hypothesis is UNPROVEN, and the replication is why.** The
+no-field arm drew 0/8 complaints where the IDENTICAL condition drew 2/8 in
+experiment 24, same day — between-run variance is at least as large as the
+between-arm difference, so neither "the field reduces complaints" nor "the
+field adds flags" survives this n. Worse for the simple reading:
+no-field #8 (shares × price, add debt, add non-core — four steps, zero
+helpers) PASSED, while declared #4 of comparable demand was flagged. The
+field shifts DETECTION, not (measurably) generation.
+
+**What the field demonstrably bought:**
+
+1. **Move monoculture, exposed.** All four numeric declarations chose
+   "hidden parameter" — and two applied it trivially (declaring "the non-core
+   total is withheld" when the stem lists the three numbers to add). The menu
+   has eight moves; on this LO the model picks one, and never the
+   two-approach comparison that is the instructor's own HIGH exemplar for
+   this family. We could not see this before the field existed.
+2. **Critiques got actionable.** Both flags verify the claim first and name
+   the gap precisely: *"The declared hidden-parameter device is implemented…
+   however the student performs only a direct multiplication"*; *"the stem
+   explicitly tells students to aggregate the three listed assets — not
+   backward or strategic solving."* Compare exp 24's boundary-call phrasing.
+   A flag like this is one relabel click for the instructor; a silent pass
+   of the same question serves inflated difficulty to students.
+3. An audit trail: the claimed device rides with the question.
+
+## Decision — keep the field; the next lever is move ASSIGNMENT
+
+Keep: compliance is total, proofs/routing/labels show no regression, the
+critiques are sharper, and the cost is a sentence per hard question. But stop
+expecting prompt-side declaration to IMPROVE the questions — three
+escalations of description-and-commitment have now moved detection, not
+generation. The monoculture finding points at the mechanism with direct
+evidence: the model needs the move CHOSEN FOR IT — move-first two-pass
+generation (pick move + prerequisite concept cheaply, then generate with
+both pinned), or per-LO move weighting. That is R7-option-2's territory,
+now reached with the evidence trail experiments 22-25 built.
