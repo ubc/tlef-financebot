@@ -52,6 +52,18 @@ export interface Arm {
   /** Applied to the built generator prompt — strip or append a block to make
    * this arm differ. Prefer exact-match replace of an exported constant. */
   transformPrompt?: (prompt: string) => string;
+  /** Runs BEFORE generation and may call the LLM (a planning pass, e.g.
+   * move-first two-pass). Its `appendix` is appended to the built generator
+   * prompt; its `planned` value is recorded on the run record. `track` must
+   * be passed to any completeJson call it makes so usage stays attributed. */
+  prePass?: (ctx: {
+    lo: string;
+    difficulty?: string;
+    chunks: FixtureChunk[];
+    i: number;
+    model: string;
+    track: (u: { promptTokens?: number; completionTokens?: number }) => void;
+  }) => Promise<{ appendix: string; planned?: unknown }>;
   generator?: StepOptions;
   validator?: StepOptions;
   reviewer?: StepOptions;
@@ -88,6 +100,8 @@ export interface RunRecord {
   fixture: string;
   target?: string;
   i: number;
+  /** A prePass planner's output (e.g. the chosen move), when the arm has one. */
+  planned?: unknown;
   selfLabel?: string;
   hardnessMove?: string;
   numericKind?: string;
@@ -215,11 +229,19 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             type: 'mcq', loName: fixture.lo, difficulty: cell.difficulty, chunks,
           });
           if (arm.transformPrompt) genPrompt = arm.transformPrompt(genPrompt);
+          let planned: unknown;
+          if (arm.prePass) {
+            const pre = await arm.prePass({
+              lo: fixture.lo, difficulty: cell.difficulty, chunks, i, model, track,
+            });
+            genPrompt = `${genPrompt}\n\n${pre.appendix}`;
+            planned = pre.planned;
+          }
           const generated = await completeJson<any>(genPrompt, {
             model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
           });
           const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, track });
-          let record: RunRecord = { ...base, ...first };
+          let record: RunRecord = { ...base, ...(planned !== undefined ? { planned } : {}), ...first };
 
           if (spec.mode === 'retry-on-reject' && String(first.decision).toLowerCase() === 'reject') {
             // Production Option B: regenerate ONCE with the critique quoted
