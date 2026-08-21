@@ -1233,11 +1233,40 @@ function renderChunks(chunks: RetrievedChunk[]): string {
  * sees all three, because it judges whether the label matches. Until 2026-08-17
  * the reviewer had only "a one-step substitution should not pass as medium or
  * hard" — it was grading against definitions it had never been shown.
+ *
+ * The definitions are the course instructor's own, condensed from the
+ * operational rubric in FinanceBot_Difficulty_Ratings.docx (2026-08-21) — the
+ * one they applied to all 108 released practice questions. It splits
+ * calculation from conceptual demand because the boundaries genuinely differ:
+ * a calculation gets harder by chaining concepts, a conceptual question by
+ * tightening distractors. See docs/difficulty-ratings-analysis.md.
  */
 export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
-  easy: 'Easy means one direct recall or one-step application with no irrelevant information.',
-  medium: 'Medium means the student must choose or connect concepts, interpret a scenario, or complete more than one reasoning step; a direct formula substitution is too easy.',
-  hard: 'Hard means multi-step synthesis, comparison, or transfer to an unfamiliar scenario; it must remain solvable from the supplied material.',
+  easy:
+    'Easy (calculation): one formula, one concept; no rate or unit conversion beyond '
+    + 'a single step — or the conversion IS the entire question (e.g. r = APR/m). '
+    + 'Easy (conceptual): direct recall of a definition or fact, with plausible but '
+    + 'clearly distinguishable distractors.',
+  medium:
+    'Medium (calculation): one genuine rate conversion (e.g. APR to effective rate '
+    + 'where compounding frequency differs from cash-flow frequency) PLUS one formula '
+    + 'application; or one standard formula (bond pricing, Gordon growth) applied to '
+    + 'a scenario whose several inputs the student must organize; or rearranging one '
+    + 'formula to solve for an unknown (payment, rate, growth rate); a direct formula '
+    + 'substitution is too easy. '
+    + 'Medium (conceptual): applying a concept to a new scenario, with distractors '
+    + 'that require real understanding rather than recall.',
+  hard:
+    'Hard (calculation): chains MORE THAN TWO distinct concepts or formula types '
+    + '(e.g. rate conversion + annuity PV + value-equals-benefit-minus-cost), or '
+    + 'requires backward or strategic solving where the approach itself is not given '
+    + '(e.g. re-deriving a hidden parameter such as a remaining term or an original '
+    + 'payment before the asked-for quantity can be computed). '
+    + 'Hard (conceptual): the student must hold two related-but-easily-confused rules '
+    + 'in mind at once (annuity vs. annuity due, cum- vs. ex-dividend, coupon rate '
+    + 'vs. interest-rate risk), against distractors each built from a single wrong '
+    + 'step. Hardness is connections across concepts, never arithmetic size, and the '
+    + 'question must remain solvable from the supplied material.',
 };
 
 export function GENERATOR_PROMPT(params: {
