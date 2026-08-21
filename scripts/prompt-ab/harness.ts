@@ -89,6 +89,7 @@ export interface RunRecord {
   target?: string;
   i: number;
   selfLabel?: string;
+  hardnessMove?: string;
   numericKind?: string;
   helperSteps?: number;
   derivedCount?: number;
@@ -168,6 +169,7 @@ async function judgeOnce(args: {
   const { helpers, derived } = helperStepCount(generated);
   return {
     selfLabel: generated.difficulty,
+    hardnessMove: generated.hardnessMove,
     numericKind: generated.numericKind,
     helperSteps: helpers,
     derivedCount: derived,

@@ -165,6 +165,14 @@ interface GeneratorOutput {
   stem: string;
   options: QuestionOption[];
   difficulty?: string;
+  /** Required at target `hard` (enforced in generateValidQuestion): one
+   * sentence naming which hardness move the question applies and how. The
+   * reviewer verifies the claim against the question — structure over
+   * exhortation, the same mechanism as the difficulty self-assessment.
+   * Measured need: experiments 22-24, where the moves menu plus labeled
+   * material produced 1 taken chain in 16 draws — description alone does
+   * not compel. */
+  hardnessMove?: string;
   // Parameterization (design spec 2026-08-05). A numerical question states no
   // numbers: it declares its inputs as `paramSlots` and every displayed value
   // — the correct answer and each distractor — as a `derivedValues` formula.
@@ -1134,7 +1142,8 @@ async function generateValidQuestion(
     if (
       candidate &&
       optionShapeValid(type, candidate.options) &&
-      errorModelsNameMistakes(candidate)
+      errorModelsNameMistakes(candidate) &&
+      hardnessMoveDeclared(difficulty, candidate)
     ) {
       const clean = sanitizeGenerated(candidate);
       // Shuffled HERE, not in createQuestion, for the same reason
@@ -1268,7 +1277,24 @@ function sanitizeGenerated(candidate: GeneratorOutput): GeneratorOutput {
       text: stripControlChars(option.text),
       explanation: stripControlChars(option.explanation),
     })),
+    ...(typeof candidate.hardnessMove === 'string'
+      ? { hardnessMove: stripControlChars(candidate.hardnessMove) }
+      : {}),
   };
+}
+
+/** A hard candidate must DECLARE its hardness move (prompt: the
+ * HARDNESS_MOVE_DECLARATION block). Deliberately narrow, like
+ * errorModelsNameMistakes: only absence/emptiness is rejected here — whether
+ * the declared move is actually IMPLEMENTED is the reviewer's criterion 9,
+ * which is a judgment this deterministic gate cannot make. Non-hard targets
+ * are exempt: the prompt never asks them for the field. */
+function hardnessMoveDeclared(
+  difficulty: Difficulty | undefined,
+  candidate: GeneratorOutput,
+): boolean {
+  if (difficulty !== 'hard') return true;
+  return typeof candidate.hardnessMove === 'string' && candidate.hardnessMove.trim().length > 0;
 }
 
 /** Structural pre-check before spending validator/reviewer calls. createQuestion
@@ -1431,6 +1457,32 @@ export const HARDNESS_MOVES: string = [
   'takes when the rules blur.',
 ].join('\n');
 
+/**
+ * The declared-move requirement, active only at target `hard`. A single
+ * pre-joined string exported by name (like HARDNESS_MOVES) so the A/B harness
+ * can strip it from a built prompt by exact match.
+ *
+ * Why a required FIELD and not more instruction: experiments 22-24 measured
+ * the menu + labeled material + connector line producing 1 taken chain in 16
+ * draws — description does not compel. The pipeline's own precedent is the
+ * difficulty self-assessment: restating the rules fixed nothing (12/12
+ * mislabelled), requiring the model to RETURN a judgment fixed labels. A
+ * field the model must fill forces the move to be chosen before the stem is
+ * written; the reviewer then verifies a concrete claim instead of making a
+ * boundary call (the wobble measured in experiments 14 and 24).
+ */
+export const HARDNESS_MOVE_DECLARATION: string = [
+  'DECLARE YOUR MOVE. Include ONE additional field in your JSON:',
+  '  "hardnessMove": one sentence naming WHICH move above you applied and HOW the',
+  'question implements it — specifically what the stem withholds or chains, e.g.',
+  '  "off-cycle timing: the loan is valued just after payment 14 of 36, so the',
+  '   remaining 22-payment term is never stated and must be derived".',
+  'For a conceptual question, name instead the two easily-confused rules the',
+  'correct answer requires holding at once. This declaration is CHECKED against',
+  'the question: a declared move the question does not implement is flagged, and',
+  'a hard question with no declaration at all is rejected before review.',
+].join('\n');
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
@@ -1459,6 +1511,7 @@ export function GENERATOR_PROMPT(params: {
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
     params.difficulty === 'hard' ? HARDNESS_MOVES : '',
+    params.difficulty === 'hard' ? HARDNESS_MOVE_DECLARATION : '',
     // The connector (R7): experiment 22 measured the widened pool licensing
     // numeric ambition while the offered chain went untaken 3/3 — the model
     // fell back to its single-concept template on 2 of 3. The material and the
@@ -1890,6 +1943,22 @@ export function REVIEWER_PROMPT(params: {
     '     student. This does NOT apply to a two-option true/false question: the platform',
     '     relabels its single wrong option to "common-misconception" automatically after',
     '     this review, so whatever role it carries here is correct and is not a defect.',
+    // Criterion 9 turns the wobbliest judgment ("is this hard, all things
+    // considered?") into a factual check against the generator's own claim.
+    // Measured need: experiment 24, where the SAME deferred-timing
+    // construction experiment 22 endorsed as hard was re-judged medium —
+    // boundary calls across different questions wobble; verifying a stated,
+    // specific property does not. Only questions that CARRY the field are
+    // judged by it; its absence on a hard question is caught deterministically
+    // before this review and is not this criterion's job.
+    '  9. Declared hardness device — if the question carries a "hardnessMove" field,',
+    '     verify the question actually IMPLEMENTS the declared device: if it claims the',
+    '     stem withholds a quantity, check the stem truly withholds it; if it claims two',
+    '     concepts are chained, check both are genuinely required to answer. A',
+    '     declaration the question does not implement means the difficulty label is',
+    '     inflated — flag it and name the gap precisely. Judge the declared device',
+    '     against the question, never re-litigate from scratch whether the question',
+    '     "feels" hard.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
     // check out." It passed every arithmetically-wrong question in 2026-08-05

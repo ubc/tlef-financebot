@@ -44,6 +44,7 @@ import { ObjectId } from 'mongodb';
 import {
   enqueueGenerationRun,
   GENERATOR_PROMPT,
+  HARDNESS_MOVE_DECLARATION,
   HARDNESS_MOVES,
   preseedingProgress,
   registerGenerationJobs,
@@ -222,7 +223,7 @@ describe('difficulty calibration prompts', () => {
         { payload: { materialId: supportMaterialId.toHexString(), chunk: 'PV material' } },
       ] as never);
     jest.mocked(completeJson)
-      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'off-cycle timing: mid-loan valuation' })
       .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
       .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
 
@@ -257,7 +258,7 @@ describe('difficulty calibration prompts', () => {
     const runOnce = async (difficulty: 'medium' | 'hard') => {
       jest.mocked(search).mockClear();
       jest.mocked(completeJson)
-        .mockResolvedValueOnce(generatorOutput())
+        .mockResolvedValueOnce({ ...generatorOutput(), hardnessMove: 'regime change: two-stage growth' })
         .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
         .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
       await runGenerationPipeline({ courseId, loId, count: 1, difficulty, byPuid: 'PUID-INSTR' });
@@ -268,6 +269,47 @@ describe('difficulty calibration prompts', () => {
     await runOnce('medium');
     // Hard on the course's FIRST LO has no earlier pool and reverts to plain.
     await runOnce('hard');
+  });
+
+  it('requires the hardnessMove declaration at target hard, retrying a candidate without one', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(completeJson)
+      // First candidate: sound options, NO declaration — must be retried, not
+      // sent onward to the validator/reviewer.
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard' })
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'hidden parameter: the payment must be re-derived' })
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    // 4 calls: generator ×2 (the retry), then validator + reviewer exactly once.
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+    // The same undeclared candidate at medium is NOT retried — the prompt
+    // never asks non-hard targets for the field.
+    jest.mocked(completeJson).mockClear();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+    expect(completeJson).toHaveBeenCalledTimes(3);
+  });
+
+  it('demands the declaration in the prompt ONLY at hard, and gives the reviewer criterion 9', () => {
+    const build = (difficulty: 'medium' | 'hard') => GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty, chunks: [{ text: 'IRR material' }],
+    });
+    expect(build('hard')).toContain(HARDNESS_MOVE_DECLARATION);
+    expect(build('medium')).not.toContain('DECLARE YOUR MOVE');
+    const reviewer = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(reviewer).toContain('Declared hardness device');
+    expect(reviewer).toContain('never re-litigate from scratch');
   });
 
   it('gives the generator the hardness-moves menu ONLY at target hard', () => {
