@@ -11,6 +11,7 @@ import {
   questionsCol,
   questionVersionsCol,
   contentRunsCol,
+  themesCol,
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
@@ -76,6 +77,14 @@ const GENERATION_TARGET = 5;
 /** Chunks retrieved per question to ground the generator. */
 const RETRIEVE_TOP_K = 6;
 
+/** The hard-target split of RETRIEVE_TOP_K (R7): the LO's own material keeps
+ * the majority, earlier objectives' material fills the rest, so the prompt
+ * size stays flat. Probe evidence (experiment 22): the widened pool is the
+ * difference between 0/4 and 3/4 honest numeric-hard attempts on the LO
+ * family whose own material tops out at medium. */
+const HARD_PRIMARY_TOP_K = 4;
+const HARD_SUPPORTING_TOP_K = 2;
+
 /** Generator attempts before a structurally-invalid question is skipped. */
 const GENERATOR_MAX_ATTEMPTS = 2;
 
@@ -138,6 +147,11 @@ export interface GenerationJobData {
 interface RetrievedChunk {
   materialId?: string;
   text: string;
+  /** From an EARLIER learning objective's materials, retrieved only for hard
+   * targets so a hardness move has a second concept to chain (R7). Rendered
+   * with an explicit label so the model — and the reviewer judging grounding —
+   * can tell support apart from the LO's own material. */
+  supporting?: boolean;
 }
 interface RetrievedGrounding {
   chunks: RetrievedChunk[];
@@ -342,7 +356,9 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // Retrieve once: every question in this batch targets the same LO/prompt, so
   // the grounding query is identical. Variety across the batch comes from the
   // warm generator (GENERATOR_TEMPERATURE), not from re-retrieving.
-  const { chunks } = await retrieveChunks(collection, courseId, lo, prompt);
+  const { chunks } = await retrieveChunks(
+    collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
+  );
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
@@ -462,6 +478,8 @@ export async function regenerateQuestion(
     question.courseId,
     lo,
     prompt,
+    undefined,
+    current.difficulty === 'hard',
   );
   const generationInstruction = [
     prompt,
@@ -579,7 +597,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       result,
       message: `Pinned ${allowedMaterialIds.length} assigned material${allowedMaterialIds.length === 1 ? '' : 's'}`,
     });
-    const grounding = await retrieveChunks(courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds);
+    // Widen only when the instructor did NOT pin materials — a pin means
+    // exactly these, and the supporting pool would smuggle others back in.
+    const grounding = await retrieveChunks(
+      courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds,
+      input.pinnedMaterialIds === undefined && input.difficulty === 'hard',
+    );
     const chunks = grounding.chunks;
     stage = 'generating';
     await updateContentRun(runId, {
@@ -932,6 +955,51 @@ async function groundingMaterialIds(
   return selected;
 }
 
+/**
+ * Materials assigned to EARLIER learning objectives — same theme with a lower
+ * LO order, or any LO/theme-wide assignment in a lower-ordered theme (R7).
+ *
+ * Backward only, by course order: the instructor's HIGH questions chain into
+ * concepts already taught (12 of the bank's 23 HIGH items sit in the
+ * cumulative Class 9-10 quiz), never forward into material students have not
+ * seen. Materials already in the primary pool are excluded — a material
+ * assigned to both this LO and an earlier one is primary, not support.
+ */
+async function supportingMaterialIds(
+  courseId: ObjectId,
+  lo: { _id: ObjectId; themeId: ObjectId; order: number },
+  primaryMaterialIds: string[],
+): Promise<string[]> {
+  const [themes, los, materials] = await Promise.all([
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    materialsCol().find({ courseId, status: 'ready', deletedAt: { $exists: false } }).toArray(),
+  ]);
+  const currentTheme = themes.find((theme) => theme._id.equals(lo.themeId));
+  if (!currentTheme) return [];
+
+  const earlierThemeIds = themes
+    .filter((theme) => theme.order < currentTheme.order)
+    .map((theme) => theme._id);
+  const isEarlierTheme = (themeId: ObjectId) => earlierThemeIds.some((id) => id.equals(themeId));
+  const earlierLoIds = los
+    .filter((candidate) =>
+      isEarlierTheme(candidate.themeId) ||
+      (candidate.themeId.equals(lo.themeId) && candidate.order < lo.order))
+    .map((candidate) => candidate._id);
+
+  const primary = new Set(primaryMaterialIds);
+  return materials
+    .filter((material) =>
+      !primary.has(material._id.toHexString()) &&
+      material.assignments.some(
+        (assignment) =>
+          (assignment.loId !== undefined && earlierLoIds.some((id) => id.equals(assignment.loId as ObjectId))) ||
+          (assignment.loId === undefined && isEarlierTheme(assignment.themeId)),
+      ))
+    .map((material) => material._id.toHexString());
+}
+
 function normalizeMaterialName(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase('en-CA');
 }
@@ -950,22 +1018,39 @@ function extractMaterialMentions(prompt?: string): string[] {
 
 /** Retrieve strictly assigned grounding chunks. Missing assignments, a Qdrant
  * failure, or zero usable hits is a visible service failure: never fall back to
- * generating from the LO name or general model knowledge. */
+ * generating from the LO name or general model knowledge.
+ *
+ * `widen` (R7, hard targets only): split the budget HARD_PRIMARY_TOP_K /
+ * HARD_SUPPORTING_TOP_K between the LO's own materials and earlier
+ * objectives' materials, so a hardness move has a second concept to chain.
+ * The widen decision belongs to the CALLER, because `pinnedMaterialIds` here
+ * does not mean "instructor pinned" — the tracked pipeline routes its
+ * resolved ids through it on every run. Callers must not widen over an
+ * actual instructor pin (a pin means exactly these). Widening quietly
+ * reverts to the plain retrieval when the course has no earlier-objective
+ * material (the first LO) or the supporting search yields nothing. A supporting-search failure likewise degrades to
+ * primary-only rather than failing generation: support is an enrichment, and
+ * the strictness contract above covers the PRIMARY grounding.
+ */
 async function retrieveChunks(
   collection: string,
   courseId: ObjectId,
-  lo: { _id: ObjectId; themeId: ObjectId; name: string },
+  lo: { _id: ObjectId; themeId: ObjectId; name: string; order: number },
   prompt?: string,
   pinnedMaterialIds?: string[],
+  widen?: boolean,
 ): Promise<RetrievedGrounding> {
   const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo, prompt));
   if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+
+  const supportingIds = widen ? await supportingMaterialIds(courseId, lo, allowedMaterialIds) : [];
+  const primaryTopK = supportingIds.length > 0 ? HARD_PRIMARY_TOP_K : RETRIEVE_TOP_K;
 
   const query = prompt ? `${lo.name}\n${prompt}` : lo.name;
   const vector = await embedOne(query);
   let hits;
   try {
-    hits = await search(collection, vector, RETRIEVE_TOP_K, {
+    hits = await search(collection, vector, primaryTopK, {
       must: [{ key: 'materialId', match: { any: allowedMaterialIds } }],
     });
   } catch (err) {
@@ -975,16 +1060,39 @@ async function retrieveChunks(
     );
     throw new Error('generation-retrieval-failed', { cause: err });
   }
+  const toChunk = (hit: (typeof hits)[number]) => ({
+    materialId: typeof hit.payload?.materialId === 'string' ? hit.payload.materialId : undefined,
+    text: typeof hit.payload?.chunk === 'string' ? hit.payload.chunk : '',
+  });
   const allowed = new Set(allowedMaterialIds);
-  const chunks = hits
-    .map((hit) => ({
-      materialId: typeof hit.payload?.materialId === 'string' ? hit.payload.materialId : undefined,
-      text: typeof hit.payload?.chunk === 'string' ? hit.payload.chunk : '',
-    }))
+  const chunks: RetrievedChunk[] = hits
+    .map(toChunk)
     // Defense in depth: Qdrant should enforce the filter, but never trust a
     // malformed/stale hit enough to write a forbidden sourceRef.
     .filter((chunk) => chunk.materialId !== undefined && allowed.has(chunk.materialId) && chunk.text.length > 0);
   if (chunks.length === 0) throw new Error('generation-no-grounding');
+
+  if (supportingIds.length > 0) {
+    try {
+      const supportingHits = await search(collection, vector, HARD_SUPPORTING_TOP_K, {
+        must: [{ key: 'materialId', match: { any: supportingIds } }],
+      });
+      const supportingAllowed = new Set(supportingIds);
+      chunks.push(
+        ...supportingHits
+          .map(toChunk)
+          .filter((chunk) =>
+            chunk.materialId !== undefined && supportingAllowed.has(chunk.materialId) && chunk.text.length > 0)
+          .map((chunk) => ({ ...chunk, supporting: true })),
+      );
+    } catch (err) {
+      console.warn(
+        `[generation] supporting-material retrieval failed for ${collection}, ` +
+          `continuing with primary grounding only: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
   return { chunks, allowedMaterialIds };
 }
 
@@ -1225,7 +1333,14 @@ function normalizeDecision(value: unknown): 'pass' | 'flag' | 'reject' {
 // --- Prompts (exported so Phase 4 content QA can tune them independently) -----
 
 function renderChunks(chunks: RetrievedChunk[]): string {
-  return chunks.map((chunk, i) => `[${i + 1}] ${chunk.text}`).join('\n\n');
+  return chunks
+    .map((chunk, i) =>
+      chunk.supporting
+        ? `[${i + 1}] [Supporting material from an EARLIER learning objective, already taught `
+          + `to these students. You may chain its concepts into the question, but the question `
+          + `must still primarily test the current learning objective.]\n${chunk.text}`
+        : `[${i + 1}] ${chunk.text}`)
+    .join('\n\n');
 }
 
 /**
@@ -1340,6 +1455,18 @@ export function GENERATOR_PROMPT(params: {
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
     params.difficulty === 'hard' ? HARDNESS_MOVES : '',
+    // The connector (R7): experiment 22 measured the widened pool licensing
+    // numeric ambition while the offered chain went untaken 3/3 — the model
+    // fell back to its single-concept template on 2 of 3. The material and the
+    // menu have to be tied together explicitly.
+    params.difficulty === 'hard' && params.chunks.some((chunk) => chunk.supporting)
+      ? 'Some chunks below are marked as supporting material from EARLIER learning\n'
+        + 'objectives. They are provided precisely so a hardness move can CHAIN one of\n'
+        + 'their concepts into this question. A hard question that ignores them and stays\n'
+        + 'inside the current objective\'s single concept is probably not hard. The\n'
+        + 'question must still primarily TEST the current learning objective — the\n'
+        + 'chained concept is a step on the way, never the thing being tested.'
+      : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',

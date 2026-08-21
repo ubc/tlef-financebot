@@ -30,6 +30,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   materialsCol: jest.fn(),
   questionsCol: jest.fn(),
   contentRunsCol: jest.fn(),
+  themesCol: jest.fn(),
   platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
 }));
 jest.mock('../../server/src/services/content-runs.service', () => ({
@@ -53,7 +54,7 @@ import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
 import { search } from '../../server/src/components/qdrant';
 import { createQuestion } from '../../server/src/services/questions.service';
-import { contentRunsCol, losCol, materialsCol, platformSettingsCol, questionsCol } from '../../server/src/components/mongodb/collections';
+import { contentRunsCol, losCol, materialsCol, platformSettingsCol, questionsCol, themesCol } from '../../server/src/components/mongodb/collections';
 import { defineJob, enqueueJob } from '../../server/src/components/jobs';
 import {
   createQuestionGenerationRun,
@@ -196,6 +197,77 @@ describe('difficulty calibration prompts', () => {
       question: generatorOutput(),
     });
     expect(prompt).toContain('Difficulty calibration');
+  });
+
+  it('widens grounding with earlier-objective material ONLY at target hard (R7)', async () => {
+    const earlierLoId = new ObjectId();
+    const supportMaterialId = new ObjectId();
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 2 });
+    loToArray.mockResolvedValue([
+      { _id: loId, courseId, themeId, name: 'Compute IRR', order: 2 },
+      { _id: earlierLoId, courseId, themeId, name: 'Present value', order: 1 },
+    ]);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId, loId }] },
+      { _id: supportMaterialId, courseId, status: 'ready', assignments: [{ themeId, loId: earlierLoId }] },
+    ]);
+    jest.mocked(search)
+      .mockResolvedValueOnce([
+        { payload: { materialId: materialId.toHexString(), chunk: 'IRR material' } },
+      ] as never)
+      .mockResolvedValueOnce([
+        { payload: { materialId: supportMaterialId.toHexString(), chunk: 'PV material' } },
+      ] as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    // Two searches: the LO's own materials at the reduced top-K, then the
+    // earlier-objective pool for the remainder — total budget unchanged.
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(4);
+    expect(jest.mocked(search).mock.calls[1]?.[2]).toBe(2);
+    expect(jest.mocked(search).mock.calls[1]?.[3]).toEqual({
+      must: [{ key: 'materialId', match: { any: [supportMaterialId.toHexString()] } }],
+    });
+    // The generator sees the labeled support and the connector tying it to the
+    // moves menu; the supporting chunk is honest provenance in sourceRefs.
+    const generatorPrompt = jest.mocked(completeJson).mock.calls[0]?.[0] as string;
+    expect(generatorPrompt).toContain('Supporting material from an EARLIER learning objective');
+    expect(generatorPrompt).toContain('a hardness move can CHAIN one of');
+    expect(createQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      sourceRefs: expect.arrayContaining([
+        expect.objectContaining({ materialId: supportMaterialId }),
+      ]),
+    }));
+  });
+
+  it('keeps the plain single retrieval at medium, and at hard with no earlier material', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    const runOnce = async (difficulty: 'medium' | 'hard') => {
+      jest.mocked(search).mockClear();
+      jest.mocked(completeJson)
+        .mockResolvedValueOnce(generatorOutput())
+        .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+        .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+      await runGenerationPipeline({ courseId, loId, count: 1, difficulty, byPuid: 'PUID-INSTR' });
+      expect(search).toHaveBeenCalledTimes(1);
+      expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(6);
+    };
+    // Medium never widens, whatever the course looks like.
+    await runOnce('medium');
+    // Hard on the course's FIRST LO has no earlier pool and reverts to plain.
+    await runOnce('hard');
   });
 
   it('gives the generator the hardness-moves menu ONLY at target hard', () => {
