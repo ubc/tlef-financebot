@@ -173,7 +173,7 @@ possible.
 
 ## 4. Recommendations, ranked
 
-### R1 — Replace `DIFFICULTY_RUBRIC` with the instructor's rubric (highest value, lowest risk)
+### R1 — Replace `DIFFICULTY_RUBRIC` with the instructor's rubric — SHIPPED (PR #78, experiment 20)
 
 Rewrite the three entries with the calc/conceptual split, condensed from §1.
 Both consumers get it via the existing plumbing (generator sees its target's
@@ -213,7 +213,7 @@ practice, A/B it against the current rubric on one computational and one
 conceptual LO before shipping; the measurable claim is reviewer criterion-5
 agreement and fewer difficulty-label flags.
 
-### R2 — Add a "hardness moves" block, active when target is `hard`
+### R2 — Add a "hardness moves" block, active when target is `hard` — SHIPPED (PR #79, experiment 21)
 
 The complement to the self-assessment fix: that told the model how to *grade*
 hardness, this tells it how to *manufacture* it. Append (only when
@@ -223,7 +223,13 @@ This mirrors how the instructor's own HIGH questions are constructed and keeps
 the block off easy/medium calls (avoiding the Experiment-2 lesson that global
 additions are not free).
 
-### R3 — Difficulty-targeted real exemplars — as an A/B, not a ship
+### R3 — Difficulty-targeted real exemplars — DEPRIORITIZED
+
+_Status 2026-08-21: the gap this targeted closed without it. On
+material-supported LOs, R1+R2 label honestly (experiment 20); on the failing
+family, the fault turned out to be grounding, not exemplars (experiments
+21-23, R7). Per the pre-registered rule below — "if R1+R2 alone close the
+gap, drop this" — dropped unless difficulty calibration regresses._
 
 Prior evidence rules out *generic* exemplars (no headroom on reviewer passes)
 — but those tests never measured **difficulty calibration with a real HIGH
@@ -268,6 +274,107 @@ only path to validating that generated `hard` ≈ experienced hard. Worth a
 follow-up ask: even one exam's item statistics joined against these 108 rated
 items would calibrate the rubric's boundary cases (the appendix itself flags
 Mid/High as judgment calls).
+
+### R7 — Backward-widened grounding for hard targets — SHIPPED (PR #79)
+
+_Emerged after this doc's first version, from experiment 21's finding: on the
+EV/EBITDA family, numeric-hard was unconstructible not because the model was
+weak but because retrieval is structurally single-concept — this LO's
+materials, this LO's name as the query, and a prompt that forbids outside
+facts — while the rubric's hard requires chaining MORE THAN TWO concepts. The
+bank chains backward: 12 of its 23 HIGH questions sit in the cumulative
+Class 9-10 quiz._
+
+As shipped: at target `hard`, the LO keeps its full `RETRIEVE_TOP_K` (6)
+chunks and `HARD_SUPPORTING_TOP_K` (2) more come from materials assigned to
+EARLIER objectives — lower LO order in the same theme, or anything in a
+lower-ordered theme. Supporting chunks render under an explicit
+earlier-objective label, with a connector line tying them to R2's moves menu.
+Never widens over an instructor pin; the course's first LO reverts to the
+plain 6; a failed supporting search degrades to primary-only.
+
+Measured (experiments 22-23): widening is the difference between 0/4 and 3/4
+honest numeric-hard attempts, and produced the family's first passing
+numeric-hard. Open residue: the model takes the *offered* prerequisite chain
+0/8 — the label licenses ambition but does not cause chaining. Escalation
+candidates, in cost order: a declared `hardnessMove` output field the
+reviewer verifies; then move-first two-pass generation. Measure Option B's
+retry on this path first — difficulty rejects now carry rubric-specific
+critiques for the first time.
+
+### R8 — Instructor-selected multi-LO questions — DESIGN, not yet built
+
+The manual counterpart of R7: instead of similarity guessing the chain
+partner, the instructor selects 2-3 LOs for one question, knowing the course's
+real pairings ("bond pricing + rate conversion is the classic exam
+combination"). Orthogonal to difficulty — cross-LO scope does not make a
+question hard (the rubric's MID explicitly includes shallow repeated
+application), it makes it *broad*; hardness remains the rubric's and R2's job.
+
+**Data model:** already multi-LO. `Question.loIds` and `themeIds` are arrays
+and `createQuestion` accepts them today; `GenerationInput.loId` (singular) is
+the artificial bottleneck, becoming `loIds`.
+
+**Retrieval — per-LO, never a merged query.** One embed + one search per
+selected LO: each LO's own name as the query, against that LO's assigned
+materials, budget split evenly — 3/3/3 for three LOs (~9 chunks, inside the
+6-10 sweet spot; the model is never the constraint at this scale). Rejected
+alternative, for the record: embedding "LO1\nLO2\nLO3" once against the union
+pool. The centroid of three concepts resembles none of them, and it carries no
+coverage guarantee — nothing stops every chunk coming from one LO, at which
+point the model writes a single-LO question with two decorative objectives
+attached. Coverage-per-LO is the feature.
+
+Mechanics:
+- `renderChunks` grows a per-LO label — `[4] [Material for objective: "Price
+  a coupon bond"]` — so generator, validator and reviewer all see which
+  material serves which objective.
+- Dedup across searches by Qdrant point id (selected LOs often share a
+  material), backfilling from the next-ranked hit.
+- An empty pool for ANY selected LO is the existing
+  `generation-no-assigned-materials` failure, naming the LO. Never silently
+  generate a 2-LO question the instructor didn't ask for.
+
+**Policy hierarchy — most explicit instruction wins, no stacking:**
+
+| instructor's request | retrieval |
+|---|---|
+| pinned materials | exactly those — trumps everything, including the per-LO split |
+| multiple LOs (any difficulty) | 3/3/3 per selected LO, NO auto-support |
+| single LO, hard | 6 own + 2 auto-supporting (R7) |
+| single LO, easy/medium | 6 own |
+
+Multi-LO + hard: R2's moves menu still fires (keyed on difficulty, and it is
+what should turn three LOs into something hard rather than merely broad); R7's
+auto-widening stands down — the instructor's selection IS the chain, and a
+similarity-picked prerequisite would dilute per-LO coverage to second-guess
+someone who knows the course. The R7 connector stays naturally silent (no
+`supporting` chunks exist in this mode).
+
+**Prompt contract — structure over exhortation.** Experiments 22-23 measured
+labeled material going untaken 0/8; handing the model three labeled groups
+will not make it integrate them either. The generator instruction must require
+it: the question must genuinely need concepts from at least two of the
+selected objectives, and a question answerable from one objective's material
+alone is wrong for this request. Prefer a declared output field naming which
+objectives the question chains, so the reviewer verifies a claim rather than
+a vibe — the same mechanism as the difficulty self-assessment. Reviewer
+criterion 2 ("tests this LO") needs matching multi-LO phrasing.
+
+**Scope beyond generation, so nobody discovers it mid-build:**
+- Mastery attribution: which LO's mastery does an attempt credit? (All
+  selected? Weighted? The bank's multi-part questions suggest all.)
+- Progression: the question presumably serves in each selected LO's tier pool.
+- Blueprints and the generation UI need multi-select; run records store one
+  loId today.
+- Review-book/analytics group by LO and will double-count unless taught not
+  to.
+
+**Before building:** probe it the way R7 was probed — fixture chunks for two
+recorded LOs (EV + CAPM) fed through the real prompt path, measuring per-LO
+coverage in the output and whether the integration claim survives reviewer
+verification. The retrieval design is deterministic and unit-testable; the
+prompt contract is the part that needs evidence first.
 
 ## 5. What the bank does NOT support changing
 
