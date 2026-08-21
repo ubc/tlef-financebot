@@ -3894,3 +3894,199 @@ from the party who owns them; the token cost buys provenance, not a metric.
 Worth re-testing on the failing LO family (experiment 14's) where hardness
 does not fall out of the material — the CAPM chunks handed both arms the hard
 construction, which made this the easiest possible test to tie.
+
+# Experiment 21 — the hardness-moves menu on the failing LO family (R2 A/B)
+
+_Run 2026-08-21, branch `saurav/instructor-difficulty-rubric` (commit 927ac4f).
+Provenance of the moves: docs/difficulty-ratings-analysis.md §2 and R2._
+
+## Method
+
+Arm `base` = the shipped prompt with `HARDNESS_MOVES` stripped from the built
+string by exact match; arm `moves` = as built. Everything else identical and
+both arms under the instructor's rubric (R1): LO "Distinguish firm vs
+enterprise value" (experiment 14's failing EV/EBITDA family), target `hard`,
+chunks fixed from the recorded experiment-B3 prompt, no instructor preset,
+`gpt-5.6-luna`, generator+reviewer effort `high`, single-shot. n=4 per arm.
+
+## Results
+
+| | base | moves |
+|---|---|---|
+| routing | 2 numeric, 2 conceptual | **4 conceptual** |
+| self-label == target | 4/4 (but see below) | 4/4 |
+| reviewer | 2 pass, **2 flag** | **4 pass** |
+| difficulty complaints | **2/4** | **0/4** |
+
+**Both base flags are the residual fault this change targets, named in the
+reviewer's own words:** *"a straightforward comparable-multiple calculation
+followed by adding non-core assets… no strategic or backward reasoning…
+better calibrated as medium calculation"* and *"not a hard chain of more than
+two distinct concepts or formula types. Relabel the difficulty as medium."*
+On this LO family, numeric-hard may simply not be constructible from the
+material — its EV/EBITDA arithmetic tops out at about two concepts, which the
+rubric calls medium — and the base generator kept attempting it and inflating
+the label, exactly the experiment-14 pattern.
+
+**The moves arm did not force fake-hard numerics. It routed around the
+impossible ask** — 4/4 conceptual — and executed R2's conceptual instruction
+precisely: every question is a minimal-pair discrimination requiring BOTH
+asset-scope AND capital-structure-neutrality rules at once, with distractors
+each built from a single wrong step. The reviewer's criterion-5 language
+tracks the construction: *"defensible rather than mere definition recall"*,
+*"must apply both related rules simultaneously"*. Zero difficulty complaints.
+
+Read together with experiment 20: on a material-supported hard LO (CAPM) the
+menu is inert (both arms found the hard construction anyway); on a family
+where hard calculation exceeds the material, the menu converts inflated-label
+numerics into honestly-hard conceptuals. Both directions are the behaviour we
+want from a construction menu that costs nothing at easy/medium.
+
+## Caveats
+
+- n=4/arm, one LO, no preset. **Untested: `hard` + the calculation preset on
+  this family** — an instructor explicitly asking for hard calculation here
+  would pit the preset against the menu's routing pressure, and which wins is
+  unmeasured. Worth a cell before relying on it.
+- The 4/4 conceptual monoculture is also a diversity observation: all four
+  stems are variations of one V-vs-EV comparison scenario. That is largely
+  the LO's own shape, and batch diversity was already an open problem
+  (experiment 1), but the menu plausibly narrows it further on
+  distinguish-type LOs.
+
+## Decision — ship R2
+
+It produced the first zero-difficulty-complaint batch recorded on this LO
+family, by the honest route (construct real hardness where it is
+constructible) rather than the dishonest one (inflate the label). Gated to
+`hard` targets, so the cost at easy/medium is zero tokens.
+
+# Experiment 22 — backward-widened grounding probe (R7 option 1, pre-implementation)
+
+_Run 2026-08-21, branch `saurav/instructor-difficulty-rubric` (shipped prompt =
+R1 rubric + R2 moves). Probe harness only — no pipeline change. Motivation:
+experiment 21 suggested numeric-hard on the EV/EBITDA family is unconstructible
+from single-LO grounding, and the instructor's bank chains HIGH questions
+backward across classes (12 of its 23 HIGH items sit in the cumulative
+Class 9-10 quiz)._
+
+## Method
+
+Same LO, target, model, efforts, and single-shot protocol as experiment 21.
+Arms differ ONLY in grounding:
+
+- **narrow** — the six EV-LO chunks exactly as experiment 21 used them.
+- **widened** — four valuation-relevant EV chunks + two CAPM rate-estimation
+  chunks (Class 16, an earlier objective), each prefixed: *"Supporting material
+  from an EARLIER learning objective, already taught… the question must still
+  primarily test the current learning objective."*
+
+Pre-registered: widened can construct numeric-hard without difficulty
+complaints; narrow reproduces experiment 21; watch for off-LO drift.
+
+## Results
+
+| | narrow | widened |
+|---|---|---|
+| routing | 4/4 conceptual | **3 numeric**, 1 conceptual |
+| reviewer | 4 pass | 2 pass, 2 flag |
+| difficulty complaints | 0/4 | 2/4 (both flags) |
+
+**Narrow replicated experiment 21 exactly** — 4/4 conceptual, 4/4 pass. Good
+reproducibility for the n.
+
+**The pass that matters: widened #2 is the first passing numeric-hard recorded
+on this family.** A deferred-start DCF (permitting delay pushes FCFs to end of
+Y2/Y3 — move 5 executed) chained into the EV→V bridge, distractors each a
+single-step error (wrong timing, omitted non-core, no discounting), and the
+reviewer endorsed the label in construction terms: *"delayed cash-flow timing,
+operating-value classification, and non-core-asset adjustment provide a
+sufficiently multi-step calculation for the stated hard difficulty."*
+
+**But the effect is routing more than chaining.** None of the three numerics
+used the CAPM material — the offered chain went untaken. #2's chain came from
+Class 17 NPV + Class 20 material that sits in BOTH arms' pools; the earlier-
+objective label appears to have licensed numeric ambition rather than supplied
+the specific ingredient. And #3/#4 regressed to the familiar
+multiple-plus-non-core template — medium work labelled hard, flagged with the
+same words as experiments 14 and 21. The moves menu was available and unused
+in both.
+
+## Reading
+
+Widening is NECESSARY on this family (narrow cannot even attempt numeric-hard
+honestly) and PARTIALLY sufficient (1/3 numerics genuinely hard). The binding
+constraint is now split: pool AND inclination. The label alone does not make
+the model chain the offered concept; when it declines, it falls back to the
+template the flags keep catching.
+
+## Implications for R7's implementation
+
+1. Option 1 (deterministic backward-widening) is worth implementing — it is
+   the difference between 0/4 and 3/4 numeric attempts, and it produced the
+   first real pass.
+2. Pair it with one prompt line CONNECTING the moves menu to the widened
+   material — the earlier-objective chunks exist precisely so a move can chain
+   them; a hard question that ignores them is probably not hard. Cheap, and
+   targets the 2/3 template regression directly.
+3. If template regression survives that, option 2 (move-first two-pass
+   generation) is the escalation, not a bigger prompt.
+
+n=4/arm, one LO, one prerequisite pairing — directional, not conclusive.
+
+# Experiment 23 — R7 as implemented: widening enables, the connector does not compel
+
+_Run 2026-08-21, branch `saurav/instructor-difficulty-rubric` (commit ab4fc86 —
+R7 shipped: 4/2 split retrieval, labeled supporting chunks via renderChunks,
+connector line in GENERATOR_PROMPT). Same fixtures, arms and n as experiment
+22, but the widened arm now flows through the REAL implementation surface:
+chunks flagged `supporting: true`, shipped label, shipped connector._
+
+## Results
+
+| | narrow | widened (real impl.) |
+|---|---|---|
+| routing | 4/4 conceptual | 2 numeric, 2 conceptual |
+| reviewer | 4 pass | 2 pass, 1 flag, **1 reject** |
+| difficulty complaints | 0/4 | 2/4 (the flag and the reject) |
+| CAPM chain taken | — | **0/4** |
+
+Narrow replicated a third consecutive time (4/4 conceptual pass).
+
+**The reject is the system working, not failing.** Widened #2 built a DCF +
+EV-bridge — the same shape as experiment 22's pass — but WITHOUT any hardness
+move applied (plain FCF1..3, rate given), and the reviewer rejected it in the
+rubric's own terms: *"does not involve more than two distinct concepts or
+formula types, backward/strategic solving…"*. Experiment 22's passing version
+had the deferred-timing move; this draw skipped it. In production the reject
+fires Option B's retry with that critique quoted back — a mitigation this
+single-shot harness deliberately does not capture.
+
+**Across both widened arms (n=8): 5 numeric attempts, 1 genuinely hard pass,
+4 honestly flagged/rejected as medium-labelled-hard, and the offered CAPM
+chain taken 0/8.** The connector line did not change the inclination at this
+n. What the R1+R2+R7 stack now reliably does on this family: enables numeric
+attempts (0/8 without widening), and catches every inflated label
+(no medium-work-labelled-hard PASSED in any widened run).
+
+## Reading, and the escalation path
+
+Option 1 stands: it is the difference between "cannot attempt numeric-hard"
+and "attempts it with honest filtering", it costs nothing at easy/medium, and
+it degrades gracefully. But demonstration-by-material plus description-by-
+connector has not made the model chain the OFFERED concept — consistent with
+this document's oldest lesson that description alone underperforms. The
+escalation candidates, in cost order:
+
+1. **A required `hardnessMove` output field at target hard** — the generator
+   must NAME the move it applied and what it chains; the reviewer checks the
+   claim against the question. Structure over exhortation, same mechanism as
+   the self-assessment fix.
+2. **Move-first two-pass generation** (R7 option 2): a cheap first call picks
+   the move and the prerequisite concept, the second call generates with both
+   pinned. Strongest expected effect, most machinery.
+
+Production note: rejects on this path now carry rubric-specific critiques, so
+Option B's retry loop — which turned 0/4 into 4/4 on verification failures —
+gets its first real chance at difficulty faults. Worth measuring with
+retryOnReject on before adding either escalation.

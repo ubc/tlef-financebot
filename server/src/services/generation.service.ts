@@ -11,6 +11,7 @@ import {
   questionsCol,
   questionVersionsCol,
   contentRunsCol,
+  themesCol,
 } from '../components/mongodb/collections';
 import { env } from '../config/env';
 import { createQuestion } from './questions.service';
@@ -76,6 +77,18 @@ const GENERATION_TARGET = 5;
 /** Chunks retrieved per question to ground the generator. */
 const RETRIEVE_TOP_K = 6;
 
+/** The hard-target grounding (R7): the LO keeps its FULL budget and earlier
+ * objectives' material comes on top — 8 chunks total. Probe evidence
+ * (experiment 22): the widened pool is the difference between 0/4 and 3/4
+ * honest numeric-hard attempts on the LO family whose own material tops out
+ * at medium. Originally 4+2 to hold the prompt size flat; raised to 6+2 on
+ * 2026-08-21 because the ~500 extra tokens are three orders of magnitude
+ * below anything Luna's context or pricing cares about, and losing two
+ * primary chunks was the split's only real cost. Experiments 22-23 ran at
+ * 4+2 — note the condition change before comparing against them. */
+const HARD_PRIMARY_TOP_K = 6;
+const HARD_SUPPORTING_TOP_K = 2;
+
 /** Generator attempts before a structurally-invalid question is skipped. */
 const GENERATOR_MAX_ATTEMPTS = 2;
 
@@ -138,6 +151,11 @@ export interface GenerationJobData {
 interface RetrievedChunk {
   materialId?: string;
   text: string;
+  /** From an EARLIER learning objective's materials, retrieved only for hard
+   * targets so a hardness move has a second concept to chain (R7). Rendered
+   * with an explicit label so the model — and the reviewer judging grounding —
+   * can tell support apart from the LO's own material. */
+  supporting?: boolean;
 }
 interface RetrievedGrounding {
   chunks: RetrievedChunk[];
@@ -342,7 +360,9 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // Retrieve once: every question in this batch targets the same LO/prompt, so
   // the grounding query is identical. Variety across the batch comes from the
   // warm generator (GENERATOR_TEMPERATURE), not from re-retrieving.
-  const { chunks } = await retrieveChunks(collection, courseId, lo, prompt);
+  const { chunks } = await retrieveChunks(
+    collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
+  );
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
@@ -462,6 +482,8 @@ export async function regenerateQuestion(
     question.courseId,
     lo,
     prompt,
+    undefined,
+    current.difficulty === 'hard',
   );
   const generationInstruction = [
     prompt,
@@ -579,7 +601,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       result,
       message: `Pinned ${allowedMaterialIds.length} assigned material${allowedMaterialIds.length === 1 ? '' : 's'}`,
     });
-    const grounding = await retrieveChunks(courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds);
+    // Widen only when the instructor did NOT pin materials — a pin means
+    // exactly these, and the supporting pool would smuggle others back in.
+    const grounding = await retrieveChunks(
+      courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds,
+      input.pinnedMaterialIds === undefined && input.difficulty === 'hard',
+    );
     const chunks = grounding.chunks;
     stage = 'generating';
     await updateContentRun(runId, {
@@ -932,6 +959,51 @@ async function groundingMaterialIds(
   return selected;
 }
 
+/**
+ * Materials assigned to EARLIER learning objectives — same theme with a lower
+ * LO order, or any LO/theme-wide assignment in a lower-ordered theme (R7).
+ *
+ * Backward only, by course order: the instructor's HIGH questions chain into
+ * concepts already taught (12 of the bank's 23 HIGH items sit in the
+ * cumulative Class 9-10 quiz), never forward into material students have not
+ * seen. Materials already in the primary pool are excluded — a material
+ * assigned to both this LO and an earlier one is primary, not support.
+ */
+async function supportingMaterialIds(
+  courseId: ObjectId,
+  lo: { _id: ObjectId; themeId: ObjectId; order: number },
+  primaryMaterialIds: string[],
+): Promise<string[]> {
+  const [themes, los, materials] = await Promise.all([
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    materialsCol().find({ courseId, status: 'ready', deletedAt: { $exists: false } }).toArray(),
+  ]);
+  const currentTheme = themes.find((theme) => theme._id.equals(lo.themeId));
+  if (!currentTheme) return [];
+
+  const earlierThemeIds = themes
+    .filter((theme) => theme.order < currentTheme.order)
+    .map((theme) => theme._id);
+  const isEarlierTheme = (themeId: ObjectId) => earlierThemeIds.some((id) => id.equals(themeId));
+  const earlierLoIds = los
+    .filter((candidate) =>
+      isEarlierTheme(candidate.themeId) ||
+      (candidate.themeId.equals(lo.themeId) && candidate.order < lo.order))
+    .map((candidate) => candidate._id);
+
+  const primary = new Set(primaryMaterialIds);
+  return materials
+    .filter((material) =>
+      !primary.has(material._id.toHexString()) &&
+      material.assignments.some(
+        (assignment) =>
+          (assignment.loId !== undefined && earlierLoIds.some((id) => id.equals(assignment.loId as ObjectId))) ||
+          (assignment.loId === undefined && isEarlierTheme(assignment.themeId)),
+      ))
+    .map((material) => material._id.toHexString());
+}
+
 function normalizeMaterialName(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase('en-CA');
 }
@@ -950,22 +1022,39 @@ function extractMaterialMentions(prompt?: string): string[] {
 
 /** Retrieve strictly assigned grounding chunks. Missing assignments, a Qdrant
  * failure, or zero usable hits is a visible service failure: never fall back to
- * generating from the LO name or general model knowledge. */
+ * generating from the LO name or general model knowledge.
+ *
+ * `widen` (R7, hard targets only): split the budget HARD_PRIMARY_TOP_K /
+ * HARD_SUPPORTING_TOP_K between the LO's own materials and earlier
+ * objectives' materials, so a hardness move has a second concept to chain.
+ * The widen decision belongs to the CALLER, because `pinnedMaterialIds` here
+ * does not mean "instructor pinned" — the tracked pipeline routes its
+ * resolved ids through it on every run. Callers must not widen over an
+ * actual instructor pin (a pin means exactly these). Widening quietly
+ * reverts to the plain retrieval when the course has no earlier-objective
+ * material (the first LO) or the supporting search yields nothing. A supporting-search failure likewise degrades to
+ * primary-only rather than failing generation: support is an enrichment, and
+ * the strictness contract above covers the PRIMARY grounding.
+ */
 async function retrieveChunks(
   collection: string,
   courseId: ObjectId,
-  lo: { _id: ObjectId; themeId: ObjectId; name: string },
+  lo: { _id: ObjectId; themeId: ObjectId; name: string; order: number },
   prompt?: string,
   pinnedMaterialIds?: string[],
+  widen?: boolean,
 ): Promise<RetrievedGrounding> {
   const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo, prompt));
   if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+
+  const supportingIds = widen ? await supportingMaterialIds(courseId, lo, allowedMaterialIds) : [];
+  const primaryTopK = supportingIds.length > 0 ? HARD_PRIMARY_TOP_K : RETRIEVE_TOP_K;
 
   const query = prompt ? `${lo.name}\n${prompt}` : lo.name;
   const vector = await embedOne(query);
   let hits;
   try {
-    hits = await search(collection, vector, RETRIEVE_TOP_K, {
+    hits = await search(collection, vector, primaryTopK, {
       must: [{ key: 'materialId', match: { any: allowedMaterialIds } }],
     });
   } catch (err) {
@@ -975,16 +1064,39 @@ async function retrieveChunks(
     );
     throw new Error('generation-retrieval-failed', { cause: err });
   }
+  const toChunk = (hit: (typeof hits)[number]) => ({
+    materialId: typeof hit.payload?.materialId === 'string' ? hit.payload.materialId : undefined,
+    text: typeof hit.payload?.chunk === 'string' ? hit.payload.chunk : '',
+  });
   const allowed = new Set(allowedMaterialIds);
-  const chunks = hits
-    .map((hit) => ({
-      materialId: typeof hit.payload?.materialId === 'string' ? hit.payload.materialId : undefined,
-      text: typeof hit.payload?.chunk === 'string' ? hit.payload.chunk : '',
-    }))
+  const chunks: RetrievedChunk[] = hits
+    .map(toChunk)
     // Defense in depth: Qdrant should enforce the filter, but never trust a
     // malformed/stale hit enough to write a forbidden sourceRef.
     .filter((chunk) => chunk.materialId !== undefined && allowed.has(chunk.materialId) && chunk.text.length > 0);
   if (chunks.length === 0) throw new Error('generation-no-grounding');
+
+  if (supportingIds.length > 0) {
+    try {
+      const supportingHits = await search(collection, vector, HARD_SUPPORTING_TOP_K, {
+        must: [{ key: 'materialId', match: { any: supportingIds } }],
+      });
+      const supportingAllowed = new Set(supportingIds);
+      chunks.push(
+        ...supportingHits
+          .map(toChunk)
+          .filter((chunk) =>
+            chunk.materialId !== undefined && supportingAllowed.has(chunk.materialId) && chunk.text.length > 0)
+          .map((chunk) => ({ ...chunk, supporting: true })),
+      );
+    } catch (err) {
+      console.warn(
+        `[generation] supporting-material retrieval failed for ${collection}, ` +
+          `continuing with primary grounding only: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
   return { chunks, allowedMaterialIds };
 }
 
@@ -1225,7 +1337,14 @@ function normalizeDecision(value: unknown): 'pass' | 'flag' | 'reject' {
 // --- Prompts (exported so Phase 4 content QA can tune them independently) -----
 
 function renderChunks(chunks: RetrievedChunk[]): string {
-  return chunks.map((chunk, i) => `[${i + 1}] ${chunk.text}`).join('\n\n');
+  return chunks
+    .map((chunk, i) =>
+      chunk.supporting
+        ? `[${i + 1}] [Supporting material from an EARLIER learning objective, already taught `
+          + `to these students. You may chain its concepts into the question, but the question `
+          + `must still primarily test the current learning objective.]\n${chunk.text}`
+        : `[${i + 1}] ${chunk.text}`)
+    .join('\n\n');
 }
 
 /**
@@ -1269,6 +1388,49 @@ export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
     + 'question must remain solvable from the supplied material.',
 };
 
+/**
+ * How a HARD question is manufactured, not just what one is. The rubric above
+ * defines the standard; this is the construction menu behind it — in the
+ * instructor's released bank, nearly every HIGH calculation question is a MID
+ * question plus exactly ONE of these complications (docs/
+ * difficulty-ratings-analysis.md §2). Included in GENERATOR_PROMPT only when
+ * the target is `hard`, so easy/medium calls pay nothing for it — the
+ * experiment-2 lesson that global prompt additions are not free.
+ *
+ * A single pre-joined string, exported by name, so an A/B harness can remove
+ * the block from a built prompt by exact match.
+ */
+export const HARDNESS_MOVES: string = [
+  'HOW TO MAKE IT HARD. In this course\'s own released question bank, a hard question',
+  'is a medium question plus ONE deliberate complication that hides the approach.',
+  'Pick the ONE move that best fits this learning objective and apply it. Do NOT',
+  'enlarge the arithmetic — hardness is connections across concepts, and what the',
+  'stem withholds, never bigger numbers:',
+  '  1. Off-cycle timing: the event happens mid-stream, so a count or remaining term',
+  '     must be re-derived rather than read off the stem (value a loan just after',
+  '     payment 14 of 36; sell the asset one year after purchase).',
+  '  2. Hidden parameter: a needed input (an original payment, a remaining maturity,',
+  '     an implied rate) is not given and must be reconstructed from other stated',
+  '     terms before the asked-for quantity can even be set up.',
+  '  3. Value = benefit minus cost: the computed value is one LEG of a trade; the',
+  '     answer is the difference, and identifying the two legs is the real work.',
+  '  4. Regime change: a growth rate or rate environment switches partway (fast',
+  '     growth for some years, then a steady state), chaining two formulas across',
+  '     the boundary and discounting the far side back through the near side.',
+  '  5. Deferred start: the stream begins some periods from now, so its standard',
+  '     formula value lands at the wrong date and must be discounted again.',
+  '  6. Reinvestment chain: interim cash flows are reinvested at a DIFFERENT rate;',
+  '     the answer needs their future value plus the terminal piece, then a return.',
+  '  7. Two-approach comparison: the same quantity valued two ways (a multiple vs. a',
+  '     discounted value), with the question living in the reconciliation.',
+  '  8. Payments due today rather than at period-end — combined with another move,',
+  '     never alone.',
+  'For a CONCEPTUAL hard question, sharpen instead of complicating: the correct',
+  'answer must require holding two related-but-easily-confused rules in mind at',
+  'once, and every distractor must be built from a SINGLE wrong step a student',
+  'takes when the rules blur.',
+].join('\n');
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
@@ -1296,6 +1458,19 @@ export function GENERATOR_PROMPT(params: {
     'does not hand over — and only if you cannot, return the honest lower label. A',
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
+    params.difficulty === 'hard' ? HARDNESS_MOVES : '',
+    // The connector (R7): experiment 22 measured the widened pool licensing
+    // numeric ambition while the offered chain went untaken 3/3 — the model
+    // fell back to its single-concept template on 2 of 3. The material and the
+    // menu have to be tied together explicitly.
+    params.difficulty === 'hard' && params.chunks.some((chunk) => chunk.supporting)
+      ? 'Some chunks below are marked as supporting material from EARLIER learning\n'
+        + 'objectives. They are provided precisely so a hardness move can CHAIN one of\n'
+        + 'their concepts into this question. A hard question that ignores them and stays\n'
+        + 'inside the current objective\'s single concept is probably not hard. The\n'
+        + 'question must still primarily TEST the current learning objective — the\n'
+        + 'chained concept is a step on the way, never the thing being tested.'
+      : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
