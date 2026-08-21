@@ -77,12 +77,16 @@ const GENERATION_TARGET = 5;
 /** Chunks retrieved per question to ground the generator. */
 const RETRIEVE_TOP_K = 6;
 
-/** The hard-target split of RETRIEVE_TOP_K (R7): the LO's own material keeps
- * the majority, earlier objectives' material fills the rest, so the prompt
- * size stays flat. Probe evidence (experiment 22): the widened pool is the
- * difference between 0/4 and 3/4 honest numeric-hard attempts on the LO
- * family whose own material tops out at medium. */
-const HARD_PRIMARY_TOP_K = 4;
+/** The hard-target grounding (R7): the LO keeps its FULL budget and earlier
+ * objectives' material comes on top — 8 chunks total. Probe evidence
+ * (experiment 22): the widened pool is the difference between 0/4 and 3/4
+ * honest numeric-hard attempts on the LO family whose own material tops out
+ * at medium. Originally 4+2 to hold the prompt size flat; raised to 6+2 on
+ * 2026-08-21 because the ~500 extra tokens are three orders of magnitude
+ * below anything Luna's context or pricing cares about, and losing two
+ * primary chunks was the split's only real cost. Experiments 22-23 ran at
+ * 4+2 — note the condition change before comparing against them. */
+const HARD_PRIMARY_TOP_K = 6;
 const HARD_SUPPORTING_TOP_K = 2;
 
 /** Generator attempts before a structurally-invalid question is skipped. */

@@ -228,10 +228,10 @@ describe('difficulty calibration prompts', () => {
 
     await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'hard', byPuid: 'PUID-INSTR' });
 
-    // Two searches: the LO's own materials at the reduced top-K, then the
-    // earlier-objective pool for the remainder — total budget unchanged.
+    // Two searches: the LO keeps its full budget, the earlier-objective pool
+    // comes on top — 8 chunks total on a widened hard target.
     expect(search).toHaveBeenCalledTimes(2);
-    expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(4);
+    expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(6);
     expect(jest.mocked(search).mock.calls[1]?.[2]).toBe(2);
     expect(jest.mocked(search).mock.calls[1]?.[3]).toEqual({
       must: [{ key: 'materialId', match: { any: [supportMaterialId.toHexString()] } }],
