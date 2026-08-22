@@ -50,6 +50,7 @@ import {
   registerGenerationJobs,
   REVIEWER_PROMPT,
   runGenerationPipeline,
+  VALIDATOR_PROMPT,
 } from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
@@ -380,20 +381,57 @@ describe('difficulty calibration prompts', () => {
     expect(build('medium')).not.toContain('DECLARE YOUR MOVE');
     const reviewer = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
     expect(reviewer).toContain('Declared hardness device');
-    expect(reviewer).toContain('never re-litigate from scratch');
-    // Without an assignment the block is absent; with one, criterion 9 judges
-    // against it AND the declared misfit-fallback stays protected.
+    expect(reviewer).toContain('Never re-litigate from scratch');
+    // The reviewer NEVER sees the raw assignment (exp 27c: it anchored the
+    // verdict) — the move claim-check is the validator's, handed off as data.
     expect(reviewer).not.toContain('The platform ASSIGNED');
-    const withAssignment = REVIEWER_PROMPT({
+    const withAssessment = REVIEWER_PROMPT({
       loName: 'Compute IRR',
       question: generatorOutput() as never,
+      moveAssessment: 'declared regime change is implemented and matches the assignment',
+    });
+    expect(withAssessment).toContain('The structure validator assessed the declared hardness move');
+    expect(withAssessment).toContain('declared regime change is implemented and matches the assignment');
+    // The verdict policy stays with the reviewer, in criterion 9 itself.
+    expect(withAssessment).toContain('MISFIT-FALLBACK to the');
+    expect(withAssessment).toContain('never a');
+    expect(withAssessment).toContain('remains a reject');
+  });
+
+  it('the validator holds the move claim-check, with fallback framed as legitimate', () => {
+    const withMove = VALIDATOR_PROMPT({
+      loName: 'Compute IRR',
+      question: { ...generatorOutput(), hardnessMove: 'deferred start: stream begins at year 3' } as never,
+      assignedMove: 'deferred start: begin the cash-flow stream some periods in the future',
+    });
+    expect(withMove).toContain('declared "hardnessMove" as a factual claim');
+    expect(withMove).toContain('The platform ASSIGNED this move');
+    expect(withMove).toContain('not whether falling');
+    expect(withMove).toContain('"moveAssessment"');
+    // No declared move and no assignment: the block is absent and the output
+    // shape stays single-field.
+    const without = VALIDATOR_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(without).not.toContain('moveAssessment');
+    expect(without).toContain('{ "roleAssessment": string }');
+  });
+
+  it('replaces the moves catalog with compact framing when a move is assigned', () => {
+    const assigned = GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty: 'hard',
+      chunks: [{ text: 'IRR material' }],
       assignedMove: 'regime change: switch a growth rate partway',
     });
-    expect(withAssignment).toContain('The platform ASSIGNED the generator this hardness move');
-    expect(withAssignment).toContain('regime change: switch a growth rate partway');
-    expect(withAssignment).toContain('DID');
-    expect(withAssignment).toContain('NOT FIT this objective and fell back');
-    expect(withAssignment).toContain('do not reject over the substitution alone');
+    expect(assigned).toContain('WHAT MAKES A QUESTION HARD');
+    expect(assigned).toContain('HAS BEEN ASSIGNED');
+    expect(assigned).not.toContain('HOW TO MAKE IT HARD');
+    // The escape hatch's referent survives the catalog's removal.
+    expect(assigned).toContain('two related-but-easily-confused rules');
+    // Without an assignment (harness/API callers) the full catalog remains.
+    const unassigned = GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty: 'hard', chunks: [{ text: 'IRR material' }],
+    });
+    expect(unassigned).toContain('HOW TO MAKE IT HARD');
+    expect(unassigned).not.toContain('WHAT MAKES A QUESTION HARD');
   });
 
   it('gives the generator the hardness-moves menu ONLY at target hard', () => {

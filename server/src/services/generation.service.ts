@@ -185,6 +185,9 @@ interface GeneratorOutput {
 }
 interface ValidatorOutput {
   roleAssessment: string;
+  /** Present when the question declares a hardness move: the validator's
+   * claim-check of declared-vs-implemented and declared-vs-assigned. */
+  moveAssessment?: string;
 }
 interface ReviewerOutput {
   decision: string;
@@ -347,7 +350,10 @@ async function retryRejectedCandidate(args: {
 
   const numerics = verifyGeneratedNumerics(retried);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: args.lo.name, question: retried, chunks: args.chunks }),
+    VALIDATOR_PROMPT({
+      loName: args.lo.name, question: retried, chunks: args.chunks,
+      ...(args.assignedMove ? { assignedMove: args.assignedMove } : {}),
+    }),
     { ...args.models.validator },
   );
   const review = await completeJson<ReviewerOutput>(
@@ -356,7 +362,7 @@ async function retryRejectedCandidate(args: {
       question: retried,
       chunks: args.chunks,
       roleAssessment: String(validation.roleAssessment ?? ''),
-      ...(args.assignedMove ? { assignedMove: args.assignedMove } : {}),
+      ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
       ...reviewerVerificationParams(numerics),
     }),
     { ...args.reviewerStep },
@@ -431,7 +437,10 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // Validator and reviewer each run on their own model. Structure validation
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
-      VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks }),
+      VALIDATOR_PROMPT({
+        loName: lo.name, question: generated, chunks,
+        ...(assignedMoves[i] ? { assignedMove: assignedMoves[i] } : {}),
+      }),
       { ...models.validator },
     );
     const review = platformSettings.featureFlags.reviewerAgent
@@ -441,7 +450,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             question: generated,
             chunks,
             roleAssessment: String(validation.roleAssessment ?? ''),
-            ...(assignedMoves[i] ? { assignedMove: assignedMoves[i] } : {}),
+            ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
             ...reviewerVerificationParams(numerics),
           }),
           { ...models.reviewer },
@@ -557,7 +566,10 @@ export async function regenerateQuestion(
   // Verified before the review so the reviewer sees the verifier's verdict.
   const numerics = verifyGeneratedNumerics(generated);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks: grounding.chunks }),
+    VALIDATOR_PROMPT({
+      loName: lo.name, question: generated, chunks: grounding.chunks,
+      ...(regenerateMove ? { assignedMove: regenerateMove } : {}),
+    }),
     { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
@@ -567,7 +579,7 @@ export async function regenerateQuestion(
           question: generated,
           chunks: grounding.chunks,
           roleAssessment: String(validation.roleAssessment ?? ''),
-          ...(regenerateMove ? { assignedMove: regenerateMove } : {}),
+          ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
           ...reviewerVerificationParams(numerics),
         }),
         { ...platformSettings.models.reviewer },
@@ -715,7 +727,10 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of generated) {
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
-          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated, chunks }),
+          VALIDATOR_PROMPT({
+            loName: lo.name, question: candidate.generated, chunks,
+            ...(assignedMoves[candidate.item] ? { assignedMove: assignedMoves[candidate.item] } : {}),
+          }),
           { ...models.validator },
         );
         validated.push(candidate);
@@ -754,7 +769,9 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 question: candidate.generated,
                 chunks,
                 roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
-                ...(assignedMoves[candidate.item] ? { assignedMove: assignedMoves[candidate.item] } : {}),
+                ...(candidate.validation?.moveAssessment
+                  ? { moveAssessment: String(candidate.validation.moveAssessment) }
+                  : {}),
                 ...reviewerVerificationParams(candidateNumerics),
               }),
               { ...models.reviewer },
@@ -1482,6 +1499,27 @@ export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
  * A single pre-joined string, exported by name, so an A/B harness can remove
  * the block from a built prompt by exact match.
  */
+/**
+ * The compact replacement for the moves CATALOG when the move is ASSIGNED
+ * (which, since assignMovesForBatch, is every production hard call). The
+ * seven-entry menu existed to help the model choose; the server chooses now,
+ * and showing seven alternatives next to a decree is noise at best. What
+ * survives is what the catalog block smuggled in besides the list: the
+ * bank's framing principle, and the conceptual pattern the assignment's
+ * escape hatch refers to — without this, the fallback would reference a
+ * pattern the prompt no longer defines. ~120 tokens against the menu's ~450.
+ */
+export const HARDNESS_FRAMING: string = [
+  'WHAT MAKES A QUESTION HARD. In this course\'s own released question bank, a hard',
+  'question is a medium question plus ONE deliberate complication that hides the',
+  'approach. Do NOT enlarge the arithmetic — hardness is connections across',
+  'concepts, and what the stem withholds, never bigger numbers.',
+  'For a CONCEPTUAL hard question the pattern is: the correct answer requires',
+  'holding two related-but-easily-confused rules in mind at once, and every',
+  'distractor is built from a SINGLE wrong step a student takes when the rules',
+  'blur.',
+].join('\n');
+
 export const HARDNESS_MOVES: string = [
   'HOW TO MAKE IT HARD. In this course\'s own released question bank, a hard question',
   'is a medium question plus ONE deliberate complication that hides the approach.',
@@ -1529,7 +1567,7 @@ export const HARDNESS_MOVES: string = [
  */
 export const HARDNESS_MOVE_DECLARATION: string = [
   'DECLARE YOUR MOVE. Include ONE additional field in your JSON:',
-  '  "hardnessMove": one sentence naming WHICH move above you applied and HOW the',
+  '  "hardnessMove": one sentence naming WHICH hardness move you applied and HOW the',
   'question implements it — specifically what the stem withholds or chains, e.g.',
   '  "off-cycle timing: the loan is valued just after payment 14 of 36, so the',
   '   remaining 22-payment term is never stated and must be derived".',
@@ -1654,7 +1692,13 @@ export function GENERATOR_PROMPT(params: {
     'does not hand over — and only if you cannot, return the honest lower label. A',
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
-    params.difficulty === 'hard' ? HARDNESS_MOVES : '',
+    // With an assignment the seven-entry catalog is dead weight (the server
+    // chose) and an invitation to blend; the compact framing keeps the two
+    // things the catalog block also carried — the hardness principle and the
+    // conceptual pattern the assignment's escape hatch references.
+    params.difficulty === 'hard'
+      ? (params.assignedMove ? HARDNESS_FRAMING : HARDNESS_MOVES)
+      : '',
     params.difficulty === 'hard' ? HARDNESS_MOVE_DECLARATION : '',
     params.difficulty === 'hard' && params.assignedMove
       ? HARDNESS_MOVE_ASSIGNMENT(params.assignedMove)
@@ -1966,13 +2010,43 @@ export function VALIDATOR_PROMPT(params: {
   question: GeneratorOutput;
   /** The same grounding the generator was given. See REVIEWER_PROMPT for why. */
   chunks?: RetrievedChunk[];
+  /**
+   * The platform-assigned hardness move, when there was one. The move CHECK
+   * lives here, not in the reviewer, for two measured reasons (2026-08-22):
+   * the validator is the claim-check specialist (2/3 vs the reviewer's 0/3 on
+   * planted per-item faults), and experiment 27c showed the assignment
+   * anchoring the reviewer's verdict upward when it held the assignment
+   * itself — one criterion-2 displacement landed as a flag where the
+   * identical fault drew rejects blind. The reviewer now receives this
+   * validator's moveAssessment as data (like roleAssessment) and never sees
+   * the raw assignment.
+   */
+  assignedMove?: string;
 }): string {
+  const declaredMove = typeof params.question.hardnessMove === 'string' && params.question.hardnessMove.trim().length > 0;
   return [
     'You are a structure validator for finance practice questions. For the question below,',
     `written for the LO "${params.loName}", assess whether EACH option's assigned role`,
     'genuinely fits its text (is the "correct" option actually correct? is each',
     '"common-misconception" a realistic misconception? etc.).',
     '',
+    ...(declaredMove || params.assignedMove
+      ? ['ALSO assess the question\'s declared "hardnessMove" as a factual claim:',
+         '  - Is the declared device genuinely IMPLEMENTED? If it claims the stem withholds',
+         '    a quantity, check the stem truly withholds it; if it claims two concepts are',
+         '    chained, check both are genuinely required to answer.',
+         ...(params.assignedMove
+           ? [`  - The platform ASSIGNED this move: "${params.assignedMove}".`,
+              '    Does the declaration match the assignment? A declaration that the assignment',
+              '    DID NOT FIT and fell back to the conceptual pattern is a legitimate outcome —',
+              '    assess whether the stated misfit reason is plausible, not whether falling',
+              '    back was disobedient. A declaration of a DIFFERENT move with no misfit',
+              '    explanation is a substitution — say so plainly.']
+           : []),
+         '  Report this in a separate "moveAssessment" field. Facts only: implemented or',
+         '  not, matching or not, and why — the reviewing instructor decides what it means.',
+         '']
+      : []),
     ...(params.chunks?.length
       ? ['Judge against the COURSE MATERIAL below — it is what the question was written',
          'from and what the student has been taught:',
@@ -1983,7 +2057,9 @@ export function VALIDATOR_PROMPT(params: {
     JSON.stringify(params.question),
     '',
     'Respond with ONLY this JSON shape:',
-    '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
+    declaredMove || params.assignedMove
+      ? '{ "roleAssessment": string, "moveAssessment": string }  // one concise paragraph each'
+      : '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
   ].join('\n');
 }
 
@@ -2028,12 +2104,15 @@ export function REVIEWER_PROMPT(params: {
    * common-misconception role, so a swap changes student behaviour.
    */
   roleAssessment?: string;
-  /** The platform-assigned hardness move (assignMovesForBatch), when there was
-   * one. Closes the loop on criterion 9: without it, a generator that silently
-   * substituted an easier move than assigned — and declared the substitute
-   * honestly — would pass review. Zero substitutions measured across 20
-   * assigned draws (exps 26-27b), so this is hardening, not a fix. */
-  assignedMove?: string;
+  /**
+   * The structure validator's move claim-check (declared-vs-implemented,
+   * declared-vs-assigned), replacing direct assignment visibility on
+   * 2026-08-22: exp 27c showed the raw assignment anchoring this reviewer's
+   * verdict upward, and the validator is the measured claim-check specialist.
+   * This reviewer weighs the finding and owns the verdict policy; it never
+   * sees the assignment itself.
+   */
+  moveAssessment?: string;
 }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
@@ -2104,13 +2183,16 @@ export function REVIEWER_PROMPT(params: {
     // specific property does not. Only questions that CARRY the field are
     // judged by it; its absence on a hard question is caught deterministically
     // before this review and is not this criterion's job.
-    '  9. Declared hardness device — if the question carries a "hardnessMove" field,',
-    '     verify the question actually IMPLEMENTS the declared device: if it claims the',
-    '     stem withholds a quantity, check the stem truly withholds it; if it claims two',
-    '     concepts are chained, check both are genuinely required to answer. A',
-    '     declaration the question does not implement means the difficulty label is',
-    '     inflated — flag it and name the gap precisely. Judge the declared device',
-    '     against the question, never re-litigate from scratch whether the question',
+    '  9. Declared hardness device — weigh the structure validator\'s move assessment',
+    '     (passed below when present), the same way as its role assessment: a declared',
+    '     move the question does not implement means the difficulty label is inflated —',
+    '     flag it and name the gap precisely. A declared MISFIT-FALLBACK to the',
+    '     conceptual pattern is legitimate: judge the fallback question on its own',
+    '     merits. A SUBSTITUTION the validator identifies (a different move than',
+    '     assigned, no misfit explanation) is a FLAG naming the substitution, never a',
+    '     reject on its own. Implementing a move satisfies THIS criterion only — a',
+    '     faithful move that does not test the learning objective (criterion 2)',
+    '     remains a reject. Never re-litigate from scratch whether the question',
     '     "feels" hard.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
@@ -2183,30 +2265,11 @@ export function REVIEWER_PROMPT(params: {
          'actually correct remains a reject: that is a wrong answer key, not a label.',
          '']
       : []),
-    // The fallback-protection wording is the load-bearing part: the FX cell
-    // (exp 27b) legitimately produces declared misfit-fallbacks, and a
-    // compliance-minded reading of the assignment would reject exactly the
-    // honest behaviour the escape hatch exists for. Substitution is a FLAG,
-    // not a reject, for the same reason role mislabels are: instructor-fixable
-    // on a question that may otherwise be sound.
-    ...(params.assignedMove
-      ? ['The platform ASSIGNED the generator this hardness move:',
-         `  "${params.assignedMove}"`,
-         'Judge criterion 9 against this assignment: the declared move should be this',
-         'move, as implemented in the question. A declaration that the assignment DID',
-         'NOT FIT this objective and fell back to the conceptual hard pattern is',
-         'legitimate, not a violation — judge the fallback question on its own merits.',
-         'But a question that implements a DIFFERENT move than assigned, with no',
-         'misfit explanation in its declaration, should be FLAGGED naming the',
-         'substitution — do not reject over the substitution alone.',
-         // Anti-anchoring, added after exp 27c: with this block present, one
-         // criterion-2 displacement landed as a flag where the identical fault
-         // drew rejects in exps 27/27b — the review opened by crediting the
-         // implemented move. Implementation credit must not soften the LO bar.
-         'Implementing the assigned move satisfies criterion 9 ONLY. It does not weigh',
-         'in favour of any other criterion: a question that implements the move',
-         'faithfully but does not test the learning objective (criterion 2) remains a',
-         'reject, exactly as it would be without an assignment.',
+    ...(params.moveAssessment
+      ? ['The structure validator assessed the declared hardness move as a claim:',
+         `  "${params.moveAssessment}"`,
+         'Weigh it under criterion 9. It reports facts (implemented or not, matching the',
+         'assignment or not); the verdict is yours, under criterion 9\'s policy.',
          '']
       : []),
     'Question JSON:',

@@ -117,6 +117,7 @@ export interface RunRecord {
   derivedValues?: unknown;
   verificationFailure?: string | null;
   roleAssessment?: string;
+  moveAssessment?: string;
   decision?: string;
   reasoning?: string;
   difficultyComplaint?: boolean;
@@ -170,8 +171,11 @@ async function judgeOnce(args: {
 }): Promise<Omit<RunRecord, 'arm' | 'fixture' | 'target' | 'i'>> {
   const { lo, chunks, generated, arm, model, assignedMove, track } = args;
   const verification = verifyGeneratedNumerics(generated);
-  const validator = await completeJson<{ roleAssessment: string }>(
-    VALIDATOR_PROMPT({ loName: lo, question: generated, chunks }),
+  const validator = await completeJson<{ roleAssessment: string; moveAssessment?: string }>(
+    VALIDATOR_PROMPT({
+      loName: lo, question: generated, chunks,
+      ...(assignedMove ? { assignedMove } : {}),
+    }),
     { model, ...arm.validator, onUsage: track },
   );
   const reviewer = await completeJson<{ decision: string; reasoning: string }>(
@@ -182,7 +186,7 @@ async function judgeOnce(args: {
       ...(verification.failure ? { verificationFailure: verification.failure } : {}),
       ...(!verification.failure && generated.numericKind === 'numeric' ? { verificationProven: true } : {}),
       roleAssessment: validator.roleAssessment,
-      ...(assignedMove ? { assignedMove } : {}),
+      ...(validator.moveAssessment ? { moveAssessment: validator.moveAssessment } : {}),
     }),
     { model, reasoningEffort: 'high', ...arm.reviewer, onUsage: track },
   );
@@ -199,6 +203,7 @@ async function judgeOnce(args: {
     derivedValues: generated.derivedValues,
     verificationFailure: verification.failure ?? null,
     roleAssessment: validator.roleAssessment,
+    ...(validator.moveAssessment ? { moveAssessment: validator.moveAssessment } : {}),
     decision: reviewer.decision,
     reasoning: reviewer.reasoning,
     difficultyComplaint: hasDifficultyComplaint(String(reviewer.reasoning ?? '')),
