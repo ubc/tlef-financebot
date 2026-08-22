@@ -1600,11 +1600,22 @@ export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
     'YOUR HARDNESS MOVE HAS BEEN ASSIGNED for this question. Implement EXACTLY this move:',
     `  ${move}`,
     'Do not substitute a different move. Declare this move, as implemented, in the',
-    '"hardnessMove" field. If this move genuinely cannot be implemented for this',
-    'learning objective from the material provided — including when the right question',
-    'for this objective is CONCEPTUAL — fall back to the conceptual hard pattern (two',
-    'easily-confused rules, single-wrong-step distractors) and say in the declaration',
-    'that the assigned move did not fit and why.',
+    '"hardnessMove" field.',
+    // The subordination clause. Measured 2026-08-21 (experiment 27, FX cell):
+    // the escape hatch fired correctly when a move was UNIMPLEMENTABLE, but
+    // three technically-implementable moves produced sound arithmetic that
+    // displaced the objective — the LO's content became a stem assertion and
+    // every question was rejected on criterion 2 ("the student never analyzes
+    // how macro drivers influence the rate"). Implementability is not fit.
+    'The move is a MEANS of testing the learning objective, never the point of the',
+    'question. If implementing it would reduce the objective to a background',
+    'assertion — the stem merely ASSERTS the objective\'s content while the student',
+    'only exercises the move\'s arithmetic — that is a MISFIT even though the move is',
+    'technically implementable. On a misfit of any kind, including when the right',
+    'question for this objective is CONCEPTUAL, fall back to the hard pattern the',
+    'objective itself supports (for a conceptual objective: two easily-confused',
+    'rules, single-wrong-step distractors) and say in the declaration that the',
+    'assigned move did not fit and why.',
   ].join('\n');
 }
 
