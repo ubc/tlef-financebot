@@ -45,8 +45,10 @@ import {
   enqueueGenerationRun,
   GENERATOR_PROMPT,
   HARDNESS_MOVE_DECLARATION,
+  HARDNESS_MOVE_MENU,
   HARDNESS_MOVES,
   preseedingProgress,
+  retryMoveFor,
   registerGenerationJobs,
   REVIEWER_PROMPT,
   runGenerationPipeline,
@@ -341,6 +343,23 @@ describe('difficulty calibration prompts', () => {
     await expect(enqueueGenerationRun({
       courseId, loId, count: 1, difficulty: 'medium', hardnessMove: 'regime-change', byPuid: 'PUID-INSTR',
     })).rejects.toThrow('generation-hardness-move-requires-hard');
+  });
+
+  it('a reject-retry rotates to the next move unless the critique is about faithfulness or the move is locked', () => {
+    const first = HARDNESS_MOVE_MENU[0]!.text;
+    const second = HARDNESS_MOVE_MENU[1]!.text;
+    const last = HARDNESS_MOVE_MENU[HARDNESS_MOVE_MENU.length - 1]!.text;
+    // Structural critique: the construction failed — move on.
+    expect(retryMoveFor(first, 'The keyed correct option is not correct; the rate formula assumes NPV is zero.', false)).toBe(second);
+    // Wraparound at the end of the menu.
+    expect(retryMoveFor(last, 'options collide at display precision', false)).toBe(first);
+    // Faithfulness critique: the move is right, the implementation is not — keep it.
+    expect(retryMoveFor(first, 'The declared hardness move is not genuinely implemented: the stem hands the term over.', false)).toBe(first);
+    // Locked (instructor-chosen or true/false): never rotate.
+    expect(retryMoveFor(first, 'wrong answer key', true)).toBe(first);
+    // No assignment, or a non-menu move (the T/F pattern): unchanged.
+    expect(retryMoveFor(undefined, 'wrong answer key', false)).toBeUndefined();
+    expect(retryMoveFor('conceptual two-rule claim: …', 'wrong answer key', false)).toBe('conceptual two-rule claim: …');
   });
 
   it('states the verdict policy to the reviewer and persists a valid suggestedDifficulty (2026-08-22)', async () => {

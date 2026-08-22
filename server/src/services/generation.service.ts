@@ -333,6 +333,35 @@ function reviewerVerificationParams(
  * Feature flags), because the cost is one extra generator+validator+reviewer
  * cycle per rejected question.
  */
+/**
+ * Which move the reject-retry implements (2026-08-22). Option B's measured
+ * win was on MECHANICAL critiques — "these two options collide at seed X" —
+ * where the fix is a local edit. On a decision-shaped LO ("Compare projects
+ * with PP and PI") it fired 3/3 and converted 0/3: the retries re-implemented
+ * the same doomed construction with the critique stapled on, because the
+ * assignment was pinned. A reject is the construction failing, so the retry
+ * now gets the NEXT move in the rotation — unless the critique is about the
+ * declared move not being implemented (then faithfulness is the fix and the
+ * move stays), or the move is locked (instructor-chosen, or true/false).
+ */
+export function retryMoveFor(
+  assignedMove: string | undefined,
+  critique: string,
+  locked: boolean,
+): string | undefined {
+  if (assignedMove === undefined || locked) return assignedMove;
+  if (/declared (hardness )?move|hardnessMove|substitut|not (genuinely )?implement/i.test(critique)) return assignedMove;
+  const index = HARDNESS_MOVE_MENU.findIndex((move) => move.text === assignedMove);
+  if (index < 0) return assignedMove;
+  return HARDNESS_MOVE_MENU[(index + 1) % HARDNESS_MOVE_MENU.length]!.text;
+}
+
+/** Appended to the reject critique when the retry carries a different move. */
+const RETRY_MOVE_CHANGED =
+  'The construction itself failed, not just a detail of it, so a DIFFERENT hardness '
+  + 'move has been assigned below. Build the new question around that move; do not '
+  + 'patch the rejected construction.';
+
 async function retryRejectedCandidate(args: {
   lo: { name: string };
   type: QuestionType;
@@ -343,13 +372,19 @@ async function retryRejectedCandidate(args: {
   reviewerStep: StepModelConfig;
   rejected: GeneratorOutput;
   critique: string;
-  /** The same assignment the rejected question carried: the replacement must
-   * implement the same move, not shop for an easier one. */
+  /** The assignment the rejected question carried. See retryMoveFor: the
+   * replacement keeps it only when the critique is about faithfulness to it;
+   * a structural reject gets the next move in the rotation. */
   assignedMove?: string;
+  /** True when the move must not change: the instructor chose it, or the
+   * question is true/false (one conceptual pattern, nothing to rotate to). */
+  moveLocked?: boolean;
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
   console.warn(`[generation] reviewer rejected — retrying with the critique: ${args.critique.slice(0, 120)}`);
+  const retryMove = retryMoveFor(args.assignedMove, args.critique, args.moveLocked === true);
+  const movedOn = retryMove !== undefined && retryMove !== args.assignedMove;
   const retried = await generateValidQuestion(
     args.type,
     args.lo.name,
@@ -357,8 +392,11 @@ async function retryRejectedCandidate(args: {
     args.prompt,
     args.chunks,
     args.models.generator,
-    REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
-    args.assignedMove,
+    movedOn
+      ? `${REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected)}
+${RETRY_MOVE_CHANGED}`
+      : REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+    retryMove,
   );
   if (!retried) return null;
 
@@ -366,7 +404,7 @@ async function retryRejectedCandidate(args: {
   const validation = await completeJson<ValidatorOutput>(
     VALIDATOR_PROMPT({
       loName: args.lo.name, question: retried, chunks: args.chunks,
-      ...(args.assignedMove ? { assignedMove: args.assignedMove } : {}),
+      ...(retryMove ? { assignedMove: retryMove } : {}),
     }),
     { ...args.models.validator },
   );
@@ -492,6 +530,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         lo, type, difficulty: input.difficulty, prompt, chunks, models,
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
         assignedMove: assignedMoves[i],
+        moveLocked: input.hardnessMove !== undefined || type === 'true-false',
       });
       if (retried) outcome = retried;
     }
@@ -834,6 +873,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           const retried = await retryRejectedCandidate({
             lo, type, difficulty: input.difficulty, prompt, chunks, models,
             assignedMove: assignedMoves[candidate.item],
+            moveLocked: input.hardnessMove !== undefined || type === 'true-false',
             reviewerStep: models.reviewer, rejected: candidate.generated,
             critique: String(candidate.review.reasoning ?? ''),
           });
