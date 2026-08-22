@@ -343,6 +343,50 @@ describe('difficulty calibration prompts', () => {
     })).rejects.toThrow('generation-hardness-move-requires-hard');
   });
 
+  it('a true/false candidate must be a True/False claim — a two-option numeric is retried (2026-08-22)', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Evaluate car affordability', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Evaluate car affordability', order: 1 }]);
+    const twoOptionNumeric = {
+      stem: 'What is the surplus?', difficulty: 'hard', hardnessMove: 'hidden parameter', numericKind: 'numeric',
+      paramSlots: [{ name: 'S', min: 1, max: 2, step: 1 }],
+      derivedValues: [{ name: 'OUT', formula: 'S' }, { name: 'OUT_WRONG', formula: 'S*2', errorModel: 'doubled' }],
+      options: [
+        { key: 'T', text: '${{OUT}}', role: 'correct', explanation: 'x' },
+        { key: 'F', text: '${{OUT_WRONG}}', role: 'common-misconception', explanation: 'y' },
+      ],
+    };
+    const claim = {
+      stem: 'A higher coupon makes a bond safer against rate moves.', difficulty: 'hard',
+      hardnessMove: 'conceptual two-rule claim', numericKind: 'conceptual',
+      options: [
+        { key: 'T', text: 'True', role: 'correct', explanation: 'x' },
+        { key: 'F', text: 'False', role: 'common-misconception', explanation: 'y' },
+      ],
+    };
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(twoOptionNumeric)
+      .mockResolvedValueOnce(claim)
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, type: 'true-false', difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    // Generator ×2 (the numeric T/F was refused deterministically), then one
+    // validator + one reviewer for the claim.
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    const prompts = jest.mocked(completeJson).mock.calls.map((call) => String(call[0]));
+    // The hard T/F gets the conceptual two-rule assignment, never a calculation move.
+    expect(prompts[0]).toContain('conceptual two-rule claim');
+    expect(prompts[0]).toContain('A TRUE/FALSE QUESTION IS A CLAIM');
+    // The reviewer is told the type and that two options is the correct shape.
+    expect(prompts[3]).toContain('Question type: TRUE/FALSE');
+    expect(prompts[3]).toContain('THIS QUESTION IS TRUE/FALSE');
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+  });
+
   it('requires the hardnessMove declaration at target hard, retrying a candidate without one', async () => {
     jest.mocked(themesCol).mockReturnValue({
       find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
@@ -733,6 +777,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     const roleAsErrorModel = {
       ...generatorOutput(),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       derivedValues: [
         { name: 'PV', formula: 'CF' },
@@ -769,6 +816,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
         { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
       ]),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       derivedValues: [
         { name: 'PV', formula: 'CF' },
@@ -1002,6 +1052,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
         { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
       ]),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       // Four DISTINCT values, one per option: two options displaying the same
       // derived value collide by definition, which the verifier now catches

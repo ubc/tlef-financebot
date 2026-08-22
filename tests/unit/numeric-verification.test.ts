@@ -8,9 +8,65 @@ import {
   SCRIPT_SAMPLE_COUNT,
   optionValueNamesForVerification,
   resolveDerivedValues,
+  undisplayedInputs,
   verifyGenerateScript,
   verifyQuestionNumerics,
 } from '../../server/src/services/numeric-verification.service';
+
+describe('undisplayedInputs — the solvability gate', () => {
+  // The live case (2026-08-22): TAX_PCT drives the correct answer through a
+  // helper step and the stem never shows it.
+  const ufcfSlots: ParamSlot[] = [
+    { name: 'EBIT', min: 100, max: 900, step: 100 },
+    { name: 'TAX_PCT', min: 20, max: 40, step: 5 },
+    { name: 'DA', min: 10, max: 90, step: 10 },
+  ];
+  const ufcfDerived: DerivedValue[] = [
+    { name: 'AFTER_TAX', formula: 'EBIT*(1-TAX_PCT/100)' },
+    { name: 'UFCF', formula: 'AFTER_TAX + DA' },
+    { name: 'UFCF_PRETAX', formula: 'EBIT + DA', errorModel: 'forgot tax' },
+    { name: 'UFCF_WRONG_DA', formula: 'AFTER_TAX + DA*2', errorModel: 'double-counted D&A' },
+  ];
+
+  it('names a slot the correct answer needs transitively that the stem never displays', () => {
+    const missing = undisplayedInputs({
+      slots: ufcfSlots, derivedValues: ufcfDerived, rootName: 'UFCF',
+      stem: 'EBIT is {{EBIT}} and depreciation is {{DA}}. What is UFCF?',
+    });
+    expect(missing).toEqual(['TAX_PCT']);
+  });
+
+  it('passes once every needed input is shown in the stem', () => {
+    const missing = undisplayedInputs({
+      slots: ufcfSlots, derivedValues: ufcfDerived, rootName: 'UFCF',
+      stem: 'EBIT is {{EBIT}}, the tax rate is {{TAX_PCT}}% and depreciation is {{DA}}.',
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it('exempts slots used only by distractor formulas — error models need no solvability', () => {
+    const slotsWithExtra: ParamSlot[] = [...ufcfSlots, { name: 'NOISE', min: 1, max: 2, step: 1 }];
+    const derivedWithNoise: DerivedValue[] = [
+      ...ufcfDerived,
+      { name: 'UFCF_NOISY', formula: 'UFCF + NOISE', errorModel: 'added an unrelated figure' },
+    ];
+    const missing = undisplayedInputs({
+      slots: slotsWithExtra, derivedValues: derivedWithNoise, rootName: 'UFCF',
+      stem: 'EBIT is {{EBIT}}, the tax rate is {{TAX_PCT}}% and depreciation is {{DA}}.',
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it('does not mistake a SUM index for an input', () => {
+    const missing = undisplayedInputs({
+      slots: [{ name: 'C', min: 1, max: 9, step: 1 }, { name: 'R', min: 1, max: 9, step: 1 }],
+      derivedValues: [{ name: 'PV', formula: 'SUM(t, 1, 3, C/(1+R/100)^t)' }],
+      rootName: 'PV',
+      stem: 'A payment of {{C}} for three years at {{R}}%.',
+    });
+    expect(missing).toEqual([]);
+  });
+});
 import { formatParamValue, substituteParams } from '../../server/src/services/params.service';
 
 const slots: ParamSlot[] = [

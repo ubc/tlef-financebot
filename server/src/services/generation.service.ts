@@ -20,6 +20,7 @@ import { drawSeed } from './params.service';
 import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
+  undisplayedInputs,
 } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
@@ -369,6 +370,7 @@ async function retryRejectedCandidate(args: {
       loName: args.lo.name,
       question: retried,
       chunks: args.chunks,
+      type: args.type,
       roleAssessment: String(validation.roleAssessment ?? ''),
       ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
       ...reviewerVerificationParams(numerics),
@@ -383,12 +385,24 @@ async function retryRejectedCandidate(args: {
  * attacks the batch-diversity problem open since experiment 1. An explicit
  * instructor choice applies to every question in the batch — they picked it
  * deliberately. Non-hard targets get no assignment at all. */
+/** The assignment for a hard TRUE/FALSE question: the menu's moves are
+ * calculation devices, and assigning one to a claim is what produced
+ * two-option numerics (2026-08-22). The conceptual pattern is the only hard
+ * construction a claim supports, so it is assigned directly. */
+const TRUE_FALSE_HARD_MOVE =
+  'conceptual two-rule claim: the statement is true or false only when two '
+  + 'related-but-easily-confused rules are held together (annuity vs. annuity due, '
+  + 'cum- vs. ex-dividend, coupon rate vs. interest-rate risk); the single wrong '
+  + 'option must be what a student concludes when the rules blur';
+
 function assignMovesForBatch(
   difficulty: Difficulty | undefined,
   hardnessMove: string | undefined,
   count: number,
+  type: QuestionType = 'mcq',
 ): (string | undefined)[] {
   if (difficulty !== 'hard') return Array.from({ length: count }, () => undefined);
+  if (type === 'true-false') return Array.from({ length: count }, () => TRUE_FALSE_HARD_MOVE);
   if (hardnessMove) {
     const chosen = HARDNESS_MOVE_MENU.find((move) => move.id === hardnessMove);
     if (!chosen) throw new Error('generation-unknown-hardness-move');
@@ -423,7 +437,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   const { chunks } = await retrieveChunks(
     collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
   );
-  const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count);
+  const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(
@@ -457,6 +471,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             loName: lo.name,
             question: generated,
             chunks,
+            type,
             roleAssessment: String(validation.roleAssessment ?? ''),
             ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
             ...reviewerVerificationParams(numerics),
@@ -558,7 +573,7 @@ export async function regenerateQuestion(
     'Create a distinct alternative to the existing question below. Preserve the learning objective but do not merely paraphrase.',
     `Existing question: ${JSON.stringify({ stem: current.stem, options: current.options })}`,
   ].join('\n\n');
-  const [regenerateMove] = assignMovesForBatch(current.difficulty, undefined, 1);
+  const [regenerateMove] = assignMovesForBatch(current.difficulty, undefined, 1, current.type);
   const generated = await generateValidQuestion(
     current.type,
     lo.name,
@@ -586,6 +601,7 @@ export async function regenerateQuestion(
           loName: lo.name,
           question: generated,
           chunks: grounding.chunks,
+          type: current.type,
           roleAssessment: String(validation.roleAssessment ?? ''),
           ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
           ...reviewerVerificationParams(numerics),
@@ -705,7 +721,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       message: `Retrieved ${chunks.length} grounded chunks`,
     });
 
-    const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count);
+    const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
     const generated: TrackedCandidate[] = [];
     for (let item = 0; item < count; item += 1) {
       try {
@@ -786,6 +802,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 loName: lo.name,
                 question: candidate.generated,
                 chunks,
+                type,
                 roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
                 ...(candidate.validation?.moveAssessment
                   ? { moveAssessment: String(candidate.validation.moveAssessment) }
@@ -1236,7 +1253,8 @@ async function generateValidQuestion(
       candidate &&
       optionShapeValid(type, candidate.options) &&
       errorModelsNameMistakes(candidate) &&
-      hardnessMoveDeclared(difficulty, candidate)
+      hardnessMoveDeclared(difficulty, candidate) &&
+      trueFalseShapeValid(type, candidate)
     ) {
       const clean = sanitizeGenerated(candidate);
       // Shuffled HERE, not in createQuestion, for the same reason
@@ -1374,6 +1392,20 @@ function sanitizeGenerated(candidate: GeneratorOutput): GeneratorOutput {
       ? { hardnessMove: stripControlChars(candidate.hardnessMove) }
       : {}),
   };
+}
+
+/** A true/false candidate is a CLAIM: its options are the texts "True" and
+ * "False" and it carries no numeric machinery. Deterministic because the
+ * prompt alone did not hold (2026-08-22: 3/3 true/false questions at hard
+ * came back as two-option numerics) and because the reviewer, judging them as
+ * malformed MCQs, was spending Option-B retries on a fault this check can
+ * refuse before any review call. MCQ candidates pass through untouched. */
+function trueFalseShapeValid(type: QuestionType, candidate: GeneratorOutput): boolean {
+  if (type !== 'true-false') return true;
+  if (candidate.numericKind === 'numeric') return false;
+  if ((candidate.paramSlots?.length ?? 0) > 0 || (candidate.derivedValues?.length ?? 0) > 0) return false;
+  const texts = candidate.options.map((option) => String(option.text).trim().toLowerCase());
+  return texts.includes('true') && texts.includes('false');
 }
 
 /** A hard candidate must DECLARE its hardness move (prompt: the
@@ -1981,7 +2013,23 @@ export function GENERATOR_PROMPT(params: {
     '  "paramSlots": [ { "name": string, "min": number, "max": number, "step": number } ],',
     '  "derivedValues": [ { "name": string, "formula": string, "errorModel": string } ],',
     '  "options": [ { "key": string, "text": string, "role": string, "explanation": string } ] }',
-    params.type === 'mcq' ? 'Use option keys "A","B","C","D".' : 'Use option keys "T","F".',
+    params.type === 'mcq'
+      ? 'Use option keys "A","B","C","D".'
+      // Measured 2026-08-22: three true/false questions at target hard came
+      // back as TWO-OPTION NUMERIC questions — options "${{S}}" / "${{S_WRONG}}"
+      // under keys T/F — because nothing above said a true/false question is
+      // a claim, and the numeric machinery plus an assigned calculation move
+      // pulled it numeric. All three were rejected. This is a contract, and
+      // trueFalseShapeValid enforces it deterministically.
+      : [
+        'Use option keys "T","F". A TRUE/FALSE QUESTION IS A CLAIM, NOT A CALCULATION:',
+        'the stem asserts one statement, the options are EXACTLY the texts "True" and',
+        '"False", and "numericKind" is ALWAYS "conceptual" with no paramSlots and no',
+        'derivedValues — numbers in the stem, if any, are fixed and the student',
+        'reasons about the claim. A hard true/false question is the conceptual hard',
+        'pattern: the claim is true or false only when two easily-confused rules are',
+        'held together. Never put a computed value in an option.',
+      ].join('\n'),
   ]
     .filter(Boolean)
     .join('\n');
@@ -2043,6 +2091,29 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
       fields: base,
       failure: `${result.error}${result.failingSeed !== undefined ? ` (seed ${result.failingSeed})` : ''}`,
     };
+  }
+
+  // The solvability gate (2026-08-22, third sighting in a week: exps 27b, 28
+  // and a live batch): a slot the CORRECT answer depends on that the stem
+  // never displays. Every value computes, distinctness proves, and the student
+  // cannot solve the question because an input was never shown. Distractor-
+  // only slots are exempt — error models need no solvability. Checked AFTER
+  // distinctness so a colliding question reports the collision, whose retry
+  // feedback is the more specific of the two.
+  const correctOption = generated.options.find((option) => option.role === 'correct');
+  const correctName = correctOption?.text.match(/\{\{(\w+)\}\}/)?.[1];
+  if (correctName) {
+    const missing = undisplayedInputs({
+      slots: paramSlots, derivedValues, rootName: correctName, stem: generated.stem,
+    });
+    if (missing.length > 0) {
+      return {
+        fields: base,
+        failure: `the correct answer depends on ${missing.map((name) => `{{${name}}}`).join(', ')} but the stem `
+          + 'never displays it, so the student has no way to compute the answer — show every input the '
+          + 'correct value needs in the stem',
+      };
+    }
   }
   return { fields: { ...base, verification: result.verification } };
 }
@@ -2114,6 +2185,11 @@ export function VALIDATOR_PROMPT(params: {
 export function REVIEWER_PROMPT(params: {
   loName: string;
   question: GeneratorOutput;
+  /** The question's type. Added 2026-08-22: judging blind, the reviewer read
+   * two-option true/false questions as malformed MCQs ("declared as a
+   * multiple-choice question but provides only two options") and rejected
+   * them for it. The option contract below is conditioned on this. */
+  type?: QuestionType;
   /**
    * The deterministic verifier's rejection, when it already has one. Measured
    * 2026-08-16: the reviewer was guessing at servability with this information
@@ -2165,6 +2241,7 @@ export function REVIEWER_PROMPT(params: {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
     `LO "${params.loName}". Judge it against these criteria (IN-Q05):`,
+    ...(params.type ? [`Question type: ${params.type === 'true-false' ? 'TRUE/FALSE (two options)' : 'multiple choice (four options)'}.`] : []),
     '  1. Factual accuracy — every statement is correct.',
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
@@ -2211,6 +2288,13 @@ export function REVIEWER_PROMPT(params: {
     '     value, or a sentence with a number stapled on ("Accept the project. 7.36").',
     '     A question whose options are decisions or statements should have been',
     '     conceptual, with no slots at all.',
+    ...(params.type === 'true-false'
+      ? ['     THIS QUESTION IS TRUE/FALSE. The contract above does not apply to it: its',
+         '     two options are exactly "True" and "False", it is conceptual by definition,',
+         '     and two options is its correct shape — never fault it for not being a',
+         '     four-option MCQ. Judge whether the claim is unambiguously true or false',
+         '     from the material, and whether the wrong answer is a real misconception.']
+      : []),
     // The T/F exemption is explicit because omitting it cost 3/3 false rejects on
     // a legitimate two-option question, measured 2026-08-17. optionShapeValid
     // skips this check for true-false, and assertOptionInvariants COERCES the
