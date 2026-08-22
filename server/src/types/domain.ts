@@ -296,7 +296,16 @@ export interface Question {
   /** Additive lineage grouping; new standalone questions use their own id. */
   templateFamilyId?: ObjectId;
   labels: QuestionLabel[];
-  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  agentDecision?: {
+    decision: 'pass' | 'flag' | 'reject';
+    reasoning: string;
+    roleAssessment: string;
+    /** The reviewer's honest label when it flags a difficulty mismatch. The
+     * persisted `difficulty` is the instructor's TARGET (input wins over the
+     * generator's self-label), so this is the only place the reviewer's
+     * assessment survives; the queue can offer it as a one-click relabel. */
+    suggestedDifficulty?: Difficulty;
+  };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
   regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
   internalNotes: Array<{ puid: string; text: string; at: Date }>; // teaching-team-only (§6.2)

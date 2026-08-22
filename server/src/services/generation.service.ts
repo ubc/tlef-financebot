@@ -198,6 +198,9 @@ interface ValidatorOutput {
 interface ReviewerOutput {
   decision: string;
   reasoning: string;
+  /** Set when the reviewer flags a difficulty mismatch: the label the
+   * question actually earns. See REVIEW_VERDICT_POLICY. */
+  suggestedDifficulty?: string;
 }
 
 export interface RegenerationVariant {
@@ -213,6 +216,7 @@ export interface RegenerationVariant {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    suggestedDifficulty?: Difficulty;
   };
 }
 
@@ -514,6 +518,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         agentDecision: {
           decision: normalizeDecision(outcome.review.decision),
           reasoning: withVerificationNote(String(outcome.review.reasoning ?? ''), outcome.numerics.failure),
+          ...suggestedDifficultyField(outcome.review.suggestedDifficulty),
           roleAssessment: String(outcome.validation.roleAssessment ?? ''),
         },
       });
@@ -625,6 +630,7 @@ export async function regenerateQuestion(
     agentDecision: {
       decision: normalizeDecision(review.decision),
       reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
+      ...suggestedDifficultyField(review.suggestedDifficulty),
       roleAssessment: String(validation.roleAssessment ?? ''),
     },
   };
@@ -892,6 +898,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           agentDecision: {
             decision: normalizeDecision(candidate.review?.decision),
             reasoning: withVerificationNote(String(candidate.review?.reasoning ?? ''), numerics.failure),
+            ...suggestedDifficultyField(candidate.review?.suggestedDifficulty),
             roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
           },
         });
@@ -2118,6 +2125,14 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
   return { fields: { ...base, verification: result.verification } };
 }
 
+/** The reviewer's earned label, persisted only when it is a real difficulty —
+ * the model may emit anything, and a bad value must not reach the editor. */
+function suggestedDifficultyField(value: unknown): { suggestedDifficulty?: Difficulty } {
+  return typeof value === 'string' && DIFFICULTIES.has(value as Difficulty)
+    ? { suggestedDifficulty: value as Difficulty }
+    : {};
+}
+
 /** Appends a verification failure to the reviewer's reasoning so the instructor
  * sees WHY the question will not serve, right where they read the review. */
 function withVerificationNote(reasoning: string, failure?: string): string {
@@ -2181,6 +2196,34 @@ export function VALIDATOR_PROMPT(params: {
       : '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
   ].join('\n');
 }
+
+/**
+ * What a verdict is FOR (Saurav, 2026-08-22). Reject is reserved for faults an
+ * instructor cannot fix with one edit: wrong facts, a wrong answer key, an
+ * unservable question, or a question that tests a different objective — the
+ * last stays a reject because mastery is attributed per LO and the review
+ * queue bulk-approves flags. Everything that is one field in the editor is a
+ * flag: a difficulty label (with the earned label named, since the persisted
+ * difficulty is the instructor's target and the generator's honest label is
+ * otherwise lost), a role label, an instructor preset not followed. Exported
+ * by name so the A/B harness can strip it for a control arm.
+ */
+export const REVIEW_VERDICT_POLICY: string = [
+  'VERDICT POLICY. "reject" is reserved for what the instructor cannot fix with one',
+  'edit: a factual error, a wrong answer key, a question the verifier cannot serve,',
+  'or a question that tests a DIFFERENT learning objective than the one named (it',
+  'would credit mastery of the wrong objective, and flags can be bulk-approved).',
+  'Everything that is one field in the question editor is a "flag", never a reject:',
+  '  - the DIFFICULTY label does not match the demand: flag, and set',
+  '    "suggestedDifficulty" to the label the question actually earns;',
+  '  - an option ROLE is mislabeled: flag, naming the swap;',
+  '  - the instructor\'s preset or instruction was not followed (a concept check',
+  '    where a calculation was asked for, or the reverse) while the question still',
+  '    tests the objective soundly: flag, saying what was asked and what was made.',
+  'Do not reject a usable question for being a different kind or level than',
+  'requested. Do reject a question that is wrong or answers a different objective,',
+  'however well-made.',
+].join('\n');
 
 export function REVIEWER_PROMPT(params: {
   loName: string;
@@ -2254,7 +2297,9 @@ export function REVIEWER_PROMPT(params: {
     `       ${DIFFICULTY_RUBRIC.easy}`,
     `       ${DIFFICULTY_RUBRIC.medium}`,
     `       ${DIFFICULTY_RUBRIC.hard}`,
-    '     A one-step substitution should not pass as medium or hard.',
+    '     A one-step substitution does not EARN medium or hard — but a wrong label on a',
+    '     sound question is a FLAG with "suggestedDifficulty" set to the label it earns,',
+    '     never a reject (see the verdict policy below).',
     '  6. Formula modelling — for a numerical question, does each formula in derivedValues',
     '     actually model what the stem asks? A present value of a two-period stream must',
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
@@ -2407,8 +2452,10 @@ export function REVIEWER_PROMPT(params: {
     'Question JSON:',
     JSON.stringify(params.question),
     '',
+    REVIEW_VERDICT_POLICY,
     'Decide: "pass" (ready for instructor approval), "flag" (usable but needs attention),',
     'or "reject" (do not use). Respond with ONLY this JSON shape:',
-    '{ "decision": "pass"|"flag"|"reject", "reasoning": string }',
+    '{ "decision": "pass"|"flag"|"reject", "reasoning": string,',
+    '  "suggestedDifficulty"?: "easy"|"medium"|"hard" }  // only with a difficulty flag',
   ].join('\n');
 }

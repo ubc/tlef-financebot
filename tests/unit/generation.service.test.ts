@@ -343,6 +343,33 @@ describe('difficulty calibration prompts', () => {
     })).rejects.toThrow('generation-hardness-move-requires-hard');
   });
 
+  it('states the verdict policy to the reviewer and persists a valid suggestedDifficulty (2026-08-22)', async () => {
+    const prompt = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(prompt).toContain('VERDICT POLICY');
+    expect(prompt).toContain('tests a DIFFERENT learning objective');
+    expect(prompt).toContain('"suggestedDifficulty"?: "easy"|"medium"|"hard"');
+
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'flag', reasoning: 'one-step substitution', suggestedDifficulty: 'easy' })
+      // A second question whose reviewer emits garbage for the field: dropped.
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'flag', reasoning: 'x', suggestedDifficulty: 'brutal' });
+
+    await runGenerationPipeline({ courseId, loId, count: 2, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+
+    const decisions = jest.mocked(createQuestion).mock.calls.map((call) => call[0].agentDecision);
+    expect(decisions[0]).toMatchObject({ decision: 'flag', suggestedDifficulty: 'easy' });
+    expect(decisions[1]).not.toHaveProperty('suggestedDifficulty');
+  });
+
   it('a true/false candidate must be a True/False claim — a two-option numeric is retried (2026-08-22)', async () => {
     jest.mocked(themesCol).mockReturnValue({
       find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
