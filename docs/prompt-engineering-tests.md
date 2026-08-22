@@ -4700,3 +4700,43 @@ conceptual ("PP and PI disagree — which should the firm trust, and why"), and
 the calculation preset steers away from that. The honest recommendation to
 the instructor: use the concept-check preset here, or choose the
 benefit-minus-cost move explicitly.
+
+# Experiment 34 — reviewer-suggested retry move: run 1, the reviewer never suggested
+
+_2026-08-22 (commit e59d4f1). Live, through the queue: "Compare projects
+with PP and PI" ×6 and "Calculate unlevered free cash flow" ×6, hard,
+calculation preset. The reviewer may set `suggestedMove` on a construction
+reject; the server applies it only if valid and different from the failed
+move, else rotates; every retry logs its move source._
+
+## Run 1
+
+| LO | Option B fired | persisted | usable |
+|---|---|---|---|
+| PP/PI | 5/6 | flag ×3 (2 → medium), reject ×3 | 3/6 — identical to exp 33's rotation result |
+| UFCF | 4/6 | pass ×3, flag ×2, reject ×1 | 5/6 |
+
+**Retry move sources across both runs: rotated 8, kept 1, suggested 0.** The
+reviewer never produced a usable suggestion. Six of the nine rejects were
+verifier collisions, where omitting is what the instruction asked for — but
+the three genuine construction rejects ("does not primarily test the stated
+objective", "not validly keyed and cannot be repaired by relabeling") got
+nothing either. Whether the field was omitted or emitted with an invalid id
+is not distinguishable from run 1's logs; the raw suggestion is now logged.
+
+**Two things this run taught, both acted on before run 2:**
+
+1. **An optional field is an exhortation.** Same lesson as the hardnessMove
+   declaration (exp 25): the reviewer at effort high simply left the
+   optional field out. It is now REQUIRED on a reject — a menu id, or
+   `null` with the "unrelated to construction" meaning — so silence is no
+   longer an available answer.
+2. **Rotating on a collision reject throws away sound constructions.** A
+   verifier collision is a fault IN a construction, not OF it, and the
+   retry-with-critique on exactly those critiques is Option B's proven
+   regime (0/4 → 4/4). `retryMoveFor` now keeps the move on collision and
+   verifier critiques and rotates (or takes the suggestion) only on
+   construction faults.
+
+Neither the fit hypothesis nor the exp-26 bias risk could be evaluated in
+run 1, because the mechanism never engaged. Run 2 follows.
