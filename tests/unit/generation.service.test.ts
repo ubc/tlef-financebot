@@ -350,16 +350,26 @@ describe('difficulty calibration prompts', () => {
     const second = HARDNESS_MOVE_MENU[1]!.text;
     const last = HARDNESS_MOVE_MENU[HARDNESS_MOVE_MENU.length - 1]!.text;
     // Structural critique: the construction failed — move on.
-    expect(retryMoveFor(first, 'The keyed correct option is not correct; the rate formula assumes NPV is zero.', false)).toBe(second);
+    expect(retryMoveFor(first, 'The keyed correct option is not correct; the rate formula assumes NPV is zero.', false))
+      .toEqual({ move: second, source: 'rotated' });
     // Wraparound at the end of the menu.
-    expect(retryMoveFor(last, 'options collide at display precision', false)).toBe(first);
+    expect(retryMoveFor(last, 'options collide at display precision', false)).toEqual({ move: first, source: 'rotated' });
     // Faithfulness critique: the move is right, the implementation is not — keep it.
-    expect(retryMoveFor(first, 'The declared hardness move is not genuinely implemented: the stem hands the term over.', false)).toBe(first);
-    // Locked (instructor-chosen or true/false): never rotate.
-    expect(retryMoveFor(first, 'wrong answer key', true)).toBe(first);
+    expect(retryMoveFor(first, 'The declared hardness move is not genuinely implemented: the stem hands the term over.', false))
+      .toEqual({ move: first, source: 'kept' });
+    // Locked (instructor-chosen or true/false): never rotate, even with a suggestion.
+    expect(retryMoveFor(first, 'wrong answer key', true, 'regime-change')).toEqual({ move: first, source: 'kept' });
     // No assignment, or a non-menu move (the T/F pattern): unchanged.
-    expect(retryMoveFor(undefined, 'wrong answer key', false)).toBeUndefined();
-    expect(retryMoveFor('conceptual two-rule claim: …', 'wrong answer key', false)).toBe('conceptual two-rule claim: …');
+    expect(retryMoveFor(undefined, 'wrong answer key', false)).toEqual({ move: undefined, source: 'kept' });
+    expect(retryMoveFor('conceptual two-rule claim: …', 'wrong answer key', false))
+      .toEqual({ move: 'conceptual two-rule claim: …', source: 'kept' });
+    // A valid, DIFFERENT reviewer suggestion wins over rotation.
+    const benefit = HARDNESS_MOVE_MENU.find((m) => m.id === 'benefit-minus-cost')!.text;
+    expect(retryMoveFor(first, 'a decision packed into a number', false, 'benefit-minus-cost'))
+      .toEqual({ move: benefit, source: 'suggested' });
+    // A suggestion naming the move that just failed, or an unknown id, falls back to rotation.
+    expect(retryMoveFor(first, 'wrong key', false, HARDNESS_MOVE_MENU[0]!.id)).toEqual({ move: second, source: 'rotated' });
+    expect(retryMoveFor(first, 'wrong key', false, 'make-it-harder')).toEqual({ move: second, source: 'rotated' });
   });
 
   it('states the verdict policy to the reviewer and persists a valid suggestedDifficulty (2026-08-22)', async () => {

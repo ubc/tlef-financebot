@@ -202,6 +202,10 @@ interface ReviewerOutput {
   /** Set when the reviewer flags a difficulty mismatch: the label the
    * question actually earns. See REVIEW_VERDICT_POLICY. */
   suggestedDifficulty?: string;
+  /** Set on a REJECT whose cause is the construction: the HARDNESS_MOVE_MENU
+   * id the reviewer thinks would fit this objective. The server validates it
+   * (retryMoveFor) -- a suggestion, never a free choice. */
+  suggestedMove?: string;
 }
 
 export interface RegenerationVariant {
@@ -348,12 +352,20 @@ export function retryMoveFor(
   assignedMove: string | undefined,
   critique: string,
   locked: boolean,
-): string | undefined {
-  if (assignedMove === undefined || locked) return assignedMove;
-  if (/declared (hardness )?move|hardnessMove|substitut|not (genuinely )?implement/i.test(critique)) return assignedMove;
+  /** The reviewer's suggestedMove (a menu id), if it gave one. Applied only
+   * when it names a valid move DIFFERENT from the one that failed; anything
+   * else falls back to rotation. */
+  suggested?: string,
+): { move: string | undefined; source: 'kept' | 'suggested' | 'rotated' } {
+  if (assignedMove === undefined || locked) return { move: assignedMove, source: 'kept' };
+  if (/declared (hardness )?move|hardnessMove|substitut|not (genuinely )?implement/i.test(critique)) {
+    return { move: assignedMove, source: 'kept' };
+  }
   const index = HARDNESS_MOVE_MENU.findIndex((move) => move.text === assignedMove);
-  if (index < 0) return assignedMove;
-  return HARDNESS_MOVE_MENU[(index + 1) % HARDNESS_MOVE_MENU.length]!.text;
+  if (index < 0) return { move: assignedMove, source: 'kept' };
+  const chosen = suggested ? HARDNESS_MOVE_MENU.find((move) => move.id === suggested) : undefined;
+  if (chosen && chosen.text !== assignedMove) return { move: chosen.text, source: 'suggested' };
+  return { move: HARDNESS_MOVE_MENU[(index + 1) % HARDNESS_MOVE_MENU.length]!.text, source: 'rotated' };
 }
 
 /** Appended to the reject critique when the retry carries a different move. */
@@ -379,12 +391,20 @@ async function retryRejectedCandidate(args: {
   /** True when the move must not change: the instructor chose it, or the
    * question is true/false (one conceptual pattern, nothing to rotate to). */
   moveLocked?: boolean;
+  /** The rejecting reviewer's suggestedMove, validated by retryMoveFor. */
+  suggestedMove?: string;
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
   console.warn(`[generation] reviewer rejected — retrying with the critique: ${args.critique.slice(0, 120)}`);
-  const retryMove = retryMoveFor(args.assignedMove, args.critique, args.moveLocked === true);
+  const { move: retryMove, source: moveSource } = retryMoveFor(
+    args.assignedMove, args.critique, args.moveLocked === true, args.suggestedMove,
+  );
   const movedOn = retryMove !== undefined && retryMove !== args.assignedMove;
+  if (args.assignedMove !== undefined) {
+    const id = HARDNESS_MOVE_MENU.find((move) => move.text === retryMove)?.id ?? 'non-menu';
+    console.warn(`[generation] reject-retry move: ${moveSource} (${id})`);
+  }
   const retried = await generateValidQuestion(
     args.type,
     args.lo.name,
@@ -531,6 +551,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
         assignedMove: assignedMoves[i],
         moveLocked: input.hardnessMove !== undefined || type === 'true-false',
+        ...(typeof review.suggestedMove === 'string' ? { suggestedMove: review.suggestedMove } : {}),
       });
       if (retried) outcome = retried;
     }
@@ -874,6 +895,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
             lo, type, difficulty: input.difficulty, prompt, chunks, models,
             assignedMove: assignedMoves[candidate.item],
             moveLocked: input.hardnessMove !== undefined || type === 'true-false',
+            ...(typeof candidate.review?.suggestedMove === 'string' ? { suggestedMove: candidate.review.suggestedMove } : {}),
             reviewerStep: models.reviewer, rejected: candidate.generated,
             critique: String(candidate.review.reasoning ?? ''),
           });
@@ -2524,6 +2546,18 @@ export function REVIEWER_PROMPT(params: {
          `  "${params.moveAssessment}"`,
          'Weigh it under criterion 9. It reports facts (implemented or not, matching the',
          'assignment or not); the verdict is yours, under criterion 9\'s policy.',
+         '',
+         // The judge that diagnosed WHY a construction failed holds the best
+         // information for choosing the next one (2026-08-22). Exp 26's caveat
+         // applies — an LLM choosing moves drifts to its favourites — so the
+         // server validates the suggestion and falls back to rotation.
+         'IF YOU REJECT and the fault is the CONSTRUCTION — the hardness move does not fit',
+         'this objective (a decision packed into a number, a comparison forced into one',
+         'figure, a reconstruction the question cannot support) — also set',
+         '"suggestedMove" to the id of the move that would fit this objective better:',
+         ...HARDNESS_MOVE_MENU.map((move) => `  - ${move.id}: ${move.text.split(':')[1]?.trim().slice(0, 90) ?? ''}`),
+         'Omit it when the fault is unrelated to the construction (a wrong fact, a',
+         'missing input, a collision fixable in place).',
          '']
       : []),
     'Question JSON:',
@@ -2533,6 +2567,7 @@ export function REVIEWER_PROMPT(params: {
     'Decide: "pass" (ready for instructor approval), "flag" (usable but needs attention),',
     'or "reject" (do not use). Respond with ONLY this JSON shape:',
     '{ "decision": "pass"|"flag"|"reject", "reasoning": string,',
-    '  "suggestedDifficulty"?: "easy"|"medium"|"hard" }  // only with a difficulty flag',
+    '  "suggestedDifficulty"?: "easy"|"medium"|"hard",   // only with a difficulty flag',
+    '  "suggestedMove"?: string }                         // only with a construction reject',
   ].join('\n');
 }
