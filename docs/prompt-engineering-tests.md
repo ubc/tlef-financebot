@@ -4659,3 +4659,44 @@ the rule; the gate enforces it.
 Three runs clean, one run burned three Option-B cycles on a decision-shaped
 LO. The two gates move "answer readable from format" and "symbolic stem"
 from reviewer-or-never to refused-before-review.
+
+# Experiment 33 — reject-retry rotates the move: conversions 0/3 → 3/5
+
+_2026-08-22 (commit e1a791a). Live, through the queue, on the LO where
+Option B had fired 3/3 and converted 0/3: "Compare projects with PP and PI",
+hard, calculation preset, count 6._
+
+| | exp 32 run (move pinned) | this run (move rotates on reject) |
+|---|---|---|
+| questions | 3 | 6 |
+| Option B fired | 3/3 | 5/6 |
+| converted to usable (pass/flag) | **0/3** | **3/5** |
+| persisted verdicts | reject ×3 | flag ×3 (→medium), reject ×3 |
+
+**The mechanism works.** Three retries that would previously have
+re-implemented the same doomed construction came back as usable PI-difference
+questions (flagged → medium by the verdict policy — honest labels, one click
+to fix). The conversions are exactly the shape the LO wants: one financially
+meaningful scalar comparing the two projects.
+
+**The three remaining rejects are all legitimate, and one of them was caused
+by my own wording.** The decision-shaped guidance said "ask for the VALUE
+DIFFERENCE the decision turns on" and the generator read it as arithmetic:
+"PP difference minus PI difference" — two unrelated metrics subtracted,
+rejected as a different objective. The guidance now names the quantity in
+finance terms (NPV of choosing A over B, the PI of one project, the value
+given up) and forbids subtracting one metric from another. The other two are
+ordinary modelling faults the reviewer caught (a PI/PP ranking inconsistency
+making the keyed sign wrong; terminal values over mismatched horizons).
+
+**Cost:** 5 Option-B cycles on 6 questions — still the most expensive family
+in the course, but the cycles now buy usable questions instead of repeats.
+
+## Still open on this family
+
+"Compare projects with PP and PI" is inherently a two-criteria,
+often-conflicting-rankings objective. Its best hard question is probably
+conceptual ("PP and PI disagree — which should the firm trust, and why"), and
+the calculation preset steers away from that. The honest recommendation to
+the instructor: use the concept-check preset here, or choose the
+benefit-minus-cost move explicitly.
