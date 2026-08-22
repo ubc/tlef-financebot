@@ -2199,6 +2199,14 @@ export function REVIEWER_PROMPT(params: {
          'But a question that implements a DIFFERENT move than assigned, with no',
          'misfit explanation in its declaration, should be FLAGGED naming the',
          'substitution — do not reject over the substitution alone.',
+         // Anti-anchoring, added after exp 27c: with this block present, one
+         // criterion-2 displacement landed as a flag where the identical fault
+         // drew rejects in exps 27/27b — the review opened by crediting the
+         // implemented move. Implementation credit must not soften the LO bar.
+         'Implementing the assigned move satisfies criterion 9 ONLY. It does not weigh',
+         'in favour of any other criterion: a question that implements the move',
+         'faithfully but does not test the learning objective (criterion 2) remains a',
+         'reject, exactly as it would be without an assignment.',
          '']
       : []),
     'Question JSON:',

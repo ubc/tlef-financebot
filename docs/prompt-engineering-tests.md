@@ -4325,3 +4325,35 @@ real path), conceptual families degrade honestly by declared fallback, the
 one recurring residual (a move supplying the objective's conclusion) is
 caught by criterion 2 and retried by Option B, and every hard question
 carries a declared, instructor-visible construction device.
+
+## 27c — the reviewer sees the assignment, and stays fair to fallbacks
+
+_Hardening from 27b's review (commit eb45b5c): criterion 9 verified the
+DECLARED move, so a silent substitution declared honestly would have passed.
+The reviewer now receives the platform's assignment, with fallback protection
+worded in. Probed on the FX cell, same rotation, n=7._
+
+| | 27b (reviewer blind) | 27c (reviewer sees assignment) |
+|---|---|---|
+| pass/flag/reject | 5/0/2 | 4/3/0 |
+| declared fallbacks passing | 3/3 | **3/3** |
+| compliance-rejections of fallbacks | 0 | **0** |
+| substitutions | 0 | 0 |
+
+**The pre-registered criterion held:** every declared misfit-fallback passed
+on its own merits — the reviewer did not turn compliance-cop, which was the
+risk this probe existed to measure.
+
+**One honest asterisk, recorded:** 27c's #3 is the familiar criterion-2
+displacement fault (benefit−cost supplying the macro conclusion) landing as
+a FLAG where the identical fault drew REJECTS in 27 and 27b. The review
+opens by crediting the implemented move — assignment context plausibly
+anchoring the verdict upward. At n=1 this is indistinguishable from the
+documented flag/reject wobble, but it has a precise counter, added without
+waiting for more n: the block now states that implementing the move
+satisfies criterion 9 ONLY and weighs in favour of no other criterion — a
+faithful move that does not test the LO remains a reject. That line's
+effect is UNVERIFIED at this n; the bound on the risk is structural either
+way: generated questions land as Drafts, nothing serves without instructor
+approval, so a too-soft verdict mis-prioritizes instructor attention rather
+than serving a bad question.
