@@ -4619,3 +4619,43 @@ a coin-flip reject into a stable one. Proposed as the next experiment.
 Ship the policy + `suggestedDifficulty`: the conversions are the right
 ones, nothing unfixable leaked by policy, and the earned label now
 survives persistence. Treat reviewer consistency as the next problem.
+
+# Experiment 32 — third live session: 3 rejects, one LO, one shape; two more gates
+
+_2026-08-22, Saurav's runs with the verdict policy live: four runs, 12
+questions, 6 pass / 3 flag / 3 reject. All three rejects came from ONE run —
+"Compare projects with PP and PI" × hard × calculation preset (Option B
+fired 3/3); the other three runs were clean (Option B 0, 0, 1)._
+
+## The rejects
+
+| question | fault | verdict on the system |
+|---|---|---|
+| two rankings packed into one number (`ANSWER_A_B = PP_A + PI_B/1000`) — collision, wrong key, wrong payback model | decision encoded as a value | correct reject |
+| hidden-parameter move: "reconstruct the rate from Project A's stated NPV" done as `IRR(-A_COST, A_CF…)`, which assumes NPV = 0 | wrong key (the rate needed `IRR` on cost + NPV) | correct reject |
+| weighted-PI-vs-direct-NPV consistency check, no payback anywhere; three `$` options and one `%` option — the `%` being correct | different objective; answer readable from format | correct reject |
+
+The shared root: this LO's natural answer is WHICH project wins — a
+decision — and the numeric option contract plus assigned calculation moves
+fought it. The assignment block now says so: a ranking or decision is asked
+for as the VALUE DIFFERENCE it turns on (one scalar) or made conceptual,
+never packed into one displayed number.
+
+## Two gates from this session
+
+**Format consistency** (`optionFormatsConsistent`): every option of a
+numerical question must be the same template around its placeholder. The
+odd-one-out case is an answer key readable from formatting alone.
+
+**Symbolic stems**, caught by the solvability gate and previously invisible:
+three persisted numerics had stems written as algebra — "the loan principal
+is $P$, the contractual APR is $A$%" — no placeholders, so the student saw
+letters and no numbers. The gate's first-attempt failures listing every
+input as undisplayed were this, not a false positive. The prompt now states
+the rule; the gate enforces it.
+
+## Cost picture
+
+Three runs clean, one run burned three Option-B cycles on a decision-shaped
+LO. The two gates move "answer readable from format" and "symbolic stem"
+from reviewer-or-never to refused-before-review.
