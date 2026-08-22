@@ -271,6 +271,77 @@ describe('difficulty calibration prompts', () => {
     await runOnce('hard');
   });
 
+  it('assigns a distinct move to every question of a hard batch, none at medium (exp 26)', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' })
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 2, difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    const generatorPrompts = jest.mocked(completeJson).mock.calls
+      .map((call) => String(call[0]))
+      .filter((prompt) => prompt.includes('HARDNESS MOVE HAS BEEN ASSIGNED'));
+    expect(generatorPrompts).toHaveLength(2);
+    // Rotation: consecutive questions in one batch carry DIFFERENT moves.
+    const moveOf = (prompt: string) =>
+      prompt.split('HAS BEEN ASSIGNED for this question. Implement EXACTLY this move:')[1]?.split('\n')[1];
+    expect(moveOf(generatorPrompts[0]!)).toBeTruthy();
+    expect(moveOf(generatorPrompts[0]!)).not.toEqual(moveOf(generatorPrompts[1]!));
+
+    // Medium never assigns.
+    jest.mocked(completeJson).mockClear();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+    expect(String(jest.mocked(completeJson).mock.calls[0]?.[0])).not.toContain('HAS BEEN ASSIGNED');
+  });
+
+  it('an explicit instructor move applies to the whole batch and unknown ids are rejected at enqueue', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' })
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({
+      courseId, loId, count: 2, difficulty: 'hard', hardnessMove: 'regime-change', byPuid: 'PUID-INSTR',
+    });
+    const prompts = jest.mocked(completeJson).mock.calls
+      .map((call) => String(call[0]))
+      .filter((prompt) => prompt.includes('HAS BEEN ASSIGNED'));
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) expect(prompt).toContain('regime change: switch a growth rate');
+
+    // Enqueue validation: unknown id and non-hard difficulty both refuse
+    // before a durable run is created.
+    await expect(enqueueGenerationRun({
+      courseId, loId, count: 1, difficulty: 'hard', hardnessMove: 'nonsense', byPuid: 'PUID-INSTR',
+    })).rejects.toThrow('generation-unknown-hardness-move');
+    await expect(enqueueGenerationRun({
+      courseId, loId, count: 1, difficulty: 'medium', hardnessMove: 'regime-change', byPuid: 'PUID-INSTR',
+    })).rejects.toThrow('generation-hardness-move-requires-hard');
+  });
+
   it('requires the hardnessMove declaration at target hard, retrying a candidate without one', async () => {
     jest.mocked(themesCol).mockReturnValue({
       find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),

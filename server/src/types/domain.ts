@@ -544,6 +544,10 @@ export interface QuestionGenerationRun extends ContentRunBase {
     count: number;
     type: QuestionType;
     difficulty?: Difficulty;
+    /** Instructor-chosen hardness move (HARDNESS_MOVE_MENU id). Persisted
+     * because the async job rebuilds GenerationInput from this record —
+     * an unpersisted choice would silently drop on the queue boundary. */
+    hardnessMove?: string;
     prompt?: string;
     blueprintId?: ObjectId;
     retryOfRunId?: ObjectId;

@@ -135,6 +135,9 @@ export interface GenerationInput {
   count: number;
   type?: QuestionType;
   difficulty?: Difficulty;
+  /** Instructor-chosen hardness move (HARDNESS_MOVE_MENU id). Only legal with
+   * difficulty 'hard'; absent means the server rotates the menu. */
+  hardnessMove?: string;
   prompt?: string;
   byPuid: string;
   models?: ResolvedStepModels;
@@ -230,6 +233,12 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
   if ((daily?.total ?? 0) + input.count > platformSettings.costControls.maxGenerationsPerDay) {
     throw new Error('generation-daily-limit');
   }
+  if (input.hardnessMove !== undefined) {
+    if (input.difficulty !== 'hard') throw new Error('generation-hardness-move-requires-hard');
+    if (!HARDNESS_MOVE_MENU.some((move) => move.id === input.hardnessMove)) {
+      throw new Error('generation-unknown-hardness-move');
+    }
+  }
   const run = await createQuestionGenerationRun({
     courseId: input.courseId,
     requestedBy: input.byPuid,
@@ -237,6 +246,7 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     count: input.count,
     type: input.type ?? 'mcq',
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
+    ...(input.hardnessMove ? { hardnessMove: input.hardnessMove } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
     ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
@@ -316,6 +326,9 @@ async function retryRejectedCandidate(args: {
   reviewerStep: StepModelConfig;
   rejected: GeneratorOutput;
   critique: string;
+  /** The same assignment the rejected question carried: the replacement must
+   * implement the same move, not shop for an easier one. */
+  assignedMove?: string;
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
@@ -328,6 +341,7 @@ async function retryRejectedCandidate(args: {
     args.chunks,
     args.models.generator,
     REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+    args.assignedMove,
   );
   if (!retried) return null;
 
@@ -347,6 +361,29 @@ async function retryRejectedCandidate(args: {
     { ...args.reviewerStep },
   );
   return { generated: retried, numerics, validation, review };
+}
+
+/** One move per question in a hard batch (experiment 26): rotation from a
+ * random start guarantees distinct constructions within a batch, which also
+ * attacks the batch-diversity problem open since experiment 1. An explicit
+ * instructor choice applies to every question in the batch — they picked it
+ * deliberately. Non-hard targets get no assignment at all. */
+function assignMovesForBatch(
+  difficulty: Difficulty | undefined,
+  hardnessMove: string | undefined,
+  count: number,
+): (string | undefined)[] {
+  if (difficulty !== 'hard') return Array.from({ length: count }, () => undefined);
+  if (hardnessMove) {
+    const chosen = HARDNESS_MOVE_MENU.find((move) => move.id === hardnessMove);
+    if (!chosen) throw new Error('generation-unknown-hardness-move');
+    return Array.from({ length: count }, () => chosen.text);
+  }
+  const start = Math.floor(Math.random() * HARDNESS_MOVE_MENU.length);
+  return Array.from(
+    { length: count },
+    (_, i) => HARDNESS_MOVE_MENU[(start + i) % HARDNESS_MOVE_MENU.length]!.text,
+  );
 }
 
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
@@ -371,9 +408,12 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   const { chunks } = await retrieveChunks(
     collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
   );
+  const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count);
 
   for (let i = 0; i < count; i += 1) {
-    const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
+    const generated = await generateValidQuestion(
+      type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[i],
+    );
     if (!generated) {
       console.warn(
         `[generation] skipped a question for LO ${loId.toHexString()} after ` +
@@ -412,6 +452,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       const retried = await retryRejectedCandidate({
         lo, type, difficulty: input.difficulty, prompt, chunks, models,
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
+        assignedMove: assignedMoves[i],
       });
       if (retried) outcome = retried;
     }
@@ -505,6 +546,8 @@ export async function regenerateQuestion(
     generationInstruction,
     grounding.chunks,
     platformSettings.models.generator,
+    undefined,
+    assignMovesForBatch(current.difficulty, undefined, 1)[0],
   );
   if (!generated) throw new Error('generation-invalid-options');
 
@@ -628,10 +671,13 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       message: `Retrieved ${chunks.length} grounded chunks`,
     });
 
+    const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count);
     const generated: TrackedCandidate[] = [];
     for (let item = 0; item < count; item += 1) {
       try {
-        const candidate = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
+        const candidate = await generateValidQuestion(
+          type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item],
+        );
         if (!candidate) throw new Error('generation-invalid-options');
         generated.push({ item, generated: candidate });
         await updateContentRun(runId, {
@@ -723,6 +769,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           });
           const retried = await retryRejectedCandidate({
             lo, type, difficulty: input.difficulty, prompt, chunks, models,
+            assignedMove: assignedMoves[candidate.item],
             reviewerStep: models.reviewer, rejected: candidate.generated,
             critique: String(candidate.review.reasoning ?? ''),
           });
@@ -917,6 +964,7 @@ export function registerGenerationJobs(): void {
         count: run.input.count,
         type: run.input.type,
         ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
+        ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
         models: resolvedFromPersisted(run.input.models),
@@ -1121,6 +1169,10 @@ async function generateValidQuestion(
    * on EVERY attempt this call makes (the verifier's own retry feedback stacks
    * on top when a collision also occurs). */
   extraInstruction?: string,
+  /** The assigned hardness move (experiment 26), carried on every attempt —
+   * a structural retry must implement the same assignment, not shop for an
+   * easier one. */
+  assignedMove?: string,
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -1128,9 +1180,8 @@ async function generateValidQuestion(
   let lastFailure: string | undefined;
 
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
-    const withExtra = extraInstruction
-      ? `${GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks })}\n\n${extraInstruction}`
-      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
+    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove });
+    const withExtra = extraInstruction ? `${built}\n\n${extraInstruction}` : built;
     const candidate = await completeJson<GeneratorOutput>(
       lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
       // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
@@ -1483,12 +1534,89 @@ export const HARDNESS_MOVE_DECLARATION: string = [
   'a hard question with no declaration at all is rejected before review.',
 ].join('\n');
 
+/**
+ * The assignable hardness moves (experiment 26): at target `hard` the SERVER
+ * picks the construction device, because given free choice the generator
+ * monocultures — 4/4 "hidden parameter" in experiment 25, and a planner call
+ * re-imported the same bias in 26 — while a deterministic rotation produced
+ * six distinct faithful builds in six draws, zero substitutions, zero
+ * difficulty complaints. Ids are the API surface (GenerationInput.hardnessMove
+ * lets an instructor pick one explicitly); texts are the generator-facing
+ * instructions. Annuity-due is deliberately absent: the bank never uses it
+ * standalone, only stacked on another move.
+ */
+export const HARDNESS_MOVE_MENU: ReadonlyArray<{ id: string; text: string }> = [
+  {
+    id: 'two-approach-comparison',
+    text: 'two-approach comparison: value the same quantity two different ways (e.g. a '
+      + 'multiple vs. a discounted value) and set the question in reconciling or '
+      + 'comparing the two results',
+  },
+  {
+    id: 'off-cycle-timing',
+    text: 'off-cycle timing: place the decisive event mid-stream, so a count or '
+      + 'remaining term must be re-derived rather than read off the stem',
+  },
+  {
+    id: 'benefit-minus-cost',
+    text: 'value = benefit minus cost: make the computed value one LEG of a trade or '
+      + 'decision, so the answer is the difference between two legs and identifying '
+      + 'the legs is part of the work',
+  },
+  {
+    id: 'regime-change',
+    text: 'regime change: switch a growth rate or rate environment partway through, '
+      + 'chaining two formula stages across the boundary and discounting the far '
+      + 'side back through the near side',
+  },
+  {
+    id: 'deferred-start',
+    text: 'deferred start: begin the cash-flow stream some periods in the future, so '
+      + 'its standard formula value lands at the wrong date and must be discounted '
+      + 'again',
+  },
+  {
+    id: 'reinvestment-chain',
+    text: 'reinvestment chain: reinvest interim cash flows at a DIFFERENT rate, so '
+      + 'the answer needs their future value plus the terminal piece',
+  },
+  {
+    id: 'hidden-parameter',
+    text: 'hidden parameter: withhold one genuinely needed input (an original payment, '
+      + 'a remaining maturity, an implied rate) so it must be reconstructed from other '
+      + 'stated terms first — it must not be a value the stem effectively hands over',
+  },
+];
+
+/**
+ * The generator-facing assignment. The escape hatch is deliberate: assignment
+ * steers routing numeric (measured in experiment 26), and on a
+ * conceptual-shaped LO a forced calculation move would be a bad fit — the
+ * fallback keeps the conceptual hard pattern reachable, with the mismatch
+ * recorded in the declaration where criterion 9 and the instructor can see it.
+ */
+export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
+  return [
+    'YOUR HARDNESS MOVE HAS BEEN ASSIGNED for this question. Implement EXACTLY this move:',
+    `  ${move}`,
+    'Do not substitute a different move. Declare this move, as implemented, in the',
+    '"hardnessMove" field. If this move genuinely cannot be implemented for this',
+    'learning objective from the material provided — including when the right question',
+    'for this objective is CONCEPTUAL — fall back to the conceptual hard pattern (two',
+    'easily-confused rules, single-wrong-step distractors) and say in the declaration',
+    'that the assigned move did not fit and why.',
+  ].join('\n');
+}
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
   difficulty?: Difficulty;
   prompt?: string;
   chunks: RetrievedChunk[];
+  /** The server-assigned (or instructor-chosen) hardness move. Only rendered
+   * at target hard; see HARDNESS_MOVE_MENU. */
+  assignedMove?: string;
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
@@ -1512,6 +1640,9 @@ export function GENERATOR_PROMPT(params: {
     'evidence of a mastery they have not shown.',
     params.difficulty === 'hard' ? HARDNESS_MOVES : '',
     params.difficulty === 'hard' ? HARDNESS_MOVE_DECLARATION : '',
+    params.difficulty === 'hard' && params.assignedMove
+      ? HARDNESS_MOVE_ASSIGNMENT(params.assignedMove)
+      : '',
     // The connector (R7): experiment 22 measured the widened pool licensing
     // numeric ambition while the offered chain went untaken 3/3 — the model
     // fell back to its single-concept template on 2 of 3. The material and the
