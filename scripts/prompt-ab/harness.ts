@@ -64,6 +64,10 @@ export interface Arm {
     model: string;
     track: (u: { promptTokens?: number; completionTokens?: number }) => void;
   }) => Promise<{ appendix: string; planned?: unknown }>;
+  /** Per-question assigned hardness move, passed through GENERATOR_PROMPT's
+   * real assignedMove param (the pipeline's own insertion point) — use this,
+   * not prePass, when probing the shipped assignment mechanism. */
+  assignedMoveFor?: (i: number) => string | undefined;
   generator?: StepOptions;
   validator?: StepOptions;
   reviewer?: StepOptions;
@@ -225,8 +229,10 @@ export async function runExperiment(spec: Experiment): Promise<string> {
         const tag = `${arm.label}/${cell.fixture}/${cell.difficulty ?? 'any'}/#${i}`;
         try {
           const chunks = arm.chunks ?? fixture.chunks;
+          const assignedMove = arm.assignedMoveFor?.(i);
           let genPrompt = GENERATOR_PROMPT({
             type: 'mcq', loName: fixture.lo, difficulty: cell.difficulty, chunks,
+            ...(assignedMove ? { assignedMove } : {}),
           });
           if (arm.transformPrompt) genPrompt = arm.transformPrompt(genPrompt);
           let planned: unknown;
