@@ -4470,3 +4470,29 @@ surface and missed a wiring bug on the production path, because the harness
 deliberately bypasses retrieval. The next harness extension worth having is a
 "through-the-queue" mode that enqueues a real run and reads the record back —
 this incident's re-run script is its prototype.
+
+## Exp 29, run 3 — the term-shift rule verified (run 6a8a03f5…, commit 347a654)
+
+| | run 1 (original) | run 2 (8d577b2) | run 3 (347a654) |
+|---|---|---|---|
+| chunks | 6 | 8 | 8 |
+| persisted verdicts | reject ×3 | pass ×2, flag ×1 | **pass ×2, reject ×1** |
+| term-shift collisions on first attempts | ~6 | ~6 | **0** |
+| other first-attempt faults | — | — | 3 (undefined variable, option contract, one non-term collision) |
+| Option B fired | 3/3 | 3/3 | **2/3** — the first candidate on this LO to pass without a retry |
+
+The term-based collisions are gone: the rule's two halves both took. One
+passing question still carries a timing distractor ("mishandling elapsed
+timing") — and it PROVED, because the elapsed slot no longer draws 0, so
+the shift is never zero. The remaining first-attempt faults are ordinary
+classes the deterministic layer already catches (a derivedValue referencing
+a name that does not exist; a sentence-with-value option; a
+coupon-vs-unlevered collision in the identity-element family). The one
+persisted reject is a legitimate criterion-9/contract call on a two-approach
+question that displayed one value while asking for two.
+
+Cost signal: Option B 3/3 → 2/3 and one clean pass. Per-question cost on
+this family moved from ~3.5¢ toward ~2.5¢; the ~1.2¢ floor needs the
+remaining first-attempt faults to fall, and those are deterministic-gate
+territory (the undisplayed-slot check already filed; an undefined-variable
+reference is its sibling). Incident closed on the prompt side.
