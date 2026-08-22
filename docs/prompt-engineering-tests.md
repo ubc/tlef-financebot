@@ -4257,3 +4257,71 @@ questions gets N different moves by construction, which also attacks the
 batch-diversity problem open since experiment 1. No planner call: two-pass
 buys nothing the rotation does not, at strictly higher cost and lower
 diversity.
+
+# Experiment 27 / 27b — assignment as shipped: EV replicates; FX finds and fixes a displacement mode
+
+_Run 2026-08-21/22 on the harness, through the REAL path — HARDNESS_MOVE_MENU
+texts via GENERATOR_PROMPT's assignedMove param (commit c2e7e78). Cells:
+EV-widened × hard (replication) and FX × hard (fit-stress, the cell exp 26
+never had). Sequential rotation covers all seven menu moves at n=7._
+
+## 27 — Results
+
+| cell | pass/flag/reject | escape-hatch fallbacks | note |
+|---|---|---|---|
+| EV-widened | 7/0/0 | 1 (honest, declared) | exp 26 replicated through the shipped mechanism |
+| FX | 3/1/3 | 2 (both honest) | **3 rejects, all criterion 2, one mechanism** |
+
+**The EV cell closes the loop on the friendly family.** Six faithful distinct
+numeric builds plus one declared conceptual fallback, 7/7 pass.
+
+**The FX cell found a failure mode the escape hatch does not cover.** The
+hatch fired exactly as designed when a move was UNIMPLEMENTABLE (two-approach
+and deferred-start on qualitative macro material → declared conceptual
+fallbacks, both passed). But benefit−cost, reinvestment-chain and
+hidden-parameter were implementable as FX-conversion arithmetic — sound
+formulas, sound distractors — and implementing them DISPLACED the objective.
+All three rejected on criterion 2 with the same diagnosis: *"central-bank
+policy is merely asserted; the student never analyzes how macro drivers
+influence the rate."* The move became the question; the LO became
+set-dressing. **Implementability is not fit.** (All three were caught
+rejects, not served questions — and in production each fires Option B's
+retry with that critique quoted back.)
+
+## The fix — a subordination clause
+
+The assignment block now states the move is a MEANS of testing the objective,
+never the point: if the stem merely asserts the objective's content while the
+student exercises the move's arithmetic, that is a misfit even though the
+move is implementable, and it takes the declared fallback.
+
+## 27b — Re-probe of the FX cell
+
+| | exp 27 FX | exp 27b FX |
+|---|---|---|
+| pass/flag/reject | 3/1/3 | **5/0/2** |
+| LO-displacement rejects | 3 | **1** |
+| honest declared fallbacks | 2 | 3 |
+| genuine difficulty complaints | 1 | 0 |
+
+The two remaining rejects split: one residual displacement (benefit−cost
+supplied the weaker-CAD conclusion again), and one UNRELATED defect the
+review correctly caught (two param slots never exposed in the stem — a
+stem-completeness fault, not an assignment fault). Displacement 3/7 → 1/7
+with the residual covered by Option B in production.
+
+**Harness note, recorded for the next reader:** the tally's
+`difficultyComplaint` heuristic false-positived twice in 27b on phrases
+inside POSITIVE reviews. The flag is triage, not a verdict — read the
+reasoning before counting complaints. Tightening the regex is open hygiene.
+
+## Where this leaves the difficulty stack
+
+R1 rubric → R2 moves → R7 widened grounding → declaration + criterion 9 →
+server-assigned moves with LO subordination. Measured end to end across
+experiments 20-27b: hard questions on calculation families now arrive as
+distinct faithful constructions (7/7, 6/6 on the friendly family through the
+real path), conceptual families degrade honestly by declared fallback, the
+one recurring residual (a move supplying the objective's conclusion) is
+caught by criterion 2 and retried by Option B, and every hard question
+carries a declared, instructor-visible construction device.
