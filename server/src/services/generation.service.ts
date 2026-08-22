@@ -361,6 +361,13 @@ export function retryMoveFor(
   if (/declared (hardness )?move|hardnessMove|substitut|not (genuinely )?implement/i.test(critique)) {
     return { move: assignedMove, source: 'kept' };
   }
+  // A verifier collision is a fault IN a construction, not OF it — Option B's
+  // proven regime (0/4 -> 4/4 on exactly these critiques). Measured 2026-08-22
+  // (exp 34 run 1): 6 of 9 reject-retries were collision critiques, and
+  // rotating threw away sound constructions to fix a distractor.
+  if (/identical at display precision|collide|deterministic verifier|cannot be served|undefined-length/i.test(critique)) {
+    return { move: assignedMove, source: 'kept' };
+  }
   const index = HARDNESS_MOVE_MENU.findIndex((move) => move.text === assignedMove);
   if (index < 0) return { move: assignedMove, source: 'kept' };
   const chosen = suggested ? HARDNESS_MOVE_MENU.find((move) => move.id === suggested) : undefined;
@@ -403,7 +410,7 @@ async function retryRejectedCandidate(args: {
   const movedOn = retryMove !== undefined && retryMove !== args.assignedMove;
   if (args.assignedMove !== undefined) {
     const id = HARDNESS_MOVE_MENU.find((move) => move.text === retryMove)?.id ?? 'non-menu';
-    console.warn(`[generation] reject-retry move: ${moveSource} (${id})`);
+    console.warn(`[generation] reject-retry move: ${moveSource} (${id}); reviewer suggested: ${args.suggestedMove ?? 'none'}`);
   }
   const retried = await generateValidQuestion(
     args.type,
@@ -2551,13 +2558,15 @@ export function REVIEWER_PROMPT(params: {
          // information for choosing the next one (2026-08-22). Exp 26's caveat
          // applies — an LLM choosing moves drifts to its favourites — so the
          // server validates the suggestion and falls back to rotation.
-         'IF YOU REJECT and the fault is the CONSTRUCTION — the hardness move does not fit',
-         'this objective (a decision packed into a number, a comparison forced into one',
-         'figure, a reconstruction the question cannot support) — also set',
-         '"suggestedMove" to the id of the move that would fit this objective better:',
+         'IF YOU REJECT, you MUST include "suggestedMove". When the fault is the',
+         'CONSTRUCTION — the hardness move does not fit this objective (a decision packed',
+         'into a number, a comparison forced into one figure, a reconstruction the',
+         'question cannot support) — set it to the id of the move that would fit this',
+         'objective better:',
          ...HARDNESS_MOVE_MENU.map((move) => `  - ${move.id}: ${move.text.split(':')[1]?.trim().slice(0, 90) ?? ''}`),
-         'Omit it when the fault is unrelated to the construction (a wrong fact, a',
-         'missing input, a collision fixable in place).',
+         'Set it to null when the fault is unrelated to the construction (a wrong fact, a',
+         'missing input, a collision fixable in place) — null is an answer; a missing',
+         'field is not.',
          '']
       : []),
     'Question JSON:',
@@ -2568,6 +2577,6 @@ export function REVIEWER_PROMPT(params: {
     'or "reject" (do not use). Respond with ONLY this JSON shape:',
     '{ "decision": "pass"|"flag"|"reject", "reasoning": string,',
     '  "suggestedDifficulty"?: "easy"|"medium"|"hard",   // only with a difficulty flag',
-    '  "suggestedMove"?: string }                         // only with a construction reject',
+    '  "suggestedMove"?: string|null }                    // REQUIRED on reject: an id, or null',
   ].join('\n');
 }

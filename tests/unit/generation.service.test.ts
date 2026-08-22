@@ -353,7 +353,11 @@ describe('difficulty calibration prompts', () => {
     expect(retryMoveFor(first, 'The keyed correct option is not correct; the rate formula assumes NPV is zero.', false))
       .toEqual({ move: second, source: 'rotated' });
     // Wraparound at the end of the menu.
-    expect(retryMoveFor(last, 'options collide at display precision', false)).toEqual({ move: first, source: 'rotated' });
+    expect(retryMoveFor(last, 'the stem asks for a ranking but the options are one figure', false)).toEqual({ move: first, source: 'rotated' });
+    // A verifier collision is a fault IN the construction, not OF it: keep the move.
+    expect(retryMoveFor(first, 'options collide at display precision (seed 1000003)', false)).toEqual({ move: first, source: 'kept' });
+    expect(retryMoveFor(first, 'The deterministic verifier has rejected the question because X and Y are identical', false, 'regime-change'))
+      .toEqual({ move: first, source: 'kept' });
     // Faithfulness critique: the move is right, the implementation is not — keep it.
     expect(retryMoveFor(first, 'The declared hardness move is not genuinely implemented: the stem hands the term over.', false))
       .toEqual({ move: first, source: 'kept' });
