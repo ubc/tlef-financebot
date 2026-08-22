@@ -138,6 +138,11 @@ export interface GenerationInput {
   /** Instructor-chosen hardness move (HARDNESS_MOVE_MENU id). Only legal with
    * difficulty 'hard'; absent means the server rotates the menu. */
   hardnessMove?: string;
+  /** True when the instructor constrained the materials (blueprint pin or
+   * prompt @mention) — the signal R7's widening respects. Distinct from
+   * pinnedMaterialIds, which the async job also uses to carry a run's FROZEN
+   * resolved set and therefore says nothing about instructor intent. */
+  groundingPinned?: boolean;
   prompt?: string;
   byPuid: string;
   models?: ResolvedStepModels;
@@ -256,6 +261,9 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     grounding: {
       allowedMaterialIds: resolvedMaterialIds,
       retrievedChunkCount: 0,
+      // An explicit pin (blueprint materials) or a prompt @mention is the
+      // instructor constraining grounding; plain LO assignment is not.
+      pinned: input.pinnedMaterialIds !== undefined || extractMaterialMentions(input.prompt).length > 0,
     },
     models: persistedModels(input.models ?? stepModelsFrom(platformSettings)),
   });
@@ -658,21 +666,30 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const allowedMaterialIds = input.pinnedMaterialIds?.map((id) => id.toHexString())
       ?? (await groundingMaterialIds(courseId, lo, prompt));
     if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+    // `pinned` rides on every grounding write so a retry of this run (which
+    // rebuilds its input from the record) still knows whether the instructor
+    // constrained the materials.
+    const pinned = input.groundingPinned === true;
     await updateContentRun(runId, {
       status: 'running',
       stage,
       grounding: {
         allowedMaterialIds: allowedMaterialIds.map((id) => new ObjectId(id)),
         retrievedChunkCount: 0,
+        pinned,
       },
       result,
       message: `Pinned ${allowedMaterialIds.length} assigned material${allowedMaterialIds.length === 1 ? '' : 's'}`,
     });
     // Widen only when the instructor did NOT pin materials — a pin means
     // exactly these, and the supporting pool would smuggle others back in.
+    // Judged by the instructor-pin FLAG, never by pinnedMaterialIds being set:
+    // the async job always passes the run's frozen ids through that field, so
+    // the old `pinnedMaterialIds === undefined` test was false on every
+    // tracked run and R7 never widened in production (2026-08-22).
     const grounding = await retrieveChunks(
       courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds,
-      input.pinnedMaterialIds === undefined && input.difficulty === 'hard',
+      !pinned && input.difficulty === 'hard',
     );
     const chunks = grounding.chunks;
     stage = 'generating';
@@ -682,6 +699,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       grounding: {
         allowedMaterialIds: grounding.allowedMaterialIds.map((id) => new ObjectId(id)),
         retrievedChunkCount: chunks.length,
+        pinned,
       },
       result,
       message: `Retrieved ${chunks.length} grounded chunks`,
@@ -995,6 +1013,8 @@ export function registerGenerationJobs(): void {
         ...(run.grounding?.allowedMaterialIds
           ? { pinnedMaterialIds: run.grounding.allowedMaterialIds }
           : {}),
+        // The frozen ids are not an instructor pin; only the recorded flag is.
+        ...(run.grounding?.pinned ? { groundingPinned: true } : {}),
       },
       id,
     );
@@ -1806,7 +1826,13 @@ export function GENERATOR_PROMPT(params: {
     '        EQUITY_VALUE = SHARES*PRICE',
     '        V            = DEBT_VALUE + EQUITY_VALUE',
     '        COST_EQUITY  = RF_PCT/100 + BETA*MRP_PCT/100',
-    '        WACC         = (EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)',
+    // Displayed in PERCENT, deliberately (2026-08-22): a live hard batch
+    // reproduced this example with a fraction-valued WACC, and its
+    // remaining-term distractor (14 vs 15 years) moved the rate by ~0.0004 —
+    // invisible at the two-decimal display, so "0.12" collided with "0.12"
+    // on both attempts and all three questions died unservable. The same
+    // values in percent, 12.04 vs 12.00, are distinct.
+    '        WACC_PCT     = 100*((EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100))',
     '      bad:  all of that inlined as one 400-character expression with the',
     '            debt-value sub-expression repeated six times.',
     '    A step that no option displays is perfectly allowed and is exempt from',
@@ -1914,6 +1940,12 @@ export function GENERATOR_PROMPT(params: {
     '  - two "wrong rate" distractors whose rates coincide where their ranges meet.',
     'For a ratio-valued answer, separate it by the STRUCTURE of the mistake (a',
     'dropped term, a wrong denominator), not by the input ranges.',
+    'And DISPLAY every rate or ratio in PERCENT: multiply by 100, name it *_PCT, show',
+    'it as "{{NAME_PCT}}%". Options render at two decimals, so a fraction-valued rate',
+    'hides any difference under 0.005 — a distractor that shifts a WACC by 0.0004',
+    '(one year of remaining term) collides with the correct 0.12 while 12.04% and',
+    '12.00% are distinct. Timing and hidden-term moves produce exactly such small',
+    'shifts on rate-valued answers; percent display is what keeps them servable.',
     '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',

@@ -476,10 +476,26 @@ describe('durable generation runs (P2-0)', () => {
         grounding: {
           allowedMaterialIds: [materialId],
           retrievedChunkCount: 0,
+          // Plain LO assignment is NOT an instructor pin — R7 may widen.
+          pinned: false,
         },
       }),
     );
     expect(enqueueJob).toHaveBeenCalledWith('generation.run', { runId: runId.toHexString() });
+  });
+
+  it('records a prompt @mention as an instructor pin on the run', async () => {
+    const runId = new ObjectId();
+    jest.mocked(createQuestionGenerationRun).mockResolvedValue({ _id: runId } as never);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, name: 'lecture-3.pdf', status: 'ready', assignments: [{ themeId, loId }] },
+    ]);
+
+    await enqueueGenerationRun({ courseId, loId, count: 1, prompt: 'Use @lecture-3.pdf only', byPuid: 'PUID-INSTR' });
+
+    expect(createQuestionGenerationRun).toHaveBeenCalledWith(
+      expect.objectContaining({ grounding: expect.objectContaining({ pinned: true }) }),
+    );
   });
 
   it('rejects an LO with no ready assigned material before creating a run', async () => {
@@ -491,6 +507,74 @@ describe('durable generation runs (P2-0)', () => {
 
     expect(createQuestionGenerationRun).not.toHaveBeenCalled();
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('the tracked job widens a hard run from the recorded pin FLAG, not from the frozen ids (R7 fix)', async () => {
+    // Found 2026-08-22 on a live hard batch: the job hands the run's frozen
+    // allowedMaterialIds back through pinnedMaterialIds, so a widen test on
+    // "pinnedMaterialIds === undefined" was false on every tracked run and R7
+    // never fired in production (6 chunks where 8 were due).
+    const earlierLoId = new ObjectId();
+    const supportMaterialId = new ObjectId();
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute WACC', order: 2 });
+    loToArray.mockResolvedValue([
+      { _id: loId, courseId, themeId, name: 'Compute WACC', order: 2 },
+      { _id: earlierLoId, courseId, themeId, name: 'CAPM', order: 1 },
+    ]);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId, loId }] },
+      { _id: supportMaterialId, courseId, status: 'ready', assignments: [{ themeId, loId: earlierLoId }] },
+    ]);
+    const runFor = (pinned: boolean) => ({
+      _id: new ObjectId(), courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 1, revision: 0, events: [], warnings: [],
+      input: {
+        loId, count: 1, type: 'mcq', difficulty: 'hard',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      // Every run carries its frozen resolved ids; only `pinned` says whether
+      // the instructor constrained them.
+      grounding: { allowedMaterialIds: [materialId], retrievedChunkCount: 0, pinned },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+
+    // Not pinned: primary search + supporting search.
+    jest.mocked(getContentRun).mockResolvedValue(runFor(false) as never);
+    jest.mocked(search).mockClear();
+    jest.mocked(search)
+      .mockResolvedValueOnce([{ payload: { materialId: materialId.toHexString(), chunk: 'WACC material' } }] as never)
+      .mockResolvedValueOnce([{ payload: { materialId: supportMaterialId.toHexString(), chunk: 'CAPM material' } }] as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: new ObjectId(), version: {} } as never);
+    // Must parse as an ObjectId: the handler returns early on an invalid id
+    // (getContentRun is mocked, so the value itself is irrelevant).
+    await handler({ runId: new ObjectId().toHexString() });
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(search).mock.calls[1]?.[3]).toEqual({
+      must: [{ key: 'materialId', match: { any: [supportMaterialId.toHexString()] } }],
+    });
+
+    // Pinned by the instructor: the frozen ids are exactly the set — one search.
+    jest.mocked(getContentRun).mockResolvedValue(runFor(true) as never);
+    jest.mocked(search).mockClear();
+    jest.mocked(search).mockResolvedValue([{ payload: { materialId: materialId.toHexString(), chunk: 'WACC material' } }] as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    // Must parse as an ObjectId: the handler returns early on an invalid id
+    // (getContentRun is mocked, so the value itself is irrelevant).
+    await handler({ runId: new ObjectId().toHexString() });
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a successful Draft and finishes partial when another item fails validation', async () => {

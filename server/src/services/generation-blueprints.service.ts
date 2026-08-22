@@ -189,5 +189,7 @@ export async function retryGenerationRun(
     ...(run.grounding?.allowedMaterialIds
       ? { pinnedMaterialIds: run.grounding.allowedMaterialIds }
       : {}),
+    // The frozen ids are not an instructor pin; only the recorded flag is.
+    ...(run.grounding?.pinned ? { groundingPinned: true } : {}),
   });
 }

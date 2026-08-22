@@ -561,6 +561,13 @@ export interface QuestionGenerationRun extends ContentRunBase {
   grounding?: {
     allowedMaterialIds: ObjectId[];
     retrievedChunkCount: number;
+    /** True when the INSTRUCTOR constrained the materials (blueprint pin or
+     * prompt @mention). allowedMaterialIds alone cannot say: every run
+     * freezes its resolved set here, and the async job hands that frozen set
+     * back as pinnedMaterialIds — which made R7's widening read every run as
+     * pinned and never fire (found 2026-08-22 on a live hard batch that
+     * retrieved 6 chunks where 8 were due). */
+    pinned?: boolean;
   };
   result?: QuestionGenerationResult;
 }
