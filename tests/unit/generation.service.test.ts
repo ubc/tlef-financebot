@@ -381,6 +381,19 @@ describe('difficulty calibration prompts', () => {
     const reviewer = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
     expect(reviewer).toContain('Declared hardness device');
     expect(reviewer).toContain('never re-litigate from scratch');
+    // Without an assignment the block is absent; with one, criterion 9 judges
+    // against it AND the declared misfit-fallback stays protected.
+    expect(reviewer).not.toContain('The platform ASSIGNED');
+    const withAssignment = REVIEWER_PROMPT({
+      loName: 'Compute IRR',
+      question: generatorOutput() as never,
+      assignedMove: 'regime change: switch a growth rate partway',
+    });
+    expect(withAssignment).toContain('The platform ASSIGNED the generator this hardness move');
+    expect(withAssignment).toContain('regime change: switch a growth rate partway');
+    expect(withAssignment).toContain('DID');
+    expect(withAssignment).toContain('NOT FIT this objective and fell back');
+    expect(withAssignment).toContain('do not reject over the substitution alone');
   });
 
   it('gives the generator the hardness-moves menu ONLY at target hard', () => {

@@ -165,9 +165,10 @@ async function judgeOnce(args: {
   generated: any;
   arm: Arm;
   model: string;
+  assignedMove?: string;
   track: (u: { promptTokens?: number; completionTokens?: number }) => void;
 }): Promise<Omit<RunRecord, 'arm' | 'fixture' | 'target' | 'i'>> {
-  const { lo, chunks, generated, arm, model, track } = args;
+  const { lo, chunks, generated, arm, model, assignedMove, track } = args;
   const verification = verifyGeneratedNumerics(generated);
   const validator = await completeJson<{ roleAssessment: string }>(
     VALIDATOR_PROMPT({ loName: lo, question: generated, chunks }),
@@ -181,6 +182,7 @@ async function judgeOnce(args: {
       ...(verification.failure ? { verificationFailure: verification.failure } : {}),
       ...(!verification.failure && generated.numericKind === 'numeric' ? { verificationProven: true } : {}),
       roleAssessment: validator.roleAssessment,
+      ...(assignedMove ? { assignedMove } : {}),
     }),
     { model, reasoningEffort: 'high', ...arm.reviewer, onUsage: track },
   );
@@ -246,7 +248,7 @@ export async function runExperiment(spec: Experiment): Promise<string> {
           const generated = await completeJson<any>(genPrompt, {
             model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
           });
-          const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, track });
+          const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, assignedMove, track });
           let record: RunRecord = { ...base, ...(planned !== undefined ? { planned } : {}), ...first };
 
           if (spec.mode === 'retry-on-reject' && String(first.decision).toLowerCase() === 'reject') {
@@ -257,7 +259,7 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             const regenerated = await completeJson<any>(retryPrompt, {
               model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
             });
-            const second = await judgeOnce({ lo: fixture.lo, chunks, generated: regenerated, arm, model, track });
+            const second = await judgeOnce({ lo: fixture.lo, chunks, generated: regenerated, arm, model, assignedMove, track });
             record = { ...record, retryFired: true, retry: second };
           }
 

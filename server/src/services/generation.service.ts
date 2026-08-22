@@ -356,6 +356,7 @@ async function retryRejectedCandidate(args: {
       question: retried,
       chunks: args.chunks,
       roleAssessment: String(validation.roleAssessment ?? ''),
+      ...(args.assignedMove ? { assignedMove: args.assignedMove } : {}),
       ...reviewerVerificationParams(numerics),
     }),
     { ...args.reviewerStep },
@@ -440,6 +441,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             question: generated,
             chunks,
             roleAssessment: String(validation.roleAssessment ?? ''),
+            ...(assignedMoves[i] ? { assignedMove: assignedMoves[i] } : {}),
             ...reviewerVerificationParams(numerics),
           }),
           { ...models.reviewer },
@@ -539,6 +541,7 @@ export async function regenerateQuestion(
     'Create a distinct alternative to the existing question below. Preserve the learning objective but do not merely paraphrase.',
     `Existing question: ${JSON.stringify({ stem: current.stem, options: current.options })}`,
   ].join('\n\n');
+  const [regenerateMove] = assignMovesForBatch(current.difficulty, undefined, 1);
   const generated = await generateValidQuestion(
     current.type,
     lo.name,
@@ -547,7 +550,7 @@ export async function regenerateQuestion(
     grounding.chunks,
     platformSettings.models.generator,
     undefined,
-    assignMovesForBatch(current.difficulty, undefined, 1)[0],
+    regenerateMove,
   );
   if (!generated) throw new Error('generation-invalid-options');
 
@@ -564,6 +567,7 @@ export async function regenerateQuestion(
           question: generated,
           chunks: grounding.chunks,
           roleAssessment: String(validation.roleAssessment ?? ''),
+          ...(regenerateMove ? { assignedMove: regenerateMove } : {}),
           ...reviewerVerificationParams(numerics),
         }),
         { ...platformSettings.models.reviewer },
@@ -750,6 +754,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 question: candidate.generated,
                 chunks,
                 roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
+                ...(assignedMoves[candidate.item] ? { assignedMove: assignedMoves[candidate.item] } : {}),
                 ...reviewerVerificationParams(candidateNumerics),
               }),
               { ...models.reviewer },
@@ -2023,6 +2028,12 @@ export function REVIEWER_PROMPT(params: {
    * common-misconception role, so a swap changes student behaviour.
    */
   roleAssessment?: string;
+  /** The platform-assigned hardness move (assignMovesForBatch), when there was
+   * one. Closes the loop on criterion 9: without it, a generator that silently
+   * substituted an easier move than assigned — and declared the substitute
+   * honestly — would pass review. Zero substitutions measured across 20
+   * assigned draws (exps 26-27b), so this is hardening, not a fix. */
+  assignedMove?: string;
 }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
@@ -2170,6 +2181,24 @@ export function REVIEWER_PROMPT(params: {
          'FLAG the question and name the exact swap so the instructor can relabel it —',
          'do not reject over role labels alone. An option marked "correct" that is not',
          'actually correct remains a reject: that is a wrong answer key, not a label.',
+         '']
+      : []),
+    // The fallback-protection wording is the load-bearing part: the FX cell
+    // (exp 27b) legitimately produces declared misfit-fallbacks, and a
+    // compliance-minded reading of the assignment would reject exactly the
+    // honest behaviour the escape hatch exists for. Substitution is a FLAG,
+    // not a reject, for the same reason role mislabels are: instructor-fixable
+    // on a question that may otherwise be sound.
+    ...(params.assignedMove
+      ? ['The platform ASSIGNED the generator this hardness move:',
+         `  "${params.assignedMove}"`,
+         'Judge criterion 9 against this assignment: the declared move should be this',
+         'move, as implemented in the question. A declaration that the assignment DID',
+         'NOT FIT this objective and fell back to the conceptual hard pattern is',
+         'legitimate, not a violation — judge the fallback question on its own merits.',
+         'But a question that implements a DIFFERENT move than assigned, with no',
+         'misfit explanation in its declaration, should be FLAGGED naming the',
+         'substitution — do not reject over the substitution alone.',
          '']
       : []),
     'Question JSON:',
