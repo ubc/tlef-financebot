@@ -11,6 +11,21 @@ import { formatParamValue, resolveSlotsAndDerived } from './params.service';
 import type { DerivedValue, NumericVerification, ParamSlot } from '../types/domain';
 
 /**
+ * The format-consistency gate (2026-08-22): in a numerical question every
+ * option displays the SAME quantity, so every option text must be the same
+ * template around its placeholder — "${{X}}", "{{X}}%", "${{X}} million". A
+ * live question had three "$…" options and one "…%" option, and the odd one
+ * out was the correct answer: an answer key readable from formatting alone,
+ * and a question that is not even comparing like with like. Returns the
+ * templates when they disagree so the failure can name them.
+ */
+export function optionFormatsConsistent(optionTexts: string[]): { ok: true } | { ok: false; templates: string[] } {
+  const templates = optionTexts.map((text) => text.replace(/\{\{\w+\}\}/g, '{{…}}').replace(/\s+/g, ' ').trim());
+  const distinct = [...new Set(templates)];
+  return distinct.length <= 1 ? { ok: true } : { ok: false, templates: distinct };
+}
+
+/**
  * The solvability gate: which paramSlots does `rootName` (the correct
  * option's derived value) depend on — directly or through other
  * derivedValues — that the stem never displays as a {{placeholder}}?

@@ -21,6 +21,7 @@ import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
   undisplayedInputs,
+  optionFormatsConsistent,
 } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
@@ -1718,6 +1719,15 @@ export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
     'objective itself supports (for a conceptual objective: two easily-confused',
     'rules, single-wrong-step distractors) and say in the declaration that the',
     'assigned move did not fit and why.',
+    // Measured 2026-08-22 on "Compare projects with PP and PI": the natural
+    // answer is WHICH project wins, and the generator encoded two rankings
+    // into one number (PP_A + PI_B/1000) to satisfy the option contract —
+    // collision, wrong key, wrong payback model, all in one question.
+    'If implementing the move yields a RANKING or a DECISION ("which project",',
+    '"which criterion wins") rather than one quantity, do not encode it as a number.',
+    'Either ask for the VALUE DIFFERENCE the decision turns on (benefit minus cost —',
+    'one scalar), or make the question conceptual. Never pack two results into one',
+    'displayed value.',
   ].join('\n');
 }
 
@@ -1840,6 +1850,13 @@ export function GENERATOR_PROMPT(params: {
     'State the inputs as variable slots and every displayed value as a formula; a',
     'deterministic evaluator computes them at serve time, and each student sees different',
     'numbers.',
+    // Found 2026-08-22 by the solvability gate: three persisted questions had
+    // stems written as ALGEBRA — "the loan principal is $P$, the APR is $A$%"
+    // — symbolic names in math, no placeholders, so the student saw letters
+    // and no numbers. Unanswerable, and nothing had caught it.
+    'The STEM must show every input the answer needs as its {{NAME}} placeholder —',
+    '"a principal of ${{PRINCIPAL}} at {{APR_PCT}}% APR" — never as a bare symbol',
+    'like $P$ or $A$. A symbolic stem displays no numbers; the question is rejected.',
     '  - "paramSlots": the inputs, e.g.',
     '      [ { "name": "PAYMENT", "min": 100, "max": 900, "step": 100 },',
     '        { "name": "RATE_PCT", "min": 4, "max": 12, "step": 2 } ]',
@@ -2086,6 +2103,17 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
   );
   if (!optionValues.ok) {
     return { fields: base, failure: optionValues.error };
+  }
+
+  const formats = optionFormatsConsistent(generated.options.map((option) => option.text));
+  if (!formats.ok) {
+    return {
+      fields: base,
+      failure: `options must all display the same quantity in the same format, but they use `
+        + `${formats.templates.map((t) => `"${t}"`).join(' and ')} — a differently formatted option `
+        + 'gives the answer away and compares unlike quantities; make every option the same '
+        + 'unit and template',
+    };
   }
 
   const result = verifyQuestionNumerics({

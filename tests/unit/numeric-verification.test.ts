@@ -7,11 +7,27 @@ import {
   VERIFICATION_SAMPLE_COUNT,
   SCRIPT_SAMPLE_COUNT,
   optionValueNamesForVerification,
+  optionFormatsConsistent,
   resolveDerivedValues,
   undisplayedInputs,
   verifyGenerateScript,
   verifyQuestionNumerics,
 } from '../../server/src/services/numeric-verification.service';
+
+describe('optionFormatsConsistent — the format-consistency gate', () => {
+  it('accepts options that share one template around the placeholder', () => {
+    expect(optionFormatsConsistent(['${{A}}', '${{B}}', '${{C}}', '${{D}}'])).toEqual({ ok: true });
+    expect(optionFormatsConsistent(['{{A}}%', '{{B}}%'])).toEqual({ ok: true });
+    expect(optionFormatsConsistent(['${{A}} million', '${{B}}  million'])).toEqual({ ok: true });
+  });
+
+  it('names the disagreeing templates when the odd one out gives the answer away', () => {
+    // The live case: three dollar options and one percent option — the
+    // percent was the correct answer.
+    const result = optionFormatsConsistent(['${{A}}', '${{B}}', '{{C}}%', '${{D}}']);
+    expect(result).toEqual({ ok: false, templates: ['${{…}}', '{{…}}%'] });
+  });
+});
 
 describe('undisplayedInputs — the solvability gate', () => {
   // The live case (2026-08-22): TAX_PCT drives the correct answer through a
