@@ -1765,9 +1765,14 @@ export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
     // collision, wrong key, wrong payback model, all in one question.
     'If implementing the move yields a RANKING or a DECISION ("which project",',
     '"which criterion wins") rather than one quantity, do not encode it as a number.',
-    'Either ask for the VALUE DIFFERENCE the decision turns on (benefit minus cost —',
-    'one scalar), or make the question conceptual. Never pack two results into one',
-    'displayed value.',
+    'Either ask for ONE financially meaningful quantity the decision turns on — the',
+    'NPV of choosing A over B, the PI of one project, the value given up by picking',
+    'the wrong one — or make the question conceptual. Never pack two results into',
+    'one displayed value, and never subtract one METRIC from a different metric',
+    // Measured 2026-08-22, the live retry: "PP difference minus PI difference"
+    // — an arithmetic combination of two unrelated metrics, rejected as a
+    // different objective. "Value difference" needed saying in finance terms.
+    '("payback difference minus PI difference" is arithmetic, not finance).',
   ].join('\n');
 }
 
