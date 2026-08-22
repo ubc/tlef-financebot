@@ -1946,6 +1946,22 @@ export function GENERATOR_PROMPT(params: {
     '(one year of remaining term) collides with the correct 0.12 while 12.04% and',
     '12.00% are distinct. Timing and hidden-term moves produce exactly such small',
     'shifts on rate-valued answers; percent display is what keeps them servable.',
+    // Added 2026-08-22 after the live re-run: with percent display in place,
+    // the batch STILL collided six times on first attempts — "used the
+    // original term instead of the remaining term" distractors came out
+    // identical to the correct answer at the cent (872117.12 = 872117.12),
+    // i.e. an identity at the draw, not a rounding miss. A term-shift move
+    // makes the obvious distractor an input-range difference, which is the
+    // collision family the rule above already forbids — it needed naming for
+    // this move specifically. Option B rescued all three, at ~3x the cost.
+    'When your hardness move SHIFTS a term or count (remaining maturity, payments',
+    'already made, a deferred start), do NOT build a distractor from the unshifted',
+    'value — "used the original term", "forgot the elapsed years". That distractor',
+    'differs from the correct answer only by the shift, which is a tiny rate change',
+    'or exactly zero when the shift draws 0, and it collides. Make the elapsed or',
+    'deferred quantity a slot that never draws 0, and build every distractor from a',
+    'STRUCTURALLY different mistake (book weights, coupon rate for yield, a dropped',
+    'leg) — never from the term alone.',
     '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',

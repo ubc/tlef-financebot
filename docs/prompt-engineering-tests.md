@@ -4405,3 +4405,68 @@ validator claim-checks declaration against assignment and implementation →
 reviewer weighs the finding under criterion 9's policy, blind to the raw
 assignment → deterministic gates below, instructor above. Every hand-off in
 that chain now exists because a measured failure put it there.
+
+# Experiment 29 — live incident: a hard WACC batch, 3/3 rejects, two root causes and a residue
+
+_2026-08-22, Saurav's own run on the dev stack (run 6a8a000a…), LO "Compute
+WACC and discount cash flows", hard, count 3, calculation preset, luna at
+effort high. Investigated from the run record, the persisted questions, and
+the server logs; fixed in 8d577b2; re-run live through the real async path
+(run 6a8a02e5…)._
+
+## What the run showed
+
+- `retrievedChunkCount: 6` at target hard, on an LO with 4 earlier themes
+  and 3 earlier LOs of assigned material. **R7 never fired.**
+- All three questions persisted as rejects with the verifier's note:
+  `WACC_ORIGINAL_TERM and WACC are identical at display precision (both
+  show 0.12)` — on both generator attempts, then again after Option B.
+- The rotation had assigned three different moves (timing, two-approach,
+  hidden parameter) and the reviewer's reasoning on each was sound. The
+  machinery worked; the questions died on display precision.
+
+## Root cause 1 — R7 was inert on tracked runs
+
+The async job rebuilds GenerationInput from the run record and passes the
+run's FROZEN `allowedMaterialIds` through `pinnedMaterialIds`. The widen test
+was `pinnedMaterialIds === undefined` — false on every tracked run. The
+harness probes (exps 22-28) bypass that path entirely, which is why eight
+experiments never noticed. Fix: instructor intent gets its own signal,
+`run.grounding.pinned` (blueprint pin or prompt @mention), carried as
+`GenerationInput.groundingPinned` and preserved across every grounding write.
+Re-run: `retrievedChunkCount: 8, pinned: false`.
+
+## Root cause 2 — the prompt's own WACC example taught a fraction-valued rate
+
+The batch reproduced the BUILD-IN-STEPS example name for name, and the
+assigned term-shift moves change a WACC by ~0.0004 — invisible at
+two-decimal display. The example now ends in `WACC_PCT`, and the collision
+section states the rule: display rates in percent. Re-run: options render as
+`{{WACC_PCT}}%`, values 12.29 / 12.57.
+
+## Re-run result, and the residue
+
+| | original batch | re-run (8d577b2) |
+|---|---|---|
+| chunks | 6 | **8** |
+| persisted verdicts | reject ×3 | **pass ×2, flag ×1** (a role mislabel — one click) |
+| first-attempt collisions | ~6 | ~6 |
+| Option B fired | 3/3 | 3/3 |
+
+Rejects went to zero, but the first-pass waste did not: with percent display
+in place the logs still show `WACC_WRONG_REMAINING_PCT and WACC_PCT identical
+(both 12.29)` and — the telling one — `NPV_ORIGINAL_TERM and NPV_CORRECT
+identical (both 872117.12)`: equal at the CENT, an identity at the draw, not
+a rounding miss. A term-shift move makes the obvious distractor ("used the
+original term") an input-range difference — the collision family the prompt
+already forbids in the abstract, now named for this move specifically: build
+distractors from structurally different mistakes, never from the term alone,
+and never let the elapsed quantity draw 0. Effect unverified at this writing;
+the cost signal to watch is Option B firing, which turned a 1.2¢ question into
+a ~3.5¢ one three times over.
+
+**Lesson for the record:** eight harness experiments validated every prompt
+surface and missed a wiring bug on the production path, because the harness
+deliberately bypasses retrieval. The next harness extension worth having is a
+"through-the-queue" mode that enqueues a real run and reads the record back —
+this incident's re-run script is its prototype.
