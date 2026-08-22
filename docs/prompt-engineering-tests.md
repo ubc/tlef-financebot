@@ -4203,3 +4203,57 @@ evidence: the model needs the move CHOSEN FOR IT — move-first two-pass
 generation (pick move + prerequisite concept cheaply, then generate with
 both pinned), or per-LO move weighting. That is R7-option-2's territory,
 now reached with the evidence trail experiments 22-25 built.
+
+# Experiment 26 — move-first generation: deterministic assignment wins outright
+
+_Run 2026-08-21 on the harness (prePass planner hook added for this
+experiment). Probe only — nothing shipped. Arms: `one-pass` (shipped free
+choice, third run of this condition), `two-pass` (a low-effort planning call
+picks the move), `assigned` (deterministic rotation of a curated six-move
+list, no planner). EV/EBITDA × hard, 6+2 grounding, n=6/arm._
+
+## Results
+
+| arm | numeric | proofs | pass/flag | difficulty complaints | distinct moves | assignments kept |
+|---|---|---|---|---|---|---|
+| one-pass | 3/6 | 3/3 | 6/0 | 0 | 3 | — |
+| two-pass | 6/6 | 6/6 | 5/1 | 0 | 3 | 6/6 |
+| **assigned** | **6/6** | **6/6** | **6/0** | **0** | **6** | **6/6** |
+
+**The assigned arm met every pre-registered bar and then some.** Six distinct
+moves in six draws — including deferred timing, regime change, reinvestment
+chain and the two-approach comparison, moves the model has never once picked
+for itself across experiments 22-26. Zero substitutions: every assignment
+was implemented faithfully and declared honestly, up to a 13-helper-step
+regime-change build. Six proofs, six passes, no difficulty complaints, and
+the CAPM chain was taken exactly where the assigned move demanded it
+(two-approach). Faithfulness held even for the moves furthest from the
+model's default.
+
+**The two-pass planner re-imports the bias it was meant to fix.** Given the
+same menu and told to judge fit rather than default to the familiar, the
+planning call picked hidden parameter 3/6 and never picked deferred, regime
+or reinvestment — the planner is the same model with the same preference.
+All six assignments were kept, quality was fine (its one flag is a factual
+equity-vs-firm-value conflation the reviewer caught with criterion 6 —
+unrelated to difficulty), but it costs an extra call per question to deliver
+half the diversity of a rotation that costs nothing.
+
+**The control reverted to conceptual routing (3/6)** and drew zero
+complaints this run — the third distinct outcome from three runs of this
+identical condition (2/8, then 0/8+2/8 flags, now 0/6 with conceptual
+drift). Free choice does not just monoculture the move; it monocultures
+unpredictably.
+
+## Decision — implement deterministic move assignment in the pipeline
+
+The design experiments 22-26 point to, now with direct evidence at every
+step: at target `hard`, the SERVER picks the move (rotating or sampling the
+curated menu; per-LO-family weighting can come later), appends the
+assignment block to the generator prompt, and the shipped declaration +
+criterion 9 verify implementation — the enforcement machinery from
+experiment 25 becomes the audit layer for assignments. A batch of N hard
+questions gets N different moves by construction, which also attacks the
+batch-diversity problem open since experiment 1. No planner call: two-pass
+buys nothing the rotation does not, at strictly higher cost and lower
+diversity.
