@@ -4357,3 +4357,51 @@ effect is UNVERIFIED at this n; the bound on the risk is structural either
 way: generated questions land as Drafts, nothing serves without instructor
 approval, so a too-soft verdict mis-prioritizes instructor attention rather
 than serving a bad question.
+
+# Experiment 28 — move check in the validator, catalog compacted: both hold, and FX turns a corner
+
+_Run 2026-08-22 (commit 24f43df). Both cells, full rotation, n=7 each._
+
+## Results
+
+| cell | pass/flag/reject | of which caught defects | fallbacks | substitutions |
+|---|---|---|---|---|
+| EV-widened | 5/1/1 | 1 (solvability, see below) | 0 needed | 0 |
+| FX | 5/1/1 | 1 (displacement → REJECT) | 1 | 0 |
+
+**Every pre-registered bar held.** EV built faithful assigned moves with the
+catalog gone — zero substitutions, declarations intact, so the seven-entry
+list was indeed choosing-aid, not implementation-aid. The validator's
+moveAssessments are factual and well-formed ("Implemented and matching. The
+stem places valuation immediately after payment…"). And the FX displacement
+fault RE-HARDENED to reject with the reviewer judging blind again — exp
+27c's anchoring evidence, now with the confirmatory flip in both directions.
+
+**The result beyond the bars: FX produced four genuinely-hard numeric PASSES
+on the LO.** In experiment 27 the same assigned moves generated
+FX-conversion arithmetic with the macro drivers asserted in the stem; now
+the moves are built AROUND the drivers — the regime change IS an inflation
+regime switch, the off-cycle event IS a policy announcement, and the
+reviewer's pass reasoning confirms it each time ("directly tests how
+relative inflation and central-bank policy affect an exchange-rate quote").
+The subordination clause + framing appear to have taught the integration,
+not just the fallback: the fallback rate dropped for the RIGHT reason.
+
+**The EV reject is a recurring fault class worth a deterministic gate, seen
+twice now** (27b's #6 and here): a paramSlot used by the correct answer's
+formula chain but never DISPLAYED in the stem — the values compute fine, the
+verifier proves distinctness, and the student cannot solve the question
+because an input was never shown. "TAX_PCT is used in AFTER_TAX_FCF, but the
+stem never supplies it." The review catches it, but this is exactly the
+class of structural fault the deterministic layer should own: trace the
+correct value's formula dependencies and require each slot to appear as a
+{{placeholder}} in the stem. Filed as follow-up work.
+
+## Where this leaves things
+
+The difficulty stack's final architecture: server assigns the move →
+generator implements under compact framing with a declared report →
+validator claim-checks declaration against assignment and implementation →
+reviewer weighs the finding under criterion 9's policy, blind to the raw
+assignment → deterministic gates below, instructor above. Every hand-off in
+that chain now exists because a measured failure put it there.
