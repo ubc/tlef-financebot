@@ -4545,3 +4545,14 @@ Every fault class here burned an Option-B retry before persisting, and the
 true/false batch burned three for a fault a deterministic check now refuses
 for free. The solvability and T/F gates move two more fault classes from
 "reviewer catches it after a full cycle" to "never reaches a model call".
+
+## Exp 30 — T/F fix verified live (run 6a8a08ce…)
+
+Same LO, type true-false, hard, concept-check preset as the 3/3-reject run.
+Result: **pass ×3**, all `numericKind: conceptual`, options exactly
+"True"/"False", 8 chunks, Option B fired once (one first-pass reject
+converted). Every question is a genuine two-rule claim in the instructor's
+own HIGH T/F style — APR-determines-payments vs. personal-opportunity-cost-
+rate-discounts-them, ordinary annuity vs. annuity due — with the reviewer
+crediting "the declared hard conceptual move is implemented" and the wrong
+option as a real misconception. Rejects 3/3 → 0/3 on the identical request.
