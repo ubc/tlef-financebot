@@ -4496,3 +4496,52 @@ this family moved from ~3.5¢ toward ~2.5¢; the ~1.2¢ floor needs the
 remaining first-attempt faults to fall, and those are deterministic-gate
 territory (the undisplayed-slot check already filed; an undefined-variable
 reference is its sibling). Incident closed on the prompt side.
+
+# Experiment 30 — second live session: 9 rejects in 15, four causes, two fixes
+
+_2026-08-22, Saurav's runs on the dev stack after exp 29's fixes: five runs,
+15 questions, 9 rejects / 2 flags / 4 passes. Investigated from run records,
+persisted reasoning and server logs; fixed in the commit above._
+
+## The rejects, classified
+
+| cause | rejects | verdict on the system |
+|---|---|---|
+| **True/false at hard became two-option numerics** (run on "Evaluate car affordability", type true-false) | 3 | **gap** — generator produced `${{S}}`/`${{S_WRONG}}` under keys T/F with an assigned calculation move; the reviewer, never told the type, rejected them as malformed MCQs |
+| **Calculation preset on a conceptual LO** ("Explain market efficiency", medium) | 2 (+1 flag) | **correct refusal** — "tests APR conversion, not the LO"; "easy labelled medium" |
+| **Undisplayed input** (UFCF: TAX_PCT drives the answer, stem never shows it) | 1 | **gap** — third sighting in a week |
+| **Genuine modelling faults** (keyed formula ignores the stem's condition; double-counted restructuring charge; ambiguous no-growth wording; savings question not derivable from its material) | 3 | **correct refusal** |
+
+## Fixes
+
+**True/false is a claim.** The generator prompt now states the contract
+(options exactly "True"/"False", always conceptual, no slots); a hard T/F is
+assigned the conceptual two-rule pattern rather than a calculation move;
+`trueFalseShapeValid` refuses a numeric or non-True/False T/F
+deterministically before any review call is spent; and the reviewer receives
+the question type, with the option contract conditioned on it.
+
+**Solvability gate.** `undisplayedInputs` traces the correct option's
+derived-value chain down to paramSlots and requires each to be displayed in
+the stem. Distractor-only slots are exempt (error models need no
+solvability). Ordered after distinctness so a colliding question keeps the
+collision's more specific retry feedback.
+
+## Two things that are not bugs, recorded so they are not re-investigated
+
+- **A conceptual LO with the Calculation preset will be refused**, and should
+  be — the reviewer's criterion 2 is doing its job. The UX could warn when
+  the preset and the LO's material disagree; that is a product call.
+- **R7 widening depends on theme/LO ORDER being the teaching order.** The
+  "Plan saving, investing, protection" LO retrieved 6 chunks at hard with
+  `pinned: false` — correctly, because its theme "Personal Finance Planning"
+  has `order: 1` in this course even though it is Class 23 content, so
+  nothing is "earlier" per the data. Backward-widening is only as good as the
+  course's ordering; worth a note in the instructor-facing docs.
+
+## Cost note
+
+Every fault class here burned an Option-B retry before persisting, and the
+true/false batch burned three for a fault a deterministic check now refuses
+for free. The solvability and T/F gates move two more fault classes from
+"reviewer catches it after a full cycle" to "never reaches a model call".
