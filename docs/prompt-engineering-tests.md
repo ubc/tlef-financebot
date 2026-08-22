@@ -4740,3 +4740,40 @@ is not distinguishable from run 1's logs; the raw suggestion is now logged.
 
 Neither the fit hypothesis nor the exp-26 bias risk could be evaluated in
 run 1, because the mechanism never engaged. Run 2 follows.
+
+## Exp 34 run 2 — with the field required: the reviewer suggests the move that just failed
+
+_PP/PI ×6, commit 8fdf15b (suggestedMove REQUIRED on reject; collision
+rejects keep the move)._
+
+| | exp 33 (rotation) | run 1 (optional suggestion) | run 2 (required suggestion) |
+|---|---|---|---|
+| Option B fired | 5/6 | 5/6 | 4/6 |
+| usable (pass/flag) | 3/6 | 3/6 | **4/6** |
+| retry sources | rotated 5 | rotated 5 | kept 1 (collision), **suggested 1**, rotated 2 |
+
+**The reviewer now answers — and two of its three construction-reject
+suggestions named the move that had just failed** (deferred-start after a
+deferred-start question; off-cycle-timing after an off-cycle question). The
+server's validation caught both and rotated; the one valid suggestion
+(two-approach-comparison) was applied. The mechanism's bounded design held
+— it cannot do worse than rotation — but the content shows why it cannot do
+much better either: the reviewer is reading the declared move in the
+question JSON and anchoring on it. Run 1's "never suggests" and run 2's
+"suggests the failed move" are the same absence of an independent opinion.
+
+**The 4/6 is within wobble** (runs of this identical request have landed at
+3/6, 3/6 and 4/6), and it came with one applied suggestion; nothing here
+separates the mechanism from noise.
+
+## Decision — retire the ask; keep what run 1 proved
+
+Same discipline as exps 3, 5 and 26: no measured benefit, a per-call cost
+(~150 tokens of menu on every hard review), and a mechanism whose content
+repeats the exp-26 finding that an LLM choosing moves does worse than a
+deterministic rule. The prompt no longer asks for `suggestedMove`; the
+validated channel in `retryMoveFor` stays (tested, inert) so it can be
+re-tested without re-plumbing if a reviewer that does NOT see the declared
+move is ever tried. What ships from this experiment is the run-1
+refinement: **collision rejects keep the move** — a fault IN a construction,
+not OF it, fixed by Option B's proven local retry.
