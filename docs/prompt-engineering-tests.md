@@ -4556,3 +4556,66 @@ own HIGH T/F style — APR-determines-payments vs. personal-opportunity-cost-
 rate-discounts-them, ordinary annuity vs. annuity due — with the reviewer
 crediting "the declared hard conceptual move is implemented" and the wrong
 option as a real misconception. Rejects 3/3 → 0/3 on the identical request.
+
+# Experiment 31 — verdict policy, judge-only: small intended shift, one debatable pass, and the wobble finding
+
+_2026-08-22 (commit 8afbdfc). Every persisted question in the dev course —
+73, across archived and approved — re-reviewed under the old prompt (A,
+REVIEW_VERDICT_POLICY stripped) and the new (B), same reconstructed
+grounding, same persisted validator assessment, recomputed verification.
+Reviewer calls only: 146 calls, 650k in / 208k out, ~38¢._
+
+## Results
+
+| arm | pass | flag | reject |
+|---|---|---|---|
+| old-policy (A) | 31 | 12 | 30 |
+| new-policy (B) | 31 | 14 | 28 |
+
+A→B transitions: stable 64/73 (pass→pass 28, reject→reject 27, flag→flag 9);
+reject→flag 2; reject→pass 1; flag→reject 1; pass→flag 3; flag→pass 2.
+Difficulty flags in B: 11, of which 9 carry `suggestedDifficulty`.
+
+**The intended conversions happened and look right.** The "easy labelled
+medium" market-efficiency reject became a flag → easy (0f3127). A
+distractor-modelling fault on the original WACC batch (a formula that does
+not implement its own errorModel) became a flag with the fix named (03aaaa).
+Approved questions picked up `→ hard` suggestions where the reviewer now
+reads more demand than the label (4a842x) — exactly the information the
+instructor was not getting before.
+
+**One conversion exposed a wording gap, now closed.** The true/false question
+with numeric options (0f3135) went reject → flag, the reviewer reading a TYPE
+contract violation as "a different kind than requested". The policy now says
+"kind" means conceptual vs. calculation and a type-contract violation is a
+reject. In production this case no longer reaches the reviewer at all
+(trueFalseShapeValid, exp 30), but the wording needed fixing regardless.
+
+**One reject→pass, and it is not the policy.** 0f313b (UFCF with a
+restructuring charge "included in year-3 EBIT"): A rejected it as double-
+counting, B passed it as a legitimate add-back of a charge embedded in EBIT.
+Both readings are defensible accounting — the question's wording is the
+ambiguity, and the two verdicts were produced seconds apart from identical
+inputs. That is the wobble finding, not leakage: the policy text says a
+factual error stays a reject, and B's reasoning claims correctness, not
+leniency.
+
+**The finding that matters most: verdict wobble dwarfs the policy effect.**
+On the 33 questions generated today, the OLD prompt disagreed with its own
+earlier verdicts on ~10 — reject→pass four times, flag→reject once,
+pass→flag three times — with the same question, grounding and validator
+assessment. A and B, run seconds apart, disagreed on 9/73. Some of the
+disagreement with ORIGINAL verdicts is legitimate (older questions were
+judged by older prompts; re-judging lacks the unpersisted moveAssessment),
+but A-vs-B is same-prompt-modulo-policy, and a reviewer that flips a third
+of borderline verdicts is the larger cause of "so many rejects" than any
+policy wording. Reasoning models ignore temperature, so determinism is not
+on the table; the lever is **majority-of-3 on REJECT verdicts only** — two
+extra reviewer calls (~1¢) spent only when a reject is proposed, converting
+a coin-flip reject into a stable one. Proposed as the next experiment.
+
+## Decision
+
+Ship the policy + `suggestedDifficulty`: the conversions are the right
+ones, nothing unfixable leaked by policy, and the earned label now
+survives persistence. Treat reviewer consistency as the next problem.

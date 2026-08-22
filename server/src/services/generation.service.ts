@@ -2221,8 +2221,12 @@ export const REVIEW_VERDICT_POLICY: string = [
   '    where a calculation was asked for, or the reverse) while the question still',
   '    tests the objective soundly: flag, saying what was asked and what was made.',
   'Do not reject a usable question for being a different kind or level than',
-  'requested. Do reject a question that is wrong or answers a different objective,',
-  'however well-made.',
+  'requested — "kind" here means conceptual vs. calculation, NOT the declared question',
+  'TYPE: a true/false question whose options are not "True" and "False", or a',
+  'multiple-choice question without four options, violates its type contract and',
+  'is a reject (measured 2026-08-22: a numeric two-option true/false was flagged as',
+  '"a different kind than requested"). Do reject a question that is wrong or answers',
+  'a different objective, however well-made.',
 ].join('\n');
 
 export function REVIEWER_PROMPT(params: {
