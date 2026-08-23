@@ -1,6 +1,14 @@
 import type { WithId } from 'mongodb';
 import { ObjectId } from 'mongodb';
-import { questionsCol, questionVersionsCol, auditCol } from '../components/mongodb/collections';
+import {
+  attemptsCol,
+  auditCol,
+  examAttemptsCol,
+  flagsCol,
+  questionsCol,
+  questionVersionsCol,
+  reviewBookCol,
+} from '../components/mongodb/collections';
 import { drawSeed } from './params.service';
 import { shuffleOptions } from './option-order.service';
 import { canTransition } from '../types/domain';
@@ -350,6 +358,54 @@ export async function addQuestionInternalNote(
  * propagates: swallowing it would under-report the count while leaving an
  * unaudited state change in place.
  */
+/** States a question can be hard-deleted from: it has never been approved,
+ * so it has never been served. Everything else ends at `archived`, which is
+ * restorable and keeps attempt, flag and review-book history coherent. */
+const DELETABLE_STATES: ReadonlySet<PublicationState> = new Set(['draft', 'pending-review', 'reviewed']);
+
+export type BulkDeleteSkipReason = 'not-found' | 'ever-approved' | 'has-history';
+
+/**
+ * Hard-delete questions that have never been served (Saurav, 2026-08-23: the
+ * review queue's "Delete selected"). Refuses, per question, anything that has
+ * ever been approved or that any attempt, exam attempt, flag or review-book
+ * entry references -- those records would dangle -- and reports why. The
+ * question document and every version go; an audit entry records it.
+ */
+export async function bulkDeleteUnserved(
+  questionIds: ObjectId[],
+  byPuid: string,
+): Promise<{ deleted: number; skipped: Array<{ questionId: ObjectId; reason: BulkDeleteSkipReason }> }> {
+  let deleted = 0;
+  const skipped: Array<{ questionId: ObjectId; reason: BulkDeleteSkipReason }> = [];
+  for (const questionId of questionIds) {
+    const question = await questionsCol().findOne({ _id: questionId });
+    if (!question) { skipped.push({ questionId, reason: 'not-found' }); continue; }
+    if (!DELETABLE_STATES.has(question.state)) { skipped.push({ questionId, reason: 'ever-approved' }); continue; }
+    const [attempts, examAttempts, flags, reviewBook] = await Promise.all([
+      attemptsCol().countDocuments({ questionId }, { limit: 1 }),
+      examAttemptsCol().countDocuments({ 'questions.questionId': questionId }, { limit: 1 }),
+      flagsCol().countDocuments({ questionId }, { limit: 1 }),
+      reviewBookCol().countDocuments({ questionId }, { limit: 1 }),
+    ]);
+    if (attempts + examAttempts + flags + reviewBook > 0) { skipped.push({ questionId, reason: 'has-history' }); continue; }
+    await questionVersionsCol().deleteMany({ questionId });
+    const result = await questionsCol().deleteOne({ _id: questionId, state: question.state });
+    if (result.deletedCount !== 1) { skipped.push({ questionId, reason: 'not-found' }); continue; }
+    await auditCol().insertOne({
+      actorPuid: byPuid,
+      action: 'question.delete',
+      targetType: 'question',
+      targetId: questionId,
+      courseId: question.courseId,
+      detail: { from: question.state, versions: question.currentVersion },
+      createdAt: new Date(),
+    });
+    deleted += 1;
+  }
+  return { deleted, skipped };
+}
+
 export async function bulkTransition(questionIds: ObjectId[], to: PublicationState, byPuid: string): Promise<number> {
   let count = 0;
   for (const questionId of questionIds) {

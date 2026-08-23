@@ -275,6 +275,7 @@ material ids are rejected before hierarchy creation begins.
   returns `409 { error: "question-conflict" }`. Omitting it preserves the
   existing state-only transition contract.
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
+- `POST /api/questions/bulk-delete { questionIds }` → `{ deleted, skipped: [{ questionId, reason }] }` — hard-deletes never-served questions only (never approved; no attempt, exam attempt, flag or review-book reference). Anything else is skipped with `reason` ∈ `ever-approved` | `has-history` | `not-found`; archive those instead. Same course-span and instructor guards as bulk-transition.
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
 - `POST /api/courses/:courseId/generate`
   `{ loId, count?, type?, difficulty?, prompt? }` or `{ blueprintId }` →

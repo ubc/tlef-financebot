@@ -1,11 +1,23 @@
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
-import { questionsCol, questionVersionsCol, auditCol } from '../../server/src/components/mongodb/collections';
+import {
+  questionsCol,
+  questionVersionsCol,
+  auditCol,
+  attemptsCol,
+  examAttemptsCol,
+  flagsCol,
+  reviewBookCol,
+} from '../../server/src/components/mongodb/collections';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   questionsCol: jest.fn(),
   questionVersionsCol: jest.fn(),
   auditCol: jest.fn(),
+  attemptsCol: jest.fn(),
+  examAttemptsCol: jest.fn(),
+  flagsCol: jest.fn(),
+  reviewBookCol: jest.fn(),
 }));
 
 import {
@@ -14,6 +26,7 @@ import {
   addQuestionInternalNote,
   transitionQuestion,
   bulkTransition,
+  bulkDeleteUnserved,
 } from '../../server/src/services/questions.service';
 import { shuffleOptions } from '../../server/src/services/option-order.service';
 import type { QuestionOption, QuestionVersion } from '../../server/src/types/domain';
@@ -26,8 +39,22 @@ const questionsUpdateOne = jest.fn();
 const versionsInsertOne = jest.fn();
 const versionsFindOne = jest.fn();
 const auditInsertOne = jest.fn();
+const questionsDeleteOne = jest.fn();
+const versionsDeleteMany = jest.fn();
+// Reference counts a hard delete checks: attempts, exam attempts, flags, review book.
+const attemptsCount = jest.fn();
+const examAttemptsCount = jest.fn();
+const flagsCount = jest.fn();
+const reviewBookCount = jest.fn();
 
 beforeEach(() => {
+  questionsDeleteOne.mockReset().mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+  versionsDeleteMany.mockReset().mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+  for (const count of [attemptsCount, examAttemptsCount, flagsCount, reviewBookCount]) count.mockReset().mockResolvedValue(0);
+  jest.mocked(attemptsCol).mockReturnValue({ countDocuments: attemptsCount } as never);
+  jest.mocked(examAttemptsCol).mockReturnValue({ countDocuments: examAttemptsCount } as never);
+  jest.mocked(flagsCol).mockReturnValue({ countDocuments: flagsCount } as never);
+  jest.mocked(reviewBookCol).mockReturnValue({ countDocuments: reviewBookCount } as never);
   questionsInsertOne.mockReset();
   questionsFindOne.mockReset();
   questionsUpdateOne.mockReset();
@@ -49,10 +76,12 @@ beforeEach(() => {
     insertOne: questionsInsertOne,
     findOne: questionsFindOne,
     updateOne: questionsUpdateOne,
+    deleteOne: questionsDeleteOne,
   } as never);
   jest.mocked(questionVersionsCol).mockReturnValue({
     insertOne: versionsInsertOne,
     findOne: versionsFindOne,
+    deleteMany: versionsDeleteMany,
   } as never);
   jest.mocked(auditCol).mockReturnValue({ insertOne: auditInsertOne } as never);
 });
@@ -673,5 +702,74 @@ describe('bulkTransition (IN-Q07)', () => {
 
     expect(count).toBe(1);
     expect(auditInsertOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- bulkDeleteUnserved ---------------------------------------------------------
+
+describe('bulkDeleteUnserved (review queue "Delete selected")', () => {
+  const courseId = new ObjectId();
+  const question = (id: ObjectId, state: string) => ({ _id: id, courseId, state, currentVersion: 2 });
+
+  it('deletes a never-approved question with its versions and records an audit entry', async () => {
+    const draftId = new ObjectId();
+    questionsFindOne.mockResolvedValue(question(draftId, 'pending-review'));
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    const result = await bulkDeleteUnserved([draftId], 'PUID-INSTR-0001');
+
+    expect(result).toEqual({ deleted: 1, skipped: [] });
+    expect(versionsDeleteMany).toHaveBeenCalledWith({ questionId: draftId });
+    expect(questionsDeleteOne).toHaveBeenCalledWith({ _id: draftId, state: 'pending-review' });
+    expect(auditInsertOne).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'question.delete',
+      targetId: draftId,
+      courseId,
+      detail: { from: 'pending-review', versions: 2 },
+    }));
+  });
+
+  it('skips anything that has ever been approved (approved, paused, archived) -- archive is the path for those', async () => {
+    const ids = { approved: new ObjectId(), paused: new ObjectId(), archived: new ObjectId() };
+    questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => {
+      if (_id.equals(ids.approved)) return question(ids.approved, 'approved');
+      if (_id.equals(ids.paused)) return question(ids.paused, 'paused');
+      return question(ids.archived, 'archived');
+    });
+
+    const result = await bulkDeleteUnserved(Object.values(ids), 'PUID-INSTR-0001');
+
+    expect(result.deleted).toBe(0);
+    expect(result.skipped.map((entry) => entry.reason)).toEqual(['ever-approved', 'ever-approved', 'ever-approved']);
+    expect(questionsDeleteOne).not.toHaveBeenCalled();
+    expect(versionsDeleteMany).not.toHaveBeenCalled();
+    expect(auditInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('skips a draft that any attempt, exam attempt, flag or review-book entry references', async () => {
+    const draftId = new ObjectId();
+    questionsFindOne.mockResolvedValue(question(draftId, 'draft'));
+    for (const [label, count] of [['attempt', attemptsCount], ['exam', examAttemptsCount], ['flag', flagsCount], ['review book', reviewBookCount]] as const) {
+      for (const other of [attemptsCount, examAttemptsCount, flagsCount, reviewBookCount]) other.mockResolvedValue(0);
+      count.mockResolvedValue(1);
+      questionsDeleteOne.mockClear();
+
+      const result = await bulkDeleteUnserved([draftId], 'PUID-INSTR-0001');
+
+      expect([label, result.skipped]).toEqual([label, [{ questionId: draftId, reason: 'has-history' }]]);
+      expect(questionsDeleteOne).not.toHaveBeenCalled();
+    }
+    expect(examAttemptsCount).toHaveBeenCalledWith({ 'questions.questionId': draftId }, { limit: 1 });
+  });
+
+  it('reports a missing question as not-found and keeps going', async () => {
+    const missingId = new ObjectId();
+    const draftId = new ObjectId();
+    questionsFindOne.mockImplementation(async ({ _id }: { _id: ObjectId }) => (_id.equals(draftId) ? question(draftId, 'reviewed') : null));
+    auditInsertOne.mockResolvedValue({ acknowledged: true });
+
+    const result = await bulkDeleteUnserved([missingId, draftId], 'PUID-INSTR-0001');
+
+    expect(result).toEqual({ deleted: 1, skipped: [{ questionId: missingId, reason: 'not-found' }] });
   });
 });

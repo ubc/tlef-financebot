@@ -40,6 +40,8 @@
 // queue item only carries a boolean label, not a per-question flag count.
 import {
   ApiError,
+  bulkDelete,
+  type BulkDeleteSkipReason,
   bulkTransition,
   getCourseTree,
   getQuestion,
@@ -258,19 +260,15 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     renderResults();
   }
 
-  async function bulkApprove(): Promise<void> {
-    if (selected.size === 0) return;
+  /** Runs one bulk action over the selection, then refetches the queue. The
+   * action returns the message to show; a thrown error shows as the action
+   * error and keeps the selection so the instructor can retry. */
+  async function runBulk(action: (ids: string[]) => Promise<string>): Promise<void> {
     const ids = [...selected];
-    if (!await confirmDialog({
-      title: 'Approve selected questions?',
-      message: `${ids.length} question${ids.length === 1 ? '' : 's'} will become available for student practice.`,
-      confirmLabel: 'Approve questions',
-    })) return;
     actionErrorMessage = null;
     bulkMessage = null;
     try {
-      const { updated } = await bulkTransition(ids, 'approved');
-      bulkMessage = `Approved ${updated} of ${ids.length} question${ids.length === 1 ? '' : 's'} (others were not in an approvable state).`;
+      bulkMessage = await action(ids);
       selected.clear();
       queueItems = await getReviewQueue(courseId);
       agentDecisions.clear();
@@ -281,6 +279,58 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     }
     renderControls();
     renderResults();
+  }
+
+  const plural = (count: number): string => `${count} question${count === 1 ? '' : 's'}`;
+
+  async function bulkApprove(): Promise<void> {
+    if (selected.size === 0) return;
+    if (!await confirmDialog({
+      title: 'Approve selected questions?',
+      message: `${plural(selected.size)} will become available for student practice.`,
+      confirmLabel: 'Approve questions',
+    })) return;
+    await runBulk(async (ids) => {
+      const { updated } = await bulkTransition(ids, 'approved');
+      return `Approved ${updated} of ${plural(ids.length)} (others were not in an approvable state).`;
+    });
+  }
+
+  async function bulkArchive(): Promise<void> {
+    if (selected.size === 0) return;
+    if (!await confirmDialog({
+      title: 'Archive selected questions?',
+      message: `${plural(selected.size)} will leave the queue and stop being served. Archived questions keep their history and can be restored from the Archived tab.`,
+      confirmLabel: 'Archive questions',
+    })) return;
+    await runBulk(async (ids) => {
+      const { updated } = await bulkTransition(ids, 'archived');
+      return `Archived ${updated} of ${plural(ids.length)}.`;
+    });
+  }
+
+  const SKIP_REASON_TEXT: Record<BulkDeleteSkipReason, string> = {
+    'ever-approved': 'already approved once — archive instead',
+    'has-history': 'referenced by student attempts, flags or review books — archive instead',
+    'not-found': 'no longer exist',
+  };
+
+  async function bulkDeleteSelected(): Promise<void> {
+    if (selected.size === 0) return;
+    if (!await confirmDialog({
+      title: 'Delete selected questions permanently?',
+      message: `${plural(selected.size)} will be deleted, with every version. This cannot be undone. Only questions that were never approved and never served are deleted; anything with student history is skipped and reported so you can archive it instead.`,
+      confirmLabel: 'Delete permanently',
+      tone: 'danger',
+    })) return;
+    await runBulk(async (ids) => {
+      const { deleted, skipped } = await bulkDelete(ids);
+      const reasons = (['ever-approved', 'has-history', 'not-found'] as const)
+        .map((reason) => ({ reason, count: skipped.filter((entry) => entry.reason === reason).length }))
+        .filter((entry) => entry.count > 0)
+        .map((entry) => `${entry.count} ${SKIP_REASON_TEXT[entry.reason]}`);
+      return `Deleted ${deleted} of ${plural(ids.length)}.${reasons.length ? ` Skipped: ${reasons.join('; ')}.` : ''}`;
+    });
   }
 
   function renderControls(): void {
@@ -302,6 +352,31 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el('option', { value: 'stem', text: 'Sort by: Question (A–Z)', selected: sortKey === 'stem' ? 'selected' : undefined }),
     ) as HTMLSelectElement;
 
+    // Select all / none over the rows this tab + sort currently shows.
+    const visible = visibleRows();
+    const visibleSelected = visible.filter((item) => selected.has(item.id)).length;
+    const selectAll = el('input', {
+      type: 'checkbox',
+      'aria-label': 'Select every question shown',
+      checked: visible.length > 0 && visibleSelected === visible.length ? 'checked' : undefined,
+      disabled: visible.length === 0 ? 'disabled' : undefined,
+      onchange: (e: Event) => {
+        if ((e.target as HTMLInputElement).checked) for (const item of visible) selected.add(item.id);
+        else for (const item of visible) selected.delete(item.id);
+        renderControls();
+        renderResults();
+      },
+    }) as HTMLInputElement;
+    selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+    const selectAllLabel = el(
+      'label',
+      { class: 'queue-controls__select-all' },
+      selectAll,
+      el('span', { text: selected.size > 0 ? `${selected.size} selected` : 'Select all' }),
+    );
+
+    // Bulk Approve stays the one-click action; Archive and Delete sit behind
+    // a native <select> so the dangerous actions take a deliberate pick.
     const bulkButton = el(
       'button',
       {
@@ -312,8 +387,26 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       },
       'Bulk Approve…',
     );
+    const moreActions = el(
+      'select',
+      {
+        class: 'input',
+        'aria-label': 'More bulk actions',
+        disabled: selected.size === 0 ? 'disabled' : undefined,
+        onchange: (e: Event) => {
+          const menu = e.target as HTMLSelectElement;
+          const action = menu.value;
+          menu.value = '';
+          if (action === 'archive') void bulkArchive();
+          else if (action === 'delete') void bulkDeleteSelected();
+        },
+      },
+      el('option', { value: '', text: 'More actions…', selected: 'selected' }),
+      el('option', { value: 'archive', text: 'Archive selected' }),
+      el('option', { value: 'delete', text: 'Delete selected…' }),
+    ) as HTMLSelectElement;
 
-    return el('div', { class: 'queue-controls' }, sortSelect, bulkButton);
+    return el('div', { class: 'queue-controls' }, selectAllLabel, sortSelect, bulkButton, moreActions);
   }
 
   function flagIndicator(item: ReviewQueueItem): HTMLElement | false {

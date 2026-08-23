@@ -5180,6 +5180,16 @@ button.class-row--link:focus-visible .class-row__title {
   width: auto;
 }
 
+.queue-controls__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .queue-message {
   margin: 0 0 0.75rem;
   padding: 0.6rem 0.9rem;

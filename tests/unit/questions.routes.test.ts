@@ -20,6 +20,7 @@ jest.mock('../../server/src/services/questions.service', () => ({
   editQuestion: jest.fn(),
   transitionQuestion: jest.fn(),
   bulkTransition: jest.fn(),
+  bulkDeleteUnserved: jest.fn(),
 }));
 jest.mock('../../server/src/services/capabilities.service', () => ({
   hasCapability: jest.fn(async (user: User, requestedCourseId: ObjectId) => user.courseRoles.some(
@@ -36,7 +37,7 @@ import {
   getDistinctQuestionCourseIds,
   getQuestionDetail,
 } from '../../server/src/services/bank.service';
-import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransition } from '../../server/src/services/questions.service';
+import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransition, bulkDeleteUnserved } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
@@ -90,6 +91,7 @@ beforeEach(() => {
   jest.mocked(addQuestionInternalNote).mockReset();
   jest.mocked(transitionQuestion).mockReset();
   jest.mocked(bulkTransition).mockReset();
+  jest.mocked(bulkDeleteUnserved).mockReset();
 });
 
 describe('POST /api/questions/:questionId/internal-notes', () => {
@@ -774,5 +776,61 @@ describe('POST /api/questions/bulk-transition (privilege-escalation guard, Saura
     // that the response matches the contract's error format.
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: 'connection timed out' });
+  });
+});
+
+describe('POST /api/questions/bulk-delete (same guards as bulk-transition)', () => {
+  it('401s a signed-out caller', async () => {
+    const res = await request(makeApp(undefined))
+      .post('/api/questions/bulk-delete')
+      .send({ questionIds: [questionId.toHexString()] });
+
+    expect(res.status).toBe(401);
+    expect(bulkDeleteUnserved).not.toHaveBeenCalled();
+  });
+
+  it('403s when the ids span more than one course, without deleting anything', async () => {
+    jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([courseId, otherCourseId]);
+
+    const res = await request(makeApp(instructor))
+      .post('/api/questions/bulk-delete')
+      .send({ questionIds: [questionId.toHexString(), new ObjectId().toHexString()] });
+
+    expect(res.status).toBe(403);
+    expect(bulkDeleteUnserved).not.toHaveBeenCalled();
+  });
+
+  it('403s an instructor of a different course than the one the ids resolve to', async () => {
+    jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([otherCourseId]);
+
+    const res = await request(makeApp(instructor))
+      .post('/api/questions/bulk-delete')
+      .send({ questionIds: [questionId.toHexString()] });
+
+    expect(res.status).toBe(403);
+    expect(bulkDeleteUnserved).not.toHaveBeenCalled();
+  });
+
+  it('400s an empty id list', async () => {
+    const res = await request(makeApp(instructor)).post('/api/questions/bulk-delete').send({ questionIds: [] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns the deleted count and each skipped id with its reason as hex strings', async () => {
+    const skippedId = new ObjectId();
+    jest.mocked(getDistinctQuestionCourseIds).mockResolvedValue([courseId]);
+    jest.mocked(bulkDeleteUnserved).mockResolvedValue({
+      deleted: 1,
+      skipped: [{ questionId: skippedId, reason: 'ever-approved' }],
+    });
+
+    const res = await request(makeApp(instructor))
+      .post('/api/questions/bulk-delete')
+      .send({ questionIds: [questionId.toHexString(), skippedId.toHexString()] });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deleted: 1, skipped: [{ questionId: skippedId.toHexString(), reason: 'ever-approved' }] });
+    expect(bulkDeleteUnserved).toHaveBeenCalledWith([questionId, skippedId], instructor.puid);
   });
 });

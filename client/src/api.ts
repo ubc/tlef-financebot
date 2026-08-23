@@ -2384,6 +2384,24 @@ export function bulkTransition(questionIds: string[], to: PublicationState): Pro
   });
 }
 
+export type BulkDeleteSkipReason = 'not-found' | 'ever-approved' | 'has-history';
+export interface BulkDeleteResult {
+  deleted: number;
+  /** Questions the server refused to delete, and why: ever approved (archive
+   * those instead) or referenced by an attempt, flag or review-book entry. */
+  skipped: Array<{ questionId: string; reason: BulkDeleteSkipReason }>;
+}
+
+/** Hard-delete never-served questions. The server skips (never fails on)
+ * anything that has been approved or has student history. */
+export function bulkDelete(questionIds: string[]): Promise<BulkDeleteResult> {
+  return request<BulkDeleteResult>('/api/questions/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questionIds }),
+  });
+}
+
 // --- Instructor: parameterization config (Task 5, IN-Q09) ------------------
 
 export interface ParamSlotInput {
