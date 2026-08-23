@@ -183,6 +183,8 @@ export async function retryGenerationRun(
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,
+    // Model ids only: enqueue persists ids, and the job recovers the admin's
+    // per-step parameters from the CURRENT settings at execution time.
     models: resolvedFromPersisted(run.input.models),
     ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
     retryOfRunId: runId,

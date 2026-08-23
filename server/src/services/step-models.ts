@@ -75,17 +75,30 @@ export function persistedModels(resolved: ResolvedStepModels): QuestionGeneratio
 /**
  * Rebuild the in-memory shape from a stored run or blueprint.
  *
- * ⚠️ Per-step temperature and reasoning effort are NOT recovered — runs record
- * model ids only — so replaying a run uses the recorded models with the models'
- * own defaults, not whatever parameters were configured when it first ran. That
- * is the same information a pre-change run carried, so replay is no worse than
- * before, but it is not a faithful re-execution either.
+ * Runs record model ids only. Per-step parameters (reasoning effort,
+ * temperature) are recovered from the CURRENT platform settings when the
+ * recorded model id matches the configured one -- see the `settings` param.
+ * A run whose model has since been changed in the console runs that model
+ * at its own defaults, which is the same information it always carried.
  */
-export function resolvedFromPersisted(models: QuestionGenerationRun['input']['models']): ResolvedStepModels {
+export function resolvedFromPersisted(
+  models: QuestionGenerationRun['input']['models'],
+  /**
+   * The CURRENT platform settings. When a step's recorded model id matches the
+   * configured one, that step inherits the admin's configured parameters
+   * (reasoning effort, temperature). Found 2026-08-23: without this, every
+   * queued run -- the primary path, not a replay -- executed at the model's
+   * default effort while the admin console said `high`/`xhigh`, and the
+   * regression panel's first baseline was measured at effort `none`.
+   */
+  settings?: PlatformSettings,
+): ResolvedStepModels {
+  const step = (recorded: string, configured?: StepModelConfig): StepModelConfig =>
+    configured && configured.model === recorded ? { ...configured } : { model: recorded };
   return {
     embedding: models.embedding,
-    generator: { model: models.generator },
-    validator: { model: models.validator },
-    reviewer: { model: models.reviewer },
+    generator: step(models.generator, settings?.models.generator),
+    validator: step(models.validator, settings?.models.validator),
+    reviewer: step(models.reviewer, settings?.models.reviewer),
   };
 }

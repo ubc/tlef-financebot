@@ -613,6 +613,52 @@ describe('durable generation runs (P2-0)', () => {
     expect(enqueueJob).not.toHaveBeenCalled();
   });
 
+  it('the tracked job runs each step at the effort the admin configured for its model (2026-08-23)', async () => {
+    jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+      _id: 'platform',
+      models: {
+        generator: { model: 'gen-model', reasoningEffort: 'xhigh' },
+        validator: { model: 'val-model' },
+        reviewer: { model: 'rev-model', reasoningEffort: 'xhigh' },
+        masteryEvaluator: { model: 'mastery-model' }, utility: { model: 'util-model' },
+      },
+      costControls: { maxGenerationsPerDay: 100 },
+      featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: false },
+      updatedBy: 'ADMIN', updatedAt: new Date(),
+    })) } as never);
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: new ObjectId(), courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 1, revision: 0, events: [], warnings: [],
+      // The record carries ids only — the effort must come from the settings.
+      input: { loId, count: 1, type: 'mcq', difficulty: 'medium',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' } },
+      grounding: { allowedMaterialIds: [materialId], retrievedChunkCount: 0, pinned: false },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: new ObjectId(), version: {} } as never);
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: new ObjectId().toHexString() });
+
+    const calls = jest.mocked(completeJson).mock.calls;
+    expect(calls[0]?.[1]).toMatchObject({ model: 'gen-model', reasoningEffort: 'xhigh' });
+    expect(calls[1]?.[1]).toMatchObject({ model: 'val-model' });
+    expect(calls[1]?.[1]).not.toHaveProperty('reasoningEffort');
+    expect(calls[2]?.[1]).toMatchObject({ model: 'rev-model', reasoningEffort: 'xhigh' });
+    // And the run record says so, where the instructor can see it.
+    const retrieving = jest.mocked(updateContentRun).mock.calls.map((c) => c[1]).find((u) => /Retrieving/.test(String(u.message)));
+    expect(String(retrieving?.message)).toContain('generator gen-model @xhigh');
+  });
+
   it('the tracked job widens a hard run from the recorded pin FLAG, not from the frozen ids (R7 fix)', async () => {
     // Found 2026-08-22 on a live hard batch: the job hands the run's frozen
     // allowedMaterialIds back through pinnedMaterialIds, so a widen test on

@@ -750,7 +750,11 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
   let stage: QuestionGenerationRun['stage'] = 'retrieving';
 
   try {
-    await updateContentRun(runId, { status: 'running', stage, message: 'Retrieving assigned course material' });
+    const effort = (config: StepModelConfig) => config.reasoningEffort ?? 'default';
+    await updateContentRun(runId, {
+      status: 'running', stage,
+      message: `Retrieving assigned course material (generator ${models.generator.model} @${effort(models.generator)}, reviewer ${models.reviewer.model} @${effort(models.reviewer)})`,
+    });
     const lo = await losCol().findOne({ _id: loId });
     if (!lo) throw new Error('lo-not-found');
     if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
@@ -1102,7 +1106,7 @@ export function registerGenerationJobs(): void {
         ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
-        models: resolvedFromPersisted(run.input.models),
+        models: resolvedFromPersisted(run.input.models, await getPlatformSettings()),
         ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
         ...(run.input.retryOfRunId ? { retryOfRunId: run.input.retryOfRunId } : {}),
         ...(run.grounding?.allowedMaterialIds
