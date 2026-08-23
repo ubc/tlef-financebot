@@ -48,16 +48,25 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
 
   let planRows: GenerationPlanRow[] = [];
   let plan = new Map<string, PlanCounts>();
+  // Which LOs run NOW — separate from how many each needs, so an instructor
+  // can keep Auto's counts and still generate for a subset.
+  let selected = new Set<string>();
   let busy = false;
+
+  const eligibleIds = (): string[] => planRows.filter((row) => options.hasReadySource(row.loId)).map((row) => row.loId);
 
   const resetToAuto = (): void => {
     plan = new Map(planRows.map((row) => [row.loId, autoCounts(row)]));
+    // Auto selects every eligible LO that has something planned.
+    selected = new Set(planRows
+      .filter((row) => options.hasReadySource(row.loId) && row.cells.some((cell) => cell.count > 0))
+      .map((row) => row.loId));
   };
 
   const cells = (): GenerationPlanCell[] => {
     const out: GenerationPlanCell[] = [];
     for (const [loId, counts] of plan) {
-      if (!options.hasReadySource(loId)) continue;
+      if (!options.hasReadySource(loId) || !selected.has(loId)) continue;
       for (const tier of TIERS) for (const kind of KINDS) {
         if (counts[tier][kind] > 0) out.push({ loId, difficulty: tier, kind, count: counts[tier][kind] });
       }
@@ -92,9 +101,21 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
         el('div', { class: 'generation-plan__kinds' }, ...inputs),
       );
     });
+    const eligible = options.hasReadySource(row.loId);
+    const toggle = el('input', {
+      class: 'generation-plan__select', type: 'checkbox',
+      'aria-label': `Include ${row.loName} in this batch`,
+      ...(eligible && selected.has(row.loId) ? { checked: 'checked' } : {}),
+      ...(eligible && !busy ? {} : { disabled: 'disabled' }),
+    }) as HTMLInputElement;
+    toggle.onchange = () => {
+      if (toggle.checked) selected.add(row.loId); else selected.delete(row.loId);
+      refresh();
+    };
     return el(
       'article',
-      { class: 'generation-plan__row' },
+      { class: `generation-plan__row${eligible && selected.has(row.loId) ? '' : ' is-excluded'}` },
+      toggle,
       el(
         'div',
         { class: 'generation-plan__copy' },
@@ -121,7 +142,26 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
         ? `Generate ${questions} question${questions === 1 ? '' : 's'} across ${los} LO${los === 1 ? '' : 's'} → ${questions} to review`
         : 'Nothing planned — adjust a count or press Auto';
     autoButton.disabled = busy;
-    mount(grid, ...(planRows.length ? planRows.map(renderRow) : [el('p', { class: 'app-dialog__message', text: 'No Learning Objectives to plan for.' })]));
+    const eligible = eligibleIds();
+    const selectedEligible = eligible.filter((loId) => selected.has(loId));
+    const selectAll = el('input', {
+      class: 'generation-plan__select', type: 'checkbox', 'aria-label': 'Include every Learning Objective with a ready source',
+      ...(eligible.length > 0 && selectedEligible.length === eligible.length ? { checked: 'checked' } : {}),
+      ...(busy || eligible.length === 0 ? { disabled: 'disabled' } : {}),
+    }) as HTMLInputElement;
+    selectAll.indeterminate = selectedEligible.length > 0 && selectedEligible.length < eligible.length;
+    selectAll.onchange = () => {
+      if (selectAll.checked) for (const loId of eligible) selected.add(loId);
+      else selected.clear();
+      refresh();
+    };
+    const header = el(
+      'label',
+      { class: 'generation-plan__header' },
+      selectAll,
+      el('span', { text: `${selectedEligible.length} of ${eligible.length} Learning Objective${eligible.length === 1 ? '' : 's'} selected — counts are kept when a row is unselected` }),
+    );
+    mount(grid, header, ...(planRows.length ? planRows.map(renderRow) : [el('p', { class: 'app-dialog__message', text: 'No Learning Objectives to plan for.' })]));
   };
 
   const generate = async (): Promise<void> => {

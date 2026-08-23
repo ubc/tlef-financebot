@@ -8545,10 +8545,15 @@ button.class-row--link:focus-visible .class-row__title {
 
 /* The batch planner dialog (Question Workspace): same grid as the setup
    guide's inline version, inside a wide app-dialog. */
+/* The dialog ELEMENT is what carries the width (31rem by default) — widening
+   only the surface inside it is what produced a horizontal scrollbar. */
+.app-dialog--wide {
+  width: min(80rem, calc(100vw - 2rem));
+}
+
 .app-dialog--wide .app-dialog__surface {
-  width: min(64rem, 96vw);
   max-height: 90vh;
-  overflow: auto;
+  overflow-y: auto;
 }
 
 .generation-plan__rows {
@@ -8557,15 +8562,41 @@ button.class-row--link:focus-visible .class-row__title {
   margin: 0.75rem 0;
 }
 
+.generation-plan__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .generation-plan__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: 0.75rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
+}
+
+.generation-plan__row.is-excluded {
+  opacity: 0.55;
+}
+
+.generation-plan__select {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 56rem) {
+  .generation-plan__row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .generation-plan__grid {
+    grid-column: 1 / -1;
+  }
 }
 
 .generation-plan__copy {
