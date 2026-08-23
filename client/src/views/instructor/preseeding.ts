@@ -59,7 +59,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
-import { confirmDialog } from '../../modal.js';
+import { openGenerationPlanDialog } from './generation-plan-dialog.js';
 import { errorState, helpTip, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 
@@ -788,39 +788,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let bulkError: string | null = null;
   let bulkBusy = false;
 
-  async function generateForAllThin(): Promise<void> {
-    const thin = thinLos(preseeding);
-    if (thin.length === 0) return;
-    const eligible = thin.filter((lo) => hasReadyAssignedMaterial(lo.loId));
-    const skipped = thin.length - eligible.length;
-    if (eligible.length === 0) {
-      bulkError = 'None of the below-target Learning Objectives has a ready assigned material. Assign course materials before generating questions.';
-      renderTiles();
-      return;
-    }
-    if (!await confirmDialog({
-      title: 'Generate questions?',
-      message: `Start generation for ${eligible.length} below-target Learning Objective${eligible.length === 1 ? '' : 's'}?${skipped ? ` ${skipped} without assigned materials will be skipped.` : ''}`,
-      confirmLabel: 'Start generation',
-    })) return;
-    bulkBusy = true;
-    bulkError = null;
-    bulkMessage = null;
-    renderTiles();
-    // One generateQuestions call per thin LO (Task G brief), all in flight
-    // together; a single LO's failure doesn't stop the rest from enqueuing.
-    const results = await Promise.allSettled(eligible.map((lo) => generateQuestions(courseId, { loId: lo.loId })));
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-    const runIds = results
-      .filter((result): result is PromiseFulfilledResult<{ runId: string }> => result.status === 'fulfilled')
-      .map((result) => result.value.runId.slice(-8));
-    bulkBusy = false;
-    bulkMessage = `Queued generation for ${succeeded} of ${eligible.length} eligible LO${eligible.length === 1 ? '' : 's'}${runIds.length ? ` — runs ${runIds.join(', ')}` : ''}.${skipped ? ` Skipped ${skipped} without assigned materials.` : ''}`;
-    if (succeeded < eligible.length) {
-      bulkError = `${eligible.length - succeeded} LO${eligible.length - succeeded === 1 ? '' : 's'} failed to enqueue — try again from that row's "Generate Questions" action.`;
-    }
-    renderTiles();
-  }
+  // The untyped "Generate for All Thin LOs" sweep was replaced by the batch
+  // planner dialog (2026-08-23): one typed run per LO x tier x kind instead of
+  // one untyped run per LO. See generation-plan-dialog.ts.
 
   // --- Tiles + table ----------------------------------------------------------
 
@@ -938,7 +908,20 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     pageHeader(
       'Question Bank Coverage',
       'Target: 3–5 Approved questions per LO before publishing. Generate for any LO below threshold.',
-      { text: 'Generate for All Thin LOs', onClick: () => void generateForAllThin() },
+      {
+        text: 'Plan a batch…',
+        onClick: () => openGenerationPlanDialog({
+          courseId,
+          hasReadySource: hasReadyAssignedMaterial,
+          onQueued: (result) => {
+            const started = result.runs.filter((run) => run.runId).length;
+            const failed = result.runs.length - started;
+            bulkMessage = `Queued ${started} run${started === 1 ? '' : 's'} from the plan.${failed ? ` ${failed} cell${failed === 1 ? '' : 's'} could not start.` : ''}`;
+            bulkError = null;
+            renderTiles();
+          },
+        }),
+      },
     ),
     layout,
   );

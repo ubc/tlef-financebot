@@ -8543,6 +8543,82 @@ button.class-row--link:focus-visible .class-row__title {
   background: color-mix(in srgb, var(--instr-green-bg) 28%, var(--surface));
 }
 
+/* The batch planner dialog (Question Workspace): same grid as the setup
+   guide's inline version, inside a wide app-dialog. */
+.app-dialog--wide .app-dialog__surface {
+  width: min(64rem, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.generation-plan__rows {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.generation-plan__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.generation-plan__copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.generation-plan__copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.generation-plan__grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.5rem 0.85rem;
+}
+
+.generation-plan__tier {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.generation-plan__tier > small {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.generation-plan__kinds {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.generation-plan__kind {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.generation-plan__count {
+  width: 3.6rem;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.generation-plan__count:disabled {
+  opacity: 0.5;
+}
+
 /* The batch planner: a row is the LO's copy plus a tier grid, each tier a
    pair of steppers (calculation / conceptual). */
 .course-setup-guide__generation-row:has(.course-setup-guide__plan-grid) {
