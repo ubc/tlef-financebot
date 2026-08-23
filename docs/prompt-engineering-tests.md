@@ -4842,3 +4842,58 @@ before `suggestedDifficulty` existed: those 13 questions would have been
    1 for a multiplier, a draw making two ranges meet) before any call.
 3. **Prerequisite-heavy at 67%** — UFCF's collisions plus one modelling
    fault; likely improves with (2).
+
+# Baseline 2 — the panel at generator xhigh / reviewer xhigh (2026-08-23)
+
+_Same 64-question panel, run after da99920 made queued runs honour the
+admin's per-step effort. Committed as the new `panel-baseline.json`, because
+xhigh/xhigh is now the production configuration AND it is honoured. Baseline
+1's record stays: it is what the system did at effort `none`, which is what
+every instructor run before today actually got._
+
+## Headline: 53 pass / 11 flag / 0 reject — 100% usable; all hard assertions pass
+
+| cut | baseline 1 (none) | baseline 2 (xhigh) |
+|---|---|---|
+| overall usable | 92% | **100%** |
+| rejects | 5 | **0** |
+| Option B fired | 17 | **1** |
+| persisted with a verifier note | 3 | **0** |
+| hard usable | 83% | **100%** |
+| prerequisite-heavy usable | 67% | **100%** |
+| flags carrying a suggested label | 28 | 9 |
+
+Experiment 9's n=3 finding — that effort eliminates the collision family —
+holds at n=64 on the real path: zero verifier notes, one Option-B retry in
+the whole panel. Wall-clock was ~33 minutes against baseline 1's ~28, not
+the 2× experiment 15 measured, because retries fell away.
+
+## The correction: "medium is mostly easy in disguise" was an effort-none artifact
+
+| target → earned label | baseline 1 | baseline 2 |
+|---|---|---|
+| medium → easy | **13** | **2** |
+| medium → hard | 0 | 4 |
+| hard → medium | 5 | 1 |
+| hard → easy | 2 | 0 |
+
+At xhigh the generator builds medium as the rubric describes it, and four
+mediums are now flagged as over-delivering. The medium-calibration stack
+proposed from baseline 1 is NOT the next lever; it was the reviewer
+reading an effort-none generator. This is the regression panel doing its
+job — a finding that looked like a construction gap was a configuration
+bug, and it took one re-run to tell them apart.
+
+## What did move that is worth watching
+
+- **Routing shifted conceptual.** MCQ easy/medium produced 7 numeric / 9
+  conceptual each (baseline 1: calculation was 64% of everything); hard
+  produced 16/0 — the hard stack steers numeric by construction, and at
+  easy/medium the xhigh generator prefers conceptual when the LO allows.
+  Not a defect, but a preference the instructor's preset should be able to
+  override, and the panel runs with no preset.
+- **high vs xhigh on the real path is unmeasured.** `high` was never
+  actually live either. Experiment 15 (n=3) called xhigh "not worth 2×
+  latency for an identical verdict distribution" against high; baseline 2
+  is xhigh vs NONE. A panel run at high/high (~$1, ~30 min) is the
+  comparison that decides the production setting on evidence.
