@@ -881,11 +881,16 @@ export interface InstructorCourse {
   autoPause: AutoPauseConfig;
 }
 
+export type LoKind = 'calculation' | 'conceptual' | 'mixed';
+export type QuestionKind = 'calculation' | 'conceptual';
+
 export interface CourseTreeLo {
   _id: string;
   name: string;
   order: number;
   themeId: string;
+  /** Inferred from the objective's verb at creation; the instructor's edit wins. */
+  kind?: LoKind;
 }
 
 export interface CourseTreeTheme {
@@ -1376,7 +1381,7 @@ export function upsertCourseOutline(
 }
 
 /** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
-export function updateLo(loId: string, patch: { name?: string; order?: number }): Promise<CourseTreeLo> {
+export function updateLo(loId: string, patch: { name?: string; order?: number; kind?: LoKind }): Promise<CourseTreeLo> {
   return request<CourseTreeLo>(`/api/los/${encodeURIComponent(loId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -1914,6 +1919,41 @@ export interface PreseedingLo {
    * Approved questions are intentionally excluded. */
   unapproved: number;
   target: number;
+}
+
+/** One row of the batch planner's Auto plan (GET generation-plan). */
+export interface GenerationPlanRow {
+  loId: string;
+  loName: string;
+  themeName: string;
+  loKind: LoKind;
+  approved: Record<'easy' | 'medium' | 'hard', number>;
+  cells: Array<{ difficulty: 'easy' | 'medium' | 'hard'; kind: QuestionKind; count: number }>;
+}
+
+export interface GenerationPlanCell {
+  loId: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  kind: QuestionKind;
+  count: number;
+}
+
+export interface GenerationPlanResult {
+  runs: Array<GenerationPlanCell & { runId?: string; error?: string }>;
+}
+
+/** GET /api/courses/:courseId/generation-plan -> the Auto plan per LO. */
+export function getGenerationPlan(courseId: string): Promise<GenerationPlanRow[]> {
+  return request<GenerationPlanRow[]>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`);
+}
+
+/** POST /api/courses/:courseId/generation-plan -> one run per cell. */
+export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[]): Promise<GenerationPlanResult> {
+  return request<GenerationPlanResult>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cells }),
+  });
 }
 
 /** GET /api/courses/:courseId/preseeding -> per-LO approved-question coverage. */

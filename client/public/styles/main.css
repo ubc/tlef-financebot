@@ -8543,6 +8543,54 @@ button.class-row--link:focus-visible .class-row__title {
   background: color-mix(in srgb, var(--instr-green-bg) 28%, var(--surface));
 }
 
+/* The batch planner: a row is the LO's copy plus a tier grid, each tier a
+   pair of steppers (calculation / conceptual). */
+.course-setup-guide__generation-row:has(.course-setup-guide__plan-grid) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.course-setup-guide__plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.5rem 0.85rem;
+}
+
+.course-setup-guide__plan-tier {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.course-setup-guide__plan-tier > small {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.course-setup-guide__plan-kinds {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.course-setup-guide__plan-kind {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.course-setup-guide__plan-count {
+  width: 3.6rem;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.course-setup-guide__plan-count:disabled {
+  opacity: 0.5;
+}
+
 .course-setup-guide__coverage {
   font-family: var(--mono);
   font-size: 0.7rem;
