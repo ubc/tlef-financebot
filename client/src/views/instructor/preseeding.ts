@@ -786,11 +786,11 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 
   let bulkMessage: string | null = null;
   let bulkError: string | null = null;
-  let bulkBusy = false;
 
   // The untyped "Generate for All Thin LOs" sweep was replaced by the batch
   // planner dialog (2026-08-23): one typed run per LO x tier x kind instead of
-  // one untyped run per LO. See generation-plan-dialog.ts.
+  // one untyped run per LO. See generation-plan-dialog.ts. The dialog owns its
+  // busy state; this page only shows the outcome.
 
   // --- Tiles + table ----------------------------------------------------------
 
@@ -808,7 +808,6 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         statTile(belowTarget, 'LOs below target', 'warn'),
         statTile(empty, 'LOs empty', 'bad'),
       ),
-      bulkBusy ? el('p', { class: 'preseeding-bulk-status', text: 'Queuing generation…' }) : false,
       bulkMessage ? el('p', { class: 'preseeding-bulk-status', text: bulkMessage }) : false,
       bulkError ? errorState(bulkError) : false,
     );

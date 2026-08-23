@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb';
+import type { ObjectId } from 'mongodb';
 import { losCol, questionsCol, questionVersionsCol, themesCol } from '../components/mongodb/collections';
 import type { Difficulty, LoKind, QuestionKind } from '../types/domain';
 import { effectiveLoKind } from './courses.service';

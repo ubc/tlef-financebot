@@ -1244,7 +1244,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     generationMessage = '';
     for (const row of eligible) locallyQueuedRuns.set(row.loId, null);
     refreshGenerationPanel();
-    let planResult: Awaited<ReturnType<typeof enqueueGenerationPlan>> = { runs: [] };
+    let planResult: Awaited<ReturnType<typeof enqueueGenerationPlan>>;
     try {
       planResult = await enqueueGenerationPlan(options.courseId, cells);
     } catch (caught) {
