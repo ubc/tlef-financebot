@@ -83,7 +83,9 @@ const PROFILE_BLURB: Record<string, string> = {
 function describeProfile(caps: ModelCapabilities): string {
   const parts = [
     caps.temperature ? 'accepts a temperature' : 'accepts no temperature',
-    caps.reasoningEffort ? `reasons at ${caps.defaultEffort} by default` : 'does not reason',
+    caps.reasoningEffort
+      ? `reasons (API default ${caps.defaultEffort}; the pipeline sends none unless a step sets an effort)`
+      : 'does not reason',
     `sends its token limit as ${caps.tokenLimitParam}`,
   ];
   return parts.join(', ');
@@ -178,11 +180,19 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
 
       if (caps.reasoningEffort) {
         const effort = el('select', { class: 'input', 'aria-label': `${STEP_LABEL[step]} reasoning effort` }) as HTMLSelectElement;
+        // What a step runs at when nothing is stored is the PIPELINE's default
+        // (`none`, sent explicitly so a temperature stays legal) — not the
+        // model's API default, which only applies when the parameter is
+        // omitted, and the pipeline never omits it. Found 2026-08-23: this
+        // select preselected luna's API default and labelled it "medium —
+        // model default" for a validator that had always run at none.
         for (const value of caps.reasoningEffort) {
-          const label = value === caps.defaultEffort ? `${value} — model default` : value;
+          const label = value === 'none'
+            ? 'none — pipeline default (temperature allowed)'
+            : value === caps.defaultEffort ? `${value} — the model's own API default` : value;
           effort.append(el('option', { value, text: label }));
         }
-        effort.value = draft[step].reasoningEffort ?? caps.defaultEffort;
+        effort.value = draft[step].reasoningEffort ?? 'none';
         effort.onchange = () => {
           const next = effort.value as ReasoningEffort;
           draft[step] = { ...draft[step], reasoningEffort: next };
@@ -194,7 +204,9 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
         children.push(el('div', { class: 'form-field' }, labelRow('Reasoning effort', EFFORT_HELP), effort));
       }
 
-      const effortNow = draft[step].reasoningEffort;
+      // Same rule as the select above: unset means the pipeline sends `none`,
+      // under which a temperature IS legal — the field must show.
+      const effortNow = draft[step].reasoningEffort ?? 'none';
       if (temperatureAllowed(caps, effortNow)) {
         const { min, max } = caps.temperature!;
         const stepDefault = settings.catalogue.stepTemperatureDefaults[step] ?? caps.temperature!.default;
