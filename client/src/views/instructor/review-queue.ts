@@ -370,7 +370,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
     const selectAllLabel = el(
       'label',
-      { class: 'queue-controls__select-all' },
+      { class: 'bulk-select-all' },
       selectAll,
       el('span', { text: selected.size > 0 ? `${selected.size} selected` : 'Select all' }),
     );

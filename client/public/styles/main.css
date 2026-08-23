@@ -4784,9 +4784,22 @@ button.class-row--link:focus-visible .class-row__title {
 .bank-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.6rem;
   margin-bottom: 1rem;
+}
+
+/* "Select all / N selected" at the left of a bulk-action row (review queue,
+   question bank). */
+.bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .bank-table {
@@ -4798,7 +4811,7 @@ button.class-row--link:focus-visible .class-row__title {
 
 .bank-row {
   display: grid;
-  grid-template-columns: minmax(220px, 2.2fr) 0.7fr 1.1fr 0.7fr 1fr 1.4fr 1fr;
+  grid-template-columns: 1.75rem minmax(220px, 2.2fr) 0.7fr 1.1fr 0.7fr 1fr 1.4fr 1fr;
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
@@ -4910,6 +4923,10 @@ button.class-row--link:focus-visible .class-row__title {
   .bank-row__source-changed,
   .bank-row__spacer {
     grid-column: 1 / -1;
+  }
+
+  .bank-row__select {
+    justify-self: start;
   }
 
   .bank-row__stem {
@@ -5180,15 +5197,6 @@ button.class-row--link:focus-visible .class-row__title {
   width: auto;
 }
 
-.queue-controls__select-all {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-right: auto;
-  font-size: 0.9rem;
-  white-space: nowrap;
-  cursor: pointer;
-}
 
 .queue-message {
   margin: 0 0 0.75rem;
