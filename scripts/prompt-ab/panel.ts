@@ -190,7 +190,9 @@ async function main() {
     table('By kind (what the generator produced)', byKind, baseline?.byKind),
     table('By family', byFamily, baseline?.byFamily),
     table('By cell', byCell, baseline?.byCell),
-    baseline ? `Baseline: ${baseline.at} (${baseline.n} questions).` : 'No baseline on disk — run with --save-baseline to commit this as the reference.',
+    args.has('--save-baseline')
+      ? `Saved as the baseline (${BASELINE}).${baseline ? ` Deltas above are against the previous baseline, ${baseline.at}.` : ''}`
+      : baseline ? `Baseline: ${baseline.at} (${baseline.n} questions).` : 'No baseline on disk — run with --save-baseline to commit this as the reference.',
   ].join('\n');
   fs.writeFileSync(REPORT, report + '\n');
   console.log('\n' + report);

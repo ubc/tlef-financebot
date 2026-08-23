@@ -4777,3 +4777,68 @@ re-tested without re-plumbing if a reviewer that does NOT see the declared
 move is ever tried. What ships from this experiment is the run-1
 refinement: **collision rejects keep the move** — a fault IN a construction,
 not OF it, fixed by Option B's proven local retry.
+
+# Baseline 1 — the regression panel's first run (2026-08-23)
+
+_64 questions, 32 cells, through the real async path, no preset. Committed as
+`scripts/prompt-ab/panel-baseline.json` (e11754c). Every future prompt or
+pipeline change is compared against this._
+
+## Headline: 31 pass / 28 flag / 5 reject — 92% usable; all hard assertions pass
+
+| cut | usable |
+|---|---|
+| easy / medium / hard | 100% / 96% / 83% |
+| multiple choice / true-false | 90% / **100%** (16/16, after exp 30's fix) |
+| produced calculation / conceptual | 88% / 100% |
+| family: calculation / decision / conceptual / prerequisite-heavy | 95% / 94% / 95% / **67%** |
+
+Widening fired on 22 of 24 hard questions (8 chunks); the 2 at 6 are the
+first-theme LO where nothing is "earlier" per the course's theme order.
+
+## The five rejects — the collision family is still the #1 reject cause
+
+Three of five are verifier collisions persisted unproven, all in the
+identity-element family (a six-payment distractor equal to the correct NPV;
+UFCF no-tax vs NWC-added; pretax-salvage vs double-D&A), each after two
+generator attempts AND an Option-B retry that kept the move (correctly — a
+collision is a fault in a construction) and collided again. One is off-LO
+(car affordability, hard: a dealer-defined scenario the material does not
+support) and one a modelling fault (market efficiency, hard: reinvested
+distributions modelled as price). Nothing reached the queue usable while
+unproven.
+
+## The finding the panel exists to surface: MEDIUM is mostly easy in disguise
+
+28 flags carry a suggested label, and the distribution is not noise:
+
+| target → reviewer's earned label | count |
+|---|---|
+| medium → **easy** | **13** (of 14 medium flags) |
+| hard → medium | 5 |
+| hard → easy | 2 |
+| easy → medium | 2 |
+
+The medium cells are "usable" at 96% — and the reviewer says most of those
+questions earn easy. The hard stack (rubric, moves, assignment, widening,
+declaration) has no medium equivalent: medium gets the rubric line and
+nothing else, and the instructor's bank is 51% MID. By the rubric, medium
+means one genuine rate conversion PLUS a formula, or a standard formula
+over a scenario whose inputs must be organized, or rearranging for an
+unknown — and the generator, left to itself, delivers one substitution.
+This is the largest quality gap the panel shows, and it was invisible
+before `suggestedDifficulty` existed: those 13 questions would have been
+13 clean flags or passes.
+
+## What the baseline says to do next, in order
+
+1. **Medium-calibration stack** — the hard machinery's lessons applied one
+   level down: an assigned "medium device" (a rate conversion, an
+   organize-several-inputs scenario, a rearrangement) instead of a rubric
+   line, measured against this baseline's 13/14.
+2. **The identity-element collision family** — still the top reject cause
+   after every prompt rule; the deterministic fix is a range check that
+   refuses a slot whose range admits the identity value (0 for an addend,
+   1 for a multiplier, a draw making two ranges meet) before any call.
+3. **Prerequisite-heavy at 67%** — UFCF's collisions plus one modelling
+   fault; likely improves with (2).
