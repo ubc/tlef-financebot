@@ -285,3 +285,42 @@ with per-question stem/options/explanation/level. The docx lives at
 `C:\Users\Saurav\Documents\CLAUDE\LTIC\FinanceBot_Difficulty_Ratings.docx`.
 Re-derivable: unzip → parse `word/document.xml` (questions are one-row tables
 `Question N | type | level` followed by body paragraphs).
+
+### R9 — The batch planner ("Plan a batch") — SHIPPED on `saurav/generation-plan`
+
+_Not to be confused with R8 (one question spanning several LOs). R9 plans a
+batch of ordinary single-LO questions across many LOs at once._
+
+**Why:** the setup guide's "generate starter questions" button sent one
+untyped run per thin LO — no difficulty, no kind — so the hard stack never
+engaged and an LO with three approved mediums satisfied "≥3 approved" with
+no easy entry and no hard ceiling, while the practice loop serves by tier.
+Baseline 2 also showed the generator's free kind choice leaning conceptual
+at easy/medium; nothing let an instructor say "this LO needs calculations".
+
+**What shipped:**
+- **The kind contract** — `GenerationInput.kind` (calculation | conceptual):
+  stated to the generator, persisted on the run, enforced deterministically
+  (a candidate of the other kind is refused before review and regenerated,
+  like a shape failure). The first dimension of a question to get a contract
+  rather than a preset's suggestion.
+- **A kind per LO** — `LearningObjective.kind` (calculation | conceptual |
+  mixed), inferred from the objective's verb at creation (Calculate/Compute/
+  Estimate → calculation; Explain/Distinguish → conceptual; Evaluate/Compare/
+  Plan → mixed, the decision-shaped objectives that rejected when forced
+  either way), editable in the LO editor.
+- **The Auto plan** — `TIER_TARGETS` 2/2/1 (summing to the existing target of
+  5) is the one place the course's idea of a covered LO lives; each LO's gap
+  per tier is split by its kind (mixed leans conceptual at easy, calculation
+  at hard). `GET /courses/:id/generation-plan`.
+- **One run per cell** — `POST /courses/:id/generation-plan` enqueues a run
+  per LO × tier × kind with explicit difficulty and kind; a cell that cannot
+  start reports its error and the rest proceed.
+- **The panel** — the guide's generation step is a grid: per LO, its kind and
+  per-tier approved counts, a stepper per tier × kind, Auto to reset, and an
+  action that reads "Generate N questions across M LOs → N to review".
+
+**Deliberately left:** the publish checklist still says "≥3 approved" (three
+tests and the dashboard's action mapping pin that text); making it
+tier-aware is a follow-up. The regression panel can verify a seeded
+distribution directly.
