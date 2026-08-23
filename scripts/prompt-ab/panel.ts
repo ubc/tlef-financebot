@@ -15,12 +15,13 @@
  *     reported as deltas — never as failures, because the reviewer's verdict
  *     wobble (~30% on borderline cases, exp 31) would make that cry wolf.
  *
- * Every created Draft is archived afterwards (audit-logged) unless --keep, so
- * the panel never leaves the instructor's queue dirty.
+ * Every created Draft stays in the review queue, labelled `panel:<stamp>`, so
+ * the instructor can read the questions behind the numbers; --archive cleans
+ * them up (audit-logged) instead.
  *
  * Needs the dev stack up (Mongo, Qdrant, the server's worker). Run from the
  * repo root:
- *   npx tsx scripts/prompt-ab/panel.ts [--save-baseline] [--keep] [--only=<substring>]
+ *   npx tsx scripts/prompt-ab/panel.ts [--save-baseline] [--archive] [--only=<substring>]
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -198,15 +199,26 @@ async function main() {
   console.log('\n' + report);
   console.log(`\nresults -> ${RESULTS}\nreport  -> ${REPORT}`);
 
-  // ---- Clean up the queue -----------------------------------------------------
-  if (!args.has('--keep') && createdIds.length) {
+  // ---- Label, and leave the questions for the instructor ---------------------
+  // The panel's questions stay in the review queue by default (Saurav,
+  // 2026-08-23): the numbers say WHERE to look, the questions say WHY, and
+  // the instructor's judgment is the test of whether the reviewer's verdicts
+  // and suggested labels are right. Each carries a `panel:<stamp>` label so
+  // the run is filterable in the bank and archivable as a set later.
+  if (createdIds.length) {
+    await questionsCol().updateMany({ _id: { $in: createdIds } }, { $addToSet: { labels: `panel:${stamp}` } });
+    console.log(`labelled ${createdIds.length} questions panel:${stamp}`);
+  }
+  if (args.has('--archive') && createdIds.length) {
     const now = new Date();
     const res = await questionsCol().updateMany({ _id: { $in: createdIds }, state: 'draft' }, { $set: { state: 'archived', updatedAt: now } });
     await auditCol().insertMany(createdIds.map((id) => ({
       actorPuid: PANEL_REQUESTED_BY, action: 'question.transition', targetType: 'question', targetId: id,
       courseId, detail: { from: 'draft', to: 'archived', note: `regression panel ${stamp}` }, createdAt: now,
     })) as never[]);
-    console.log(`archived ${res.modifiedCount} panel drafts (use --keep to leave them in the queue)`);
+    console.log(`archived ${res.modifiedCount} panel drafts (--archive)`);
+  } else if (createdIds.length) {
+    console.log('panel questions left in the review queue (pass --archive to clean up automatically)');
   }
   await stopJobs();
   process.exit(failures.length ? 1 : 0);
