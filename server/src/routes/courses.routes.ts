@@ -103,6 +103,8 @@ const courseOutlineBody = z.object({
 const updateLoBody = z.object({
   name: z.string().min(1).optional(),
   order: z.number().int().optional(),
+  /** The instructor's override of the verb-inferred kind; drives the planner's Auto. */
+  kind: z.enum(['calculation', 'conceptual', 'mixed']).optional(),
 });
 
 /**

@@ -13,6 +13,12 @@ import {
   preseedingProgress,
   regenerateQuestion,
 } from '../services/generation.service';
+import {
+  autoGenerationPlan,
+  enqueueGenerationPlan,
+  PLAN_MAX_CELLS,
+  PLAN_MAX_COUNT,
+} from '../services/generation-plan.service';
 import { enqueueBlueprintRun } from '../services/generation-blueprints.service';
 
 // Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
@@ -95,6 +101,58 @@ generationRouter.post(
           byPuid: req.user!.puid,
         });
     res.status(202).json({ runId: runId.toHexString() });
+  },
+);
+
+const planCell = z.object({
+  loId: objectIdParam,
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  kind: z.enum(['calculation', 'conceptual']),
+  count: z.number().int().min(1).max(PLAN_MAX_COUNT),
+});
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS) });
+
+/**
+ * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
+ * with its per-tier approved counts and the cells (difficulty x kind x count)
+ * that would bring it to the tier targets. Instructor-only.
+ */
+generationRouter.get(
+  '/courses/:courseId/generation-plan',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const rows = await autoGenerationPlan(new ObjectId(String(req.params.courseId)));
+    res.json(rows.map((row) => ({
+      loId: row.loId.toHexString(), loName: row.loName, themeName: row.themeName, loKind: row.loKind,
+      approved: row.approved, cells: row.cells,
+    })));
+  },
+);
+
+/**
+ * POST /api/courses/:courseId/generation-plan { cells: [{ loId, difficulty, kind, count }] }
+ * -> 202 { runs: [{ loId, difficulty, kind, count, runId? , error? }] }.
+ * One generation run per cell; a cell that cannot start reports its error
+ * and the rest proceed. Instructor-only.
+ */
+generationRouter.post(
+  '/courses/:courseId/generation-plan',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  validate({ body: planBody }),
+  async (req, res) => {
+    const body = req.body as z.infer<typeof planBody>;
+    const result = await enqueueGenerationPlan(
+      new ObjectId(String(req.params.courseId)),
+      body.cells.map((cell) => ({ ...cell, loId: new ObjectId(cell.loId) })),
+      req.user!.puid,
+    );
+    res.status(202).json({
+      runs: result.runs.map((run) => ({
+        ...run, loId: run.loId.toHexString(), ...(run.runId ? { runId: run.runId.toHexString() } : {}),
+      })),
+    });
   },
 );
 
