@@ -4936,3 +4936,18 @@ Two secondary observations, not decisions: high routes medium more toward
 calculation (10/6 vs 7/9) with no medium → easy flags, and mediums are now
 flagged for OVER-delivering (→ hard, 5). Medium calibration is not the
 problem it looked like at effort none.
+
+## Baseline 3, decision reversed: xhigh stays, by the right metric (2026-08-23)
+
+The high-vs-xhigh call above weighed tokens and wall-clock. The team's
+objective is instructor hours. Under that metric the trade inverts:
+wall-clock is a background job the instructor never waits on, tokens are
+the platform's cost, and what the instructor feels is the queue — where
+xhigh produced 0 rejects / 11 flags against high's 1 reject / 13 flags.
+Three fewer interventions per 64 questions and no dead rejects to read and
+discard, small and partly within wobble but consistent in direction, at a
+cost the objective does not count. Production stays at xhigh/xhigh; the
+committed baseline is baseline 2 (xhigh) again; baseline 3's numbers remain
+above as the measured cost of high. The identity-value range gate is still
+worth building — at xhigh it makes the last collision class impossible
+rather than merely rare.

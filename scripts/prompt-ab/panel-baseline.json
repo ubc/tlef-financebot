@@ -1,12 +1,12 @@
 {
-  "at": "2026-08-23T02:32:26.451Z",
+  "at": "2026-08-23T01:58:59.688Z",
   "n": 64,
   "overall": {
     "n": 64,
-    "pass": 50,
-    "flag": 13,
-    "reject": 1,
-    "usable": 63
+    "pass": 53,
+    "flag": 11,
+    "reject": 0,
+    "usable": 64
   },
   "byDifficulty": {
     "easy": {
@@ -25,58 +25,58 @@
     },
     "hard": {
       "n": 24,
-      "pass": 19,
-      "flag": 4,
-      "reject": 1,
-      "usable": 23
+      "pass": 22,
+      "flag": 2,
+      "reject": 0,
+      "usable": 24
     }
   },
   "byType": {
     "mcq": {
       "n": 48,
-      "pass": 34,
-      "flag": 13,
-      "reject": 1,
-      "usable": 47
+      "pass": 39,
+      "flag": 9,
+      "reject": 0,
+      "usable": 48
     },
     "true-false": {
       "n": 16,
-      "pass": 16,
-      "flag": 0,
+      "pass": 14,
+      "flag": 2,
       "reject": 0,
       "usable": 16
     }
   },
   "byKind": {
     "conceptual": {
-      "n": 31,
-      "pass": 27,
+      "n": 34,
+      "pass": 30,
       "flag": 4,
       "reject": 0,
-      "usable": 31
+      "usable": 34
     },
     "calculation": {
-      "n": 33,
+      "n": 30,
       "pass": 23,
-      "flag": 9,
-      "reject": 1,
-      "usable": 32
+      "flag": 7,
+      "reject": 0,
+      "usable": 30
     }
   },
   "byFamily": {
     "calculation": {
       "n": 22,
-      "pass": 17,
-      "flag": 5,
+      "pass": 19,
+      "flag": 3,
       "reject": 0,
       "usable": 22
     },
     "decision": {
       "n": 16,
-      "pass": 10,
-      "flag": 5,
-      "reject": 1,
-      "usable": 15
+      "pass": 12,
+      "flag": 4,
+      "reject": 0,
+      "usable": 16
     },
     "conceptual": {
       "n": 20,
@@ -87,8 +87,8 @@
     },
     "prerequisite-heavy": {
       "n": 6,
-      "pass": 6,
-      "flag": 0,
+      "pass": 5,
+      "flag": 1,
       "reject": 0,
       "usable": 6
     }
@@ -110,36 +110,36 @@
     },
     "Plan saving, investing, protection | mcq | hard": {
       "n": 2,
-      "pass": 0,
-      "flag": 2,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
     "Evaluate car affordability | mcq | easy": {
       "n": 2,
-      "pass": 1,
-      "flag": 1,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
     "Evaluate car affordability | mcq | medium": {
       "n": 2,
-      "pass": 0,
-      "flag": 2,
+      "pass": 1,
+      "flag": 1,
       "reject": 0,
       "usable": 2
     },
     "Evaluate car affordability | mcq | hard": {
       "n": 2,
-      "pass": 1,
-      "flag": 1,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
     "Explain market efficiency | mcq | easy": {
       "n": 2,
-      "pass": 1,
-      "flag": 1,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
@@ -159,8 +159,8 @@
     },
     "Estimate expected returns with CAPM | mcq | easy": {
       "n": 2,
-      "pass": 1,
-      "flag": 1,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
@@ -180,15 +180,15 @@
     },
     "Apply NPV and IRR | mcq | easy": {
       "n": 2,
-      "pass": 2,
-      "flag": 0,
+      "pass": 0,
+      "flag": 2,
       "reject": 0,
       "usable": 2
     },
     "Apply NPV and IRR | mcq | medium": {
       "n": 2,
-      "pass": 1,
-      "flag": 1,
+      "pass": 2,
+      "flag": 0,
       "reject": 0,
       "usable": 2
     },
@@ -216,14 +216,14 @@
     "Compare projects with PP and PI | mcq | hard": {
       "n": 2,
       "pass": 1,
-      "flag": 0,
-      "reject": 1,
-      "usable": 1
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
     },
     "Calculate unlevered free cash flow | mcq | easy": {
       "n": 2,
-      "pass": 2,
-      "flag": 0,
+      "pass": 1,
+      "flag": 1,
       "reject": 0,
       "usable": 2
     },
@@ -264,8 +264,8 @@
     },
     "Evaluate car affordability | true-false | medium": {
       "n": 2,
-      "pass": 2,
-      "flag": 0,
+      "pass": 1,
+      "flag": 1,
       "reject": 0,
       "usable": 2
     },
@@ -278,8 +278,8 @@
     },
     "Explain market efficiency | true-false | medium": {
       "n": 2,
-      "pass": 2,
-      "flag": 0,
+      "pass": 1,
+      "flag": 1,
       "reject": 0,
       "usable": 2
     },
@@ -319,5 +319,5 @@
       "usable": 2
     }
   },
-  "condition": "generator high, reviewer high, validator default (the production configuration)"
+  "condition": "generator xhigh, reviewer xhigh (admin settings, honoured since da99920)"
 }
