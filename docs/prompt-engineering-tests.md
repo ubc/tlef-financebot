@@ -4897,3 +4897,42 @@ bug, and it took one re-run to tell them apart.
   latency for an identical verdict distribution" against high; baseline 2
   is xhigh vs NONE. A panel run at high/high (~$1, ~30 min) is the
   comparison that decides the production setting on evidence.
+
+# Baseline 3 — high/high vs xhigh/xhigh on the panel: keep high (2026-08-23)
+
+_Same 64-question panel, generator high / reviewer high / validator default,
+deltas against baseline 2 (xhigh/xhigh). Committed as the baseline because
+high/high is the production configuration from here._
+
+| | xhigh / xhigh (baseline 2) | high / high |
+|---|---|---|
+| verdicts | 53 pass / 11 flag / 0 reject | 50 pass / 13 flag / 1 reject |
+| usable | 100% | **98%** |
+| Option B fired | 1 | 2 |
+| persisted with a verifier note | 0 | 1 |
+| wall-clock (5 concurrent) | ~33 min | **~22 min** |
+| medium → easy flags | 2 | **0** (medium → hard: 5) |
+| medium MCQ routing (numeric / conceptual) | 7 / 9 | 10 / 6 |
+
+**The one reject is the identity-element collision family, on the hardest
+cell** — "Compare projects with PP and PI" at hard: a "wrong rate"
+distractor whose formula did not actually use a different rate, so it
+displayed identically to the correct value, through two generator attempts
+and an Option-B retry. The reviewer's critique names the exact fix. Every
+other cell matches baseline 2 within the documented verdict wobble.
+
+## Decision — high/high in production; close the collision hole deterministically
+
+xhigh bought one fewer collision reject for ~50% more wall-clock and more
+reasoning tokens on every call. That is the wrong trade, because the thing
+it bought is a deterministic check we have not written yet: a slot-range
+gate that refuses the identity value (0 for an addend, 1 for a multiplier,
+a "wrong rate" that can equal the right rate) before any model call. High
+with that gate should match xhigh's zero at high's cost. Experiment 15's
+n=3 call — "xhigh is not worth 2× latency for an identical verdict
+distribution" — now stands on n=64 through the real path.
+
+Two secondary observations, not decisions: high routes medium more toward
+calculation (10/6 vs 7/9) with no medium → easy flags, and mediums are now
+flagged for OVER-delivering (→ hard, 5). Medium calibration is not the
+problem it looked like at effort none.
