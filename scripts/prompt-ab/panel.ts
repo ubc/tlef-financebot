@@ -26,6 +26,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ObjectId } from 'mongodb';
+import type { QuestionGenerationRun } from '../../server/src/types/domain';
 import { enqueueGenerationRun } from '../../server/src/services/generation.service';
 import { connectMongo } from '../../server/src/components/mongodb';
 import { startJobs, stopJobs } from '../../server/src/components/jobs';
@@ -86,7 +87,7 @@ async function main() {
   // Poll until every run is terminal.
   const terminal = new Set(['completed', 'partial', 'failed']);
   const deadline = Date.now() + 3 * 60 * 60 * 1000;
-  const done = new Map<string, any>();
+  const done = new Map<string, QuestionGenerationRun>();
   while (done.size < runs.length && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 15000));
     for (const { runId } of runs) {
@@ -105,7 +106,7 @@ async function main() {
   for (const { cell, runId } of runs) {
     const run = done.get(runId.toHexString());
     if (!run) { console.log(`TIMEOUT ${cell.lo} ${cell.type} ${cell.difficulty}`); continue; }
-    const events: string[] = (run.events ?? []).map((e: any) => e.message ?? '');
+    const events: string[] = (run.events ?? []).map((e) => e.message ?? '');
     // Option B is attributed per candidate: the event names the 1-based item
     // ("Reviewer rejected candidate 2 — retrying"), and createdQuestionIds is
     // in item order when no item failed. With failures the mapping is

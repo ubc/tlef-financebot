@@ -35,13 +35,17 @@ import {
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
+import type { ReasoningEffort } from '../../server/src/types/domain';
+
+/** The generator's JSON shape, as the production verifier types it. */
+type Generated = Parameters<typeof verifyGeneratedNumerics>[0];
 
 export interface FixtureChunk { text: string; supporting?: boolean }
 export interface Fixture { lo: string; chunks: FixtureChunk[] }
 
 export interface StepOptions {
   model?: string;
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'none';
+  reasoningEffort?: ReasoningEffort;
   temperature?: number;
 }
 
@@ -148,10 +152,10 @@ function hasDifficultyComplaint(reasoning: string): boolean {
     .test(reasoning);
 }
 
-function helperStepCount(generated: any): { helpers: number; derived: number } {
-  const derived: any[] = generated.derivedValues ?? [];
+function helperStepCount(generated: Generated): { helpers: number; derived: number } {
+  const derived = generated.derivedValues ?? [];
   const optionNames = new Set(
-    (generated.options ?? []).flatMap((o: any) =>
+    (generated.options ?? []).flatMap((o) =>
       [...String(o.text).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1])),
   );
   return {
@@ -163,7 +167,7 @@ function helperStepCount(generated: any): { helpers: number; derived: number } {
 async function judgeOnce(args: {
   lo: string;
   chunks: FixtureChunk[];
-  generated: any;
+  generated: Generated;
   arm: Arm;
   model: string;
   assignedMove?: string;
@@ -250,7 +254,7 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             genPrompt = `${genPrompt}\n\n${pre.appendix}`;
             planned = pre.planned;
           }
-          const generated = await completeJson<any>(genPrompt, {
+          const generated = await completeJson<Generated>(genPrompt, {
             model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
           });
           const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, assignedMove, track });
@@ -261,7 +265,7 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             // back (generateValidQuestion appends the feedback below the full
             // prompt), judge the replacement the same way, keep both records.
             const retryPrompt = `${genPrompt}\n\n${REVIEWER_REJECT_FEEDBACK(String(first.reasoning ?? ''), generated)}`;
-            const regenerated = await completeJson<any>(retryPrompt, {
+            const regenerated = await completeJson<Generated>(retryPrompt, {
               model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
             });
             const second = await judgeOnce({ lo: fixture.lo, chunks, generated: regenerated, arm, model, assignedMove, track });

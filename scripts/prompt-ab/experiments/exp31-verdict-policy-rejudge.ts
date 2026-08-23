@@ -53,7 +53,7 @@ async function main() {
   const tally = { A: { pass: 0, flag: 0, reject: 0 }, B: { pass: 0, flag: 0, reject: 0 } } as Record<string, Record<string, number>>;
   const transitions: Record<string, number> = {};
   let difficultyFlagsWithSuggestion = 0, difficultyFlags = 0;
-  let usage = { promptTokens: 0, completionTokens: 0 };
+  const usage = { promptTokens: 0, completionTokens: 0 };
   const track = (u: { promptTokens?: number; completionTokens?: number }) => {
     usage.promptTokens += u.promptTokens ?? 0; usage.completionTokens += u.completionTokens ?? 0;
   };
@@ -62,11 +62,11 @@ async function main() {
     const v = await questionVersionsCol().findOne({ _id: q.currentVersionId });
     const lo = q.loIds[0] ? await losCol().findOne({ _id: q.loIds[0] }) : null;
     if (!v || !lo) continue;
-    const chunks = (v.sourceRefs ?? []).filter((r: any) => r.chunk).map((r: any) => ({ text: String(r.chunk) }));
+    const chunks = (v.sourceRefs ?? []).filter((r) => r.chunk).map((r) => ({ text: String(r.chunk) }));
     const question = {
       stem: v.stem, options: v.options, difficulty: v.difficulty, numericKind: v.numericKind,
       paramSlots: v.paramSlots, derivedValues: v.derivedValues,
-    } as any;
+    } as Parameters<typeof verifyGeneratedNumerics>[0];
     const numerics = verifyGeneratedNumerics(question);
     const common = {
       loName: lo.name, question, type: v.type, chunks,
