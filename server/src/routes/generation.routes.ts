@@ -59,6 +59,8 @@ const generateBody = z.object({
   // Instructor-chosen hardness move; ids from HARDNESS_MOVE_MENU. The service
   // re-validates (id known, difficulty hard), so this only gates the shape.
   hardnessMove: z.string().max(64).optional(),
+  /** The kind contract: every question in the run must be this kind. */
+  kind: z.enum(['calculation', 'conceptual']).optional(),
   prompt: z.string().max(2000).optional(),
 }).refine((body) => Boolean(body.loId) !== Boolean(body.blueprintId), {
   message: 'Provide exactly one of loId or blueprintId.',
@@ -88,6 +90,7 @@ generationRouter.post(
           ...(body.type ? { type: body.type } : {}),
           ...(body.difficulty ? { difficulty: body.difficulty } : {}),
           ...(body.hardnessMove ? { hardnessMove: body.hardnessMove } : {}),
+          ...(body.kind ? { kind: body.kind } : {}),
           ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
           byPuid: req.user!.puid,
         });

@@ -214,11 +214,23 @@ export interface Theme {
   archivedAt?: Date;
 }
 
+/** What kind of question an LO naturally asks for. `mixed` means both. */
+export type LoKind = 'calculation' | 'conceptual' | 'mixed';
+
+/** What kind of question a single generation request must produce. */
+export type QuestionKind = 'calculation' | 'conceptual';
+
 export interface LearningObjective {
   courseId: ObjectId;
   themeId: ObjectId;
   name: string;
   order: number;
+  /** Instructor-editable; inferred from the objective's verb at creation
+   * (Calculate/Compute/Estimate → calculation, Explain/Distinguish →
+   * conceptual, Evaluate/Compare/Plan → mixed). Drives the batch planner's
+   * Auto distribution. Absent on LOs created before 2026-08-23: readers fall
+   * back to the same inference. */
+  kind?: LoKind;
   archivedAt?: Date;
 }
 
@@ -557,6 +569,9 @@ export interface QuestionGenerationRun extends ContentRunBase {
      * because the async job rebuilds GenerationInput from this record —
      * an unpersisted choice would silently drop on the queue boundary. */
     hardnessMove?: string;
+    /** The kind this run must produce (batch planner cells). Persisted so the
+     * async job honours it. */
+    kind?: QuestionKind;
     prompt?: string;
     blueprintId?: ObjectId;
     retryOfRunId?: ObjectId;

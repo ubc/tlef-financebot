@@ -51,6 +51,7 @@ import type {
   DerivedValue,
   NumericVerification,
   StepModelConfig,
+  QuestionKind,
 } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -145,6 +146,9 @@ export interface GenerationInput {
    * pinnedMaterialIds, which the async job also uses to carry a run's FROZEN
    * resolved set and therefore says nothing about instructor intent. */
   groundingPinned?: boolean;
+  /** The kind every question in this run must be (batch planner cells). A
+   * candidate of the other kind is refused before review and regenerated. */
+  kind?: QuestionKind;
   prompt?: string;
   byPuid: string;
   models?: ResolvedStepModels;
@@ -267,6 +271,7 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     type: input.type ?? 'mcq',
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.hardnessMove ? { hardnessMove: input.hardnessMove } : {}),
+    ...(input.kind ? { kind: input.kind } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
     ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
@@ -403,6 +408,8 @@ async function retryRejectedCandidate(args: {
   /** Reserved: a validated move suggestion. Nothing passes one today — see
    * ReviewerOutput.suggestedMove for why (exp 34). */
   suggestedMove?: string;
+  /** The kind contract the rejected question carried; the replacement keeps it. */
+  kind?: QuestionKind;
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
@@ -427,6 +434,7 @@ async function retryRejectedCandidate(args: {
 ${RETRY_MOVE_CHANGED}`
       : REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
     retryMove,
+    args.kind,
   );
   if (!retried) return null;
 
@@ -514,7 +522,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(
-      type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[i],
+      type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[i], input.kind,
     );
     if (!generated) {
       console.warn(
@@ -561,6 +569,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
         assignedMove: assignedMoves[i],
         moveLocked: input.hardnessMove !== undefined || type === 'true-false',
+        ...(input.kind ? { kind: input.kind } : {}),
       });
       if (retried) outcome = retried;
     }
@@ -806,7 +815,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (let item = 0; item < count; item += 1) {
       try {
         const candidate = await generateValidQuestion(
-          type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item],
+          type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item], input.kind,
         );
         if (!candidate) throw new Error('generation-invalid-options');
         generated.push({ item, generated: candidate });
@@ -908,6 +917,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
             lo, type, difficulty: input.difficulty, prompt, chunks, models,
             assignedMove: assignedMoves[candidate.item],
             moveLocked: input.hardnessMove !== undefined || type === 'true-false',
+            ...(input.kind ? { kind: input.kind } : {}),
             reviewerStep: models.reviewer, rejected: candidate.generated,
             critique: String(candidate.review.reasoning ?? ''),
           });
@@ -1104,6 +1114,7 @@ export function registerGenerationJobs(): void {
         type: run.input.type,
         ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
         ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
+        ...(run.input.kind ? { kind: run.input.kind } : {}),
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
         models: resolvedFromPersisted(run.input.models, await getPlatformSettings()),
@@ -1314,6 +1325,9 @@ async function generateValidQuestion(
    * a structural retry must implement the same assignment, not shop for an
    * easier one. */
   assignedMove?: string,
+  /** The kind contract (batch planner): the candidate's numericKind must
+   * match, or it is refused like a shape failure and regenerated. */
+  kind?: QuestionKind,
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -1321,7 +1335,7 @@ async function generateValidQuestion(
   let lastFailure: string | undefined;
 
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
-    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove });
+    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind });
     const withExtra = extraInstruction ? `${built}\n\n${extraInstruction}` : built;
     const candidate = await completeJson<GeneratorOutput>(
       lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
@@ -1336,7 +1350,8 @@ async function generateValidQuestion(
       optionShapeValid(type, candidate.options) &&
       errorModelsNameMistakes(candidate) &&
       hardnessMoveDeclared(difficulty, candidate) &&
-      trueFalseShapeValid(type, candidate)
+      trueFalseShapeValid(type, candidate) &&
+      kindContractMet(kind, candidate)
     ) {
       const clean = sanitizeGenerated(candidate);
       // Shuffled HERE, not in createQuestion, for the same reason
@@ -1488,6 +1503,17 @@ function trueFalseShapeValid(type: QuestionType, candidate: GeneratorOutput): bo
   if ((candidate.paramSlots?.length ?? 0) > 0 || (candidate.derivedValues?.length ?? 0) > 0) return false;
   const texts = candidate.options.map((option) => String(option.text).trim().toLowerCase());
   return texts.includes('true') && texts.includes('false');
+}
+
+/** The kind contract (batch planner, 2026-08-23). Until now the kind of a
+ * question was the one dimension with no contract: the generator chose
+ * numericKind freely and a preset could only ask. A planner cell that says
+ * "1 calculation" has to be a guarantee, so a candidate of the other kind is
+ * refused like a shape failure and regenerated. No contract → free choice,
+ * as before. */
+function kindContractMet(kind: QuestionKind | undefined, candidate: GeneratorOutput): boolean {
+  if (kind === undefined) return true;
+  return kind === 'calculation' ? candidate.numericKind === 'numeric' : candidate.numericKind !== 'numeric';
 }
 
 /** A hard candidate must DECLARE its hardness move (prompt: the
@@ -1819,6 +1845,8 @@ export function GENERATOR_PROMPT(params: {
   /** The server-assigned (or instructor-chosen) hardness move. Only rendered
    * at target hard; see HARDNESS_MOVE_MENU. */
   assignedMove?: string;
+  /** The kind contract from a batch-planner cell. */
+  kind?: QuestionKind;
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
@@ -1863,6 +1891,19 @@ export function GENERATOR_PROMPT(params: {
         + 'question must still primarily TEST the current learning objective — the\n'
         + 'chained concept is a step on the way, never the thing being tested.'
       : '',
+    // The kind contract (batch planner, 2026-08-23): a planner cell that says
+    // "calculation" is a guarantee, checked deterministically (kindContractMet)
+    // — the first dimension of a question to get a contract rather than a
+    // preset's suggestion.
+    params.kind === 'calculation'
+      ? 'THIS QUESTION MUST BE A CALCULATION: set "numericKind": "numeric", with paramSlots '
+        + 'and derivedValues as specified below. A conceptual question is refused and '
+        + 'regenerated.'
+      : params.kind === 'conceptual'
+        ? 'THIS QUESTION MUST BE CONCEPTUAL: set "numericKind": "conceptual", with no '
+          + 'paramSlots and no derivedValues — the student reasons about ideas, not '
+          + 'arithmetic. A numeric question is refused and regenerated.'
+        : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
