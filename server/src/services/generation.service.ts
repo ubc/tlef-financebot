@@ -20,6 +20,8 @@ import { drawSeed } from './params.service';
 import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
+  undisplayedInputs,
+  optionFormatsConsistent,
 } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
@@ -135,6 +137,14 @@ export interface GenerationInput {
   count: number;
   type?: QuestionType;
   difficulty?: Difficulty;
+  /** Instructor-chosen hardness move (HARDNESS_MOVE_MENU id). Only legal with
+   * difficulty 'hard'; absent means the server rotates the menu. */
+  hardnessMove?: string;
+  /** True when the instructor constrained the materials (blueprint pin or
+   * prompt @mention) — the signal R7's widening respects. Distinct from
+   * pinnedMaterialIds, which the async job also uses to carry a run's FROZEN
+   * resolved set and therefore says nothing about instructor intent. */
+  groundingPinned?: boolean;
   prompt?: string;
   byPuid: string;
   models?: ResolvedStepModels;
@@ -165,6 +175,14 @@ interface GeneratorOutput {
   stem: string;
   options: QuestionOption[];
   difficulty?: string;
+  /** Required at target `hard` (enforced in generateValidQuestion): one
+   * sentence naming which hardness move the question applies and how. The
+   * reviewer verifies the claim against the question — structure over
+   * exhortation, the same mechanism as the difficulty self-assessment.
+   * Measured need: experiments 22-24, where the moves menu plus labeled
+   * material produced 1 taken chain in 16 draws — description alone does
+   * not compel. */
+  hardnessMove?: string;
   // Parameterization (design spec 2026-08-05). A numerical question states no
   // numbers: it declares its inputs as `paramSlots` and every displayed value
   // — the correct answer and each distractor — as a `derivedValues` formula.
@@ -174,10 +192,22 @@ interface GeneratorOutput {
 }
 interface ValidatorOutput {
   roleAssessment: string;
+  /** Present when the question declares a hardness move: the validator's
+   * claim-check of declared-vs-implemented and declared-vs-assigned. */
+  moveAssessment?: string;
 }
 interface ReviewerOutput {
   decision: string;
   reasoning: string;
+  /** Set when the reviewer flags a difficulty mismatch: the label the
+   * question actually earns. See REVIEW_VERDICT_POLICY. */
+  suggestedDifficulty?: string;
+  /** Not asked for since exp 34 (2026-08-22): when the reviewer was required
+   * to name a better move on a construction reject, 2 of 3 suggestions named
+   * the move that had just failed — it anchors on the declared move in the
+   * question JSON. retryMoveFor still accepts a suggestion, validated, so
+   * the channel can be re-tested without re-plumbing. */
+  suggestedMove?: string;
 }
 
 export interface RegenerationVariant {
@@ -193,6 +223,7 @@ export interface RegenerationVariant {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    suggestedDifficulty?: Difficulty;
   };
 }
 
@@ -222,6 +253,12 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
   if ((daily?.total ?? 0) + input.count > platformSettings.costControls.maxGenerationsPerDay) {
     throw new Error('generation-daily-limit');
   }
+  if (input.hardnessMove !== undefined) {
+    if (input.difficulty !== 'hard') throw new Error('generation-hardness-move-requires-hard');
+    if (!HARDNESS_MOVE_MENU.some((move) => move.id === input.hardnessMove)) {
+      throw new Error('generation-unknown-hardness-move');
+    }
+  }
   const run = await createQuestionGenerationRun({
     courseId: input.courseId,
     requestedBy: input.byPuid,
@@ -229,12 +266,16 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     count: input.count,
     type: input.type ?? 'mcq',
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
+    ...(input.hardnessMove ? { hardnessMove: input.hardnessMove } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
     ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
     grounding: {
       allowedMaterialIds: resolvedMaterialIds,
       retrievedChunkCount: 0,
+      // An explicit pin (blueprint materials) or a prompt @mention is the
+      // instructor constraining grounding; plain LO assignment is not.
+      pinned: input.pinnedMaterialIds !== undefined || extractMaterialMentions(input.prompt).length > 0,
     },
     models: persistedModels(input.models ?? stepModelsFrom(platformSettings)),
   });
@@ -298,6 +339,50 @@ function reviewerVerificationParams(
  * Feature flags), because the cost is one extra generator+validator+reviewer
  * cycle per rejected question.
  */
+/**
+ * Which move the reject-retry implements (2026-08-22). Option B's measured
+ * win was on MECHANICAL critiques — "these two options collide at seed X" —
+ * where the fix is a local edit. On a decision-shaped LO ("Compare projects
+ * with PP and PI") it fired 3/3 and converted 0/3: the retries re-implemented
+ * the same doomed construction with the critique stapled on, because the
+ * assignment was pinned. A reject is the construction failing, so the retry
+ * now gets the NEXT move in the rotation — unless the critique is about the
+ * declared move not being implemented (then faithfulness is the fix and the
+ * move stays), or the move is locked (instructor-chosen, or true/false).
+ */
+export function retryMoveFor(
+  assignedMove: string | undefined,
+  critique: string,
+  locked: boolean,
+  /** The reviewer's suggestedMove (a menu id), if it gave one. Applied only
+   * when it names a valid move DIFFERENT from the one that failed; anything
+   * else falls back to rotation. */
+  suggested?: string,
+): { move: string | undefined; source: 'kept' | 'suggested' | 'rotated' } {
+  if (assignedMove === undefined || locked) return { move: assignedMove, source: 'kept' };
+  if (/declared (hardness )?move|hardnessMove|substitut|not (genuinely )?implement/i.test(critique)) {
+    return { move: assignedMove, source: 'kept' };
+  }
+  // A verifier collision is a fault IN a construction, not OF it — Option B's
+  // proven regime (0/4 -> 4/4 on exactly these critiques). Measured 2026-08-22
+  // (exp 34 run 1): 6 of 9 reject-retries were collision critiques, and
+  // rotating threw away sound constructions to fix a distractor.
+  if (/identical at display precision|collide|deterministic verifier|cannot be served|undefined-length/i.test(critique)) {
+    return { move: assignedMove, source: 'kept' };
+  }
+  const index = HARDNESS_MOVE_MENU.findIndex((move) => move.text === assignedMove);
+  if (index < 0) return { move: assignedMove, source: 'kept' };
+  const chosen = suggested ? HARDNESS_MOVE_MENU.find((move) => move.id === suggested) : undefined;
+  if (chosen && chosen.text !== assignedMove) return { move: chosen.text, source: 'suggested' };
+  return { move: HARDNESS_MOVE_MENU[(index + 1) % HARDNESS_MOVE_MENU.length]!.text, source: 'rotated' };
+}
+
+/** Appended to the reject critique when the retry carries a different move. */
+const RETRY_MOVE_CHANGED =
+  'The construction itself failed, not just a detail of it, so a DIFFERENT hardness '
+  + 'move has been assigned below. Build the new question around that move; do not '
+  + 'patch the rejected construction.';
+
 async function retryRejectedCandidate(args: {
   lo: { name: string };
   type: QuestionType;
@@ -308,10 +393,28 @@ async function retryRejectedCandidate(args: {
   reviewerStep: StepModelConfig;
   rejected: GeneratorOutput;
   critique: string;
+  /** The assignment the rejected question carried. See retryMoveFor: the
+   * replacement keeps it only when the critique is about faithfulness to it;
+   * a structural reject gets the next move in the rotation. */
+  assignedMove?: string;
+  /** True when the move must not change: the instructor chose it, or the
+   * question is true/false (one conceptual pattern, nothing to rotate to). */
+  moveLocked?: boolean;
+  /** Reserved: a validated move suggestion. Nothing passes one today — see
+   * ReviewerOutput.suggestedMove for why (exp 34). */
+  suggestedMove?: string;
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
   console.warn(`[generation] reviewer rejected — retrying with the critique: ${args.critique.slice(0, 120)}`);
+  const { move: retryMove, source: moveSource } = retryMoveFor(
+    args.assignedMove, args.critique, args.moveLocked === true, args.suggestedMove,
+  );
+  const movedOn = retryMove !== undefined && retryMove !== args.assignedMove;
+  if (args.assignedMove !== undefined) {
+    const id = HARDNESS_MOVE_MENU.find((move) => move.text === retryMove)?.id ?? 'non-menu';
+    console.warn(`[generation] reject-retry move: ${moveSource} (${id})`);
+  }
   const retried = await generateValidQuestion(
     args.type,
     args.lo.name,
@@ -319,13 +422,20 @@ async function retryRejectedCandidate(args: {
     args.prompt,
     args.chunks,
     args.models.generator,
-    REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+    movedOn
+      ? `${REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected)}
+${RETRY_MOVE_CHANGED}`
+      : REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
+    retryMove,
   );
   if (!retried) return null;
 
   const numerics = verifyGeneratedNumerics(retried);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: args.lo.name, question: retried, chunks: args.chunks }),
+    VALIDATOR_PROMPT({
+      loName: args.lo.name, question: retried, chunks: args.chunks,
+      ...(retryMove ? { assignedMove: retryMove } : {}),
+    }),
     { ...args.models.validator },
   );
   const review = await completeJson<ReviewerOutput>(
@@ -333,12 +443,49 @@ async function retryRejectedCandidate(args: {
       loName: args.lo.name,
       question: retried,
       chunks: args.chunks,
+      type: args.type,
       roleAssessment: String(validation.roleAssessment ?? ''),
+      ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
       ...reviewerVerificationParams(numerics),
     }),
     { ...args.reviewerStep },
   );
   return { generated: retried, numerics, validation, review };
+}
+
+/** One move per question in a hard batch (experiment 26): rotation from a
+ * random start guarantees distinct constructions within a batch, which also
+ * attacks the batch-diversity problem open since experiment 1. An explicit
+ * instructor choice applies to every question in the batch — they picked it
+ * deliberately. Non-hard targets get no assignment at all. */
+/** The assignment for a hard TRUE/FALSE question: the menu's moves are
+ * calculation devices, and assigning one to a claim is what produced
+ * two-option numerics (2026-08-22). The conceptual pattern is the only hard
+ * construction a claim supports, so it is assigned directly. */
+const TRUE_FALSE_HARD_MOVE =
+  'conceptual two-rule claim: the statement is true or false only when two '
+  + 'related-but-easily-confused rules are held together (annuity vs. annuity due, '
+  + 'cum- vs. ex-dividend, coupon rate vs. interest-rate risk); the single wrong '
+  + 'option must be what a student concludes when the rules blur';
+
+function assignMovesForBatch(
+  difficulty: Difficulty | undefined,
+  hardnessMove: string | undefined,
+  count: number,
+  type: QuestionType = 'mcq',
+): (string | undefined)[] {
+  if (difficulty !== 'hard') return Array.from({ length: count }, () => undefined);
+  if (type === 'true-false') return Array.from({ length: count }, () => TRUE_FALSE_HARD_MOVE);
+  if (hardnessMove) {
+    const chosen = HARDNESS_MOVE_MENU.find((move) => move.id === hardnessMove);
+    if (!chosen) throw new Error('generation-unknown-hardness-move');
+    return Array.from({ length: count }, () => chosen.text);
+  }
+  const start = Math.floor(Math.random() * HARDNESS_MOVE_MENU.length);
+  return Array.from(
+    { length: count },
+    (_, i) => HARDNESS_MOVE_MENU[(start + i) % HARDNESS_MOVE_MENU.length]!.text,
+  );
 }
 
 export async function runGenerationPipeline(input: GenerationInput): Promise<ObjectId[]> {
@@ -363,9 +510,12 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   const { chunks } = await retrieveChunks(
     collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
   );
+  const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
 
   for (let i = 0; i < count; i += 1) {
-    const generated = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
+    const generated = await generateValidQuestion(
+      type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[i],
+    );
     if (!generated) {
       console.warn(
         `[generation] skipped a question for LO ${loId.toHexString()} after ` +
@@ -382,7 +532,10 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // Validator and reviewer each run on their own model. Structure validation
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
-      VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks }),
+      VALIDATOR_PROMPT({
+        loName: lo.name, question: generated, chunks,
+        ...(assignedMoves[i] ? { assignedMove: assignedMoves[i] } : {}),
+      }),
       { ...models.validator },
     );
     const review = platformSettings.featureFlags.reviewerAgent
@@ -391,7 +544,9 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
             loName: lo.name,
             question: generated,
             chunks,
+            type,
             roleAssessment: String(validation.roleAssessment ?? ''),
+            ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
             ...reviewerVerificationParams(numerics),
           }),
           { ...models.reviewer },
@@ -404,6 +559,8 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       const retried = await retryRejectedCandidate({
         lo, type, difficulty: input.difficulty, prompt, chunks, models,
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
+        assignedMove: assignedMoves[i],
+        moveLocked: input.hardnessMove !== undefined || type === 'true-false',
       });
       if (retried) outcome = retried;
     }
@@ -431,6 +588,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
         agentDecision: {
           decision: normalizeDecision(outcome.review.decision),
           reasoning: withVerificationNote(String(outcome.review.reasoning ?? ''), outcome.numerics.failure),
+          ...suggestedDifficultyField(outcome.review.suggestedDifficulty),
           roleAssessment: String(outcome.validation.roleAssessment ?? ''),
         },
       });
@@ -490,6 +648,7 @@ export async function regenerateQuestion(
     'Create a distinct alternative to the existing question below. Preserve the learning objective but do not merely paraphrase.',
     `Existing question: ${JSON.stringify({ stem: current.stem, options: current.options })}`,
   ].join('\n\n');
+  const [regenerateMove] = assignMovesForBatch(current.difficulty, undefined, 1, current.type);
   const generated = await generateValidQuestion(
     current.type,
     lo.name,
@@ -497,13 +656,18 @@ export async function regenerateQuestion(
     generationInstruction,
     grounding.chunks,
     platformSettings.models.generator,
+    undefined,
+    regenerateMove,
   );
   if (!generated) throw new Error('generation-invalid-options');
 
   // Verified before the review so the reviewer sees the verifier's verdict.
   const numerics = verifyGeneratedNumerics(generated);
   const validation = await completeJson<ValidatorOutput>(
-    VALIDATOR_PROMPT({ loName: lo.name, question: generated, chunks: grounding.chunks }),
+    VALIDATOR_PROMPT({
+      loName: lo.name, question: generated, chunks: grounding.chunks,
+      ...(regenerateMove ? { assignedMove: regenerateMove } : {}),
+    }),
     { ...platformSettings.models.validator },
   );
   const review = platformSettings.featureFlags.reviewerAgent
@@ -512,7 +676,9 @@ export async function regenerateQuestion(
           loName: lo.name,
           question: generated,
           chunks: grounding.chunks,
+          type: current.type,
           roleAssessment: String(validation.roleAssessment ?? ''),
+          ...(validation.moveAssessment ? { moveAssessment: String(validation.moveAssessment) } : {}),
           ...reviewerVerificationParams(numerics),
         }),
         { ...platformSettings.models.reviewer },
@@ -534,6 +700,7 @@ export async function regenerateQuestion(
     agentDecision: {
       decision: normalizeDecision(review.decision),
       reasoning: withVerificationNote(String(review.reasoning ?? ''), numerics.failure),
+      ...suggestedDifficultyField(review.suggestedDifficulty),
       roleAssessment: String(validation.roleAssessment ?? ''),
     },
   };
@@ -583,7 +750,11 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
   let stage: QuestionGenerationRun['stage'] = 'retrieving';
 
   try {
-    await updateContentRun(runId, { status: 'running', stage, message: 'Retrieving assigned course material' });
+    const effort = (config: StepModelConfig) => config.reasoningEffort ?? 'default';
+    await updateContentRun(runId, {
+      status: 'running', stage,
+      message: `Retrieving assigned course material (generator ${models.generator.model} @${effort(models.generator)}, reviewer ${models.reviewer.model} @${effort(models.reviewer)})`,
+    });
     const lo = await losCol().findOne({ _id: loId });
     if (!lo) throw new Error('lo-not-found');
     if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
@@ -591,21 +762,30 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const allowedMaterialIds = input.pinnedMaterialIds?.map((id) => id.toHexString())
       ?? (await groundingMaterialIds(courseId, lo, prompt));
     if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
+    // `pinned` rides on every grounding write so a retry of this run (which
+    // rebuilds its input from the record) still knows whether the instructor
+    // constrained the materials.
+    const pinned = input.groundingPinned === true;
     await updateContentRun(runId, {
       status: 'running',
       stage,
       grounding: {
         allowedMaterialIds: allowedMaterialIds.map((id) => new ObjectId(id)),
         retrievedChunkCount: 0,
+        pinned,
       },
       result,
       message: `Pinned ${allowedMaterialIds.length} assigned material${allowedMaterialIds.length === 1 ? '' : 's'}`,
     });
     // Widen only when the instructor did NOT pin materials — a pin means
     // exactly these, and the supporting pool would smuggle others back in.
+    // Judged by the instructor-pin FLAG, never by pinnedMaterialIds being set:
+    // the async job always passes the run's frozen ids through that field, so
+    // the old `pinnedMaterialIds === undefined` test was false on every
+    // tracked run and R7 never widened in production (2026-08-22).
     const grounding = await retrieveChunks(
       courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds,
-      input.pinnedMaterialIds === undefined && input.difficulty === 'hard',
+      !pinned && input.difficulty === 'hard',
     );
     const chunks = grounding.chunks;
     stage = 'generating';
@@ -615,15 +795,19 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       grounding: {
         allowedMaterialIds: grounding.allowedMaterialIds.map((id) => new ObjectId(id)),
         retrievedChunkCount: chunks.length,
+        pinned,
       },
       result,
       message: `Retrieved ${chunks.length} grounded chunks`,
     });
 
+    const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
     const generated: TrackedCandidate[] = [];
     for (let item = 0; item < count; item += 1) {
       try {
-        const candidate = await generateValidQuestion(type, lo.name, input.difficulty, prompt, chunks, models.generator);
+        const candidate = await generateValidQuestion(
+          type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item],
+        );
         if (!candidate) throw new Error('generation-invalid-options');
         generated.push({ item, generated: candidate });
         await updateContentRun(runId, {
@@ -657,7 +841,10 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of generated) {
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
-          VALIDATOR_PROMPT({ loName: lo.name, question: candidate.generated, chunks }),
+          VALIDATOR_PROMPT({
+            loName: lo.name, question: candidate.generated, chunks,
+            ...(assignedMoves[candidate.item] ? { assignedMove: assignedMoves[candidate.item] } : {}),
+          }),
           { ...models.validator },
         );
         validated.push(candidate);
@@ -695,7 +882,11 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
                 loName: lo.name,
                 question: candidate.generated,
                 chunks,
+                type,
                 roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
+                ...(candidate.validation?.moveAssessment
+                  ? { moveAssessment: String(candidate.validation.moveAssessment) }
+                  : {}),
                 ...reviewerVerificationParams(candidateNumerics),
               }),
               { ...models.reviewer },
@@ -715,6 +906,8 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           });
           const retried = await retryRejectedCandidate({
             lo, type, difficulty: input.difficulty, prompt, chunks, models,
+            assignedMove: assignedMoves[candidate.item],
+            moveLocked: input.hardnessMove !== undefined || type === 'true-false',
             reviewerStep: models.reviewer, rejected: candidate.generated,
             critique: String(candidate.review.reasoning ?? ''),
           });
@@ -780,6 +973,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           agentDecision: {
             decision: normalizeDecision(candidate.review?.decision),
             reasoning: withVerificationNote(String(candidate.review?.reasoning ?? ''), numerics.failure),
+            ...suggestedDifficultyField(candidate.review?.suggestedDifficulty),
             roleAssessment: String(candidate.validation?.roleAssessment ?? ''),
           },
         });
@@ -909,14 +1103,17 @@ export function registerGenerationJobs(): void {
         count: run.input.count,
         type: run.input.type,
         ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
+        ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
-        models: resolvedFromPersisted(run.input.models),
+        models: resolvedFromPersisted(run.input.models, await getPlatformSettings()),
         ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
         ...(run.input.retryOfRunId ? { retryOfRunId: run.input.retryOfRunId } : {}),
         ...(run.grounding?.allowedMaterialIds
           ? { pinnedMaterialIds: run.grounding.allowedMaterialIds }
           : {}),
+        // The frozen ids are not an instructor pin; only the recorded flag is.
+        ...(run.grounding?.pinned ? { groundingPinned: true } : {}),
       },
       id,
     );
@@ -1113,6 +1310,10 @@ async function generateValidQuestion(
    * on EVERY attempt this call makes (the verifier's own retry feedback stacks
    * on top when a collision also occurs). */
   extraInstruction?: string,
+  /** The assigned hardness move (experiment 26), carried on every attempt —
+   * a structural retry must implement the same assignment, not shop for an
+   * easier one. */
+  assignedMove?: string,
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -1120,9 +1321,8 @@ async function generateValidQuestion(
   let lastFailure: string | undefined;
 
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
-    const withExtra = extraInstruction
-      ? `${GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks })}\n\n${extraInstruction}`
-      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks });
+    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove });
+    const withExtra = extraInstruction ? `${built}\n\n${extraInstruction}` : built;
     const candidate = await completeJson<GeneratorOutput>(
       lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
       // GENERATOR_TEMPERATURE is the default, not an override: an admin who sets
@@ -1134,7 +1334,9 @@ async function generateValidQuestion(
     if (
       candidate &&
       optionShapeValid(type, candidate.options) &&
-      errorModelsNameMistakes(candidate)
+      errorModelsNameMistakes(candidate) &&
+      hardnessMoveDeclared(difficulty, candidate) &&
+      trueFalseShapeValid(type, candidate)
     ) {
       const clean = sanitizeGenerated(candidate);
       // Shuffled HERE, not in createQuestion, for the same reason
@@ -1268,7 +1470,38 @@ function sanitizeGenerated(candidate: GeneratorOutput): GeneratorOutput {
       text: stripControlChars(option.text),
       explanation: stripControlChars(option.explanation),
     })),
+    ...(typeof candidate.hardnessMove === 'string'
+      ? { hardnessMove: stripControlChars(candidate.hardnessMove) }
+      : {}),
   };
+}
+
+/** A true/false candidate is a CLAIM: its options are the texts "True" and
+ * "False" and it carries no numeric machinery. Deterministic because the
+ * prompt alone did not hold (2026-08-22: 3/3 true/false questions at hard
+ * came back as two-option numerics) and because the reviewer, judging them as
+ * malformed MCQs, was spending Option-B retries on a fault this check can
+ * refuse before any review call. MCQ candidates pass through untouched. */
+function trueFalseShapeValid(type: QuestionType, candidate: GeneratorOutput): boolean {
+  if (type !== 'true-false') return true;
+  if (candidate.numericKind === 'numeric') return false;
+  if ((candidate.paramSlots?.length ?? 0) > 0 || (candidate.derivedValues?.length ?? 0) > 0) return false;
+  const texts = candidate.options.map((option) => String(option.text).trim().toLowerCase());
+  return texts.includes('true') && texts.includes('false');
+}
+
+/** A hard candidate must DECLARE its hardness move (prompt: the
+ * HARDNESS_MOVE_DECLARATION block). Deliberately narrow, like
+ * errorModelsNameMistakes: only absence/emptiness is rejected here — whether
+ * the declared move is actually IMPLEMENTED is the reviewer's criterion 9,
+ * which is a judgment this deterministic gate cannot make. Non-hard targets
+ * are exempt: the prompt never asks them for the field. */
+function hardnessMoveDeclared(
+  difficulty: Difficulty | undefined,
+  candidate: GeneratorOutput,
+): boolean {
+  if (difficulty !== 'hard') return true;
+  return typeof candidate.hardnessMove === 'string' && candidate.hardnessMove.trim().length > 0;
 }
 
 /** Structural pre-check before spending validator/reviewer calls. createQuestion
@@ -1400,6 +1633,27 @@ export const DIFFICULTY_RUBRIC: Record<Difficulty, string> = {
  * A single pre-joined string, exported by name, so an A/B harness can remove
  * the block from a built prompt by exact match.
  */
+/**
+ * The compact replacement for the moves CATALOG when the move is ASSIGNED
+ * (which, since assignMovesForBatch, is every production hard call). The
+ * seven-entry menu existed to help the model choose; the server chooses now,
+ * and showing seven alternatives next to a decree is noise at best. What
+ * survives is what the catalog block smuggled in besides the list: the
+ * bank's framing principle, and the conceptual pattern the assignment's
+ * escape hatch refers to — without this, the fallback would reference a
+ * pattern the prompt no longer defines. ~120 tokens against the menu's ~450.
+ */
+export const HARDNESS_FRAMING: string = [
+  'WHAT MAKES A QUESTION HARD. In this course\'s own released question bank, a hard',
+  'question is a medium question plus ONE deliberate complication that hides the',
+  'approach. Do NOT enlarge the arithmetic — hardness is connections across',
+  'concepts, and what the stem withholds, never bigger numbers.',
+  'For a CONCEPTUAL hard question the pattern is: the correct answer requires',
+  'holding two related-but-easily-confused rules in mind at once, and every',
+  'distractor is built from a SINGLE wrong step a student takes when the rules',
+  'blur.',
+].join('\n');
+
 export const HARDNESS_MOVES: string = [
   'HOW TO MAKE IT HARD. In this course\'s own released question bank, a hard question',
   'is a medium question plus ONE deliberate complication that hides the approach.',
@@ -1431,12 +1685,140 @@ export const HARDNESS_MOVES: string = [
   'takes when the rules blur.',
 ].join('\n');
 
+/**
+ * The declared-move requirement, active only at target `hard`. A single
+ * pre-joined string exported by name (like HARDNESS_MOVES) so the A/B harness
+ * can strip it from a built prompt by exact match.
+ *
+ * Why a required FIELD and not more instruction: experiments 22-24 measured
+ * the menu + labeled material + connector line producing 1 taken chain in 16
+ * draws — description does not compel. The pipeline's own precedent is the
+ * difficulty self-assessment: restating the rules fixed nothing (12/12
+ * mislabelled), requiring the model to RETURN a judgment fixed labels. A
+ * field the model must fill forces the move to be chosen before the stem is
+ * written; the reviewer then verifies a concrete claim instead of making a
+ * boundary call (the wobble measured in experiments 14 and 24).
+ */
+export const HARDNESS_MOVE_DECLARATION: string = [
+  'DECLARE YOUR MOVE. Include ONE additional field in your JSON:',
+  '  "hardnessMove": one sentence naming WHICH hardness move you applied and HOW the',
+  'question implements it — specifically what the stem withholds or chains, e.g.',
+  '  "off-cycle timing: the loan is valued just after payment 14 of 36, so the',
+  '   remaining 22-payment term is never stated and must be derived".',
+  'For a conceptual question, name instead the two easily-confused rules the',
+  'correct answer requires holding at once. This declaration is CHECKED against',
+  'the question: a declared move the question does not implement is flagged, and',
+  'a hard question with no declaration at all is rejected before review.',
+].join('\n');
+
+/**
+ * The assignable hardness moves (experiment 26): at target `hard` the SERVER
+ * picks the construction device, because given free choice the generator
+ * monocultures — 4/4 "hidden parameter" in experiment 25, and a planner call
+ * re-imported the same bias in 26 — while a deterministic rotation produced
+ * six distinct faithful builds in six draws, zero substitutions, zero
+ * difficulty complaints. Ids are the API surface (GenerationInput.hardnessMove
+ * lets an instructor pick one explicitly); texts are the generator-facing
+ * instructions. Annuity-due is deliberately absent: the bank never uses it
+ * standalone, only stacked on another move.
+ */
+export const HARDNESS_MOVE_MENU: ReadonlyArray<{ id: string; text: string }> = [
+  {
+    id: 'two-approach-comparison',
+    text: 'two-approach comparison: value the same quantity two different ways (e.g. a '
+      + 'multiple vs. a discounted value) and set the question in reconciling or '
+      + 'comparing the two results',
+  },
+  {
+    id: 'off-cycle-timing',
+    text: 'off-cycle timing: place the decisive event mid-stream, so a count or '
+      + 'remaining term must be re-derived rather than read off the stem',
+  },
+  {
+    id: 'benefit-minus-cost',
+    text: 'value = benefit minus cost: make the computed value one LEG of a trade or '
+      + 'decision, so the answer is the difference between two legs and identifying '
+      + 'the legs is part of the work',
+  },
+  {
+    id: 'regime-change',
+    text: 'regime change: switch a growth rate or rate environment partway through, '
+      + 'chaining two formula stages across the boundary and discounting the far '
+      + 'side back through the near side',
+  },
+  {
+    id: 'deferred-start',
+    text: 'deferred start: begin the cash-flow stream some periods in the future, so '
+      + 'its standard formula value lands at the wrong date and must be discounted '
+      + 'again',
+  },
+  {
+    id: 'reinvestment-chain',
+    text: 'reinvestment chain: reinvest interim cash flows at a DIFFERENT rate, so '
+      + 'the answer needs their future value plus the terminal piece',
+  },
+  {
+    id: 'hidden-parameter',
+    text: 'hidden parameter: withhold one genuinely needed input (an original payment, '
+      + 'a remaining maturity, an implied rate) so it must be reconstructed from other '
+      + 'stated terms first — it must not be a value the stem effectively hands over',
+  },
+];
+
+/**
+ * The generator-facing assignment. The escape hatch is deliberate: assignment
+ * steers routing numeric (measured in experiment 26), and on a
+ * conceptual-shaped LO a forced calculation move would be a bad fit — the
+ * fallback keeps the conceptual hard pattern reachable, with the mismatch
+ * recorded in the declaration where criterion 9 and the instructor can see it.
+ */
+export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
+  return [
+    'YOUR HARDNESS MOVE HAS BEEN ASSIGNED for this question. Implement EXACTLY this move:',
+    `  ${move}`,
+    'Do not substitute a different move. Declare this move, as implemented, in the',
+    '"hardnessMove" field.',
+    // The subordination clause. Measured 2026-08-21 (experiment 27, FX cell):
+    // the escape hatch fired correctly when a move was UNIMPLEMENTABLE, but
+    // three technically-implementable moves produced sound arithmetic that
+    // displaced the objective — the LO's content became a stem assertion and
+    // every question was rejected on criterion 2 ("the student never analyzes
+    // how macro drivers influence the rate"). Implementability is not fit.
+    'The move is a MEANS of testing the learning objective, never the point of the',
+    'question. If implementing it would reduce the objective to a background',
+    'assertion — the stem merely ASSERTS the objective\'s content while the student',
+    'only exercises the move\'s arithmetic — that is a MISFIT even though the move is',
+    'technically implementable. On a misfit of any kind, including when the right',
+    'question for this objective is CONCEPTUAL, fall back to the hard pattern the',
+    'objective itself supports (for a conceptual objective: two easily-confused',
+    'rules, single-wrong-step distractors) and say in the declaration that the',
+    'assigned move did not fit and why.',
+    // Measured 2026-08-22 on "Compare projects with PP and PI": the natural
+    // answer is WHICH project wins, and the generator encoded two rankings
+    // into one number (PP_A + PI_B/1000) to satisfy the option contract —
+    // collision, wrong key, wrong payback model, all in one question.
+    'If implementing the move yields a RANKING or a DECISION ("which project",',
+    '"which criterion wins") rather than one quantity, do not encode it as a number.',
+    'Either ask for ONE financially meaningful quantity the decision turns on — the',
+    'NPV of choosing A over B, the PI of one project, the value given up by picking',
+    'the wrong one — or make the question conceptual. Never pack two results into',
+    'one displayed value, and never subtract one METRIC from a different metric',
+    // Measured 2026-08-22, the live retry: "PP difference minus PI difference"
+    // — an arithmetic combination of two unrelated metrics, rejected as a
+    // different objective. "Value difference" needed saying in finance terms.
+    '("payback difference minus PI difference" is arithmetic, not finance).',
+  ].join('\n');
+}
+
 export function GENERATOR_PROMPT(params: {
   type: QuestionType;
   loName: string;
   difficulty?: Difficulty;
   prompt?: string;
   chunks: RetrievedChunk[];
+  /** The server-assigned (or instructor-chosen) hardness move. Only rendered
+   * at target hard; see HARDNESS_MOVE_MENU. */
+  assignedMove?: string;
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
@@ -1458,7 +1840,17 @@ export function GENERATOR_PROMPT(params: {
     'does not hand over — and only if you cannot, return the honest lower label. A',
     'mislabelled question is worse than an easy one: it is served to students as',
     'evidence of a mastery they have not shown.',
-    params.difficulty === 'hard' ? HARDNESS_MOVES : '',
+    // With an assignment the seven-entry catalog is dead weight (the server
+    // chose) and an invitation to blend; the compact framing keeps the two
+    // things the catalog block also carried — the hardness principle and the
+    // conceptual pattern the assignment's escape hatch references.
+    params.difficulty === 'hard'
+      ? (params.assignedMove ? HARDNESS_FRAMING : HARDNESS_MOVES)
+      : '',
+    params.difficulty === 'hard' ? HARDNESS_MOVE_DECLARATION : '',
+    params.difficulty === 'hard' && params.assignedMove
+      ? HARDNESS_MOVE_ASSIGNMENT(params.assignedMove)
+      : '',
     // The connector (R7): experiment 22 measured the widened pool licensing
     // numeric ambition while the offered chain went untaken 3/3 — the model
     // fell back to its single-concept template on 2 of 3. The material and the
@@ -1537,6 +1929,13 @@ export function GENERATOR_PROMPT(params: {
     'State the inputs as variable slots and every displayed value as a formula; a',
     'deterministic evaluator computes them at serve time, and each student sees different',
     'numbers.',
+    // Found 2026-08-22 by the solvability gate: three persisted questions had
+    // stems written as ALGEBRA — "the loan principal is $P$, the APR is $A$%"
+    // — symbolic names in math, no placeholders, so the student saw letters
+    // and no numbers. Unanswerable, and nothing had caught it.
+    'The STEM must show every input the answer needs as its {{NAME}} placeholder —',
+    '"a principal of ${{PRINCIPAL}} at {{APR_PCT}}% APR" — never as a bare symbol',
+    'like $P$ or $A$. A symbolic stem displays no numbers; the question is rejected.',
     '  - "paramSlots": the inputs, e.g.',
     '      [ { "name": "PAYMENT", "min": 100, "max": 900, "step": 100 },',
     '        { "name": "RATE_PCT", "min": 4, "max": 12, "step": 2 } ]',
@@ -1562,7 +1961,13 @@ export function GENERATOR_PROMPT(params: {
     '        EQUITY_VALUE = SHARES*PRICE',
     '        V            = DEBT_VALUE + EQUITY_VALUE',
     '        COST_EQUITY  = RF_PCT/100 + BETA*MRP_PCT/100',
-    '        WACC         = (EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100)',
+    // Displayed in PERCENT, deliberately (2026-08-22): a live hard batch
+    // reproduced this example with a fraction-valued WACC, and its
+    // remaining-term distractor (14 vs 15 years) moved the rate by ~0.0004 —
+    // invisible at the two-decimal display, so "0.12" collided with "0.12"
+    // on both attempts and all three questions died unservable. The same
+    // values in percent, 12.04 vs 12.00, are distinct.
+    '        WACC_PCT     = 100*((EQUITY_VALUE/V)*COST_EQUITY + (DEBT_VALUE/V)*(YTM_PCT/100))',
     '      bad:  all of that inlined as one 400-character expression with the',
     '            debt-value sub-expression repeated six times.',
     '    A step that no option displays is perfectly allowed and is exempt from',
@@ -1670,6 +2075,28 @@ export function GENERATOR_PROMPT(params: {
     '  - two "wrong rate" distractors whose rates coincide where their ranges meet.',
     'For a ratio-valued answer, separate it by the STRUCTURE of the mistake (a',
     'dropped term, a wrong denominator), not by the input ranges.',
+    'And DISPLAY every rate or ratio in PERCENT: multiply by 100, name it *_PCT, show',
+    'it as "{{NAME_PCT}}%". Options render at two decimals, so a fraction-valued rate',
+    'hides any difference under 0.005 — a distractor that shifts a WACC by 0.0004',
+    '(one year of remaining term) collides with the correct 0.12 while 12.04% and',
+    '12.00% are distinct. Timing and hidden-term moves produce exactly such small',
+    'shifts on rate-valued answers; percent display is what keeps them servable.',
+    // Added 2026-08-22 after the live re-run: with percent display in place,
+    // the batch STILL collided six times on first attempts — "used the
+    // original term instead of the remaining term" distractors came out
+    // identical to the correct answer at the cent (872117.12 = 872117.12),
+    // i.e. an identity at the draw, not a rounding miss. A term-shift move
+    // makes the obvious distractor an input-range difference, which is the
+    // collision family the rule above already forbids — it needed naming for
+    // this move specifically. Option B rescued all three, at ~3x the cost.
+    'When your hardness move SHIFTS a term or count (remaining maturity, payments',
+    'already made, a deferred start), do NOT build a distractor from the unshifted',
+    'value — "used the original term", "forgot the elapsed years". That distractor',
+    'differs from the correct answer only by the shift, which is a tiny rate change',
+    'or exactly zero when the shift draws 0, and it collides. Make the elapsed or',
+    'deferred quantity a slot that never draws 0, and build every distractor from a',
+    'STRUCTURALLY different mistake (book weights, coupon rate for yield, a dropped',
+    'leg) — never from the term alone.',
     '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',
@@ -1689,7 +2116,23 @@ export function GENERATOR_PROMPT(params: {
     '  "paramSlots": [ { "name": string, "min": number, "max": number, "step": number } ],',
     '  "derivedValues": [ { "name": string, "formula": string, "errorModel": string } ],',
     '  "options": [ { "key": string, "text": string, "role": string, "explanation": string } ] }',
-    params.type === 'mcq' ? 'Use option keys "A","B","C","D".' : 'Use option keys "T","F".',
+    params.type === 'mcq'
+      ? 'Use option keys "A","B","C","D".'
+      // Measured 2026-08-22: three true/false questions at target hard came
+      // back as TWO-OPTION NUMERIC questions — options "${{S}}" / "${{S_WRONG}}"
+      // under keys T/F — because nothing above said a true/false question is
+      // a claim, and the numeric machinery plus an assigned calculation move
+      // pulled it numeric. All three were rejected. This is a contract, and
+      // trueFalseShapeValid enforces it deterministically.
+      : [
+        'Use option keys "T","F". A TRUE/FALSE QUESTION IS A CLAIM, NOT A CALCULATION:',
+        'the stem asserts one statement, the options are EXACTLY the texts "True" and',
+        '"False", and "numericKind" is ALWAYS "conceptual" with no paramSlots and no',
+        'derivedValues — numbers in the stem, if any, are fixed and the student',
+        'reasons about the claim. A hard true/false question is the conceptual hard',
+        'pattern: the claim is true or false only when two easily-confused rules are',
+        'held together. Never put a computed value in an option.',
+      ].join('\n'),
   ]
     .filter(Boolean)
     .join('\n');
@@ -1741,6 +2184,17 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
     return { fields: base, failure: optionValues.error };
   }
 
+  const formats = optionFormatsConsistent(generated.options.map((option) => option.text));
+  if (!formats.ok) {
+    return {
+      fields: base,
+      failure: `options must all display the same quantity in the same format, but they use `
+        + `${formats.templates.map((t) => `"${t}"`).join(' and ')} — a differently formatted option `
+        + 'gives the answer away and compares unlike quantities; make every option the same '
+        + 'unit and template',
+    };
+  }
+
   const result = verifyQuestionNumerics({
     slots: paramSlots,
     derivedValues,
@@ -1752,7 +2206,38 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
       failure: `${result.error}${result.failingSeed !== undefined ? ` (seed ${result.failingSeed})` : ''}`,
     };
   }
+
+  // The solvability gate (2026-08-22, third sighting in a week: exps 27b, 28
+  // and a live batch): a slot the CORRECT answer depends on that the stem
+  // never displays. Every value computes, distinctness proves, and the student
+  // cannot solve the question because an input was never shown. Distractor-
+  // only slots are exempt — error models need no solvability. Checked AFTER
+  // distinctness so a colliding question reports the collision, whose retry
+  // feedback is the more specific of the two.
+  const correctOption = generated.options.find((option) => option.role === 'correct');
+  const correctName = correctOption?.text.match(/\{\{(\w+)\}\}/)?.[1];
+  if (correctName) {
+    const missing = undisplayedInputs({
+      slots: paramSlots, derivedValues, rootName: correctName, stem: generated.stem,
+    });
+    if (missing.length > 0) {
+      return {
+        fields: base,
+        failure: `the correct answer depends on ${missing.map((name) => `{{${name}}}`).join(', ')} but the stem `
+          + 'never displays it, so the student has no way to compute the answer — show every input the '
+          + 'correct value needs in the stem',
+      };
+    }
+  }
   return { fields: { ...base, verification: result.verification } };
+}
+
+/** The reviewer's earned label, persisted only when it is a real difficulty —
+ * the model may emit anything, and a bad value must not reach the editor. */
+function suggestedDifficultyField(value: unknown): { suggestedDifficulty?: Difficulty } {
+  return typeof value === 'string' && DIFFICULTIES.has(value as Difficulty)
+    ? { suggestedDifficulty: value as Difficulty }
+    : {};
 }
 
 /** Appends a verification failure to the reviewer's reasoning so the instructor
@@ -1766,13 +2251,43 @@ export function VALIDATOR_PROMPT(params: {
   question: GeneratorOutput;
   /** The same grounding the generator was given. See REVIEWER_PROMPT for why. */
   chunks?: RetrievedChunk[];
+  /**
+   * The platform-assigned hardness move, when there was one. The move CHECK
+   * lives here, not in the reviewer, for two measured reasons (2026-08-22):
+   * the validator is the claim-check specialist (2/3 vs the reviewer's 0/3 on
+   * planted per-item faults), and experiment 27c showed the assignment
+   * anchoring the reviewer's verdict upward when it held the assignment
+   * itself — one criterion-2 displacement landed as a flag where the
+   * identical fault drew rejects blind. The reviewer now receives this
+   * validator's moveAssessment as data (like roleAssessment) and never sees
+   * the raw assignment.
+   */
+  assignedMove?: string;
 }): string {
+  const declaredMove = typeof params.question.hardnessMove === 'string' && params.question.hardnessMove.trim().length > 0;
   return [
     'You are a structure validator for finance practice questions. For the question below,',
     `written for the LO "${params.loName}", assess whether EACH option's assigned role`,
     'genuinely fits its text (is the "correct" option actually correct? is each',
     '"common-misconception" a realistic misconception? etc.).',
     '',
+    ...(declaredMove || params.assignedMove
+      ? ['ALSO assess the question\'s declared "hardnessMove" as a factual claim:',
+         '  - Is the declared device genuinely IMPLEMENTED? If it claims the stem withholds',
+         '    a quantity, check the stem truly withholds it; if it claims two concepts are',
+         '    chained, check both are genuinely required to answer.',
+         ...(params.assignedMove
+           ? [`  - The platform ASSIGNED this move: "${params.assignedMove}".`,
+              '    Does the declaration match the assignment? A declaration that the assignment',
+              '    DID NOT FIT and fell back to the conceptual pattern is a legitimate outcome —',
+              '    assess whether the stated misfit reason is plausible, not whether falling',
+              '    back was disobedient. A declaration of a DIFFERENT move with no misfit',
+              '    explanation is a substitution — say so plainly.']
+           : []),
+         '  Report this in a separate "moveAssessment" field. Facts only: implemented or',
+         '  not, matching or not, and why — the reviewing instructor decides what it means.',
+         '']
+      : []),
     ...(params.chunks?.length
       ? ['Judge against the COURSE MATERIAL below — it is what the question was written',
          'from and what the student has been taught:',
@@ -1783,13 +2298,52 @@ export function VALIDATOR_PROMPT(params: {
     JSON.stringify(params.question),
     '',
     'Respond with ONLY this JSON shape:',
-    '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
+    declaredMove || params.assignedMove
+      ? '{ "roleAssessment": string, "moveAssessment": string }  // one concise paragraph each'
+      : '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
   ].join('\n');
 }
+
+/**
+ * What a verdict is FOR (Saurav, 2026-08-22). Reject is reserved for faults an
+ * instructor cannot fix with one edit: wrong facts, a wrong answer key, an
+ * unservable question, or a question that tests a different objective — the
+ * last stays a reject because mastery is attributed per LO and the review
+ * queue bulk-approves flags. Everything that is one field in the editor is a
+ * flag: a difficulty label (with the earned label named, since the persisted
+ * difficulty is the instructor's target and the generator's honest label is
+ * otherwise lost), a role label, an instructor preset not followed. Exported
+ * by name so the A/B harness can strip it for a control arm.
+ */
+export const REVIEW_VERDICT_POLICY: string = [
+  'VERDICT POLICY. "reject" is reserved for what the instructor cannot fix with one',
+  'edit: a factual error, a wrong answer key, a question the verifier cannot serve,',
+  'or a question that tests a DIFFERENT learning objective than the one named (it',
+  'would credit mastery of the wrong objective, and flags can be bulk-approved).',
+  'Everything that is one field in the question editor is a "flag", never a reject:',
+  '  - the DIFFICULTY label does not match the demand: flag, and set',
+  '    "suggestedDifficulty" to the label the question actually earns;',
+  '  - an option ROLE is mislabeled: flag, naming the swap;',
+  '  - the instructor\'s preset or instruction was not followed (a concept check',
+  '    where a calculation was asked for, or the reverse) while the question still',
+  '    tests the objective soundly: flag, saying what was asked and what was made.',
+  'Do not reject a usable question for being a different kind or level than',
+  'requested — "kind" here means conceptual vs. calculation, NOT the declared question',
+  'TYPE: a true/false question whose options are not "True" and "False", or a',
+  'multiple-choice question without four options, violates its type contract and',
+  'is a reject (measured 2026-08-22: a numeric two-option true/false was flagged as',
+  '"a different kind than requested"). Do reject a question that is wrong or answers',
+  'a different objective, however well-made.',
+].join('\n');
 
 export function REVIEWER_PROMPT(params: {
   loName: string;
   question: GeneratorOutput;
+  /** The question's type. Added 2026-08-22: judging blind, the reviewer read
+   * two-option true/false questions as malformed MCQs ("declared as a
+   * multiple-choice question but provides only two options") and rejected
+   * them for it. The option contract below is conditioned on this. */
+  type?: QuestionType;
   /**
    * The deterministic verifier's rejection, when it already has one. Measured
    * 2026-08-16: the reviewer was guessing at servability with this information
@@ -1828,10 +2382,20 @@ export function REVIEWER_PROMPT(params: {
    * common-misconception role, so a swap changes student behaviour.
    */
   roleAssessment?: string;
+  /**
+   * The structure validator's move claim-check (declared-vs-implemented,
+   * declared-vs-assigned), replacing direct assignment visibility on
+   * 2026-08-22: exp 27c showed the raw assignment anchoring this reviewer's
+   * verdict upward, and the validator is the measured claim-check specialist.
+   * This reviewer weighs the finding and owns the verdict policy; it never
+   * sees the assignment itself.
+   */
+  moveAssessment?: string;
 }): string {
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
     `LO "${params.loName}". Judge it against these criteria (IN-Q05):`,
+    ...(params.type ? [`Question type: ${params.type === 'true-false' ? 'TRUE/FALSE (two options)' : 'multiple choice (four options)'}.`] : []),
     '  1. Factual accuracy — every statement is correct.',
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
@@ -1844,7 +2408,9 @@ export function REVIEWER_PROMPT(params: {
     `       ${DIFFICULTY_RUBRIC.easy}`,
     `       ${DIFFICULTY_RUBRIC.medium}`,
     `       ${DIFFICULTY_RUBRIC.hard}`,
-    '     A one-step substitution should not pass as medium or hard.',
+    '     A one-step substitution does not EARN medium or hard — but a wrong label on a',
+    '     sound question is a FLAG with "suggestedDifficulty" set to the label it earns,',
+    '     never a reject (see the verdict policy below).',
     '  6. Formula modelling — for a numerical question, does each formula in derivedValues',
     '     actually model what the stem asks? A present value of a two-period stream must',
     '     discount each cash flow by its OWN period. Judge the model, not the arithmetic.',
@@ -1878,6 +2444,13 @@ export function REVIEWER_PROMPT(params: {
     '     value, or a sentence with a number stapled on ("Accept the project. 7.36").',
     '     A question whose options are decisions or statements should have been',
     '     conceptual, with no slots at all.',
+    ...(params.type === 'true-false'
+      ? ['     THIS QUESTION IS TRUE/FALSE. The contract above does not apply to it: its',
+         '     two options are exactly "True" and "False", it is conceptual by definition,',
+         '     and two options is its correct shape — never fault it for not being a',
+         '     four-option MCQ. Judge whether the claim is unambiguously true or false',
+         '     from the material, and whether the wrong answer is a real misconception.']
+      : []),
     // The T/F exemption is explicit because omitting it cost 3/3 false rejects on
     // a legitimate two-option question, measured 2026-08-17. optionShapeValid
     // skips this check for true-false, and assertOptionInvariants COERCES the
@@ -1890,6 +2463,25 @@ export function REVIEWER_PROMPT(params: {
     '     student. This does NOT apply to a two-option true/false question: the platform',
     '     relabels its single wrong option to "common-misconception" automatically after',
     '     this review, so whatever role it carries here is correct and is not a defect.',
+    // Criterion 9 turns the wobbliest judgment ("is this hard, all things
+    // considered?") into a factual check against the generator's own claim.
+    // Measured need: experiment 24, where the SAME deferred-timing
+    // construction experiment 22 endorsed as hard was re-judged medium —
+    // boundary calls across different questions wobble; verifying a stated,
+    // specific property does not. Only questions that CARRY the field are
+    // judged by it; its absence on a hard question is caught deterministically
+    // before this review and is not this criterion's job.
+    '  9. Declared hardness device — weigh the structure validator\'s move assessment',
+    '     (passed below when present), the same way as its role assessment: a declared',
+    '     move the question does not implement means the difficulty label is inflated —',
+    '     flag it and name the gap precisely. A declared MISFIT-FALLBACK to the',
+    '     conceptual pattern is legitimate: judge the fallback question on its own',
+    '     merits. A SUBSTITUTION the validator identifies (a different move than',
+    '     assigned, no misfit explanation) is a FLAG naming the substitution, never a',
+    '     reject on its own. Implementing a move satisfies THIS criterion only — a',
+    '     faithful move that does not test the learning objective (criterion 2)',
+    '     remains a reject. Never re-litigate from scratch whether the question',
+    '     "feels" hard.',
     '',
     // The deleted criterion was "Calculation correctness — any numbers/formulas
     // check out." It passed every arithmetically-wrong question in 2026-08-05
@@ -1961,11 +2553,21 @@ export function REVIEWER_PROMPT(params: {
          'actually correct remains a reject: that is a wrong answer key, not a label.',
          '']
       : []),
+    ...(params.moveAssessment
+      ? ['The structure validator assessed the declared hardness move as a claim:',
+         `  "${params.moveAssessment}"`,
+         'Weigh it under criterion 9. It reports facts (implemented or not, matching the',
+         'assignment or not); the verdict is yours, under criterion 9\'s policy.',
+         '',
+         '']
+      : []),
     'Question JSON:',
     JSON.stringify(params.question),
     '',
+    REVIEW_VERDICT_POLICY,
     'Decide: "pass" (ready for instructor approval), "flag" (usable but needs attention),',
     'or "reject" (do not use). Respond with ONLY this JSON shape:',
-    '{ "decision": "pass"|"flag"|"reject", "reasoning": string }',
+    '{ "decision": "pass"|"flag"|"reject", "reasoning": string,',
+    '  "suggestedDifficulty"?: "easy"|"medium"|"hard" }  // only with a difficulty flag',
   ].join('\n');
 }

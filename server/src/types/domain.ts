@@ -296,7 +296,16 @@ export interface Question {
   /** Additive lineage grouping; new standalone questions use their own id. */
   templateFamilyId?: ObjectId;
   labels: QuestionLabel[];
-  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  agentDecision?: {
+    decision: 'pass' | 'flag' | 'reject';
+    reasoning: string;
+    roleAssessment: string;
+    /** The reviewer's honest label when it flags a difficulty mismatch. The
+     * persisted `difficulty` is the instructor's TARGET (input wins over the
+     * generator's self-label), so this is the only place the reviewer's
+     * assessment survives; the queue can offer it as a one-click relabel. */
+    suggestedDifficulty?: Difficulty;
+  };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
   regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
   internalNotes: Array<{ puid: string; text: string; at: Date }>; // teaching-team-only (§6.2)
@@ -544,6 +553,10 @@ export interface QuestionGenerationRun extends ContentRunBase {
     count: number;
     type: QuestionType;
     difficulty?: Difficulty;
+    /** Instructor-chosen hardness move (HARDNESS_MOVE_MENU id). Persisted
+     * because the async job rebuilds GenerationInput from this record —
+     * an unpersisted choice would silently drop on the queue boundary. */
+    hardnessMove?: string;
     prompt?: string;
     blueprintId?: ObjectId;
     retryOfRunId?: ObjectId;
@@ -557,6 +570,13 @@ export interface QuestionGenerationRun extends ContentRunBase {
   grounding?: {
     allowedMaterialIds: ObjectId[];
     retrievedChunkCount: number;
+    /** True when the INSTRUCTOR constrained the materials (blueprint pin or
+     * prompt @mention). allowedMaterialIds alone cannot say: every run
+     * freezes its resolved set here, and the async job hands that frozen set
+     * back as pinnedMaterialIds — which made R7's widening read every run as
+     * pinned and never fire (found 2026-08-22 on a live hard batch that
+     * retrieved 6 chunks where 8 were due). */
+    pinned?: boolean;
   };
   result?: QuestionGenerationResult;
 }

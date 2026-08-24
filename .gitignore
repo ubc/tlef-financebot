@@ -41,3 +41,4 @@ local_cache/
 # Uploaded course materials (server/src/services/materials.service.ts) — disk
 # storage for multer, not a build artifact but never committed.
 uploads/
+scripts/prompt-ab/results/

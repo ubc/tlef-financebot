@@ -4090,3 +4090,864 @@ Production note: rejects on this path now carry rubric-specific critiques, so
 Option B's retry loop — which turned 0/4 into 4/4 on verification failures —
 gets its first real chance at difficulty faults. Worth measuring with
 retryOnReject on before adding either escalation.
+
+# Experiment 24 — the Option-B retry never fired: difficulty residue lives in flags
+
+_Run 2026-08-21 on the standardized harness (scripts/prompt-ab — first
+experiment on it; every prior experiment ran on ad-hoc scratchpad scripts).
+The measurement experiment 23 asked for before escalating. Real token usage
+captured per call via completeJson's new onUsage hook._
+
+## Method
+
+Shipped stack (R1+R2+R7 at 6+2) on the reject-prone family: EV/EBITDA ×
+hard, production-shaped grounding (6 EV chunks + 2 CAPM supporting), n=8,
+mode retry-on-reject (production Option B mirrored: one regeneration with
+the critique quoted back, replacement judged identically). Pre-registered:
+the retry converts at least half the difficulty rejects into genuinely
+harder questions.
+
+## Results
+
+| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | retries fired → converted | tokens in/out |
+|---|---|---|---|---|---|---|---|
+| shipped-6+2 | 6/2 | 8/8 | 6/6 | 6/2/0 | 2 | 0 → 0 | 105,924/58,682 |
+
+**1. The hypothesis is untestable — zero rejects in eight draws.** Experiment
+23's reject did not recur; the difficulty residue surfaced as two FLAGS, and
+Option B fires on reject only, by design. Whatever fixes the remaining
+medium-labelled-hard questions, it is not the reject-retry: the event it
+needs is too rare, and the faults land in a verdict tier it never touches.
+
+**2. The offered chain was finally taken — once, and it passed.** Question #1
+chains CAPM (from the supporting chunks) → required return → NPV of three
+FCFs → enterprise value → firm-value bridge, with a chain-specific distractor
+(discounting at the risk-free rate). The reviewer passed it, noting the
+question "appropriately incorporat[es] the taught CAPM treatment". That is
+1 take in 16 widened draws across experiments 22-24 — rare, not impossible.
+
+**3. The two flags are reviewer wobble on a known boundary.** Both flag a
+deferred-timing DCF plus non-core bridge as "roughly a medium-level
+combination" — the SAME construction experiment 22's pass endorsed as hard
+("delayed cash-flow timing… sufficiently multi-step"). Consistent with
+experiment 14's note: identical inputs judge consistently, judgment calls
+across different questions wobble at the boundary. Read flag counts
+accordingly.
+
+**4. Real cost, measured at last:** 105.9k in / 58.7k out for 8 questions ×
+3 calls at generator+reviewer `high` — about $0.092 per run, ~1.2¢ per
+question at luna's post-cut rates. Prior experiments' cost reconstructions
+were within range.
+
+## Decision
+
+Option B stays as it is — it was never the lever for difficulty faults, and
+extending it to fire on flags would burn a full generation cycle on a
+verdict tier that (a) wobbles and (b) is deliberately kept instructor-fixable.
+Next per the cost ladder from experiment 23: the declared `hardnessMove`
+output field — prevention at generation time, verified by the reviewer, the
+same structure-over-exhortation mechanism that fixed self-labels.
+
+# Experiment 25 — the declared hardnessMove field: visibility won, prevention unproven
+
+_Run 2026-08-21 on the harness. Arms: `no-field` (HARDNESS_MOVE_DECLARATION
+stripped — exp 24's condition, doubling as its same-day replication) vs
+`declared` (as shipped, criterion 9 active). EV/EBITDA × hard, 6+2 grounding,
+single-shot, n=8/arm._
+
+## Results
+
+| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | tokens in/out |
+|---|---|---|---|---|---|---|
+| no-field | 4/4 | 8/8 | 4/4 | 8/0/0 | 0 | 104,654/55,266 |
+| declared | 4/4 | 8/8 | 4/4 | 6/2/0 | 2 | 106,067/48,301 |
+
+**Compliance: 8/8.** Every declared-arm question carries a well-formed
+declaration; the deterministic absence-gate never had to fire. All four
+conceptual declarations name genuine two-rule combinations and passed.
+
+**The primary hypothesis is UNPROVEN, and the replication is why.** The
+no-field arm drew 0/8 complaints where the IDENTICAL condition drew 2/8 in
+experiment 24, same day — between-run variance is at least as large as the
+between-arm difference, so neither "the field reduces complaints" nor "the
+field adds flags" survives this n. Worse for the simple reading:
+no-field #8 (shares × price, add debt, add non-core — four steps, zero
+helpers) PASSED, while declared #4 of comparable demand was flagged. The
+field shifts DETECTION, not (measurably) generation.
+
+**What the field demonstrably bought:**
+
+1. **Move monoculture, exposed.** All four numeric declarations chose
+   "hidden parameter" — and two applied it trivially (declaring "the non-core
+   total is withheld" when the stem lists the three numbers to add). The menu
+   has eight moves; on this LO the model picks one, and never the
+   two-approach comparison that is the instructor's own HIGH exemplar for
+   this family. We could not see this before the field existed.
+2. **Critiques got actionable.** Both flags verify the claim first and name
+   the gap precisely: *"The declared hidden-parameter device is implemented…
+   however the student performs only a direct multiplication"*; *"the stem
+   explicitly tells students to aggregate the three listed assets — not
+   backward or strategic solving."* Compare exp 24's boundary-call phrasing.
+   A flag like this is one relabel click for the instructor; a silent pass
+   of the same question serves inflated difficulty to students.
+3. An audit trail: the claimed device rides with the question.
+
+## Decision — keep the field; the next lever is move ASSIGNMENT
+
+Keep: compliance is total, proofs/routing/labels show no regression, the
+critiques are sharper, and the cost is a sentence per hard question. But stop
+expecting prompt-side declaration to IMPROVE the questions — three
+escalations of description-and-commitment have now moved detection, not
+generation. The monoculture finding points at the mechanism with direct
+evidence: the model needs the move CHOSEN FOR IT — move-first two-pass
+generation (pick move + prerequisite concept cheaply, then generate with
+both pinned), or per-LO move weighting. That is R7-option-2's territory,
+now reached with the evidence trail experiments 22-25 built.
+
+# Experiment 26 — move-first generation: deterministic assignment wins outright
+
+_Run 2026-08-21 on the harness (prePass planner hook added for this
+experiment). Probe only — nothing shipped. Arms: `one-pass` (shipped free
+choice, third run of this condition), `two-pass` (a low-effort planning call
+picks the move), `assigned` (deterministic rotation of a curated six-move
+list, no planner). EV/EBITDA × hard, 6+2 grounding, n=6/arm._
+
+## Results
+
+| arm | numeric | proofs | pass/flag | difficulty complaints | distinct moves | assignments kept |
+|---|---|---|---|---|---|---|
+| one-pass | 3/6 | 3/3 | 6/0 | 0 | 3 | — |
+| two-pass | 6/6 | 6/6 | 5/1 | 0 | 3 | 6/6 |
+| **assigned** | **6/6** | **6/6** | **6/0** | **0** | **6** | **6/6** |
+
+**The assigned arm met every pre-registered bar and then some.** Six distinct
+moves in six draws — including deferred timing, regime change, reinvestment
+chain and the two-approach comparison, moves the model has never once picked
+for itself across experiments 22-26. Zero substitutions: every assignment
+was implemented faithfully and declared honestly, up to a 13-helper-step
+regime-change build. Six proofs, six passes, no difficulty complaints, and
+the CAPM chain was taken exactly where the assigned move demanded it
+(two-approach). Faithfulness held even for the moves furthest from the
+model's default.
+
+**The two-pass planner re-imports the bias it was meant to fix.** Given the
+same menu and told to judge fit rather than default to the familiar, the
+planning call picked hidden parameter 3/6 and never picked deferred, regime
+or reinvestment — the planner is the same model with the same preference.
+All six assignments were kept, quality was fine (its one flag is a factual
+equity-vs-firm-value conflation the reviewer caught with criterion 6 —
+unrelated to difficulty), but it costs an extra call per question to deliver
+half the diversity of a rotation that costs nothing.
+
+**The control reverted to conceptual routing (3/6)** and drew zero
+complaints this run — the third distinct outcome from three runs of this
+identical condition (2/8, then 0/8+2/8 flags, now 0/6 with conceptual
+drift). Free choice does not just monoculture the move; it monocultures
+unpredictably.
+
+## Decision — implement deterministic move assignment in the pipeline
+
+The design experiments 22-26 point to, now with direct evidence at every
+step: at target `hard`, the SERVER picks the move (rotating or sampling the
+curated menu; per-LO-family weighting can come later), appends the
+assignment block to the generator prompt, and the shipped declaration +
+criterion 9 verify implementation — the enforcement machinery from
+experiment 25 becomes the audit layer for assignments. A batch of N hard
+questions gets N different moves by construction, which also attacks the
+batch-diversity problem open since experiment 1. No planner call: two-pass
+buys nothing the rotation does not, at strictly higher cost and lower
+diversity.
+
+# Experiment 27 / 27b — assignment as shipped: EV replicates; FX finds and fixes a displacement mode
+
+_Run 2026-08-21/22 on the harness, through the REAL path — HARDNESS_MOVE_MENU
+texts via GENERATOR_PROMPT's assignedMove param (commit c2e7e78). Cells:
+EV-widened × hard (replication) and FX × hard (fit-stress, the cell exp 26
+never had). Sequential rotation covers all seven menu moves at n=7._
+
+## 27 — Results
+
+| cell | pass/flag/reject | escape-hatch fallbacks | note |
+|---|---|---|---|
+| EV-widened | 7/0/0 | 1 (honest, declared) | exp 26 replicated through the shipped mechanism |
+| FX | 3/1/3 | 2 (both honest) | **3 rejects, all criterion 2, one mechanism** |
+
+**The EV cell closes the loop on the friendly family.** Six faithful distinct
+numeric builds plus one declared conceptual fallback, 7/7 pass.
+
+**The FX cell found a failure mode the escape hatch does not cover.** The
+hatch fired exactly as designed when a move was UNIMPLEMENTABLE (two-approach
+and deferred-start on qualitative macro material → declared conceptual
+fallbacks, both passed). But benefit−cost, reinvestment-chain and
+hidden-parameter were implementable as FX-conversion arithmetic — sound
+formulas, sound distractors — and implementing them DISPLACED the objective.
+All three rejected on criterion 2 with the same diagnosis: *"central-bank
+policy is merely asserted; the student never analyzes how macro drivers
+influence the rate."* The move became the question; the LO became
+set-dressing. **Implementability is not fit.** (All three were caught
+rejects, not served questions — and in production each fires Option B's
+retry with that critique quoted back.)
+
+## The fix — a subordination clause
+
+The assignment block now states the move is a MEANS of testing the objective,
+never the point: if the stem merely asserts the objective's content while the
+student exercises the move's arithmetic, that is a misfit even though the
+move is implementable, and it takes the declared fallback.
+
+## 27b — Re-probe of the FX cell
+
+| | exp 27 FX | exp 27b FX |
+|---|---|---|
+| pass/flag/reject | 3/1/3 | **5/0/2** |
+| LO-displacement rejects | 3 | **1** |
+| honest declared fallbacks | 2 | 3 |
+| genuine difficulty complaints | 1 | 0 |
+
+The two remaining rejects split: one residual displacement (benefit−cost
+supplied the weaker-CAD conclusion again), and one UNRELATED defect the
+review correctly caught (two param slots never exposed in the stem — a
+stem-completeness fault, not an assignment fault). Displacement 3/7 → 1/7
+with the residual covered by Option B in production.
+
+**Harness note, recorded for the next reader:** the tally's
+`difficultyComplaint` heuristic false-positived twice in 27b on phrases
+inside POSITIVE reviews. The flag is triage, not a verdict — read the
+reasoning before counting complaints. Tightening the regex is open hygiene.
+
+## Where this leaves the difficulty stack
+
+R1 rubric → R2 moves → R7 widened grounding → declaration + criterion 9 →
+server-assigned moves with LO subordination. Measured end to end across
+experiments 20-27b: hard questions on calculation families now arrive as
+distinct faithful constructions (7/7, 6/6 on the friendly family through the
+real path), conceptual families degrade honestly by declared fallback, the
+one recurring residual (a move supplying the objective's conclusion) is
+caught by criterion 2 and retried by Option B, and every hard question
+carries a declared, instructor-visible construction device.
+
+## 27c — the reviewer sees the assignment, and stays fair to fallbacks
+
+_Hardening from 27b's review (commit eb45b5c): criterion 9 verified the
+DECLARED move, so a silent substitution declared honestly would have passed.
+The reviewer now receives the platform's assignment, with fallback protection
+worded in. Probed on the FX cell, same rotation, n=7._
+
+| | 27b (reviewer blind) | 27c (reviewer sees assignment) |
+|---|---|---|
+| pass/flag/reject | 5/0/2 | 4/3/0 |
+| declared fallbacks passing | 3/3 | **3/3** |
+| compliance-rejections of fallbacks | 0 | **0** |
+| substitutions | 0 | 0 |
+
+**The pre-registered criterion held:** every declared misfit-fallback passed
+on its own merits — the reviewer did not turn compliance-cop, which was the
+risk this probe existed to measure.
+
+**One honest asterisk, recorded:** 27c's #3 is the familiar criterion-2
+displacement fault (benefit−cost supplying the macro conclusion) landing as
+a FLAG where the identical fault drew REJECTS in 27 and 27b. The review
+opens by crediting the implemented move — assignment context plausibly
+anchoring the verdict upward. At n=1 this is indistinguishable from the
+documented flag/reject wobble, but it has a precise counter, added without
+waiting for more n: the block now states that implementing the move
+satisfies criterion 9 ONLY and weighs in favour of no other criterion — a
+faithful move that does not test the LO remains a reject. That line's
+effect is UNVERIFIED at this n; the bound on the risk is structural either
+way: generated questions land as Drafts, nothing serves without instructor
+approval, so a too-soft verdict mis-prioritizes instructor attention rather
+than serving a bad question.
+
+# Experiment 28 — move check in the validator, catalog compacted: both hold, and FX turns a corner
+
+_Run 2026-08-22 (commit 24f43df). Both cells, full rotation, n=7 each._
+
+## Results
+
+| cell | pass/flag/reject | of which caught defects | fallbacks | substitutions |
+|---|---|---|---|---|
+| EV-widened | 5/1/1 | 1 (solvability, see below) | 0 needed | 0 |
+| FX | 5/1/1 | 1 (displacement → REJECT) | 1 | 0 |
+
+**Every pre-registered bar held.** EV built faithful assigned moves with the
+catalog gone — zero substitutions, declarations intact, so the seven-entry
+list was indeed choosing-aid, not implementation-aid. The validator's
+moveAssessments are factual and well-formed ("Implemented and matching. The
+stem places valuation immediately after payment…"). And the FX displacement
+fault RE-HARDENED to reject with the reviewer judging blind again — exp
+27c's anchoring evidence, now with the confirmatory flip in both directions.
+
+**The result beyond the bars: FX produced four genuinely-hard numeric PASSES
+on the LO.** In experiment 27 the same assigned moves generated
+FX-conversion arithmetic with the macro drivers asserted in the stem; now
+the moves are built AROUND the drivers — the regime change IS an inflation
+regime switch, the off-cycle event IS a policy announcement, and the
+reviewer's pass reasoning confirms it each time ("directly tests how
+relative inflation and central-bank policy affect an exchange-rate quote").
+The subordination clause + framing appear to have taught the integration,
+not just the fallback: the fallback rate dropped for the RIGHT reason.
+
+**The EV reject is a recurring fault class worth a deterministic gate, seen
+twice now** (27b's #6 and here): a paramSlot used by the correct answer's
+formula chain but never DISPLAYED in the stem — the values compute fine, the
+verifier proves distinctness, and the student cannot solve the question
+because an input was never shown. "TAX_PCT is used in AFTER_TAX_FCF, but the
+stem never supplies it." The review catches it, but this is exactly the
+class of structural fault the deterministic layer should own: trace the
+correct value's formula dependencies and require each slot to appear as a
+{{placeholder}} in the stem. Filed as follow-up work.
+
+## Where this leaves things
+
+The difficulty stack's final architecture: server assigns the move →
+generator implements under compact framing with a declared report →
+validator claim-checks declaration against assignment and implementation →
+reviewer weighs the finding under criterion 9's policy, blind to the raw
+assignment → deterministic gates below, instructor above. Every hand-off in
+that chain now exists because a measured failure put it there.
+
+# Experiment 29 — live incident: a hard WACC batch, 3/3 rejects, two root causes and a residue
+
+_2026-08-22, Saurav's own run on the dev stack (run 6a8a000a…), LO "Compute
+WACC and discount cash flows", hard, count 3, calculation preset, luna at
+effort high. Investigated from the run record, the persisted questions, and
+the server logs; fixed in 8d577b2; re-run live through the real async path
+(run 6a8a02e5…)._
+
+## What the run showed
+
+- `retrievedChunkCount: 6` at target hard, on an LO with 4 earlier themes
+  and 3 earlier LOs of assigned material. **R7 never fired.**
+- All three questions persisted as rejects with the verifier's note:
+  `WACC_ORIGINAL_TERM and WACC are identical at display precision (both
+  show 0.12)` — on both generator attempts, then again after Option B.
+- The rotation had assigned three different moves (timing, two-approach,
+  hidden parameter) and the reviewer's reasoning on each was sound. The
+  machinery worked; the questions died on display precision.
+
+## Root cause 1 — R7 was inert on tracked runs
+
+The async job rebuilds GenerationInput from the run record and passes the
+run's FROZEN `allowedMaterialIds` through `pinnedMaterialIds`. The widen test
+was `pinnedMaterialIds === undefined` — false on every tracked run. The
+harness probes (exps 22-28) bypass that path entirely, which is why eight
+experiments never noticed. Fix: instructor intent gets its own signal,
+`run.grounding.pinned` (blueprint pin or prompt @mention), carried as
+`GenerationInput.groundingPinned` and preserved across every grounding write.
+Re-run: `retrievedChunkCount: 8, pinned: false`.
+
+## Root cause 2 — the prompt's own WACC example taught a fraction-valued rate
+
+The batch reproduced the BUILD-IN-STEPS example name for name, and the
+assigned term-shift moves change a WACC by ~0.0004 — invisible at
+two-decimal display. The example now ends in `WACC_PCT`, and the collision
+section states the rule: display rates in percent. Re-run: options render as
+`{{WACC_PCT}}%`, values 12.29 / 12.57.
+
+## Re-run result, and the residue
+
+| | original batch | re-run (8d577b2) |
+|---|---|---|
+| chunks | 6 | **8** |
+| persisted verdicts | reject ×3 | **pass ×2, flag ×1** (a role mislabel — one click) |
+| first-attempt collisions | ~6 | ~6 |
+| Option B fired | 3/3 | 3/3 |
+
+Rejects went to zero, but the first-pass waste did not: with percent display
+in place the logs still show `WACC_WRONG_REMAINING_PCT and WACC_PCT identical
+(both 12.29)` and — the telling one — `NPV_ORIGINAL_TERM and NPV_CORRECT
+identical (both 872117.12)`: equal at the CENT, an identity at the draw, not
+a rounding miss. A term-shift move makes the obvious distractor ("used the
+original term") an input-range difference — the collision family the prompt
+already forbids in the abstract, now named for this move specifically: build
+distractors from structurally different mistakes, never from the term alone,
+and never let the elapsed quantity draw 0. Effect unverified at this writing;
+the cost signal to watch is Option B firing, which turned a 1.2¢ question into
+a ~3.5¢ one three times over.
+
+**Lesson for the record:** eight harness experiments validated every prompt
+surface and missed a wiring bug on the production path, because the harness
+deliberately bypasses retrieval. The next harness extension worth having is a
+"through-the-queue" mode that enqueues a real run and reads the record back —
+this incident's re-run script is its prototype.
+
+## Exp 29, run 3 — the term-shift rule verified (run 6a8a03f5…, commit 347a654)
+
+| | run 1 (original) | run 2 (8d577b2) | run 3 (347a654) |
+|---|---|---|---|
+| chunks | 6 | 8 | 8 |
+| persisted verdicts | reject ×3 | pass ×2, flag ×1 | **pass ×2, reject ×1** |
+| term-shift collisions on first attempts | ~6 | ~6 | **0** |
+| other first-attempt faults | — | — | 3 (undefined variable, option contract, one non-term collision) |
+| Option B fired | 3/3 | 3/3 | **2/3** — the first candidate on this LO to pass without a retry |
+
+The term-based collisions are gone: the rule's two halves both took. One
+passing question still carries a timing distractor ("mishandling elapsed
+timing") — and it PROVED, because the elapsed slot no longer draws 0, so
+the shift is never zero. The remaining first-attempt faults are ordinary
+classes the deterministic layer already catches (a derivedValue referencing
+a name that does not exist; a sentence-with-value option; a
+coupon-vs-unlevered collision in the identity-element family). The one
+persisted reject is a legitimate criterion-9/contract call on a two-approach
+question that displayed one value while asking for two.
+
+Cost signal: Option B 3/3 → 2/3 and one clean pass. Per-question cost on
+this family moved from ~3.5¢ toward ~2.5¢; the ~1.2¢ floor needs the
+remaining first-attempt faults to fall, and those are deterministic-gate
+territory (the undisplayed-slot check already filed; an undefined-variable
+reference is its sibling). Incident closed on the prompt side.
+
+# Experiment 30 — second live session: 9 rejects in 15, four causes, two fixes
+
+_2026-08-22, Saurav's runs on the dev stack after exp 29's fixes: five runs,
+15 questions, 9 rejects / 2 flags / 4 passes. Investigated from run records,
+persisted reasoning and server logs; fixed in the commit above._
+
+## The rejects, classified
+
+| cause | rejects | verdict on the system |
+|---|---|---|
+| **True/false at hard became two-option numerics** (run on "Evaluate car affordability", type true-false) | 3 | **gap** — generator produced `${{S}}`/`${{S_WRONG}}` under keys T/F with an assigned calculation move; the reviewer, never told the type, rejected them as malformed MCQs |
+| **Calculation preset on a conceptual LO** ("Explain market efficiency", medium) | 2 (+1 flag) | **correct refusal** — "tests APR conversion, not the LO"; "easy labelled medium" |
+| **Undisplayed input** (UFCF: TAX_PCT drives the answer, stem never shows it) | 1 | **gap** — third sighting in a week |
+| **Genuine modelling faults** (keyed formula ignores the stem's condition; double-counted restructuring charge; ambiguous no-growth wording; savings question not derivable from its material) | 3 | **correct refusal** |
+
+## Fixes
+
+**True/false is a claim.** The generator prompt now states the contract
+(options exactly "True"/"False", always conceptual, no slots); a hard T/F is
+assigned the conceptual two-rule pattern rather than a calculation move;
+`trueFalseShapeValid` refuses a numeric or non-True/False T/F
+deterministically before any review call is spent; and the reviewer receives
+the question type, with the option contract conditioned on it.
+
+**Solvability gate.** `undisplayedInputs` traces the correct option's
+derived-value chain down to paramSlots and requires each to be displayed in
+the stem. Distractor-only slots are exempt (error models need no
+solvability). Ordered after distinctness so a colliding question keeps the
+collision's more specific retry feedback.
+
+## Two things that are not bugs, recorded so they are not re-investigated
+
+- **A conceptual LO with the Calculation preset will be refused**, and should
+  be — the reviewer's criterion 2 is doing its job. The UX could warn when
+  the preset and the LO's material disagree; that is a product call.
+- **R7 widening depends on theme/LO ORDER being the teaching order.** The
+  "Plan saving, investing, protection" LO retrieved 6 chunks at hard with
+  `pinned: false` — correctly, because its theme "Personal Finance Planning"
+  has `order: 1` in this course even though it is Class 23 content, so
+  nothing is "earlier" per the data. Backward-widening is only as good as the
+  course's ordering; worth a note in the instructor-facing docs.
+
+## Cost note
+
+Every fault class here burned an Option-B retry before persisting, and the
+true/false batch burned three for a fault a deterministic check now refuses
+for free. The solvability and T/F gates move two more fault classes from
+"reviewer catches it after a full cycle" to "never reaches a model call".
+
+## Exp 30 — T/F fix verified live (run 6a8a08ce…)
+
+Same LO, type true-false, hard, concept-check preset as the 3/3-reject run.
+Result: **pass ×3**, all `numericKind: conceptual`, options exactly
+"True"/"False", 8 chunks, Option B fired once (one first-pass reject
+converted). Every question is a genuine two-rule claim in the instructor's
+own HIGH T/F style — APR-determines-payments vs. personal-opportunity-cost-
+rate-discounts-them, ordinary annuity vs. annuity due — with the reviewer
+crediting "the declared hard conceptual move is implemented" and the wrong
+option as a real misconception. Rejects 3/3 → 0/3 on the identical request.
+
+# Experiment 31 — verdict policy, judge-only: small intended shift, one debatable pass, and the wobble finding
+
+_2026-08-22 (commit 8afbdfc). Every persisted question in the dev course —
+73, across archived and approved — re-reviewed under the old prompt (A,
+REVIEW_VERDICT_POLICY stripped) and the new (B), same reconstructed
+grounding, same persisted validator assessment, recomputed verification.
+Reviewer calls only: 146 calls, 650k in / 208k out, ~38¢._
+
+## Results
+
+| arm | pass | flag | reject |
+|---|---|---|---|
+| old-policy (A) | 31 | 12 | 30 |
+| new-policy (B) | 31 | 14 | 28 |
+
+A→B transitions: stable 64/73 (pass→pass 28, reject→reject 27, flag→flag 9);
+reject→flag 2; reject→pass 1; flag→reject 1; pass→flag 3; flag→pass 2.
+Difficulty flags in B: 11, of which 9 carry `suggestedDifficulty`.
+
+**The intended conversions happened and look right.** The "easy labelled
+medium" market-efficiency reject became a flag → easy (0f3127). A
+distractor-modelling fault on the original WACC batch (a formula that does
+not implement its own errorModel) became a flag with the fix named (03aaaa).
+Approved questions picked up `→ hard` suggestions where the reviewer now
+reads more demand than the label (4a842x) — exactly the information the
+instructor was not getting before.
+
+**One conversion exposed a wording gap, now closed.** The true/false question
+with numeric options (0f3135) went reject → flag, the reviewer reading a TYPE
+contract violation as "a different kind than requested". The policy now says
+"kind" means conceptual vs. calculation and a type-contract violation is a
+reject. In production this case no longer reaches the reviewer at all
+(trueFalseShapeValid, exp 30), but the wording needed fixing regardless.
+
+**One reject→pass, and it is not the policy.** 0f313b (UFCF with a
+restructuring charge "included in year-3 EBIT"): A rejected it as double-
+counting, B passed it as a legitimate add-back of a charge embedded in EBIT.
+Both readings are defensible accounting — the question's wording is the
+ambiguity, and the two verdicts were produced seconds apart from identical
+inputs. That is the wobble finding, not leakage: the policy text says a
+factual error stays a reject, and B's reasoning claims correctness, not
+leniency.
+
+**The finding that matters most: verdict wobble dwarfs the policy effect.**
+On the 33 questions generated today, the OLD prompt disagreed with its own
+earlier verdicts on ~10 — reject→pass four times, flag→reject once,
+pass→flag three times — with the same question, grounding and validator
+assessment. A and B, run seconds apart, disagreed on 9/73. Some of the
+disagreement with ORIGINAL verdicts is legitimate (older questions were
+judged by older prompts; re-judging lacks the unpersisted moveAssessment),
+but A-vs-B is same-prompt-modulo-policy, and a reviewer that flips a third
+of borderline verdicts is the larger cause of "so many rejects" than any
+policy wording. Reasoning models ignore temperature, so determinism is not
+on the table; the lever is **majority-of-3 on REJECT verdicts only** — two
+extra reviewer calls (~1¢) spent only when a reject is proposed, converting
+a coin-flip reject into a stable one. Proposed as the next experiment.
+
+## Decision
+
+Ship the policy + `suggestedDifficulty`: the conversions are the right
+ones, nothing unfixable leaked by policy, and the earned label now
+survives persistence. Treat reviewer consistency as the next problem.
+
+# Experiment 32 — third live session: 3 rejects, one LO, one shape; two more gates
+
+_2026-08-22, Saurav's runs with the verdict policy live: four runs, 12
+questions, 6 pass / 3 flag / 3 reject. All three rejects came from ONE run —
+"Compare projects with PP and PI" × hard × calculation preset (Option B
+fired 3/3); the other three runs were clean (Option B 0, 0, 1)._
+
+## The rejects
+
+| question | fault | verdict on the system |
+|---|---|---|
+| two rankings packed into one number (`ANSWER_A_B = PP_A + PI_B/1000`) — collision, wrong key, wrong payback model | decision encoded as a value | correct reject |
+| hidden-parameter move: "reconstruct the rate from Project A's stated NPV" done as `IRR(-A_COST, A_CF…)`, which assumes NPV = 0 | wrong key (the rate needed `IRR` on cost + NPV) | correct reject |
+| weighted-PI-vs-direct-NPV consistency check, no payback anywhere; three `$` options and one `%` option — the `%` being correct | different objective; answer readable from format | correct reject |
+
+The shared root: this LO's natural answer is WHICH project wins — a
+decision — and the numeric option contract plus assigned calculation moves
+fought it. The assignment block now says so: a ranking or decision is asked
+for as the VALUE DIFFERENCE it turns on (one scalar) or made conceptual,
+never packed into one displayed number.
+
+## Two gates from this session
+
+**Format consistency** (`optionFormatsConsistent`): every option of a
+numerical question must be the same template around its placeholder. The
+odd-one-out case is an answer key readable from formatting alone.
+
+**Symbolic stems**, caught by the solvability gate and previously invisible:
+three persisted numerics had stems written as algebra — "the loan principal
+is $P$, the contractual APR is $A$%" — no placeholders, so the student saw
+letters and no numbers. The gate's first-attempt failures listing every
+input as undisplayed were this, not a false positive. The prompt now states
+the rule; the gate enforces it.
+
+## Cost picture
+
+Three runs clean, one run burned three Option-B cycles on a decision-shaped
+LO. The two gates move "answer readable from format" and "symbolic stem"
+from reviewer-or-never to refused-before-review.
+
+# Experiment 33 — reject-retry rotates the move: conversions 0/3 → 3/5
+
+_2026-08-22 (commit e1a791a). Live, through the queue, on the LO where
+Option B had fired 3/3 and converted 0/3: "Compare projects with PP and PI",
+hard, calculation preset, count 6._
+
+| | exp 32 run (move pinned) | this run (move rotates on reject) |
+|---|---|---|
+| questions | 3 | 6 |
+| Option B fired | 3/3 | 5/6 |
+| converted to usable (pass/flag) | **0/3** | **3/5** |
+| persisted verdicts | reject ×3 | flag ×3 (→medium), reject ×3 |
+
+**The mechanism works.** Three retries that would previously have
+re-implemented the same doomed construction came back as usable PI-difference
+questions (flagged → medium by the verdict policy — honest labels, one click
+to fix). The conversions are exactly the shape the LO wants: one financially
+meaningful scalar comparing the two projects.
+
+**The three remaining rejects are all legitimate, and one of them was caused
+by my own wording.** The decision-shaped guidance said "ask for the VALUE
+DIFFERENCE the decision turns on" and the generator read it as arithmetic:
+"PP difference minus PI difference" — two unrelated metrics subtracted,
+rejected as a different objective. The guidance now names the quantity in
+finance terms (NPV of choosing A over B, the PI of one project, the value
+given up) and forbids subtracting one metric from another. The other two are
+ordinary modelling faults the reviewer caught (a PI/PP ranking inconsistency
+making the keyed sign wrong; terminal values over mismatched horizons).
+
+**Cost:** 5 Option-B cycles on 6 questions — still the most expensive family
+in the course, but the cycles now buy usable questions instead of repeats.
+
+## Still open on this family
+
+"Compare projects with PP and PI" is inherently a two-criteria,
+often-conflicting-rankings objective. Its best hard question is probably
+conceptual ("PP and PI disagree — which should the firm trust, and why"), and
+the calculation preset steers away from that. The honest recommendation to
+the instructor: use the concept-check preset here, or choose the
+benefit-minus-cost move explicitly.
+
+# Experiment 34 — reviewer-suggested retry move: run 1, the reviewer never suggested
+
+_2026-08-22 (commit e59d4f1). Live, through the queue: "Compare projects
+with PP and PI" ×6 and "Calculate unlevered free cash flow" ×6, hard,
+calculation preset. The reviewer may set `suggestedMove` on a construction
+reject; the server applies it only if valid and different from the failed
+move, else rotates; every retry logs its move source._
+
+## Run 1
+
+| LO | Option B fired | persisted | usable |
+|---|---|---|---|
+| PP/PI | 5/6 | flag ×3 (2 → medium), reject ×3 | 3/6 — identical to exp 33's rotation result |
+| UFCF | 4/6 | pass ×3, flag ×2, reject ×1 | 5/6 |
+
+**Retry move sources across both runs: rotated 8, kept 1, suggested 0.** The
+reviewer never produced a usable suggestion. Six of the nine rejects were
+verifier collisions, where omitting is what the instruction asked for — but
+the three genuine construction rejects ("does not primarily test the stated
+objective", "not validly keyed and cannot be repaired by relabeling") got
+nothing either. Whether the field was omitted or emitted with an invalid id
+is not distinguishable from run 1's logs; the raw suggestion is now logged.
+
+**Two things this run taught, both acted on before run 2:**
+
+1. **An optional field is an exhortation.** Same lesson as the hardnessMove
+   declaration (exp 25): the reviewer at effort high simply left the
+   optional field out. It is now REQUIRED on a reject — a menu id, or
+   `null` with the "unrelated to construction" meaning — so silence is no
+   longer an available answer.
+2. **Rotating on a collision reject throws away sound constructions.** A
+   verifier collision is a fault IN a construction, not OF it, and the
+   retry-with-critique on exactly those critiques is Option B's proven
+   regime (0/4 → 4/4). `retryMoveFor` now keeps the move on collision and
+   verifier critiques and rotates (or takes the suggestion) only on
+   construction faults.
+
+Neither the fit hypothesis nor the exp-26 bias risk could be evaluated in
+run 1, because the mechanism never engaged. Run 2 follows.
+
+## Exp 34 run 2 — with the field required: the reviewer suggests the move that just failed
+
+_PP/PI ×6, commit 8fdf15b (suggestedMove REQUIRED on reject; collision
+rejects keep the move)._
+
+| | exp 33 (rotation) | run 1 (optional suggestion) | run 2 (required suggestion) |
+|---|---|---|---|
+| Option B fired | 5/6 | 5/6 | 4/6 |
+| usable (pass/flag) | 3/6 | 3/6 | **4/6** |
+| retry sources | rotated 5 | rotated 5 | kept 1 (collision), **suggested 1**, rotated 2 |
+
+**The reviewer now answers — and two of its three construction-reject
+suggestions named the move that had just failed** (deferred-start after a
+deferred-start question; off-cycle-timing after an off-cycle question). The
+server's validation caught both and rotated; the one valid suggestion
+(two-approach-comparison) was applied. The mechanism's bounded design held
+— it cannot do worse than rotation — but the content shows why it cannot do
+much better either: the reviewer is reading the declared move in the
+question JSON and anchoring on it. Run 1's "never suggests" and run 2's
+"suggests the failed move" are the same absence of an independent opinion.
+
+**The 4/6 is within wobble** (runs of this identical request have landed at
+3/6, 3/6 and 4/6), and it came with one applied suggestion; nothing here
+separates the mechanism from noise.
+
+## Decision — retire the ask; keep what run 1 proved
+
+Same discipline as exps 3, 5 and 26: no measured benefit, a per-call cost
+(~150 tokens of menu on every hard review), and a mechanism whose content
+repeats the exp-26 finding that an LLM choosing moves does worse than a
+deterministic rule. The prompt no longer asks for `suggestedMove`; the
+validated channel in `retryMoveFor` stays (tested, inert) so it can be
+re-tested without re-plumbing if a reviewer that does NOT see the declared
+move is ever tried. What ships from this experiment is the run-1
+refinement: **collision rejects keep the move** — a fault IN a construction,
+not OF it, fixed by Option B's proven local retry.
+
+# Baseline 1 — the regression panel's first run (2026-08-23)
+
+_64 questions, 32 cells, through the real async path, no preset. Committed as
+`scripts/prompt-ab/panel-baseline.json` (e11754c). Every future prompt or
+pipeline change is compared against this._
+
+## Headline: 31 pass / 28 flag / 5 reject — 92% usable; all hard assertions pass
+
+| cut | usable |
+|---|---|
+| easy / medium / hard | 100% / 96% / 83% |
+| multiple choice / true-false | 90% / **100%** (16/16, after exp 30's fix) |
+| produced calculation / conceptual | 88% / 100% |
+| family: calculation / decision / conceptual / prerequisite-heavy | 95% / 94% / 95% / **67%** |
+
+Widening fired on 22 of 24 hard questions (8 chunks); the 2 at 6 are the
+first-theme LO where nothing is "earlier" per the course's theme order.
+
+## The five rejects — the collision family is still the #1 reject cause
+
+Three of five are verifier collisions persisted unproven, all in the
+identity-element family (a six-payment distractor equal to the correct NPV;
+UFCF no-tax vs NWC-added; pretax-salvage vs double-D&A), each after two
+generator attempts AND an Option-B retry that kept the move (correctly — a
+collision is a fault in a construction) and collided again. One is off-LO
+(car affordability, hard: a dealer-defined scenario the material does not
+support) and one a modelling fault (market efficiency, hard: reinvested
+distributions modelled as price). Nothing reached the queue usable while
+unproven.
+
+## The finding the panel exists to surface: MEDIUM is mostly easy in disguise
+
+28 flags carry a suggested label, and the distribution is not noise:
+
+| target → reviewer's earned label | count |
+|---|---|
+| medium → **easy** | **13** (of 14 medium flags) |
+| hard → medium | 5 |
+| hard → easy | 2 |
+| easy → medium | 2 |
+
+The medium cells are "usable" at 96% — and the reviewer says most of those
+questions earn easy. The hard stack (rubric, moves, assignment, widening,
+declaration) has no medium equivalent: medium gets the rubric line and
+nothing else, and the instructor's bank is 51% MID. By the rubric, medium
+means one genuine rate conversion PLUS a formula, or a standard formula
+over a scenario whose inputs must be organized, or rearranging for an
+unknown — and the generator, left to itself, delivers one substitution.
+This is the largest quality gap the panel shows, and it was invisible
+before `suggestedDifficulty` existed: those 13 questions would have been
+13 clean flags or passes.
+
+## What the baseline says to do next, in order
+
+1. **Medium-calibration stack** — the hard machinery's lessons applied one
+   level down: an assigned "medium device" (a rate conversion, an
+   organize-several-inputs scenario, a rearrangement) instead of a rubric
+   line, measured against this baseline's 13/14.
+2. **The identity-element collision family** — still the top reject cause
+   after every prompt rule; the deterministic fix is a range check that
+   refuses a slot whose range admits the identity value (0 for an addend,
+   1 for a multiplier, a draw making two ranges meet) before any call.
+3. **Prerequisite-heavy at 67%** — UFCF's collisions plus one modelling
+   fault; likely improves with (2).
+
+# Baseline 2 — the panel at generator xhigh / reviewer xhigh (2026-08-23)
+
+_Same 64-question panel, run after da99920 made queued runs honour the
+admin's per-step effort. Committed as the new `panel-baseline.json`, because
+xhigh/xhigh is now the production configuration AND it is honoured. Baseline
+1's record stays: it is what the system did at effort `none`, which is what
+every instructor run before today actually got._
+
+## Headline: 53 pass / 11 flag / 0 reject — 100% usable; all hard assertions pass
+
+| cut | baseline 1 (none) | baseline 2 (xhigh) |
+|---|---|---|
+| overall usable | 92% | **100%** |
+| rejects | 5 | **0** |
+| Option B fired | 17 | **1** |
+| persisted with a verifier note | 3 | **0** |
+| hard usable | 83% | **100%** |
+| prerequisite-heavy usable | 67% | **100%** |
+| flags carrying a suggested label | 28 | 9 |
+
+Experiment 9's n=3 finding — that effort eliminates the collision family —
+holds at n=64 on the real path: zero verifier notes, one Option-B retry in
+the whole panel. Wall-clock was ~33 minutes against baseline 1's ~28, not
+the 2× experiment 15 measured, because retries fell away.
+
+## The correction: "medium is mostly easy in disguise" was an effort-none artifact
+
+| target → earned label | baseline 1 | baseline 2 |
+|---|---|---|
+| medium → easy | **13** | **2** |
+| medium → hard | 0 | 4 |
+| hard → medium | 5 | 1 |
+| hard → easy | 2 | 0 |
+
+At xhigh the generator builds medium as the rubric describes it, and four
+mediums are now flagged as over-delivering. The medium-calibration stack
+proposed from baseline 1 is NOT the next lever; it was the reviewer
+reading an effort-none generator. This is the regression panel doing its
+job — a finding that looked like a construction gap was a configuration
+bug, and it took one re-run to tell them apart.
+
+## What did move that is worth watching
+
+- **Routing shifted conceptual.** MCQ easy/medium produced 7 numeric / 9
+  conceptual each (baseline 1: calculation was 64% of everything); hard
+  produced 16/0 — the hard stack steers numeric by construction, and at
+  easy/medium the xhigh generator prefers conceptual when the LO allows.
+  Not a defect, but a preference the instructor's preset should be able to
+  override, and the panel runs with no preset.
+- **high vs xhigh on the real path is unmeasured.** `high` was never
+  actually live either. Experiment 15 (n=3) called xhigh "not worth 2×
+  latency for an identical verdict distribution" against high; baseline 2
+  is xhigh vs NONE. A panel run at high/high (~$1, ~30 min) is the
+  comparison that decides the production setting on evidence.
+
+# Baseline 3 — high/high vs xhigh/xhigh on the panel: keep high (2026-08-23)
+
+_Same 64-question panel, generator high / reviewer high / validator default,
+deltas against baseline 2 (xhigh/xhigh). Committed as the baseline because
+high/high is the production configuration from here._
+
+| | xhigh / xhigh (baseline 2) | high / high |
+|---|---|---|
+| verdicts | 53 pass / 11 flag / 0 reject | 50 pass / 13 flag / 1 reject |
+| usable | 100% | **98%** |
+| Option B fired | 1 | 2 |
+| persisted with a verifier note | 0 | 1 |
+| wall-clock (5 concurrent) | ~33 min | **~22 min** |
+| medium → easy flags | 2 | **0** (medium → hard: 5) |
+| medium MCQ routing (numeric / conceptual) | 7 / 9 | 10 / 6 |
+
+**The one reject is the identity-element collision family, on the hardest
+cell** — "Compare projects with PP and PI" at hard: a "wrong rate"
+distractor whose formula did not actually use a different rate, so it
+displayed identically to the correct value, through two generator attempts
+and an Option-B retry. The reviewer's critique names the exact fix. Every
+other cell matches baseline 2 within the documented verdict wobble.
+
+## Decision — high/high in production; close the collision hole deterministically
+
+xhigh bought one fewer collision reject for ~50% more wall-clock and more
+reasoning tokens on every call. That is the wrong trade, because the thing
+it bought is a deterministic check we have not written yet: a slot-range
+gate that refuses the identity value (0 for an addend, 1 for a multiplier,
+a "wrong rate" that can equal the right rate) before any model call. High
+with that gate should match xhigh's zero at high's cost. Experiment 15's
+n=3 call — "xhigh is not worth 2× latency for an identical verdict
+distribution" — now stands on n=64 through the real path.
+
+Two secondary observations, not decisions: high routes medium more toward
+calculation (10/6 vs 7/9) with no medium → easy flags, and mediums are now
+flagged for OVER-delivering (→ hard, 5). Medium calibration is not the
+problem it looked like at effort none.
+
+## Baseline 3, decision reversed: xhigh stays, by the right metric (2026-08-23)
+
+The high-vs-xhigh call above weighed tokens and wall-clock. The team's
+objective is instructor hours. Under that metric the trade inverts:
+wall-clock is a background job the instructor never waits on, tokens are
+the platform's cost, and what the instructor feels is the queue — where
+xhigh produced 0 rejects / 11 flags against high's 1 reject / 13 flags.
+Three fewer interventions per 64 questions and no dead rejects to read and
+discard, small and partly within wobble but consistent in direction, at a
+cost the objective does not count. Production stays at xhigh/xhigh; the
+committed baseline is baseline 2 (xhigh) again; baseline 3's numbers remain
+above as the measured cost of high. The identity-value range gate is still
+worth building — at xhigh it makes the last collision class impossible
+rather than merely rare.

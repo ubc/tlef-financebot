@@ -44,11 +44,15 @@ import { ObjectId } from 'mongodb';
 import {
   enqueueGenerationRun,
   GENERATOR_PROMPT,
+  HARDNESS_MOVE_DECLARATION,
+  HARDNESS_MOVE_MENU,
   HARDNESS_MOVES,
   preseedingProgress,
+  retryMoveFor,
   registerGenerationJobs,
   REVIEWER_PROMPT,
   runGenerationPipeline,
+  VALIDATOR_PROMPT,
 } from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
@@ -222,7 +226,7 @@ describe('difficulty calibration prompts', () => {
         { payload: { materialId: supportMaterialId.toHexString(), chunk: 'PV material' } },
       ] as never);
     jest.mocked(completeJson)
-      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'off-cycle timing: mid-loan valuation' })
       .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
       .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
 
@@ -257,7 +261,7 @@ describe('difficulty calibration prompts', () => {
     const runOnce = async (difficulty: 'medium' | 'hard') => {
       jest.mocked(search).mockClear();
       jest.mocked(completeJson)
-        .mockResolvedValueOnce(generatorOutput())
+        .mockResolvedValueOnce({ ...generatorOutput(), hardnessMove: 'regime change: two-stage growth' })
         .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
         .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
       await runGenerationPipeline({ courseId, loId, count: 1, difficulty, byPuid: 'PUID-INSTR' });
@@ -268,6 +272,270 @@ describe('difficulty calibration prompts', () => {
     await runOnce('medium');
     // Hard on the course's FIRST LO has no earlier pool and reverts to plain.
     await runOnce('hard');
+  });
+
+  it('assigns a distinct move to every question of a hard batch, none at medium (exp 26)', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' })
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 2, difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    const generatorPrompts = jest.mocked(completeJson).mock.calls
+      .map((call) => String(call[0]))
+      .filter((prompt) => prompt.includes('HARDNESS MOVE HAS BEEN ASSIGNED'));
+    expect(generatorPrompts).toHaveLength(2);
+    // Rotation: consecutive questions in one batch carry DIFFERENT moves.
+    const moveOf = (prompt: string) =>
+      prompt.split('HAS BEEN ASSIGNED for this question. Implement EXACTLY this move:')[1]?.split('\n')[1];
+    expect(moveOf(generatorPrompts[0]!)).toBeTruthy();
+    expect(moveOf(generatorPrompts[0]!)).not.toEqual(moveOf(generatorPrompts[1]!));
+
+    // Medium never assigns.
+    jest.mocked(completeJson).mockClear();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+    expect(String(jest.mocked(completeJson).mock.calls[0]?.[0])).not.toContain('HAS BEEN ASSIGNED');
+  });
+
+  it('an explicit instructor move applies to the whole batch and unknown ids are rejected at enqueue', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' })
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({
+      courseId, loId, count: 2, difficulty: 'hard', hardnessMove: 'regime-change', byPuid: 'PUID-INSTR',
+    });
+    const prompts = jest.mocked(completeJson).mock.calls
+      .map((call) => String(call[0]))
+      .filter((prompt) => prompt.includes('HAS BEEN ASSIGNED'));
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) expect(prompt).toContain('regime change: switch a growth rate');
+
+    // Enqueue validation: unknown id and non-hard difficulty both refuse
+    // before a durable run is created.
+    await expect(enqueueGenerationRun({
+      courseId, loId, count: 1, difficulty: 'hard', hardnessMove: 'nonsense', byPuid: 'PUID-INSTR',
+    })).rejects.toThrow('generation-unknown-hardness-move');
+    await expect(enqueueGenerationRun({
+      courseId, loId, count: 1, difficulty: 'medium', hardnessMove: 'regime-change', byPuid: 'PUID-INSTR',
+    })).rejects.toThrow('generation-hardness-move-requires-hard');
+  });
+
+  it('a reject-retry rotates to the next move unless the critique is about faithfulness or the move is locked', () => {
+    const first = HARDNESS_MOVE_MENU[0]!.text;
+    const second = HARDNESS_MOVE_MENU[1]!.text;
+    const last = HARDNESS_MOVE_MENU[HARDNESS_MOVE_MENU.length - 1]!.text;
+    // Structural critique: the construction failed — move on.
+    expect(retryMoveFor(first, 'The keyed correct option is not correct; the rate formula assumes NPV is zero.', false))
+      .toEqual({ move: second, source: 'rotated' });
+    // Wraparound at the end of the menu.
+    expect(retryMoveFor(last, 'the stem asks for a ranking but the options are one figure', false)).toEqual({ move: first, source: 'rotated' });
+    // A verifier collision is a fault IN the construction, not OF it: keep the move.
+    expect(retryMoveFor(first, 'options collide at display precision (seed 1000003)', false)).toEqual({ move: first, source: 'kept' });
+    expect(retryMoveFor(first, 'The deterministic verifier has rejected the question because X and Y are identical', false, 'regime-change'))
+      .toEqual({ move: first, source: 'kept' });
+    // Faithfulness critique: the move is right, the implementation is not — keep it.
+    expect(retryMoveFor(first, 'The declared hardness move is not genuinely implemented: the stem hands the term over.', false))
+      .toEqual({ move: first, source: 'kept' });
+    // Locked (instructor-chosen or true/false): never rotate, even with a suggestion.
+    expect(retryMoveFor(first, 'wrong answer key', true, 'regime-change')).toEqual({ move: first, source: 'kept' });
+    // No assignment, or a non-menu move (the T/F pattern): unchanged.
+    expect(retryMoveFor(undefined, 'wrong answer key', false)).toEqual({ move: undefined, source: 'kept' });
+    expect(retryMoveFor('conceptual two-rule claim: …', 'wrong answer key', false))
+      .toEqual({ move: 'conceptual two-rule claim: …', source: 'kept' });
+    // A valid, DIFFERENT reviewer suggestion wins over rotation.
+    const benefit = HARDNESS_MOVE_MENU.find((m) => m.id === 'benefit-minus-cost')!.text;
+    expect(retryMoveFor(first, 'a decision packed into a number', false, 'benefit-minus-cost'))
+      .toEqual({ move: benefit, source: 'suggested' });
+    // A suggestion naming the move that just failed, or an unknown id, falls back to rotation.
+    expect(retryMoveFor(first, 'wrong key', false, HARDNESS_MOVE_MENU[0]!.id)).toEqual({ move: second, source: 'rotated' });
+    expect(retryMoveFor(first, 'wrong key', false, 'make-it-harder')).toEqual({ move: second, source: 'rotated' });
+  });
+
+  it('states the verdict policy to the reviewer and persists a valid suggestedDifficulty (2026-08-22)', async () => {
+    const prompt = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(prompt).toContain('VERDICT POLICY');
+    expect(prompt).toContain('tests a DIFFERENT learning objective');
+    expect(prompt).toContain('"suggestedDifficulty"?: "easy"|"medium"|"hard"');
+
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'flag', reasoning: 'one-step substitution', suggestedDifficulty: 'easy' })
+      // A second question whose reviewer emits garbage for the field: dropped.
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'flag', reasoning: 'x', suggestedDifficulty: 'brutal' });
+
+    await runGenerationPipeline({ courseId, loId, count: 2, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+
+    const decisions = jest.mocked(createQuestion).mock.calls.map((call) => call[0].agentDecision);
+    expect(decisions[0]).toMatchObject({ decision: 'flag', suggestedDifficulty: 'easy' });
+    expect(decisions[1]).not.toHaveProperty('suggestedDifficulty');
+  });
+
+  it('a true/false candidate must be a True/False claim — a two-option numeric is retried (2026-08-22)', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Evaluate car affordability', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Evaluate car affordability', order: 1 }]);
+    const twoOptionNumeric = {
+      stem: 'What is the surplus?', difficulty: 'hard', hardnessMove: 'hidden parameter', numericKind: 'numeric',
+      paramSlots: [{ name: 'S', min: 1, max: 2, step: 1 }],
+      derivedValues: [{ name: 'OUT', formula: 'S' }, { name: 'OUT_WRONG', formula: 'S*2', errorModel: 'doubled' }],
+      options: [
+        { key: 'T', text: '${{OUT}}', role: 'correct', explanation: 'x' },
+        { key: 'F', text: '${{OUT_WRONG}}', role: 'common-misconception', explanation: 'y' },
+      ],
+    };
+    const claim = {
+      stem: 'A higher coupon makes a bond safer against rate moves.', difficulty: 'hard',
+      hardnessMove: 'conceptual two-rule claim', numericKind: 'conceptual',
+      options: [
+        { key: 'T', text: 'True', role: 'correct', explanation: 'x' },
+        { key: 'F', text: 'False', role: 'common-misconception', explanation: 'y' },
+      ],
+    };
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(twoOptionNumeric)
+      .mockResolvedValueOnce(claim)
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, type: 'true-false', difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    // Generator ×2 (the numeric T/F was refused deterministically), then one
+    // validator + one reviewer for the claim.
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    const prompts = jest.mocked(completeJson).mock.calls.map((call) => String(call[0]));
+    // The hard T/F gets the conceptual two-rule assignment, never a calculation move.
+    expect(prompts[0]).toContain('conceptual two-rule claim');
+    expect(prompts[0]).toContain('A TRUE/FALSE QUESTION IS A CLAIM');
+    // The reviewer is told the type and that two options is the correct shape.
+    expect(prompts[3]).toContain('Question type: TRUE/FALSE');
+    expect(prompts[3]).toContain('THIS QUESTION IS TRUE/FALSE');
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires the hardnessMove declaration at target hard, retrying a candidate without one', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(completeJson)
+      // First candidate: sound options, NO declaration — must be retried, not
+      // sent onward to the validator/reviewer.
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard' })
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'hidden parameter: the payment must be re-derived' })
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'hard', byPuid: 'PUID-INSTR' });
+
+    // 4 calls: generator ×2 (the retry), then validator + reviewer exactly once.
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+    // The same undeclared candidate at medium is NOT retried — the prompt
+    // never asks non-hard targets for the field.
+    jest.mocked(completeJson).mockClear();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'medium', byPuid: 'PUID-INSTR' });
+    expect(completeJson).toHaveBeenCalledTimes(3);
+  });
+
+  it('demands the declaration in the prompt ONLY at hard, and gives the reviewer criterion 9', () => {
+    const build = (difficulty: 'medium' | 'hard') => GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty, chunks: [{ text: 'IRR material' }],
+    });
+    expect(build('hard')).toContain(HARDNESS_MOVE_DECLARATION);
+    expect(build('medium')).not.toContain('DECLARE YOUR MOVE');
+    const reviewer = REVIEWER_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(reviewer).toContain('Declared hardness device');
+    expect(reviewer).toContain('Never re-litigate from scratch');
+    // The reviewer NEVER sees the raw assignment (exp 27c: it anchored the
+    // verdict) — the move claim-check is the validator's, handed off as data.
+    expect(reviewer).not.toContain('The platform ASSIGNED');
+    const withAssessment = REVIEWER_PROMPT({
+      loName: 'Compute IRR',
+      question: generatorOutput() as never,
+      moveAssessment: 'declared regime change is implemented and matches the assignment',
+    });
+    expect(withAssessment).toContain('The structure validator assessed the declared hardness move');
+    expect(withAssessment).toContain('declared regime change is implemented and matches the assignment');
+    // The verdict policy stays with the reviewer, in criterion 9 itself.
+    expect(withAssessment).toContain('MISFIT-FALLBACK to the');
+    expect(withAssessment).toContain('never a');
+    expect(withAssessment).toContain('remains a reject');
+  });
+
+  it('the validator holds the move claim-check, with fallback framed as legitimate', () => {
+    const withMove = VALIDATOR_PROMPT({
+      loName: 'Compute IRR',
+      question: { ...generatorOutput(), hardnessMove: 'deferred start: stream begins at year 3' } as never,
+      assignedMove: 'deferred start: begin the cash-flow stream some periods in the future',
+    });
+    expect(withMove).toContain('declared "hardnessMove" as a factual claim');
+    expect(withMove).toContain('The platform ASSIGNED this move');
+    expect(withMove).toContain('not whether falling');
+    expect(withMove).toContain('"moveAssessment"');
+    // No declared move and no assignment: the block is absent and the output
+    // shape stays single-field.
+    const without = VALIDATOR_PROMPT({ loName: 'Compute IRR', question: generatorOutput() as never });
+    expect(without).not.toContain('moveAssessment');
+    expect(without).toContain('{ "roleAssessment": string }');
+  });
+
+  it('replaces the moves catalog with compact framing when a move is assigned', () => {
+    const assigned = GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty: 'hard',
+      chunks: [{ text: 'IRR material' }],
+      assignedMove: 'regime change: switch a growth rate partway',
+    });
+    expect(assigned).toContain('WHAT MAKES A QUESTION HARD');
+    expect(assigned).toContain('HAS BEEN ASSIGNED');
+    expect(assigned).not.toContain('HOW TO MAKE IT HARD');
+    // The escape hatch's referent survives the catalog's removal.
+    expect(assigned).toContain('two related-but-easily-confused rules');
+    // Without an assignment (harness/API callers) the full catalog remains.
+    const unassigned = GENERATOR_PROMPT({
+      type: 'mcq', loName: 'Compute IRR', difficulty: 'hard', chunks: [{ text: 'IRR material' }],
+    });
+    expect(unassigned).toContain('HOW TO MAKE IT HARD');
+    expect(unassigned).not.toContain('WHAT MAKES A QUESTION HARD');
   });
 
   it('gives the generator the hardness-moves menu ONLY at target hard', () => {
@@ -312,10 +580,26 @@ describe('durable generation runs (P2-0)', () => {
         grounding: {
           allowedMaterialIds: [materialId],
           retrievedChunkCount: 0,
+          // Plain LO assignment is NOT an instructor pin — R7 may widen.
+          pinned: false,
         },
       }),
     );
     expect(enqueueJob).toHaveBeenCalledWith('generation.run', { runId: runId.toHexString() });
+  });
+
+  it('records a prompt @mention as an instructor pin on the run', async () => {
+    const runId = new ObjectId();
+    jest.mocked(createQuestionGenerationRun).mockResolvedValue({ _id: runId } as never);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, name: 'lecture-3.pdf', status: 'ready', assignments: [{ themeId, loId }] },
+    ]);
+
+    await enqueueGenerationRun({ courseId, loId, count: 1, prompt: 'Use @lecture-3.pdf only', byPuid: 'PUID-INSTR' });
+
+    expect(createQuestionGenerationRun).toHaveBeenCalledWith(
+      expect.objectContaining({ grounding: expect.objectContaining({ pinned: true }) }),
+    );
   });
 
   it('rejects an LO with no ready assigned material before creating a run', async () => {
@@ -327,6 +611,120 @@ describe('durable generation runs (P2-0)', () => {
 
     expect(createQuestionGenerationRun).not.toHaveBeenCalled();
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('the tracked job runs each step at the effort the admin configured for its model (2026-08-23)', async () => {
+    jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
+      _id: 'platform',
+      models: {
+        generator: { model: 'gen-model', reasoningEffort: 'xhigh' },
+        validator: { model: 'val-model' },
+        reviewer: { model: 'rev-model', reasoningEffort: 'xhigh' },
+        masteryEvaluator: { model: 'mastery-model' }, utility: { model: 'util-model' },
+      },
+      costControls: { maxGenerationsPerDay: 100 },
+      featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: false },
+      updatedBy: 'ADMIN', updatedAt: new Date(),
+    })) } as never);
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Compute IRR', order: 1 }]);
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: new ObjectId(), courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 1, revision: 0, events: [], warnings: [],
+      // The record carries ids only — the effort must come from the settings.
+      input: { loId, count: 1, type: 'mcq', difficulty: 'medium',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' } },
+      grounding: { allowedMaterialIds: [materialId], retrievedChunkCount: 0, pinned: false },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    } as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: new ObjectId(), version: {} } as never);
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: new ObjectId().toHexString() });
+
+    const calls = jest.mocked(completeJson).mock.calls;
+    expect(calls[0]?.[1]).toMatchObject({ model: 'gen-model', reasoningEffort: 'xhigh' });
+    expect(calls[1]?.[1]).toMatchObject({ model: 'val-model' });
+    expect(calls[1]?.[1]).not.toHaveProperty('reasoningEffort');
+    expect(calls[2]?.[1]).toMatchObject({ model: 'rev-model', reasoningEffort: 'xhigh' });
+    // And the run record says so, where the instructor can see it.
+    const retrieving = jest.mocked(updateContentRun).mock.calls.map((c) => c[1]).find((u) => /Retrieving/.test(String(u.message)));
+    expect(String(retrieving?.message)).toContain('generator gen-model @xhigh');
+  });
+
+  it('the tracked job widens a hard run from the recorded pin FLAG, not from the frozen ids (R7 fix)', async () => {
+    // Found 2026-08-22 on a live hard batch: the job hands the run's frozen
+    // allowedMaterialIds back through pinnedMaterialIds, so a widen test on
+    // "pinnedMaterialIds === undefined" was false on every tracked run and R7
+    // never fired in production (6 chunks where 8 were due).
+    const earlierLoId = new ObjectId();
+    const supportMaterialId = new ObjectId();
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute WACC', order: 2 });
+    loToArray.mockResolvedValue([
+      { _id: loId, courseId, themeId, name: 'Compute WACC', order: 2 },
+      { _id: earlierLoId, courseId, themeId, name: 'CAPM', order: 1 },
+    ]);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId, loId }] },
+      { _id: supportMaterialId, courseId, status: 'ready', assignments: [{ themeId, loId: earlierLoId }] },
+    ]);
+    const runFor = (pinned: boolean) => ({
+      _id: new ObjectId(), courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 1, revision: 0, events: [], warnings: [],
+      input: {
+        loId, count: 1, type: 'mcq', difficulty: 'hard',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      // Every run carries its frozen resolved ids; only `pinned` says whether
+      // the instructor constrained them.
+      grounding: { allowedMaterialIds: [materialId], retrievedChunkCount: 0, pinned },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const hardGen = () => ({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'as assigned' });
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+
+    // Not pinned: primary search + supporting search.
+    jest.mocked(getContentRun).mockResolvedValue(runFor(false) as never);
+    jest.mocked(search).mockClear();
+    jest.mocked(search)
+      .mockResolvedValueOnce([{ payload: { materialId: materialId.toHexString(), chunk: 'WACC material' } }] as never)
+      .mockResolvedValueOnce([{ payload: { materialId: supportMaterialId.toHexString(), chunk: 'CAPM material' } }] as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    jest.mocked(createQuestion).mockResolvedValue({ questionId: new ObjectId(), version: {} } as never);
+    // Must parse as an ObjectId: the handler returns early on an invalid id
+    // (getContentRun is mocked, so the value itself is irrelevant).
+    await handler({ runId: new ObjectId().toHexString() });
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(search).mock.calls[1]?.[3]).toEqual({
+      must: [{ key: 'materialId', match: { any: [supportMaterialId.toHexString()] } }],
+    });
+
+    // Pinned by the instructor: the frozen ids are exactly the set — one search.
+    jest.mocked(getContentRun).mockResolvedValue(runFor(true) as never);
+    jest.mocked(search).mockClear();
+    jest.mocked(search).mockResolvedValue([{ payload: { materialId: materialId.toHexString(), chunk: 'WACC material' } }] as never);
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(hardGen())
+      .mockResolvedValueOnce({ roleAssessment: 'ok', moveAssessment: 'implemented' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    // Must parse as an ObjectId: the handler returns early on an invalid id
+    // (getContentRun is mocked, so the value itself is irrelevant).
+    await handler({ runId: new ObjectId().toHexString() });
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a successful Draft and finishes partial when another item fails validation', async () => {
@@ -485,6 +883,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
     const roleAsErrorModel = {
       ...generatorOutput(),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       derivedValues: [
         { name: 'PV', formula: 'CF' },
@@ -521,6 +922,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
         { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
       ]),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       derivedValues: [
         { name: 'PV', formula: 'CF' },
@@ -754,6 +1158,9 @@ describe('runGenerationPipeline — three-agent orchestration (IN-Q05/Q10)', () 
         { key: 'D', text: '{{PV_D}}', role: 'clearly-wrong', explanation: 'nope' },
       ]),
       numericKind: 'numeric' as const,
+      // The stem must DISPLAY every input the correct answer needs (solvability
+      // gate, 2026-08-22) — generatorOutput()'s default stem shows none.
+      stem: 'A cash flow of {{CF}} arrives in one year. What is its present value?',
       paramSlots: [{ name: 'CF', min: 10, max: 20, step: 5 }],
       // Four DISTINCT values, one per option: two options displaying the same
       // derived value collide by definition, which the verifier now catches

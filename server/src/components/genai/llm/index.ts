@@ -27,6 +27,13 @@ export const llm = new LLMModule(buildConfig());
 
 export interface CompleteJsonOptions extends ModelRequestOptions {
   systemPrompt?: string;
+  /** Called with the provider's token usage after each underlying request
+   * (including the JSON-retry request, so a caller may see two calls). The
+   * pipeline never sets this; it exists for the prompt A/B harness
+   * (scripts/prompt-ab), whose cost numbers were previously reconstructed
+   * from character counts. Absent usage (provider-dependent) is not
+   * reported. */
+  onUsage?: (usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number }) => void;
 }
 
 /**
@@ -80,6 +87,7 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
   };
 
   const first = await llm.sendMessage(prompt, sendOptions);
+  if (first.usage) options.onUsage?.(first.usage);
   try {
     return extractJson<T>(first.content);
   } catch {
@@ -87,6 +95,7 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
       `${prompt}\n\nYour previous reply was not valid JSON. Respond with ONLY the JSON value — no prose, no explanation, no code fences.`,
       sendOptions,
     );
+    if (retry.usage) options.onUsage?.(retry.usage);
     return extractJson<T>(retry.content);
   }
 }

@@ -1,0 +1,323 @@
+{
+  "at": "2026-08-23T01:58:59.688Z",
+  "n": 64,
+  "overall": {
+    "n": 64,
+    "pass": 53,
+    "flag": 11,
+    "reject": 0,
+    "usable": 64
+  },
+  "byDifficulty": {
+    "easy": {
+      "n": 16,
+      "pass": 13,
+      "flag": 3,
+      "reject": 0,
+      "usable": 16
+    },
+    "medium": {
+      "n": 24,
+      "pass": 18,
+      "flag": 6,
+      "reject": 0,
+      "usable": 24
+    },
+    "hard": {
+      "n": 24,
+      "pass": 22,
+      "flag": 2,
+      "reject": 0,
+      "usable": 24
+    }
+  },
+  "byType": {
+    "mcq": {
+      "n": 48,
+      "pass": 39,
+      "flag": 9,
+      "reject": 0,
+      "usable": 48
+    },
+    "true-false": {
+      "n": 16,
+      "pass": 14,
+      "flag": 2,
+      "reject": 0,
+      "usable": 16
+    }
+  },
+  "byKind": {
+    "conceptual": {
+      "n": 34,
+      "pass": 30,
+      "flag": 4,
+      "reject": 0,
+      "usable": 34
+    },
+    "calculation": {
+      "n": 30,
+      "pass": 23,
+      "flag": 7,
+      "reject": 0,
+      "usable": 30
+    }
+  },
+  "byFamily": {
+    "calculation": {
+      "n": 22,
+      "pass": 19,
+      "flag": 3,
+      "reject": 0,
+      "usable": 22
+    },
+    "decision": {
+      "n": 16,
+      "pass": 12,
+      "flag": 4,
+      "reject": 0,
+      "usable": 16
+    },
+    "conceptual": {
+      "n": 20,
+      "pass": 17,
+      "flag": 3,
+      "reject": 0,
+      "usable": 20
+    },
+    "prerequisite-heavy": {
+      "n": 6,
+      "pass": 5,
+      "flag": 1,
+      "reject": 0,
+      "usable": 6
+    }
+  },
+  "byCell": {
+    "Plan saving, investing, protection | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Plan saving, investing, protection | mcq | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Plan saving, investing, protection | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Evaluate car affordability | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Evaluate car affordability | mcq | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Evaluate car affordability | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Explain market efficiency | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Explain market efficiency | mcq | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Explain market efficiency | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Estimate expected returns with CAPM | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Estimate expected returns with CAPM | mcq | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Estimate expected returns with CAPM | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Apply NPV and IRR | mcq | easy": {
+      "n": 2,
+      "pass": 0,
+      "flag": 2,
+      "reject": 0,
+      "usable": 2
+    },
+    "Apply NPV and IRR | mcq | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Apply NPV and IRR | mcq | hard": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Compare projects with PP and PI | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Compare projects with PP and PI | mcq | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Compare projects with PP and PI | mcq | hard": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Calculate unlevered free cash flow | mcq | easy": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Calculate unlevered free cash flow | mcq | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Calculate unlevered free cash flow | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Analyze macro drivers of exchange rates | mcq | easy": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Analyze macro drivers of exchange rates | mcq | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Analyze macro drivers of exchange rates | mcq | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Evaluate car affordability | true-false | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Evaluate car affordability | true-false | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Explain market efficiency | true-false | medium": {
+      "n": 2,
+      "pass": 1,
+      "flag": 1,
+      "reject": 0,
+      "usable": 2
+    },
+    "Explain market efficiency | true-false | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Estimate expected returns with CAPM | true-false | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Estimate expected returns with CAPM | true-false | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Distinguish firm vs enterprise value | true-false | medium": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    },
+    "Distinguish firm vs enterprise value | true-false | hard": {
+      "n": 2,
+      "pass": 2,
+      "flag": 0,
+      "reject": 0,
+      "usable": 2
+    }
+  },
+  "condition": "generator xhigh, reviewer xhigh (admin settings, honoured since da99920)"
+}

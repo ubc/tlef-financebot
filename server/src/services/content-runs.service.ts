@@ -170,6 +170,7 @@ export async function createQuestionGenerationRun(input: {
   count: number;
   type: QuestionType;
   difficulty?: Difficulty;
+  hardnessMove?: string;
   prompt?: string;
   blueprintId?: ObjectId;
   retryOfRunId?: ObjectId;
@@ -193,6 +194,7 @@ export async function createQuestionGenerationRun(input: {
       count: input.count,
       type: input.type,
       ...(input.difficulty ? { difficulty: input.difficulty } : {}),
+      ...(input.hardnessMove ? { hardnessMove: input.hardnessMove } : {}),
       ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
       ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
       ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),

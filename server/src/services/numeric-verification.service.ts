@@ -5,10 +5,94 @@
 // values collide. Pure functions only (apart from the Tier 3 sandbox) — no
 // DB/HTTP here; callers own persistence. See server/src/services/AGENTS.md.
 // -----------------------------------------------------------------------------
-import { EVALUATOR_VERSION } from '../components/formula';
+import { EVALUATOR_VERSION, parseFormula, type Node } from '../components/formula';
 import { executeGenerate } from '../components/param-worker';
 import { formatParamValue, resolveSlotsAndDerived } from './params.service';
 import type { DerivedValue, NumericVerification, ParamSlot } from '../types/domain';
+
+/**
+ * The format-consistency gate (2026-08-22): in a numerical question every
+ * option displays the SAME quantity, so every option text must be the same
+ * template around its placeholder — "${{X}}", "{{X}}%", "${{X}} million". A
+ * live question had three "$…" options and one "…%" option, and the odd one
+ * out was the correct answer: an answer key readable from formatting alone,
+ * and a question that is not even comparing like with like. Returns the
+ * templates when they disagree so the failure can name them.
+ */
+export function optionFormatsConsistent(optionTexts: string[]): { ok: true } | { ok: false; templates: string[] } {
+  const templates = optionTexts.map((text) => text.replace(/\{\{\w+\}\}/g, '{{…}}').replace(/\s+/g, ' ').trim());
+  const distinct = [...new Set(templates)];
+  return distinct.length <= 1 ? { ok: true } : { ok: false, templates: distinct };
+}
+
+/**
+ * The solvability gate: which paramSlots does `rootName` (the correct
+ * option's derived value) depend on — directly or through other
+ * derivedValues — that the stem never displays as a {{placeholder}}?
+ *
+ * A question can pass every other check and still be unanswerable: the values
+ * compute, distinctness proves, and the student was never shown an input. Seen
+ * three times in one week (experiments 27b and 28, then a live batch on
+ * 2026-08-22: "TAX_PCT is used in AFTER_TAX_FCF, but the stem never supplies
+ * it"). Slots used only by distractor formulas are deliberately exempt: an
+ * error model needs no solvability. Stem only, not options — the option
+ * contract makes an option a displayed VALUE, never an input carrier.
+ *
+ * Unparseable formulas and unknown names are ignored here; the evaluator and
+ * its own verification report those with better messages.
+ */
+export function undisplayedInputs(args: {
+  slots: ParamSlot[];
+  derivedValues: DerivedValue[];
+  rootName: string;
+  stem: string;
+}): string[] {
+  const derivedByName = new Map(args.derivedValues.map((derived) => [derived.name, derived.formula]));
+  const slotNames = new Set(args.slots.map((slot) => slot.name));
+  const needed = new Set<string>();
+  const visited = new Set<string>();
+
+  const collect = (node: Node, bound: Set<string>): void => {
+    switch (node.kind) {
+      case 'num':
+        return;
+      case 'var':
+        if (bound.has(node.name)) return;
+        if (slotNames.has(node.name)) needed.add(node.name);
+        else if (derivedByName.has(node.name)) visit(node.name);
+        return;
+      case 'neg':
+        collect(node.operand, bound);
+        return;
+      case 'binary':
+        collect(node.left, bound);
+        collect(node.right, bound);
+        return;
+      case 'call':
+        node.args.forEach((arg) => collect(arg, bound));
+        return;
+      case 'sum':
+        collect(node.from, bound);
+        collect(node.to, bound);
+        collect(node.body, new Set([...bound, node.index]));
+        return;
+      default:
+        return;
+    }
+  };
+  const visit = (name: string): void => {
+    if (visited.has(name)) return;
+    visited.add(name);
+    const formula = derivedByName.get(name);
+    if (formula === undefined) return;
+    const parsed = parseFormula(formula);
+    if (parsed.ok) collect(parsed.ast, new Set());
+  };
+  visit(args.rootName);
+
+  const displayed = new Set([...args.stem.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]));
+  return [...needed].filter((name) => !displayed.has(name));
+}
 
 /** Draws sampled per verification run. Every one must pass every check. */
 export const VERIFICATION_SAMPLE_COUNT = 100;
