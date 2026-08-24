@@ -6,6 +6,7 @@
 import {
   ApiError,
   browseBank,
+  bulkTransition,
   getCourseTree,
   transitionQuestion,
   type BankQuestion,
@@ -133,6 +134,10 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
   let filters: BankFilterState = { ...EMPTY_FILTERS };
   let summary: Summary = { total: 0, approved: 0, pendingReview: 0, flagged: 0, draft: 0, sourceChanged: 0 };
   let listQuestions: BankQuestion[] = [];
+  // Rows ticked for a bulk action. Pruned on every list load so a stale id
+  // from a previous filter never rides along into an archive.
+  const selected = new Set<string>();
+  let bulkMessage: string | null = null;
   let listTotal = 0;
   let loadErrorMessage: string | null = null;
 
@@ -168,6 +173,8 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     });
     listTotal = total;
     listQuestions = questions;
+    const present = new Set(questions.map((q) => q.id));
+    for (const id of [...selected]) if (!present.has(id)) selected.delete(id);
   }
 
   async function reload(): Promise<void> {
@@ -237,6 +244,36 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       loadErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
       renderResults();
     }
+  }
+
+  /** Rows the select-all checkbox covers: what the filters and search show,
+   * minus rows already archived (nothing to archive there). */
+  function selectableRows(): BankQuestion[] {
+    return displayedQuestions().filter((q) => q.state !== 'archived');
+  }
+
+  async function bulkArchive(): Promise<void> {
+    if (selected.size === 0) return;
+    const ids = [...selected];
+    if (!await confirmDialog({
+      title: 'Archive selected questions?',
+      message: `${ids.length} question${ids.length === 1 ? '' : 's'} will no longer be served to students. You can restore each to Draft from the Archived filter later.`,
+      confirmLabel: 'Archive questions',
+      tone: 'danger',
+    })) return;
+    bulkMessage = null;
+    try {
+      const { updated } = await bulkTransition(ids, 'archived');
+      bulkMessage = `Archived ${updated} of ${ids.length} question${ids.length === 1 ? '' : 's'}.`;
+      selected.clear();
+    } catch (error) {
+      loadErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
+    }
+    await reload();
+  }
+
+  function renderActions(): void {
+    actionsContainer.replaceChildren(actionRow());
   }
 
   function summaryLine(): HTMLElement {
@@ -363,9 +400,40 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
   }
 
   function actionRow(): HTMLElement {
+    const selectable = selectableRows();
+    const selectedShown = selectable.filter((q) => selected.has(q.id)).length;
+    const selectAll = el('input', {
+      type: 'checkbox',
+      'aria-label': 'Select every question shown',
+      checked: selectable.length > 0 && selectedShown === selectable.length ? 'checked' : undefined,
+      disabled: selectable.length === 0 ? 'disabled' : undefined,
+      onchange: (e: Event) => {
+        if ((e.target as HTMLInputElement).checked) for (const q of selectable) selected.add(q.id);
+        else for (const q of selectable) selected.delete(q.id);
+        renderActions();
+        renderResults();
+      },
+    }) as HTMLInputElement;
+    selectAll.indeterminate = selectedShown > 0 && selectedShown < selectable.length;
     return el(
       'div',
       { class: 'bank-actions' },
+      el(
+        'label',
+        { class: 'bulk-select-all' },
+        selectAll,
+        el('span', { text: selected.size > 0 ? `${selected.size} selected` : 'Select all' }),
+      ),
+      el(
+        'button',
+        {
+          class: 'btn btn--ghost',
+          type: 'button',
+          disabled: selected.size === 0 ? 'disabled' : undefined,
+          onclick: () => void bulkArchive(),
+        },
+        'Archive selected…',
+      ),
       el('button', { class: 'btn btn--ghost', type: 'button', disabled: 'disabled', title: 'Coming soon' }, '↑ Import'),
       el(
         'button',
@@ -383,10 +451,23 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     renderRichText(stemCell, rowStemText(q));
 
     const sourceChanged = q.labels.includes('source-changed');
+    const checkbox = el('input', {
+      class: 'bank-row__select',
+      type: 'checkbox',
+      'aria-label': 'Select question',
+      checked: selected.has(q.id) ? 'checked' : undefined,
+      disabled: q.state === 'archived' ? 'disabled' : undefined,
+      onchange: (e: Event) => {
+        if ((e.target as HTMLInputElement).checked) selected.add(q.id);
+        else selected.delete(q.id);
+        renderActions();
+      },
+    });
 
     return el(
       'div',
       { class: 'bank-row' },
+      checkbox,
       stemCell,
       el('span', { class: 'bank-row__type', text: TYPE_LABEL[q.current.type] }),
       el('span', { class: 'bank-row__topic', text: topicLoLabel(tree, q.loIds, q.themeIds) }),
@@ -418,6 +499,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
 
   function renderFilters(): void {
     filterContainer.replaceChildren(filterRow());
+    renderActions();
   }
 
   function renderResults(): void {
@@ -425,6 +507,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     mount(
       resultsContainer,
       loadErrorMessage ? errorState(loadErrorMessage, () => void reload()) : false,
+      bulkMessage ? el('p', { class: 'queue-message', text: bulkMessage }) : false,
       summaryLine(),
       el(
         'div',
@@ -432,6 +515,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
         el(
           'div',
           { class: 'bank-row bank-row--head' },
+          el('span', {}),
           el('span', { text: 'Question Stem' }),
           el('span', { text: 'Type' }),
           el('span', { text: 'Topic / LO' }),
@@ -468,7 +552,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     );
   }
 
-  actionsContainer.replaceChildren(actionRow());
+  renderActions();
   void reload();
 }
 

@@ -17,6 +17,7 @@ import {
   addQuestionInternalNote,
   editQuestion,
   transitionQuestion,
+  bulkDeleteUnserved,
   bulkTransition,
 } from '../services/questions.service';
 import {
@@ -226,6 +227,7 @@ const bulkTransitionBody = z.object({
   questionIds: z.array(objectIdParam).min(1),
   to: z.enum(PUBLICATION_STATES),
 });
+const bulkDeleteBody = z.object({ questionIds: z.array(objectIdParam).min(1) });
 
 /**
  * Resolve `res.locals.courseId` from the question a child route targets,
@@ -639,6 +641,27 @@ questionsRouter.post(
       ? await transitionQuestion(questionId, to, req.user!.puid)
       : await transitionQuestion(questionId, to, req.user!.puid, new ObjectId(expectedVersionId));
     res.json(toQuestionResponse(updated));
+  },
+);
+
+/**
+ * POST /api/questions/bulk-delete { questionIds } -> { deleted, skipped }.
+ * Hard-deletes never-served questions only (see bulkDeleteUnserved); guarded
+ * exactly like bulk-transition, including the single-course resolution.
+ */
+questionsRouter.post(
+  '/questions/bulk-delete',
+  ensureApiAuthenticated(),
+  validate({ body: bulkDeleteBody }),
+  stashCourseIdFromBulk(),
+  ensureCapability('question.approve'),
+  async (req, res) => {
+    const { questionIds } = req.body as z.infer<typeof bulkDeleteBody>;
+    const result = await bulkDeleteUnserved(questionIds.map((id) => new ObjectId(id)), req.user!.puid);
+    res.json({
+      deleted: result.deleted,
+      skipped: result.skipped.map((entry) => ({ questionId: entry.questionId.toHexString(), reason: entry.reason })),
+    });
   },
 );
 

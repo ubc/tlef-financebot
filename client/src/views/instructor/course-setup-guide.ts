@@ -2,7 +2,10 @@ import {
   ApiError,
   addUrlMaterial,
   applySuggestedHierarchy,
-  generateQuestions,
+  enqueueGenerationPlan,
+  getGenerationPlan,
+  type GenerationPlanCell,
+  type GenerationPlanRow,
   getCourseTree,
   getInstructorWorkflow,
   getPreseeding,
@@ -1007,6 +1010,44 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   }
   let generationUi: GenerationUi | undefined;
 
+  // The batch planner: a grid of counts per LO x tier x kind. `planRows` is
+  // the server's Auto plan (per-tier approved counts and the cells that reach
+  // the tier targets); `plan` is the instructor's editable copy. Auto resets
+  // it; any stepper edit marks it dirty so a background refresh does not
+  // overwrite what they typed.
+  type Tier = 'easy' | 'medium' | 'hard';
+  type Kind = 'calculation' | 'conceptual';
+  type PlanCounts = Record<Tier, Record<Kind, number>>;
+  const TIERS: Tier[] = ['easy', 'medium', 'hard'];
+  const KINDS: Kind[] = ['calculation', 'conceptual'];
+  let planRows: GenerationPlanRow[] = [];
+  let plan = new Map<string, PlanCounts>();
+  let planDirty = false;
+
+  function emptyCounts(): PlanCounts {
+    return { easy: { calculation: 0, conceptual: 0 }, medium: { calculation: 0, conceptual: 0 }, hard: { calculation: 0, conceptual: 0 } };
+  }
+  function autoCounts(row: GenerationPlanRow): PlanCounts {
+    const counts = emptyCounts();
+    for (const cell of row.cells) counts[cell.difficulty][cell.kind] += cell.count;
+    return counts;
+  }
+  function resetPlanToAuto(): void {
+    plan = new Map(planRows.map((row) => [row.loId, autoCounts(row)]));
+    planDirty = false;
+  }
+  function planCellsFor(loIds: Set<string>): GenerationPlanCell[] {
+    const cells: GenerationPlanCell[] = [];
+    for (const [loId, counts] of plan) {
+      if (!loIds.has(loId)) continue;
+      for (const tier of TIERS) for (const kind of KINDS) {
+        const count = counts[tier][kind];
+        if (count > 0) cells.push({ loId, difficulty: tier, kind, count });
+      }
+    }
+    return cells;
+  }
+
   function activeGenerationFor(loId: string): boolean {
     if (locallyQueuedRuns.has(loId)) return true;
     return [...runs.values()].some((run) =>
@@ -1068,6 +1109,58 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       });
   }
 
+  /** One LO of the planner: coverage per tier and a stepper per tier x kind. */
+  function renderPlanRow(row: GenerationRow): HTMLElement {
+    const auto = planRows.find((candidate) => candidate.loId === row.loId);
+    const counts = plan.get(row.loId) ?? (auto ? autoCounts(auto) : emptyCounts());
+    if (!plan.has(row.loId)) plan.set(row.loId, counts);
+    const editable = row.hasReadySource && !row.active;
+    const planned = TIERS.reduce((sum, tier) => sum + counts[tier].calculation + counts[tier].conceptual, 0);
+    const tierCells = TIERS.map((tier) => {
+      const approved = auto?.approved[tier] ?? 0;
+      const inputs = KINDS.map((kind) => {
+        const input = el('input', {
+          class: 'input course-setup-guide__plan-count',
+          type: 'number', min: '0', max: '20', value: String(counts[tier][kind]),
+          'aria-label': `${row.loName}: ${tier} ${kind} questions`,
+          ...(editable ? {} : { disabled: 'disabled' }),
+        }) as HTMLInputElement;
+        input.onchange = () => {
+          counts[tier][kind] = Math.max(0, Math.min(20, Math.floor(Number(input.value) || 0)));
+          input.value = String(counts[tier][kind]);
+          planDirty = true;
+          refreshGenerationPanel();
+        };
+        return el('label', { class: 'course-setup-guide__plan-kind' }, el('small', { text: kind === 'calculation' ? 'calc' : 'concept' }), input);
+      });
+      return el(
+        'div',
+        { class: 'course-setup-guide__plan-tier' },
+        el('small', { text: `${tier} \u00b7 ${approved} approved` }),
+        el('div', { class: 'course-setup-guide__plan-kinds' }, ...inputs),
+      );
+    });
+    return el(
+      'article',
+      { class: `course-setup-guide__generation-row${row.approved >= row.target ? ' is-complete' : ''}` },
+      el(
+        'div',
+        { class: 'course-setup-guide__generation-copy' },
+        el('small', { text: `${row.themeName} \u00b7 ${auto?.loKind ?? 'mixed'}` }),
+        el('strong', { text: row.loName }),
+        el('span', {
+          class: `course-setup-guide__eligibility${row.hasReadySource ? ' is-ready' : ''}`,
+          text: row.active
+            ? 'Generating\u2026'
+            : row.hasReadySource
+              ? planned > 0 ? `${planned} planned` : 'Nothing planned'
+              : 'Needs a ready assigned source',
+        }),
+      ),
+      el('div', { class: 'course-setup-guide__plan-grid' }, ...tierCells),
+    );
+  }
+
   function refreshGenerationPanel(): void {
     if (!generationUi || currentScreen !== 'generation') return;
     const rows = generationRows();
@@ -1086,34 +1179,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       ? [el('p', { class: 'course-setup-guide__empty', text: 'Loading Learning Objective coverage\u2026' })]
       : rows.length === 0
         ? [el('p', { class: 'course-setup-guide__empty', text: 'No Learning Objectives yet. Add or generate a structure before creating questions.' })]
-        : rows.map((row) =>
-              el(
-                'article',
-                { class: `course-setup-guide__generation-row${row.approved >= row.target ? ' is-complete' : ''}` },
-                el(
-                  'div',
-                  { class: 'course-setup-guide__generation-copy' },
-                  el('small', { text: row.themeName }),
-                  el('strong', { text: row.loName }),
-                ),
-                el('span', {
-                  class: 'course-setup-guide__coverage',
-                  text: `${row.approved}/${row.target} approved${row.unapproved ? ` \u00b7 ${row.unapproved} awaiting review` : ''}`,
-                }),
-                el('span', {
-                  class: `course-setup-guide__eligibility${row.hasReadySource ? ' is-ready' : ''}`,
-                  text: row.approved >= row.target
-                    ? 'Target met'
-                    : row.active
-                      ? 'Generating\u2026'
-                      : row.needed === 0 && row.unapproved > 0
-                        ? 'Review existing questions next'
-                      : row.hasReadySource
-                        ? 'Ready source assigned'
-                        : 'Needs a ready assigned source',
-                }),
-              ),
-            );
+        : rows.map((row) => renderPlanRow(row));
     mount(generationUi.list, ...generationNodes);
     const runNodes = renderGenerationRuns();
     mount(
@@ -1122,16 +1188,20 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         ? el('div', { class: 'course-setup-guide__run-list' }, el('h4', { text: 'Recent generation activity' }), ...runNodes)
         : false,
     );
-    generationUi.generateButton.disabled = generationBusy || eligible.length === 0;
+    const plannable = new Set(rows.filter((row) => row.hasReadySource && !row.active).map((row) => row.loId));
+    const plannedCells = planCellsFor(plannable);
+    const plannedQuestions = plannedCells.reduce((sum, cell) => sum + cell.count, 0);
+    const plannedLos = new Set(plannedCells.map((cell) => cell.loId)).size;
+    generationUi.generateButton.disabled = generationBusy || plannedQuestions === 0;
     generationUi.generateButton.textContent = generationBusy
       ? 'Queuing generation\u2026'
-      : eligible.length > 0
-        ? `Generate starter questions for ${eligible.length} LO${eligible.length === 1 ? '' : 's'}`
+      : plannedQuestions > 0
+        ? `Generate ${plannedQuestions} question${plannedQuestions === 1 ? '' : 's'} across ${plannedLos} LO${plannedLos === 1 ? '' : 's'} \u2192 ${plannedQuestions} to review`
         : active > 0
           ? 'Generation is already running'
           : awaitingReview > 0
             ? 'Review existing questions before generating more'
-          : 'No eligible thin LOs';
+          : 'Nothing planned \u2014 adjust a count or press Auto';
     generationUi.status.textContent = generationError || generationMessage;
     generationUi.status.className = generationError
       ? 'course-setup-guide__form-error'
@@ -1140,17 +1210,20 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
 
   async function loadGenerationData(revision = screenRevision): Promise<void> {
     try {
-      const [tree, materialRows, coverage, recentRuns] = await Promise.all([
+      const [tree, materialRows, coverage, recentRuns, autoPlan] = await Promise.all([
         getCourseTree(options.courseId),
         listMaterials(options.courseId),
         getPreseeding(options.courseId),
         listContentRuns(options.courseId, { kind: 'question-generation', limit: 30 }),
+        getGenerationPlan(options.courseId),
       ]);
       if (closed) return;
       courseTree = tree;
       materials = materialRows;
       materialsLoaded = true;
       preseeding = coverage;
+      planRows = autoPlan;
+      if (!planDirty) resetPlanToAuto();
       learningObjectiveCount = tree.themes.reduce((count, theme) => count + (theme.los?.length ?? 0), 0);
       for (const run of recentRuns) runs.set(run._id, run);
       if (revision === screenRevision && currentScreen === 'generation') refreshGenerationPanel();
@@ -1162,42 +1235,50 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
 
   async function generateStarterQuestions(): Promise<void> {
     if (generationBusy) return;
-    const eligible = generationRows().filter((row) =>
-      row.approved < row.target && row.needed > 0 && row.hasReadySource && !row.active,
-    );
-    if (eligible.length === 0) return;
+    const plannable = new Set(generationRows().filter((row) => row.hasReadySource && !row.active).map((row) => row.loId));
+    const cells = planCellsFor(plannable);
+    if (cells.length === 0) return;
+    const eligible = [...new Set(cells.map((cell) => cell.loId))].map((loId) => ({ loId }));
     generationBusy = true;
     generationError = '';
     generationMessage = '';
     for (const row of eligible) locallyQueuedRuns.set(row.loId, null);
     refreshGenerationPanel();
-    const results = await Promise.allSettled(
-      eligible.map((row) => generateQuestions(options.courseId, {
-        loId: row.loId,
-        count: Math.min(20, Math.max(1, row.needed)),
-      })),
-    );
+    let planResult: Awaited<ReturnType<typeof enqueueGenerationPlan>>;
+    try {
+      planResult = await enqueueGenerationPlan(options.courseId, cells);
+    } catch (caught) {
+      if (closed) return;
+      generationBusy = false;
+      generationError = errorMessage(caught);
+      for (const row of eligible) locallyQueuedRuns.delete(row.loId);
+      refreshGenerationPanel();
+      return;
+    }
     if (closed) return;
-    const succeeded = results.filter((result) => result.status === 'fulfilled').length;
-    results.forEach((result, index) => {
-      const loId = eligible[index].loId;
-      if (result.status === 'rejected') {
-        locallyQueuedRuns.delete(loId);
-        return;
-      }
-      const knownRun = runs.get(result.value.runId);
-      if (knownRun) locallyQueuedRuns.delete(loId);
-      else locallyQueuedRuns.set(loId, result.value.runId);
-    });
-    const runIds = results
-      .filter((result): result is PromiseFulfilledResult<{ runId: string }> => result.status === 'fulfilled')
-      .map((result) => result.value.runId.slice(-8));
+    // One run per cell; an LO is "queued" if any of its cells started, and a
+    // cell that could not start is reported by name so the instructor sees
+    // exactly what did not happen.
+    const started = planResult.runs.filter((run) => run.runId);
+    const failed = planResult.runs.filter((run) => !run.runId);
+    planDirty = false;
+    for (const { loId } of eligible) {
+      const firstRun = started.find((run) => run.loId === loId);
+      if (!firstRun?.runId) { locallyQueuedRuns.delete(loId); continue; }
+      if (runs.get(firstRun.runId)) locallyQueuedRuns.delete(loId);
+      else locallyQueuedRuns.set(loId, firstRun.runId);
+    }
+    const queuedQuestions = started.reduce((sum, run) => sum + run.count, 0);
     generationBusy = false;
-    generationMessage = succeeded > 0
-      ? `Queued ${succeeded} generation run${succeeded === 1 ? '' : 's'}${runIds.length ? `: ${runIds.join(', ')}` : ''}. Progress is saved automatically.`
+    generationMessage = started.length > 0
+      ? `Queued ${started.length} run${started.length === 1 ? '' : 's'} (${queuedQuestions} question${queuedQuestions === 1 ? '' : 's'}) — they will arrive in the review queue as they finish.`
       : '';
-    if (succeeded < eligible.length) {
-      generationError = `${eligible.length - succeeded} Learning Objective${eligible.length - succeeded === 1 ? '' : 's'} could not be queued. You can retry safely.`;
+    if (failed.length > 0) {
+      const byLo = new Map<string, string>();
+      for (const run of failed) byLo.set(run.loId, run.error ?? 'could not start');
+      const names = [...byLo].map(([loId, error]) =>
+        `${generationRows().find((row) => row.loId === loId)?.loName ?? loId} (${error})`);
+      generationError = `${failed.length} cell${failed.length === 1 ? '' : 's'} could not be queued: ${names.join('; ')}. You can retry safely.`;
     }
     notifyChanged();
     void refreshWorkflow();
@@ -1226,8 +1307,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     mount(
       body,
       screenHeading(
-        'Generate a small starter set of questions',
-        'FinanceBot only generates for below-target LOs that have a ready assigned source. Every new question enters the review queue before students can see it.',
+        'Plan a batch of questions',
+        'Auto suggests how many easy, medium and hard questions each Learning Objective needs, split into calculation and conceptual by the objective’s kind. Adjust any count, then generate. Every new question enters the review queue before students can see it.',
       ),
       summary,
       list,
@@ -1259,6 +1340,10 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         'Open Question Workspace',
         coursePath('/preseeding'),
         el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('sources') }, 'Check sources'),
+        el('button', {
+          class: 'btn btn--ghost', type: 'button', title: 'Reset every count to the suggested plan',
+          onclick: () => { resetPlanToAuto(); refreshGenerationPanel(); },
+        }, 'Auto'),
         generateButton,
         el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('review') }, 'Continue to review \u2192'),
       ),

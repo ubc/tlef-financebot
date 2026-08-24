@@ -15,6 +15,7 @@ import type {
   QuestionGenerationResult,
   QuestionGenerationRun,
   QuestionType,
+  QuestionKind,
 } from '../types/domain';
 
 const TERMINAL_STATUSES = new Set<ContentRunStatus>(['completed', 'partial', 'failed']);
@@ -171,6 +172,7 @@ export async function createQuestionGenerationRun(input: {
   type: QuestionType;
   difficulty?: Difficulty;
   hardnessMove?: string;
+  kind?: QuestionKind;
   prompt?: string;
   blueprintId?: ObjectId;
   retryOfRunId?: ObjectId;
@@ -195,6 +197,7 @@ export async function createQuestionGenerationRun(input: {
       type: input.type,
       ...(input.difficulty ? { difficulty: input.difficulty } : {}),
       ...(input.hardnessMove ? { hardnessMove: input.hardnessMove } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
       ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
       ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
       ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),

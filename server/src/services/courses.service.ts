@@ -13,6 +13,7 @@ import type {
   CourseLifecycle,
   Theme,
   LearningObjective,
+  LoKind,
   RosterEntry,
 } from '../types/domain';
 
@@ -286,14 +287,35 @@ export async function getThemeCourseId(themeId: ObjectId): Promise<ObjectId | nu
   return theme?.courseId ?? null;
 }
 
+/**
+ * What kind of question an objective naturally asks for, read off its verb.
+ * Calibrated against the instructor's own bank (2026-08-23): objectives that
+ * begin with a computing verb produced calculation questions, explaining and
+ * distinguishing verbs produced conceptual ones, and the evaluating/comparing
+ * verbs are the decision-shaped objectives that wanted both — they were also
+ * the ones that generated rejects when forced either way. A heuristic seeds
+ * the default; the instructor's edit wins.
+ */
+export function inferLoKind(name: string): LoKind {
+  const verb = name.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+  if (/^(calculate|compute|estimate|price|value|derive|solve|determine|quantify|measure)/.test(verb)) return 'calculation';
+  if (/^(explain|describe|define|distinguish|identify|recognize|recognise|summarize|summarise|interpret|discuss|outline|list|classify)/.test(verb)) return 'conceptual';
+  return 'mixed';
+}
+
+/** The kind to plan with: the instructor's choice, else the inference. */
+export function effectiveLoKind(lo: Pick<LearningObjective, 'name' | 'kind'>): LoKind {
+  return lo.kind ?? inferLoKind(lo.name);
+}
+
 export async function addLo(
   courseId: ObjectId,
   themeId: ObjectId,
-  input: { name: string },
+  input: { name: string; kind?: LoKind },
 ): Promise<WithId<LearningObjective>> {
   const [last] = await losCol().find({ themeId }).sort({ order: -1 }).limit(1).toArray();
   const order = (last?.order ?? 0) + 1;
-  const lo: LearningObjective = { courseId, themeId, name: input.name, order };
+  const lo: LearningObjective = { courseId, themeId, name: input.name, order, kind: input.kind ?? inferLoKind(input.name) };
   const { insertedId } = await losCol().insertOne(lo);
   return { _id: insertedId, ...lo };
 }
@@ -391,7 +413,7 @@ export async function upsertCourseOutline(
 
 export async function updateLo(
   loId: ObjectId,
-  patch: Partial<Pick<LearningObjective, 'name' | 'order'>>,
+  patch: Partial<Pick<LearningObjective, 'name' | 'order' | 'kind'>>,
 ): Promise<WithId<LearningObjective>> {
   const lo = await losCol().findOneAndUpdate({ _id: loId }, { $set: patch }, { returnDocument: 'after' });
   if (!lo) throw new Error('lo-not-found');

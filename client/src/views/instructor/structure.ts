@@ -800,6 +800,15 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   function buildLoDetail(lo: CourseTreeLo, theme: CourseTreeTheme): HTMLElement {
     const index = (theme.los ?? []).indexOf(lo);
     const nameInput = el('input', { class: 'input', type: 'text', value: lo.name }) as HTMLInputElement;
+    // The LO's kind drives the batch planner's Auto distribution. Inferred
+    // from the verb server-side; this is the instructor's override.
+    const kindSelect = el('select', { class: 'input', 'aria-label': 'Question kind' }) as HTMLSelectElement;
+    for (const [value, label] of [
+      ['calculation', 'Calculation — numeric questions'],
+      ['conceptual', 'Conceptual — reasoning questions'],
+      ['mixed', 'Mixed — both kinds'],
+    ] as const) kindSelect.append(el('option', { value, text: label }));
+    kindSelect.value = lo.kind ?? 'mixed';
     const errorSlot = el('div', {});
     const approved = preseeding.find((p) => p.loId === lo._id)?.approved ?? 0;
 
@@ -811,8 +820,9 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         return;
       }
       try {
-        const updated = await updateLo(lo._id, { name });
+        const updated = await updateLo(lo._id, { name, kind: kindSelect.value as CourseTreeLo['kind'] });
         lo.name = updated.name;
+        lo.kind = updated.kind;
         closeEditor();
         refresh();
       } catch (error) {
@@ -863,6 +873,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled', title: 'Coming soon' }, 'Split LO…'),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Name'), nameInput),
+      el('div', { class: 'form-field' }, fieldLabel('Question kind'), kindSelect),
       // Description is omitted: LearningObjective has no `description` field
       // server-side (server/src/types/domain.ts) — adding one would be a
       // server change, out of scope for this task. Omitted rather than faked.

@@ -4784,9 +4784,22 @@ button.class-row--link:focus-visible .class-row__title {
 .bank-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.6rem;
   margin-bottom: 1rem;
+}
+
+/* "Select all / N selected" at the left of a bulk-action row (review queue,
+   question bank). */
+.bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: auto;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .bank-table {
@@ -4798,7 +4811,7 @@ button.class-row--link:focus-visible .class-row__title {
 
 .bank-row {
   display: grid;
-  grid-template-columns: minmax(220px, 2.2fr) 0.7fr 1.1fr 0.7fr 1fr 1.4fr 1fr;
+  grid-template-columns: 1.75rem minmax(220px, 2.2fr) 0.7fr 1.1fr 0.7fr 1fr 1.4fr 1fr;
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
@@ -4910,6 +4923,10 @@ button.class-row--link:focus-visible .class-row__title {
   .bank-row__source-changed,
   .bank-row__spacer {
     grid-column: 1 / -1;
+  }
+
+  .bank-row__select {
+    justify-self: start;
   }
 
   .bank-row__stem {
@@ -5179,6 +5196,7 @@ button.class-row--link:focus-visible .class-row__title {
 .queue-controls select.input {
   width: auto;
 }
+
 
 .queue-message {
   margin: 0 0 0.75rem;
@@ -8541,6 +8559,161 @@ button.class-row--link:focus-visible .class-row__title {
 .course-setup-guide__generation-row.is-complete {
   border-color: color-mix(in srgb, var(--instr-green-fg) 25%, var(--border));
   background: color-mix(in srgb, var(--instr-green-bg) 28%, var(--surface));
+}
+
+/* The batch planner dialog (Question Workspace): same grid as the setup
+   guide's inline version, inside a wide app-dialog. */
+/* The dialog ELEMENT is what carries the width (31rem by default) — widening
+   only the surface inside it is what produced a horizontal scrollbar. */
+.app-dialog--wide {
+  width: min(80rem, calc(100vw - 2rem));
+}
+
+.app-dialog--wide .app-dialog__surface {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.generation-plan__rows {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.generation-plan__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.generation-plan__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.generation-plan__row.is-excluded {
+  opacity: 0.55;
+}
+
+.generation-plan__select {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 56rem) {
+  .generation-plan__row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .generation-plan__grid {
+    grid-column: 1 / -1;
+  }
+}
+
+.generation-plan__copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.generation-plan__copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.generation-plan__grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.5rem 0.85rem;
+}
+
+.generation-plan__tier {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.generation-plan__tier > small {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.generation-plan__kinds {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.generation-plan__kind {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.generation-plan__count {
+  width: 3.6rem;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.generation-plan__count:disabled {
+  opacity: 0.5;
+}
+
+/* The batch planner: a row is the LO's copy plus a tier grid, each tier a
+   pair of steppers (calculation / conceptual). */
+.course-setup-guide__generation-row:has(.course-setup-guide__plan-grid) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.course-setup-guide__plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.5rem 0.85rem;
+}
+
+.course-setup-guide__plan-tier {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.course-setup-guide__plan-tier > small {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.course-setup-guide__plan-kinds {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.course-setup-guide__plan-kind {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.course-setup-guide__plan-count {
+  width: 3.6rem;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.course-setup-guide__plan-count:disabled {
+  opacity: 0.5;
 }
 
 .course-setup-guide__coverage {

@@ -403,6 +403,31 @@ describe('difficulty calibration prompts', () => {
     expect(decisions[1]).not.toHaveProperty('suggestedDifficulty');
   });
 
+  it('the kind contract refuses a candidate of the other kind and regenerates (batch planner, 2026-08-23)', async () => {
+    jest.mocked(themesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
+    } as never);
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Explain market efficiency', order: 1 });
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Explain market efficiency', order: 1 }]);
+    jest.mocked(completeJson)
+      // A numeric candidate against a CONCEPTUAL contract: refused before any review call.
+      .mockResolvedValueOnce({ ...generatorOutput(), numericKind: 'numeric', paramSlots: [], derivedValues: [] })
+      .mockResolvedValueOnce({ ...generatorOutput(), numericKind: 'conceptual' })
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({ courseId, loId, count: 1, difficulty: 'medium', kind: 'conceptual', byPuid: 'PUID-INSTR' });
+
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    const prompts = jest.mocked(completeJson).mock.calls.map((call) => String(call[0]));
+    expect(prompts[0]).toContain('THIS QUESTION MUST BE CONCEPTUAL');
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+    // And the contract is persisted on the run so the async job honours it.
+    jest.mocked(createQuestionGenerationRun).mockResolvedValue({ _id: new ObjectId() } as never);
+    await enqueueGenerationRun({ courseId, loId, count: 1, kind: 'calculation', byPuid: 'PUID-INSTR' });
+    expect(createQuestionGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ kind: 'calculation' }));
+  });
+
   it('a true/false candidate must be a True/False claim — a two-option numeric is retried (2026-08-22)', async () => {
     jest.mocked(themesCol).mockReturnValue({
       find: jest.fn(() => ({ toArray: async () => [{ _id: themeId, courseId, order: 1 }] })),
