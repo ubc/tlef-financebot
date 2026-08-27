@@ -1,6 +1,7 @@
 import {
   ApiError,
   assignMaterial,
+  getCanvasLink,
   getCourseKnowledgeGraph,
   getCourseTree,
   getMaterialWorkspaceDetail,
@@ -31,6 +32,7 @@ import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { assignmentSummary, classificationLabel } from './material-assign.js';
+import { openCanvasImportDialog } from './canvas-panel.js';
 
 const INGEST_STAGES = ['queued', 'parsing', 'chunking', 'embedding', 'indexing', 'classifying'] as const;
 const MATERIAL_KINDS: MaterialKind[] = [
@@ -108,13 +110,17 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   let trash: Material[];
   let recentRuns: ContentRunSummary[];
   let graph: CourseKnowledgeGraph;
+  // Phase 6: "Import from Canvas" shows only for a linked course. A 404 (no
+  // Canvas on this deployment) or any other failure just hides the button.
+  let canvasLinked = false;
   try {
-    [tree, materials, trash, recentRuns, graph] = await Promise.all([
+    [tree, materials, trash, recentRuns, graph, canvasLinked] = await Promise.all([
       getCourseTree(courseId),
       listMaterials(courseId),
       listTrashedMaterials(courseId),
       listContentRuns(courseId, { kind: 'material-ingest', limit: 30 }),
       getCourseKnowledgeGraph(courseId),
+      getCanvasLink(courseId).then((l) => l.linked).catch(() => false),
     ]);
   } catch (error) {
     body.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -181,6 +187,21 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       fileMode = 'files';
       if (created[0]) selectMaterial(created[0]);
       flash(`${created.length} material${created.length === 1 ? '' : 's'} added. Processing is running in the activity stream.`);
+      refresh();
+    } catch (error) {
+      feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+    }
+  }
+
+  async function doCanvasImport(): Promise<void> {
+    feedback.replaceChildren();
+    try {
+      const created = await openCanvasImportDialog(courseId);
+      if (created.length === 0) return;
+      materials = [...created, ...materials];
+      fileMode = 'files';
+      if (created[0]) selectMaterial(created[0]);
+      flash(`${created.length} file${created.length === 1 ? '' : 's'} imported from Canvas. Processing is running in the activity stream.`);
       refresh();
     } catch (error) {
       feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -360,6 +381,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('span', { class: 'workspace-count', text: String(materials.length) }),
       ),
       uploadZone('Drop files here or browse', (files) => void doUpload(files)),
+      canvasLinked
+        ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Import from Canvas', onclick: () => void doCanvasImport() })
+        : el('span'),
       el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void doAddUrl(urlInput) }, '+')),
       el('input', {
         class: 'input input--sm workspace-search',

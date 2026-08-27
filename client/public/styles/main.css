@@ -9031,3 +9031,12 @@ button.class-row--link:focus-visible .class-row__title {
     text-align: left;
   }
 }
+
+/* Canvas card + import dialog (Phase 6) */
+.canvas-step__label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+.canvas-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.canvas-report__counts { font-weight: 600; }
+.canvas-report__warn { color: var(--warning-text, #8a5a00); }
+.canvas-report__bucket summary { cursor: pointer; }
+.canvas-files { display: grid; gap: 0.25rem; max-height: 50vh; overflow: auto; }
+.canvas-files__row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
