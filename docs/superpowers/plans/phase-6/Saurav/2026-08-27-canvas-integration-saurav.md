@@ -47,7 +47,7 @@
 - Consumes: `getDb()` from `components/mongodb`; `ensureApiAuthenticated()` from `components/auth`; `env` from `config/env`.
 - Produces: `getCanvasConfig(): canvas.Config` (memoised; throws if unconfigured), `isCanvasConfigured(): boolean`, `createLmsCanvasRouter(): Router`. Tasks 2–4 add routes to the same router file and mock `components/lms` the same way this task's test does.
 
-- [ ] **Step 1: Append the env block**
+- [x] **Step 1: Append the env block**
 
 `.env.example`, appended at the end:
 
@@ -85,7 +85,7 @@ export const canvasEnabled =
   Boolean(env.canvas.domain && env.canvas.clientId && env.canvas.clientSecret && env.canvas.redirectUri);
 ```
 
-- [ ] **Step 2: Write the failing route test**
+- [x] **Step 2: Write the failing route test**
 
 `tests/unit/lms-canvas.routes.test.ts`:
 
@@ -204,12 +204,12 @@ describe('auth router mount', () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 Run: `npx jest tests/unit/lms-canvas.routes.test.ts`
 Expected: FAIL — `Cannot find module '../../server/src/routes/lms-canvas.routes'`.
 
-- [ ] **Step 4: Write the component**
+- [x] **Step 4: Write the component**
 
 `server/src/components/lms/index.ts`:
 
@@ -272,7 +272,7 @@ Rules:
 Local Canvas: `../local-lms-dev/README.md`.
 ```
 
-- [ ] **Step 5: Write the router factory with `/status` and the auth mount**
+- [x] **Step 5: Write the router factory with `/status` and the auth mount**
 
 `server/src/routes/lms-canvas.routes.ts`:
 
@@ -336,7 +336,7 @@ export function createLmsCanvasRouter(): Router {
 }
 ```
 
-- [ ] **Step 6: Mount it**
+- [x] **Step 6: Mount it**
 
 `server/src/app.ts` — add the import after line 32 (`import { authRouter } …`):
 
@@ -353,12 +353,12 @@ and after the `notificationsRouter` mount (line 92), one block:
 
 (`isProduction` is already imported from `./config/env` on line 6; merge the two imports into one line if eslint's `no-duplicate-imports` complains.)
 
-- [ ] **Step 7: Run the tests and typecheck**
+- [x] **Step 7: Run the tests and typecheck**
 
 Run: `npx jest tests/unit/lms-canvas.routes.test.ts && npm run typecheck:server`
 Expected: 5 tests PASS; typecheck clean. If `req.canvasApi` is unknown to the compiler, the package's global augmentation is not being picked up — add `import type {} from '@ubc/ubc-genai-toolkit-lms-integration';` to `server/src/types/express.d.ts` (one line) so the `Express.Request.canvasApi` declaration is loaded with the rest of the request typings.
 
-- [ ] **Step 8: Hand-verify connect/disconnect against local Canvas**
+- [x] **Step 8: Hand-verify connect/disconnect against local Canvas**
 
 With `../local-lms-dev` up and the four `CANVAS_*` values in `.env`, `npm run dev`, sign in as `faculty`, then:
 1. `GET http://localhost:6118/api/lms/canvas/status` → `{ "connected": false }`
@@ -368,7 +368,7 @@ With `../local-lms-dev` up and the four `CANVAS_*` values in `.env`, `npm run de
 
 Record the four results in `STATUS.md`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add .env.example server/src/config/env.ts server/src/components/lms server/src/routes/lms-canvas.routes.ts server/src/app.ts tests/unit/lms-canvas.routes.test.ts

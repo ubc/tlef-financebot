@@ -6,7 +6,7 @@ _Last updated: 2026-08-27_
 
 | Task | State |
 |---|---|
-| 1 — Component, config, connect/disconnect | Not started |
+| 1 — Component, config, connect/disconnect | **Complete** |
 | 2 — Course link | Not started |
 | 3 — File import | Not started |
 | 4 — Roster sync | Not started |
@@ -43,4 +43,24 @@ _Last updated: 2026-08-27_
 
 ## Verification log
 
-_(Filled in per task: commands run, results, and the Task 6 hand smoke.)_
+### Task 1 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas.routes.test.ts` → 5/5. Full suite → 99 suites, 1,246 tests.
+- `npm run typecheck:server`, `npx eslint` on changed files → clean.
+- **Finding:** the package's structural `MongoDbLike` does not type-check
+  against mongodb v7's `Db` (`createIndex` param variance). Cast at the one
+  boundary in `components/lms/index.ts`; runtime shape is compatible. Worth
+  reporting upstream.
+- Mount probe with the real `.env` values: `/api/lms/canvas/status` and
+  `/auth/login` → **401** unauthenticated (mounted, config accepted); `/courses`
+  → 404 (Task 2 not built yet).
+- **Connect, by hand, through the real app:** signed in as `faculty-user`,
+  `/status` → `connected:false`; OAuth as `teacher1@example.com`; `/status` →
+  `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
+  the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
+  `userKey`.
+- **Disconnect, by hand:** `POST /api/lms/canvas/auth/logout` → 200;
+  `/status` → `connected:false`; `lmsCanvasTokens` → 0 documents. Note for
+  the UI task: logging out of FinanceBot does *not* clear the Canvas token
+  (by design — it is keyed by PUID, not session), so Settings needs a real
+  *Disconnect* control.

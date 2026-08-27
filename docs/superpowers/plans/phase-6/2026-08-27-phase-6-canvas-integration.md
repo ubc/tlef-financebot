@@ -45,12 +45,12 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `server/src/components/lms/` wraps the package: `loadConfigFromEnv`,
+- [x] `server/src/components/lms/` wraps the package: `loadConfigFromEnv`,
   `createMongoTokenStore` on `lmsCanvasTokens`, `getUserKey → req.user.puid`.
-- [ ] `env.canvas` + `env.canvasEnabled`; `.env.example` block appended.
-- [ ] `/api/lms/canvas/auth/*` (package router) and `GET /api/lms/canvas/status`
+- [x] `env.canvas` + `env.canvasEnabled`; `.env.example` block appended.
+- [x] `/api/lms/canvas/auth/*` (package router) and `GET /api/lms/canvas/status`
   mounted only when configured; unconfigured deployments 404.
-- [ ] Route tests; connect/disconnect verified by hand against local Canvas.
+- [x] Route tests; connect/disconnect verified by hand against local Canvas.
 
 ### Task 2: Course link
 
