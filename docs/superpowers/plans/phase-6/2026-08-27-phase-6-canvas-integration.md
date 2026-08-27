@@ -88,10 +88,10 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `enrollByCode` and `listEnrollments` accept an `lmsRosterEntries` hit by
+- [x] `enrollByCode` and `listEnrollments` accept an `lmsRosterEntries` hit by
   PUID as an alternative to a CSV roster hit. Nothing else changes.
-- [ ] `enrollment.service.test.ts` extended; existing cases unchanged.
-- [ ] PRD §3 and §10 updated: Canvas linking/import/roster in scope; gradebook
+- [x] `enrollment.service.test.ts` extended; existing cases unchanged.
+- [x] PRD §3 and §10 updated: Canvas linking/import/roster in scope; gradebook
   write-back remains a stretch goal.
 
 ### Task 6: Instructor UI

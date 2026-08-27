@@ -1,5 +1,5 @@
 import type { ObjectId } from 'mongodb';
-import { coursesCol, rosterCol, usersCol } from '../components/mongodb/collections';
+import { coursesCol, rosterCol, usersCol, lmsRosterEntriesCol } from '../components/mongodb/collections';
 import type { User } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -35,9 +35,13 @@ export async function enrollByCode(
 
   const identifiers = [user.uid, user.email].filter(Boolean).map((s) => s.toLowerCase());
   const rosterHit = await rosterCol().findOne({ courseId: course._id, identifier: { $in: identifiers } });
-  if (!rosterHit) throw new EnrollmentError('not-on-roster');
+  // Phase 6: a synced Canvas roster (matched on integration_id = PUID) is an
+  // alternative to the CSV roster, never a replacement. Consulted only when
+  // the CSV roster did not match, so existing behaviour is byte-identical.
+  const lmsHit = rosterHit ? null : await lmsRosterEntriesCol().findOne({ courseId: course._id, puid: user.puid });
+  if (!rosterHit && !lmsHit) throw new EnrollmentError('not-on-roster');
 
-  const ends = rosterHit.extendedUntil ?? course.termEnd;
+  const ends = rosterHit?.extendedUntil ?? course.termEnd;
   if (ends && ends < new Date()) throw new EnrollmentError('course-ended');
 
   if (user.courseRoles.some((r) => r.role === 'student' && r.courseId.toString() === course._id.toString())) {
@@ -69,6 +73,9 @@ export async function listEnrollments(
 
       const identifiers = [user.uid, user.email].filter(Boolean).map((s) => s.toLowerCase());
       const rosterHit = await rosterCol().findOne({ courseId, identifier: { $in: identifiers } });
+      // A Canvas-only student (Phase 6) has no CSV row and therefore no
+      // extendedUntil; termEnd applies. Extensions are granted by adding the
+      // student to the CSV roster — that path is the escape hatch by design.
       const ends = rosterHit?.extendedUntil ?? course.termEnd;
       const archived = course.lifecycle === 'archived' || Boolean(course.archivedAt);
       const active = !archived && (!ends || ends >= new Date());

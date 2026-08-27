@@ -1456,7 +1456,7 @@ git commit -m "feat(lms): sync the Canvas roster, matched on integration_id"
 - Consumes: `lmsRosterEntriesCol()` (Task 2).
 - Produces: no new exports. `enrollByCode` and `listEnrollments` accept a Canvas roster hit by PUID.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 In `tests/unit/enrollment.service.test.ts`, add `lmsRosterEntriesCol: jest.fn()` to the collections mock, a `const lmsFindOne = jest.fn();` reset in `beforeEach` with `jest.mocked(lmsRosterEntriesCol).mockReturnValue({ findOne: lmsFindOne } as never);` and default `lmsFindOne.mockResolvedValue(null)` so **every existing test runs unchanged**. Then:
 
@@ -1498,11 +1498,11 @@ describe('enrollByCode with a synced Canvas roster (Phase 6)', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts` — Expected: the four new tests FAIL (`not-on-roster` / `lmsRosterEntriesCol` never called).
 
-- [ ] **Step 3: Implement — one lookup, twice**
+- [x] **Step 3: Implement — one lookup, twice**
 
 `enrollment.service.ts`, add `lmsRosterEntriesCol` to the collections import. In `enrollByCode`, replace lines 36–38 with:
 
@@ -1526,18 +1526,18 @@ In `listEnrollments`, no change is required: `rosterHit?.extendedUntil ?? course
       // student to the CSV roster — that path is the escape hatch by design.
 ```
 
-- [ ] **Step 4: Run the full enrollment suite**
+- [x] **Step 4: Run the full enrollment suite**
 
 Run: `npx jest tests/unit/enrollment.service.test.ts` — Expected: every pre-existing test and the four new ones PASS.
 
-- [ ] **Step 5: PRD**
+- [x] **Step 5: PRD**
 
 `docs/PRD.md`:
 - Line 49: `LTI / Canvas API / grade passback — stretch goal, not MVP.` → `LTI / grade passback — stretch goal, not MVP. Canvas course linking, file import, and roster sync are in scope from Phase 6 (OAuth, read-only; see docs/superpowers/specs/2026-08-27-canvas-integration-design.md).`
 - Line 64, the sentence `Direct enrollment via UBC Academic API and Canvas integration remain stretch goals (Academic API would eventually remove the need for manual roster maintenance).` → `A course linked to Canvas (Phase 6) can sync its Canvas roster, matched on the student's institutional identifier; a synced student enrolls with the registration code alone. Synced entries add to the manual roster rather than replacing it. Direct enrollment via UBC Academic API remains a stretch goal.`
 - Lines 310–312 (Stretch Goals): keep `Canvas gradebook integration` and `Automatic upload to Canvas`; they are still out of scope.
 
-- [ ] **Step 6: Typecheck, lint, commit**
+- [x] **Step 6: Typecheck, lint, commit**
 
 Run: `npm run typecheck:server && npx eslint server/src/services/enrollment.service.ts && npx jest`
 Expected: full suite PASS.

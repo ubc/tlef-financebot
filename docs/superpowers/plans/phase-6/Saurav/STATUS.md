@@ -10,7 +10,7 @@ _Last updated: 2026-08-27_
 | 2 — Course link | **Complete** (live check folded into Task 6's smoke) |
 | 3 — File import | **Complete** (live check folded into Task 6's smoke) |
 | 4 — Roster sync | **Complete** (live check folded into Task 6's smoke) |
-| 5 — Enrollment gate + PRD | Not started |
+| 5 — Enrollment gate + PRD | **Complete** |
 | 6 — Instructor UI + hand smoke | Not started |
 
 ## Done before Task 1 (2026-08-27)
@@ -59,6 +59,16 @@ _Last updated: 2026-08-27_
   `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
   the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
   `userKey`.
+### Task 5 — 2026-08-27
+
+- `npx jest tests/unit/enrollment` → 13/13: the 9 pre-existing cases pass
+  unchanged (the mock defaults the Canvas lookup to null), 4 new. Typecheck
+  and lint clean.
+- The Canvas lookup runs only when the CSV roster did not match, so a CSV
+  student's `extendedUntil` path is untouched.
+- PRD §3 line 49 and the roster paragraph updated; the gradebook and
+  auto-upload stretch-goal rows stay.
+
 ### Task 4 — 2026-08-27
 
 - `npx jest tests/unit/lms-canvas tests/unit/collections.indexes.test.ts` →
