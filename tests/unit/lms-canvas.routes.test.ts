@@ -47,10 +47,12 @@ jest.mock('../../server/src/services/lms-canvas.service', () => ({
   linkCourse: jest.fn(),
   unlinkCourse: jest.fn(),
   requireLink: jest.fn(),
+  listImportableFiles: jest.fn(),
+  importFiles: jest.fn(),
 }));
 
 import { createLmsCanvasRouter } from '../../server/src/routes/lms-canvas.routes';
-import { listTeacherCourses, getLink, linkCourse, unlinkCourse } from '../../server/src/services/lms-canvas.service';
+import { listTeacherCourses, getLink, linkCourse, unlinkCourse, listImportableFiles, importFiles } from '../../server/src/services/lms-canvas.service';
 
 const courseId = new ObjectId();
 
@@ -92,6 +94,8 @@ beforeEach(() => {
   jest.mocked(getLink).mockReset();
   jest.mocked(linkCourse).mockReset();
   jest.mocked(unlinkCourse).mockReset();
+  jest.mocked(listImportableFiles).mockReset();
+  jest.mocked(importFiles).mockReset();
 });
 
 describe('GET /api/lms/canvas/status', () => {
@@ -188,5 +192,44 @@ describe('course link routes', () => {
     const res = await request(makeApp(instructor)).delete(`${base}/link`);
     expect(res.status).toBe(204);
     expect(unlinkCourse).toHaveBeenCalledWith(courseId);
+  });
+});
+
+describe('file import routes', () => {
+  it('GET files 400s not-linked', async () => {
+    jest.mocked(listImportableFiles).mockRejectedValue(new Error('not-linked'));
+    const res = await request(makeApp(instructor)).get(`${base}/files`);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'not-linked' });
+  });
+  it('GET files returns the list', async () => {
+    jest.mocked(listImportableFiles).mockResolvedValue([{ id: '10', name: 'a.pdf', size: 1, updatedAt: undefined, alreadyImported: false }]);
+    const res = await request(makeApp(instructor)).get(`${base}/files`);
+    expect(res.status).toBe(200);
+    expect(res.body[0].id).toBe('10');
+  });
+  it('POST import 400s an empty or oversized batch', async () => {
+    expect((await request(makeApp(instructor)).post(`${base}/files/import`).send({ fileIds: [] })).status).toBe(400);
+    expect((await request(makeApp(instructor)).post(`${base}/files/import`).send({ fileIds: Array(21).fill('1') })).status).toBe(400);
+    expect(importFiles).not.toHaveBeenCalled();
+  });
+  it('POST import 201s with created/skipped/failed and strips storagePath', async () => {
+    jest.mocked(importFiles).mockResolvedValue({
+      created: [{ _id: new ObjectId(), name: 'a.pdf', storagePath: '/secret' }] as never,
+      skipped: ['2'], failed: [{ id: '3', reason: 'download-failed' }],
+    });
+    const res = await request(makeApp(instructor)).post(`${base}/files/import`).send({ fileIds: ['1', '2', '3'] });
+    expect(res.status).toBe(201);
+    expect(res.body.created[0].storagePath).toBeUndefined();
+    expect(res.body.skipped).toEqual(['2']);
+    expect(res.body.failed).toEqual([{ id: '3', reason: 'download-failed' }]);
+    expect(importFiles).toHaveBeenCalledWith(expect.anything(), courseId, ['1', '2', '3'], 'PUID-INSTR-0001', expect.stringContaining('uploads'));
+  });
+  it('maps a package 403 to canvas-forbidden with no message', async () => {
+    const { canvas: c } = jest.requireMock('@ubc/ubc-genai-toolkit-lms-integration');
+    jest.mocked(listImportableFiles).mockRejectedValue(new c.CanvasApiError('secret detail', 403));
+    const res = await request(makeApp(instructor)).get(`${base}/files`);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'canvas-forbidden' });
   });
 });

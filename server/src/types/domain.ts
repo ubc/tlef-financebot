@@ -438,6 +438,16 @@ export interface Material {
   error?: string;
   sourceUrl?: string; // format === 'url'
   storagePath?: string; // uploaded file location on disk
+  /** Where an imported file came from (Phase 6). Present only for LMS imports;
+   * the partial unique index `materials_origin_unique` makes a second import
+   * of the same Canvas file a skip, not a duplicate. Survives trashing. */
+  origin?: {
+    provider: 'canvas';
+    externalCourseId: string;
+    externalFileId: string;
+    sourceUpdatedAt?: Date;
+    importedAt: Date;
+  };
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>; // many-to-many (IN-S05)
   classificationSuggestion?: { themeId: ObjectId; loId?: ObjectId; confidence: number }; // IN-S06
   /** Ranked AI mappings. High-confidence mappings may already be present in

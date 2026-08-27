@@ -247,6 +247,8 @@ connected: false, connectUrl }` when the caller has no usable Canvas token.
 - `GET /api/lms/canvas/courses/:courseId/link` → `{ linked: false }` | `{ linked: true, canvas: { courseId, name, code, linkedAt } }`
 - `PUT /api/lms/canvas/courses/:courseId/link { canvasCourseId }` → as GET; `403 { error: 'not-teacher' }` when the id is not in the teacher list
 - `DELETE /api/lms/canvas/courses/:courseId/link` → 204; also deletes the course's synced Canvas roster entries
+- `GET /api/lms/canvas/courses/:courseId/files` → `[{ id, name, size?, updatedAt?, alreadyImported }]` — Canvas Files in an upload-accepted format under 50 MB; `400 { error: 'not-linked' }` if the course has no link
+- `POST /api/lms/canvas/courses/:courseId/files/import { fileIds: string[] }` (1–20) → 201 `{ created: [Material], skipped: [id], failed: [{ id, reason: 'download-failed' | 'too-large' | 'unsupported-format' | 'not-found' }] }`. Per-file independent; already-imported ids are skipped, so a retry never double-ingests. Created materials enter the normal `processing` pipeline
 Package errors map to `401 canvas-reconnect`, `403 canvas-forbidden`, `502 canvas-unavailable`, `409 roster-coverage`. Bodies never carry Canvas messages or `raw`.
 
 ## Question bank (instructor; TA read paths in Phase 3)

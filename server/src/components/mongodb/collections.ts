@@ -109,6 +109,14 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'capabilitySettings', keys: { scope: 1, courseId: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { courseId: 1, email: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { status: 1, email: 1 } },
+  // Phase 6: one import per Canvas file per course. Name and filter are fixed
+  // once deployed — MongoDB refuses startup if a partial filter changes under
+  // the same index name.
+  {
+    collection: 'materials',
+    keys: { courseId: 1, 'origin.provider': 1, 'origin.externalCourseId': 1, 'origin.externalFileId': 1 },
+    options: { unique: true, partialFilterExpression: { 'origin.provider': { $type: 'string' } }, name: 'materials_origin_unique' },
+  },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

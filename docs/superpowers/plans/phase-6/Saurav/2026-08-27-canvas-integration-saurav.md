@@ -816,7 +816,7 @@ git commit -m "feat(lms): link a Canvas course the instructor teaches"
   - `listImportableFiles(api, courseId: ObjectId): Promise<ImportableFile[]>` where `ImportableFile = { id: string; name: string; size?: number; updatedAt?: string; alreadyImported: boolean }`
   - `importFiles(api, courseId: ObjectId, fileIds: string[], byPuid: string, uploadDir: string): Promise<ImportResult>` where `ImportResult = { created: WithId<Material>[]; skipped: string[]; failed: Array<{ id: string; reason: 'download-failed' | 'too-large' | 'unsupported-format' | 'not-found' }> }`
 
-- [ ] **Step 1: Share the upload policy**
+- [x] **Step 1: Share the upload policy**
 
 `server/src/services/materials.service.ts`: change line 135 to `export function detectUploadFormat(...)` and add, near `MATERIAL_INGEST_JOB` (line 52):
 
@@ -831,7 +831,7 @@ export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 Run: `npx jest tests/unit/materials && npm run typecheck:server` — Expected: unchanged PASS.
 
-- [ ] **Step 2: Domain + index**
+- [x] **Step 2: Domain + index**
 
 `domain.ts`, inside `interface Material` after `storagePath?`:
 
@@ -858,7 +858,7 @@ Run: `npx jest tests/unit/materials && npm run typecheck:server` — Expected: u
   },
 ```
 
-- [ ] **Step 3: Failing service tests**
+- [x] **Step 3: Failing service tests**
 
 Append to `tests/unit/lms-canvas.service.test.ts`. Extend the package mock with `getCourseFiles: jest.fn(), downloadFile: jest.fn()`; mock `materials.service`:
 
@@ -953,11 +953,11 @@ describe('importFiles', () => {
 });
 ```
 
-- [ ] **Step 4: Run to verify they fail**
+- [x] **Step 4: Run to verify they fail**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts` — Expected: FAIL, functions not exported.
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 Append to `lms-canvas.service.ts` (add imports `import fs from 'node:fs/promises'; import path from 'node:path'; import { randomUUID } from 'node:crypto'; import type { WithId } from 'mongodb'; import type { Material } from '../types/domain'; import { materialsCol } from '../components/mongodb/collections'; import { createMaterials, detectUploadFormat, MAX_UPLOAD_BYTES, type UploadedFile } from './materials.service';`):
 
@@ -1055,11 +1055,11 @@ export async function importFiles(
 
 (`downloadFile` is bounded by `maxBytes`, so "too-large" after download surfaces as `download-failed`; the pre-check on `size` is the cheap path.)
 
-- [ ] **Step 6: Run the service tests**
+- [x] **Step 6: Run the service tests**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts` — Expected: PASS.
 
-- [ ] **Step 7: Failing route tests, then routes**
+- [x] **Step 7: Failing route tests, then routes**
 
 Append to the routes test (mock `listImportableFiles`, `importFiles` in the service mock):
 
@@ -1137,12 +1137,12 @@ Routes, inside `createLmsCanvasRouter()` (add `import path from 'node:path'; imp
   });
 ```
 
-- [ ] **Step 8: Run all, typecheck, lint**
+- [x] **Step 8: Run all, typecheck, lint**
 
 Run: `npx jest tests/unit/lms-canvas tests/unit/materials && npm run typecheck:server && npx eslint server/src/routes/lms-canvas.routes.ts server/src/services/lms-canvas.service.ts server/src/services/materials.service.ts server/src/routes/materials.routes.ts`
 Expected: PASS, clean.
 
-- [ ] **Step 9: Contract**
+- [x] **Step 9: Contract**
 
 Add to the Canvas section of `docs/api-contract.md`:
 
@@ -1151,7 +1151,7 @@ Add to the Canvas section of `docs/api-contract.md`:
 - `POST /api/lms/canvas/courses/:courseId/files/import { fileIds: string[] }` (1–20) → 201 `{ created: [Material], skipped: [id], failed: [{ id, reason: 'download-failed' | 'too-large' | 'unsupported-format' | 'not-found' }] }`. Per-file independent; already-imported ids are skipped, so a retry never double-ingests. Created materials enter the normal `processing` pipeline
 ```
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add server/src/types/domain.ts server/src/components/mongodb/collections.ts server/src/services/materials.service.ts server/src/routes/materials.routes.ts server/src/services/lms-canvas.service.ts server/src/routes/lms-canvas.routes.ts tests/unit/lms-canvas.service.test.ts tests/unit/lms-canvas.routes.test.ts docs/api-contract.md

@@ -8,7 +8,7 @@ _Last updated: 2026-08-27_
 |---|---|
 | 1 — Component, config, connect/disconnect | **Complete** |
 | 2 — Course link | **Complete** (live check folded into Task 6's smoke) |
-| 3 — File import | Not started |
+| 3 — File import | **Complete** (live check folded into Task 6's smoke) |
 | 4 — Roster sync | Not started |
 | 5 — Enrollment gate + PRD | Not started |
 | 6 — Instructor UI + hand smoke | Not started |
@@ -59,6 +59,19 @@ _Last updated: 2026-08-27_
   `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
   the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
   `userKey`.
+### Task 3 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas` → 31/31. Full suite → 100 suites, 1,272.
+  Typecheck and lint clean.
+- `detectUploadFormat` exported; `MAX_FILES_PER_UPLOAD` / `MAX_UPLOAD_BYTES`
+  now live in `materials.service.ts` and the multer limits read them.
+  **Finding:** `materials.routes.test.ts` mocks the whole service module, so
+  the constants had to be added to that mock or multer ran unbounded (one
+  413 test 500ed). Anyone else mocking `materials.service` wholesale will hit
+  the same.
+- `materials_origin_unique` created by `ensureIndexes` on the live dev DB with
+  the intended partial filter — verified by reading the index back.
+
 ### Task 2 — 2026-08-27
 
 - `npx jest tests/unit/lms-canvas` → 21/21 (7 service, 14 route). Typecheck

@@ -66,12 +66,12 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `Material.origin` + the fixed-name partial unique index.
-- [ ] `detectUploadFormat` exported; `MAX_FILES_PER_UPLOAD` moved to the service.
-- [ ] `GET /courses/:courseId/files` (importable, `alreadyImported` flagged) and
+- [x] `Material.origin` + the fixed-name partial unique index.
+- [x] `detectUploadFormat` exported; `MAX_FILES_PER_UPLOAD` moved to the service.
+- [x] `GET /courses/:courseId/files` (importable, `alreadyImported` flagged) and
   `POST /courses/:courseId/files/import` — per-file independent, duplicates
   skipped, bytes written under `UPLOAD_DIR` and handed to `createMaterials`.
-- [ ] Route + service tests; contract updated.
+- [x] Route + service tests; contract updated.
 
 ### Task 4: Roster sync
 
