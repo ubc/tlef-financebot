@@ -397,7 +397,7 @@ git commit -m "feat(lms): Canvas component, config, connect/disconnect, /status"
   - `requireLink(courseId: ObjectId): Promise<CourseLink>` — throws `Error('not-linked')`; Tasks 3–4 call it.
 - Produces (routes): `GET /lms/canvas/courses`, `GET|PUT|DELETE /lms/canvas/courses/:courseId/link`.
 
-- [ ] **Step 1: Add the domain field**
+- [x] **Step 1: Add the domain field**
 
 `server/src/types/domain.ts`, inside `interface Course` after `lastBacklogNotifiedAt?`:
 
@@ -414,7 +414,7 @@ git commit -m "feat(lms): Canvas component, config, connect/disconnect, /status"
   };
 ```
 
-- [ ] **Step 2: Write the failing service tests**
+- [x] **Step 2: Write the failing service tests**
 
 `tests/unit/lms-canvas.service.test.ts`:
 
@@ -499,7 +499,7 @@ describe('getLink / requireLink', () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts`
 Expected: FAIL — module not found for `lms-canvas.service`, and `lmsRosterEntriesCol` is not exported.
@@ -529,7 +529,7 @@ export interface LmsRosterEntry {
 }
 ```
 
-- [ ] **Step 4: Write the service**
+- [x] **Step 4: Write the service**
 
 `server/src/services/lms-canvas.service.ts`:
 
@@ -601,12 +601,12 @@ export async function unlinkCourse(courseId: ObjectId): Promise<void> {
 }
 ```
 
-- [ ] **Step 5: Run the service tests**
+- [x] **Step 5: Run the service tests**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts`
 Expected: 7 tests PASS.
 
-- [ ] **Step 6: Add the failing route tests**
+- [x] **Step 6: Add the failing route tests**
 
 Append to `tests/unit/lms-canvas.routes.test.ts`. Extend the mocks at the top: add `ensureCourseInstructor` is real (it reads `req.user.courseRoles`), and mock the service:
 
@@ -698,12 +698,12 @@ describe('course link routes', () => {
 });
 ```
 
-- [ ] **Step 7: Run to verify they fail**
+- [x] **Step 7: Run to verify they fail**
 
 Run: `npx jest tests/unit/lms-canvas.routes.test.ts`
 Expected: the new tests FAIL with 404s.
 
-- [ ] **Step 8: Add the routes**
+- [x] **Step 8: Add the routes**
 
 In `server/src/routes/lms-canvas.routes.ts`, add imports:
 
@@ -763,12 +763,12 @@ and inside `createLmsCanvasRouter()`, after `/status`:
   });
 ```
 
-- [ ] **Step 9: Run everything**
+- [x] **Step 9: Run everything**
 
 Run: `npx jest tests/unit/lms-canvas && npm run typecheck:server && npx eslint server/src/routes/lms-canvas.routes.ts server/src/services/lms-canvas.service.ts`
 Expected: all PASS, clean.
 
-- [ ] **Step 10: Contract**
+- [x] **Step 10: Contract**
 
 `docs/api-contract.md`, new section after "Materials (instructor) — implementation note":
 
@@ -788,7 +788,7 @@ connected: false, connectUrl }` when the caller has no usable Canvas token.
 Package errors map to `401 canvas-reconnect`, `403 canvas-forbidden`, `502 canvas-unavailable`, `409 roster-coverage`. Bodies never carry Canvas messages or `raw`.
 ```
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add server/src/types/domain.ts server/src/components/mongodb/collections.ts server/src/services/lms-canvas.service.ts server/src/routes/lms-canvas.routes.ts tests/unit/lms-canvas.service.test.ts tests/unit/lms-canvas.routes.test.ts docs/api-contract.md

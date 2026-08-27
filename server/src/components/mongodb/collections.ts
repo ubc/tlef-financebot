@@ -4,7 +4,7 @@ import type {
   User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   PreviewAttemptRecord, PreviewStudentSession,
   Material, MaterialChunk, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
-  Notification, AuditLog, RosterEntry, SessionSummaryRecord,
+  Notification, AuditLog, RosterEntry, SessionSummaryRecord, LmsRosterEntry,
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
 } from '../../types/domain';
@@ -35,6 +35,7 @@ export const flagsCol = (): Collection<Flag> => getDb().collection<Flag>('flags'
 export const notificationsCol = (): Collection<Notification> => getDb().collection<Notification>('notifications');
 export const auditCol = (): Collection<AuditLog> => getDb().collection<AuditLog>('auditLogs');
 export const rosterCol = (): Collection<RosterEntry> => getDb().collection<RosterEntry>('rosterEntries');
+export const lmsRosterEntriesCol = (): Collection<LmsRosterEntry> => getDb().collection<LmsRosterEntry>('lmsRosterEntries'); // Phase 6
 export const sessionSummariesCol = (): Collection<SessionSummaryRecord> => getDb().collection<SessionSummaryRecord>('sessionSummaries');
 export const contentRunsCol = (): Collection<ContentRun> => getDb().collection<ContentRun>('contentRuns');
 export const generationBlueprintsCol = (): Collection<GenerationBlueprint> =>

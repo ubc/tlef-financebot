@@ -7,7 +7,7 @@ _Last updated: 2026-08-27_
 | Task | State |
 |---|---|
 | 1 — Component, config, connect/disconnect | **Complete** |
-| 2 — Course link | Not started |
+| 2 — Course link | **Complete** (live check folded into Task 6's smoke) |
 | 3 — File import | Not started |
 | 4 — Roster sync | Not started |
 | 5 — Enrollment gate + PRD | Not started |
@@ -59,6 +59,16 @@ _Last updated: 2026-08-27_
   `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
   the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
   `userKey`.
+### Task 2 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas` → 21/21 (7 service, 14 route). Typecheck
+  and lint clean. `Course.canvas`, `LmsRosterEntry`, and `lmsRosterEntriesCol`
+  landed here so Task 4 only adds indexes. Contract section added.
+- Not smoke-tested live yet: `PUT link` needs a connected Canvas identity,
+  which Task 1's disconnect test removed. Covered by Task 6's end-to-end run.
+
+### Task 1 (continued)
+
 - **Disconnect, by hand:** `POST /api/lms/canvas/auth/logout` → 200;
   `/status` → `connected:false`; `lmsCanvasTokens` → 0 documents. Note for
   the UI task: logging out of FinanceBot does *not* clear the Canvas token

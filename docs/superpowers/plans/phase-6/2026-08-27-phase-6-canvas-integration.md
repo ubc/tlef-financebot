@@ -56,11 +56,11 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `Course.canvas` sub-document; `GET /courses`, `GET/PUT/DELETE
+- [x] `Course.canvas` sub-document; `GET /courses`, `GET/PUT/DELETE
   /courses/:courseId/link`.
-- [ ] `PUT link` refuses any Canvas course not in the teacher list; `DELETE`
+- [x] `PUT link` refuses any Canvas course not in the teacher list; `DELETE`
   also clears that course's `lmsRosterEntries`.
-- [ ] Route + service tests; `docs/api-contract.md` section added.
+- [x] Route + service tests; `docs/api-contract.md` section added.
 
 ### Task 3: File import into materials
 

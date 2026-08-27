@@ -235,6 +235,20 @@ suggestion creates the selected hierarchy and persists those assignments
 automatically; existing assignments are preserved and cross-course/non-ready
 material ids are rejected before hierarchy creation begins.
 
+## Canvas LMS (instructor; Phase 6)
+Mounted only when `CANVAS_DOMAIN`, `CANVAS_CLIENT_ID`, `CANVAS_CLIENT_SECRET`,
+`CANVAS_REDIRECT_URI` are all set; otherwise every path below 404s.
+Course-scoped routes require the course instructor (admins pass) **and** a
+connected Canvas identity — the package answers `401 { success: false,
+connected: false, connectUrl }` when the caller has no usable Canvas token.
+- `GET|POST /api/lms/canvas/auth/{login,callback,logout}` — package OAuth router. `returnTo` must be a local absolute path.
+- `GET /api/lms/canvas/status` → `{ connected }` (200 either way)
+- `GET /api/lms/canvas/courses` → `[{ id, name, code }]` — Canvas courses the connected identity **teaches**
+- `GET /api/lms/canvas/courses/:courseId/link` → `{ linked: false }` | `{ linked: true, canvas: { courseId, name, code, linkedAt } }`
+- `PUT /api/lms/canvas/courses/:courseId/link { canvasCourseId }` → as GET; `403 { error: 'not-teacher' }` when the id is not in the teacher list
+- `DELETE /api/lms/canvas/courses/:courseId/link` → 204; also deletes the course's synced Canvas roster entries
+Package errors map to `401 canvas-reconnect`, `403 canvas-forbidden`, `502 canvas-unavailable`, `409 roster-coverage`. Bodies never carry Canvas messages or `raw`.
+
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
   `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion }] }` (IN-Q08)

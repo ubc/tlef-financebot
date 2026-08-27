@@ -202,6 +202,16 @@ export interface Course {
   redirectFailureThreshold: number; // ST-P07, default 3
   reviewBacklogThreshold: number; // §9.1, default 10 -- pending-review count that triggers a 'review-backlog' notification
   lastBacklogNotifiedAt?: Date; // §9.1 -- written by notifications.service's checkReviewBacklog, at most once per 24h
+  /** Linked Canvas course (Phase 6). Provider-scoped id; every Canvas read for
+   * this course derives its external course id from here, never from a
+   * request. Omitted from ordinary course responses. */
+  canvas?: {
+    courseId: string;
+    name: string;
+    code: string;
+    linkedAt: Date;
+    linkedBy: string; // puid
+  };
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -751,6 +761,21 @@ export interface RosterEntry {
   identifier: string; // CWL username or student email, lower-cased
   extendedUntil?: Date; // per-student access extension (IN-S02)
   addedAt: Date;
+}
+
+/** One synced Canvas identity per linked course (Phase 6). Only users whose
+ * Canvas `integration_id` (the PUID at UBC) was present are stored; the rest
+ * are counted in the sync report's coverage and never guessed. Replaced
+ * wholesale on every sync. */
+export interface LmsRosterEntry {
+  courseId: ObjectId;
+  provider: 'canvas';
+  externalCourseId: string;
+  externalUserId: string;
+  puid: string;
+  name: string; // display label only — never evidence of identity
+  matchedBy: 'integrationId';
+  syncedAt: Date;
 }
 
 /** Stores the most recent end-of-session summary a student deferred to their
