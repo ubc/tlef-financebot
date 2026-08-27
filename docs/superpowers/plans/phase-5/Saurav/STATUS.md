@@ -4,35 +4,28 @@ _Last updated: 2026-08-14_
 
 ## Next session: read this first
 
-**Task 7.1 is shipped and in review — [PR #73](https://github.com/ubc/tlef-financebot/pull/73)**,
-branch `saurav/practice-rendering-and-retry`, 8 commits, pushed, **not merged**.
-Do not continue committing to that branch; it is under review.
+**Task 7.1 is merged** — [PR #73](https://github.com/ubc/tlef-financebot/pull/73)
+landed on `main` as `21519df` on 2026-08-14.
 
-**Task 7.2 (shuffle answer options) is the next slice and is ready to start.**
-Its plan section is complete — finding, the measurement attempt and why it was
-inconclusive, why creation time rather than approval time, design, files, steps,
-verification. Nothing is blocked on a decision.
+**Task 7.2 is shipped and in review — [PR #74](https://github.com/ubc/tlef-financebot/pull/74)**,
+branch `saurav/shuffle-answer-options`, cut from `main` at `21519df`, pushed,
+**not merged**. Do not continue committing to that branch; it is under review.
+See the 2026-08-14 entry below for what shipped and the two follow-ups it found.
 
-Starting it:
+**Task 7.3 is the next slice, and is still blocked on telling Stephen** — it
+reverses `PRD.md:86` and Stephen's `selectRetryQuestion`. Nothing in 7.1 or 7.2
+touched it. Have that conversation before writing any code.
 
-- **Branch from `main`, not from the 7.1 branch.** The two do not overlap: 7.1
-  is `generation.service.ts` + client rendering; 7.2 is `questions.service.ts`
-  (`createQuestion` / `editQuestion`). If #73 has merged by then, just branch
-  from an updated `main`.
-- Rebase or merge `main` first if #73 has landed, so `npx jest` numbers are
-  comparable to the ones recorded here.
+Also still open, unchanged: the prompt-only pass for difficulty calibration
+(every recent question is labelled `hard` and is a one-step substitution) and the
+stray `$$` seen mid-stem.
 
-Two interactions with 7.1's work that the Task 7.2 section predates:
+### Environment note — node is not on PATH
 
-1. **`optionShapeValid` now requires an MCQ to carry a `common-misconception`**
-   and rejects an `errorModel` that only restates a role. Shuffling changes
-   option ORDER, never roles, so neither check is affected — but expect them in
-   the file when you read it.
-2. **The e2e specs match options by TEXT, not by key** —
-   `optionPattern(correctOptionText(...))` in `numeric-fixture.ts`. That is why
-   shuffling should not break `practice-loop`, `core-loop-demo` or
-   `critical-paths`. Confirm it rather than assume it; if a spec does key-match
-   anywhere, that is the one to fix first.
+`npm`/`node`/`npx` resolve nowhere in a fresh shell. The working binary is the
+portable install at
+`C:\Users\Saurav\AppData\Local\node-portable\node-v24.19.0-win-x64`; prepend it
+to `$env:Path` before running lint/typecheck/jest. Cost ~10 minutes to rediscover.
 
 Deliberately NOT part of 7.2, recorded so it is not lost:
 
@@ -46,6 +39,193 @@ Deliberately NOT part of 7.2, recorded so it is not lost:
   is a one-step substitution — and the stray `$$` seen mid-stem.
 - Task 7.3 still needs the Stephen conversation before any code is written.
 
+## 2026-08-15 — Tasks 2 + 4: per-step params and the capability-driven console
+
+Built on top of PR #75's branch. **Not yet a PR.**
+
+**Schema.** `PlatformSettings.models.<step>` is now `{ model, temperature?,
+reasoningEffort? }` for five steps — the fourth existing one plus a new
+**`utility`** step that finally puts classification, hierarchy suggestion and
+import conversion under admin control (they read `LLM_DEFAULT_MODEL` directly
+before). `customModels` carries the escape hatch: a model id plus one of the
+implemented profiles.
+
+**Back-compat is read-time, not a migration**, so a rollback stays safe — and it
+was proven against the real dev DB, which held a legacy document: it came back
+normalized with `utility` invented from `LLM_DEFAULT_MODEL`.
+
+**Validation is server-side, not just UI.** The console will not offer an
+illegal combination, but the endpoint takes JSON, and an incoherent save is a
+400 inside a background job with nothing pointing at the settings change.
+Verified live: `{reviewer: {model: luna, temperature: 0.7}}` → **400
+`step-rejects-temperature:reviewer`**; the same body plus
+`reasoningEffort: 'none'` → **200**.
+
+**Console.** One `<select>` per step from the server catalogue, plus a single
+conditional control that swaps as capabilities change. Verified in the browser:
+reviewer on nano shows effort + temperature; switching to luna replaces
+temperature with an explanation; setting effort `none` brings it back; setting
+`high` withdraws it again. Saving persisted
+`reviewer: {model: 'gpt-5.6-luna', reasoningEffort: 'high'}`.
+
+### 2026-08-15 follow-up — console cleanup, and why there is no default temperature
+
+Saurav: the panel read as a wall of text and the five steps ran together. Each
+step is now its own bordered card in `.admin-step-list`, and every sentence of
+explanation moved behind the existing `helpTip` info icon (the same control
+instructor Settings uses), so the prose is there when someone is deciding and
+absent every other visit.
+
+**Saurav asked whether the console should default a temperature for
+`gpt-5.4-nano`. It must not, and the reason is a real trap.** A step config
+spreads OVER the step's own default —
+`{ temperature: GENERATOR_TEMPERATURE, ...step }` in `generateValidQuestion` —
+so a saved `temperature: 0` on the generator **overrides the 0.7 that exists to
+make a batch of questions differ**, and all three come back near-identical. The
+old UI pre-filled the box with the profile default (`0`), which meant one nudge
+would have persisted exactly that.
+
+Fixed: the temperature input is now **empty with a placeholder showing the
+effective step default** (`0.7 — step default` on the generator, `0` elsewhere),
+and clearing it deletes the key, which is the only way to undo an override once
+saved. `GENERATOR_TEMPERATURE` moved into `step-models.STEP_TEMPERATURE_DEFAULTS`
+so the console can *show* it rather than duplicate it, and the catalogue carries
+it to the client. Round-trip verified in the browser: `1.2` persists, clearing
+returns the stored config to `{ model }` alone.
+
+Also fixed while there: cards in a grid were staggered because `.card + .card`
+adds a stacking margin the grid then honours — same fix and same reason as the
+existing `.stack > .card + .card` rule.
+
+**Verification:** 96 suites / 1123 tests still green; a11y 4 passed / 2 failed
+(the same pre-existing student surfaces); `responsive-workflows.spec.ts` 2
+passed against the reworked DOM.
+
+### Deliberate calls
+
+- **The run record still stores model IDS only.** Widening it to carry per-step
+  parameters needs its own read-normalization for every existing run, so a
+  replay reuses the recorded models with their defaults. Recorded here rather
+  than left as a silent gap.
+- **`masteryEvaluator` and `layer2Evaluator` are labelled "not yet wired"** in
+  the UI, per Saurav's call — both are saved and neither is read by anything.
+- `step-models.ts` exists because this is the **third** time a pure helper in a
+  wholesale-mocked barrel came back `undefined` under tests (after
+  `option-order.service` in 7.2 and `model-capabilities`). Pure helpers do not
+  belong in a heavily-mocked module.
+
+### Verification
+
+`npm run lint`, `npm run typecheck` clean; `npx jest` **96 suites / 1123 tests**
+(1109 before). 14 new tests covering legacy normalization, the invented
+`utility` step, every capability rejection, and custom-model profile borrowing.
+Browser-verified end to end against the real DB.
+
+**a11y: 4 passed, 2 failed** — the admin surface passes with the reworked DOM.
+The two failures (student practice, student exam) were **confirmed pre-existing
+by stashing this branch and re-running: identical two failures.**
+
+**Full e2e: 38 passed, 3 failed, 1 skipped — the recorded baseline exactly**,
+with the same three pre-existing failures (`app.spec.ts` and
+`walking-skeleton.spec.ts`, the `ADMIN_CWL_ALLOWLIST` landing issue;
+`numeric-parameterization.spec.ts`, the stale expectation that is Stephen's).
+`responsive-workflows.spec.ts` visits this page and passed unchanged, so the
+reworked DOM broke no selectors.
+
+### The e2e suite costs no model tokens, and that is by construction
+
+Worth recording, because it is not obvious and someone will ask before a run:
+the only spec that generates for real is `instructor-pipeline.spec.ts:310`, and
+it is `test.skip(!process.env.LLM_AVAILABLE)` — that is the "1 skipped".
+`custom-generation.spec.ts` intercepts `/generate` and `/regenerate` with
+`page.route`; `course-setup-guide-material-first.spec.ts` intercepts material
+upload, the SSE stream and `/suggest-hierarchy`. `numeric-parameterization`
+builds slots by hand and exercises server-side verification only, and
+`import.spec` has no short-answer item so `convertOther` never fires.
+
+**Do not set `LLM_AVAILABLE` casually.** It unskips a real run, and because the
+form never sends `count` the server fills in `DEFAULT_GENERATION_COUNT = 3` —
+3 questions x (generator + validator + reviewer).
+
+## 2026-08-14 — Model capability profiles — [PR #75](https://github.com/ubc/tlef-financebot/pull/75)
+
+Branch `saurav/model-capability-profiles`, cut from `main` at `21519df`, pushed
+as `a9691d6`, **not merged**. Tasks 1 + 3 of the plan; Tasks 2 + 4 (the admin
+console) are deliberately a separate PR so this could land without waiting.
+
+
+**Why it exists.** Switching to `gpt-5.6-luna` breaks EVERY LLM call. Measured
+against the live API: `temperature` at any value → 400 while reasoning is
+active; `max_tokens` → 400 `Use 'max_completion_tokens' instead`.
+`completeJson` always sent `temperature`, so the failure is total.
+
+**The rule, measured on both models and worth not re-deriving:** temperature is
+legal only while the *effective* reasoning effort is `none`. That is a property
+of the REQUEST, not the model. `gpt-5.4-nano` defaults to effort `none` (the only
+reason temperature has ever worked here); `gpt-5.6-luna` defaults to `medium`.
+**luna accepts `temperature: 0.7` if you also pass `reasoning_effort: 'none'`.**
+
+`reasoning_effort` accepts exactly `none | low | medium | high | xhigh`. **Both
+OpenAI doc pages are wrong** — the model page lists `max`, the reasoning guide
+lists `minimal`, the API rejects both. Probe, do not read.
+
+### Two pre-existing bugs this uncovered
+
+- **`rag.service.ts:118` has been 400ing in production.** It passed
+  `maxTokens: 500`, which reaches OpenAI as `max_tokens`, which `gpt-5.4-nano`
+  — the configured model — rejects. Unnoticed because RAG is demo surface.
+- **`gpt-5.4-nano` is not a legacy model.** It has the same reasoning channel as
+  luna. Nobody had noticed because nothing ever sent it an effort.
+
+### What shipped
+
+`components/genai/llm/model-capabilities.ts` — three profiles, two known models,
+`modelRequestOptions()` that every LLM call site shapes through. `completeJson`
+requests effort `none` by default so its determinism contract survives a model
+swap; `rag.service` does the same, deliberately.
+
+### The review found four things the live tests had not
+
+Recorded because three of them would have shipped silently:
+
+1. `completeJson` would have lost `temperature: 0` for classification, the
+   validator, the reviewer and import — nondeterministic, nothing logged.
+2. **`max_completion_tokens` is not a renamed `max_tokens`** — it budgets
+   reasoning AND output together. Measured: luna burned all 500 tokens reasoning
+   and returned `''` with `finish_reason: 'length'`. `rag.service` returns
+   `answer` unchecked, so the "fix" would have turned a loud 400 into a blank
+   answer beside real citations.
+3. The unknown-model fallback to `classic` was unsafe: a dated snapshot id like
+   `gpt-5.4-nano-2026-08-01` would have got `max_tokens` and 400'd. Ids matching
+   `/^(gpt-|o\d)/i` now get the conservative reasoning shape.
+4. The module was in `config/`; integration knowledge belongs in
+   `components/genai/llm/`. The mocking hazard that seemed to force `config/`
+   was overstated — `jest.mock` on a barrel does not shadow a sibling module.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck` clean; `npx jest` **95 suites / 1109
+  tests** (1103 before).
+- **Mutation-verified:** restoring the unconditional `temperature` fails three
+  tests; restored.
+- **Live-verified end to end** on both models — a mocked unit test cannot show
+  that `temperature: undefined` is dropped from the JSON body rather than sent.
+  Every profile, plus the RAG shape, issues real requests that succeed.
+- ⚠️ **Not yet run through a real generation.** Only direct API calls.
+
+### Still open
+
+- `GENERATOR_TEMPERATURE = 0.7` and the "validator and reviewer stay
+  deterministic" comment at `generation.service.ts:70-74` are now conditional on
+  the effort in play. Comment not yet updated — it is accurate while
+  `completeJson` defaults to `none`, but a future per-step effort setting
+  (Task 2/4) will make it false.
+- Nothing surfaces a model's resolved profile. `/api/health` reports the raw id,
+  so a misconfigured model is undiagnosable until the first call.
+- Tasks 2 + 4 (PlatformSettings schema, `utility` step, admin console UI) are
+  unstarted. Plan:
+  [`2026-08-14-model-capability-profiles.md`](2026-08-14-model-capability-profiles.md).
+
 ## Where this stands
 
 Phase 5's six core tasks are all `Owner: Stephen`. Saurav's Phase 5 work starts
@@ -54,8 +234,8 @@ with **Task 7**, claimed in writing in the shared plan on 2026-08-13, plus the
 
 | Item | State |
 |---|---|
-| Task 7.1 — LaTeX formula rendering | **Live-tested 2026-08-13.** The prompt works; the test found 3 further bugs, 2 now fixed. See below |
-| Task 7.2 — shuffle answer options | Planned, not started. Distribution measured 2026-08-13: **inconclusive, dev DB is empty** — build anyway |
+| Task 7.1 — LaTeX formula rendering | **Merged 2026-08-14** as `21519df` (PR #73) |
+| Task 7.2 — shuffle answer options | **In review 2026-08-14** — [PR #74](https://github.com/ubc/tlef-financebot/pull/74). Live-confirmed, mutation-verified |
 | Task 7.3 — Strategy-A same-question retry | Planned, not started. **Blocked on telling Stephen** |
 | Phase-4 Task 3 — Delete for never-used questions | Design settled, nothing built. Deferred here by the Aug 24 freeze |
 
@@ -509,6 +689,239 @@ nobody keeps waiting for an LLM that would not help.
 - Full e2e: **38 passed, 3 failed, 1 skipped** — the same three pre-existing
   failures, previously confirmed by stashing.
 - Visually confirmed in the browser against the real generated question.
+
+## 2026-08-14 — Task 7.2 built on `saurav/shuffle-answer-options`
+
+**What changed.** `shuffleOptions` (seeded Fisher-Yates over `seededRandom`,
+then keys relabelled by new position) now runs inside `createQuestion` for MCQs
+only. True/False keeps `T` then `F`. `editQuestion` does not shuffle.
+
+The re-approval hazard is written out at the call site rather than left to be
+rediscovered: `approved → paused → approved` would otherwise reorder a version
+that already has AttemptRecords, silently mispairing `answerDistributions`
+counts with roles while the chart still renders.
+
+### Two deliberate deviations from the written plan
+
+1. **`editQuestion` does not shuffle**, though the plan named it as a second
+   choke point. `createQuestion` has exactly four callers — generation ×2,
+   import ×2 — and there is no manual-create route, so it is the only
+   origination path and covers every question already. An edit is a human
+   stating an order; re-randomizing it each save would undo a deliberate
+   reorder. Pinned by a test.
+2. **The helper lives in `questions.service.ts`**, not `params.service.ts`. It
+   imports `seededRandom`, so no PRNG is duplicated. `exam-attempts.service.ts`
+   keeps its own private Fisher-Yates; unifying them would mean editing a file
+   this task otherwise has no reason to touch.
+
+### The hazard the plan missed, and it was benign
+
+Verification runs **before** `createQuestion`, so a shuffle could in principle
+invalidate the proof it just earned. It cannot: `NumericVerification` is
+`{evaluatorVersion, sampleSeeds, verifiedAt}` (`domain.ts:218-222`) — no option
+keys, no positions — and the distinctness it proves is over a multiset the
+shuffle preserves. Checked rather than assumed, because the failure would have
+been silent.
+
+### The reviewer/validator letter mismatch — found live, then fixed
+
+Flagged as a theoretical risk while building, then **confirmed against real
+generated content** on run `6a7e9b9f0dbc47057d634fdc` (2026-08-14). Question
+`…4fe1`, stored post-shuffle:
+
+| Key stored | Actual role | `roleAssessment` claims |
+|---|---|---|
+| A | partially-correct | "Option A (**correct**)" |
+| B | clearly-wrong | "Option B (**common-misconception**)" |
+| C | **correct** | "Option C (**clearly-wrong**)" |
+| D | common-misconception | "Option D (**partially-correct**)" |
+
+Every letter wrong, because the prose describes the pre-shuffle order. The
+`reasoning` field was misaligned identically — it asked for "distractor D" to be
+recategorized when the option it described had become A. An instructor acting on
+that review edits the wrong option.
+
+**Both agents matter, not just the reviewer.** `roleAssessment` (validator) is
+nothing but letter references; `reasoning` (reviewer) cites them freely.
+
+**Fix: shuffle at the generator boundary instead.** `shuffleOptions` moved out
+of `createQuestion`'s exclusive control and is now called in
+`generateValidQuestion` — the one point every generator output passes through,
+the same justification `sanitizeGenerated` already uses — which is upstream of
+the validator and reviewer. `createQuestion` keeps its own shuffle for the
+import path and gained `optionsAlreadyShuffled` so the generation path is not
+randomized twice. **The flag defaults to false**, so a future caller that
+forgets it still gets a shuffle: shuffling twice is harmless, never shuffling is
+the bug being prevented.
+
+Two options considered and rejected: reviewing *after* `createQuestion` (correct,
+but reorders the durable run's user-visible validating → reviewing → persisting
+stages), and shuffling per-serve (reopens the AttemptRecord-pinning cost this
+plan already priced and declined, and would touch grading, exam, preview and
+analytics).
+
+`shuffleOptions` now lives in its own `option-order.service.ts` rather than in
+`questions.service.ts`: several suites mock `questions.service` wholesale, so a
+pure helper there is `undefined` under those mocks. This is the plan's own "or a
+new small module" option.
+
+### A prediction that was wrong, recorded because it cost time
+
+A search pass predicted three unit tests would break on positional assertions
+(`practice.routes.test.ts:149,208`, `generation.service.test.ts:477`). **All
+three pass unchanged** — every one of them mocks the DB or the service *below*
+`createQuestion`, so the shuffle never runs in them. Running the suite settled in
+35 seconds what static reading got backwards.
+
+### The distribution measurement, obtained for free
+
+Reading `provenance` over the dev DB after the live runs answered the question
+the plan recorded as unmeasurable without a content week or staging:
+
+| Run | Correct-answer keys |
+|---|---|
+| 02:58, pre-shuffle | A, A |
+| 03:17, pre-shuffle | A, A, A |
+| 04:38, post-shuffle | A, D, C |
+
+**Five of five live `gpt-5.4-nano` questions had the correct answer at `A`
+before the shuffle.** Small n, but real model output rather than hand-written
+fixtures — the first direct evidence that the assumed bias exists.
+
+### Verification
+
+- `npm run lint`, `npm run typecheck` clean; `npx jest` **94 suites / 1096
+  tests** (1084 before, 12 new).
+- New coverage: set-preservation under shuffle, key relabelling A–D by position,
+  correct-role leaving `A` for some seed, determinism per seed, non-A–D key sets
+  keeping their own alphabet, T/F untouched, and `editQuestion` storing an
+  options patch in the order given.
+- Statistical: 100 `createQuestion` calls must produce all four keys as the
+  correct one, with fewer than 50 at `A`. Bounds are loose on purpose (expected
+  25, sd ≈ 4.3; missing a key has probability ≈ 3e-13).
+- **Mutation-verified (creation-time shuffle):** disabling it fails that test
+  with `Set {"A"}` against `Set {"A","B","C","D"}` — all 100 correct answers at
+  `A`, precisely the bias the task exists to remove. Restored.
+- **Mutation-verified (agent-order alignment):** removing the shuffle from
+  `generateValidQuestion` fails the new "shuffles upstream of persistence" test.
+  Restored. Two further guards pin that the validator and reviewer prompts show
+  the exact order that reaches `createQuestion`, and that
+  `optionsAlreadyShuffled` is set on that path.
+- One pre-existing test needed a real fix rather than a rewrite of intent:
+  `generation.service.test.ts:477` asserted on `options[0]` after the pipeline
+  ran, which is now a shuffled position. It locates the option by `role` instead.
+  This was the one prediction from the earlier search pass that turned out
+  correct — it only became true once the shuffle moved upstream into a code path
+  that test actually executes.
+- `docs/api-contract.md` now states that a key does not identify the same option
+  across two versions of a question.
+
+### e2e caught a real break that the unit layer could not
+
+**Full e2e: 38 passed, 3 failed, 1 skipped** — back to the recorded baseline,
+with the same three pre-existing failures (`app.spec.ts` and
+`walking-skeleton.spec.ts`, the `ADMIN_CWL_ALLOWLIST` landing issue;
+`numeric-parameterization.spec.ts`, the stale expectation that is Stephen's).
+
+The first run was **4 failed**. `instructor-pipeline.spec.ts:278` matched its
+option button with ``new RegExp(`^A\\s+${CORRECT_OPTION}`)`` — key-anchored AND
+text-matched — and it seeds the correct answer at `A`, so the shuffle moved it
+and the click timed out.
+
+**This directly contradicts the hand-off note written on 2026-08-14** (in the
+since-rewritten "next session" block), which said the e2e specs match by TEXT
+not by key and that shuffling therefore should not break them. That is true of
+`practice-loop`, `core-loop-demo` and `critical-paths`,
+which go through `optionPattern` (`numeric-fixture.ts:199`) — an UNANCHORED
+regex, so key-agnostic. It was not true of `instructor-pipeline`. The earlier
+note's own advice — *"confirm it rather than assume it; if a spec does key-match
+anywhere, that is the one to fix first"* — was the correct instinct, and 1093
+green unit tests did not substitute for following it.
+
+Fixed by matching `^[A-D]\s+` instead of `^A\s+`: the key prefix is still
+asserted to render, but which letter it is no longer is. A sweep of `tests/e2e`
+and `tests/a11y` confirms this was the only key-anchored option matcher.
+
+**The passing spec is also the first end-to-end proof of the feature.** It seeds
+the correct answer at `A`, and a real browser then clicks that option by text at
+whatever key it landed on and gets `Correct!` — so grading demonstrably still
+resolves post-shuffle, which no unit test showed.
+
+**Still not run against the live model.** Generation-path shuffling has only
+been exercised with seeded fixtures.
+
+## Follow-up — the option editor hides options that share a role
+
+Found 2026-08-14 while tracing a live report that the instructor editor showed
+options labelled **A, B, D, C**. **Unrelated to 7.2, nothing touched,
+pre-existing.**
+
+The letter order itself is correct behaviour. `question-detail.ts:361` groups
+editor rows by ROLE in the canonical I6 order (Correct Answer → Good Confounder
+→ Related but Incorrect → Easy to Eliminate) and labels each row with the
+option's real key. Before shuffling, the generator emitted options in role
+order, so the letters lined up A–D by coincidence; now they honestly report
+which letter the student sees. The sample panel still renders true stored order.
+Deliberately left alone — sorting the editor by key would override I6.
+
+**The bug is on the same three lines:**
+
+```ts
+const displayRoles = ROLE_ORDER.filter((role) => draftOptions.some((o) => o.role === role));
+...displayRoles.map((role) => { const draft = draftOptions.find((o) => o.role === role)!; ...
+```
+
+That is one row per DISTINCT role, so an MCQ with a repeated role loses options
+from the editor entirely. Repeated roles are legal — `assertOptionInvariants`
+only requires exactly one `correct` — and they are common in practice:
+**5 of 25 MCQ versions in the dev DB**, one of which renders **2 of its 4
+options**. The hidden options cannot be edited and keep their generated text
+through a save. Nothing is corrupted; it is a review blind spot, which matters
+because approving a question is supposed to mean someone read all of it.
+
+Two further consequences of the same shape, worth fixing together:
+
+- `applySavedVersion` (`:425-426`) re-matches saved options to editor rows by
+  `role`, so with duplicates it always resolves to the first match.
+- The per-row aria-labels are built from the role name alone
+  (`${ROLE_LABEL[role]} option text`), so rendering duplicates would produce
+  duplicate labels — the fix should key rows by option index or key, not role.
+
+## Follow-up — the numeric gate's `conceptual` override cannot actually override
+
+Noticed 2026-08-14 while answering "is the verification proof only for numerical
+questions?" during Task 7.2. **Unrelated to 7.2, nothing touched, pre-existing.**
+
+The answer to the question is yes — `isServable` returns `true` immediately for
+a non-numeric version, so conceptual questions never need a proof. But *numeric*
+is not the generator's declaration alone. `isNumericQuestion`
+(`numeric-gate.service.ts`) is:
+
+```ts
+if (version.numericKind === 'numeric') return true;
+return detectNumeric(version.stem, version.options.map((o) => o.text));
+```
+
+so when `numericKind === 'conceptual'` the heuristic detector still decides.
+
+**The two comments in that file contradict each other.** The `NUMERIC_PATTERNS`
+comment justifies a deliberately loose detector on the grounds that *"a false
+positive costs an instructor one override"* — but there is no override that
+beats the detector. `isNumericQuestion`'s own docstring states the real rule
+(*"an instructor override to 'conceptual' only wins when the detector also finds
+nothing"*), and the code matches that docstring. So the escape hatch the pattern
+comment promises does not exist.
+
+Why it matters in practice: `NUMERIC_PATTERNS` includes `\b\d{2,}\b` and
+`\d\s*%`, so a genuinely conceptual question whose stem says "In 2024…" or "a
+15% hurdle rate" is classified numeric, then needs a proof it will never earn,
+and **silently never serves**. There is no way for an instructor to release it.
+
+Two candidate resolutions, not decided: make an explicit `conceptual`
+declaration win outright (restoring the override the comment promises), or keep
+the detector authoritative and fix the misleading comment — in which case the
+loose-by-design patterns need a different justification, because the stated one
+depends on an override that does not work.
 
 ## ⚠️ Stephen needs to be told before Task 7.3 merges
 

@@ -1,0 +1,135 @@
+# Saurav — Phase 6 status
+
+_Last updated: 2026-08-27 (Phase 6 complete on `saurav/canvas-integration`)_
+
+## Where this stands
+
+| Task | State |
+|---|---|
+| 1 — Component, config, connect/disconnect | **Complete** |
+| 2 — Course link | **Complete** (live check folded into Task 6's smoke) |
+| 3 — File import | **Complete** (live check folded into Task 6's smoke) |
+| 4 — Roster sync | **Complete** (live check folded into Task 6's smoke) |
+| 5 — Enrollment gate + PRD | **Complete** |
+| 6 — Instructor UI + hand smoke | **Complete** — full smoke passed |
+
+## Done before Task 1 (2026-08-27)
+
+- **Design approved** and written up:
+  `docs/superpowers/specs/2026-08-27-canvas-integration-design.md`. Decisions
+  recorded there: read-only scope (no gradebook write-back), roster entries
+  *add to* the CSV roster, a separate `lmsRosterEntries` collection keyed by
+  PUID, no Moodle.
+- **Package installed:** `@ubc/ubc-genai-toolkit-lms-integration@^1.2.0`
+  (GitHub Packages; project `.npmrc` carries the registry line, the PAT lives
+  in `~/.npmrc`). All 27 functions the recipes use verified present.
+- **Local Canvas verified end to end** in `../local-lms-dev/` — bootstrap,
+  292 sequences realigned, seeded course `FINBOT-DEMO` with an uneven roster
+  (student 2 `integration_id` 42000001, student 3 42999999, student 4 none),
+  assignment + submission, plain non-admin teacher `teacher1@example.com`.
+- **Teacher-token roster read through real OAuth:** `integrationId` on
+  **2 of 3**, identical to the admin key; `email`/`loginId` **0 of 3**.
+  Matching on `integration_id` is viable with the token the app will use.
+  Hosted UBC Canvas is a separate configuration and remains its own first
+  check.
+
+## Open questions for others
+
+- **Kelvin / LT Hub:** on hosted UBC Canvas, is `integration_id` the PUID, and
+  can a Teacher-role token read it? If either is no, the matcher has no key.
+- **Ops before go-live:** the production Developer Key must be scoped to the
+  five endpoints in the spec's Configuration section with *Allow Include
+  Parameters* on. The local key enforces no scopes.
+
+## Verification log
+
+### Task 1 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas.routes.test.ts` → 5/5. Full suite → 99 suites, 1,246 tests.
+- `npm run typecheck:server`, `npx eslint` on changed files → clean.
+- **Finding:** the package's structural `MongoDbLike` does not type-check
+  against mongodb v7's `Db` (`createIndex` param variance). Cast at the one
+  boundary in `components/lms/index.ts`; runtime shape is compatible. Worth
+  reporting upstream.
+- Mount probe with the real `.env` values: `/api/lms/canvas/status` and
+  `/auth/login` → **401** unauthenticated (mounted, config accepted); `/courses`
+  → 404 (Task 2 not built yet).
+- **Connect, by hand, through the real app:** signed in as `faculty-user`,
+  `/status` → `connected:false`; OAuth as `teacher1@example.com`; `/status` →
+  `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
+  the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
+  `userKey`.
+### Task 6 — 2026-08-27, including the end-to-end smoke
+
+- `tests/unit/canvas-panel.test.ts` → 3/3. `npm run typecheck` (both),
+  eslint, `npm run build:client` clean. Full suite → 102 suites, 1,291.
+- Added `disconnectCanvas()` + a *Disconnect Canvas* control on the card:
+  Task 1 showed that logging out of FinanceBot does not clear the token, so
+  the UI needs an explicit way to do it.
+- `seed-canvas.sh` gained a **course file** step (three-request upload of
+  `fixtures/canvas-sample.pdf`) so "Import from Canvas" has something to
+  import on a fresh environment.
+
+**Hand smoke against local Canvas — every prediction held.** Course:
+COMM 298 · Introduction to Finance (`6a684cfc03188bacbbf69009`), instructor
+`faculty-user`, Canvas identity `teacher1@example.com` (plain teacher).
+
+| Step | Expected | Actual |
+|---|---|---|
+| A1 Settings card | Step 1 of 3; `1 on the CSV roster` | ✓ |
+| A2 Connect → OAuth → return | back on Settings at `#canvas`, Step 2 listing FINBOT-DEMO | ✓ |
+| A3 Link | Step 3 · Linked; `1 from CSV · 0 from Canvas` | ✓ — DB: `course.canvas` name/code from Canvas's row |
+| A4 Import `canvas-sample.pdf` | processing → ready | ✓ — DB: `origin` stamped, `storagePath` a uuid.pdf under `uploads/`, 1 chunk |
+| B5 Sync | 0 matched · 2 on Canvas only · 1 in FinanceBot only; IDs 2 of 3; 2 added; 1-student warning | ✓ — DB: 2 entries, `matchedBy: integrationId`; Conflict Student not stored |
+| B6 `cpsc_student` enroll by code, no CSV entry | succeeds | ✓ — DB: enrolled, on CSV false, on Canvas entries true |
+| B7 `conflict_student` enroll | refused | ✓ |
+| C8 Add `conflict_student` to CSV → enroll | succeeds (escape hatch) | ✓ |
+| C9 Re-sync | 1 matched · 1 on Canvas only · 2 in FinanceBot only | ✓ |
+| C10 Unlink | Step 2; `2 from CSV · 0 from Canvas`; enrollments and material intact | ✓ — DB: link cleared, entries 0, both students still enrolled, material intact |
+
+### Task 5 — 2026-08-27
+
+- `npx jest tests/unit/enrollment` → 13/13: the 9 pre-existing cases pass
+  unchanged (the mock defaults the Canvas lookup to null), 4 new. Typecheck
+  and lint clean.
+- The Canvas lookup runs only when the CSV roster did not match, so a CSV
+  student's `extendedUntil` path is untouched.
+- PRD §3 line 49 and the roster paragraph updated; the gradebook and
+  auto-upload stretch-goal rows stay.
+
+### Task 4 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas tests/unit/collections.indexes.test.ts` →
+  43/43. Typecheck and lint clean. Both unique `lmsRosterEntries` indexes
+  created by `ensureIndexes` on the live dev DB — read back and confirmed.
+- Sync does two roster reads (`getCourseUsers` + `matchCourseRoster`); kept
+  deliberately for the package's course-id stamping guarantee.
+
+### Task 3 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas` → 31/31. Full suite → 100 suites, 1,272.
+  Typecheck and lint clean.
+- `detectUploadFormat` exported; `MAX_FILES_PER_UPLOAD` / `MAX_UPLOAD_BYTES`
+  now live in `materials.service.ts` and the multer limits read them.
+  **Finding:** `materials.routes.test.ts` mocks the whole service module, so
+  the constants had to be added to that mock or multer ran unbounded (one
+  413 test 500ed). Anyone else mocking `materials.service` wholesale will hit
+  the same.
+- `materials_origin_unique` created by `ensureIndexes` on the live dev DB with
+  the intended partial filter — verified by reading the index back.
+
+### Task 2 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas` → 21/21 (7 service, 14 route). Typecheck
+  and lint clean. `Course.canvas`, `LmsRosterEntry`, and `lmsRosterEntriesCol`
+  landed here so Task 4 only adds indexes. Contract section added.
+- Not smoke-tested live yet: `PUT link` needs a connected Canvas identity,
+  which Task 1's disconnect test removed. Covered by Task 6's end-to-end run.
+
+### Task 1 (continued)
+
+- **Disconnect, by hand:** `POST /api/lms/canvas/auth/logout` → 200;
+  `/status` → `connected:false`; `lmsCanvasTokens` → 0 documents. Note for
+  the UI task: logging out of FinanceBot does *not* clear the Canvas token
+  (by design — it is keyed by PUID, not session), so Settings needs a real
+  *Disconnect* control.
