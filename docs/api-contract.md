@@ -249,6 +249,8 @@ connected: false, connectUrl }` when the caller has no usable Canvas token.
 - `DELETE /api/lms/canvas/courses/:courseId/link` → 204; also deletes the course's synced Canvas roster entries
 - `GET /api/lms/canvas/courses/:courseId/files` → `[{ id, name, size?, updatedAt?, alreadyImported }]` — Canvas Files in an upload-accepted format under 50 MB; `400 { error: 'not-linked' }` if the course has no link
 - `POST /api/lms/canvas/courses/:courseId/files/import { fileIds: string[] }` (1–20) → 201 `{ created: [Material], skipped: [id], failed: [{ id, reason: 'download-failed' | 'too-large' | 'unsupported-format' | 'not-found' }] }`. Per-file independent; already-imported ids are skipped, so a retry never double-ingests. Created materials enter the normal `processing` pipeline
+- `POST /api/lms/canvas/courses/:courseId/roster/sync` → `{ report, coverage, syncedAt, stored }`. `report` is the package's `LmsRosterMatchReport` (`matched` / `rosterOnly` / `appOnly` with `reason` / `ambiguous`), matched on Canvas `integration_id` = PUID against students enrolled in this course. Storage replaces the course's Canvas-sourced roster with every Canvas user carrying an `integration_id`. `409 { error: 'roster-coverage' }` when a non-empty roster exposes no `integration_id` at all — nothing is written.
+- `GET /api/lms/canvas/courses/:courseId/roster/canvas` → `{ syncedAt | null, entries: [{ puid, name }] }`
 Package errors map to `401 canvas-reconnect`, `403 canvas-forbidden`, `502 canvas-unavailable`, `409 roster-coverage`. Bodies never carry Canvas messages or `raw`.
 
 ## Question bank (instructor; TA read paths in Phase 3)

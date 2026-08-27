@@ -8,7 +8,16 @@ import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import { getCanvasConfig } from '../components/lms';
 import { MAX_FILES_PER_UPLOAD } from '../services/materials.service';
-import { getLink, importFiles, linkCourse, listImportableFiles, listTeacherCourses, unlinkCourse } from '../services/lms-canvas.service';
+import {
+  getCanvasRoster,
+  getLink,
+  importFiles,
+  linkCourse,
+  listImportableFiles,
+  listTeacherCourses,
+  syncRoster,
+  unlinkCourse,
+} from '../services/lms-canvas.service';
 
 // Canvas LMS integration routes (Phase 6). Mounted under /api only when the
 // four CANVAS_* variables are set (see app.ts); an unconfigured deployment
@@ -145,6 +154,20 @@ export function createLmsCanvasRouter(): Router {
     } catch (err) {
       if (!notLinked(err, res) && !mapCanvasError(err, res)) throw err;
     }
+  });
+
+  /** POST roster/sync -> { report, coverage, syncedAt, stored }; 409 roster-coverage writes nothing. */
+  router.post('/lms/canvas/courses/:courseId/roster/sync', ...courseGuards, withCanvas, async (req, res) => {
+    try {
+      res.json(await syncRoster(req.canvasApi!, new ObjectId(String(req.params.courseId))));
+    } catch (err) {
+      if (!notLinked(err, res) && !mapCanvasError(err, res)) throw err;
+    }
+  });
+
+  /** GET roster/canvas -> { syncedAt | null, entries: [{ puid, name }] }. */
+  router.get('/lms/canvas/courses/:courseId/roster/canvas', ...courseGuards, async (req, res) => {
+    res.json(await getCanvasRoster(new ObjectId(String(req.params.courseId))));
   });
 
   /** DELETE link — also clears the course's synced Canvas roster entries. */

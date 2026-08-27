@@ -1176,7 +1176,7 @@ git commit -m "feat(lms): import Canvas Files into course materials"
   - `getCanvasRoster(courseId: ObjectId): Promise<{ syncedAt: Date | null; entries: Array<{ puid: string; name: string }> }>`
   - Routes: `POST /lms/canvas/courses/:courseId/roster/sync`, `GET /lms/canvas/courses/:courseId/roster/canvas`.
 
-- [ ] **Step 1: Indexes, with a test that pins them**
+- [x] **Step 1: Indexes, with a test that pins them**
 
 `collections.ts`, appended to `INDEX_SPECS`:
 
@@ -1208,7 +1208,7 @@ describe('Phase 6 index specs', () => {
 
 Run: `npx jest tests/unit/collections.indexes.test.ts` — Expected: PASS (both specs exist after this step).
 
-- [ ] **Step 2: Failing service tests**
+- [x] **Step 2: Failing service tests**
 
 Append to the service test. Extend the package mock: `getCourseUsers: jest.fn(), matchCourseRoster: jest.fn(), explainUnmatched: jest.fn()`, plus a top-level `rosterFieldCoverage: (users: Array<{ integrationId?: string }>) => ({ total: users.length, integrationId: users.filter((u) => u.integrationId).length, sisId: 0, email: 0, loginId: 0 })` and `class CanvasGradeExportError extends Error { constructor(m: string, public reason: string) { super(m); } }` exported under `canvas`. Add `usersFindToArray`, `entriesInsertMany` mocks:
 
@@ -1293,11 +1293,11 @@ describe('getCanvasRoster', () => {
 });
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts` — Expected: FAIL, `syncRoster`/`getCanvasRoster` not exported.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 Append to `lms-canvas.service.ts` (add `import { rosterFieldCoverage } from '@ubc/ubc-genai-toolkit-lms-integration'; import type { LmsRosterFieldCoverage, LmsRosterMatchReport } from '@ubc/ubc-genai-toolkit-lms-integration'; import { usersCol } from '../components/mongodb/collections'; import type { LmsRosterEntry } from '../types/domain';`):
 
@@ -1368,11 +1368,11 @@ export async function getCanvasRoster(courseId: ObjectId): Promise<{ syncedAt: D
 
 Note the double read (`getCourseUsers` then `matchCourseRoster`, which reads again): two roster requests per sync. Acceptable for a manual action; `matchRosterByIntegrationId(courseId, users, appUsers)` would avoid it but loses the package's course-id stamping guarantee. Keep the two calls.
 
-- [ ] **Step 5: Run the service tests**
+- [x] **Step 5: Run the service tests**
 
 Run: `npx jest tests/unit/lms-canvas.service.test.ts` — Expected: PASS.
 
-- [ ] **Step 6: Failing route tests, then routes**
+- [x] **Step 6: Failing route tests, then routes**
 
 Append to the routes test (mock `syncRoster`, `getCanvasRoster`):
 
@@ -1422,12 +1422,12 @@ Routes (inside the factory; import `getCanvasRoster, syncRoster`):
   });
 ```
 
-- [ ] **Step 7: Run all, typecheck, lint**
+- [x] **Step 7: Run all, typecheck, lint**
 
 Run: `npx jest tests/unit/lms-canvas tests/unit/collections.indexes.test.ts && npm run typecheck:server && npx eslint server/src/routes/lms-canvas.routes.ts server/src/services/lms-canvas.service.ts server/src/components/mongodb/collections.ts`
 Expected: PASS, clean.
 
-- [ ] **Step 8: Contract**
+- [x] **Step 8: Contract**
 
 Add to the Canvas section:
 
@@ -1436,7 +1436,7 @@ Add to the Canvas section:
 - `GET /api/lms/canvas/courses/:courseId/roster/canvas` → `{ syncedAt | null, entries: [{ puid, name }] }`
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add server/src/components/mongodb/collections.ts server/src/services/lms-canvas.service.ts server/src/routes/lms-canvas.routes.ts tests/unit/lms-canvas.service.test.ts tests/unit/lms-canvas.routes.test.ts tests/unit/collections.indexes.test.ts docs/api-contract.md

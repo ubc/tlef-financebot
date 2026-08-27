@@ -49,10 +49,12 @@ jest.mock('../../server/src/services/lms-canvas.service', () => ({
   requireLink: jest.fn(),
   listImportableFiles: jest.fn(),
   importFiles: jest.fn(),
+  syncRoster: jest.fn(),
+  getCanvasRoster: jest.fn(),
 }));
 
 import { createLmsCanvasRouter } from '../../server/src/routes/lms-canvas.routes';
-import { listTeacherCourses, getLink, linkCourse, unlinkCourse, listImportableFiles, importFiles } from '../../server/src/services/lms-canvas.service';
+import { listTeacherCourses, getLink, linkCourse, unlinkCourse, listImportableFiles, importFiles, syncRoster, getCanvasRoster } from '../../server/src/services/lms-canvas.service';
 
 const courseId = new ObjectId();
 
@@ -96,6 +98,8 @@ beforeEach(() => {
   jest.mocked(unlinkCourse).mockReset();
   jest.mocked(listImportableFiles).mockReset();
   jest.mocked(importFiles).mockReset();
+  jest.mocked(syncRoster).mockReset();
+  jest.mocked(getCanvasRoster).mockReset();
 });
 
 describe('GET /api/lms/canvas/status', () => {
@@ -231,5 +235,40 @@ describe('file import routes', () => {
     const res = await request(makeApp(instructor)).get(`${base}/files`);
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: 'canvas-forbidden' });
+  });
+});
+
+describe('roster sync routes', () => {
+  it('POST sync 409s roster-coverage with a fixed body', async () => {
+    const { canvas: c } = jest.requireMock('@ubc/ubc-genai-toolkit-lms-integration');
+    jest.mocked(syncRoster).mockRejectedValue(new c.CanvasGradeExportError('all blank', 'roster-coverage'));
+    const res = await request(makeApp(instructor)).post(`${base}/roster/sync`);
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'roster-coverage' });
+  });
+  it('POST sync returns report, coverage, syncedAt, stored — and no raw', async () => {
+    const t = new Date('2026-08-27T10:00:00Z');
+    jest.mocked(syncRoster).mockResolvedValue({
+      report: { courseId: 'C1', matched: [], appOnly: [], rosterOnly: [{ lmsUserId: '3', name: 'U', key: '42999999' }], ambiguous: [], coverage: { total: 1, integrationId: 1, sisId: 0, email: 0, loginId: 0 } } as never,
+      coverage: { total: 1, integrationId: 1, sisId: 0, email: 0, loginId: 0 },
+      syncedAt: t,
+      stored: 1,
+    });
+    const res = await request(makeApp(instructor)).post(`${base}/roster/sync`);
+    expect(res.status).toBe(200);
+    expect(res.body.stored).toBe(1);
+    expect(res.body.syncedAt).toBe(t.toISOString());
+    expect(res.body.report.rosterOnly[0].name).toBe('U');
+    expect(JSON.stringify(res.body)).not.toContain('"raw"');
+  });
+  it('POST sync 400s not-linked', async () => {
+    jest.mocked(syncRoster).mockRejectedValue(new Error('not-linked'));
+    const res = await request(makeApp(instructor)).post(`${base}/roster/sync`);
+    expect(res.status).toBe(400);
+  });
+  it('GET roster/canvas returns the stored entries', async () => {
+    jest.mocked(getCanvasRoster).mockResolvedValue({ syncedAt: null, entries: [] });
+    const res = await request(makeApp(instructor)).get(`${base}/roster/canvas`);
+    expect(res.body).toEqual({ syncedAt: null, entries: [] });
   });
 });

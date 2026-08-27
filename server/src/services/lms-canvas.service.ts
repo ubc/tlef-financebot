@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ObjectId, WithId } from 'mongodb';
-import { canvas } from '@ubc/ubc-genai-toolkit-lms-integration';
-import { coursesCol, lmsRosterEntriesCol, materialsCol } from '../components/mongodb/collections';
-import type { Material } from '../types/domain';
+import { canvas, rosterFieldCoverage, type LmsRosterFieldCoverage, type LmsRosterMatchReport } from '@ubc/ubc-genai-toolkit-lms-integration';
+import { coursesCol, lmsRosterEntriesCol, materialsCol, usersCol } from '../components/mongodb/collections';
+import type { LmsRosterEntry, Material } from '../types/domain';
 import { getCourse } from './courses.service';
 import { createMaterials, detectUploadFormat, MAX_UPLOAD_BYTES, type UploadedFile } from './materials.service';
 
@@ -174,4 +174,75 @@ export async function importFiles(
     imported.add(id);
   }
   return result;
+}
+
+// --- Roster sync (Task 4) ----------------------------------------------------
+
+export interface SyncResult {
+  report: LmsRosterMatchReport;
+  coverage: LmsRosterFieldCoverage;
+  syncedAt: Date;
+  stored: number;
+}
+
+/**
+ * Sync the linked Canvas roster. Two independent outputs from one read:
+ *
+ * 1. A match report, for display — `appUsers` are the students already
+ *    enrolled in this FinanceBot course, keyed by PUID, so `matched` means
+ *    "enrolled and on Canvas", `rosterOnly` "on Canvas, not yet enrolled"
+ *    (normal), `appOnly` "enrolled here, gone from Canvas" (explained as
+ *    enrollment-ended vs not-enrolled).
+ * 2. The stored entries: every Canvas user WITH an integrationId, whether or
+ *    not they have ever logged in — that is what makes them enrollable.
+ *
+ * The package throws `roster-coverage` when a non-empty roster carries no
+ * integrationId at all; that propagates and nothing is written, because the
+ * state is indistinguishable from an empty class and must not be recorded
+ * as one.
+ *
+ * Two roster reads per sync (getCourseUsers, then matchCourseRoster reads
+ * again). Acceptable for a manual action; matchRosterByIntegrationId would
+ * avoid it but loses the package's course-id stamping guarantee.
+ */
+export async function syncRoster(api: canvas.ApiClient, courseId: ObjectId): Promise<SyncResult> {
+  const link = await requireLink(courseId);
+  const students = await usersCol()
+    .find({ courseRoles: { $elemMatch: { courseId, role: 'student' } } })
+    .project<{ puid: string }>({ puid: 1 })
+    .toArray();
+  const appUsers = students.map((s) => ({ appUserId: s.puid, key: s.puid }));
+
+  const users = await canvas.getCourseUsers(api, link.courseId);
+  const coverage = rosterFieldCoverage(users);
+  const matched = await canvas.matchCourseRoster(api, link.courseId, appUsers); // throws roster-coverage
+  const report = await canvas.explainUnmatched(api, link.courseId, matched);
+
+  const syncedAt = new Date();
+  const entries: LmsRosterEntry[] = users
+    .filter((u): u is typeof u & { integrationId: string } => typeof u.integrationId === 'string' && u.integrationId.trim() !== '')
+    .map((u) => ({
+      courseId,
+      provider: 'canvas',
+      externalCourseId: link.courseId,
+      externalUserId: u.id,
+      puid: u.integrationId.trim(),
+      name: u.name,
+      matchedBy: 'integrationId',
+      syncedAt,
+    }));
+
+  await lmsRosterEntriesCol().deleteMany({ courseId });
+  if (entries.length > 0) await lmsRosterEntriesCol().insertMany(entries);
+  return { report, coverage, syncedAt, stored: entries.length };
+}
+
+export async function getCanvasRoster(
+  courseId: ObjectId,
+): Promise<{ syncedAt: Date | null; entries: Array<{ puid: string; name: string }> }> {
+  const rows = await lmsRosterEntriesCol().find({ courseId }).sort({ name: 1 }).toArray();
+  return {
+    syncedAt: rows.reduce<Date | null>((latest, r) => (!latest || r.syncedAt > latest ? r.syncedAt : latest), null),
+    entries: rows.map((r) => ({ puid: r.puid, name: r.name })),
+  };
 }

@@ -77,12 +77,12 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `lmsRosterEntries` collection with both unique indexes.
-- [ ] `POST /courses/:courseId/roster/sync` — `matchCourseRoster` +
+- [x] `lmsRosterEntries` collection with both unique indexes.
+- [x] `POST /courses/:courseId/roster/sync` — `matchCourseRoster` +
   `explainUnmatched` against student `courseRoles`; replaces the course's
   Canvas-sourced set; `roster-coverage` → 409 and nothing written.
-- [ ] `GET /courses/:courseId/roster/canvas`.
-- [ ] Route + service tests; contract updated.
+- [x] `GET /courses/:courseId/roster/canvas`.
+- [x] Route + service tests; contract updated.
 
 ### Task 5: Enrollment gate + PRD
 

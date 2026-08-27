@@ -117,6 +117,11 @@ export const INDEX_SPECS: IndexSpec[] = [
     keys: { courseId: 1, 'origin.provider': 1, 'origin.externalCourseId': 1, 'origin.externalFileId': 1 },
     options: { unique: true, partialFilterExpression: { 'origin.provider': { $type: 'string' } }, name: 'materials_origin_unique' },
   },
+  // Phase 6: one row per Canvas identity per linked course. The second index
+  // makes two Canvas accounts claiming one PUID a loud write failure rather
+  // than a quiet overwrite.
+  { collection: 'lmsRosterEntries', keys: { courseId: 1, provider: 1, externalCourseId: 1, externalUserId: 1 }, options: { unique: true } },
+  { collection: 'lmsRosterEntries', keys: { courseId: 1, provider: 1, externalCourseId: 1, puid: 1 }, options: { unique: true } },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

@@ -9,7 +9,7 @@ _Last updated: 2026-08-27_
 | 1 — Component, config, connect/disconnect | **Complete** |
 | 2 — Course link | **Complete** (live check folded into Task 6's smoke) |
 | 3 — File import | **Complete** (live check folded into Task 6's smoke) |
-| 4 — Roster sync | Not started |
+| 4 — Roster sync | **Complete** (live check folded into Task 6's smoke) |
 | 5 — Enrollment gate + PRD | Not started |
 | 6 — Instructor UI + hand smoke | Not started |
 
@@ -59,6 +59,14 @@ _Last updated: 2026-08-27_
   `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
   the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
   `userKey`.
+### Task 4 — 2026-08-27
+
+- `npx jest tests/unit/lms-canvas tests/unit/collections.indexes.test.ts` →
+  43/43. Typecheck and lint clean. Both unique `lmsRosterEntries` indexes
+  created by `ensureIndexes` on the live dev DB — read back and confirmed.
+- Sync does two roster reads (`getCourseUsers` + `matchCourseRoster`); kept
+  deliberately for the package's course-id stamping guarantee.
+
 ### Task 3 — 2026-08-27
 
 - `npx jest tests/unit/lms-canvas` → 31/31. Full suite → 100 suites, 1,272.
