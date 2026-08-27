@@ -4,7 +4,7 @@ import type {
   User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   PreviewAttemptRecord, PreviewStudentSession,
   Material, MaterialChunk, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
-  Notification, AuditLog, RosterEntry, SessionSummaryRecord,
+  Notification, AuditLog, RosterEntry, SessionSummaryRecord, LmsRosterEntry,
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
 } from '../../types/domain';
@@ -35,6 +35,7 @@ export const flagsCol = (): Collection<Flag> => getDb().collection<Flag>('flags'
 export const notificationsCol = (): Collection<Notification> => getDb().collection<Notification>('notifications');
 export const auditCol = (): Collection<AuditLog> => getDb().collection<AuditLog>('auditLogs');
 export const rosterCol = (): Collection<RosterEntry> => getDb().collection<RosterEntry>('rosterEntries');
+export const lmsRosterEntriesCol = (): Collection<LmsRosterEntry> => getDb().collection<LmsRosterEntry>('lmsRosterEntries'); // Phase 6
 export const sessionSummariesCol = (): Collection<SessionSummaryRecord> => getDb().collection<SessionSummaryRecord>('sessionSummaries');
 export const contentRunsCol = (): Collection<ContentRun> => getDb().collection<ContentRun>('contentRuns');
 export const generationBlueprintsCol = (): Collection<GenerationBlueprint> =>
@@ -108,6 +109,19 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'capabilitySettings', keys: { scope: 1, courseId: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { courseId: 1, email: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { status: 1, email: 1 } },
+  // Phase 6: one import per Canvas file per course. Name and filter are fixed
+  // once deployed — MongoDB refuses startup if a partial filter changes under
+  // the same index name.
+  {
+    collection: 'materials',
+    keys: { courseId: 1, 'origin.provider': 1, 'origin.externalCourseId': 1, 'origin.externalFileId': 1 },
+    options: { unique: true, partialFilterExpression: { 'origin.provider': { $type: 'string' } }, name: 'materials_origin_unique' },
+  },
+  // Phase 6: one row per Canvas identity per linked course. The second index
+  // makes two Canvas accounts claiming one PUID a loud write failure rather
+  // than a quiet overwrite.
+  { collection: 'lmsRosterEntries', keys: { courseId: 1, provider: 1, externalCourseId: 1, externalUserId: 1 }, options: { unique: true } },
+  { collection: 'lmsRosterEntries', keys: { courseId: 1, provider: 1, externalCourseId: 1, puid: 1 }, options: { unique: true } },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

@@ -10,6 +10,7 @@ import {
   ApiError,
   archiveCourse,
   getAuthState,
+  getCanvasRoster,
   getCourseTree,
   getRoster,
   previewRosterFile,
@@ -29,6 +30,7 @@ import { helpTip, pageHeader, sectionTitleWithHelp, uploadZone } from '../../ins
 import { textPromptDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
+import { renderCanvasCard } from './canvas-panel.js';
 
 function fieldLabel(text: string, htmlFor: string): HTMLElement {
   return el('label', { class: 'form-field__label', for: htmlFor, text });
@@ -214,6 +216,24 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   const rosterErrorSlot = el('div', {});
   const rosterImportSlot = el('div', { 'aria-live': 'polite' });
   const rosterListEl = el('div', { class: 'roster-list' });
+  // Phase 6: the roster is a union of the CSV list and the synced Canvas
+  // roster. The count line keeps that visible; the Canvas card below the
+  // roster owns connect/link/sync.
+  const rosterCountEl = el('p', { class: 'roster-count muted', 'aria-live': 'polite' });
+  let canvasCount: number | null = null;
+  function updateRosterCount(): void {
+    rosterCountEl.textContent = canvasCount === null
+      ? `${roster.length} on the CSV roster`
+      : `${roster.length} from CSV · ${canvasCount} from Canvas`;
+  }
+  async function refreshRosterCount(): Promise<void> {
+    try {
+      canvasCount = (await getCanvasRoster(courseId)).entries.length;
+    } catch {
+      canvasCount = null; // no Canvas on this deployment, or not linked
+    }
+    updateRosterCount();
+  }
   // The last parsed file is kept so switching the identifier column re-parses
   // it server-side instead of asking the instructor to pick the file again.
   let lastPreview: RosterParseResult | null = null;
@@ -263,6 +283,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   renderStrategyGroup();
 
   function renderRosterList(): void {
+    updateRosterCount();
     rosterListEl.replaceChildren(
       roster.length
         ? el(
@@ -555,6 +576,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         strategyGroup,
 
         sectionTitleWithHelp('Roster', HELP.roster),
+        rosterCountEl,
         el('p', {
           class: 'view__lead',
           text: 'Upload a CSV or paste one identifier per line. Saving replaces the full roster.',
@@ -568,6 +590,8 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         rosterErrorSlot,
         saveRosterButton,
         rosterListEl,
+
+        renderCanvasCard(courseId, () => void refreshRosterCount()),
       ),
     ),
     el(
@@ -594,6 +618,8 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     ),
   );
   saveRosterButton.addEventListener('click', () => void saveRoster());
+  // Returning from the Canvas OAuth redirect lands on #canvas; bring the card into view.
+  if (location.hash === '#canvas') document.getElementById('canvas')?.scrollIntoView();
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {

@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { isProduction } from './config/env';
+import { isProduction, canvasEnabled } from './config/env';
 import { healthRouter } from './routes/health.routes';
 import { notesRouter } from './routes/notes.routes';
 import { ragRouter } from './routes/rag.routes';
@@ -29,6 +29,7 @@ import { examsRouter } from './routes/exams.routes';
 import { tasRouter } from './routes/tas.routes';
 import { analyticsRouter } from './routes/analytics.routes';
 import { authRouter } from './routes/auth.routes';
+import { createLmsCanvasRouter } from './routes/lms-canvas.routes';
 import { configureAuth } from './components/auth';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 
@@ -92,6 +93,7 @@ export function createApp(): Express {
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).
   app.use('/api', flagsRouter); // Student flagging + instructor flag-resolution queue + configurable auto-pause (ST-P09, §4.3, §6.2).
   app.use('/api', notificationsRouter); // In-app notifications: poll/read/read-all, scoped to the signed-in user (§4.3, §9.1).
+  if (canvasEnabled) app.use('/api', createLmsCanvasRouter()); // Canvas LMS: connect, link, file import, roster sync (Phase 6). 404s when unconfigured.
 
   // Serve the compiled client. Any non-API request falls through to here.
   app.use(express.static(CLIENT_PUBLIC_DIR));

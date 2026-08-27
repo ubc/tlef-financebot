@@ -45,6 +45,7 @@
   "dependencies": {
     "@qdrant/js-client-rest": "^1.18.0",
     "@types/multer": "^2.2.0",
+    "@ubc/ubc-genai-toolkit-lms-integration": "^1.2.0",
     "agenda": "4.4.0",
     "chart.js": "^4.5.1",
     "connect-mongo": "^6.0.0",

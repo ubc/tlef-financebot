@@ -2967,3 +2967,69 @@ export function dismissNotification(id: string): Promise<AppNotification> {
 export function dismissAllNotifications(): Promise<{ count: number }> {
   return request<{ count: number }>('/api/notifications/dismiss-all', { method: 'POST' });
 }
+
+// --- Canvas LMS (instructor; Phase 6) ---------------------------------------
+
+export interface CanvasLink { courseId: string; name: string; code: string; linkedAt: string }
+export interface CanvasImportableFile { id: string; name: string; size?: number; updatedAt?: string; alreadyImported: boolean }
+export interface CanvasImportResult { created: Material[]; skipped: string[]; failed: Array<{ id: string; reason: string }> }
+export interface CanvasCoverage { total: number; integrationId: number; sisId: number; email: number; loginId: number }
+export interface CanvasSyncResult {
+  report: {
+    matched: Array<{ key: string; lmsUserId: string; name: string; matchedBy: string }>;
+    rosterOnly: Array<{ lmsUserId: string; name: string; key?: string }>;
+    appOnly: Array<{ key: string; reason: 'unknown' | 'not-enrolled' | 'enrollment-ended'; formerEnrollment?: { name: string } }>;
+    ambiguous: Array<{ key: string; lmsUserIds: string[] }>;
+  };
+  coverage: CanvasCoverage;
+  syncedAt: string;
+  stored: number;
+}
+
+/** GET /api/lms/canvas/status -> { connected }. `null` when the deployment has no Canvas at all (404). */
+export async function getCanvasStatus(): Promise<{ connected: boolean } | null> {
+  try {
+    return await request<{ connected: boolean }>('/api/lms/canvas/status');
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+export function canvasLoginUrl(returnTo: string): string {
+  return `/api/lms/canvas/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
+}
+export function disconnectCanvas(): Promise<void> {
+  return request<void>('/api/lms/canvas/auth/logout', { method: 'POST' });
+}
+export function listCanvasCourses(): Promise<Array<{ id: string; name: string; code: string }>> {
+  return request('/api/lms/canvas/courses');
+}
+export function getCanvasLink(courseId: string): Promise<{ linked: false } | { linked: true; canvas: CanvasLink }> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/link`);
+}
+export function linkCanvasCourse(courseId: string, canvasCourseId: string): Promise<{ linked: true; canvas: CanvasLink }> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/link`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ canvasCourseId }),
+  });
+}
+export function unlinkCanvasCourse(courseId: string): Promise<void> {
+  return request<void>(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/link`, { method: 'DELETE' });
+}
+export function listCanvasFiles(courseId: string): Promise<CanvasImportableFile[]> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/files`);
+}
+export function importCanvasFiles(courseId: string, fileIds: string[]): Promise<CanvasImportResult> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/files/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileIds }),
+  });
+}
+export function syncCanvasRoster(courseId: string): Promise<CanvasSyncResult> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/roster/sync`, { method: 'POST' });
+}
+export function getCanvasRoster(courseId: string): Promise<{ syncedAt: string | null; entries: Array<{ puid: string; name: string }> }> {
+  return request(`/api/lms/canvas/courses/${encodeURIComponent(courseId)}/roster/canvas`);
+}

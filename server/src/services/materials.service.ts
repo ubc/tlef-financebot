@@ -51,6 +51,11 @@ export type UploadFormat = (typeof UPLOAD_FORMATS)[number];
 const EXCERPT_MAX_CHARS = 2000;
 export const MATERIAL_INGEST_JOB = 'material.ingest';
 
+/** Upload batch and size ceilings. Shared with the Canvas import path so the
+ * policy has one definition (materials.routes' multer limits read these). */
+export const MAX_FILES_PER_UPLOAD = 20;
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 interface MaterialIngestJobData {
   runId: string;
 }
@@ -132,7 +137,7 @@ function fileExtension(filename: string): string {
   return ext || filename.toLowerCase();
 }
 
-function detectUploadFormat(filename: string): UploadFormat | undefined {
+export function detectUploadFormat(filename: string): UploadFormat | undefined {
   const ext = fileExtension(filename);
   return (UPLOAD_FORMATS as readonly string[]).includes(ext) ? (ext as UploadFormat) : undefined;
 }

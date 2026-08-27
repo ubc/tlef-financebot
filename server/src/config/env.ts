@@ -159,6 +159,15 @@ export const env = {
   // Resource limits for parameterized-question worker_threads (PRD §2).
   paramWorkerTimeoutMs: Number(optional('PARAM_WORKER_TIMEOUT_MS', '2000')),
   paramWorkerMemoryMb: Number(optional('PARAM_WORKER_MEMORY_MB', '64')),
+  // Canvas LMS integration (server/src/components/lms). Read by the package's
+  // loadConfigFromEnv directly from process.env; mirrored here so the mount
+  // decision is typed and testable.
+  canvas: {
+    domain: optional('CANVAS_DOMAIN', ''),
+    clientId: optional('CANVAS_CLIENT_ID', ''),
+    clientSecret: optional('CANVAS_CLIENT_SECRET', ''),
+    redirectUri: optional('CANVAS_REDIRECT_URI', ''),
+  },
 
   // GenAI embeddings (see server/src/components/genai/embeddings). Provider is
   // `fastembed` (local, self-contained) or an LLM provider name (ollama |
@@ -177,6 +186,10 @@ export const env = {
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';
+
+/** All four Canvas variables set → the /api/lms/canvas router is mounted. */
+export const canvasEnabled =
+  Boolean(env.canvas.domain && env.canvas.clientId && env.canvas.clientSecret && env.canvas.redirectUri);
 
 /**
  * Fail fast on insecure/incomplete production configuration. Called from

@@ -21,6 +21,8 @@ import {
   assignMaterial,
   getMaterialCourseId,
   updateMaterialKind,
+  MAX_FILES_PER_UPLOAD,
+  MAX_UPLOAD_BYTES,
 } from '../services/materials.service';
 import {
   applySuggestedHierarchy,
@@ -114,14 +116,12 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 // contain (I5) — multer has no default, so an unbounded `files[]` field is a
 // resource-exhaustion vector (disk + one enqueued job per file) with no limit
 // today.
-const MAX_FILES_PER_UPLOAD = 20;
-
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (_req, file, cb) => cb(null, `${randomUUID()}${path.extname(file.originalname)}`),
   }),
-  limits: { fileSize: 50 * 1024 * 1024, files: MAX_FILES_PER_UPLOAD },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_FILES_PER_UPLOAD },
 });
 
 /**

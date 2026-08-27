@@ -18,6 +18,10 @@ import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/materials.service', () => ({
+  // The route reads its multer limits from the service (Phase 6 shared them
+  // with the Canvas import); the mock must supply them or multer runs unbounded.
+  MAX_FILES_PER_UPLOAD: 20,
+  MAX_UPLOAD_BYTES: 50 * 1024 * 1024,
   createMaterials: jest.fn(),
   createUrlMaterial: jest.fn(),
   listMaterials: jest.fn(),

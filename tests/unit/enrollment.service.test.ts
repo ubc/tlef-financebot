@@ -1,17 +1,19 @@
 import { ObjectId } from 'mongodb';
 import { enrollByCode, EnrollmentError, listEnrollments } from '../../server/src/services/enrollment.service';
-import { coursesCol, rosterCol, usersCol } from '../../server/src/components/mongodb/collections';
+import { coursesCol, rosterCol, usersCol, lmsRosterEntriesCol } from '../../server/src/components/mongodb/collections';
 import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   coursesCol: jest.fn(),
   rosterCol: jest.fn(),
   usersCol: jest.fn(),
+  lmsRosterEntriesCol: jest.fn(),
 }));
 
 const coursesFindOne = jest.fn();
 const rosterFindOne = jest.fn();
 const usersUpdateOne = jest.fn();
+const lmsFindOne = jest.fn();
 
 beforeEach(() => {
   coursesFindOne.mockReset();
@@ -20,6 +22,10 @@ beforeEach(() => {
   jest.mocked(coursesCol).mockReturnValue({ findOne: coursesFindOne } as never);
   jest.mocked(rosterCol).mockReturnValue({ findOne: rosterFindOne } as never);
   jest.mocked(usersCol).mockReturnValue({ updateOne: usersUpdateOne } as never);
+  // Phase 6: default to "not on the Canvas roster" so every pre-existing case
+  // runs unchanged.
+  lmsFindOne.mockReset().mockResolvedValue(null);
+  jest.mocked(lmsRosterEntriesCol).mockReturnValue({ findOne: lmsFindOne } as never);
 });
 
 const courseId = new ObjectId();
@@ -117,5 +123,41 @@ describe('listEnrollments (ST-E03)', () => {
     await expect(listEnrollments(enrolledStudent)).resolves.toEqual([
       { courseId, name: 'Intro Finance', courseCode: 'COMM 298', term: undefined, active: false },
     ]);
+  });
+});
+
+describe('enrollByCode with a synced Canvas roster (Phase 6)', () => {
+  it('enrolls a student on the Canvas roster by PUID with no CSV entry', async () => {
+    coursesFindOne.mockResolvedValue(activeCourse);
+    rosterFindOne.mockResolvedValue(null);
+    lmsFindOne.mockResolvedValue({ courseId, puid: 'P1', name: 'S' });
+    usersUpdateOne.mockResolvedValue({});
+    const result = await enrollByCode(student, 'GOODCODE');
+    expect(result.courseId).toEqual(courseId);
+    expect(lmsFindOne).toHaveBeenCalledWith({ courseId, puid: 'P1' });
+  });
+
+  it('still refuses a student on neither roster', async () => {
+    coursesFindOne.mockResolvedValue(activeCourse);
+    rosterFindOne.mockResolvedValue(null);
+    lmsFindOne.mockResolvedValue(null);
+    await expect(enrollByCode(student, 'GOODCODE')).rejects.toMatchObject({ code: 'not-on-roster' });
+  });
+
+  it('does not consult the Canvas roster when the CSV roster already matched', async () => {
+    coursesFindOne.mockResolvedValue(activeCourse);
+    rosterFindOne.mockResolvedValue({ courseId, identifier: 'student1' });
+    usersUpdateOne.mockResolvedValue({});
+    await enrollByCode(student, 'GOODCODE');
+    expect(lmsFindOne).not.toHaveBeenCalled();
+  });
+
+  it('a Canvas-only student is active until termEnd (no extendedUntil path)', async () => {
+    coursesFindOne.mockResolvedValue(activeCourse);
+    rosterFindOne.mockResolvedValue(null);
+    lmsFindOne.mockResolvedValue({ courseId, puid: 'P1' });
+    const enrolled = { ...student, courseRoles: [{ courseId, role: 'student' as const }] } as User;
+    const [row] = await listEnrollments(enrolled);
+    expect(row.active).toBe(true);
   });
 });
