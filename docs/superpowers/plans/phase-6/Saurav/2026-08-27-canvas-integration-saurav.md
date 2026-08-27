@@ -1564,7 +1564,7 @@ git commit -m "feat(enrollment): accept a synced Canvas roster entry by PUID"
 - Produces (`api.ts`): `getCanvasStatus()`, `listCanvasCourses()`, `getCanvasLink(courseId)`, `linkCanvasCourse(courseId, canvasCourseId)`, `unlinkCanvasCourse(courseId)`, `listCanvasFiles(courseId)`, `importCanvasFiles(courseId, fileIds)`, `syncCanvasRoster(courseId)`, `getCanvasRoster(courseId)`, `canvasLoginUrl(returnTo)`.
 - Produces (`canvas-panel.ts`): `renderCanvasCard(courseId: string, onRosterChanged: () => void): HTMLElement` and `openCanvasImportDialog(courseId: string): Promise<Material[]>`.
 
-- [ ] **Step 1: API functions**
+- [x] **Step 1: API functions**
 
 Append to `client/src/api.ts`:
 
@@ -1631,7 +1631,7 @@ export function getCanvasRoster(courseId: string): Promise<{ syncedAt: string | 
 
 Check `ApiError` exposes `status` (it is constructed with `(message, response.status)` at `api.ts:29`; if the field is named differently, use that name).
 
-- [ ] **Step 2: Pure helpers, with tests first**
+- [x] **Step 2: Pure helpers, with tests first**
 
 `tests/unit/canvas-panel.test.ts` (client pure logic under node, as `duplicate-name.test.ts` does):
 
@@ -1660,7 +1660,7 @@ describe('bucketCounts', () => {
 
 Run: `npx jest tests/unit/canvas-panel.test.ts` — Expected: FAIL, module not found.
 
-- [ ] **Step 3: The panel module**
+- [x] **Step 3: The panel module**
 
 `client/src/views/instructor/canvas-panel.ts`:
 
@@ -1827,7 +1827,7 @@ export async function openCanvasImportDialog(courseId: string): Promise<Material
 
 Run: `npx jest tests/unit/canvas-panel.test.ts` — Expected: PASS. (If ts-jest chokes on the `.js` imports of DOM modules under node, the moduleNameMapper at `jest.config.js:29` strips the extension; `dom.js` has no browser-only top-level code, as `duplicate-name.test.ts` relies on.)
 
-- [ ] **Step 4: Settings**
+- [x] **Step 4: Settings**
 
 `settings.ts`: import `renderCanvasCard` from `./canvas-panel.js`. In the second `settings-column` (line ~507), **after** the Roster block, append:
 
@@ -1851,7 +1851,7 @@ and mount `rosterCountEl` directly under `sectionTitleWithHelp('Roster', HELP.ro
 
 On load, if `location.hash === '#canvas'`, call `document.getElementById('canvas')?.scrollIntoView()` after mount so the OAuth return lands on the card.
 
-- [ ] **Step 5: Materials**
+- [x] **Step 5: Materials**
 
 `materials.ts`: import `openCanvasImportDialog` from `./canvas-panel.js` and `getCanvasLink` from `../../api.js`. Add state `let canvasLinked = false;` beside `fileMode`, and in the initial load `Promise.all`, add `getCanvasLink(courseId).then((l) => l.linked).catch(() => false)` → `canvasLinked`. Beside `uploadZone(...)` at line 362:
 
@@ -1880,7 +1880,7 @@ and beside `doUpload`:
   }
 ```
 
-- [ ] **Step 6: Styles**
+- [x] **Step 6: Styles**
 
 Append to `client/public/styles/main.css`:
 
@@ -1895,12 +1895,12 @@ Append to `client/public/styles/main.css`:
 .canvas-files__row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; }
 ```
 
-- [ ] **Step 7: Typecheck, lint, build**
+- [x] **Step 7: Typecheck, lint, build**
 
 Run: `npm run typecheck && npx eslint client/src/views/instructor/canvas-panel.ts client/src/views/instructor/settings.ts client/src/views/instructor/materials.ts client/src/api.ts && npm run build:client`
 Expected: clean.
 
-- [ ] **Step 8: Hand smoke against local Canvas — the acceptance test**
+- [x] **Step 8: Hand smoke against local Canvas — the acceptance test**
 
 With `../local-lms-dev` up and the app running:
 1. Sign in as `faculty`, create or open a course, publish it. Settings → the Canvas card shows **Step 1**.
@@ -1914,7 +1914,7 @@ With `../local-lms-dev` up and the app running:
 
 Record each step's actual result in `STATUS.md`.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add client/src/api.ts client/src/views/instructor/canvas-panel.ts client/src/views/instructor/settings.ts client/src/views/instructor/materials.ts client/public/styles/main.css tests/unit/canvas-panel.test.ts docs/superpowers/plans/phase-6/Saurav/STATUS.md

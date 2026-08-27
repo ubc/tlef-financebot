@@ -1,6 +1,6 @@
 # Phase 6 — Canvas Integration
 
-**Status:** Started 2026-08-27. Promotes the PRD's "Canvas integration" stretch
+**Status:** All six tasks complete on `saurav/canvas-integration`, 2026-08-27; end-to-end smoke passed against local Canvas. Awaiting PR/merge. Started 2026-08-27. Promotes the PRD's "Canvas integration" stretch
 goal into scope for course linking, file import, and roster sync. Gradebook
 write-back stays a stretch goal.
 
@@ -98,11 +98,11 @@ each task and keep additions append-only.
 
 **Owner:** Saurav
 
-- [ ] `api.ts` functions for every route above.
-- [ ] Settings: the *Canvas* card (connect → choose course → linked; sync
+- [x] `api.ts` functions for every route above.
+- [x] Settings: the *Canvas* card (connect → choose course → linked; sync
   report with coverage; unlink). Hidden when `/status` 404s.
-- [ ] Materials: *Import from Canvas* modal, shown only when linked.
-- [ ] Hand smoke against local Canvas recorded in Saurav's STATUS: link
+- [x] Materials: *Import from Canvas* modal, shown only when linked.
+- [x] Hand smoke against local Canvas recorded in Saurav's STATUS: link
   `FINBOT-DEMO` as `teacher1`, import one file to `ready`, sync → 1 matched /
   1 rosterOnly / 1 appOnly, coverage 2 of 3, enroll `cpsc_student` with the
   code alone.

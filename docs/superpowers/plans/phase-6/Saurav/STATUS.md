@@ -1,6 +1,6 @@
 # Saurav — Phase 6 status
 
-_Last updated: 2026-08-27_
+_Last updated: 2026-08-27 (Phase 6 complete on `saurav/canvas-integration`)_
 
 ## Where this stands
 
@@ -11,7 +11,7 @@ _Last updated: 2026-08-27_
 | 3 — File import | **Complete** (live check folded into Task 6's smoke) |
 | 4 — Roster sync | **Complete** (live check folded into Task 6's smoke) |
 | 5 — Enrollment gate + PRD | **Complete** |
-| 6 — Instructor UI + hand smoke | Not started |
+| 6 — Instructor UI + hand smoke | **Complete** — full smoke passed |
 
 ## Done before Task 1 (2026-08-27)
 
@@ -59,6 +59,34 @@ _Last updated: 2026-08-27_
   `connected:true`. `lmsCanvasTokens` holds one document, `userKey` ===
   the faculty user's PUID, `canvasUserId` 5 (= teacher1), unique index on
   `userKey`.
+### Task 6 — 2026-08-27, including the end-to-end smoke
+
+- `tests/unit/canvas-panel.test.ts` → 3/3. `npm run typecheck` (both),
+  eslint, `npm run build:client` clean. Full suite → 102 suites, 1,291.
+- Added `disconnectCanvas()` + a *Disconnect Canvas* control on the card:
+  Task 1 showed that logging out of FinanceBot does not clear the token, so
+  the UI needs an explicit way to do it.
+- `seed-canvas.sh` gained a **course file** step (three-request upload of
+  `fixtures/canvas-sample.pdf`) so "Import from Canvas" has something to
+  import on a fresh environment.
+
+**Hand smoke against local Canvas — every prediction held.** Course:
+COMM 298 · Introduction to Finance (`6a684cfc03188bacbbf69009`), instructor
+`faculty-user`, Canvas identity `teacher1@example.com` (plain teacher).
+
+| Step | Expected | Actual |
+|---|---|---|
+| A1 Settings card | Step 1 of 3; `1 on the CSV roster` | ✓ |
+| A2 Connect → OAuth → return | back on Settings at `#canvas`, Step 2 listing FINBOT-DEMO | ✓ |
+| A3 Link | Step 3 · Linked; `1 from CSV · 0 from Canvas` | ✓ — DB: `course.canvas` name/code from Canvas's row |
+| A4 Import `canvas-sample.pdf` | processing → ready | ✓ — DB: `origin` stamped, `storagePath` a uuid.pdf under `uploads/`, 1 chunk |
+| B5 Sync | 0 matched · 2 on Canvas only · 1 in FinanceBot only; IDs 2 of 3; 2 added; 1-student warning | ✓ — DB: 2 entries, `matchedBy: integrationId`; Conflict Student not stored |
+| B6 `cpsc_student` enroll by code, no CSV entry | succeeds | ✓ — DB: enrolled, on CSV false, on Canvas entries true |
+| B7 `conflict_student` enroll | refused | ✓ |
+| C8 Add `conflict_student` to CSV → enroll | succeeds (escape hatch) | ✓ |
+| C9 Re-sync | 1 matched · 1 on Canvas only · 2 in FinanceBot only | ✓ |
+| C10 Unlink | Step 2; `2 from CSV · 0 from Canvas`; enrollments and material intact | ✓ — DB: link cleared, entries 0, both students still enrolled, material intact |
+
 ### Task 5 — 2026-08-27
 
 - `npx jest tests/unit/enrollment` → 13/13: the 9 pre-existing cases pass
