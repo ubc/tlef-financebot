@@ -4,6 +4,10 @@ on:
     branches: [main, setup]
   pull_request:
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -13,7 +17,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # @ubc/ubc-genai-toolkit-lms-integration lives on GitHub Packages.
+          # setup-node writes the auth line for this registry into the
+          # runner's ~/.npmrc from NODE_AUTH_TOKEN; the project .npmrc only
+          # maps the @ubc scope to the registry.
+          registry-url: https://npm.pkg.github.com
+          scope: '@ubc'
       - run: npm ci
+        env:
+          # GITHUB_TOKEN can read a package only if that package grants this
+          # repository access. If it cannot, add a repo secret
+          # GH_PACKAGES_READ_TOKEN (classic PAT, read:packages, SSO-authorized
+          # for ubc) and it takes precedence.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_READ_TOKEN || secrets.GITHUB_TOKEN }}
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
