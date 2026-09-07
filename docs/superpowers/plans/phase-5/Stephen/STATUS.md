@@ -1,6 +1,20 @@
 # Stephen — Phase 5 status
 
-_Last updated: 2026-08-07_
+_Last updated: 2026-09-07_
+
+## Latest local delivery — generation workflow
+
+- User Stephen explicitly authorized unified modifications across developer ownership.
+- main fast-forwarded to `2af3b6f`; existing Student tutorial changes preserved.
+- Local branch `codex/visual-generation-workflow` implements per-question verified
+  Draft delivery, persisted item progress, SSE latest messages, visible pipeline,
+  connection/revision handling and non-disruptive Draft arrival refresh.
+- 103 Jest suites / 1,299 tests, lint, typecheck and build passed. Three deterministic
+  compiled-view Playwright tests passed including scoped mobile axe; no paid-provider
+  performance or real SAML E2E claim. Independent review passed after two fixes.
+- Changes are uncommitted and not merged or deployed. Full harness and role redesign
+  remain product follow-ups; see this date's personal implementation plan and
+  `docs/product/2026-09-07-ai-workspace-and-harness.md`.
 
 ## In progress
 
