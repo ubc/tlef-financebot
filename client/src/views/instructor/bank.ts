@@ -68,6 +68,20 @@ function difficultyLabel(d: Difficulty): string {
   return d.charAt(0).toUpperCase() + d.slice(1);
 }
 
+/** Names of the question's tagged Topics that are not released (no date, or
+ * a date still ahead — the server's theme-release.ts rule). An Approved
+ * question with any such Topic is held back from students everywhere, so
+ * the bank row says so next to its status. Pure, tested. */
+export function heldBackTopics(tree: CourseTree, themeIds: readonly string[], now: Date = new Date()): string[] {
+  return tree.themes
+    .filter((theme) => themeIds.includes(theme._id))
+    .filter((theme) => {
+      const date = theme.availableFrom ? new Date(theme.availableFrom) : null;
+      return !date || Number.isNaN(date.getTime()) || date > now;
+    })
+    .map((theme) => theme.name);
+}
+
 /** "Topic 1 / LO 1, LO 4" style label for a question's tagged Topics/LOs,
  * derived from the course tree (server only gives loIds/themeIds arrays —
  * this is display-only client derivation, no server change). Questions
@@ -443,6 +457,24 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     );
   }
 
+  /** Status badge, plus a "Not released to students" tag when an Approved question waits on
+   * an unreleased Topic — Approved alone reads as "students can see it". */
+  function statusCell(q: BankQuestion): HTMLElement {
+    const badge = statusBadge(STATUS_LABEL[q.state], statusToBadgeVariant(q.state));
+    const held = q.state === 'approved' ? heldBackTopics(tree, q.themeIds) : [];
+    if (held.length === 0) return badge;
+    return el(
+      'span',
+      { class: 'bank-row__status' },
+      badge,
+      el('span', {
+        class: 'bank-row__held',
+        title: `Not visible to students until ${held.join(' and ')} ${held.length === 1 ? 'is' : 'are'} released.`,
+        text: 'Not released to students',
+      }),
+    );
+  }
+
   function questionRow(q: BankQuestion): HTMLElement {
     const stemCell = el('div', { class: 'bank-row__stem' });
     // The STUDENT's view of the question. This row used to print the stored
@@ -472,7 +504,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       el('span', { class: 'bank-row__type', text: TYPE_LABEL[q.current.type] }),
       el('span', { class: 'bank-row__topic', text: topicLoLabel(tree, q.loIds, q.themeIds) }),
       el('span', { class: 'bank-row__difficulty', text: difficultyLabel(q.current.difficulty) }),
-      statusBadge(STATUS_LABEL[q.state], statusToBadgeVariant(q.state)),
+      statusCell(q),
       el(
         'div',
         { class: 'bank-row__actions' },
