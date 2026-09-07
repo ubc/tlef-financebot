@@ -121,9 +121,17 @@ generationRouter.post(
 
 const planCell = z.object({
   loId: objectIdParam,
+  /** Combination rows: the objectives every question from this cell must
+   * integrate. Same bounds and service re-validation as the single form. */
+  secondaryLoIds: z.array(objectIdParam).max(MAX_SECONDARY_LOS).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   kind: z.enum(['calculation', 'conceptual']),
   count: z.number().int().min(1).max(PLAN_MAX_COUNT),
+}).refine((cell) => {
+  const secondary = cell.secondaryLoIds ?? [];
+  return new Set(secondary).size === secondary.length && !secondary.includes(cell.loId);
+}, {
+  message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
 const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS) });
 
@@ -160,7 +168,13 @@ generationRouter.post(
     const body = req.body as z.infer<typeof planBody>;
     const result = await enqueueGenerationPlan(
       new ObjectId(String(req.params.courseId)),
-      body.cells.map((cell) => ({ ...cell, loId: new ObjectId(cell.loId) })),
+      body.cells.map((cell) => ({
+        ...cell,
+        loId: new ObjectId(cell.loId),
+        ...(cell.secondaryLoIds?.length
+          ? { secondaryLoIds: cell.secondaryLoIds.map((id) => new ObjectId(id)) }
+          : { secondaryLoIds: undefined }),
+      })),
       req.user!.puid,
     );
     res.status(202).json({

@@ -8768,6 +8768,71 @@ button.class-row--link:focus-visible .class-row__title {
   opacity: 0.55;
 }
 
+/* Combination rows (multi-LO batch generation): instructor-added rows whose
+   questions integrate a primary and up to two secondary objectives. Accented
+   so they read as a different kind of row from the Auto plan's LO rows. */
+.generation-plan__row--combo {
+  border-left: 3px solid var(--instr-green-fg);
+}
+
+.generation-plan__combo-los {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.4rem;
+}
+
+.generation-plan__combo-los .generation-plan__plus {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.generation-plan__remove {
+  align-self: start;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.generation-plan__remove:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+
+.generation-plan__builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.generation-plan__builder .form-field__label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.generation-plan__builder-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 56rem) {
+  .generation-plan__builder {
+    grid-template-columns: 1fr;
+  }
+}
+
 .generation-plan__select {
   margin-top: 0.2rem;
 }
