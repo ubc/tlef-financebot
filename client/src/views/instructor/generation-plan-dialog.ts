@@ -1,4 +1,4 @@
-// The batch planner as a dialog: "Plan a batch" from the Question Workspace.
+// The batch planner as a dialog: "Batch Generation" from the Question Workspace.
 // One row per Learning Objective — its kind, per-tier approved counts, and a
 // stepper per tier x kind. Auto fills the grid from the server's plan; the
 // instructor adjusts any count; one action enqueues one generation run per
@@ -201,7 +201,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
     el(
       'div',
       { class: 'app-dialog__surface generation-plan' },
-      el('h2', { class: 'app-dialog__title', id: 'generation-plan-title', text: 'Plan a batch of questions' }),
+      el('h2', { class: 'app-dialog__title', id: 'generation-plan-title', text: 'Batch Generation' }),
       el('p', {
         class: 'app-dialog__message',
         text: 'Auto suggests how many easy, medium and hard questions each Learning Objective needs, split into calculation and conceptual by its kind. Adjust any count, then generate. Every question enters the review queue first.',

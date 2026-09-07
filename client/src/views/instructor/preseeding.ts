@@ -39,6 +39,7 @@ import {
   ApiError,
   createGenerationBlueprint,
   generateQuestions,
+  getContentRun,
   getCourseTree,
   getGenerationPresets,
   getPreseeding,
@@ -166,12 +167,61 @@ const GENERATION_ERROR_MESSAGE: Record<string, string> = {
     'The run completed, but no valid Draft questions could be created.',
   'content-run-enqueue-failed':
     'Question generation could not be queued. Please try again after the background job service recovers.',
+  'generation-secondary-lo-limit':
+    'A question can integrate at most two further Learning Objectives.',
+  'generation-secondary-lo-duplicate':
+    'Each Learning Objective can be chosen once, and the Target LO cannot also be a secondary one.',
+  'generation-secondary-lo-no-materials':
+    'One of the secondary Learning Objectives has no ready assigned material. Assign course material to it before generating.',
+  'generation-secondary-lo-no-grounding':
+    'No usable content was found in a secondary Learning Objective\'s materials. Check its assigned files and try again.',
 };
 
 /** Convert persisted/server domain codes into instructor-facing recovery text. */
 export function generationErrorMessage(message: string): string {
   const code = message.split(':')[0] ?? message;
   return GENERATION_ERROR_MESSAGE[code] ?? message;
+}
+
+// --- Multi-LO generation (pure, tested) --------------------------------------
+
+/** How many further Learning Objectives one question may integrate. Mirrors
+ * the server's MAX_SECONDARY_LOS: two keeps a question answerable, and the
+ * server rejects more. */
+export const MAX_SECONDARY_LOS = 2;
+
+/** Add `loId` to the secondary list unless it is empty, the primary, already
+ * chosen, or the list is full. Returns the same array when nothing changes so
+ * callers can skip a re-render. */
+export function addSecondaryLo(
+  current: readonly string[],
+  loId: string,
+  primaryLoId: string,
+  max: number = MAX_SECONDARY_LOS,
+): string[] {
+  if (!loId || loId === primaryLoId || current.includes(loId) || current.length >= max) return [...current];
+  return [...current, loId];
+}
+
+/** The difficulty to show after the secondary list changes. Adding the FIRST
+ * secondary objective moves the target to hard: every multi-LO calculation
+ * generated at medium so far came back flagged "hard" by the reviewer
+ * (2026-09-04, five of five), because integrating a second objective is by
+ * construction the multi-concept chain the rubric calls hard. The instructor
+ * can still pick medium afterwards — conceptual integrations do pass at
+ * medium — and later additions or removals never touch their choice. */
+export function difficultyAfterSecondaryChange(
+  current: GenerationDifficulty,
+  previousCount: number,
+  nextCount: number,
+): GenerationDifficulty {
+  return previousCount === 0 && nextCount > 0 ? 'hard' : current;
+}
+
+/** After the primary LO changes, a secondary equal to the new primary is
+ * dropped — a question cannot integrate its own objective. */
+export function secondaryLosAfterPrimaryChange(current: readonly string[], primaryLoId: string): string[] {
+  return current.filter((id) => id !== primaryLoId);
 }
 
 // --- LO/Topic join ------------------------------------------------------------
@@ -219,6 +269,13 @@ const DIFFICULTY_LABEL: Record<GenerationDifficulty, string> = { easy: 'Easy', m
 // service, the collection and `/api/courses/:courseId/generation-blueprints`
 // all keep the original name: renaming the contract is a far larger change with
 // no user benefit.
+/** Questions per run offered by the form. The server allows up to 20; five
+ * keeps one instructor click within a few minutes of generator time. */
+export const COUNT_OPTIONS = [1, 2, 3, 4, 5] as const;
+export const DEFAULT_COUNT = 3;
+const SECONDARY_HELP =
+  `Optional, up to ${MAX_SECONDARY_LOS} more Learning Objectives. Each question will require the Target LO and every objective added here, and is tagged to all of them. Their assigned materials ground the question alongside the Target LO's.`;
+
 const SAVED_SETUP_LABEL = 'Saved Setup';
 const SAVED_SETUP_HELP =
   'Saves this Learning Objective, question type, difficulty and prompt together so you can re-run the same request later without setting it up again.';
@@ -254,6 +311,12 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let rows = buildRows(preseeding, tree);
   const runs = new Map(recentRuns.map((run) => [run._id, run]));
   const refreshedTerminalRuns = new Set<string>();
+  // The latest pipeline event message per ACTIVE run ("Generated candidate 1
+  // of 3"). The summary the stream carries has no events, and during the
+  // generating stage the unit counter only moves on failures, so without this
+  // a five-minute candidate reads as a frozen "0/3". One snapshot fetch per
+  // stream update, active runs only.
+  const runMessages = new Map<string, string>();
   const losInScope = tree.themes.flatMap((theme, themeIndex) =>
     (theme.los ?? []).map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} / LO ${loIndex + 1}: ${lo.name}` })),
   );
@@ -287,8 +350,16 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   // LOs, so there is no one target to jump the instructor to — only a better
   // starting point than the course's very first LO.
   let formLoId = arrivalThemeLoId || losInScope[0]?.id || '';
+  // Multi-LO generation: further objectives every question must integrate.
+  // Never carried by a Saved Setup (blueprints hold one LO), so selecting a
+  // setup clears it.
+  let formSecondaryLoIds: string[] = [];
+  // The Recent Generation Activity disclosure is rebuilt on every run event,
+  // so its open/closed state lives here rather than on the element.
+  let runsOpen = false;
   let formType: GenerationQuestionType = arrivalType ?? 'mcq';
   let formDifficulty: GenerationDifficulty = 'medium';
+  let formCount: number = DEFAULT_COUNT;
   let formError: string | null = null;
   let formQueuedMessage: string | null = null;
   let formBusy = false;
@@ -345,6 +416,20 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     return materialsForLo(loId).length > 0;
   }
 
+  function loLabel(loId: string): string {
+    return losInScope.find((lo) => lo.id === loId)?.label ?? 'Unknown LO';
+  }
+
+  /** Short "LO 1.2" style handle for run panels, where the full label is noise. */
+  function loShortLabel(loId: string): string {
+    return rows.find((row) => row.loId === loId)?.loLabel.split('  ')[0] ?? loLabel(loId);
+  }
+
+  function queuePath(runId?: string | null): string {
+    const base = `/instructor/course/${encodeURIComponent(courseId)}/queue`;
+    return runId ? `${base}?runId=${encodeURIComponent(runId)}` : base;
+  }
+
   function openMaterials(): void {
     navigate(`/instructor/course/${encodeURIComponent(courseId)}/materials`);
   }
@@ -395,6 +480,11 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       renderForm();
       return;
     }
+    if (formSecondaryLoIds.some((loId) => !hasReadyAssignedMaterial(loId))) {
+      formError = GENERATION_ERROR_MESSAGE['generation-secondary-lo-no-materials'];
+      renderForm();
+      return;
+    }
     formBusy = true;
     formError = null;
     formQueuedMessage = null;
@@ -402,6 +492,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     try {
       const queued = await generateQuestions(courseId, {
         loId: formLoId,
+        ...(formSecondaryLoIds.length > 0 ? { secondaryLoIds: [...formSecondaryLoIds] } : {}),
+        count: formCount,
         type: formType,
         difficulty: formDifficulty,
         prompt: promptTextarea.value.trim() || undefined,
@@ -496,26 +588,47 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       : run.status === 'failed'
         ? ` · during ${stage}`
         : '';
-    return `${run.status}${activeStage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed`;
+    const latest = run.status === 'running' || run.status === 'queued' ? runMessages.get(run._id) : undefined;
+    return `${run.status}${activeStage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed${latest ? ` · ${latest}` : ''}`;
+  }
+
+  async function refreshRunMessage(runId: string): Promise<void> {
+    try {
+      const snapshot = await getContentRun(courseId, runId);
+      if (!root.isConnected) return;
+      const last = snapshot.events[snapshot.events.length - 1]?.message;
+      if (!last || runMessages.get(runId) === last) return;
+      runMessages.set(runId, last);
+      renderRuns();
+      if (activeFormRunId === runId) renderForm();
+    } catch {
+      // The message is a courtesy; the run's status line stands on its own.
+    }
   }
 
   function runStatusPanel(run: ContentRunSummary): HTMLElement {
     const created = run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0;
     const missingAssignedMaterial = run.error?.code === 'generation-no-assigned-materials'
       || run.error?.message.split(':')[0] === 'generation-no-assigned-materials';
+    // Which objectives the run targeted — the primary plus any integrated
+    // secondaries — so a collapsed history still reads as a list of intents.
+    const targetLos = run.kind === 'question-generation'
+      ? [run.input.loId, ...(run.input.secondaryLoIds ?? [])].map(loShortLabel).join(' + ')
+      : '';
     return el(
       'div',
       { class: `preseeding-queued-message content-run-status content-run-status--${run.status}`, role: 'status' },
       el('strong', { text: `Run ${run._id.slice(-8)}` }),
+      targetLos ? el('span', { class: 'content-run-status__target', text: ` · ${targetLos}` }) : false,
       el('span', { text: ` — ${runStatusText(run)}` }),
       created > 0
         ? el(
             'a',
             {
-              href: `#/instructor/course/${encodeURIComponent(courseId)}/queue`,
+              href: `#${queuePath(run._id)}`,
               onclick: (event: Event) => {
                 event.preventDefault();
-                navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`);
+                navigate(queuePath(run._id));
               },
             },
             ' Review Drafts →',
@@ -563,6 +676,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
           const selected = blueprints.find((blueprint) => blueprint._id === selectedBlueprintId);
           if (selected) {
             formLoId = selected.loId;
+            formSecondaryLoIds = [];
             formType = selected.type;
             formDifficulty = selected.difficulty ?? 'medium';
             promptTextarea.value = selected.prompt ?? '';
@@ -586,6 +700,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         class: 'input',
         onchange: (e: Event) => {
           formLoId = (e.target as HTMLSelectElement).value;
+          formSecondaryLoIds = secondaryLosAfterPrimaryChange(formSecondaryLoIds, formLoId);
           mentionInput.value = '';
           renderForm();
         },
@@ -595,6 +710,88 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       ),
     ) as HTMLSelectElement;
     formLoSelect = loSelect;
+
+    // Multi-LO generation: chips for the chosen secondary objectives plus a
+    // picker that adds one. The picker lists only objectives that are neither
+    // the primary nor already chosen, and disappears once the list is full.
+    const secondaryCandidates = losInScope.filter(
+      (lo) => lo.id !== formLoId && !formSecondaryLoIds.includes(lo.id),
+    );
+    const secondaryPicker = el(
+      'select',
+      {
+        class: 'input',
+        'aria-label': 'Add a Learning Objective to integrate',
+        disabled: formSecondaryLoIds.length >= MAX_SECONDARY_LOS || secondaryCandidates.length === 0 ? 'disabled' : undefined,
+        onchange: (e: Event) => {
+          const picked = (e.target as HTMLSelectElement).value;
+          const next = addSecondaryLo(formSecondaryLoIds, picked, formLoId);
+          formDifficulty = difficultyAfterSecondaryChange(formDifficulty, formSecondaryLoIds.length, next.length);
+          formSecondaryLoIds = next;
+          formError = null;
+          renderForm();
+        },
+      },
+      el('option', {
+        value: '',
+        selected: 'selected',
+        text: formSecondaryLoIds.length >= MAX_SECONDARY_LOS
+          ? `Up to ${MAX_SECONDARY_LOS} objectives chosen`
+          : 'Add a Learning Objective…',
+      }),
+      ...secondaryCandidates.map((lo) => el('option', { value: lo.id, text: lo.label })),
+    ) as HTMLSelectElement;
+    const secondaryChips = el(
+      'div',
+      { class: 'lo-chip-row' },
+      ...formSecondaryLoIds.map((loId) =>
+        el(
+          'span',
+          { class: `lo-chip${hasReadyAssignedMaterial(loId) ? '' : ' lo-chip--warn'}` },
+          el('span', { text: loLabel(loId) }),
+          hasReadyAssignedMaterial(loId) ? false : el('span', { class: 'lo-chip__note', text: 'no ready material' }),
+          el(
+            'button',
+            {
+              class: 'lo-chip__remove',
+              type: 'button',
+              'aria-label': `Remove ${loLabel(loId)}`,
+              onclick: () => {
+                formSecondaryLoIds = formSecondaryLoIds.filter((id) => id !== loId);
+                renderForm();
+              },
+            },
+            '×',
+          ),
+        ),
+      ),
+    );
+    // The tip sits beside the label, outside any <label>, for the same
+    // focus-stealing reason as the Saved Setup field below.
+    const secondaryField = el(
+      'div',
+      { class: 'form-field' },
+      el(
+        'div',
+        { class: 'form-field__label-row' },
+        el('span', { class: 'form-field__label', text: 'Additional LO' }),
+        helpTip('Additional LO', SECONDARY_HELP),
+      ),
+      formSecondaryLoIds.length > 0 ? secondaryChips : false,
+      secondaryPicker,
+    );
+    const countSelect = el(
+      'select',
+      {
+        class: 'input',
+        onchange: (e: Event) => {
+          formCount = Number((e.target as HTMLSelectElement).value);
+        },
+      },
+      ...COUNT_OPTIONS.map((n) =>
+        el('option', { value: String(n), text: String(n), selected: formCount === n ? 'selected' : undefined }),
+      ),
+    ) as HTMLSelectElement;
 
     const typeSelect = el(
       'select',
@@ -648,9 +845,12 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         el(
           'button',
           {
-            class: 'btn btn--ghost btn--sm',
+            class: 'btn btn--ghost btn--field',
             type: 'button',
-            disabled: formBusy ? 'disabled' : undefined,
+            // A Saved Setup holds one LO; it cannot carry the secondary
+            // objectives, so saving would silently drop them.
+            disabled: formBusy || formSecondaryLoIds.length > 0 ? 'disabled' : undefined,
+            title: formSecondaryLoIds.length > 0 ? 'Saved Setups hold a single Target LO. Remove the added objectives to save.' : undefined,
             onclick: () => void saveBlueprint(),
           },
           'Save setup',
@@ -659,7 +859,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
           ? el(
               'button',
               {
-                class: 'btn btn--ghost btn--sm',
+                class: 'btn btn--ghost btn--field',
                 type: 'button',
                 disabled: formBusy ? 'disabled' : undefined,
                 onclick: () => void runSelectedBlueprint(),
@@ -717,6 +917,15 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         el('span', { class: 'form-field__label', text: 'Custom prompt · Use @filename to reference a specific uploaded material' }),
         promptTextarea,
       ),
+      // Same three-column grid as the row above, so the picker is exactly as
+      // wide as Target LO; the third cell is intentionally empty.
+      el(
+        'div',
+        { class: 'preseeding-form__row' },
+        secondaryField,
+        el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Number of Questions' }), countSelect),
+        el('div'),
+      ),
       el(
         'div',
         { class: 'preseeding-form__row' },
@@ -736,7 +945,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         el(
           'button',
           {
-            class: 'btn btn--ghost btn--sm',
+            class: 'btn btn--ghost btn--field',
             type: 'button',
             onclick: insertMaterialMention,
           },
@@ -752,10 +961,10 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             el(
               'a',
               {
-                href: `#/instructor/course/${encodeURIComponent(courseId)}/queue`,
+                href: `#${queuePath(activeFormRunId)}`,
                 onclick: (e: Event) => {
                   e.preventDefault();
-                  navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`);
+                  navigate(queuePath(activeFormRunId));
                 },
               },
               'Go to Review Queue →',
@@ -771,7 +980,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
           disabled: formBusy || !canGenerate ? 'disabled' : undefined,
           onclick: () => void submitGenerate(),
         },
-        formBusy ? 'Generating…' : 'Generate Question →',
+        formBusy ? 'Generating…' : 'Generate',
       ),
       // The I12 wireframe also shows a synchronous "Generated output"
       // preview panel here, ending in "Review & Approve ->". Omitted: the
@@ -866,13 +1075,25 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 
   function renderRuns(): void {
     const generationRuns = recentRuns.filter((run) => run.kind === 'question-generation').slice(0, 8);
+    const active = generationRuns.filter((run) => !['completed', 'partial', 'failed'].includes(run.status)).length;
+    // A disclosure, closed by default: the list is reference material, not
+    // the page's job. The summary carries the counts so a closed panel still
+    // says whether anything is in flight; the form's own status panel shows
+    // the run the instructor just queued.
+    const summaryText = `Recent Generation Activity (${generationRuns.length}${active > 0 ? ` · ${active} in progress` : ''})`;
     mount(
       runContainer,
       generationRuns.length > 0
         ? el(
-            'section',
-            { class: 'content-run-history' },
-            el('h2', { class: 'detail-section-title', text: 'Recent Generation Activity' }),
+            'details',
+            {
+              class: 'content-run-history content-run-history--collapsible',
+              open: runsOpen ? 'open' : undefined,
+              ontoggle: (event: Event) => {
+                runsOpen = (event.target as HTMLDetailsElement).open;
+              },
+            },
+            el('summary', { class: 'content-run-history__summary' }, el('h2', { class: 'detail-section-title', text: summaryText })),
             ...generationRuns.map(runStatusPanel),
           )
         : false,
@@ -890,6 +1111,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     if (activeFormRunId === run._id) renderForm();
 
     const terminal = ['completed', 'partial', 'failed'].includes(run.status);
+    if (terminal) runMessages.delete(run._id);
+    else void refreshRunMessage(run._id);
     const wasActive = previous !== undefined && !['completed', 'partial', 'failed'].includes(previous.status);
     if (!terminal || refreshedTerminalRuns.has(run._id) || (source === 'snapshot' && !wasActive)) return;
     refreshedTerminalRuns.add(run._id);
@@ -908,7 +1131,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       'Question Bank Coverage',
       'Target: 3–5 Approved questions per LO before publishing. Generate for any LO below threshold.',
       {
-        text: 'Plan a batch…',
+        text: 'Batch Generation',
         onClick: () => openGenerationPlanDialog({
           courseId,
           hasReadySource: hasReadyAssignedMaterial,

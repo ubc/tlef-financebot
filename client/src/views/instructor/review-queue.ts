@@ -43,6 +43,7 @@ import {
   bulkDelete,
   type BulkDeleteSkipReason,
   bulkTransition,
+  getContentRun,
   getCourseTree,
   getQuestion,
   getReviewQueue,
@@ -58,8 +59,21 @@ import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../in
 import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { STATUS_LABEL, TYPE_LABEL, statusToBadgeVariant } from './bank.js';
+
+/** Arrival from a generation run (`?runId=` — preseeding.ts's "Review
+ * Drafts" links): how many of the run's created questions are in the queue
+ * right now, and how many have already left it (approved, archived,
+ * deleted). Pure so the banner copy is unit-testable. */
+export function runHighlightSummary(
+  createdQuestionIds: readonly string[],
+  queueIds: readonly string[],
+): { shown: number; missing: number } {
+  const queue = new Set(queueIds);
+  const shown = createdQuestionIds.filter((id) => queue.has(id)).length;
+  return { shown, missing: createdQuestionIds.length - shown };
+}
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -73,6 +87,25 @@ interface AgentDecisionInfo {
 }
 
 export type QueueTab = 'all' | 'flagged' | 'agent-flag' | 'agent-reject' | 'agent-pass';
+
+/** Question-type filter (2026-09-04): when one type is short in the bank the
+ * instructor wants the other type's candidates in one place. Orthogonal to
+ * the tabs, which are about decisions; this is about the question itself. */
+export type QueueTypeFilter = 'all' | 'mcq' | 'true-false';
+
+export const QUEUE_TYPE_FILTERS: QueueTypeFilter[] = ['all', 'mcq', 'true-false'];
+
+const TYPE_FILTER_LABEL: Record<QueueTypeFilter, string> = {
+  all: 'All types',
+  mcq: 'MCQ only',
+  'true-false': 'True/False only',
+};
+
+export function matchesType(item: { current: { type: 'mcq' | 'true-false' } }, filter: QueueTypeFilter): boolean {
+  return filter === 'all' || item.current.type === filter;
+}
+
+const DIFFICULTY_LABEL: Record<'easy' | 'medium' | 'hard', string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
 const QUEUE_TABS: QueueTab[] = ['all', 'flagged', 'agent-flag', 'agent-reject', 'agent-pass'];
 
@@ -164,14 +197,82 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   const root = el('div', { class: 'view' }, body);
   mount(outlet, root);
 
+  // Arrival from a generation run: the run's created question ids become a
+  // highlight over the full queue (never a filter — the instructor asked to
+  // see what a run produced, not to lose the rest of their worklist). A run
+  // that cannot be loaded degrades to a plain queue with a note; it must not
+  // block the page.
+  const arrivalRunId = currentQuery().get('runId') ?? '';
+  let highlightIds: Set<string> | null = null;
+  let highlightError: string | null = null;
+  let highlightScrolled = false;
+
   let tree: CourseTree;
   let queueItems: ReviewQueueItem[];
   try {
-    [tree, queueItems] = await Promise.all([getCourseTree(courseId), getReviewQueue(courseId)]);
+    [tree, queueItems] = await Promise.all([
+      getCourseTree(courseId),
+      getReviewQueue(courseId),
+      arrivalRunId
+        ? getContentRun(courseId, arrivalRunId).then(
+            (run) => {
+              if (run.kind === 'question-generation') highlightIds = new Set(run.result?.createdQuestionIds ?? []);
+              else highlightError = `Run ${arrivalRunId.slice(-8)} is not a question-generation run.`;
+            },
+            () => {
+              highlightError = `Run ${arrivalRunId.slice(-8)} could not be loaded, so nothing is highlighted.`;
+            },
+          )
+        : Promise.resolve(),
+    ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderReviewQueueInner(outlet, courseId)));
     return;
+  }
+
+  const queueBasePath = `/instructor/course/${encodeURIComponent(courseId)}/queue`;
+
+  function highlightBanner(): HTMLElement | false {
+    if (highlightError) {
+      return el('p', { class: 'queue-message queue-message--highlight', role: 'status', text: highlightError });
+    }
+    if (!highlightIds) return false;
+    const { shown, missing } = runHighlightSummary([...highlightIds], queueItems.map((item) => item.id));
+    const plural = (count: number): string => `${count} question${count === 1 ? '' : 's'}`;
+    const missingText = missing > 0
+      ? ` ${missing} other${missing === 1 ? '' : 's'} from that run ${missing === 1 ? 'is' : 'are'} no longer in the queue.`
+      : '';
+    return el(
+      'p',
+      { class: 'queue-message queue-message--highlight', role: 'status' },
+      shown > 0
+        ? `Highlighting ${plural(shown)} generated by run ${arrivalRunId.slice(-8)}.${missingText}`
+        : `Run ${arrivalRunId.slice(-8)} has no questions left in the queue.${missingText}`,
+      ' ',
+      el(
+        'a',
+        {
+          href: `#${queueBasePath}`,
+          onclick: (event: Event) => {
+            event.preventDefault();
+            navigate(queueBasePath);
+          },
+        },
+        'Clear highlight',
+      ),
+    );
+  }
+
+  /** Bring the first highlighted row into view once, on the first paint that
+   * has one — not on every re-render, which would yank the page around while
+   * the instructor works. */
+  function scrollToHighlight(): void {
+    if (highlightScrolled) return;
+    const first = resultsContainer.querySelector<HTMLElement>('.queue-row--highlight');
+    if (!first) return;
+    highlightScrolled = true;
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   const agentDecisions = new Map<string, AgentDecisionInfo | undefined>();
@@ -201,6 +302,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   }
 
   let activeTab: QueueTab = 'all';
+  let typeFilter: QueueTypeFilter = 'all';
   let sortKey: SortKey = 'priority';
   const selected = new Set<string>();
   let loadErrorMessage: string | null = null;
@@ -218,7 +320,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   function visibleRows(): ReviewQueueItem[] {
     const inputs = tabInputs();
-    const filtered = queueItems.filter((_, i) => matchesTab(inputs[i], activeTab));
+    const filtered = queueItems.filter((item, i) => matchesTab(inputs[i], activeTab) && matchesType(item, typeFilter));
     if (sortKey === 'stem') {
       return [...filtered].sort((a, b) => a.current.stem.localeCompare(b.current.stem));
     }
@@ -352,6 +454,30 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el('option', { value: 'stem', text: 'Sort by: Question (A–Z)', selected: sortKey === 'stem' ? 'selected' : undefined }),
     ) as HTMLSelectElement;
 
+    // Type filter with live counts over the current tab, so "True/False only
+    // (0)" tells the instructor there is nothing to find before they click.
+    const inputs = tabInputs();
+    const onTab = queueItems.filter((_, i) => matchesTab(inputs[i], activeTab));
+    const typeSelect = el(
+      'select',
+      {
+        class: 'input',
+        'aria-label': 'Filter the review queue by question type',
+        onchange: (e: Event) => {
+          typeFilter = (e.target as HTMLSelectElement).value as QueueTypeFilter;
+          renderControls();
+          renderResults();
+        },
+      },
+      ...QUEUE_TYPE_FILTERS.map((filter) =>
+        el('option', {
+          value: filter,
+          text: `${TYPE_FILTER_LABEL[filter]} (${onTab.filter((item) => matchesType(item, filter)).length})`,
+          selected: typeFilter === filter ? 'selected' : undefined,
+        }),
+      ),
+    ) as HTMLSelectElement;
+
     // Select all / none over the rows this tab + sort currently shows.
     const visible = visibleRows();
     const visibleSelected = visible.filter((item) => selected.has(item.id)).length;
@@ -406,7 +532,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el('option', { value: 'delete', text: 'Delete selected…' }),
     ) as HTMLSelectElement;
 
-    return el('div', { class: 'queue-controls' }, selectAllLabel, sortSelect, bulkButton, moreActions);
+    return el('div', { class: 'queue-controls' }, selectAllLabel, typeSelect, sortSelect, bulkButton, moreActions);
   }
 
   function flagIndicator(item: ReviewQueueItem): HTMLElement | false {
@@ -440,9 +566,10 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       },
     }) as HTMLInputElement;
 
+    const highlighted = highlightIds?.has(item.id) === true;
     return el(
       'div',
-      { class: 'queue-row' },
+      { class: highlighted ? 'queue-row queue-row--highlight' : 'queue-row' },
       checkbox,
       el('div', {}, stemCell, flagIndicator(item)),
       el('div', { class: 'queue-row__type-lo' }, el('span', { text: TYPE_LABEL[item.current.type] }), el('span', { text: topicLoLabel(tree, item.loIds, item.themeIds) })),
@@ -451,6 +578,13 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el(
         'div',
         { class: 'queue-row__actions' },
+        // Difficulty next to the decision buttons (2026-09-04): approving is
+        // partly a "does the label fit" call, so the label sits where the
+        // instructor's eye already is.
+        el('span', {
+          class: `queue-row__difficulty queue-row__difficulty--${item.current.difficulty}`,
+          text: DIFFICULTY_LABEL[item.current.difficulty] ?? item.current.difficulty,
+        }),
         el(
           'button',
           {
@@ -484,6 +618,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       loadErrorMessage ? errorState(loadErrorMessage, () => void reload()) : false,
       actionErrorMessage ? errorState(actionErrorMessage) : false,
       bulkMessage ? el('p', { class: 'queue-message', text: bulkMessage }) : false,
+      highlightBanner(),
       el(
         'div',
         { class: 'queue-table' },
@@ -502,6 +637,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
           : emptyState('No questions match this filter.'),
       ),
     );
+    scrollToHighlight();
   }
 
   async function reload(): Promise<void> {

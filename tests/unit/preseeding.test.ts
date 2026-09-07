@@ -6,11 +6,15 @@
 // as review-queue.test.ts/question-bank-helpers.test.ts. See
 // client/src/views/instructor/preseeding.ts.
 import {
+  addSecondaryLo,
   coverageStatus,
+  difficultyAfterSecondaryChange,
   generationErrorMessage,
   materialMentionToken,
   presetPrompt,
+  secondaryLosAfterPrimaryChange,
   thinLos,
+  MAX_SECONDARY_LOS,
   PRESET_TEMPLATES,
   THIN_THRESHOLD,
   type PresetTemplateId,
@@ -103,5 +107,43 @@ describe('presetPrompt', () => {
   it('returns the same text for the same id (pure/deterministic)', () => {
     const id: PresetTemplateId = 'numerical-parameterized';
     expect(presetPrompt(id)).toBe(presetPrompt(id));
+  });
+});
+
+describe('multi-LO secondary objective picks', () => {
+  it('adds a new objective and refuses an empty pick, the primary, a duplicate, and a full list', () => {
+    expect(addSecondaryLo([], 'lo-2', 'lo-1')).toEqual(['lo-2']);
+    expect(addSecondaryLo(['lo-2'], 'lo-3', 'lo-1')).toEqual(['lo-2', 'lo-3']);
+    expect(addSecondaryLo([], '', 'lo-1')).toEqual([]);
+    expect(addSecondaryLo([], 'lo-1', 'lo-1')).toEqual([]);
+    expect(addSecondaryLo(['lo-2'], 'lo-2', 'lo-1')).toEqual(['lo-2']);
+    expect(addSecondaryLo(['lo-2', 'lo-3'], 'lo-4', 'lo-1')).toEqual(['lo-2', 'lo-3']);
+    expect(MAX_SECONDARY_LOS).toBe(2);
+  });
+
+  it('never mutates the list it was given', () => {
+    const current = ['lo-2'];
+    addSecondaryLo(current, 'lo-3', 'lo-1');
+    expect(current).toEqual(['lo-2']);
+  });
+
+  it('drops a secondary objective that becomes the primary, keeping the rest in order', () => {
+    expect(secondaryLosAfterPrimaryChange(['lo-2', 'lo-3'], 'lo-2')).toEqual(['lo-3']);
+    expect(secondaryLosAfterPrimaryChange(['lo-2', 'lo-3'], 'lo-9')).toEqual(['lo-2', 'lo-3']);
+  });
+
+  it('moves difficulty to hard when the first secondary is added, and never otherwise', () => {
+    expect(difficultyAfterSecondaryChange('medium', 0, 1)).toBe('hard');
+    expect(difficultyAfterSecondaryChange('easy', 0, 1)).toBe('hard');
+    // The instructor's later choice stands: a second addition, or a removal.
+    expect(difficultyAfterSecondaryChange('medium', 1, 2)).toBe('medium');
+    expect(difficultyAfterSecondaryChange('medium', 1, 0)).toBe('medium');
+    // A refused add (list unchanged) changes nothing.
+    expect(difficultyAfterSecondaryChange('medium', 0, 0)).toBe('medium');
+  });
+
+  it('maps the secondary-objective server codes to instructor-facing text', () => {
+    expect(generationErrorMessage('generation-secondary-lo-no-materials')).toMatch(/no ready assigned material/);
+    expect(generationErrorMessage('generation-secondary-lo-duplicate: lo-2')).toMatch(/chosen once/);
   });
 });

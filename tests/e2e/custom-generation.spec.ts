@@ -137,7 +137,7 @@ test.describe('Task 10 custom generation and regeneration', () => {
     await page.getByLabel('Material @mention autocomplete').fill(MATERIAL_NAME);
     await page.getByRole('button', { name: 'Insert @mention' }).click();
     await expect(prompt).toHaveValue(new RegExp(`@"${MATERIAL_NAME.replace('.', '\\.')}"`));
-    await page.getByRole('button', { name: 'Generate Question →' }).click();
+    await page.getByRole('button', { name: 'Generate', exact: true }).click();
     await expect(page.getByText(/Generation queued as run 12345678/i)).toBeVisible();
     expect(generationPayload).toMatchObject({
       loId,
