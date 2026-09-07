@@ -29,6 +29,7 @@ import {
   reviewBookCol,
   attemptsCol,
   losCol,
+  themesCol,
 } from '../../server/src/components/mongodb/collections';
 import { getMasteryTier, getLoStatuses, themeCoverage, recordAttemptInMastery } from '../../server/src/services/mastery.service';
 import { repeatedFailureRedirect } from '../../server/src/services/progression.service';
@@ -150,6 +151,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(getMasteryTier).mockResolvedValue('easy');
   jest.mocked(getLoStatuses).mockResolvedValue(new Map());
+  // The bank's Theme is RELEASED: since the release model (theme-release.ts)
+  // an undated Theme holds every question tagged to it out of serving, which
+  // would make the approved-only proof pass for the wrong reason.
+  jest.mocked(themesCol).mockReturnValue({
+    find: jest.fn(() => ({
+      toArray: async () => [{ _id: themeId, courseId, name: 'Theme', order: 1, availableFrom: new Date(0) }],
+    })),
+  } as never);
   jest.mocked(themeCoverage).mockResolvedValue({ covered: false, includesSkipped: false });
   jest.mocked(repeatedFailureRedirect).mockResolvedValue(undefined);
   // attempts.service reads `profile.status` off this return (line 242/317), so

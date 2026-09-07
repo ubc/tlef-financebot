@@ -22,6 +22,7 @@ import { enqueueExamMasteryPass } from './exam-mastery.service';
 import { notifyCourseStaff } from './notifications.service';
 import { isServable } from './numeric-gate.service';
 import { drawCollisionFreeParams, substituteParams } from './params.service';
+import { releasedForServing, unreleasedThemeIds } from './theme-release';
 
 type QuestionHead = WithId<Question>;
 type Version = WithId<QuestionVersion>;
@@ -116,11 +117,18 @@ async function loadBank(
   template: WithId<ExamTemplate>,
 ): Promise<{ candidates: Candidate[]; versions: Map<string, Version> }> {
   const themeIds = template.themes.map((theme) => theme.themeId);
-  const questions = await questionsCol().find({
-    courseId,
-    state: 'approved',
-    themeIds: { $in: themeIds },
-  }).toArray();
+  const [tagged, unreleased] = await Promise.all([
+    questionsCol().find({
+      courseId,
+      state: 'approved',
+      themeIds: { $in: themeIds },
+    }).toArray(),
+    unreleasedThemeIds(courseId),
+  ]);
+  // The release holdback (theme-release.ts): a question that also carries a
+  // tag on an unreleased Topic stays out of the exam even though one of its
+  // Topics is in the template.
+  const questions = tagged.filter((question) => releasedForServing(question, unreleased));
   const versionIds = questions.map((question) => question.currentVersionId);
   const allLoIds = questions.flatMap((question) => question.loIds);
   const [versionsList, los] = await Promise.all([

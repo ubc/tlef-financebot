@@ -31,6 +31,7 @@ import {
   servableApprovedCountByLo,
   type SelectResult,
 } from './serving.service';
+import { isThemeReleased } from './theme-release';
 
 const PREVIEW_PUID = 'anonymous-preview';
 const MASTERY_WINDOW = 10;
@@ -140,7 +141,7 @@ async function assertPreviewLo(courseId: ObjectId, loId: ObjectId): Promise<With
     courseId,
     archivedAt: { $exists: false },
   });
-  if (!theme || (theme.availableFrom && theme.availableFrom > new Date())) {
+  if (!theme || !isThemeReleased(theme)) {
     throw new Error('lo-not-available');
   }
   return lo;
@@ -256,7 +257,7 @@ export async function getPreviewHome(
   const now = new Date();
   const home: PreviewHomeTheme[] = [];
   for (const theme of themes.sort((a, b) => a.order - b.order)) {
-    if (theme.availableFrom && theme.availableFrom > now) continue;
+    if (!isThemeReleased(theme, now)) continue;
     const visibleLos = los
       .filter((lo) => lo.themeId.equals(theme._id))
       .sort((a, b) => a.order - b.order)

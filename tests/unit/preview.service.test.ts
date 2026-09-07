@@ -101,6 +101,9 @@ const theme: Theme & { _id: ObjectId } = {
   courseId,
   name: 'Time Value',
   order: 1,
+  // Released: since the release model (theme-release.ts) an undated Theme is
+  // "Not released" and Preview hides it like the live course home.
+  availableFrom: new Date(0),
 };
 
 const lo: LearningObjective & { _id: ObjectId } = {
