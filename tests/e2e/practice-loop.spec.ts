@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -75,7 +75,7 @@ test.describe('practice loop (student)', () => {
     courseId = course._id;
     registrationCode = course.registrationCode;
 
-    const themeRes = await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME } });
+    const themeRes = await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME, availableFrom: RELEASED } });
     const theme = (await themeRes.json()) as { _id: string };
 
     const loRes = await api.post(`/api/themes/${theme._id}/los`, { data: { name: LO_NAME } });

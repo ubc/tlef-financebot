@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   attemptsCol,
@@ -54,7 +54,7 @@ test.describe('Exam Prep single-sitting integrity path', () => {
     registrationCode = course.registrationCode;
 
     const themeResponse = await api.post(`/api/courses/${courseId}/themes`, {
-      data: { name: 'Exam integrity Topic' },
+      data: { name: 'Exam integrity Topic', availableFrom: RELEASED },
     });
     expect(themeResponse.status()).toBe(201);
     const theme = (await themeResponse.json()) as { _id: string };

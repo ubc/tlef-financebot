@@ -229,6 +229,8 @@ export function secondaryLosAfterPrimaryChange(current: readonly string[], prima
 interface LoRow {
   loId: string;
   approved: number;
+  /** Approved but not yet visible to students: tagged to an unreleased Topic. */
+  heldBack: number;
   target: number;
   topicName: string;
   loLabel: string;
@@ -243,6 +245,7 @@ function buildRows(preseeding: PreseedingLo[], tree: CourseTree): LoRow[] {
         return {
           loId: p.loId,
           approved: p.approved,
+          heldBack: p.heldBack ?? 0,
           target: p.target,
           topicName: theme.name,
           loLabel: `LO ${themeIndex + 1}.${loIndex + 1}  ${p.loName}`,
@@ -251,7 +254,7 @@ function buildRows(preseeding: PreseedingLo[], tree: CourseTree): LoRow[] {
     }
     // LO not found in the tree (e.g. archived after preseeding was computed)
     // — still show the row rather than dropping coverage data silently.
-    return { loId: p.loId, approved: p.approved, target: p.target, topicName: '—', loLabel: p.loName };
+    return { loId: p.loId, approved: p.approved, heldBack: p.heldBack ?? 0, target: p.target, topicName: '—', loLabel: p.loName };
   });
 }
 
@@ -911,12 +914,6 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Question Type' }), typeSelect),
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Difficulty' }), difficultySelect),
       ),
-      el(
-        'label',
-        { class: 'form-field' },
-        el('span', { class: 'form-field__label', text: 'Custom prompt · Use @filename to reference a specific uploaded material' }),
-        promptTextarea,
-      ),
       // Same three-column grid as the row above, so the picker is exactly as
       // wide as Target LO; the third cell is intentionally empty.
       el(
@@ -925,6 +922,12 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         secondaryField,
         el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Number of Questions' }), countSelect),
         el('div'),
+      ),
+      el(
+        'label',
+        { class: 'form-field' },
+        el('span', { class: 'form-field__label', text: 'Custom prompt · Use @filename to reference a specific uploaded material' }),
+        promptTextarea,
       ),
       el(
         'div',
@@ -1045,7 +1048,18 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       { class: 'preseeding-row' },
       el('span', { class: 'preseeding-row__lo', 'data-label': 'Learning objective', text: row.loLabel }),
       el('span', { class: 'preseeding-row__topic', 'data-label': 'Topic', text: row.topicName }),
-      el('span', { class: approvedToneClass(status), 'data-label': 'Approved', text: String(row.approved) }),
+      el(
+        'span',
+        { class: approvedToneClass(status), 'data-label': 'Approved' },
+        String(row.approved),
+        row.heldBack > 0
+          ? el('small', {
+              class: 'preseeding-row__held',
+              title: `${row.heldBack} of these are tagged to a Topic that is not released yet, so students cannot see them until it is.`,
+              text: ` · ${row.heldBack} not released to students`,
+            })
+          : false,
+      ),
       el('span', { class: 'preseeding-row__target', 'data-label': 'Target', text: String(row.target) }),
       coverageBadge,
       actionCell,

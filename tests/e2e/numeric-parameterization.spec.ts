@@ -9,7 +9,7 @@
 // courseRole before the first page load.
 import { test, expect } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -46,7 +46,7 @@ test.describe('numeric parameterization', () => {
     courseId = course._id;
 
     const theme = (await (await api.post(`/api/courses/${courseId}/themes`, {
-      data: { name: THEME_NAME },
+      data: { name: THEME_NAME, availableFrom: RELEASED },
     })).json()) as { _id: string };
     const lo = (await (await api.post(`/api/themes/${theme._id}/los`, {
       data: { name: LO_NAME },

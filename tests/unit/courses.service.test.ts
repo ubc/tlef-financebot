@@ -23,6 +23,7 @@ import {
   updateCourse,
   addTheme,
   archiveTheme,
+  updateTheme,
   publishChecklist,
   setPublished,
   archiveCourse,
@@ -343,7 +344,54 @@ describe('archiveTheme (cascade to Learning Objectives)', () => {
   });
 });
 
+describe('updateTheme — release date (theme-release.ts)', () => {
+  it('stamps a release date, and `null` withdraws it with $unset rather than writing null', async () => {
+    const themeId = new ObjectId();
+    const released = new Date('2026-09-05T00:00:00Z');
+    themesFindOneAndUpdate.mockResolvedValue({ _id: themeId, name: 'T', order: 1, availableFrom: released });
+
+    await updateTheme(themeId, { name: 'T', availableFrom: released });
+    expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
+      { _id: themeId },
+      { $set: { name: 'T', availableFrom: released } },
+      { returnDocument: 'after' },
+    );
+
+    await updateTheme(themeId, { availableFrom: null });
+    expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
+      { _id: themeId },
+      { $set: {}, $unset: { availableFrom: '' } },
+      { returnDocument: 'after' },
+    );
+
+    // Absent means untouched — a rename must not withdraw a release.
+    await updateTheme(themeId, { name: 'Renamed' });
+    expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
+      { _id: themeId },
+      { $set: { name: 'Renamed' } },
+      { returnDocument: 'after' },
+    );
+  });
+});
+
 describe('publishChecklist + setPublished (IN-L06)', () => {
+  it('lists the Topics that are not released, and passes only when every Topic is', async () => {
+    const courseId = new ObjectId();
+    coursesFindOne.mockResolvedValue({ _id: courseId, registrationCode: 'ABCD2345', published: false });
+    losToArray.mockResolvedValue([]);
+    themesToArray.mockResolvedValue([
+      { _id: new ObjectId(), name: 'Topic 1', availableFrom: new Date(0) },
+      { _id: new ObjectId(), name: 'Topic 2' },
+      { _id: new ObjectId(), name: 'Topic 3', availableFrom: new Date(Date.now() + 86_400_000) },
+    ]);
+
+    const checklist = await publishChecklist(courseId);
+    expect(checklist.at(-1)).toEqual({ item: 'Every Topic released (not yet: Topic 2, Topic 3)', ok: false });
+
+    themesToArray.mockResolvedValue([{ _id: new ObjectId(), name: 'Topic 1', availableFrom: new Date(0) }]);
+    expect((await publishChecklist(courseId)).at(-1)).toEqual({ item: 'Every Topic released', ok: true });
+  });
+
   it('does not mark the approved-question requirement complete when the course has no LOs', async () => {
     const courseId = new ObjectId();
     coursesFindOne.mockResolvedValue({
@@ -380,7 +428,7 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
 
     const checklist = await publishChecklist(courseId);
 
-    expect(checklist).toHaveLength(5);
+    expect(checklist).toHaveLength(6);
     const approvedItem = checklist[4];
     expect(approvedItem.ok).toBe(false);
     expect(approvedItem.item).toContain('IRR basics');

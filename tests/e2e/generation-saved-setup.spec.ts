@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -44,7 +44,7 @@ test.describe('Generate Question "Saved Setup"', () => {
     courseId = ((await courseResponse.json()) as { _id: string })._id;
 
     const theme = (await (
-      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC } })
+      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC, availableFrom: RELEASED } })
     ).json()) as { _id: string };
     const loId = ((await (
       await context.request.post(`/api/themes/${theme._id}/los`, { data: { name: LO } })

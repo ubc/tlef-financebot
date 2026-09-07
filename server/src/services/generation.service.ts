@@ -25,6 +25,7 @@ import {
 } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
+import { unreleasedThemeIds } from './theme-release';
 import {
   STEP_TEMPERATURE_DEFAULTS,
   configuredGenerationModels,
@@ -1104,19 +1105,28 @@ export async function preseedingProgress(
     approved: number;
     reviewed: number;
     unapproved: number;
+    /** Of `approved`, how many students cannot see yet because the question
+     * is also tagged to a Topic that is not released (theme-release.ts). The
+     * coverage page shows it so "3 approved" and "students see 2" do not
+     * look like a bug. */
+    heldBack: number;
     target: number;
   }>
 > {
-  const los = await losCol()
-    .find({ courseId, archivedAt: { $exists: false } })
-    .sort({ order: 1 })
-    .toArray();
+  const [los, unreleased] = await Promise.all([
+    losCol()
+      .find({ courseId, archivedAt: { $exists: false } })
+      .sort({ order: 1 })
+      .toArray(),
+    unreleasedThemeIds(courseId),
+  ]);
+  const unreleasedIds = [...unreleased].map((id) => new ObjectId(id));
 
   const progress = [];
   for (const lo of los) {
-    // Three small counts per LO, awaited in parallel. LO counts are tiny at
+    // Four small counts per LO, awaited in parallel. LO counts are tiny at
     // Phase-1 scale; if this ever matters, one $unwind aggregation collapses it.
-    const [approved, reviewed, unapproved] = await Promise.all([
+    const [approved, reviewed, unapproved, heldBack] = await Promise.all([
       questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'approved' }),
       questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'reviewed' }),
       questionsCol().countDocuments({
@@ -1124,6 +1134,11 @@ export async function preseedingProgress(
         loIds: lo._id,
         state: { $in: ['draft', 'pending-review', 'reviewed', 'paused'] },
       }),
+      unreleasedIds.length === 0
+        ? Promise.resolve(0)
+        : questionsCol().countDocuments({
+            courseId, loIds: lo._id, state: 'approved', themeIds: { $in: unreleasedIds },
+          }),
     ]);
     progress.push({
       loId: lo._id,
@@ -1131,6 +1146,7 @@ export async function preseedingProgress(
       approved,
       reviewed,
       unapproved,
+      heldBack,
       target: GENERATION_TARGET,
     });
   }
