@@ -184,6 +184,105 @@ describe('platform generation cost control (AD-07)', () => {
   });
 });
 
+describe('multi-LO generation (secondary objectives)', () => {
+  const secondaryLoId = new ObjectId();
+  const secondaryThemeId = new ObjectId();
+  const secondaryMaterialId = new ObjectId();
+
+  /** A primary LO with its own material, plus one secondary objective in
+   * another theme with its own ready material. The first search answers the
+   * primary query, the second the secondary one. */
+  function wireSecondary(): void {
+    loFindOne.mockResolvedValue({ _id: loId, courseId, themeId, name: 'Compute IRR', order: 2 });
+    loToArray.mockResolvedValue([
+      { _id: secondaryLoId, courseId, themeId: secondaryThemeId, name: 'Present value', order: 1 },
+    ]);
+    materialToArray.mockResolvedValue([
+      { _id: materialId, courseId, status: 'ready', assignments: [{ themeId, loId }] },
+      { _id: secondaryMaterialId, courseId, status: 'ready', assignments: [{ themeId: secondaryThemeId, loId: secondaryLoId }] },
+    ]);
+    jest.mocked(search)
+      .mockResolvedValueOnce([
+        { payload: { materialId: materialId.toHexString(), chunk: 'IRR material' } },
+      ] as never)
+      .mockResolvedValueOnce([
+        { payload: { materialId: secondaryMaterialId.toHexString(), chunk: 'PV material' } },
+      ] as never);
+  }
+
+  it('grounds each secondary objective from its own materials, tells all three agents, and tags the question to every LO', async () => {
+    wireSecondary();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit; PV genuinely required' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({
+      courseId, loId, secondaryLoIds: [secondaryLoId], count: 1, difficulty: 'medium', byPuid: 'PUID-INSTR',
+    });
+
+    // Primary keeps its plain budget; the secondary gets its own filtered search.
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(6);
+    expect(jest.mocked(search).mock.calls[1]?.[2]).toBe(2);
+    expect(jest.mocked(search).mock.calls[1]?.[3]).toEqual({
+      must: [{ key: 'materialId', match: { any: [secondaryMaterialId.toHexString()] } }],
+    });
+    // The secondary query is the secondary objective's own name.
+    expect(jest.mocked(embedOne).mock.calls[1]?.[0]).toBe('Present value');
+
+    const [generatorPrompt, validatorPrompt, reviewerPrompt] = jest.mocked(completeJson).mock.calls.map((call) => call[0] as string);
+    expect(generatorPrompt).toContain('THIS QUESTION MUST INTEGRATE A SECOND LEARNING OBJECTIVE');
+    expect(generatorPrompt).toContain('  - "Present value"');
+    expect(generatorPrompt).toContain('Material for the learning objective "Present value"');
+    expect(validatorPrompt).toContain('ALSO required to integrate');
+    expect(reviewerPrompt).toContain('It must ALSO genuinely require each of: "Present value"');
+
+    expect(createQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      loIds: [loId, secondaryLoId],
+      themeIds: [themeId, secondaryThemeId],
+      sourceRefs: expect.arrayContaining([expect.objectContaining({ materialId: secondaryMaterialId })]),
+    }));
+  });
+
+  it('at target hard, chosen secondaries replace the automatic earlier-objective sweep', async () => {
+    wireSecondary();
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce({ ...generatorOutput(), difficulty: 'hard', hardnessMove: 'reinvestment chain: PV then IRR' })
+      .mockResolvedValueOnce({ roleAssessment: 'roles fit' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+
+    await runGenerationPipeline({
+      courseId, loId, secondaryLoIds: [secondaryLoId], count: 1, difficulty: 'hard', byPuid: 'PUID-INSTR',
+    });
+
+    // No third search for the earlier-objective pool, and the primary budget
+    // stays at the plain 6 (the split only applies to the automatic sweep).
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(search).mock.calls[0]?.[2]).toBe(6);
+    const generatorPrompt = jest.mocked(completeJson).mock.calls[0]?.[0] as string;
+    expect(generatorPrompt).not.toContain('Supporting material from an EARLIER learning objective');
+    expect(generatorPrompt).toContain('hardness move chains should come from one of the listed objectives');
+  });
+
+  it('enqueue rejects a repeat of the primary, an unknown objective, and one with no ready material', async () => {
+    await expect(enqueueGenerationRun({ courseId, loId, secondaryLoIds: [loId], count: 1, byPuid: 'PUID-INSTR' }))
+      .rejects.toThrow('generation-secondary-lo-duplicate');
+
+    loToArray.mockResolvedValue([]);
+    await expect(enqueueGenerationRun({ courseId, loId, secondaryLoIds: [secondaryLoId], count: 1, byPuid: 'PUID-INSTR' }))
+      .rejects.toThrow('lo-not-found');
+
+    // The objective exists, but only the primary's material is assigned.
+    loToArray.mockResolvedValue([
+      { _id: secondaryLoId, courseId, themeId: secondaryThemeId, name: 'Present value', order: 1 },
+    ]);
+    await expect(enqueueGenerationRun({ courseId, loId, secondaryLoIds: [secondaryLoId], count: 1, byPuid: 'PUID-INSTR' }))
+      .rejects.toThrow('generation-secondary-lo-no-materials');
+    expect(createQuestionGenerationRun).not.toHaveBeenCalled();
+  });
+});
+
 describe('difficulty calibration prompts', () => {
   it('defines medium difficulty beyond a direct formula substitution', () => {
     const prompt = GENERATOR_PROMPT({

@@ -12,6 +12,7 @@ jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
   regenerateQuestion: jest.fn(),
+  MAX_SECONDARY_LOS: 2,
   PRESET_PROMPTS: [
     { label: 'Calculation question', text: 'Write a calculation question.' },
     { label: 'Concept check', text: 'Write a concept check.' },
@@ -170,6 +171,57 @@ describe('POST /api/courses/:courseId/generate (IN-Q10)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'generation-no-assigned-materials' });
+  });
+
+  describe('multi-LO generation (secondaryLoIds)', () => {
+    const secondA = new ObjectId();
+    const secondB = new ObjectId();
+    const post = (body: Record<string, unknown>) =>
+      request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`).send(body);
+
+    it('passes up to two distinct secondary objectives through as ObjectIds', async () => {
+      const res = await post({
+        loId: loId.toHexString(),
+        secondaryLoIds: [secondA.toHexString(), secondB.toHexString()],
+      });
+      expect(res.status).toBe(202);
+      expect(jest.mocked(enqueueGenerationRun).mock.calls[0]![0]).toMatchObject({
+        loId,
+        secondaryLoIds: [secondA, secondB],
+      });
+    });
+
+    it('omits the field entirely when the list is empty', async () => {
+      await post({ loId: loId.toHexString(), secondaryLoIds: [] });
+      expect(jest.mocked(enqueueGenerationRun).mock.calls[0]![0]).not.toHaveProperty('secondaryLoIds');
+    });
+
+    it('400s more than two, a repeat of the primary, a duplicate, and a mix with blueprintId', async () => {
+      const third = new ObjectId();
+      for (const body of [
+        { loId: loId.toHexString(), secondaryLoIds: [secondA, secondB, third].map((id) => id.toHexString()) },
+        { loId: loId.toHexString(), secondaryLoIds: [loId.toHexString()] },
+        { loId: loId.toHexString(), secondaryLoIds: [secondA.toHexString(), secondA.toHexString()] },
+        { blueprintId: new ObjectId().toHexString(), secondaryLoIds: [secondA.toHexString()] },
+      ]) {
+        const res = await post(body);
+        expect(res.status).toBe(400);
+      }
+      expect(enqueueGenerationRun).not.toHaveBeenCalled();
+    });
+
+    it('maps the secondary-objective service errors to actionable statuses', async () => {
+      for (const [code, status] of [
+        ['generation-secondary-lo-no-materials', 409],
+        ['generation-secondary-lo-duplicate', 400],
+        ['generation-secondary-lo-no-grounding', 422],
+      ] as const) {
+        jest.mocked(enqueueGenerationRun).mockRejectedValueOnce(new Error(code));
+        const res = await post({ loId: loId.toHexString(), secondaryLoIds: [secondA.toHexString()] });
+        expect(res.status).toBe(status);
+        expect(res.body).toEqual({ error: code });
+      }
+    });
   });
 });
 

@@ -27,6 +27,11 @@ export const PLAN_MAX_COUNT = 20;
 
 export interface PlanCell {
   loId: ObjectId;
+  /** Combination rows (multi-LO batch generation, 2026-09-04): the further
+   * objectives every question from this cell must integrate. Validated by
+   * enqueueGenerationRun like the single form's secondaries; a failure is
+   * reported per cell like any other enqueue error. */
+  secondaryLoIds?: ObjectId[];
   difficulty: Difficulty;
   kind: QuestionKind;
   count: number;
@@ -104,7 +109,15 @@ export async function autoGenerationPlan(courseId: ObjectId): Promise<AutoPlanRo
 }
 
 export interface PlanResult {
-  runs: Array<{ loId: ObjectId; difficulty: Difficulty; kind: QuestionKind; count: number; runId?: ObjectId; error?: string }>;
+  runs: Array<{
+    loId: ObjectId;
+    secondaryLoIds?: ObjectId[];
+    difficulty: Difficulty;
+    kind: QuestionKind;
+    count: number;
+    runId?: ObjectId;
+    error?: string;
+  }>;
 }
 
 /** Enqueue one generation run per cell. A cell that cannot be enqueued (no
@@ -114,14 +127,15 @@ export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[
   if (cells.length > PLAN_MAX_CELLS) throw new Error('generation-plan-too-large');
   const runs: PlanResult['runs'] = [];
   for (const cell of cells) {
-    const base = { loId: cell.loId, difficulty: cell.difficulty, kind: cell.kind, count: cell.count };
+    const secondary = cell.secondaryLoIds?.length ? { secondaryLoIds: cell.secondaryLoIds } : {};
+    const base = { loId: cell.loId, ...secondary, difficulty: cell.difficulty, kind: cell.kind, count: cell.count };
     if (!Number.isInteger(cell.count) || cell.count < 1 || cell.count > PLAN_MAX_COUNT) {
       runs.push({ ...base, error: 'generation-plan-invalid-count' });
       continue;
     }
     try {
       const runId = await enqueueGenerationRun({
-        courseId, loId: cell.loId, count: cell.count, type: 'mcq',
+        courseId, loId: cell.loId, ...secondary, count: cell.count, type: 'mcq',
         difficulty: cell.difficulty, kind: cell.kind, byPuid,
       });
       runs.push({ ...base, runId });

@@ -5216,7 +5216,9 @@ button.class-row--link:focus-visible .class-row__title {
 
 .queue-row {
   display: grid;
-  grid-template-columns: 1.75rem minmax(220px, 2.4fr) 1.1fr 0.9fr 1fr 1.4fr;
+  /* Actions widened (1.4fr -> 1.9fr) for the difficulty pill beside the
+     Review/Approve buttons; the stem column gave up the difference. */
+  grid-template-columns: 1.75rem minmax(220px, 2.1fr) 1fr 0.9fr 0.9fr 1.9fr;
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
@@ -5226,6 +5228,26 @@ button.class-row--link:focus-visible .class-row__title {
 
 .queue-table__rows .queue-row:last-child {
   border-bottom: none;
+}
+
+/* Arrival from a generation run (review-queue.ts `?runId=`): the run's
+   questions stand out inside the full queue. */
+.queue-row--highlight {
+  background: var(--instr-green-bg);
+  box-shadow: inset 4px 0 0 var(--instr-green-fg);
+}
+
+.queue-message--highlight {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--instr-green-fg) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+}
+
+.queue-message--highlight a {
+  color: inherit;
+  font-weight: 650;
 }
 
 /* TA queue row: 5 columns — no select checkbox (the instructor row's leading
@@ -5284,7 +5306,36 @@ button.class-row--link:focus-visible .class-row__title {
 
 .queue-row__actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
+}
+
+/* Difficulty pill beside the Review/Approve buttons (review-queue.ts). */
+.queue-row__difficulty {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.queue-row__difficulty--easy {
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+}
+
+.queue-row__difficulty--medium {
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
+.queue-row__difficulty--hard {
+  background: var(--instr-red-bg);
+  color: var(--instr-red-fg);
 }
 
 @media (max-width: 640px) {
@@ -5815,6 +5866,119 @@ button.class-row--link:focus-visible .class-row__title {
 .content-run-status {
   display: block;
   margin: 0.55rem 0;
+}
+
+/* Recent Generation Activity as a disclosure (preseeding.ts renderRuns):
+   closed by default, the summary carries the counts. */
+.content-run-history--collapsible {
+  padding: 0;
+}
+
+.content-run-history__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.content-run-history__summary::-webkit-details-marker {
+  display: none;
+}
+
+.content-run-history__summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.content-run-history--collapsible[open] > .content-run-history__summary::before {
+  content: '▾';
+}
+
+.content-run-history__summary .detail-section-title {
+  margin: 0;
+}
+
+.content-run-history--collapsible[open] > .content-run-history__summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.content-run-history--collapsible > .content-run-status {
+  margin: 0.55rem 1rem;
+}
+
+.content-run-history--collapsible > .content-run-status:last-child {
+  margin-bottom: 1rem;
+}
+
+.content-run-status__target {
+  color: var(--muted);
+}
+
+/* Buttons that sit in a form-row grid beside labeled fields (Save setup,
+   Run setup, Insert @mention): bottom-aligned with the inputs and the same
+   height as `.input` (identical padding-block and 1px border). */
+.preseeding-form__row > .btn--field {
+  align-self: end;
+  padding: 0.55rem 1rem;
+  font-size: inherit;
+}
+
+/* Bottom-align every cell in a form row: when the Also-integrate cell grows
+   by a row of chips, the Questions select beside it stays level with the
+   picker instead of floating at the top of the row. */
+.preseeding-form__row > .form-field {
+  align-self: end;
+}
+
+/* Multi-LO generation: the secondary-objective chips under the form's
+   Target LO row (preseeding.ts). */
+
+.lo-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.lo-chip--warn {
+  border-color: color-mix(in srgb, var(--instr-amber-fg) 45%, transparent);
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
+.lo-chip__note {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.lo-chip__remove {
+  padding: 0 0.3rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lo-chip__remove:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 .content-run-status--failed {
@@ -8602,6 +8766,71 @@ button.class-row--link:focus-visible .class-row__title {
 
 .generation-plan__row.is-excluded {
   opacity: 0.55;
+}
+
+/* Combination rows (multi-LO batch generation): instructor-added rows whose
+   questions integrate a primary and up to two secondary objectives. Accented
+   so they read as a different kind of row from the Auto plan's LO rows. */
+.generation-plan__row--combo {
+  border-left: 3px solid var(--instr-green-fg);
+}
+
+.generation-plan__combo-los {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.4rem;
+}
+
+.generation-plan__combo-los .generation-plan__plus {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.generation-plan__remove {
+  align-self: start;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.generation-plan__remove:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+
+.generation-plan__builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.generation-plan__builder .form-field__label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.generation-plan__builder-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 56rem) {
+  .generation-plan__builder {
+    grid-template-columns: 1fr;
+  }
 }
 
 .generation-plan__select {

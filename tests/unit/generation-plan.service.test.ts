@@ -125,4 +125,23 @@ describe('enqueueGenerationPlan', () => {
       expect.objectContaining({ loId: loB, difficulty: 'medium', error: 'generation-plan-invalid-count' }),
     ]);
   });
+
+  it('passes a combination cell\'s secondary objectives through to the run, and echoes them in the result', async () => {
+    const primary = new ObjectId(); const secondA = new ObjectId(); const secondB = new ObjectId();
+    const runId = new ObjectId();
+    jest.mocked(enqueueGenerationRun).mockResolvedValueOnce(runId);
+
+    const result = await enqueueGenerationPlan(courseId, [
+      { loId: primary, secondaryLoIds: [secondA, secondB], difficulty: 'hard', kind: 'calculation', count: 1 },
+      { loId: primary, difficulty: 'easy', kind: 'conceptual', count: 0 },
+    ], 'PUID-INSTR');
+
+    expect(enqueueGenerationRun).toHaveBeenCalledTimes(1);
+    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({
+      loId: primary, secondaryLoIds: [secondA, secondB], difficulty: 'hard', kind: 'calculation', count: 1,
+    }));
+    expect(result.runs[0]).toEqual(expect.objectContaining({ secondaryLoIds: [secondA, secondB], runId }));
+    // A plain cell carries no secondary field at all, so callers can tell the two apart.
+    expect(result.runs[1]).not.toHaveProperty('secondaryLoIds');
+  });
 });

@@ -168,6 +168,7 @@ export async function createQuestionGenerationRun(input: {
   courseId: ObjectId;
   requestedBy: string;
   loId: ObjectId;
+  secondaryLoIds?: ObjectId[];
   count: number;
   type: QuestionType;
   difficulty?: Difficulty;
@@ -193,6 +194,9 @@ export async function createQuestionGenerationRun(input: {
     warnings: [],
     input: {
       loId: input.loId,
+      ...(input.secondaryLoIds && input.secondaryLoIds.length > 0
+        ? { secondaryLoIds: input.secondaryLoIds }
+        : {}),
       count: input.count,
       type: input.type,
       ...(input.difficulty ? { difficulty: input.difficulty } : {}),

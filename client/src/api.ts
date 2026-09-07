@@ -1557,6 +1557,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
   kind: 'question-generation';
   input: {
     loId: string;
+    /** Multi-LO generation: further objectives every question integrates. */
+    secondaryLoIds?: string[];
     count: number;
     type: GenerationQuestionType;
     difficulty?: GenerationDifficulty;
@@ -1933,6 +1935,9 @@ export interface GenerationPlanRow {
 
 export interface GenerationPlanCell {
   loId: string;
+  /** Combination rows (multi-LO batch generation): further objectives every
+   * question from this cell must integrate; the questions are tagged to all. */
+  secondaryLoIds?: string[];
   difficulty: 'easy' | 'medium' | 'hard';
   kind: QuestionKind;
   count: number;
@@ -1976,6 +1981,9 @@ export type GenerationDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface GenerateQuestionsInput {
   loId: string;
+  /** Multi-LO generation: up to two further objectives every question must
+   * genuinely integrate. The questions are tagged to all of them. */
+  secondaryLoIds?: string[];
   count?: number;
   type?: GenerationQuestionType;
   difficulty?: GenerationDifficulty;

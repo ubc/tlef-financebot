@@ -562,6 +562,10 @@ export interface QuestionGenerationRun extends ContentRunBase {
   stage: QuestionGenerationStage;
   input: {
     loId: ObjectId;
+    /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
+     * question must integrate. Persisted so the async job and a retry carry
+     * them; the created questions are tagged to all of them (IN-Q13). */
+    secondaryLoIds?: ObjectId[];
     count: number;
     type: QuestionType;
     difficulty?: Difficulty;
