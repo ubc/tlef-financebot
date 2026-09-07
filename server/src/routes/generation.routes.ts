@@ -9,6 +9,7 @@ import {
 import { validate } from '../middleware/validate';
 import {
   enqueueGenerationRun,
+  MAX_SECONDARY_LOS,
   PRESET_PROMPTS,
   preseedingProgress,
   regenerateQuestion,
@@ -58,6 +59,10 @@ generationRouter.get(
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
   loId: objectIdParam.optional(),
+  /** Multi-LO generation: further objectives every question must integrate.
+   * Bounded by MAX_SECONDARY_LOS; the service re-validates that each exists,
+   * belongs to the course and has ready material. */
+  secondaryLoIds: z.array(objectIdParam).max(MAX_SECONDARY_LOS).optional(),
   blueprintId: objectIdParam.optional(),
   count: z.number().int().min(1).max(20).optional(),
   type: z.enum(['mcq', 'true-false']).optional(),
@@ -72,6 +77,13 @@ const generateBody = z.object({
   message: 'Provide exactly one of loId or blueprintId.',
 }).refine((body) => body.hardnessMove === undefined || body.difficulty === 'hard', {
   message: 'hardnessMove requires difficulty "hard".',
+}).refine((body) => {
+  const secondary = body.secondaryLoIds ?? [];
+  return new Set(secondary).size === secondary.length && !secondary.includes(body.loId ?? '');
+}, {
+  message: 'secondaryLoIds must be distinct and must not repeat loId.',
+}).refine((body) => !body.blueprintId || !body.secondaryLoIds?.length, {
+  message: 'secondaryLoIds cannot be combined with blueprintId.',
 });
 
 /**
@@ -92,6 +104,9 @@ generationRouter.post(
       : await enqueueGenerationRun({
           courseId,
           loId: new ObjectId(body.loId!),
+          ...(body.secondaryLoIds?.length
+            ? { secondaryLoIds: body.secondaryLoIds.map((id) => new ObjectId(id)) }
+            : {}),
           count: body.count ?? DEFAULT_GENERATION_COUNT,
           ...(body.type ? { type: body.type } : {}),
           ...(body.difficulty ? { difficulty: body.difficulty } : {}),
@@ -213,6 +228,11 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'generation-no-grounding': 422,
   'generation-daily-limit': 429,
   'generation-blueprint-not-found': 404,
+  // Multi-LO generation: every one is a request the instructor can correct.
+  'generation-secondary-lo-limit': 400,
+  'generation-secondary-lo-duplicate': 400,
+  'generation-secondary-lo-no-materials': 409,
+  'generation-secondary-lo-no-grounding': 422,
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

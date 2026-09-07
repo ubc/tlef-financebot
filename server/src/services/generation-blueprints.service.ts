@@ -178,6 +178,7 @@ export async function retryGenerationRun(
   return enqueueGenerationRun({
     courseId,
     loId: run.input.loId,
+    ...(run.input.secondaryLoIds?.length ? { secondaryLoIds: run.input.secondaryLoIds } : {}),
     count: run.input.count,
     type: run.input.type,
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),

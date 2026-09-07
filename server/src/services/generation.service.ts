@@ -92,6 +92,16 @@ const RETRIEVE_TOP_K = 6;
 const HARD_PRIMARY_TOP_K = 6;
 const HARD_SUPPORTING_TOP_K = 2;
 
+/** Multi-LO generation: how many further objectives one question may be
+ * asked to integrate. Two keeps the question answerable — three concepts
+ * chained in one stem reads as a case study, not a practice item — and keeps
+ * the prompt within the same budget as a widened hard target (6 primary
+ * chunks plus SECONDARY_TOP_K per secondary objective). */
+export const MAX_SECONDARY_LOS = 2;
+/** Chunks retrieved per secondary objective, filtered to that objective's own
+ * ready assigned materials so each one is genuinely represented. */
+const SECONDARY_TOP_K = 2;
+
 /** Generator attempts before a structurally-invalid question is skipped. */
 const GENERATOR_MAX_ATTEMPTS = 2;
 
@@ -135,6 +145,12 @@ const DECISIONS = new Set(['pass', 'flag', 'reject']);
 export interface GenerationInput {
   courseId: ObjectId;
   loId: ObjectId;
+  /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
+   * question must genuinely integrate. Their ready assigned materials become
+   * the SUPPORTING grounding pool (replacing R7's automatic earlier-objective
+   * sweep, at every difficulty), and the created questions are tagged to the
+   * primary and every secondary LO (IN-Q13). */
+  secondaryLoIds?: ObjectId[];
   count: number;
   type?: QuestionType;
   difficulty?: Difficulty;
@@ -170,6 +186,10 @@ interface RetrievedChunk {
    * with an explicit label so the model — and the reviewer judging grounding —
    * can tell support apart from the LO's own material. */
   supporting?: boolean;
+  /** Set when the supporting chunk came from an instructor-chosen SECONDARY
+   * objective rather than R7's automatic earlier-objective pool, so the
+   * label can name the objective the question must integrate. */
+  supportingLoName?: string;
 }
 interface RetrievedGrounding {
   chunks: RetrievedChunk[];
@@ -236,6 +256,10 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
   const lo = await losCol().findOne({ _id: input.loId });
   if (!lo) throw new Error('lo-not-found');
   if (!lo.courseId.equals(input.courseId)) throw new Error('lo-not-in-course');
+  // Secondary objectives are validated here for the same reason as grounding
+  // below: a missing LO or one with no ready material is actionable NOW, not
+  // as a failed background run.
+  const secondary = await resolveSecondaryLos(input.courseId, lo, input.secondaryLoIds);
 
   // Resolve and freeze grounding before creating the durable run. Previously a
   // request with no ready assigned material was accepted, then failed in the
@@ -267,6 +291,7 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     courseId: input.courseId,
     requestedBy: input.byPuid,
     loId: input.loId,
+    ...(secondary.length > 0 ? { secondaryLoIds: secondary.map((entry) => entry.lo._id) } : {}),
     count: input.count,
     type: input.type ?? 'mcq',
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
@@ -410,6 +435,8 @@ async function retryRejectedCandidate(args: {
   suggestedMove?: string;
   /** The kind contract the rejected question carried; the replacement keeps it. */
   kind?: QuestionKind;
+  /** Multi-LO generation: the objectives the replacement must still integrate. */
+  secondaryLoNames?: string[];
 }): Promise<{ generated: GeneratorOutput; numerics: ReturnType<typeof verifyGeneratedNumerics>; validation: ValidatorOutput; review: ReviewerOutput } | null> {
   // Same observability as the verifier retry's warn: the reject-retry is a paid
   // extra cycle, and an admin watching logs should see each one it spends.
@@ -435,6 +462,7 @@ ${RETRY_MOVE_CHANGED}`
       : REVIEWER_REJECT_FEEDBACK(args.critique, args.rejected),
     retryMove,
     args.kind,
+    args.secondaryLoNames,
   );
   if (!retried) return null;
 
@@ -442,6 +470,7 @@ ${RETRY_MOVE_CHANGED}`
   const validation = await completeJson<ValidatorOutput>(
     VALIDATOR_PROMPT({
       loName: args.lo.name, question: retried, chunks: args.chunks,
+      secondaryLoNames: args.secondaryLoNames,
       ...(retryMove ? { assignedMove: retryMove } : {}),
     }),
     { ...args.models.validator },
@@ -449,6 +478,7 @@ ${RETRY_MOVE_CHANGED}`
   const review = await completeJson<ReviewerOutput>(
     REVIEWER_PROMPT({
       loName: args.lo.name,
+      secondaryLoNames: args.secondaryLoNames,
       question: retried,
       chunks: args.chunks,
       type: args.type,
@@ -508,6 +538,8 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // generate this course's Draft questions against another course's LO, which
   // would tag them with a foreign loId/themeId.
   if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
+  const secondary = await resolveSecondaryLos(courseId, lo, input.secondaryLoIds);
+  const secondaryLoNames = secondary.map((entry) => entry.lo.name);
 
   const collection = courseCollection(courseId);
   const created: ObjectId[] = [];
@@ -516,13 +548,14 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
   // the grounding query is identical. Variety across the batch comes from the
   // warm generator (GENERATOR_TEMPERATURE), not from re-retrieving.
   const { chunks } = await retrieveChunks(
-    collection, courseId, lo, prompt, undefined, input.difficulty === 'hard',
+    collection, courseId, lo, prompt, undefined, input.difficulty === 'hard', secondary,
   );
   const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
 
   for (let i = 0; i < count; i += 1) {
     const generated = await generateValidQuestion(
       type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[i], input.kind,
+      secondaryLoNames,
     );
     if (!generated) {
       console.warn(
@@ -541,7 +574,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     // first (per-role assessment), then the IN-Q05 review decision.
     const validation = await completeJson<ValidatorOutput>(
       VALIDATOR_PROMPT({
-        loName: lo.name, question: generated, chunks,
+        loName: lo.name, question: generated, chunks, secondaryLoNames,
         ...(assignedMoves[i] ? { assignedMove: assignedMoves[i] } : {}),
       }),
       { ...models.validator },
@@ -550,6 +583,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
       ? await completeJson<ReviewerOutput>(
           REVIEWER_PROMPT({
             loName: lo.name,
+            secondaryLoNames,
             question: generated,
             chunks,
             type,
@@ -565,7 +599,7 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     let outcome = { generated, numerics, validation, review };
     if (platformSettings.featureFlags.retryOnReject && normalizeDecision(review.decision) === 'reject') {
       const retried = await retryRejectedCandidate({
-        lo, type, difficulty: input.difficulty, prompt, chunks, models,
+        lo, type, difficulty: input.difficulty, prompt, chunks, models, secondaryLoNames,
         reviewerStep: models.reviewer, rejected: generated, critique: String(review.reasoning ?? ''),
         assignedMove: assignedMoves[i],
         moveLocked: input.hardnessMove !== undefined || type === 'true-false',
@@ -581,8 +615,8 @@ export async function runGenerationPipeline(input: GenerationInput): Promise<Obj
     try {
       const { questionId } = await createQuestion({
         courseId,
-        loIds: [loId],
-        themeIds: [lo.themeId],
+        loIds: taggedLoIds(loId, secondary),
+        themeIds: taggedThemeIds(lo, secondary),
         type,
         stem: outcome.generated.stem,
         options: outcome.generated.options,
@@ -767,6 +801,12 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const lo = await losCol().findOne({ _id: loId });
     if (!lo) throw new Error('lo-not-found');
     if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
+    // Secondary objectives' material pools are resolved at run time from the
+    // current assignments (only the PRIMARY pool is frozen on the record):
+    // enqueue already proved each has ready material, and a retry of an old
+    // run should ground in whatever those objectives are assigned today.
+    const secondary = await resolveSecondaryLos(courseId, lo, input.secondaryLoIds);
+    const secondaryLoNames = secondary.map((entry) => entry.lo.name);
 
     const allowedMaterialIds = input.pinnedMaterialIds?.map((id) => id.toHexString())
       ?? (await groundingMaterialIds(courseId, lo, prompt));
@@ -795,6 +835,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const grounding = await retrieveChunks(
       courseCollection(courseId), courseId, lo, prompt, allowedMaterialIds,
       !pinned && input.difficulty === 'hard',
+      secondary,
     );
     const chunks = grounding.chunks;
     stage = 'generating';
@@ -816,6 +857,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       try {
         const candidate = await generateValidQuestion(
           type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item], input.kind,
+          secondaryLoNames,
         );
         if (!candidate) throw new Error('generation-invalid-options');
         generated.push({ item, generated: candidate });
@@ -851,7 +893,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
           VALIDATOR_PROMPT({
-            loName: lo.name, question: candidate.generated, chunks,
+            loName: lo.name, question: candidate.generated, chunks, secondaryLoNames,
             ...(assignedMoves[candidate.item] ? { assignedMove: assignedMoves[candidate.item] } : {}),
           }),
           { ...models.validator },
@@ -889,6 +931,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           ? await completeJson<ReviewerOutput>(
               REVIEWER_PROMPT({
                 loName: lo.name,
+                secondaryLoNames,
                 question: candidate.generated,
                 chunks,
                 type,
@@ -914,7 +957,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
             message: `Reviewer rejected candidate ${candidate.item + 1} — retrying with the critique`,
           });
           const retried = await retryRejectedCandidate({
-            lo, type, difficulty: input.difficulty, prompt, chunks, models,
+            lo, type, difficulty: input.difficulty, prompt, chunks, models, secondaryLoNames,
             assignedMove: assignedMoves[candidate.item],
             moveLocked: input.hardnessMove !== undefined || type === 'true-false',
             ...(input.kind ? { kind: input.kind } : {}),
@@ -961,8 +1004,8 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       try {
         const { questionId } = await createQuestion({
           courseId,
-          loIds: [loId],
-          themeIds: [lo.themeId],
+          loIds: taggedLoIds(loId, secondary),
+          themeIds: taggedThemeIds(lo, secondary),
           type,
           stem: candidate.generated.stem,
           options: candidate.generated.options,
@@ -1110,6 +1153,7 @@ export function registerGenerationJobs(): void {
       {
         courseId: run.courseId,
         loId: run.input.loId,
+        ...(run.input.secondaryLoIds?.length ? { secondaryLoIds: run.input.secondaryLoIds } : {}),
         count: run.input.count,
         type: run.input.type,
         ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
@@ -1212,6 +1256,63 @@ async function supportingMaterialIds(
     .map((material) => material._id.toHexString());
 }
 
+interface SecondaryLo {
+  lo: { _id: ObjectId; themeId: ObjectId; name: string; order: number };
+  /** Ready materials assigned to this objective (plain assignment — the
+   * prompt's @mentions constrain only the primary pool). */
+  materialIds: string[];
+}
+
+/**
+ * Multi-LO generation: validate the instructor's secondary objectives and
+ * resolve each one's grounding pool. Every failure here is a request error an
+ * instructor can act on: an unknown or foreign LO, the primary repeated, more
+ * than MAX_SECONDARY_LOS, or an objective with no ready assigned material
+ * (there would be nothing to integrate it FROM). Order is preserved — the
+ * prompt lists the objectives as the instructor chose them.
+ */
+async function resolveSecondaryLos(
+  courseId: ObjectId,
+  primary: { _id: ObjectId },
+  secondaryLoIds: ObjectId[] | undefined,
+): Promise<SecondaryLo[]> {
+  if (!secondaryLoIds || secondaryLoIds.length === 0) return [];
+  if (secondaryLoIds.length > MAX_SECONDARY_LOS) throw new Error('generation-secondary-lo-limit');
+  const seen = new Set<string>([primary._id.toHexString()]);
+  for (const id of secondaryLoIds) {
+    const key = id.toHexString();
+    if (seen.has(key)) throw new Error('generation-secondary-lo-duplicate');
+    seen.add(key);
+  }
+  const found = await losCol().find({ _id: { $in: secondaryLoIds } }).toArray();
+  const resolved: SecondaryLo[] = [];
+  for (const id of secondaryLoIds) {
+    const lo = found.find((candidate) => candidate._id.equals(id));
+    if (!lo) throw new Error('lo-not-found');
+    if (!lo.courseId.equals(courseId)) throw new Error('lo-not-in-course');
+    const materialIds = await groundingMaterialIds(courseId, lo);
+    if (materialIds.length === 0) throw new Error('generation-secondary-lo-no-materials');
+    resolved.push({ lo, materialIds });
+  }
+  return resolved;
+}
+
+/** The LOs a generated question is tagged to: the primary first, then every
+ * secondary objective in the instructor's order (IN-Q13 many-to-many). */
+function taggedLoIds(loId: ObjectId, secondary: SecondaryLo[]): ObjectId[] {
+  return [loId, ...secondary.map((entry) => entry.lo._id)];
+}
+
+/** The themes of every tagged LO, de-duplicated — two objectives in one
+ * theme tag the theme once. */
+function taggedThemeIds(lo: { themeId: ObjectId }, secondary: SecondaryLo[]): ObjectId[] {
+  const themes: ObjectId[] = [lo.themeId];
+  for (const entry of secondary) {
+    if (!themes.some((id) => id.equals(entry.lo.themeId))) themes.push(entry.lo.themeId);
+  }
+  return themes;
+}
+
 function normalizeMaterialName(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase('en-CA');
 }
@@ -1251,11 +1352,21 @@ async function retrieveChunks(
   prompt?: string,
   pinnedMaterialIds?: string[],
   widen?: boolean,
+  /** Multi-LO generation: instructor-chosen secondary objectives. When any
+   * are given they ARE the supporting pool — SECONDARY_TOP_K chunks each,
+   * filtered to that objective's own materials and queried by its own name —
+   * and R7's automatic earlier-objective sweep is skipped: the instructor has
+   * said which concept to chain. Unlike the automatic sweep this is a
+   * contract, so an objective that retrieves nothing fails the run the same
+   * way an ungrounded primary does. */
+  secondary: SecondaryLo[] = [],
 ): Promise<RetrievedGrounding> {
   const allowedMaterialIds = pinnedMaterialIds ?? (await groundingMaterialIds(courseId, lo, prompt));
   if (allowedMaterialIds.length === 0) throw new Error('generation-no-assigned-materials');
 
-  const supportingIds = widen ? await supportingMaterialIds(courseId, lo, allowedMaterialIds) : [];
+  const supportingIds = widen && secondary.length === 0
+    ? await supportingMaterialIds(courseId, lo, allowedMaterialIds)
+    : [];
   const primaryTopK = supportingIds.length > 0 ? HARD_PRIMARY_TOP_K : RETRIEVE_TOP_K;
 
   const query = prompt ? `${lo.name}\n${prompt}` : lo.name;
@@ -1283,6 +1394,33 @@ async function retrieveChunks(
     // malformed/stale hit enough to write a forbidden sourceRef.
     .filter((chunk) => chunk.materialId !== undefined && allowed.has(chunk.materialId) && chunk.text.length > 0);
   if (chunks.length === 0) throw new Error('generation-no-grounding');
+
+  for (const entry of secondary) {
+    const secondaryVector = await embedOne(prompt ? `${entry.lo.name}\n${prompt}` : entry.lo.name);
+    let secondaryHits;
+    try {
+      secondaryHits = await search(collection, secondaryVector, SECONDARY_TOP_K, {
+        must: [{ key: 'materialId', match: { any: entry.materialIds } }],
+      });
+    } catch (err) {
+      console.warn(
+        `[generation] secondary-objective retrieval failed for ${collection}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new Error('generation-retrieval-failed', { cause: err });
+    }
+    const secondaryAllowed = new Set(entry.materialIds);
+    const secondaryChunks = secondaryHits
+      .map(toChunk)
+      .filter((chunk) =>
+        chunk.materialId !== undefined && secondaryAllowed.has(chunk.materialId) && chunk.text.length > 0
+        // A material assigned to both objectives can surface the same chunk
+        // twice; the primary copy already grounds it.
+        && !chunks.some((existing) => existing.text === chunk.text))
+      .map((chunk) => ({ ...chunk, supporting: true, supportingLoName: entry.lo.name }));
+    if (secondaryChunks.length === 0) throw new Error('generation-secondary-lo-no-grounding');
+    chunks.push(...secondaryChunks);
+  }
 
   if (supportingIds.length > 0) {
     try {
@@ -1328,6 +1466,8 @@ async function generateValidQuestion(
   /** The kind contract (batch planner): the candidate's numericKind must
    * match, or it is refused like a shape failure and regenerated. */
   kind?: QuestionKind,
+  /** Multi-LO generation: the further objectives every attempt must integrate. */
+  secondaryLoNames?: string[],
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -1335,7 +1475,7 @@ async function generateValidQuestion(
   let lastFailure: string | undefined;
 
   for (let attempt = 1; attempt <= GENERATOR_MAX_ATTEMPTS; attempt += 1) {
-    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind });
+    const built = GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind, secondaryLoNames });
     const withExtra = extraInstruction ? `${built}\n\n${extraInstruction}` : built;
     const candidate = await completeJson<GeneratorOutput>(
       lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,
@@ -1598,12 +1738,36 @@ function normalizeDecision(value: unknown): 'pass' | 'flag' | 'reject' {
 function renderChunks(chunks: RetrievedChunk[]): string {
   return chunks
     .map((chunk, i) =>
-      chunk.supporting
-        ? `[${i + 1}] [Supporting material from an EARLIER learning objective, already taught `
-          + `to these students. You may chain its concepts into the question, but the question `
-          + `must still primarily test the current learning objective.]\n${chunk.text}`
-        : `[${i + 1}] ${chunk.text}`)
+      chunk.supportingLoName
+        ? `[${i + 1}] [Material for the learning objective "${chunk.supportingLoName}", which this `
+          + `question must ALSO genuinely require — see the integration rule above.]\n${chunk.text}`
+        : chunk.supporting
+          ? `[${i + 1}] [Supporting material from an EARLIER learning objective, already taught `
+            + `to these students. You may chain its concepts into the question, but the question `
+            + `must still primarily test the current learning objective.]\n${chunk.text}`
+          : `[${i + 1}] ${chunk.text}`)
     .join('\n\n');
+}
+
+/** Multi-LO generation: the integration rule shared by the generator and, in
+ * its judging form, the validator and reviewer. Listed objectives are a
+ * CONTRACT — each must be a step the answer genuinely needs, never a name
+ * dropped into the stem. */
+function integrationRule(secondaryLoNames: string[] | undefined, difficulty?: Difficulty): string {
+  if (!secondaryLoNames || secondaryLoNames.length === 0) return '';
+  return [
+    `THIS QUESTION MUST INTEGRATE ${secondaryLoNames.length === 1 ? 'A SECOND LEARNING OBJECTIVE' : 'TWO FURTHER LEARNING OBJECTIVES'}:`,
+    ...secondaryLoNames.map((name) => `  - "${name}"`),
+    'Answering correctly must genuinely require the primary objective AND each objective',
+    'listed above — a step from each, chained into one scenario — never a question about',
+    'the primary objective that merely mentions the others. The material for each listed',
+    'objective is labeled below by objective; draw on it. The question will be tagged to',
+    'every one of these objectives, so a student practicing any of them may be served it.',
+    difficulty === 'hard'
+      ? 'At target hard, the concept your declared hardness move chains should come from one of'
+        + ' the listed objectives rather than from any other material.'
+      : '',
+  ].filter((line) => line.length > 0).join('\n');
 }
 
 /**
@@ -1847,12 +2011,15 @@ export function GENERATOR_PROMPT(params: {
   assignedMove?: string;
   /** The kind contract from a batch-planner cell. */
   kind?: QuestionKind;
+  /** Multi-LO generation: further objectives the question must integrate. */
+  secondaryLoNames?: string[];
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
   return [
     `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
     `for the learning objective: "${params.loName}".`,
+    integrationRule(params.secondaryLoNames, params.difficulty),
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
     difficultyGuidance,
     // Measured 2026-08-16: TWELVE OF TWELVE generated questions came back
@@ -1883,7 +2050,7 @@ export function GENERATOR_PROMPT(params: {
     // numeric ambition while the offered chain went untaken 3/3 — the model
     // fell back to its single-concept template on 2 of 3. The material and the
     // menu have to be tied together explicitly.
-    params.difficulty === 'hard' && params.chunks.some((chunk) => chunk.supporting)
+    params.difficulty === 'hard' && params.chunks.some((chunk) => chunk.supporting && !chunk.supportingLoName)
       ? 'Some chunks below are marked as supporting material from EARLIER learning\n'
         + 'objectives. They are provided precisely so a hardness move can CHAIN one of\n'
         + 'their concepts into this question. A hard question that ignores them and stays\n'
@@ -2304,14 +2471,27 @@ export function VALIDATOR_PROMPT(params: {
    * the raw assignment.
    */
   assignedMove?: string;
+  /** Multi-LO generation: objectives the question was required to integrate.
+   * The validator checks the integration as a factual claim, the same way it
+   * checks a declared hardness move. */
+  secondaryLoNames?: string[];
 }): string {
   const declaredMove = typeof params.question.hardnessMove === 'string' && params.question.hardnessMove.trim().length > 0;
+  const secondary = params.secondaryLoNames ?? [];
   return [
     'You are a structure validator for finance practice questions. For the question below,',
     `written for the LO "${params.loName}", assess whether EACH option's assigned role`,
     'genuinely fits its text (is the "correct" option actually correct? is each',
     '"common-misconception" a realistic misconception? etc.).',
     '',
+    ...(secondary.length > 0
+      ? ['The question was ALSO required to integrate these learning objectives:',
+         ...secondary.map((name) => `  - "${name}"`),
+         'In roleAssessment, state for EACH one whether answering genuinely requires it (a',
+         'step the student must perform) or whether it is merely mentioned. A name dropped',
+         'into the stem is not integration.',
+         '']
+      : []),
     ...(declaredMove || params.assignedMove
       ? ['ALSO assess the question\'s declared "hardnessMove" as a factual claim:',
          '  - Is the declared device genuinely IMPLEMENTED? If it claims the stem withholds',
@@ -2432,13 +2612,23 @@ export function REVIEWER_PROMPT(params: {
    * sees the assignment itself.
    */
   moveAssessment?: string;
+  /** Multi-LO generation: objectives the question must ALSO genuinely test.
+   * Folded into criterion 2 so a question that name-drops an objective
+   * without needing it fails alignment, not some side rule. */
+  secondaryLoNames?: string[];
 }): string {
+  const secondary = params.secondaryLoNames ?? [];
   return [
     'You are a senior finance instructor reviewing a generated practice question for the',
     `LO "${params.loName}". Judge it against these criteria (IN-Q05):`,
     ...(params.type ? [`Question type: ${params.type === 'true-false' ? 'TRUE/FALSE (two options)' : 'multiple choice (four options)'}.`] : []),
     '  1. Factual accuracy — every statement is correct.',
     '  2. LO & material alignment — it tests this LO and is grounded in the material.',
+    ...(secondary.length > 0
+      ? [`     It must ALSO genuinely require each of: ${secondary.map((name) => `"${name}"`).join(', ')}.`,
+         '     Reject a question that mentions one of these objectives without the answer',
+         '     depending on it — the question will be served to students practicing them.']
+      : []),
     '  3. Distractor quality — wrong options are plausible and pedagogically useful.',
     '  4. Clarity — the stem and options are unambiguous.',
     // Until 2026-08-17 the reviewer had only the one-step heuristic — it was
