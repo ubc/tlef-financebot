@@ -2,6 +2,7 @@ import type { WithId, ObjectId } from 'mongodb';
 import { questionsCol, questionVersionsCol, themesCol, losCol } from '../components/mongodb/collections';
 import { getMasteryTier, getLoStatuses } from './mastery.service';
 import { isServable } from './numeric-gate.service';
+import { isThemeReleased, releasedForServing, unreleasedThemeIds } from './theme-release';
 import type { Question, QuestionVersion, Difficulty, Theme, LearningObjective, MasteryStatus } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -42,9 +43,14 @@ function pickRandom<T>(pool: T[], rand: () => number): T {
  * head whose current version is missing is dropped (should never happen —
  * versions are never deleted, PRD §2). */
 async function approvedCandidatesForLo(courseId: ObjectId, loId: ObjectId): Promise<Candidate[]> {
-  const heads = await questionsCol()
-    .find({ courseId, loIds: loId, state: 'approved' })
-    .toArray();
+  const [allHeads, unreleased] = await Promise.all([
+    questionsCol().find({ courseId, loIds: loId, state: 'approved' }).toArray(),
+    unreleasedThemeIds(courseId),
+  ]);
+  // The release holdback (theme-release.ts): a question tagged to any Topic
+  // that is not released stays out of practice even under this LO. Same
+  // chokepoint role as the numeric gate below.
+  const heads = allHeads.filter((head) => releasedForServing(head, unreleased));
   if (heads.length === 0) return [];
 
   const versionIds = heads.map((h) => h.currentVersionId);
@@ -72,9 +78,13 @@ async function approvedCandidatesForLo(courseId: ObjectId, loId: ObjectId): Prom
  * available and then lead directly to `no-question-available`.
  */
 export async function servableApprovedCountByLo(courseId: ObjectId): Promise<Map<string, number>> {
-  const heads = await questionsCol()
-    .find({ courseId, state: 'approved' })
-    .toArray();
+  const [allHeads, unreleased] = await Promise.all([
+    questionsCol().find({ courseId, state: 'approved' }).toArray(),
+    unreleasedThemeIds(courseId),
+  ]);
+  // Held-back questions (theme-release.ts) are not counted: an LO whose only
+  // questions wait on a later Topic must stay hidden, not list and then fail.
+  const heads = allHeads.filter((head) => releasedForServing(head, unreleased));
   if (heads.length === 0) return new Map();
 
   const versions = await questionVersionsCol()
@@ -231,7 +241,7 @@ export interface StudentCourseHomeTheme {
 /**
  * Student-facing course home (ST-P01/P02): only themes/LOs with ≥1 Approved,
  * student-servable current version are shown. Archived themes/LOs are excluded outright. A theme
- * whose `availableFrom` is still in the future (progressive release) is
+ * that is not RELEASED (theme-release.ts: no date, or a date still ahead) is
  * hidden entirely, not merely flagged — the `available` field it would carry
  * is therefore always `true` for every entry actually returned, kept on the
  * shape for forward-compat with a future "shown but locked" UI.
@@ -255,7 +265,7 @@ export async function studentCourseHome(
   const result: StudentCourseHomeTheme[] = [];
 
   for (const theme of themes) {
-    const available = !theme.availableFrom || theme.availableFrom <= now;
+    const available = isThemeReleased(theme, now);
     if (!available) continue;
 
     const themeLos = los.filter((lo) => lo.themeId.equals(theme._id));
