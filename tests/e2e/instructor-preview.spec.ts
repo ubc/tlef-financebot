@@ -67,6 +67,8 @@ test.describe('Instructor student preview', () => {
       courseId,
       name: THEME_NAME,
       order: 1,
+      // Released (theme-release.ts): an undated Topic is hidden from Preview.
+      availableFrom: new Date('2000-01-01T00:00:00.000Z'),
     });
     await losCol().insertOne({
       _id: loId,

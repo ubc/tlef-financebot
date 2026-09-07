@@ -203,6 +203,12 @@ test.describe('instructor pipeline', () => {
       themeId = tree.themes[0]._id;
       loId = tree.themes[0].los?.[0]._id ?? '';
       expect(themeId).toBeTruthy();
+      // The guide creates the Topic "Not released" (theme-release.ts); the
+      // Student Preview stage below needs it released to show anything.
+      const release = await page.request.patch(`/api/themes/${themeId}`, {
+        data: { availableFrom: '2000-01-01T00:00:00.000Z' },
+      });
+      expect(release.ok()).toBe(true);
       expect(loId).toBeTruthy();
     });
 

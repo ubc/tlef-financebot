@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { ObjectId, type WithId } from 'mongodb';
-import { AUTH_FILE } from '../e2e/global-setup';
+import { AUTH_FILE, RELEASED } from '../e2e/global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -203,7 +203,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     expect(guideDates.ok()).toBe(true);
 
     const theme = (await (
-      await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME } })
+      await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME, availableFrom: RELEASED } })
     ).json()) as { _id: string };
     themeId = theme._id;
     const lo = (await (

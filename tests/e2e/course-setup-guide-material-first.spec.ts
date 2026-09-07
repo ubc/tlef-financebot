@@ -414,7 +414,7 @@ test.describe('course setup guide — materials first', () => {
       await guide.getByLabel('Include suggested Topic 2', { exact: true }).uncheck();
       await guide.getByRole('button', { name: 'Apply selected structure' }).click();
 
-      await expect(guide.getByRole('heading', { name: 'Generate a small starter set of questions' })).toBeVisible();
+      await expect(guide.getByRole('heading', { name: 'Plan a batch of questions' })).toBeVisible();
       const themes = await themesCol().find({ courseId: courseObjectId }).toArray();
       const los = await losCol().find({ courseId: courseObjectId }).toArray();
       const material = materialId ? await materialsCol().findOne({ _id: materialId }) : null;

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   attemptsCol,
@@ -91,7 +91,7 @@ test.describe('Phase 2 flag safety loop', () => {
     registrationCode = course.registrationCode;
 
     const themeRes = await api.post(`/api/courses/${courseId}/themes`, {
-      data: { name: THEME_NAME },
+      data: { name: THEME_NAME, availableFrom: RELEASED },
     });
     expect(themeRes.status()).toBe(201);
     const theme = (await themeRes.json()) as { _id: string };
