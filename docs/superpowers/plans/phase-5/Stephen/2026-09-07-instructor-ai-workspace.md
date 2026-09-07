@@ -1,6 +1,6 @@
 # Instructor AI Workspace Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Accept the existing progressive generation workflow, then deliver a persistent English Instructor workspace for goal → editable AI plan → explicitly started generation → saved Draft inspection and the existing review/refinement editor.
 
@@ -77,7 +77,7 @@ Client exports in `client/src/api.ts`: `listWorkspaceTasks(courseId)`, `createWo
 
 - [x] Verify main has no newer commits and preserve the current dirty workspace.
 - [x] Run existing workflow browser checks and typecheck. Result: 3/3 browser checks passed, both TS projects passed.
-- [ ] Review current ordering/recovery against implementation and run full regressions after integration; record actual results and environment limitations.
+- [x] Review current ordering/recovery against implementation and run full regressions after integration; record actual results and environment limitations.
 
 ### Task 2: Durable task, bounded planner, and safe dispatch
 
@@ -85,7 +85,7 @@ Client exports in `client/src/api.ts`: `listWorkspaceTasks(courseId)`, `createWo
 
 **Interfaces:** Produce the shared HTTP contract above. Persist a task-to-run association on the run itself, so a response or final task write failure cannot lose already dispatched work. Planner uses `completeJson<unknown>` and validates before persistence; generation remains `enqueueGenerationRun(input)`.
 
-- [ ] Write behavioral regressions and run them failing: foreign/missing/archived LO or material is refused before any model/generation dispatch; foreign owner/course is unreadable; stale plan save rejected; duplicate Run starts once; planner JSON failure is actionable; stored run recovered after response/final-write loss; refresh never queues paid work.
+- [x] Write behavioral regressions and run them failing: foreign/missing/archived LO or material is refused before any model/generation dispatch; foreign owner/course is unreadable; stale plan save rejected; duplicate Run starts once; planner JSON failure is actionable; stored run recovered after response/final-write loss; refresh never queues paid work.
 
 ```ts
 expect(await Promise.all([startSamePlan(), startSamePlan()])).toHaveLength(2);
@@ -93,11 +93,11 @@ expect(enqueueGenerationRun).toHaveBeenCalledTimes(1);
 expect(completeJson).not.toHaveBeenCalled(); // read/refresh path
 ```
 
-- [ ] Add the durable task record, course+owner indexes, create-request deduplication and bounded conversation/plan history. Persist planning requests before Agenda enqueue; use a worker claim and revision CAS to reject duplicate/stale jobs. Revalidate current Instructor access in the background worker. Add startup interruption recovery and course-deletion active-work guard/cleanup.
-- [ ] Build fresh context from active Themes/LOs, ready non-deleted assignments and Approved tier coverage. Give the planner only compact validated facts, the user's messages and prior plan. Use configured model, capped output and existing JSON retry; collect usage/timing as task-local operation metadata. Unsupported or ambiguous requests may return an assistant clarification without a runnable plan. No keyword-only fake assistant.
-- [ ] Validate the plan against that context (including all secondary LOs), derive its permitted sources on the server, and retain previous plan revisions. Manual edits get the same validation. Natural-language followups keep previous goal/constraints and create a new unexecuted plan; never silently alter an executed plan.
-- [ ] Claim a plan execution atomically before dispatch, pass task/plan association into content-run creation and derive status/results from those runs. Repeated calls look up existing work; uncertain interruption produces an actionable state and never blindly repeats a paid action. No automatic run from a model response. Return domain errors as English user messages.
-- [ ] Implement validated thin per-route guards and serialization; update course deletion and startup without reordering shared code. Run focused Jest plus server typecheck. Report implementation/test evidence in `/private/tmp/financebot-workspace/task-2-report.md`.
+- [x] Add the durable task record, course+owner indexes, create-request deduplication and bounded conversation/plan history. Persist planning requests before Agenda enqueue; use a worker claim and revision CAS to reject duplicate/stale jobs. Revalidate current Instructor access in the background worker. Add startup interruption recovery and course-deletion active-work guard/cleanup.
+- [x] Build fresh context from active Themes/LOs, ready non-deleted assignments and Approved tier coverage. Give the planner only compact validated facts, the user's messages and prior plan. Use configured model, capped output and existing JSON retry; collect usage/timing as task-local operation metadata. Unsupported or ambiguous requests may return an assistant clarification without a runnable plan. No keyword-only fake assistant.
+- [x] Validate the plan against that context (including all secondary LOs), derive its permitted sources on the server, and retain previous plan revisions. Manual edits get the same validation. Natural-language followups keep previous goal/constraints and create a new unexecuted plan; never silently alter an executed plan.
+- [x] Claim a plan execution atomically before dispatch, pass task/plan association into content-run creation and derive status/results from those runs. Repeated calls look up existing work; uncertain interruption produces an actionable state and never blindly repeats a paid action. No automatic run from a model response. Return domain errors as English user messages.
+- [x] Implement validated thin per-route guards and serialization; update course deletion and startup without reordering shared code. Run focused Jest plus server typecheck. Report implementation/test evidence in `/private/tmp/financebot-workspace/task-2-report.md`.
 
 ### Task 3: English Instructor workspace with stable live results
 
@@ -105,18 +105,62 @@ expect(completeJson).not.toHaveBeenCalled(); // read/refresh path
 
 **Interfaces:** Consume the shared API above and existing `subscribeContentRuns`, `renderGenerationProgress`, `getQuestion`, `renderQuestionDetail`/question-bank routes. Routes `/instructor/course/:id/workspace` and `/instructor/course/:id/workspace/:taskId`. Export `renderAiWorkspace(outlet, params)`.
 
-- [ ] Implement task sidebar, stable conversation/composer and result inspector. Empty state explains supported authoring tasks with useful prompt starters. Task creation persists a request UUID until its response is known; refresh/list/detail restores messages, plans, existing runs. Use URL task identity, not shared local storage for private conversations.
-- [ ] Render server planning state with truthful English text and poll only while planning/starting; dispose polling/EventSource on navigation. Handle initial/failed/loading/archived/empty-course and stale task responses with useful actions. Poll and SSE do not replace composer or dirty plan controls.
-- [ ] Show an editable plan with primary and up to 2 secondary objectives, count, type, difficulty, optional kind and instruction. Show the actual server-derived sources/coverage/rationale. Save edits explicitly; Run remains unavailable for unsaved/stale/blocked plans and uses the precise plan revision. Followup messages revise the plan while retaining the previous conversation.
-- [ ] Subscribe once per course to real ContentRun snapshots. Filter by current task run IDs/association, reject old revisions, and add saved Draft cards without changing selected artifact or scroll/focus. Inspector shows selected question, source excerpts, AI decision and numerical-verification state using safe existing rich text rendering. Do not imply AI pass is publication approval.
-- [ ] Provide direct 'Review and refine' access to the existing full question editor, with a clear 'Back to AI Workspace' destination retaining the task. Reuse selective regeneration/side-by-side/version saving; do not introduce a second unguarded edit implementation. Keep this boundary explicit: task planning and runs are durable; existing editor's unsaved variant remains transient.
-- [ ] Write browser tests over actual compiled modules and deterministic API/SSE fixtures: natural language → saved plan → followup → edit → Run; repeat click does not duplicate; first Draft visible before terminal; composer/plan focus survives SSE; reload restores task; foreign/stale error actionable; disconnect/reconnect; mobile layout/light-dark/axe and navigation cleanup. Run build/browser checks, report in `/private/tmp/financebot-workspace/task-3-report.md`.
+- [x] Implement task sidebar, stable conversation/composer and result inspector. Empty state explains supported authoring tasks with useful prompt starters. Task creation persists a request UUID until its response is known; refresh/list/detail restores messages, plans, existing runs. Use URL task identity, not shared local storage for private conversations.
+- [x] Render server planning state with truthful English text and poll only while planning/starting; dispose polling/EventSource on navigation. Handle initial/failed/loading/archived/empty-course and stale task responses with useful actions. Poll and SSE do not replace composer or dirty plan controls.
+- [x] Show an editable plan with primary and up to 2 secondary objectives, count, type, difficulty, optional kind and instruction. Show the actual server-derived sources/coverage/rationale. Save edits explicitly; Run remains unavailable for unsaved/stale/blocked plans and uses the precise plan revision. Followup messages revise the plan while retaining the previous conversation.
+- [x] Subscribe once per course to real ContentRun snapshots. Filter by current task run IDs/association, reject old revisions, and add saved Draft cards without changing selected artifact or scroll/focus. Inspector shows selected question, source excerpts, AI decision and numerical-verification state using safe existing rich text rendering. Do not imply AI pass is publication approval.
+- [x] Provide direct 'Review and refine' access to the existing full question editor, with a clear 'Back to AI Workspace' destination retaining the task. Reuse selective regeneration/side-by-side/version saving; do not introduce a second unguarded edit implementation. Keep this boundary explicit: task planning and runs are durable; existing editor's unsaved variant remains transient.
+- [x] Write browser tests over actual compiled modules and deterministic API/SSE fixtures: natural language → saved plan → followup → edit → Run; repeat click does not duplicate; first Draft visible before terminal; composer/plan focus survives SSE; reload restores task; foreign/stale error actionable; disconnect/reconnect; mobile layout/light-dark/axe and navigation cleanup. Run build/browser checks, report in `/private/tmp/financebot-workspace/task-3-report.md`.
 
 ### Task 4: Integrated acceptance and independent review
 
 **Files:** This plan, Stephen STATUS, API contract and closest AGENTS current-state notes.
 
-- [ ] Review backend and UI against the shared contract; fix material findings with covering regressions.
-- [ ] Run `npm test -- --runInBand`, `npm run lint`, `npm run typecheck`, `npm run build`, `npx playwright test -c playwright.workflow.config.ts`, and `git diff --check` after integration.
-- [ ] Inspect actual browser-rendered workspace at desktop/mobile; independently review the combined changes, including preservation of existing tutorial/generation work. Record evidence and limitations: real SAML/Mongo/provider path only if actually run; no claims about measured provider latency or horizontal SSE replay.
-- [ ] Update docs, sync Stephen's plan after completion; leave code uncommitted for the user's review.
+- [x] Review backend and UI against the shared contract; fix material findings with covering regressions.
+- [x] Run `npm test -- --runInBand`, `npm run lint`, `npm run typecheck`, `npm run build`, `npx playwright test -c playwright.workflow.config.ts`, and `git diff --check` after integration.
+- [x] Inspect actual browser-rendered workspace at desktop/mobile; independently review the combined changes, including preservation of existing tutorial/generation work. Record evidence and limitations: real SAML/Mongo/provider path only if actually run; no claims about measured provider latency or horizontal SSE replay.
+- [x] Update docs, sync Stephen's plan after completion; leave code uncommitted for the user's review.
+
+
+## Final acceptance evidence — 2026-09-07
+
+- Rechecked latest origin/main: `2af3b6f`. Current branch remains
+  `codex/visual-generation-workflow`; previous tutorial changes are retained.
+- Full Jest: **107 suites / 1,328 tests passed**. Lint, both TypeScript projects,
+  production build and `git diff --check` passed.
+- Combined deterministic compiled-view browser acceptance: **15/15 passed**.
+  Covers editable planning, explicit Run, progressive Drafts, focus retention,
+  request/response races, private task recovery, reconnect, mobile/dark/light
+  rendering and scoped axe scans. Real app rail width is explicitly covered.
+- Real SAML/Mongo acceptance: **4/4 passed** across workspace persistence,
+  stale/private access, return from the full question editor, isolated Student
+  Preview and Exam Prep answer withholding/resume/results/analytics.
+- One bounded actual model experiment: plan ready about **4.6s**; first saved
+  Draft about **8.0s** after Run. Repeated Run retained exactly one contentRun.
+  AI review flagged difficulty; no approval/publication occurred. Temporary
+  course/material/question/task/vector data was cleaned through course deletion.
+  These are one experiment's observations, not production latency guarantees.
+- Independent backend and UI reviews accepted the planned feature after all
+  four backend and five UI findings were fixed with regressions. Planner failure
+  metadata now retains measured model/time/provider usage when available.
+- Inspected real desktop screenshot plus responsive light/dark screenshots.
+  The compact stage rail and container-responsive layout corrected the original
+  narrow-pane word wrapping. Generation axe measures steady state and explicitly
+  asserts reduced motion, consistent with the repository's accessibility suite.
+- Product acceptance and delivery boundaries are documented in
+  `docs/product/2026-09-07-workspace-acceptance.md`; Stephen STATUS is updated.
+  Closing plan synchronization uses the dedicated documentation branch only.
+  Application code remains uncommitted, unmerged and undeployed.
+
+### Unresolved limits and next slice
+
+A successful real embedding run was followed by one native FastEmbed shutdown
+abort (`mutex lock failed`, exit 134). Service restart succeeded; no public toolkit
+dispose hook was found and no native dependency fix is claimed. This requires
+runtime investigation before production acceptance.
+
+Task planning and generation references persist. The existing full editor's
+unsaved refinement variants remain transient; next scope is persistent per-question
+conversation/candidate versions and explicit adoption. Cancellation, failed-item-only
+retry, horizontal event delivery/replay, representative load/quality evaluation,
+and expanded TA/Student/Admin workspaces are not delivered by this slice.

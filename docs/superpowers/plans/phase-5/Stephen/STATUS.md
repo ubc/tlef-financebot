@@ -2,24 +2,37 @@
 
 _Last updated: 2026-09-07_
 
-## Latest local delivery — generation workflow
+## Latest local delivery — Instructor AI Workspace and generation workflow
 
 - User Stephen explicitly authorized unified modifications across developer ownership.
-- main fast-forwarded to `2af3b6f`; existing Student tutorial changes preserved.
+- Current branch includes latest `origin/main` at `2af3b6f`; existing Student tutorial changes preserved.
 - Local branch `codex/visual-generation-workflow` implements per-question verified
   Draft delivery, persisted item progress, SSE latest messages, visible pipeline,
   connection/revision handling and non-disruptive Draft arrival refresh.
-- 103 Jest suites / 1,299 tests, lint, typecheck and build passed. Three deterministic
-  compiled-view Playwright tests passed including scoped mobile axe; no paid-provider
-  performance or real SAML E2E claim. Independent review passed after two fixes.
-- Changes are uncommitted and not merged or deployed. Full harness and role redesign
-  remain product follow-ups; see this date's personal implementation plan and
-  `docs/product/2026-09-07-ai-workspace-and-harness.md`.
+- Added English AI Workspace: private durable conversations, a bounded AI planner
+  grounded in actual course sources/coverage, editable plan revisions, explicit
+  idempotent Run, live Draft/evidence inspection and the existing full editor with
+  a return-to-task link. Source/owner validation and atomic background claims
+  protect the HTTP and worker boundaries; refresh never restarts paid work.
+- Final verification: 107 Jest suites / 1,328 tests; lint, typecheck, build and
+  diff checks passed. Fifteen deterministic browser cases passed with mobile,
+  theme and scoped axe coverage; four real SAML/Mongo cases passed across task
+  persistence, Preview isolation and Exam Prep. Independent review findings resolved.
+- One actual provider experiment produced a plan in about 4.6s and a saved Draft
+  about 8.0s after Run; a repeated Run still produced one run. The reviewer flagged
+  difficulty, and nothing was approved or published. Temporary fixtures were removed.
+  These sample timings are not a latency guarantee. Native FastEmbed shutdown
+  aborted once after the successful experiment and remains a runtime investigation.
+- Application changes are uncommitted and not merged or deployed. Task-local
+  persistent question refinement, cancellation, failed-item-only retry, horizontal
+  event recovery and the remaining role workspaces remain follow-ups. See both
+  2026-09-07 personal plans and `docs/product/2026-09-07-workspace-acceptance.md`.
 
 ## In progress
 
-- No Guided Course Preparation work remains. Task 2, the LO-centred Content
-  Studio, is the next Stephen-owned Phase 5 slice.
+- The latest Instructor AI Workspace slice has passed functional acceptance.
+  No implementation remains in this local slice; production runtime and expanded
+  product scope follow below. Core merged-phase checkboxes have not been changed.
 
 ## Completed
 
@@ -107,9 +120,12 @@ _Last updated: 2026-09-07_
 
 ## Next
 
-- Continue Task 2: LO-centred Content Studio on the new Project interaction
-  model, followed by the unified Action Inbox and real tool-calling Course
-  Authoring Agent.
+- Persist single-question refinement conversations and candidate versions inside
+  AI Workspace, reusing the existing editor and approval service. Extend to a TA
+  continuous-review flow after this Instructor loop, then Student learning tasks
+  and Admin run operations with separate authorization/data projections.
+- Investigate the native FastEmbed shutdown failure before production acceptance;
+  validate multi-process SSE and representative quality/latency before scale-out.
 
 ## Coordination
 
