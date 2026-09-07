@@ -112,3 +112,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await browser.close();
   }
 }
+
+/** A release date safely in the past for Topics the specs create through the
+ * API. Since the Topic release model (server/src/services/theme-release.ts)
+ * a Topic with no date is "Not released" and hidden from students, along
+ * with every question tagged to it — so a spec that needs a Topic visible
+ * must release it explicitly. */
+export const RELEASED = '2000-01-01T00:00:00.000Z';

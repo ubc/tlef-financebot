@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   auditCol,
@@ -136,7 +136,7 @@ test.describe('notification bell — navigate, dismiss, clear all', () => {
     expect(courseRes.status()).toBe(201);
     courseId = ((await courseRes.json()) as { _id: string })._id;
 
-    const themeRes = await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME } });
+    const themeRes = await api.post(`/api/courses/${courseId}/themes`, { data: { name: THEME_NAME, availableFrom: RELEASED } });
     expect(themeRes.status()).toBe(201);
     themeId = ((await themeRes.json()) as { _id: string })._id;
 

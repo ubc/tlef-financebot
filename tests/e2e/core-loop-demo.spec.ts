@@ -201,6 +201,14 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await instructor.getByPlaceholder('Topic name').fill(TOPIC_NAME);
         await instructor.getByRole('button', { name: 'Add', exact: true }).click();
         await expect(instructor.locator('.tree-theme__name')).toHaveText(`Topic 1: ${TOPIC_NAME}`);
+        // A new Topic starts "Not released" (theme-release.ts); the student
+        // below can only see it — and practise its questions — once the
+        // instructor releases it, which is part of the demo now.
+        await expect(instructor.locator('.tree-theme__availability')).toHaveText('Not released');
+        await instructor.getByRole('button', { name: `Edit Topic 1: ${TOPIC_NAME}` }).click();
+        const topicEditor = instructor.getByRole('dialog', { name: 'Edit course structure item' });
+        await topicEditor.getByRole('button', { name: 'Release now' }).click();
+        await expect(instructor.locator('.tree-theme__availability')).toHaveText(/^Released on /);
 
         await instructor.getByRole('button', { name: '+ Add LO' }).click();
         await instructor.getByPlaceholder('Learning Objective name').fill(LO_NAME);

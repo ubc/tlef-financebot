@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import { coursesCol, losCol, themesCol, usersCol } from '../../server/src/components/mongodb/collections';
 
@@ -43,10 +43,10 @@ test.describe('Question Bank "+ Generate Question" filter scope', () => {
     courseId = ((await courseResponse.json()) as { _id: string })._id;
 
     const themeOne = (await (
-      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC_ONE } })
+      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC_ONE, availableFrom: RELEASED } })
     ).json()) as { _id: string };
     const themeTwo = (await (
-      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC_TWO } })
+      await context.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC_TWO, availableFrom: RELEASED } })
     ).json()) as { _id: string };
     themeTwoId = themeTwo._id;
 

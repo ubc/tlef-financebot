@@ -9,7 +9,7 @@
 // directly, since question authoring still has no HTTP route.
 import { test, expect } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -43,7 +43,7 @@ test.describe('instructor sample panel', () => {
     courseId = course._id;
 
     const theme = (await (
-      await api.post(`/api/courses/${courseId}/themes`, { data: { name: 'Rendering (E2E)' } })
+      await api.post(`/api/courses/${courseId}/themes`, { data: { name: 'Rendering (E2E)', availableFrom: RELEASED } })
     ).json()) as { _id: string };
     const lo = (await (
       await api.post(`/api/themes/${theme._id}/los`, { data: { name: 'Render maths (E2E)' } })

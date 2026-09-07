@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   coursesCol,
@@ -87,7 +87,7 @@ test.describe('responsive cross-role workflows', () => {
     expect(datesResponse.ok()).toBe(true);
 
     const themeResponse = await context.request.post(`/api/courses/${courseId}/themes`, {
-      data: { name: 'Responsive layout' },
+      data: { name: 'Responsive layout', availableFrom: RELEASED },
     });
     expect(themeResponse.status()).toBe(201);
     themeId = ((await themeResponse.json()) as { _id: string })._id;

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ObjectId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   contentRunsCol,
@@ -56,7 +56,7 @@ test.describe('Task 10 custom generation and regeneration', () => {
     courseId = course._id;
 
     const themeResponse = await context.request.post(`/api/courses/${courseId}/themes`, {
-      data: { name: 'Capital budgeting' },
+      data: { name: 'Capital budgeting', availableFrom: RELEASED },
     });
     const theme = (await themeResponse.json()) as { _id: string };
     themeId = theme._id;
