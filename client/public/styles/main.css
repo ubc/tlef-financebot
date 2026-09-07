@@ -3618,6 +3618,93 @@ button.class-row--link:focus-visible .class-row__title {
   font-size: 0.78rem;
 }
 
+/* Progressive-release state on the Topic row (structure.ts), so the
+   "Available From" date is visible without opening the editor. */
+.tree-theme__availability {
+  flex-shrink: 0;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.tree-theme__availability--unreleased {
+  background: var(--instr-red-bg);
+  color: var(--instr-red-fg);
+}
+
+.tree-theme__availability--scheduled {
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+}
+
+.tree-theme__availability--released {
+  background: var(--instr-green-bg);
+  color: var(--instr-green-fg);
+}
+
+/* Release controls in the Topic editor (structure.ts). */
+.structure-release {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.25rem 0 0.9rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.structure-release__label {
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.structure-release__state {
+  margin-right: auto;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.structure-release--unreleased .structure-release__state {
+  color: var(--instr-red-fg);
+}
+
+.structure-release--scheduled .structure-release__state {
+  color: var(--instr-amber-fg);
+}
+
+.structure-release--released .structure-release__state {
+  color: var(--instr-green-fg);
+}
+
+/* Bank row: an Approved question waiting on an unreleased Topic (bank.ts). */
+.bank-row__status {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.bank-row__held {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--instr-amber-bg);
+  color: var(--instr-amber-fg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Coverage row: Approved questions students cannot see yet (preseeding.ts). */
+.preseeding-row__held {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .tree-lo-list {
   display: flex;
   flex-direction: column;

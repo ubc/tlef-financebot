@@ -1331,7 +1331,8 @@ export function addTheme(courseId: string, name: string): Promise<CourseTreeThem
 /** PATCH /api/themes/:themeId { name?, availableFrom?, order? } -> Theme. */
 export function updateTheme(
   themeId: string,
-  patch: { name?: string; availableFrom?: string; order?: number },
+  /** `availableFrom: null` withdraws a release; `undefined` leaves it alone. */
+  patch: { name?: string; availableFrom?: string | null; order?: number },
 ): Promise<CourseTreeTheme> {
   return request<CourseTreeTheme>(`/api/themes/${encodeURIComponent(themeId)}`, {
     method: 'PATCH',
@@ -1920,6 +1921,9 @@ export interface PreseedingLo {
   /** Draft + Pending review + Reviewed + Paused question heads. Archived and
    * Approved questions are intentionally excluded. */
   unapproved: number;
+  /** Of `approved`, how many are held back from students because the
+   * question is also tagged to a Topic that is not released yet. */
+  heldBack?: number;
   target: number;
 }
 
