@@ -10,6 +10,8 @@
 
 **Owner:** Stephen; unified modification is already authorized. Baseline `2af3b6f` is current origin/main. Branch `codex/role-tutorials-analytics` carries existing Student tutorial changes. The earlier AI Workspace work was rolled back at the user's request and remains rolled back. Work in this existing user checkout; retain application changes uncommitted for review. Baseline recovery files are in `/private/tmp/financebot-role-experience`.
 
+**Delivery authorization (2026-09-09):** After local acceptance, Stephen explicitly requested committing and pushing this work to main. This supersedes the original hold on application commits and pushes below; completed implementation steps retain their original review checkpoints.
+
 ## Global Constraints
 
 - Production UI copy is English.
