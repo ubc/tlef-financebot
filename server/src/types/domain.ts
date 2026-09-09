@@ -51,6 +51,9 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export type CourseRole = 'student' | 'instructor' | 'ta';
 
+export type TutorialRole = CourseRole | 'admin';
+export type TutorialProgressStatus = 'completed' | 'dismissed';
+
 export type Capability =
   | 'question.review'
   | 'question.suggest-edit'
@@ -104,6 +107,18 @@ export interface User {
   createdAt: Date;
   lastLoginAt: Date;
   deactivatedAt?: Date;
+}
+
+/** Account-scoped completion state for short, contextual product tutorials.
+ * Kept separate from User so tutorial versions can evolve without rewriting
+ * identity records and so each role can have an independent catalogue. */
+export interface TutorialProgress {
+  puid: string;
+  role: TutorialRole;
+  tutorialId: string;
+  version: number;
+  status: TutorialProgressStatus;
+  updatedAt: Date;
 }
 
 /** Admin-managed global Instructor grant keyed by the canonical SAML PUID. */

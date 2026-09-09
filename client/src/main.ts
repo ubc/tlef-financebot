@@ -1,3 +1,4 @@
+import { renderTutorialHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
 // shell based on GET /api/auth/me, builds the sidebar + top bar, and starts the
 // hash router. Imports use a `.js` extension because the browser loads the
@@ -34,6 +35,7 @@ import { renderExamSelect } from './views/student/exam-select.js';
 import { renderExamAttempt } from './views/student/exam-attempt.js';
 import { renderExamResults } from './views/student/exam-results.js';
 import { renderExamHistory } from './views/student/exam-history.js';
+import { renderStudentSettings } from './views/student/settings.js';
 import {
   INSTRUCTOR_NAV,
   courseIdFromPath,
@@ -94,6 +96,8 @@ import {
 // but keeping specific-first is the convention as this list grows).
 const ROUTES: Route[] = [
   { path: '/', render: renderHome },
+  { path: '/settings', render: renderStudentSettings },
+  { path: '/help', render: renderTutorialHelp },
   { path: '/faculty', render: renderRole('faculty') },
   { path: '/student', render: renderRole('student') },
   { path: '/staff', render: renderRole('staff') },
@@ -118,6 +122,8 @@ const ROUTES: Route[] = [
 // these patterns never actually shadow one another. All instructor views
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
+  { path: '/instructor/help', render: renderTutorialHelp },
+  { path: '/admin/help', render: renderTutorialHelp },
   { path: '/admin/platform-settings', render: renderAdminPlatformSettings },
   { path: '/admin/capabilities', render: renderAdminCapabilities },
   { path: '/admin/users', render: renderAdminUsers },
@@ -143,6 +149,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
 ];
 
 const TA_ROUTES: Route[] = [
+  { path: '/ta/course/:id/help', render: renderTutorialHelp },
   { path: '/ta/course/:id/question/:questionId', render: renderTaQuestionDetail },
   { path: '/ta/course/:id/review', render: renderTaReviewQueue },
   { path: '/ta/course/:id/flags', render: renderTaFlagTriage },
@@ -271,6 +278,8 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
       flagsLink,
     ),
   );
+  const helpLink = el('a', { class: 'nav__link', href: '#' }, 'Help & Tutorials');
+  if (!viewAs) nav.append(helpLink);
   const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
   const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
   const courseContext = el('section', { class: 'course-context', 'aria-label': 'Current course' },
@@ -366,6 +375,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
+      helpLink.href = `#/ta/course/${encodeURIComponent(courseId)}/help`;
       reviewLink.classList.toggle(
         'nav__link--active',
         path.endsWith('/review') || path.includes('/question/'),
@@ -416,6 +426,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
             { label: 'Instructor Grants', path: '/admin/accounts', glyph: 'G' },
             { label: 'Capabilities', path: '/admin/capabilities', glyph: 'C' },
             { label: 'Platform Settings', path: '/admin/platform-settings', glyph: 'S' },
+            { label: 'Help & Tutorials', path: '/admin/help', glyph: '?' },
           ],
         },
         ...INSTRUCTOR_NAV,
@@ -575,7 +586,8 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       const courseId = courseIdFromPath(path);
       updateCourseContext(courseId, path);
       for (const { item, link, courseScoped } of anchors) {
-        const href = resolveHref(item, courseId);
+        const resolvedHref = resolveHref(item, courseId);
+        const href = item.path === '/instructor/help' && courseId ? `${resolvedHref}?courseId=${encodeURIComponent(courseId)}` : resolvedHref;
         link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
         const active = isNavItemActive(item, path);
@@ -905,11 +917,13 @@ function buildStudentShell(
     onNavigate: (path) => {
       const courseId = config.courseIdFromPath(path);
       updateCourseContext(courseId);
+      if (!courseId && path === '/settings') topbarTitle.textContent = 'Settings';
       const availabilityRequest = ++examAvailabilityRequest;
       practiceMode = config.practicePath(path);
       nav.hidden = practiceMode;
       for (const { item, link, courseScoped } of anchors) {
-        const href = studentNavHref(item, courseId);
+        const resolvedHref = studentNavHref(item, courseId);
+        const href = (item.label === 'Help & Tutorials' || item.label === 'Settings') && courseId ? `${resolvedHref}?courseId=${encodeURIComponent(courseId)}` : resolvedHref;
         link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
         const active = !practiceMode && isStudentNavActive(item, path, courseId);

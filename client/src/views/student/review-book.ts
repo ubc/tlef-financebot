@@ -22,6 +22,7 @@ import { badge, emptyState, errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { copyrightFooter, pageHeader } from '../../student-ui.js';
 import type { RouteParams } from '../../router.js';
+import { maybeStartStudentTutorial } from '../../tutorials.js';
 import {
   LIVE_STUDENT_EXPERIENCE,
   type StudentExperience,
@@ -270,6 +271,7 @@ export async function renderReviewBookWithExperience(
     'Review Book',
     'Missed questions and bookmarks, grouped by topic and learning objective.',
   );
+  header.setAttribute('data-tutorial', 'review-book-intro');
   header.append(
     el(
       'select',
@@ -296,6 +298,7 @@ export async function renderReviewBookWithExperience(
         experience.getReviewBook(courseId, sort),
         experience.getHome(courseId),
       ]);
+      if (!experience.preview) maybeStartStudentTutorial('student-review-book', { root });
       if (groups.length === 0) {
         body.replaceChildren(emptyState('Nothing in your Review Book yet — missed questions and bookmarks land here.'));
         return;
@@ -318,7 +321,7 @@ export async function renderReviewBookWithExperience(
       body.replaceChildren(
         el(
           'div',
-          { class: 'review-groups' },
+          { class: 'review-groups', 'data-tutorial': 'review-book-groups' },
           ...groups.map((g) =>
             topicGroup(
               courseId,

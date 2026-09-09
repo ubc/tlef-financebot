@@ -189,7 +189,7 @@ test.describe('Exam Prep single-sitting integrity path', () => {
       await expect(instructorPage.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
       await instructorPage.getByRole('button', { name: 'Exam Prep', exact: true }).click();
       await expect(instructorPage.getByText(
-        'Exam integrity Topic: Insufficient data (<5 attempts) (2 attempts)',
+        'Exam integrity Topic · Insufficient data · 2 attempts',
         { exact: true },
       )).toBeVisible();
     } finally {

@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Course Settings (I4) — term dates, feedback strategy, auto-pause,
 // registration code, and roster (Task 15, Task C). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
@@ -594,6 +595,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     ),
   );
   saveRosterButton.addEventListener('click', () => void saveRoster());
+  attachTutorial(root, 'instructor-course-settings', {"course-settings-dates": "#settings-term-start", "course-settings-roster": "#settings-roster"});
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {

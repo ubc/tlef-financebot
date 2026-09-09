@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // TA Question Page — the destination of the TA Review Queue's Review → button
 // (views/ta/review-queue.ts). This is where the editing-ish work a TA is
 // allowed to do now lives, having been pulled off the queue rows: suggest an
@@ -26,6 +27,8 @@ import {
   ApiError,
   addTaQuestionNote,
   getCourseOutline,
+  getMyCourseCapabilities,
+  type Capability,
   getQuestion,
   suggestTaQuestionEdit,
   type CourseOutline,
@@ -253,8 +256,9 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
 
   let outline: CourseOutline;
   let detail: QuestionDetail;
+  let permissions: Record<Capability, boolean>;
   try {
-    [outline, detail] = await Promise.all([getCourseOutline(courseId), getQuestion(questionId)]);
+    [outline, detail, permissions] = await Promise.all([getCourseOutline(courseId), getQuestion(questionId), getMyCourseCapabilities(courseId)]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderInner(outlet, courseId, questionId)));
@@ -282,10 +286,11 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
     ),
     el('div', { class: 'cluster' }, statusBadge(STATUS_LABEL[detail.state], statusToBadgeVariant(detail.state))),
     questionBody(detail),
-    suggestPanel(detail, () => void refresh()),
+    permissions['question.suggest-edit'] ? suggestPanel(detail, () => void refresh()) : el('p', { class: 'muted', text: 'Suggested edits are unavailable. Add a review note or ask your Instructor about course permissions.' }),
     suggestionsList(detail.suggestions ?? []),
-    notesPanel(detail),
+    el('div', { 'data-tutorial': 'ta-question-actions' }, notesPanel(detail)),
   );
+  attachTutorial(root, 'ta-question-review', {"ta-question-content": ".question-stem"});
 }
 
 export function renderTaQuestionDetail(outlet: HTMLElement, params: RouteParams): void {

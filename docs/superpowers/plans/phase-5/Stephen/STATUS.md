@@ -1,11 +1,27 @@
 # Stephen — Phase 5 status
 
-_Last updated: 2026-08-07_
+_Last updated: 2026-09-09_
 
 ## In progress
 
-- No Guided Course Preparation work remains. Task 2, the LO-centred Content
-  Studio, is the next Stephen-owned Phase 5 slice.
+- Role tutorials and Student Analytics are locally accepted on
+  `codex/role-tutorials-analytics`, including the final independent integration
+  review. Stephen authorized committing and pushing this accepted delivery to
+  main on 2026-09-09.
+
+## Current delivery
+
+- 25 contextual tutorials across Student (9), Instructor (9), TA (3) and
+  Admin (4), with shared course-aware Help, replay, isolated progress and
+  capability-aware TA controls.
+- Student Analytics now provides actionable objective and question-version
+  drilldowns, exact mode/date filters, weekly activity/CSV and permission-gated
+  named follow-up. Zero-data and insufficient-sample states are explicit.
+- Full Jest: 103 suites / 1294 tests. Dedicated browsers: 15 tutorial and
+  10 analytics tests. Real SAML/Mongo: 6 new role/analytics flows plus the
+  existing Exam Prep and 2 Preview cases. Real-page axe: all 6 scenarios pass.
+- See [acceptance evidence](../../../../testing/2026-09-09-role-tutorials-analytics-acceptance.md)
+  for coverage and limits. Optional product help is separate from PRD consent.
 
 ## Completed
 
@@ -93,9 +109,9 @@ _Last updated: 2026-08-07_
 
 ## Next
 
-- Continue Task 2: LO-centred Content Studio on the new Project interaction
-  model, followed by the unified Action Inbox and real tool-calling Course
-  Authoring Agent.
+- Review the current local tutorial and analytics experience with Stephen.
+  The earlier AI Workspace experiment remains rolled back; this delivery does
+  not resume that work or change generation.
 
 ## Coordination
 

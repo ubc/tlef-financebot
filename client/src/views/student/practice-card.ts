@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // The single-question card: selectable options, submit/lock/reveal, and the
 // Strategy-A retry-in-place recursion. Factored out of practice.ts (which
 // owns the LO/theme walking loop) to keep each file under the house style's
@@ -85,7 +86,7 @@ export function makeQuestionCard(
   isRetry = false,
   adapter: PracticeCardAdapter = LIVE_PRACTICE_ADAPTER,
 ): HTMLElement {
-  const card = el('div', { class: 'practice-card' });
+  const card = el('div', { class: 'practice-card', 'data-tutorial': 'practice-question' });
   let selectedKey: string | undefined;
   let result: AttemptResult | undefined;
   let submitting = false;
@@ -385,7 +386,7 @@ export function makeQuestionCard(
       const flagFormOpen = flagState === 'editing' || flagState === 'submitting';
       footer = el(
         'div',
-        { class: 'row practice-card__footer' },
+        { class: 'row practice-card__footer', 'data-tutorial': 'practice-actions' },
         bookmarkControl(),
         flagControl(),
         flagFormOpen
@@ -396,7 +397,7 @@ export function makeQuestionCard(
       // Strategy-A retry-in-place: the original explanations for the
       // withheld options stay withheld — this recursive card is a fresh
       // question with its own reveal, not a re-render of the original's.
-      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
+      footer = el('div', { class: 'row practice-card__footer', 'data-tutorial': 'practice-actions' }, bookmarkControl(), flagControl());
       const retryQuestion = retryAsQuestion(retry, question.watermark, question.difficulty);
       session.recordServed(retryQuestion);
       retryCard = makeQuestionCard(ctx, session, retryQuestion, callbacks, true, adapter);
@@ -435,7 +436,7 @@ export function makeQuestionCard(
           'Continue practicing',
         ),
       );
-      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
+      footer = el('div', { class: 'row practice-card__footer', 'data-tutorial': 'practice-actions' }, bookmarkControl(), flagControl());
     } else if (recommendation) {
       const themeComplete = recommendation === 'advance-theme';
       const hasNextLo = ctx.isThemeMode && ctx.loIndex + 1 < ctx.los.length;
@@ -466,11 +467,11 @@ export function makeQuestionCard(
           ),
         ),
       );
-      footer = el('div', { class: 'row practice-card__footer' }, bookmarkControl(), flagControl());
+      footer = el('div', { class: 'row practice-card__footer', 'data-tutorial': 'practice-actions' }, bookmarkControl(), flagControl());
     } else {
       footer = el(
         'div',
-        { class: 'row practice-card__footer' },
+        { class: 'row practice-card__footer', 'data-tutorial': 'practice-actions' },
         bookmarkControl(),
         flagControl(),
         el(
@@ -487,12 +488,12 @@ export function makeQuestionCard(
       qLabel,
       stemEl,
       el('div', { class: 'practice-card__options' }, ...options),
-      feedback,
-      explanations,
+      feedback ? el('div', { 'data-tutorial': 'practice-feedback' }, feedback, explanations) : false,
       progressionPanel,
       footer,
       retryCard ? el('div', { class: 'practice-card__retry' }, el('p', { class: 'eyebrow', text: 'Try a similar question' }), retryCard) : false,
     );
+    if (result && !isRetry) attachTutorial(card, 'student-feedback', {});
   };
 
   draw();

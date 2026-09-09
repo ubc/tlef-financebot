@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   getAdminCapabilities,
@@ -85,6 +86,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     matrixSlot,
   );
   await load();
+  attachTutorial(body, 'admin-capabilities', {"admin-capabilities-scope": ".admin-toolbar", "admin-capabilities-matrix": ".admin-capability-list"});
 }
 
 export function renderAdminCapabilities(outlet: HTMLElement, _params: RouteParams): void {

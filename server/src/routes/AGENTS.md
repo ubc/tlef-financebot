@@ -28,6 +28,9 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   All **public** (they establish/report the session). The `/auth/*` paths are
   intentionally NOT under `/api` (their URLs must match the ACS/SLO registered in
   the IdP). See `components/auth/AGENTS.md`.
+- `tutorials.routes.ts` — authenticated user's own contextual tutorial
+  catalogue and completion/dismissal/reset state. PUID always comes from the
+  session; role and tutorial ids are validated against the server catalogue. Admin tutorial access requires an Admin session; progress never changes consent or permissions.
 - `courses.routes.ts` — Courses / Hierarchy / Roster: course CRUD, explicit
   draft/published/archived lifecycle, read-only publish checklist,
   archive/restore, owner/Admin-only permanent cascade deletion, Theme and LO CRUD/archive, and roster
@@ -99,3 +102,13 @@ the "Protecting routes" section of `components/auth/AGENTS.md`.
   `client/src/api.ts`.
 - Return JSON. Throw errors (optionally with a numeric `status`) and let the
   central `errorHandler` format them.
+
+- `capabilities.routes.ts` — `GET /courses/:courseId/capabilities/me` returns
+  only the session user's effective booleans through the existing capability
+  service. It rejects signed-out and foreign-course users, takes no user/role
+  override, and never returns stored assignments or other identities.
+
+- `analytics.routes.ts` validates optional exact date/mode/LO scopes and bounded
+  question-pattern limits. Aggregate routes require `analytics.view`; all named
+  follow-up lists/search/profiles require `analytics.individual`. Distribution
+  resolves an explicit version against the course-owned question.

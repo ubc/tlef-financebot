@@ -2700,9 +2700,10 @@ export interface ThemeFailureRate extends AnalyticsRate {
 }
 
 export interface AnswerDistribution {
+  questionId: string; versionId: string; version: number; stem: string; isCurrent: boolean;
   attempts: number;
   insufficient: boolean;
-  options: Array<{ key: string; role: string; count: number; pct?: number }>;
+  options: Array<{ key: string; text: string; role: string; count: number; pct?: number }>;
   misconceptionHighlight: boolean;
 }
 
@@ -2743,20 +2744,28 @@ export interface StudentAnalyticsProfile {
   engagement: { attempts: number; sessions: number; lastAttemptAt?: string; examPrepAttempts: number; topicPracticeAttempts: number };
 }
 
-export function getFailureRates(courseId: string, mode: 'topic-practice' | 'exam-prep'): Promise<ThemeFailureRate[]> {
-  return request<ThemeFailureRate[]>(
-    `/api/courses/${encodeURIComponent(courseId)}/analytics/failure-rates?mode=${encodeURIComponent(mode)}`,
-  );
+export interface AnalyticsFilter { mode?: 'topic-practice' | 'exam-prep'; from?: string; to?: string; loId?: string }
+export interface QuestionPattern extends AnalyticsRate {
+  questionId: string; versionId: string; stem: string; loId: string; loName: string;
+  themeId: string; themeName: string; misconceptionRate?: number; version?: number;
+  isCurrent: boolean; available: boolean; objectiveCount: number;
 }
-
-export function getAnswerDistribution(courseId: string, questionId: string): Promise<AnswerDistribution> {
-  return request<AnswerDistribution>(
-    `/api/courses/${encodeURIComponent(courseId)}/analytics/questions/${encodeURIComponent(questionId)}/distribution`,
-  );
+export function analyticsQuery(filter: AnalyticsFilter & { versionId?: string; limit?: number }): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== '') query.set(key, String(value));
+  return query.toString();
 }
-
-export function getEngagementAnalytics(courseId: string): Promise<EngagementAnalytics> {
-  return request<EngagementAnalytics>(`/api/courses/${encodeURIComponent(courseId)}/analytics/engagement`);
+export function getFailureRates(courseId: string, mode: 'topic-practice' | 'exam-prep', filter: AnalyticsFilter = {}): Promise<ThemeFailureRate[]> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/failure-rates?${analyticsQuery({ ...filter, mode })}`);
+}
+export function getQuestionPatterns(courseId: string, filter: AnalyticsFilter): Promise<{ items: QuestionPattern[]; total: number; limit: number }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/question-patterns?${analyticsQuery(filter)}`);
+}
+export function getAnswerDistribution(courseId: string, questionId: string, filter: AnalyticsFilter & { versionId?: string } = {}): Promise<AnswerDistribution> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/questions/${encodeURIComponent(questionId)}/distribution?${analyticsQuery(filter)}`);
+}
+export function getEngagementAnalytics(courseId: string, filter: AnalyticsFilter = {}): Promise<EngagementAnalytics> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/engagement?${analyticsQuery(filter)}`);
 }
 
 export function getLowEngagement(courseId: string, inactiveDays = 7): Promise<AnalyticsStudent[]> {
@@ -2974,4 +2983,47 @@ export function dismissNotification(id: string): Promise<AppNotification> {
 /** POST /api/notifications/dismiss-all -> { count }. "Clear all". */
 export function dismissAllNotifications(): Promise<{ count: number }> {
   return request<{ count: number }>('/api/notifications/dismiss-all', { method: 'POST' });
+}
+
+// --- Contextual tutorials ---------------------------------------------------
+
+export type TutorialRole = 'student' | 'instructor' | 'ta' | 'admin';
+export type TutorialStatus = 'not-viewed' | 'completed' | 'dismissed';
+
+export interface TutorialState {
+  id: string;
+  role: TutorialRole;
+  version: number;
+  title: string;
+  description: string;
+  estimatedSeconds: number;
+  status: TutorialStatus;
+  updatedAt?: string;
+}
+
+export function listTutorials(role: TutorialRole): Promise<TutorialState[]> {
+  return request<TutorialState[]>(`/api/tutorials?role=${encodeURIComponent(role)}`);
+}
+
+export function saveTutorialProgress(
+  tutorialId: string,
+  role: TutorialRole,
+  status: Exclude<TutorialStatus, 'not-viewed'>,
+): Promise<void> {
+  return request<void>(`/api/tutorials/${encodeURIComponent(tutorialId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, status }),
+  });
+}
+
+export function resetTutorialProgress(role: TutorialRole): Promise<{ count: number }> {
+  return request<{ count: number }>(`/api/tutorials?role=${encodeURIComponent(role)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Session-owned effective course permissions; no assignment or other-user data. */
+export function getMyCourseCapabilities(courseId: string): Promise<Record<Capability, boolean>> {
+  return request<Record<Capability, boolean>>(`/api/courses/${encodeURIComponent(courseId)}/capabilities/me`);
 }

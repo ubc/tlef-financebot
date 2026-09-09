@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   PIPELINE_STEPS,
@@ -386,6 +387,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     ),
     el('div', { class: 'admin-save-bar' }, el('button', { class: 'btn btn--primary', type: 'button', text: 'Save settings', onclick: () => void save() }), status),
   );
+  attachTutorial(body, 'admin-platform-settings', {"admin-platform-models": ".admin-step-list", "admin-platform-quality": ".admin-save-bar"});
 }
 
 export function renderAdminPlatformSettings(outlet: HTMLElement, _params: RouteParams): void {

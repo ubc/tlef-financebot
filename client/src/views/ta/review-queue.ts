@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // TA Review Queue (TA-01) — the instructor review queue's layout with only
 // TA-permitted actions. Phase 3 Task 6 specified "same data as the instructor
 // queue but the payload/UI carry no approve/reject affordances"; this view is
@@ -15,6 +16,8 @@
 import {
   ApiError,
   getCourseOutline,
+  getMyCourseCapabilities,
+  type Capability,
   getQuestion,
   getTaReviewQueue,
   markTaQuestionReviewed,
@@ -65,8 +68,9 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   let outline: CourseOutline;
   let items: TaReviewQueueItem[];
+  let permissions: Record<Capability, boolean>;
   try {
-    [outline, items] = await Promise.all([getCourseOutline(courseId), getTaReviewQueue(courseId)]);
+    [outline, items, permissions] = await Promise.all([getCourseOutline(courseId), getTaReviewQueue(courseId), getMyCourseCapabilities(courseId)]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderInner(outlet, courseId)));
@@ -98,7 +102,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   const tabsContainer = el('div', {});
   const controlsContainer = el('div', {});
-  const resultsContainer = el('div', {});
+  const resultsContainer = el('div', { 'data-tutorial': 'ta-review-items' });
 
   function tabInputs(): QueueTabInput[] {
     return items.map((item) => ({ labels: item.labels, agentDecision: agentDecisions.get(item.id) }));
@@ -190,12 +194,12 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
           class: 'btn btn--instr-primary btn--sm', type: 'button',
           onclick: () => navigate(`/ta/course/${encodeURIComponent(courseId)}/question/${encodeURIComponent(item.id)}`),
         }, 'Review →'),
-        el('button', {
+        permissions['question.mark-reviewed'] ? el('button', {
           class: 'btn btn--ghost btn--sm', type: 'button',
           disabled: item.state === 'reviewed' ? 'disabled' : undefined,
           title: item.state === 'reviewed' ? 'Already marked reviewed' : 'Mark this question reviewed for the instructor',
           onclick: () => void markReviewed(item),
-        }, 'Mark reviewed'),
+        }, 'Mark reviewed') : el('p', { class: 'muted', text: 'Mark reviewed is unavailable. Ask your Instructor about course permissions.' }),
       ),
     );
   }
@@ -231,6 +235,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
   renderControls();
   renderResults();
   void enrichAgentDecisions(items);
+  attachTutorial(root, 'ta-review', { 'ta-review-context': '.page-header' });
 }
 
 export function renderTaReviewQueue(outlet: HTMLElement, params: RouteParams): void {

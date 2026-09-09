@@ -30,6 +30,12 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['taInvites:{"status":1,"email":1}']).toBeDefined();
   });
 
+  it('enforces one tutorial status per user, role, and tutorial', () => {
+    expect(
+      byCollection['tutorialProgress:{"puid":1,"role":1,"tutorialId":1}'].options?.unique,
+    ).toBe(true);
+  });
+
   it('indexes the hot attempt-record and serving paths', () => {
     expect(byCollection['attemptRecords:{"puid":1,"courseId":1,"loId":1,"createdAt":-1}']).toBeDefined();
     expect(byCollection['attemptRecords:{"questionVersionId":1}']).toBeDefined();

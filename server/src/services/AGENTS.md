@@ -29,6 +29,9 @@ objects directly.
   user)` returns a role-specific payload; `ROLE_AREAS` lists the roles that have
   an area. Called only from the role-gated `routes/roles.routes.ts`. Keep or adapt
   for role-specific features.
+- `tutorials.service.ts` — versioned, account-scoped contextual tutorial
+  catalogue for Student/Instructor/TA/Admin and completion/dismissal/reset state. Missing or stale versions
+  read as not viewed, allowing one micro-tutorial to evolve independently.
 - `content-runs.service.ts` — Phase 2 P2-0 durable operation state. It owns
   legal status/stage transitions, revision compare-and-set writes, bounded
   event/warning history, startup reconciliation, and post-write course
@@ -103,3 +106,8 @@ Other services will appear as more components are built up.
    use their public `index.ts` exports.
 3. Accept and return plain typed data, not Express `req`/`res` objects.
 4. Call the service from a route in `server/src/routes/`.
+
+- `analytics.service.ts` aggregates exact mode/date scopes, active zero-attempt LOs,
+  bounded question/version patterns and version-isolated distributions. Engagement
+  includes empty weeks and active-LO coverage; durations describe observed attempt
+  spans. Historical metadata never substitutes a current version.

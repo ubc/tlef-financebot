@@ -63,6 +63,8 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `preview-session.ts` | Browser-scoped UUID for one fresh anonymous Preview student. Exit clears it; refresh keeps the current walkthrough. |
 | `views/instructor/content-map.ts` | Instructor-only Theme/LO coverage map joining material kinds, question states, run status, and authoring gaps. |
 | `views/student/exam-*.ts` | Phase 3 Exam Prep selection, integrity-preserving live sitting, post-submit results, and history. The live DOM receives only sanitized stems/options; correctness and explanations exist only in the results view. |
+| `tutorials.ts` | Account/role-aware accessible spotlight engine, first-use triggers and safe cross-route replay. `tutorial-definitions.ts` owns the 25 Student/Instructor/TA/Admin contexts; `views/tutorial-help.ts` owns the shared hub. |
+| `views/student/settings.ts` | Centered Student settings hub with appearance controls and Help & Tutorials status/replay/reset. |
 
 ## Adding a page
 
@@ -115,3 +117,10 @@ token-driven.
   and owns its loading/empty/error states.
 - The compiled output `client/public/js/` is generated and git-ignored. Never
   edit it by hand and never commit it.
+
+Shared Help is available in each real role shell; Student Settings retains
+Appearance and embeds the same hub. Views attach tutorial targets only after
+rendering, with the view root supplied for stale-view cancellation. TA suggestion
+and mark-reviewed controls use `getMyCourseCapabilities` rather than assuming
+that every TA has the default capabilities. Instructor TA View still uses the
+real Instructor permission projection while keeping TA-only action surfaces.

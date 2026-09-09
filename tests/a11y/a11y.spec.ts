@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { ObjectId } from 'mongodb';
+import { ObjectId, type WithId } from 'mongodb';
 import { AUTH_FILE } from '../e2e/global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
@@ -17,8 +17,10 @@ import {
   examTemplatesCol,
   examAttemptsCol,
   usersCol,
+  tutorialProgressCol,
 } from '../../server/src/components/mongodb/collections';
 import { createQuestion } from '../../server/src/services/questions.service';
+import type { TutorialProgress, TutorialRole } from '../../server/src/types/domain';
 
 // Accessibility scans using axe-core. We assert WCAG 2.0/2.1 A + AA rules and
 // require zero violations, so a regression (missing label, low contrast, bad
@@ -86,6 +88,49 @@ async function login(page: Page, username: string): Promise<void> {
   await page.fill('input[name="password"]', username);
   await page.getByRole('button', { name: /login|log in|sign in|yes/i }).first().click();
   await page.waitForURL('**/', { timeout: 30_000 });
+}
+
+/** Make first-use onboarding deterministic for each Student browser test. The
+ * route scopes deletion to the authenticated test account, then reload clears
+ * the page module's in-memory tutorial catalogue cache. */
+const originalTutorials = new Map<string, { puid: string; role: TutorialRole; items: WithId<TutorialProgress>[] }>();
+async function preserveTutorials(page: Page, role: TutorialRole): Promise<string> {
+  const auth = await (await page.request.get('/api/auth/me')).json() as { user: { puid: string } };
+  const puid = auth.user.puid;
+  const key = JSON.stringify([puid, role]);
+  if (!originalTutorials.has(key)) {
+    originalTutorials.set(key, { puid, role, items: await tutorialProgressCol().find({ puid, role }).toArray() });
+  }
+  return puid;
+}
+async function resetStudentTutorialState(page: Page): Promise<void> {
+  await preserveTutorials(page, 'student');
+  const response = await page.request.delete('/api/tutorials?role=student');
+  expect(response.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
+}
+
+/** These scans cover the full underlying page. Tutorial dialogs are exercised
+ * separately in real-role integration and the focused browser axe suite. */
+async function prepareSurfaceScan(page: Page, role: 'instructor' | 'admin'): Promise<void> {
+  const puid = await preserveTutorials(page, role);
+  const response = await page.request.get(`/api/tutorials?role=${role}`);
+  expect(response.ok()).toBe(true);
+  const catalogue = await response.json() as Array<{ id: string; version: number }>;
+  for (const tutorial of catalogue) {
+    await tutorialProgressCol().updateOne({ puid, role, tutorialId: tutorial.id }, {
+      $set: { puid, role, tutorialId: tutorial.id, version: tutorial.version, status: 'dismissed', updatedAt: new Date() },
+    }, { upsert: true });
+  }
+}
+
+async function scanAndDismissTutorial(page: Page, surface: string): Promise<void> {
+  const tutorial = page.locator('.tutorial-popover');
+  await expect(tutorial).toBeVisible();
+  await expectNoViolations(page, surface);
+  await tutorial.getByRole('button', { name: 'Skip tutorial' }).click();
+  await expect(tutorial).toBeHidden();
 }
 
 const COURSE_NAME = 'A11y Scan Course';
@@ -171,10 +216,15 @@ test.describe('a11y across the signed-in surfaces', () => {
 
     await connectMongo();
 
-    // Two approved questions: the rich one drives the question/feedback scans
-    // and the exam; the plain one gives the Strategy-A retry gate something to
-    // offer (selectRetryQuestion excludes the question just answered).
-    const stems = [RICH_STEM, 'What is the present value of 200 at 10% for one year?'];
+    // Approved questions: the rich one exercises the renderer, while two plain
+    // conceptual questions guarantee the Strategy-A retry gate still has a
+    // servable alternative if the numeric-safety gate withholds the rich item.
+    // selectRetryQuestion excludes the question that was just answered.
+    const stems = [
+      RICH_STEM,
+      'Which principle explains why a future cash flow is discounted?',
+      'Which statement best describes present value?',
+    ];
     for (const [index, stem] of stems.entries()) {
       const { questionId } = await createQuestion({
         courseId: new ObjectId(courseId),
@@ -258,12 +308,17 @@ test.describe('a11y across the signed-in surfaces', () => {
         usersCol().updateMany({}, { $pull: { courseRoles: { courseId: guideId } } }),
       ]);
     }
+    for (const { puid, role, items } of originalTutorials.values()) {
+      await tutorialProgressCol().deleteMany({ puid, role });
+      if (items.length) await tutorialProgressCol().insertMany(items);
+    }
   });
 
   test('guided course setup choice dialog has no WCAG A/AA violations', async ({ browser }) => {
     const context = await browser.newContext({ storageState: AUTH_FILE });
     const page = await context.newPage();
     try {
+      await prepareSurfaceScan(page, 'instructor');
       await page.goto(`/#/instructor/course/${guideCourseId}`);
       await expect(page.getByRole('heading', { name: GUIDE_COURSE_NAME })).toBeVisible();
 
@@ -285,6 +340,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     const context = await browser.newContext({ storageState: AUTH_FILE });
     const page = await context.newPage();
     try {
+      await prepareSurfaceScan(page, 'instructor');
       await page.goto('/#/instructor/courses');
       await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible();
       await expectNoViolations(page, 'instructor course list');
@@ -342,37 +398,65 @@ test.describe('a11y across the signed-in surfaces', () => {
 
   test('student practice surfaces have no WCAG A/AA violations', async ({ page }) => {
     await login(page, 'student');
+    await resetStudentTutorialState(page);
+    await scanAndDismissTutorial(page, 'student getting-started tutorial');
     await enrol(page);
+
+    await page.goto('/#/settings');
+    await expect(page.getByRole('heading', { name: 'Help & Tutorials' })).toBeVisible();
+    await expectNoViolations(page, 'student settings and tutorial library');
 
     await page.goto(`/#/course/${courseId}`);
     await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Course Home tutorial');
     await expectNoViolations(page, 'student course home');
 
     await page.goto(`/#/course/${courseId}/theme/${themeId}`);
     await expect(page.locator('.progress-row', { hasText: LO_NAME })).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Topics tutorial');
     await expectNoViolations(page, 'student LO list');
 
     // Question view — the seeded stem renders inline KaTeX and a markdown table.
     await page.goto(`/#/course/${courseId}/practice/${loId}`);
     await expect(page.locator('.practice-card')).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Practice tutorial');
     await expectNoViolations(page, 'student question view (KaTeX + table)');
 
-    // Strategy A: a common-misconception pick withholds the other options and
-    // attaches a retry in place (attempts.service.ts decideStrategy, adaptive).
+    // Lock the seeded course while scanning each feedback surface. The
+    // production "adaptive" strategy is already covered by unit tests; an
+    // accessibility test should not depend on option-role ordering or prior
+    // attempt state when it needs both concrete UIs to render deterministically.
+    await coursesCol().updateOne(
+      { _id: new ObjectId(courseId) },
+      { $set: { feedbackStrategy: 'strategy-a' } },
+    );
+
+    // Strategy A withholds the other options and attaches a retry in place.
     await page.getByRole('button', { name: /Misconception/ }).first().click();
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect(page.locator('.practice-card__retry')).toBeVisible();
+    await scanAndDismissTutorial(page, 'student answer feedback tutorial');
     await expectNoViolations(page, 'student feedback — Strategy A (retry gate)');
 
     // Strategy B: a clearly-wrong pick gives the full reveal.
+    await coursesCol().updateOne(
+      { _id: new ObjectId(courseId) },
+      { $set: { feedbackStrategy: 'strategy-b' } },
+    );
     const retry = page.locator('.practice-card__retry');
     await retry.getByRole('button', { name: /Clearly wrong/ }).first().click();
     await retry.getByRole('button', { name: 'Submit' }).click();
     await expect(retry.getByText(/not quite/i)).toBeVisible();
     await expectNoViolations(page, 'student feedback — Strategy B (full reveal)');
 
+    await page.getByRole('link', { name: /End session/i }).first().click();
+    await expect(page.getByRole('heading', { name: 'Session Summary', exact: true })).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Session Summary tutorial');
+    await expectNoViolations(page, 'student Session Summary');
+
     await page.goto(`/#/course/${courseId}/review-book`);
     await expect(page.getByText(THEME_NAME)).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Review Book tutorial');
     await expectNoViolations(page, 'student review book');
   });
 
@@ -383,10 +467,13 @@ test.describe('a11y across the signed-in surfaces', () => {
     page.on('dialog', (dialog) => void dialog.accept());
 
     await login(page, 'student');
+    await resetStudentTutorialState(page);
+    await scanAndDismissTutorial(page, 'student getting-started tutorial before Exam Prep');
     await enrol(page);
 
     await page.goto(`/#/course/${courseId}/exams`);
     await expect(page.locator('.exam-card')).toBeVisible();
+    await scanAndDismissTutorial(page, 'student Exam Prep tutorial');
     await expectNoViolations(page, 'student exam select');
 
     await page.getByRole('button', { name: 'Start exam' }).first().click();
@@ -406,6 +493,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     await page.getByRole('button', { name: /^Submit exam/ }).click();
     await expect(page).toHaveURL(/results/, { timeout: 15_000 });
     await expect(page.locator('.exam-score-card')).toBeVisible();
+    await scanAndDismissTutorial(page, 'student submitted exam results tutorial');
     await expectNoViolations(page, 'student exam results');
   });
 
@@ -424,6 +512,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     await usersCol().updateOne({ puid }, { $set: { isAdmin: true } });
 
     try {
+      await prepareSurfaceScan(page, 'admin');
       for (const route of [
         { path: '/#/admin/users', heading: 'User Directory' },
         { path: '/#/admin/capabilities', heading: 'Capability Matrix' },

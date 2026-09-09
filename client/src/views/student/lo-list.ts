@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // LO list for a topic (ST-P01/P02 drill-down, Figma wireframe screen 3):
 // pageHeader (topic name + LO coverage), a "Session Summary" ghost link and
 // "Start Practice" primary link (jumps to the first not-yet-covered LO) in
@@ -135,6 +136,7 @@ export async function renderLoListWithExperience(
         : emptyState('No learning objectives are available in this topic yet.'),
       copyrightFooter(),
     );
+    attachTutorial(root, 'student-topics', {"topic-selection": ".stack", "topic-progress": ".page-header"}, { preview: experience.preview });
   } catch (error) {
     root.replaceChildren(errorState(
       (error as Error).message,

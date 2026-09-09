@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Question Review Detail/editor (I6) — the role-labeled option editor, AI
 // Agent Report panel, and Approve/Reject/Save flow (Task 15, Task E). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
@@ -15,6 +16,7 @@ import {
   ApiError,
   editQuestion,
   getCourseTree,
+  getAnswerDistribution,
   getQuestion,
   getQuestionSample,
   listCourseFlags,
@@ -145,6 +147,29 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   const courseId = detail.courseId || fallbackCourseId;
   const query = currentQuery();
+  const analyticsVersionId = query.get('analyticsVersionId');
+  const analyticsRoute = location.hash;
+  const analyticsNotice = el('section', { class: 'card stack', 'aria-label': 'Recorded analytics version' });
+  async function loadAnalyticsVersion(): Promise<void> {
+    analyticsNotice.replaceChildren(el('h2', { text: 'Recorded analytics version' }),
+      el('p', { text: 'Loading recorded content… The editor below shows current content.' }));
+    try {
+      const recorded = await getAnswerDistribution(courseId, questionId, { versionId: analyticsVersionId! });
+      if (!root.isConnected || location.hash !== analyticsRoute) return;
+      analyticsNotice.replaceChildren(el('h2', { text: 'Recorded analytics version' }),
+        el('p', { text: `Version ${recorded.version} · ${recorded.isCurrent ? 'Current content' : 'Historical content — the editor below shows the current version.'}` }),
+        el('p', { text: recorded.stem }),
+        el('ul', {}, ...recorded.options.map((option) => el('li', { text: `${option.key}. ${option.text} (${option.role})` }))));
+    } catch (error) {
+      if (!root.isConnected || location.hash !== analyticsRoute) return;
+      analyticsNotice.replaceChildren(el('h2', { text: 'Recorded analytics version' }),
+        el('p', { text: 'The editor below shows current content.' }),
+        error instanceof ApiError && (error.status === 404 || error.status === 400)
+          ? el('p', { text: 'The requested recorded version was not found or its identifier is invalid.' })
+          : errorState(`Unable to load recorded content: ${error instanceof Error ? error.message : 'Temporary request failure.'}`, () => void loadAnalyticsVersion()));
+    }
+  }
+  if (analyticsVersionId) void loadAnalyticsVersion();
   const fromFlags = query.get('from') === 'flags';
   const fromQueue = query.get('from') === 'queue';
   const flagVersionId = query.get('flagVersionId');
@@ -1020,6 +1045,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       fromFlags ? '← Back to Flag Queue' : fromQueue ? '← Back to Review Queue' : '← Back to Question Bank',
     ),
     pageHeader('Question', ''),
+    ...(analyticsVersionId ? [analyticsNotice] : []),
     ...(flagBanner ? [flagBanner] : []),
     el(
       'div',
@@ -1087,6 +1113,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   );
   updateSaveButton();
   renderInternalNotes();
+  attachTutorial(body, 'instructor-question-editor', {"question-editor-content": ".question-editor", "question-editor-actions": ".question-actions"});
 }
 
 export function renderQuestionDetail(outlet: HTMLElement, params: RouteParams): void {

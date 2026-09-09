@@ -85,6 +85,180 @@
   --student-sidebar-text: #d6e0fb;
 }
 
+/* ---- Contextual tutorials + Student Settings --------------------------- */
+
+.view--student-settings {
+  max-width: 880px;
+}
+
+.student-settings__section {
+  margin-bottom: 1.25rem;
+  padding: 1.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.student-settings__section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.student-settings__tutorials {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.15rem;
+}
+
+.student-settings__tutorial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.student-settings__tutorial-copy {
+  min-width: 0;
+}
+
+.student-settings__tutorial-copy p {
+  margin: 0.25rem 0 0;
+}
+
+.student-settings__tutorial-title {
+  align-items: center;
+}
+
+.student-settings__tutorial-title h3 {
+  font-size: 1rem;
+}
+
+.student-settings__duration,
+.student-settings__unavailable {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.student-settings__unavailable {
+  color: var(--warn);
+}
+
+.tutorial-layer {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tutorial-target {
+  position: relative;
+  z-index: 10001 !important;
+  border-radius: var(--radius-sm);
+  outline: 4px solid #7fb0ff;
+  outline-offset: 5px;
+  box-shadow: 0 0 0 9999px rgba(5, 12, 24, 0.64) !important;
+  transition: outline-color 180ms ease, outline-offset 180ms ease;
+}
+
+.tutorial-popover {
+  position: fixed;
+  z-index: 10002;
+  width: min(360px, calc(100vw - 36px));
+  padding: 1.1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px rgba(5, 12, 24, 0.34);
+  pointer-events: auto;
+  animation: tutorial-popover-in 180ms ease-out;
+}
+
+.tutorial-popover__progress {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tutorial-popover__title {
+  font-size: 1.15rem;
+}
+
+.tutorial-popover__body {
+  margin: 0.55rem 0 1rem;
+  color: var(--muted);
+}
+
+.tutorial-popover__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tutorial-popover__skip {
+  padding: 0.35rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@keyframes tutorial-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-target,
+  .tutorial-popover {
+    transition: none;
+    animation: none;
+  }
+
+  .tutorial-target {
+    scroll-behavior: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .student-settings__section-head,
+  .student-settings__tutorial-card,
+  .tutorial-popover__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-settings__tutorial-card > .btn,
+  .student-settings__section-head > .btn {
+    width: 100%;
+  }
+
+  .tutorial-popover__footer > .row {
+    justify-content: flex-end;
+  }
+}
+
 :root[data-theme="dark"] {
   --sidebar-bg: #050c17;
   --sidebar-text: #93a4bd;
@@ -9260,3 +9434,34 @@ button.class-row--link:focus-visible .class-row__title {
     text-align: left;
   }
 }
+
+/* Optional role tutorials: the modal blocks background interaction and scrolls
+   internally on small screens. The native inert state is restored on cleanup. */
+.tutorial-layer { pointer-events: auto; z-index: 10002; }
+.tutorial-popover { max-height: calc(100dvh - 36px); overflow-y: auto; }
+.tutorial-help { max-width: 960px; margin-inline: auto; }
+.tutorial-help__context { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+.tutorial-help__context > h3, .tutorial-help__context > p { flex-basis: 100%; }
+
+/* Instructor analytics: compact evidence, readable without a chart library. */
+.analytics-view { max-width: 1280px; margin-inline: auto; }
+.analytics-view .card { padding: 1.35rem; }
+.analytics-controls { display:flex; flex-wrap:wrap; align-items:end; gap:.75rem; }
+.analytics-controls label, .analytics-view label { display:grid; gap:.35rem; }
+.analytics-controls [aria-pressed="true"] { outline:2px solid currentColor; outline-offset:2px; }
+.analytics-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
+.analytics-metric { display:grid; gap:.35rem; padding:.75rem; border:1px solid var(--border); border-radius:8px; }
+.analytics-metric strong { font-size:1.6rem; }
+.analytics-priority, .analytics-pattern { padding:1rem; border:1px solid var(--border); border-radius:8px; display:grid; gap:.5rem; overflow-wrap:anywhere; }
+.analytics-pattern-list { display:grid; gap:.75rem; }
+.analytics-theme { border-top:1px solid var(--border); padding:.85rem 0; }
+.analytics-theme summary { cursor:pointer; font-weight:600; }
+.analytics-outcome { padding:.65rem 0; }
+.analytics-bar { height:6px; background:var(--border); border-radius:4px; margin-top:.5rem; overflow:hidden; }
+.analytics-bar span { display:block; height:100%; background:currentColor; opacity:.8; }
+.analytics-table-wrap { overflow:auto; }
+.analytics-table { width:100%; border-collapse:collapse; text-align:left; }
+.analytics-table caption { text-align:left; margin-bottom:.6rem; }
+.analytics-table th, .analytics-table td { padding:.65rem; border-bottom:1px solid var(--border); }
+.analytics-distribution { overflow-wrap:anywhere; }
+@media(max-width:700px) { .analytics-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .analytics-view .card { padding:1rem; } .analytics-controls { align-items:stretch; } .analytics-controls .input { max-width:100%; } }

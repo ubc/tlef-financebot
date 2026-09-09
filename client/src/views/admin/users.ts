@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   assignAdminCourseRole,
@@ -150,6 +151,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     results,
   );
   await load();
+  attachTutorial(body, 'admin-users', {"admin-users-search": ".admin-directory-search", "admin-users-list": ".admin-user-list"});
 }
 
 export function renderAdminUsers(outlet: HTMLElement, _params: RouteParams): void {

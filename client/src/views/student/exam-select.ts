@@ -7,6 +7,7 @@ import { el } from '../../dom.js';
 import { copyrightFooter, pageHeader } from '../../student-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
+import { maybeStartStudentTutorial } from '../../tutorials.js';
 
 function totalQuestions(template: ExamTemplate): number {
   return template.themes.reduce(
@@ -57,8 +58,10 @@ export async function renderExamSelect(outlet: HTMLElement, params: RouteParams)
   outlet.append(root);
   try {
     const templates = await listActiveExams(courseId);
+    const header = pageHeader('Exam Prep', 'Choose an available midterm or final practice sitting.');
+    header.setAttribute('data-tutorial', 'exam-prep-intro');
     root.replaceChildren(
-      pageHeader('Exam Prep', 'Choose an available midterm or final practice sitting.'),
+      header,
       el('div', { class: 'view-actions' },
         el('a', {
           class: 'btn btn--ghost',
@@ -70,10 +73,11 @@ export async function renderExamSelect(outlet: HTMLElement, params: RouteParams)
         }, 'Back to course'),
       ),
       templates.length
-        ? el('div', { class: 'exam-card-grid' }, ...templates.map((template) => templateCard(courseId, template)))
-        : emptyState('No Exam Prep sitting is available right now.'),
+        ? el('div', { class: 'exam-card-grid', 'data-tutorial': 'exam-prep-options' }, ...templates.map((template) => templateCard(courseId, template)))
+        : el('div', { 'data-tutorial': 'exam-prep-options' }, emptyState('No Exam Prep sitting is available right now.')),
       copyrightFooter(),
     );
+    maybeStartStudentTutorial('student-exam-prep', { root });
   } catch (error) {
     root.replaceChildren(errorState((error as Error).message, () => void renderExamSelect(outlet, params)));
   }

@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Review Queue (I5) — the instructor's prioritized worklist: agent-decision
 // filter tabs, inline approve, bulk approve (Task 15, Task F). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
@@ -310,8 +311,8 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   let bulkMessage: string | null = null;
 
   const tabsContainer = el('div', {});
-  const controlsContainer = el('div', {});
-  const resultsContainer = el('div', {});
+  const controlsContainer = el('div', { 'data-tutorial': 'review-filters' });
+  const resultsContainer = el('div', { 'data-tutorial': 'review-actions' });
   const layout = el('div', {}, tabsContainer, controlsContainer, resultsContainer);
 
   function tabInputs(): QueueTabInput[] {
@@ -673,6 +674,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   renderControls();
   renderResults();
   void enrichAgentDecisions(queueItems);
+  attachTutorial(root, 'instructor-review', {});
 }
 
 export function renderReviewQueue(outlet: HTMLElement, params: RouteParams): void {

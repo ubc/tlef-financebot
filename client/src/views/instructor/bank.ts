@@ -22,7 +22,7 @@ import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { rowStemText } from '../../placeholders.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -131,7 +131,9 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
     return;
   }
 
-  let filters: BankFilterState = { ...EMPTY_FILTERS };
+  const incomingLo = currentQuery().get('loId');
+  const validLo = tree.themes.flatMap((theme) => theme.los ?? []).find((lo) => lo._id === incomingLo);
+  let filters: BankFilterState = { ...EMPTY_FILTERS, loId: validLo?._id ?? '' };
   let summary: Summary = { total: 0, approved: 0, pendingReview: 0, flagged: 0, draft: 0, sourceChanged: 0 };
   let listQuestions: BankQuestion[] = [];
   // Rows ticked for a bulk action. Pruned on every list load so a stale id

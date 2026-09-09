@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   grantPlatformInstructor,
@@ -239,7 +240,9 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     ),
   );
 
+  listSlot.dataset.tutorial = 'admin-grants-list';
   await load();
+  attachTutorial(listSlot.closest<HTMLElement>('.view') ?? listSlot, 'admin-accounts', {"admin-grants-form": ".admin-account-create"});
 }
 
 export function renderAdminAccounts(outlet: HTMLElement, _params: RouteParams): void {

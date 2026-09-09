@@ -140,3 +140,13 @@ export async function saveCapabilitySettings(
 export function courseRole(user: User, courseId: ObjectId): CourseRole | undefined {
   return user.courseRoles.find((entry) => entry.courseId.equals(courseId))?.role;
 }
+
+/** Read-only projection of this session user's effective course permissions.
+ * No assignments, other identities or configurable sources leave this boundary. */
+export async function selfCourseCapabilities(user: User, courseId: ObjectId): Promise<Record<Capability, boolean>> {
+  if (!user.isAdmin && !courseRole(user, courseId)) {
+    throw Object.assign(new Error('You do not have access to this course.'), { status: 403 });
+  }
+  const entries = await Promise.all(CAPABILITIES.map(async (capability) => [capability, await hasCapability(user, courseId, capability)] as const));
+  return Object.fromEntries(entries) as Record<Capability, boolean>;
+}

@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Pre-seeding Coverage (N9) + Generate Question with Custom Prompt (I12) —
 // per-LO approved-question coverage against the server's target, and the
 // async three-agent generation trigger (Task 15, Task G). See
@@ -1151,6 +1152,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   renderTable();
   renderRuns();
   renderForm();
+  attachTutorial(root, 'instructor-generation', {"generation-scope": ".preseeding-table", "generation-actions": ".page-header"});
   // The coverage table above stays exactly as it is — an LO in the URL only
   // means the instructor arrives with the form already targeting it.
   if (arrivalLoId) openFormFor(arrivalLoId, 'arrival');

@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Session summary (ST-P10/P11, Figma wireframe screen 7): stat-tile row,
 // a "Topics This Session" accordion (topic header + per-LO accuracy),
 // a "Missed Questions — Added to Review Book" list linking back into the
@@ -248,7 +249,7 @@ function summaryBody(
     el(
       'div',
       { class: 'stat-tile-row' },
-      statTile(summary.losCovered.length, 'LOs Mastered'),
+      statTile(summary.losCovered.length, 'LOs Covered'),
       statTile(summary.questionsAttempted, 'Questions Answered'),
       statTile(correct, 'Correct Answers', 'good'),
       statTile(`${pct}%`, 'Accuracy', pct >= 70 ? 'good' : pct >= 40 ? 'warn' : 'bad'),
@@ -384,6 +385,7 @@ export async function renderSessionSummaryWithExperience(
     );
 
     root.replaceChildren(header, body, actions, copyrightFooter());
+    attachTutorial(root, 'student-session-summary', {"summary-outcomes": ".stat-tile-row", "summary-actions": ".summary-actions"}, { preview: experience.preview });
   } catch (error) {
     root.replaceChildren(errorState(
       (error as Error).message,

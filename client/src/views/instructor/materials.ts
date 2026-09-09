@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   assignMaterial,
@@ -659,6 +660,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('div', { class: 'knowledge-workspace' }, leftPanel(), assistantPanel(), inspectorPanel()),
       ),
     );
+    attachTutorial(root, 'instructor-materials', {"materials-files": ".knowledge-workspace__files", "materials-inspector": ".knowledge-workspace__inspector"});
   }
 
   async function applyRunUpdate(run: ContentRunSummary, source: 'snapshot' | 'live'): Promise<void> {

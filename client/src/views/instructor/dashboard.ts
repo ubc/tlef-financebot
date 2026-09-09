@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // Instructor Course Launch Cockpit — a task-driven summary over the existing
 // course, content, review, flag, and analytics sources of truth.
 import {
@@ -628,6 +629,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         explore,
       ),
     );
+    attachTutorial(root, 'instructor-course-setup', {"course-setup-path": ".course-flow", "course-setup-checklist": ".cockpit-checklist"});
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderDashboardInner(outlet, courseId)));

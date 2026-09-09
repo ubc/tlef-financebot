@@ -12,6 +12,8 @@ export interface StudentNavItem {
 /** Static nav shown outside an active practice session. */
 export const STUDENT_NAV: StudentNavItem[] = [
   { label: 'My Courses', glyph: 'C', path: () => '/' },
+  { label: 'Settings', glyph: 'S', path: () => '/settings' },
+  { label: 'Help & Tutorials', glyph: '?', path: () => '/help' },
   { label: 'Course Home', glyph: 'H', path: (id) => `/course/${id}` },
   { label: 'Review Book', glyph: 'R', path: (id) => `/course/${id}/review-book` },
   { label: 'Exam Prep', glyph: 'E', path: (id) => `/course/${id}/exams`, examOnly: true },

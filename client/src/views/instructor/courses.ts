@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // My Courses (N1) + Create Course (N2) — the instructor's landing page and
 // the entry point into a course's dashboard/structure/materials/bank/queue
 // (Task 15, Task B). See
@@ -135,6 +136,8 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
     const courses = await listInstructorCourses();
     if (!courses.length) {
       body.replaceChildren(emptyState('You have no courses yet — create one to get started.'));
+      body.dataset.tutorial = 'instructor-projects';
+      attachTutorial(root, 'instructor-welcome', {"instructor-project-actions": ".page-header"});
       return;
     }
     let query = '';
@@ -190,6 +193,7 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
       grid,
     );
     refreshProjects();
+    attachTutorial(root, 'instructor-welcome', {"instructor-projects": ".course-list", "instructor-project-actions": ".page-header"});
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderMyCourses(outlet)));

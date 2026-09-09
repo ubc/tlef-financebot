@@ -37,6 +37,7 @@ import {
   LIVE_STUDENT_EXPERIENCE,
   type StudentExperience,
 } from './experience.js';
+import { maybeStartStudentTutorial } from '../../tutorials.js';
 
 const STATUS_LABELS: Record<string, string> = {
   'not-attempted': 'Not attempted',
@@ -249,6 +250,7 @@ function runPracticeLoop(
           cardAdapter,
         ),
       );
+      if (!experience.preview) maybeStartStudentTutorial('student-practice', { root });
     } catch (error) {
       questionSlot.replaceChildren(errorState(
         questionLoadMessage(error, experience.preview),

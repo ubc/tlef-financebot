@@ -123,6 +123,11 @@ commonly need:
   distributions highlight common misconceptions, engagement uses 30-minute
   session clustering with CSV export, and course-scoped individual profiles
   combine history, mastery, Review Book, and flag events.
+- Student Analytics now uses explicit mode/date scopes, objective review
+  priorities, recorded-question-version drilldowns, and weekly engagement.
+  Active objectives with no attempts remain visible; rates below five attempts
+  stay unavailable. Version-specific distributions prevent option-key collisions,
+  and named check-in lists require `analytics.individual` just like profiles.
 - Phase 3 Admin essentials are implemented: the searchable directory manages
   course roles and retained-record account deactivation, protects against
   orphaning courses, exposes platform/course capability matrices, and persists
@@ -166,6 +171,12 @@ commonly need:
   viewport-bound three-panel layout with source-level Trash/Restore actions.
   The former Content Map is labelled Coverage Map to distinguish gap analysis
   from graph exploration inside the Knowledge Workspace.
+- Contextual product help provides 25 short Student, Instructor, TA and Admin
+  tutorials, with account/role/version-scoped completion, skip and reset state.
+  Shared Help supports current-course replay; Student Settings retains appearance
+  preferences. Student Preview, Instructor TA View and timed sittings suppress
+  tutorial progress. The session-owned course-capability projection gates TA
+  suggested-edit/mark-reviewed controls without changing permission rules.
 - The Course-as-Project shell now spans Student and TA roles: Student and
   isolated Student Preview share course-project cards, persistent course
   context, a collapsible icon rail, and a linear learning journey; TA and

@@ -557,29 +557,61 @@ re-invite restores the saved permission configuration.
 
 ## Instructor analytics
 
-Class analytics routes require `analytics.view`; individual student search and
-profiles require `analytics.individual`. Preview records are structurally
-excluded because every calculation reads only live collections.
+Class aggregate routes require `analytics.view`; named inactivity lists, student
+search and profiles require `analytics.individual`. Preview records are
+structurally excluded because every calculation reads only live collections.
 
-- `GET /api/courses/:courseId/analytics/failure-rates?mode=topic-practice|exam-prep`
-  — Theme rates with expandable LO rates. Any group below five attempts returns
-  `{ attempts, insufficient: true }` and no rate.
-- `GET /api/courses/:courseId/analytics/questions/:questionId/distribution` —
-  option counts/percentages and a common-misconception highlight when its share
-  exceeds 1.5 times the uniform expectation; the five-attempt floor applies.
-- `GET /api/courses/:courseId/analytics/engagement?from=&to=` — totals and
-  weekly questions, active students, sessions, average session minutes, LO
-  coverage, and Review Book activity. A gap over 30 minutes starts a session.
-- `GET /api/courses/:courseId/analytics/engagement.csv` — the weekly rows as an
-  RFC-style escaped CSV download.
-- `GET /api/courses/:courseId/analytics/low-engagement?inactiveDays=7` —
-  enrolled students at or beyond the inactivity threshold, including students
-  with no attempts.
-- `GET /api/courses/:courseId/students?q=` — search enrolled students by name,
-  CWL, or email.
-- `GET /api/courses/:courseId/students/:puid/analytics` — identity, chronological
-  attempts (including Exam Prep), mastery/qualifiers, engagement, Review Book,
-  and student flag events.
+- `GET /api/courses/:courseId/analytics/failure-rates?mode=topic-practice|exam-prep&from=&to=&loId=`
+  returns active Theme/LO rates including zero-attempt LOs. Mode defaults to
+  Topic Practice; dates omitted mean all time. Archived LOs/themes are excluded;
+  each attempt counts once against its recorded LO in the current active hierarchy.
+  Groups below five attempts return `{ attempts, insufficient: true }`, no rate.
+- `GET /api/courses/:courseId/analytics/question-patterns?mode=&from=&to=&loId=&limit=`
+  returns `{ items, total, limit }`. Limit is 1–50, default 20. Total counts matching
+  question/version groups before limiting, never people. Groups are ordered by
+  attempts descending with stable id ties. Each item has `questionId`, `versionId`,
+  `stem`, recorded `loId/loName`, `themeId/themeName`, `objectiveCount`, `attempts`, `insufficient`,
+  optional `failureRate/misconceptionRate`, `version`, `available`, `isCurrent`.
+  Rates are absent below five. Multi-LO questions group once per version in the
+  scope; `objectiveCount` counts distinct recorded LOs in that scope. Cards with
+  multiple recorded LOs show their count, rather than a single-LO label. Archived
+  and missing historical sources retain explicit historical labels. Metadata is
+  batch-resolved only against course-owned questions and their versions.
+- `GET /api/courses/:courseId/analytics/questions/:questionId/distribution?versionId=&mode=&from=&to=&loId=`
+  returns selected `questionId/versionId/version/stem/isCurrent`, attempt count,
+  threshold status, options with key/text/role/count and percentages only at five
+  attempts. Explicit version must belong to that question in the authorized
+  course (404 otherwise); malformed ids return 400. Omitted version now means
+  current-version attempts only, an intentional correction to prior mixed-version
+  counts. Omitted mode retains all modes. No current-version substitution occurs
+  for missing historical content. The legacy misconception highlight is retained.
+- `GET /api/courses/:courseId/analytics/engagement?from=&to=&mode=` returns totals
+  and weekly rows, including empty weeks (Sunday UTC). Omitted mode retains all
+  modes; omitted dates retain the past 12 weeks. The dashboard passes identical
+  explicit dates/mode to outcomes, patterns and engagement. All-time uses Unix
+  epoch as `from`, with weekly output beginning at first evidence (or this week
+  when empty). `questionsAttempted` is a legacy field name meaning submissions,
+  not unique questions. Sessions split after gaps over 30 minutes; observed
+  duration is last minus first attempt, not inferred study time. Sessions per
+  student divides by active students. Coverage intersects recorded LO ids with
+  active LOs, never exceeding 100%; Review Book activity intersects active users.
+- `GET /api/courses/:courseId/analytics/engagement.csv` accepts the same filters
+  and exports the same weekly rows with RFC-style escaping.
+- All dates are exact inclusive timestamps; invalid dates or reversed ranges
+  return 400. Valid optional LO filters constrain recorded attempt LO, not every
+  current tag attached to a multi-objective question.
+- `GET /api/courses/:courseId/analytics/low-engagement?inactiveDays=7` returns
+  enrolled students at or beyond the independent all-mode inactivity threshold,
+  including no-attempt students. It now requires `analytics.individual` because
+  it exposes named people, an intentional permission correction.
+- `GET /api/courses/:courseId/students?q=` searches name, CWL or email.
+- `GET /api/courses/:courseId/students/:puid/analytics` returns identity,
+  chronological attempts, mastery, Review Book, engagement and flag events.
+
+The dashboard uses explicit Refresh (no analytics SSE), current course capability
+projection, scoped retries and stale-response guards. Question Bank accepts a
+course-valid `loId` query; review links carry `analyticsVersionId` and show the
+recorded content separately from the current editor.
 
 ## Admin essentials
 
@@ -607,3 +639,36 @@ operation writes an audit entry.
 
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`
+
+## Contextual tutorials
+
+Tutorial progress is account-scoped and always uses the authenticated session's
+PUID. Clients cannot read or change another user's state. A completed or skipped
+tutorial is not shown automatically again unless its server-defined version is
+increased; both remain manually replayable from Settings.
+
+- `GET /api/tutorials?role=student|instructor|ta|admin` — role catalogue plus each
+  tutorial's `not-viewed`, `completed`, or `dismissed` status.
+- `PUT /api/tutorials/:tutorialId { role, status: completed|dismissed }` — upsert
+  the signed-in user's progress at the current tutorial version.
+- `DELETE /api/tutorials?role=student|instructor|ta|admin` — reset that role's progress
+  for the signed-in user.
+
+Tutorial catalogue roles include Student, Instructor, TA and Admin. Admin tutorial
+reads, writes and resets require an Admin session; other tutorial progress is
+account-owned, non-privileged product help. Foreign role/id combinations return
+404. PUID is always taken from the authenticated session. Reset deletes only that
+account/role. Tutorials do not write consent, course permissions or approvals.
+
+The client ignores obsolete account/route responses, requires every visible
+target before starting and suppresses tours in Student Preview, Instructor TA
+View and timed sittings. Navigation and missing/replaced targets cancel without
+recording completion. Help routes are `/help`, `/instructor/help`, `/admin/help`
+and `/ta/course/:id/help`; Student Settings embeds the same role-aware hub.
+
+`GET /api/courses/:courseId/capabilities/me` returns only the signed-in user's
+`Record<Capability, boolean>` for that course. Authentication and course
+membership are required (Admin retains its existing override); foreign course
+reads return 403. It reuses the existing layered resolver and TA hard denies.
+It does not accept a target PUID or a role override. Instructor TA View sees the
+real Instructor's booleans, while the TA views still omit approval/resolution.

@@ -100,3 +100,28 @@ Notes:
 A/AA tag set and asserts **zero** violations. Animations are frozen before the
 scan (`freezeAnimations`) so axe measures steady-state contrast, not a transient
 fade-in. Use `test.use({ storageState })` to scan authenticated pages.
+
+`role-tutorials.spec.ts` uses `playwright.tutorials.config.ts` for deterministic
+client-browser tests with intercepted APIs and no live service writes. Build
+the client first, then run `npx playwright test --config playwright.tutorials.config.ts`
+against the local static app on port 6118. It covers completion, replay, reset,
+identity/route races, preview/timed-exam suppression, missing/replaced anchors,
+transient failures, storage denial and scoped dialog axe at 390/1280px light/dark.
+
+`analytics-dashboard.spec.ts` uses `playwright.analytics.config.ts` for
+deterministic scope/filter/version, response-ordering and scoped-access tests,
+including desktop/mobile light/dark axe. Its APIs are intercepted; no provider
+or database calls are made by the fixture.
+
+`role-experience-integration.spec.ts` uses the normal Playwright config and real
+SAML/MongoDB. It creates a temporary owned course with two recorded question
+versions, scoped attempt evidence and a zero-attempt objective. It checks
+analytics dates/modes/versions, named-data permissions, Instructor Help replay,
+and all three TA/four Admin tutorials. Temporary course roles, Admin status,
+capability settings and role tutorial progress are restored or removed by the
+fixture; no messaging or generation is invoked.
+
+The real Student axe flows explicitly exercise all nine Student tutorial
+contexts. Instructor/Admin full-page scans seed dismissed optional-help state
+so a dialog cannot hide the underlying page from axe. Original tutorial progress
+is restored afterward; dialog accessibility is checked separately.

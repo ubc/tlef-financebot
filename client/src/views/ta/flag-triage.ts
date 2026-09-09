@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 // TA Flag Triage — mirrors the instructor Flag Queue's (views/instructor/
 // flags.ts) grouped-row layout, exposing only what a TA is permitted to do:
 // escalate a recommendation to the instructor. `flag.resolve` and
@@ -310,6 +311,8 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
         )
       : emptyState('No open flags.'),
   );
+
+  attachTutorial(body, 'ta-flags', {"ta-flags-context": ".page-header", "ta-flags-items": ".flag-table"});
 
   // A notification click lands here with ?flag= (see notification-target.ts).
   // Rows are now GROUPS, so the lookup checks a group's `data-flag-ids`

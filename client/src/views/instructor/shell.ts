@@ -33,7 +33,8 @@ export interface InstructorNavGroup {
 export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   {
     label: '',
-    items: [{ label: 'My Courses', path: '/instructor/courses', glyph: '▦' }],
+    items: [{ label: 'My Courses', path: '/instructor/courses', glyph: '▦' },
+      { label: 'Help & Tutorials', path: '/instructor/help', glyph: '?' }],
   },
   {
     label: 'Course workspace',

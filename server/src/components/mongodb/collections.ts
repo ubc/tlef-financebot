@@ -7,6 +7,7 @@ import type {
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
+  TutorialProgress,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -44,6 +45,8 @@ export const capabilitySettingsCol = (): Collection<CapabilitySettings> =>
 export const taInvitesCol = (): Collection<TaInvite> => getDb().collection<TaInvite>('taInvites');
 export const platformSettingsCol = (): Collection<PlatformSettings> =>
   getDb().collection<PlatformSettings>('platformSettings');
+export const tutorialProgressCol = (): Collection<TutorialProgress> =>
+  getDb().collection<TutorialProgress>('tutorialProgress');
 
 export interface IndexSpec {
   collection: string;
@@ -108,6 +111,11 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'capabilitySettings', keys: { scope: 1, courseId: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { courseId: 1, email: 1 }, options: { unique: true } },
   { collection: 'taInvites', keys: { status: 1, email: 1 } },
+  {
+    collection: 'tutorialProgress',
+    keys: { puid: 1, role: 1, tutorialId: 1 },
+    options: { unique: true },
+  },
 ];
 
 /** Idempotent: createIndex is a no-op when the index already exists. Called

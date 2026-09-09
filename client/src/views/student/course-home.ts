@@ -18,6 +18,7 @@ import {
   LIVE_STUDENT_EXPERIENCE,
   type StudentExperience,
 } from './experience.js';
+import { maybeStartStudentTutorial } from '../../tutorials.js';
 
 function coverage(theme: CourseHomeTheme): { covered: number; total: number } {
   const total = theme.los.length;
@@ -153,9 +154,10 @@ export async function renderCourseHomeWithExperience(
               ...home.map((group, i) => topicRow(courseId, group, i + 1, experience)),
             ),
           );
+    body.setAttribute('data-tutorial', 'topic-list');
 
     root.replaceChildren(
-      el('header', { class: 'student-course-hero' },
+      el('header', { class: 'student-course-hero', 'data-tutorial': 'course-progress' },
         el('div', { class: 'student-course-hero__main' },
           el('p', { class: 'eyebrow', text: 'Course learning project' }),
           el('h1', { class: 'student-course-hero__title', text: enrollment?.name ?? 'Course' }),
@@ -170,7 +172,7 @@ export async function renderCourseHomeWithExperience(
           ),
         ),
       ),
-      el('nav', { class: 'student-learning-flow', 'aria-label': 'Learning workflow' },
+      el('nav', { class: 'student-learning-flow', 'aria-label': 'Learning workflow', 'data-tutorial': 'learning-flow' },
         el('span', { class: 'student-learning-flow__step is-active' },
           el('strong', { text: '1' }), el('span', { text: 'Choose a topic' }),
         ),
@@ -198,6 +200,7 @@ export async function renderCourseHomeWithExperience(
       body,
       copyrightFooter(),
     );
+    if (!experience.preview) maybeStartStudentTutorial('student-course-home', { root });
   } catch (error) {
     root.replaceChildren(errorState(
       (error as Error).message,

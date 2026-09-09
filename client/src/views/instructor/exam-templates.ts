@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   getCourseTree,
@@ -258,6 +259,7 @@ async function renderExamTemplatesInner(outlet: HTMLElement, courseId: string): 
           )
         : errorState('Create at least one Theme before configuring an exam template.'),
     );
+    attachTutorial(body, 'instructor-exams', {"exam-templates": ".exam-template-grid", "exam-template-save": ".exam-template-editor button"});
   } catch (error) {
     body.replaceChildren(errorState(
       error instanceof ApiError ? error.message : (error as Error).message,

@@ -18,6 +18,7 @@ import {
   LIVE_STUDENT_EXPERIENCE,
   type StudentExperience,
 } from './student/experience.js';
+import { maybeStartStudentTutorial } from '../tutorials.js';
 
 /** The user's primary role, used to route to a role-appropriate home (ST-E01).
  * Admin wins, then an explicit global/course Instructor grant, else student.
@@ -133,7 +134,7 @@ function myCoursesSection(
   const section = el(
     'div',
     { class: 'view view--student-projects' },
-    el('header', { class: 'student-projects__header' },
+    el('header', { class: 'student-projects__header', 'data-tutorial': 'student-dashboard-intro' },
       el('div', {},
         el('p', { class: 'eyebrow', text: 'Learning dashboard' }),
         el('h1', { class: 'view__title', text: 'My Courses' }),
@@ -143,7 +144,7 @@ function myCoursesSection(
     body,
     el(
       'div',
-      { class: 'join-box' },
+      { class: 'join-box', 'data-tutorial': 'registration-code' },
       el('p', { class: 'eyebrow', text: 'Join a course' }),
       el('h2', { class: 'section-title', text: 'Have a registration code?' }),
       el('p', { class: 'muted', text: 'Enter the code your instructor shared. The course will appear in your dashboard immediately.' }),
@@ -214,7 +215,9 @@ export function renderStudentCourses(
   experience: StudentExperience = LIVE_STUDENT_EXPERIENCE,
   previewCourseId?: string,
 ): void {
-  outlet.append(myCoursesSection(experience, previewCourseId));
+  const root = myCoursesSection(experience, previewCourseId);
+  outlet.append(root);
+  if (!experience.preview) maybeStartStudentTutorial('student-welcome', { root });
 }
 
 export function renderHome(outlet: HTMLElement): void {

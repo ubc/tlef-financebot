@@ -1,3 +1,4 @@
+import { attachTutorial } from '../../tutorials.js';
 import { getExamResults, type ExamBreakdown, type ExamResultQuestion } from '../../api.js';
 import { el } from '../../dom.js';
 import { renderRichText } from '../../render.js';
@@ -90,6 +91,7 @@ export async function renderExamResults(outlet: HTMLElement, params: RouteParams
       ),
       copyrightFooter(),
     );
+    attachTutorial(root, 'student-exam-results', {"exam-results-score": ".exam-score-card", "exam-results-review": ".exam-review-list"});
   } catch (error) {
     root.replaceChildren(errorState(
       (error as Error).message,
