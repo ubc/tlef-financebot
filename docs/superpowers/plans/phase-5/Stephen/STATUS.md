@@ -187,3 +187,13 @@ B acceptance refinement: empty queue now has its own compact illustrated layout
 and next-step links, with separate resettable search/filter no-results state.
 Ten browser cases pass across the final focused runs, including empty-state
 light/dark axe. Awaiting Stephen's visual review.
+
+
+## Generate Questions workstation — 2026-09-14
+
+Approved prototype integrated into the real default page. Compact objective/brief/
+batch layout, real source eligibility, immutable batch recovery, saved-draft reader,
+AI assessment and recorded step timeline are implemented. Existing advanced tools
+remain available. Seven focused browser tests, scoped light/dark axe, build, client
+typecheck and full lint pass; real course inspected read-only. No token-streaming
+or simulated progress added. Awaiting Stephen's visual acceptance of this page.

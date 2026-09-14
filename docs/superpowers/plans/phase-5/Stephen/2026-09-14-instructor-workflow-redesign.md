@@ -249,3 +249,40 @@ copy, retain the search controls, show the pending count, and offer a reset acti
 Desktop light and 390px dark screenshots inspected; both added browser cases and
 scoped axe pass (entry animation frozen for steady-state contrast). The eight
 existing workstation cases also pass after this refinement; client compile/lint pass.
+
+### Generate Questions workstation — approved prototype implementation
+
+Stephen approved the interactive prototype on port 6129. Implement the compact
+objective list, teaching brief and exact batch summary as the default page. Reuse
+immutable generation submissions; retain advanced single/combined-objective and
+saved-setup tools. Use persisted SSE stages and saved drafts for live feedback,
+without simulated tokens or unsupported pause. Preserve the existing sidebar.
+
+- [x] Implement setup, durable batch recovery, progress, draft preview and empty states.
+- [x] Verify selection/counts, request recovery, SSE arrivals, responsive/dark layout.
+- [ ] Present this page for visual acceptance before changing another page.
+
+
+Implementation outcome: the default Generate Questions route uses the approved
+three-pane composition with compact objective rows, assigned-source eligibility,
+coverage-aware default selection, an optional teaching brief, quantity and difficulty
+controls, and exact MCQ batch totals. Advanced true/false, combined objectives,
+saved setups, detailed distributions and run stop/retry tools remain at
+`?advanced=1`; existing true/false deep links retain their prior behavior.
+
+Generation uses the existing immutable submission contract. Lost responses retain
+the same account/course-scoped submission for safe recovery across reloads. All
+active course runs and persisted batch IDs keep generation locked appropriately.
+The activity view shows actual saved counts (not processed/failed units), saved
+draft previews, real AI assessments, and on-demand durable step timelines.
+SSE updates preserve the active question reader, keyboard focus and scroll; route
+exit closes the stream. Review links retain the run context. Token-level output
+and pause/resume are not supported by the current backend; none is simulated here.
+
+Validation: seven isolated Playwright cases pass, covering selection and grounding,
+exact quantity/prompt, lost-response recovery across reload, saved-draft arrival,
+flag assessment, step history, stale-batch clearing, keyboard focus, mobile/dark
+layout and scoped axe checks. Build, client typecheck, full lint and diff whitespace
+checks pass. A real PHYS 100 course was inspected read-only with no browser errors
+or horizontal overflow. No paid generation or live question decision was triggered
+in QA. The prototype remains available on port 6129; formal app is port 6118.
