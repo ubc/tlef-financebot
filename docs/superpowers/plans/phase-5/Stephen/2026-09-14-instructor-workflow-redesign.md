@@ -196,3 +196,17 @@ re-enqueueing it. See the updated API contract for these boundaries. No live LLM
 request was made for validation.
 
 Page 2 verification: typecheck/build/lint pass; full Jest 107 suites / 1,397 tests; guided generation 4 browser cases, prior Objectives 4 cases and shared progress 8 cases pass. Browser cases include scoped axe, desktop/mobile dark, pending-supply recommendations, additional generation, Review navigation, two tabs and response-loss recovery. Backend tests cover immutable submission replay, changed payload rejection, deterministic run reuse, duplicate insert races and course cleanup. Partial enqueue remains covered by service tests; no real paid-generation or process-kill experiment was performed.
+
+## Approved B workstation implementation — 2026-09-14
+
+Stephen selected B and authorized production implementation after prototype refinement.
+Scope: formal Instructor Review Queue only. Preserve green shell; introduce compact
+queue, single-page question/answer/agent inspection, numbered question board, and
+optional rejection reason. Keep existing filter/bulk/advanced-editor access and
+server permission/publication rules. No token-streaming claims in this slice.
+
+- [ ] Build production workstation using real questions, rich text and source references.
+- [ ] Persist rejection note atomically with version-checked archive transition.
+- [ ] Verify board navigation, approval, rejection/cancellation/failure, stale versions,
+      keyboard, narrow layouts and light/dark accessibility.
+- [ ] Update API contract and delivery notes. Pause for Stephen's page acceptance.
