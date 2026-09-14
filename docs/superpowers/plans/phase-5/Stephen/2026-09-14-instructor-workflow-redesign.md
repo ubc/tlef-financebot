@@ -160,3 +160,13 @@ Not included: generation or Review redesign. Extract only the local layout primi
 ## Page 1 verification — 2026-09-14
 
 Build and lint pass. Focused guide unit tests: 2 passed. Isolated browser tests: 4 passed, covering existing/empty/error states, existing/new Topic saves, failed-save recovery, inline rename, step return, reopen/reload, keyboard, mobile dark/reduced motion and scoped axe. API mutations were intercepted; real PHYS 100 was checked read-only and its 15 LOs display under 5 Topics. Existing integration test expectations were updated for the intentional save-to-list behavior; their full database-backed suites were not rerun. Generated desktop/mobile screenshots were visually inspected. No backend or student visibility rules changed.
+
+### Page 1 visual refinement
+
+Stephen requested a smaller, more refined layout after reviewing screenshots.
+The LO list and add form now use a scoped 56rem compact dialog, smaller header
+and controls, single-line Topic headings, denser objective rows and lightweight
+Edit actions. Mobile retains 44px edit targets and readable form fields.
+Other guide steps are unchanged. Client compilation and four browser acceptance
+cases (including scoped axe) pass; desktop/mobile screenshots visually reviewed.
+Page 2 remains gated.
