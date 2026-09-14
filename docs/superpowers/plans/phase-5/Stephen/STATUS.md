@@ -173,3 +173,12 @@ immutable retry-safe submission identity and one-time Review navigation.
 Exact run restoration and all-active queries avoid recent-history truncation.
 Full Jest: 107 suites / 1,397 tests; 16 focused browser cases pass.
 Awaiting Stephen acceptance. Streaming and redesigned Review remain Page 3.
+
+## Review workstation B — 2026-09-14
+
+Stephen chose and authorized B after prototype refinement. The formal Instructor
+Review Queue is implemented with compact queue, same-page reader/editing, question
+board and optional atomic rejection reasons. 97 related unit/route tests and eight
+browser cases pass, including dark/mobile axe; build/typecheck/lint pass. Real
+course inspected read-only. Awaiting page acceptance; guided streaming remains
+separate, and no subsequent page is started.

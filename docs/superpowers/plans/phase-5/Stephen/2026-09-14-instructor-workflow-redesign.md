@@ -205,8 +205,36 @@ queue, single-page question/answer/agent inspection, numbered question board, an
 optional rejection reason. Keep existing filter/bulk/advanced-editor access and
 server permission/publication rules. No token-streaming claims in this slice.
 
-- [ ] Build production workstation using real questions, rich text and source references.
-- [ ] Persist rejection note atomically with version-checked archive transition.
-- [ ] Verify board navigation, approval, rejection/cancellation/failure, stale versions,
+- [x] Build production workstation using real questions, rich text and source references.
+- [x] Persist rejection note atomically with version-checked archive transition.
+- [x] Verify board navigation, approval, rejection/cancellation/failure, stale versions,
       keyboard, narrow layouts and light/dark accessibility.
-- [ ] Update API contract and delivery notes. Pause for Stephen's page acceptance.
+- [x] Update API contract and delivery notes. Pause for Stephen's page acceptance.
+
+
+### B production delivery
+
+Formal Instructor Review Queue now uses a compact list, inline rich-text reader,
+answer explanations, collapsible real AI assessment/source evidence, quick content
+editing, persistent decision toolbar and an accessible numbered question board.
+Existing type/agent filters, sorting, bulk actions and full editor remain available.
+Agent enrichment concurrency is limited to four. The selected reader is independent
+of list redraws and rejects late detail responses. Returning generation-run links
+prefer a question from that run. Topic-release wording remains separate from approval.
+
+Rejection notes are private internal notes, appended atomically with a version/state
+CAS archive update. Failed submissions retain the reason for retry. Decisions advance
+to the remaining queue and reviewed-this-visit context is retained in the board.
+Samples only render against the matching current version; unresolved templates are
+labeled and the full editor remains the sample/parameter configuration surface.
+No token streaming or changes to the guided Review screen were included.
+
+Validation: build/typecheck/lint and diff whitespace check pass; 97 related unit/route
+tests pass, including atomic rejection notes and stale version conflicts. Eight
+isolated browser cases cover navigation/search, optional and failed rejection,
+editing/version-pinned approval, stale responses/samples, unsaved edits, keyboard,
+390px dark mode and scoped axe. Read-only real SAML/PHYS 100 inspection confirms
+actual course questions render with the existing shell. The two legacy pipeline
+browser selectors were updated for the new reader; their full database-backed
+end-to-end suites were not rerun. No real course question was mutated during QA.
+Stephen's visual acceptance is next; other pages remain gated.
