@@ -1,6 +1,6 @@
 # Instructor workflow redesign — Stephen
 
-> Status: Page 1 implemented and locally verified; awaiting Stephen’s product acceptance. Other pages remain gated.
+> Status: Page 1 accepted by Stephen; Page 2 implemented and verified; awaiting Stephen’s product acceptance. Page 3 remains gated.
 > Owner: Stephen. Date: 2026-09-14.
 > Delivery rule: implement one page, demonstrate it, then STOP until Stephen says continue.
 
@@ -14,7 +14,7 @@
 
 ## Planned page gates
 
-- [ ] 1. Existing Learning Objectives and return navigation.
+- [x] 1. Existing Learning Objectives and return navigation.
 - [ ] 2. Guided Questions: simple generation composer and reliable batch state.
 - [ ] 3. Guided Live Review: arriving questions and visible checks.
 - [ ] 4. Full Review workspace: queue and focused question review.
@@ -47,7 +47,7 @@ The audit was conducted on local `codex/action-progress`, HEAD `8c8cb03`, with e
 - [x] Test existing 15-LO case, zero-LO case, add/cancel/save failure, reopen, back/forward and reload. Verify count/content consistency and unchanged assignments.
 - [x] Run focused guide regression (`tests/unit/course-setup-guide.test.ts`, relevant guided browser flow), typecheck/build, keyboard/mobile/light/dark checks.
 - [x] Demonstrate: Questions → Learning Objectives → existing list → Add → Cancel → Continue.
-- [ ] **STOP: Stephen accepts this page and asks to continue.**
+- [x] **STOP: Stephen accepted the compact refinement and requested Page 2.**
 
 Not included: generation or Review redesign. Extract only the local layout primitive needed here; do not restyle all forms.
 
@@ -59,12 +59,12 @@ Not included: generation or Review redesign. Extract only the local layout primi
 
 **Interfaces:** Define a durable batch/submission identifier associated with existing run IDs, accepted/failed cells and question counts. Reuse existing data where sufficient; add only missing identity/idempotency/state projection. If API shape changes, update `docs/api-contract.md` and relevant types in the same delivery. Do not use a client-only disabled flag as concurrency protection.
 
-- [ ] Put LO selection, suggested quantity and optional instructions first. Move per-difficulty/kind inputs into a clearly named advanced section; retain multi-LO combinations, source restrictions and existing limits.
-- [ ] Show approved, awaiting-review and in-progress supply separately. Use one calculation for summary, recommendation and actual submitted cells; do not automatically replenish all Approved-only gaps while review is pending.
-- [ ] Distinguish user-requested additional questions from recommendations to fill a gap. Permit intentional additional generation with explicit scope; do not globally prohibit all generation because an unrelated batch exists.
-- [ ] Keep the submitted plan immutable while running. Repeated clicks/retries of the same submission must return/recover the same accepted work, including partial enqueue and response loss.
-- [ ] Show partial enqueue errors per affected objective. Reload/reconnect must recover active work even when there are more than 30 runs.
-- [ ] On acceptance, enter existing guided Review once, with a truthful batch waiting summary. This is a minimal integration change; full streaming and visual Review redesign belong to Page 3. Do not navigate again after the user leaves.
+- [x] Put LO selection, suggested quantity and optional instructions first. Move per-difficulty/kind inputs into a clearly named advanced section; retain multi-LO combinations, source restrictions and existing limits.
+- [x] Show approved, awaiting-review and in-progress supply separately. Use one calculation for summary, recommendation and actual submitted cells; do not automatically replenish all Approved-only gaps while review is pending.
+- [x] Distinguish user-requested additional questions from recommendations to fill a gap. Permit intentional additional generation with explicit scope; do not globally prohibit all generation because an unrelated batch exists.
+- [x] Keep the submitted plan immutable while running. Repeated clicks/retries of the same submission must return/recover the same accepted work, including partial enqueue and response loss.
+- [x] Show partial enqueue errors per affected objective. Reload/reconnect must recover active work even when there are more than 30 runs.
+- [x] On acceptance, enter existing guided Review once, with a truthful batch waiting summary. This is a minimal integration change; full streaming and visual Review redesign belong to Page 3. Do not navigate again after the user leaves.
 - [ ] Verify fast double-click, two tabs, lost response, page reload, partial success, finished-but-unreviewed supply and explicit additional generation. Use deterministic provider substitutes; live paid generation is not required for these tests.
 - [ ] Extend `generation-plan.service.test.ts`, `generation-plan-dialog.test.ts` and guide browser coverage; run affected service tests, typecheck/lint/build.
 - [ ] **STOP: demonstrate simplified submission and reliable recovery; wait for Stephen.**
@@ -170,3 +170,29 @@ Edit actions. Mobile retains 44px edit targets and readable form fields.
 Other guide steps are unchanged. Client compilation and four browser acceptance
 cases (including scoped axe) pass; desktop/mobile screenshots visually reviewed.
 Page 2 remains gated.
+
+
+## Page 2 delivery notes — 2026-09-14
+
+Guided Questions now has a compact composer: objective selection, quantity and
+optional instructions. Detailed distribution and run activity are collapsed;
+source and advanced workspace access remain available. The footer stays visible.
+Recommended cells conservatively subtract pending drafts from the existing
+Approved-only tier gaps. Custom distribution and explicit additional generation
+remain available. This changes the guide only; standalone generation is Page 5.
+
+Account/course-scoped local recovery retains the immutable request and exact run
+IDs. A new server submission manifest plus deterministic run IDs makes retries
+and insert races at-most-once for each created cell. Known runs are restored by ID;
+queued/running queries return all active records rather than just the latest 30.
+Submission errors preserve a Resume action; successful acceptance navigates to
+existing Review once only if the user has not navigated away. Partial cell errors
+are surfaced. No token streaming or new Review layout is claimed in Page 2.
+
+The existing failed-run retry controls remain in the full generation workspace.
+A process interruption between run creation and job enqueue relies on existing
+startup reconciliation to expose failed/retryable work, rather than automatically
+re-enqueueing it. See the updated API contract for these boundaries. No live LLM
+request was made for validation.
+
+Page 2 verification: typecheck/build/lint pass; full Jest 107 suites / 1,397 tests; guided generation 4 browser cases, prior Objectives 4 cases and shared progress 8 cases pass. Browser cases include scoped axe, desktop/mobile dark, pending-supply recommendations, additional generation, Review navigation, two tabs and response-loss recovery. Backend tests cover immutable submission replay, changed payload rejection, deterministic run reuse, duplicate insert races and course cleanup. Partial enqueue remains covered by service tests; no real paid-generation or process-kill experiment was performed.

@@ -164,3 +164,12 @@ existing/new Topic, save-to-list and recoverable errors. The list scrolls while
 Continue stays visible. Build/lint, 2 focused unit tests and 4 isolated browser
 cases (including scoped axe and mobile dark mode) pass. Real course read-only
 verification confirms 15 LOs. Awaiting Stephen acceptance; no Page 2 work started.
+
+## Guided Questions — Page 2, 2026-09-14
+
+Page 1 accepted. Guided Questions now has compact settings and progressive
+disclosure, pending-draft-aware recommendations, explicit extra generation,
+immutable retry-safe submission identity and one-time Review navigation.
+Exact run restoration and all-active queries avoid recent-history truncation.
+Full Jest: 107 suites / 1,397 tests; 16 focused browser cases pass.
+Awaiting Stephen acceptance. Streaming and redesigned Review remain Page 3.
