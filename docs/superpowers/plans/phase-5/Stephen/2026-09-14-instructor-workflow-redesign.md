@@ -238,3 +238,14 @@ actual course questions render with the existing shell. The two legacy pipeline
 browser selectors were updated for the new reader; their full database-backed
 end-to-end suites were not rerun. No real course question was mutated during QA.
 Stephen's visual acceptance is next; other pages remain gated.
+
+### Empty-state refinement requested during acceptance
+
+An empty authoritative review queue now hides the three-column shell, search,
+filters and zero-count board. A compact illustrated state provides Question Bank
+and Generate Questions destinations, with neutral empty copy on arrival and
+completion copy after reviewing the final item. Search/filter misses use distinct
+copy, retain the search controls, show the pending count, and offer a reset action.
+Desktop light and 390px dark screenshots inspected; both added browser cases and
+scoped axe pass (entry animation frozen for steady-state contrast). The eight
+existing workstation cases also pass after this refinement; client compile/lint pass.

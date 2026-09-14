@@ -182,3 +182,8 @@ board and optional atomic rejection reasons. 97 related unit/route tests and eig
 browser cases pass, including dark/mobile axe; build/typecheck/lint pass. Real
 course inspected read-only. Awaiting page acceptance; guided streaming remains
 separate, and no subsequent page is started.
+
+B acceptance refinement: empty queue now has its own compact illustrated layout
+and next-step links, with separate resettable search/filter no-results state.
+Ten browser cases pass across the final focused runs, including empty-state
+light/dark axe. Awaiting Stephen's visual review.
