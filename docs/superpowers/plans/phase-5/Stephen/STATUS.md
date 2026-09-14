@@ -142,3 +142,17 @@ Typecheck/lint/build and IdP PHP syntax pass. Both repositories remain uncommitt
 
 Admin appearance correction: only the sidebar remains black; content and dialogs
 follow the restored light/dark toggle and persist the selected mode.
+
+## Instructor workflow UX audit — 2026-09-14
+
+Documentation only: reviewed Stephen's 12 screenshots, read-only inspected the
+live Instructor journey and checked its implementation. The audit identifies
+missing existing-LO presentation, inconsistent generation eligibility, run-only
+progress, fragmented review/preview rendering and excessive configuration.
+The historical unapproved-supply claim above must be re-verified against the
+current batch planner; no generation behavior was changed in this audit.
+
+See `2026-09-14-instructor-workflow-redesign.md` and
+`docs/ux/2026-09-14-instructor-workflow-audit.md`. Implementation is page-gated:
+Learning Objectives first, then wait for Stephen after each completed page.
+No app code, course data, installed skills or provider configuration changed.
