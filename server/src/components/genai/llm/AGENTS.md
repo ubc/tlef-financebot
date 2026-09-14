@@ -90,6 +90,12 @@ Streaming is supported via `streamConversation` / `conversation.stream()`.
   instead`), and rejects any explicit `temperature` while reasoning is active.
   `completeJson` already does this; `rag.service` had been failing a 400 on every
   call because it did not.
+- **Models write LaTeX in JSON with single backslashes.** `\times` then decodes
+  as TAB + `imes`, and `\left` (not a JSON escape) fails the whole parse.
+  `completeJson` repairs both (`./latex-escapes.ts`): a parse failure retries
+  with invalid backslashes doubled before spending a retry call, and a tab/form
+  feed/backspace/CR directly before a lowercase letter becomes the command
+  again. `\n` is not repaired — a newline before a lowercase word is prose.
 - **`max_completion_tokens` is not a renamed `max_tokens`.** It budgets reasoning
   AND visible output together, so a reasoning model can spend the whole cap
   thinking and return `''` with `finish_reason: 'length'`. Measured: luna burned

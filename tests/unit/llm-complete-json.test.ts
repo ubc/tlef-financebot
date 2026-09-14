@@ -42,6 +42,35 @@ it('throws when even the retry is not valid JSON', async () => {
   expect(sendMessage).toHaveBeenCalledTimes(2);
 });
 
+it('puts back LaTeX commands whose single backslash JSON read as a control character', async () => {
+  // The reply as the model sent it: `\times`, `\frac`, `\beta` and `\right` with ONE backslash,
+  // which JSON decodes as tab, form feed, backspace and carriage return.
+  sendMessage.mockResolvedValue({
+    content: String.raw`{"options":[{"explanation":"$$FV={{C}}\times{{N}}$$ and $\frac{a}{b}$, $\beta$, $\rho$"}]}`,
+  });
+  const result = await completeJson<{ options: Array<{ explanation: string }> }>('prompt');
+  expect(result.options[0]!.explanation).toBe(String.raw`$$FV={{C}}\times{{N}}$$ and $\frac{a}{b}$, $\beta$, $\rho$`);
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+});
+
+it('parses a reply whose single-backslash LaTeX is not a JSON escape at all, without a retry call', async () => {
+  // `\l`, `\s` and `\d` are invalid JSON escapes, so JSON.parse rejects the whole reply.
+  sendMessage.mockResolvedValue({
+    content: String.raw`{"explanation":"$\left(1+\frac{r}{12}\right)^{n}$ and $\sqrt{x}$, keeping \\ and \"quotes\""}`,
+  });
+  await expect(completeJson('prompt')).resolves.toEqual({
+    explanation: String.raw`$\left(1+\frac{r}{12}\right)^{n}$ and $\sqrt{x}$, keeping \ and "quotes"`,
+  });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+});
+
+it('leaves correctly escaped LaTeX, real newlines and tabs before non-letters alone', async () => {
+  sendMessage.mockResolvedValue({
+    content: String.raw`{"text":"$\\times$ line one\nnext line\t42","n":3}`,
+  });
+  await expect(completeJson('prompt')).resolves.toEqual({ text: '$\\times$ line one\nnext line\t42', n: 3 });
+});
+
 it('defaults temperature to 0 and requests JSON response format', async () => {
   sendMessage.mockResolvedValue({ content: '{}' });
   await completeJson('prompt', { model: 'ministral-3:latest' });
