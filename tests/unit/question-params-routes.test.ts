@@ -22,7 +22,11 @@ jest.mock('../../server/src/components/auth', () => ({
   ensureCapability: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-const editQuestion = jest.fn(async (_id: ObjectId, patch: Record<string, unknown>) => ({ _id: new ObjectId(), ...patch }));
+// Returns a whole version, as editQuestion does: the route reports its
+// unresolvable placeholders, which reads the stem and options.
+const editQuestion = jest.fn(async (_id: ObjectId, patch: Record<string, unknown>) => ({
+  _id: new ObjectId(), stem: 'What is the present value?', options: [], ...patch,
+}));
 const getQuestionDetail = jest.fn(async () => ({
   current: {
     stem: 'What is the present value of ${{PAYMENT}} at {{RATE_PCT}}%?',

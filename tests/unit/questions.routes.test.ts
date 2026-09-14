@@ -446,7 +446,7 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
   });
 
   it('200s a valid patch and returns the service result', async () => {
-    const version = { _id: new ObjectId(), version: 2, stem: 'Updated' };
+    const version = { _id: new ObjectId(), version: 2, stem: 'Updated', options: [mcqOption()] };
     jest.mocked(editQuestion).mockResolvedValue(version as never);
 
     const res = await request(makeApp(instructor))
@@ -455,6 +455,43 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.stem).toBe('Updated');
+    expect(res.body.unresolvablePlaceholders).toEqual([]);
+  });
+
+  it('reports placeholders the saved version can never fill, so the editor can warn', async () => {
+    // A conceptual question has no variables, so {{YEARS}} is never substituted.
+    const version = {
+      _id: new ObjectId(), version: 2, numericKind: 'conceptual',
+      stem: 'A down payment in {{YEARS}} years.', options: [mcqOption({ explanation: 'See $r^{{N}/4}$' })],
+    };
+    jest.mocked(editQuestion).mockResolvedValue(version as never);
+
+    const res = await request(makeApp(instructor))
+      .patch(`/api/questions/${questionId.toHexString()}`)
+      .send({ stem: 'A down payment in {{YEARS}} years.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.unresolvablePlaceholders).toEqual(['{{YEARS}}', '{{N}']);
+  });
+});
+
+describe('GET /api/questions/:questionId placeholder report', () => {
+  it('adds unresolvablePlaceholders to the current version', async () => {
+    jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+    jest.mocked(getQuestionDetail).mockResolvedValue({
+      question: { _id: questionId, courseId, state: 'draft', loIds: [], themeIds: [], labels: [], internalNotes: [] },
+      current: {
+        _id: new ObjectId(), version: 1, stem: 'Deposit ${{C}} for {{YEARS_SHORT}} years.',
+        options: [mcqOption({ text: '${{FV}}' })],
+        paramSlots: [{ name: 'C', min: 1, max: 2 }], derivedValues: [{ name: 'FV', formula: 'C' }],
+      },
+      versions: [],
+    } as never);
+
+    const res = await request(makeApp(instructor)).get(`/api/questions/${questionId.toHexString()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.current.unresolvablePlaceholders).toEqual(['{{YEARS_SHORT}}']);
   });
 });
 
@@ -488,7 +525,7 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
   });
 
   it('saves paramSlots via editQuestion, scoped to just paramSlots/generateScript', async () => {
-    const version = { _id: new ObjectId(), version: 2, paramSlots: [{ name: 'rate', min: 1, max: 10 }] };
+    const version = { _id: new ObjectId(), version: 2, stem: 'At {{rate}}%', options: [mcqOption()], paramSlots: [{ name: 'rate', min: 1, max: 10 }] };
     jest.mocked(editQuestion).mockResolvedValue(version as never);
 
     const res = await request(makeApp(instructor))
@@ -505,7 +542,7 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
   });
 
   it('saves generateScript independently of paramSlots', async () => {
-    jest.mocked(editQuestion).mockResolvedValue({ _id: new ObjectId(), version: 2 } as never);
+    jest.mocked(editQuestion).mockResolvedValue({ _id: new ObjectId(), version: 2, stem: 'Q', options: [mcqOption()] } as never);
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}/params`)

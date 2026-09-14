@@ -2,10 +2,48 @@
 // env, the same way tests/unit/duplicate-name.test.ts does.
 import {
   declaredVariableNames,
+  editableVariableNames,
   rowStemText,
   toDisplayPlaceholders,
   toStoredPlaceholders,
+  unresolvedPlaceholderWarning,
 } from '../../client/src/placeholders';
+
+describe('placeholders a question cannot fill (2026-09-14)', () => {
+  const maya = {
+    stem: 'Maya has a down payment in {{YEARS_SHORT}} years and retirement in {{YEARS_LONG}} years.',
+    options: [{ text: 'Cash, then equities', explanation: '' }],
+  };
+
+  it('keeps an undeclared placeholder a placeholder when an unrelated edit is saved', () => {
+    const names = editableVariableNames(maya);
+    expect(names).toEqual(['YEARS_SHORT', 'YEARS_LONG']);
+    const edited = `${toDisplayPlaceholders(maya.stem)} Which plan fits?`;
+    expect(toStoredPlaceholders(edited, names)).toBe(`${maya.stem} Which plan fits?`);
+    // Before: only declared variables converted back, flattening them to literal brackets.
+    expect(toStoredPlaceholders(edited, declaredVariableNames({}))).toContain('[YEARS_SHORT]');
+  });
+
+  it('still leaves ordinary bracketed prose alone', () => {
+    expect(toStoredPlaceholders('[Note] in [YEARS_SHORT] years', editableVariableNames(maya)))
+      .toBe('[Note] in {{YEARS_SHORT}} years');
+  });
+
+  it('warns in the editor’s bracket form, naming each placeholder', () => {
+    expect(unresolvedPlaceholderWarning([])).toBeUndefined();
+    expect(unresolvedPlaceholderWarning(undefined)).toBeUndefined();
+    expect(unresolvedPlaceholderWarning(['{{YEARS_SHORT}}', '{{YEARS_LONG}}'])).toEqual({
+      title: 'Students are not being served this question',
+      body: 'It uses [YEARS_SHORT] and [YEARS_LONG], but no variable has those names, so a student would see the placeholders as written. Type the actual number in its place, or add the variable.',
+    });
+    expect(unresolvedPlaceholderWarning(['{{YEARS}}'])?.body).toMatch(/^It uses \[YEARS\], but no variable has that name/);
+  });
+
+  it('describes a broken placeholder separately', () => {
+    expect(unresolvedPlaceholderWarning(['{{A}}', '{{COMPOUNDS}'])?.body)
+      .toContain('It contains "{{COMPOUNDS}", a variable with broken braces that is never replaced. Rewrite it as [NAME].');
+  });
+});
 
 const known = ['CASH_IN', 'CASH_OUT', 'NET_CASH_FLOW'];
 

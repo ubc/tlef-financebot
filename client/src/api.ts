@@ -2232,6 +2232,10 @@ export interface QuestionVersion {
    * draws. ABSENT on a numerical question means it never serves to a student
    * (see the numeric gate). */
   verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
+  /** Placeholders substitution can never fill — `{{NAME}}` with no matching
+   * variable, or a broken `{{NAME}`. Non-empty means the version is never served.
+   * Present on the question detail and edit responses. */
+  unresolvablePlaceholders?: string[];
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
   provenance?:
     | { kind: 'manual' }
