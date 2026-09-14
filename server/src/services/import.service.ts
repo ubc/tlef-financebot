@@ -678,7 +678,7 @@ export async function migrateScript(
   const options = questionOptions(candidate);
   const optionValues = optionValueNamesForVerification(options.map((option) => option.text));
   const scriptProof = optionValues.ok
-    ? await verifyGenerateScript(input.script, optionValues.names)
+    ? await verifyGenerateScript(input.script, optionValues.names, optionValues.currency)
     : { ok: false as const, error: optionValues.error };
 
   const assignment = await assignmentIds(courseId, input);

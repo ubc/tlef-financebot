@@ -61,6 +61,20 @@ objects directly.
   whose prose cites options by letter) and from `createQuestion` (covering the
   import path). Callers that shuffled already pass `optionsAlreadyShuffled` so
   the order is not randomized twice.
+- `placeholder-repair.ts` — pure `repairPlaceholderText` for stored text damaged
+  by `{{NAME}}` braces colliding with LaTeX groups (`^{{N}/4}`,
+  `-{{DOWN}+...}`) or by swallowed JSON escapes. Used by
+  `scripts/repair-latex-placeholders.ts`, which writes a new version per question
+  and recomputes the numeric proof. Prevention lives elsewhere: `substituteParams`
+  keeps a brace group when a placeholder is a `^`/`_`/`\frac`/`\sqrt` argument,
+  and `placeholderSyntaxFailure` (numeric-verification.service.ts) rejects broken
+  or undeclared placeholders in generated questions as verifier retry feedback —
+  conceptual ones included, since they have no slots at all — plus implicit
+  products in math (`implicitProduct`: `\frac{..}{100}{{YEARS}}` renders as a
+  fraction then a stray number; two bare `\frac{{A}}{{B}}` arguments are exempt). The serving
+  backstop is `unresolvablePlaceholders` in numeric-gate.service.ts: `isServable`
+  refuses any version (conceptual or numeric, script versions excepted) carrying
+  a placeholder that substitution can never fill.
 - `admin.service.ts` — Admin Console v0 platform-Instructor grant/list/revoke.
   Uses PUID as the canonical identity, updates an existing matching User when
   present, leaves a pending grant otherwise, lists safe persisted User fields,

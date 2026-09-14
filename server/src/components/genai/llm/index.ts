@@ -2,6 +2,7 @@ import { LLMModule, type LLMConfig, type LLMOptions, type ProviderType } from 'u
 import { env } from '../../../config/env';
 import { modelRequestOptions, type ModelRequestOptions } from './model-capabilities';
 import { createGenaiLogger } from '../logger';
+import { escapeInvalidJsonBackslashes, restoreLatexEscapes } from './latex-escapes';
 
 // Chat / text generation via ubc-genai-toolkit-llm. A single, process-wide
 // module is constructed from `env`; the provider (ollama | openai | anthropic |
@@ -49,13 +50,19 @@ function extractJson<T>(content: string): T {
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
-  try {
-    return JSON.parse(withoutFence) as T;
-  } catch {
-    const match = withoutFence.match(/[[{][\s\S]*[\]}]/);
-    if (match) return JSON.parse(match[0]) as T;
-    throw new Error('llm-json-parse-failed');
+  const match = withoutFence.match(/[[{][\s\S]*[\]}]/);
+  const attempts = [withoutFence, ...(match ? [match[0]] : [])];
+  // Each candidate as sent, then with invalid backslash escapes doubled: a LaTeX
+  // `\left`, `\sqrt` or `\ln` written with one backslash is not a JSON escape at
+  // all, so the whole reply fails to parse and would cost a retry call.
+  for (const text of [...attempts, ...attempts.map(escapeInvalidJsonBackslashes)]) {
+    try {
+      return restoreLatexEscapes(JSON.parse(text)) as T;
+    } catch {
+      // try the next candidate
+    }
   }
+  throw new Error('llm-json-parse-failed');
 }
 
 /**

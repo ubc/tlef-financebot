@@ -27,6 +27,9 @@ module.exports = {
   // that pattern.
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    // marked exports only an ES module, which Jest's CommonJS runtime cannot
+    // load. Its UMD build is the same code the browser vendors.
+    '^marked$': '<rootDir>/node_modules/marked/lib/marked.umd.js',
   },
   clearMocks: true,
   // V8 provider maps cleanly through ts-jest's source maps back to the .ts files.

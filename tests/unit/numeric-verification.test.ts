@@ -109,14 +109,21 @@ describe('option answer coverage', () => {
     expect(optionValueNamesForVerification(
       ['${{PV}}', '${{PV}}'],
       ['PV'],
-    )).toEqual({ ok: true, names: ['PV', 'PV'] });
+    )).toEqual({ ok: true, names: ['PV', 'PV'], currency: [true, true] });
+  });
+
+  it('records which option values are written as dollar amounts', () => {
+    expect(optionValueNamesForVerification(
+      ['${{PV}}', '{{IRR_PCT}}%', '{{PI}}', String.raw`$\${{FV}}$`],
+      ['PV', 'IRR_PCT', 'PI', 'FV'],
+    )).toEqual({ ok: true, names: ['PV', 'IRR_PCT', 'PI', 'FV'], currency: [true, false, false, true] });
   });
 
   it('ignores input placeholders while selecting the computed answer', () => {
     expect(optionValueNamesForVerification(
       ['At {{RATE}}, the answer is ${{PV}}', '${{PV_err1}}'],
       ['PV', 'PV_err1'],
-    )).toEqual({ ok: true, names: ['PV', 'PV_err1'] });
+    )).toEqual({ ok: true, names: ['PV', 'PV_err1'], currency: [true, true] });
   });
 });
 
@@ -364,6 +371,57 @@ describe('R3 — round once, at display', () => {
   it('substitutes rounded text while leaving unknown placeholders literal', () => {
     expect(substituteParams('${{PV}} and {{GONE}}', { PV: 462.5850340136054 }))
       .toBe('$462.59 and {{GONE}}');
+  });
+
+  // 2026-09-14: 2 decimals displayed a monthly rate of 0.004868 as "0.00" and a
+  // profitability index of -0.0756 as "-0.08". Values below 1 keep 3
+  // significant figures; money keeps cents.
+  it.each([
+    [0.004867550565343048, '0.00487'],
+    [0.007974140428903764, '0.00797'],
+    [-0.07564102564102562, '-0.0756'],
+    [0.125, '0.125'],
+    [0.5, '0.50'],
+    [0.75, '0.75'],
+    [0.0999999, '0.10'],
+    [0.9996, '1.00'],
+  ])('shows a non-currency value below 1 to 3 significant figures: %p -> %p', (value, shown) => {
+    expect(formatParamValue(value)).toBe(shown);
+  });
+
+  it('keeps currency at cents whatever its size', () => {
+    expect(formatParamValue(0.125, { currency: true })).toBe('0.13');
+    expect(formatParamValue(0.004867550565343048, { currency: true })).toBe('0.00');
+    expect(formatParamValue(462.5850340136054, { currency: true })).toBe('462.59');
+  });
+
+  it('formats each placeholder by how the text writes it', () => {
+    const values = { FEE: 0.125, RATE: 0.004867550565343048, PI: -0.07564102564102562 };
+    expect(substituteParams('A fee of ${{FEE}}, $r_m = {{RATE}}$, $\\${{FEE}}$ and a PI of {{PI}}.', values))
+      .toBe('A fee of $0.13, $r_m = 0.00487$, $\\$0.13$ and a PI of -0.0756.');
+  });
+});
+
+describe('display precision in the proof follows the option template', () => {
+  const draw = (optionTexts: string[]) => {
+    const names = optionValueNamesForVerification(optionTexts, ['A', 'B']);
+    if (!names.ok) throw new Error(names.error);
+    return verifyQuestionNumerics({
+      slots: [{ name: 'X', min: 1, max: 1 }],
+      derivedValues: [{ name: 'A', formula: 'X*0.123' }, { name: 'B', formula: 'X*0.121' }],
+      optionValueNames: names.names,
+      optionCurrency: names.currency,
+    });
+  };
+
+  it('rejects sub-dollar amounts that show the same cents', () => {
+    const result = draw(['${{A}}', '${{B}}']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/both show 0\.12/);
+  });
+
+  it('accepts the same values as plain numbers, which show 0.123 and 0.121', () => {
+    expect(draw(['{{A}}', '{{B}}']).ok).toBe(true);
   });
 });
 
