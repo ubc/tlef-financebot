@@ -117,3 +117,16 @@ _Last updated: 2026-09-09_
 
 This is Stephen-owned product workflow work started after Phase 3 completed
 29/29. It does not claim or alter Phase 4's protected Test & Harden scope.
+
+## Action progress — 2026-09-14
+
+Local `codex/action-progress` adds visible button spinners across roles, removes
+cursor-based waiting, and exposes source-processing stages and counts. Pending
+actions survive queue/workspace redraws; prerequisite-only disabled controls do
+not spin. Error recovery and duplicate prevention remain explicit.
+
+Verification: typecheck/lint/build; 107 Jest suites / 1,394 tests; 15 tutorial
+browser regressions; 8 action-progress browser cases including four production
+role components, source SSE transitions, mobile/dark/reduced motion and scoped axe.
+Independent review issues were resolved. Changes are uncommitted for Stephen's
+local acceptance; no course records, backend contracts or provider settings changed.
