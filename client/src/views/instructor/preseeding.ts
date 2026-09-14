@@ -1237,6 +1237,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
         text: 'Batch Generation',
         onClick: () => openGenerationPlanDialog({
           courseId,
+          tree,
           hasReadySource: hasReadyAssignedMaterial,
           onQueued: (result) => {
             const started = result.runs.filter((run) => run.runId).length;
