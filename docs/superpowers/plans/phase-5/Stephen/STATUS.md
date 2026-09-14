@@ -212,3 +212,7 @@ saved readers retain explanations and answer-check reports. 97 unit tests, 9
 browser tests and light/dark live-output axe checks pass. A real one-question run
 showed answer updates before saving and all four explanations after completion.
 The additional QA question remains unpublished.
+
+- Refined approved-only Question Bank prototype: prominent topic release controls,
+  complete question editing and return-to-review. Aligned production Review Queue
+  top heading/tabs/toolbar. Build/lint and 10 isolated browser cases pass.

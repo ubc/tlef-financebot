@@ -343,9 +343,20 @@ question remains a Draft in the current course, with no approval or release.
 prominent per-topic release controls, full question editing, and production
 Review Queue top alignment with the accepted Bank prototype.
 
-- [ ] Refine the isolated Bank prototype: approved collection, topic release panel,
+- [x] Refine the isolated Bank prototype: approved collection, topic release panel,
   complete authoring fields, and explicit return-to-review after edits.
-- [ ] Align production Review Queue heading, visible tabs and compact toolbar,
+- [x] Align production Review Queue heading, visible tabs and compact toolbar,
   preserving existing filtering, bulk actions, review decisions and empty states.
-- [ ] Verify prototype interactions and responsive rendering; run existing Review
+- [x] Verify prototype interactions and responsive rendering; run existing Review
   browser checks and client typecheck. Production Bank integration remains pending.
+
+Completed: Bank prototype now contains approved samples only, a prominent per-topic
+release strip and schedule/hold controls, full answer/metadata editor, and explicit
+return to review. Production Review Queue now uses the matching compact title,
+visible status strip, search/type/sort row and separate bulk controls.
+
+Validation: build and lint pass; all ten existing Review browser cases pass against
+an isolated static fixture server, including mobile dark and axe. The application
+server was unavailable on 6118, so no live course mutations were attempted. Prototype
+checks cover scheduling, answer/explanation edits and return to review without page
+errors or mobile overflow. Bank production integration remains pending.
