@@ -165,8 +165,11 @@ export function drawnValuesFromStem(renderedStem: string): {
 
 /** Mirrors params.service's formatParamValue — if either changes, the specs
  * fail loudly here rather than mismatching silently. */
-function formatLikeServer(value: number): string {
-  return Number.isInteger(value) ? String(value) : (Math.round(value * 100) / 100).toFixed(2);
+function formatLikeServer(value: number, currency = false): string {
+  if (Number.isInteger(value)) return String(value);
+  if (currency || Math.abs(value) >= 1) return (Math.round(value * 100) / 100).toFixed(2);
+  const decimals = Math.max(2, 3 - 1 - Math.floor(Math.log10(Math.abs(value))));
+  return value.toFixed(decimals).replace(/(\.\d{2}\d*?)0+$/, '$1');
 }
 
 /** Display text of the CORRECT option for a rendered stem, e.g. `377.36`. */

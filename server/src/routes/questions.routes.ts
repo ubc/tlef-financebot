@@ -208,6 +208,7 @@ function verifyOptionFormulas(
     slots,
     derivedValues,
     optionValueNames: optionValues.names,
+    optionCurrency: optionValues.currency,
   });
   if (result.ok) return { verification: result.verification };
   return {

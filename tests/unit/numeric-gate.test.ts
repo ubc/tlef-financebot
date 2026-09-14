@@ -3,7 +3,12 @@
 // docs/superpowers/specs/2026-08-05-numerical-question-correctness-design.md.
 import { readFileSync } from 'node:fs';
 import { EVALUATOR_VERSION } from '../../server/src/components/formula';
-import { detectNumeric, isNumericQuestion, isServable } from '../../server/src/services/numeric-gate.service';
+import {
+  detectNumeric,
+  isNumericQuestion,
+  isServable,
+  unresolvablePlaceholders,
+} from '../../server/src/services/numeric-gate.service';
 import type { QuestionOption } from '../../server/src/types/domain';
 
 function options(...texts: string[]): QuestionOption[] {
@@ -116,6 +121,48 @@ describe('isServable', () => {
       options: options('$181.41', '$190.48'),
       verification: { ...proof, evaluatorVersion: EVALUATOR_VERSION - 1 },
     })).toBe(false);
+  });
+
+  describe('placeholders that can never be substituted', () => {
+    // 2026-09-14: declared conceptual, no slots, and the student read the braces.
+    const maya = {
+      stem: 'Maya has two financial goals: a down payment in {{YEARS_SHORT}} years and retirement in {{YEARS_LONG}} years.',
+      options: options('Cash for the down payment, equities for retirement', 'Equities for both'),
+      numericKind: 'conceptual' as const,
+    };
+
+    it('refuses a conceptual question whose placeholders name no slot', () => {
+      expect(unresolvablePlaceholders(maya)).toEqual(['{{YEARS_SHORT}}', '{{YEARS_LONG}}']);
+      expect(isServable(maya)).toBe(false);
+    });
+
+    it('serves the same question once the numbers are written in', () => {
+      expect(isServable({ ...maya, stem: 'Maya has two financial goals: a down payment in 3 years and retirement in 30 years.' })).toBe(true);
+    });
+
+    it('refuses a verified numerical question with an undeclared or broken placeholder in an explanation', () => {
+      const numeric = {
+        stem: 'Deposit ${{C}} for {{N}} quarters.',
+        options: options('${{FV}}', '${{FV_WRONG}}'),
+        paramSlots: [{ name: 'C', min: 500, max: 900 }, { name: 'N', min: 4, max: 8 }],
+        derivedValues: [{ name: 'FV', formula: 'C*N' }, { name: 'FV_WRONG', formula: 'C' }],
+        verification: proof,
+      };
+      expect(isServable(numeric)).toBe(true);
+      const withExplanation = (explanation: string) => ({
+        ...numeric,
+        options: numeric.options.map((option, i) => (i === 0 ? { ...option, explanation } : option)),
+      });
+      expect(unresolvablePlaceholders(withExplanation('$FV = {{CONTRIBUTION}} \\times {{N}}$'))).toEqual(['{{CONTRIBUTION}}']);
+      expect(unresolvablePlaceholders(withExplanation('$r^{{N}/4}$'))).toEqual(['{{N}']);
+      expect(isServable(withExplanation('$r^{{N}/4}$'))).toBe(false);
+      // Grouped and triple-braced placeholders are complete.
+      expect(isServable(withExplanation('$r^{ {{N}} /4}$ and $\\frac{{{C}}}{4}$'))).toBe(true);
+    });
+
+    it('does not check a generateScript version, whose variables exist only at run time', () => {
+      expect(isServable({ ...maya, generateScript: 'return { YEARS_SHORT: 3, YEARS_LONG: 30 };' })).toBe(true);
+    });
   });
 });
 

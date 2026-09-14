@@ -26,6 +26,7 @@ import {
   VALIDATOR_PROMPT,
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
+import { implicitProduct, placeholderSyntaxFailure } from '../../server/src/services/numeric-verification.service';
 import { BUILTINS, BUILTIN_REFERENCE } from '../../server/src/components/formula';
 
 const reviewerPrompt = REVIEWER_PROMPT({
@@ -524,6 +525,134 @@ describe('generated numerics are verified before persisting', () => {
     });
     expect(result.fields.verification).toBeUndefined();
     expect(result.failure).toMatch(/identical/);
+  });
+
+  describe('placeholder gate', () => {
+    // Shapes taken from the quarterly-savings Draft generated 2026-09-14.
+    const question = (explanation: string, stem = 'Deposit ${{C}} each quarter for {{YEARS}} years at {{APR_PCT}}% APR.') => ({
+      stem,
+      numericKind: 'numeric' as const,
+      paramSlots: [
+        { name: 'C', min: 500, max: 1500, step: 250 },
+        { name: 'YEARS', min: 4, max: 12, step: 2 },
+        { name: 'APR_PCT', min: 6, max: 12, step: 2 },
+        { name: 'COMPOUNDS', min: 8, max: 16, step: 4 },
+      ],
+      derivedValues: [
+        { name: 'PERIODS', formula: '4*YEARS' },
+        { name: 'FV', formula: 'C*((1+APR_PCT/400)^PERIODS-1)/(APR_PCT/400)' },
+        { name: 'FV_SIMPLE', formula: 'C*PERIODS', errorModel: 'ignored interest' },
+        { name: 'FV_DOUBLE', formula: 'FV*2', errorModel: 'doubled the balance' },
+        { name: 'FV_HALF', formula: 'FV/2', errorModel: 'halved the balance' },
+      ],
+      options: [
+        { key: 'A', text: '${{FV}}', role: 'correct' as const, explanation },
+        { key: 'B', text: '${{FV_SIMPLE}}', role: 'common-misconception' as const, explanation: '' },
+        { key: 'C', text: '${{FV_DOUBLE}}', role: 'partially-correct' as const, explanation: '' },
+        { key: 'D', text: '${{FV_HALF}}', role: 'clearly-wrong' as const, explanation: '' },
+      ],
+    });
+    const names = (q: ReturnType<typeof question>) => [...q.paramSlots, ...q.derivedValues].map((entry) => entry.name);
+
+    it('accepts complete placeholders, including ones given their own LaTeX group', () => {
+      const q = question(String.raw`$$r=\left(1+\frac{ {{APR_PCT}} }{100}\right)^{ {{COMPOUNDS}} / 4 }-1,\quad (1+r)^{{{PERIODS}}}$$`);
+      expect(placeholderSyntaxFailure(q, names(q))).toBeUndefined();
+    });
+
+    it('rejects a placeholder whose braces were merged into a LaTeX group', () => {
+      const q = question(String.raw`$$r=\left(1+\frac{{{APR_PCT}}}{100}\right)^{{COMPOUNDS}/4}-1$$`);
+      const failure = placeholderSyntaxFailure(q, names(q));
+      expect(failure).toMatch(/option A's explanation contains .*\{\{COMPOUNDS\}\} is not a complete placeholder/);
+      expect(failure).toContain('^{ {{COMPOUNDS}} / 4 }');
+      expect(placeholderSyntaxFailure(question('$C={{C}\\times{{PERIODS}}$'), names(q))).toMatch(/\{\{C\}\} is not a complete/);
+      expect(placeholderSyntaxFailure(question('$x = {COMPOUNDS}}$'), names(q))).toMatch(/\{\{COMPOUNDS\}\} is not a complete/);
+    });
+
+    it('does not mistake ordinary LaTeX groups for broken placeholders', () => {
+      const q = question(String.raw`$\frac{\text{NPV}}{C_0}$ and $\text{FV}_{\text{wrong}}$`);
+      expect(placeholderSyntaxFailure(q, names(q))).toBeUndefined();
+    });
+
+    it('rejects a placeholder that names nothing declared', () => {
+      const q = question('Each deposit is ${{CONTRIBUTION}}.');
+      expect(placeholderSyntaxFailure(q, names(q))).toMatch(/\{\{CONTRIBUTION\}\}, which is neither a paramSlot nor a derivedValue/);
+    });
+
+    it('rejects a control character left by a swallowed LaTeX escape', () => {
+      const q = question('$$FV={{C}}\timesPERIODS$$'.replace('\\t', '\t'));
+      expect(placeholderSyntaxFailure(q, names(q))).toMatch(/control character .*\\\\times/);
+    });
+
+    it('withholds verification and returns the gate failure as retry feedback', () => {
+      const result = verifyGeneratedNumerics(question(String.raw`$(1+r)^{{COMPOUNDS}/4}$`));
+      expect(result.fields.verification).toBeUndefined();
+      expect(result.failure).toMatch(/not a complete placeholder/);
+    });
+
+    describe('implicit products', () => {
+      const flagged = (text: string) => implicitProduct(text);
+
+      it('flags a placeholder written straight after a closed fraction', () => {
+        // As generated 2026-09-14: rendered as 4/100 followed by a stray 2.
+        expect(flagged(String.raw`$$\mathrm{FV}_{\mathrm{wrong}} = {{PRINCIPAL}}\left(1+\frac{ {{CASH_RATE_PCT}} }{100}{{YEARS}}\right) = {{CASH_SIMPLE}}.$$`))
+          .toContain('{100}{{YEARS}}');
+      });
+
+      it('flags numbers that run together', () => {
+        expect(flagged('$C = {{PAYMENT}}{{PERIODS}}$')).toBe('{{PAYMENT}}{{PERIODS}}');
+        expect(flagged('$w_3{{BETA_3}}$')).toBe('3{{BETA_3}}');
+        expect(flagged('$x = {{RATE}} 2$')).toBe('{{RATE}} 2');
+        expect(flagged(String.raw`$P_0 = {{DIVIDEND}}\frac{1}{r-g}$`)).toBe(String.raw`{{DIVIDEND}}\frac`);
+      });
+
+      it('accepts explicit products, fraction arguments, parentheses and prose', () => {
+        for (const text of [
+          String.raw`$$\left(1+\frac{ {{CASH_RATE_PCT}} }{100} \times {{YEARS}}\right)$$`,
+          String.raw`$$\frac{ {{PRINCIPAL}} }{{PERIODS}}$$ and $\frac{{PRINCIPAL}}{{PERIODS}}$ and $\frac{{{A}}}{{{B}}}$`,
+          String.raw`$$FV = {{PRINCIPAL}}\left(1+\frac{ {{R}} }{100}\right)^{ {{N}} }$$`,
+          String.raw`$$r_m = \frac{ {{CASH_APR_PCT}} }{100 \times 12}, \qquad n = 12 \times {{YEARS}} = {{MONTHS}}$$`,
+          'A young investor needs ${{GOAL}} at the end of {{YEARS}} years at {{CASH_APR_PCT}}% APR.',
+        ]) {
+          expect(flagged(text)).toBeUndefined();
+        }
+      });
+
+      it('is part of the placeholder gate, with feedback to write \\times', () => {
+        const q = question(String.raw`$$FV = {{C}}\left(1+\frac{ {{APR_PCT}} }{100}{{YEARS}}\right)$$`);
+        expect(placeholderSyntaxFailure(q, names(q))).toMatch(/no operator between two numbers.*\\times/);
+      });
+
+      it('tells the generator to write multiplication explicitly', () => {
+        expect(generatorPrompt).toContain('Write every multiplication explicitly with \\times');
+      });
+    });
+
+    it('rejects a conceptual question that uses a placeholder, and says to write the number', () => {
+      const conceptual = {
+        stem: 'Maya has a down payment in {{YEARS_SHORT}} years and retirement in {{YEARS_LONG}} years. Which plan fits?',
+        numericKind: 'conceptual' as const,
+        options: [
+          { key: 'A', text: 'Cash for the down payment, equities for retirement', role: 'correct' as const, explanation: '' },
+          { key: 'B', text: 'Equities for both goals', role: 'common-misconception' as const, explanation: '' },
+        ],
+      };
+      const result = verifyGeneratedNumerics(conceptual);
+      expect(result.fields).toEqual({ numericKind: 'conceptual' });
+      expect(result.failure).toMatch(/conceptual, so it has no paramSlots and \{\{YEARS_SHORT\}\} can never be replaced/);
+      expect(result.failure).toContain('"a down payment in 5 years"');
+
+      const clean = verifyGeneratedNumerics({ ...conceptual, stem: 'Maya has a down payment in 3 years and retirement in 30 years.' });
+      expect(clean).toEqual({ fields: { numericKind: 'conceptual' } });
+    });
+
+    it('tells the generator a conceptual question has no placeholders', () => {
+      expect(generatorPrompt).toContain('A conceptual question therefore has NO {{placeholders}} anywhere.');
+    });
+
+    it('tells the generator how to group a placeholder inside LaTeX', () => {
+      expect(generatorPrompt).toContain('its braces are NOT a LaTeX');
+      expect(generatorPrompt).toContain('$(1+r)^{ {{COMPOUNDS}} / 4 }$');
+    });
   });
 
   it('verifies at BOTH createQuestion call sites', () => {

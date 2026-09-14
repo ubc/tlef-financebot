@@ -22,6 +22,7 @@ import {
   verifyQuestionNumerics,
   undisplayedInputs,
   optionFormatsConsistent,
+  placeholderSyntaxFailure,
 } from './numeric-verification.service';
 import { getPlatformSettings } from './admin.service';
 import { courseCollection } from './materials.service';
@@ -2149,6 +2150,24 @@ export function GENERATOR_PROMPT(params: {
     '     and let the placeholder carry the number:',
     '       good:  $r = \\frac{R}{100}$ where the rate is {{RATE_PCT}}%',
     '       bad:   $r = \\frac{\\text{RATE_PCT}}{100}$',
+    '  4. A placeholder is always exactly {{NAME}}, and its braces are NOT a LaTeX',
+    '     group. Wherever LaTeX needs a group around a placeholder or around an',
+    '     expression containing one, add that group separately, with spaces:',
+    '       good:  $(1+r)^{ {{PERIODS}} }$     $(1+r)^{ {{COMPOUNDS}} / 4 }$',
+    '       bad:   $(1+r)^{{PERIODS}}$         $(1+r)^{{COMPOUNDS}/4}$',
+    '  5. Write every multiplication explicitly with \\times. A placeholder written',
+    '     straight after a fraction, a digit or another placeholder runs into it once',
+    '     the numbers are filled in:',
+    '       good:  $P\\left(1+\\frac{ {{RATE_PCT}} }{100} \\times {{YEARS}}\\right)$',
+    '       bad:   $P\\left(1+\\frac{ {{RATE_PCT}} }{100}{{YEARS}}\\right)$   (shows 4/100 then a stray 2)',
+    '  6. DISPLAY A RATE AS A PERCENTAGE, never as a decimal. A rate a student reads',
+    '     — a periodic rate, an IRR, a return — is a derivedValue named _PCT whose',
+    '     formula is in percent, shown with a percent sign (\\% inside math):',
+    '       good:  { "name": "MONTHLY_RATE_PCT", "formula": "APR_PCT/12" }',
+    '              ... a monthly rate of {{MONTHLY_RATE_PCT}}%   or   $r_m = {{MONTHLY_RATE_PCT}}\\%$',
+    '       bad:   { "name": "MONTHLY_RATE", "formula": "APR_PCT/100/12" } shown as $r_m = {{MONTHLY_RATE}}$',
+    '     A decimal rate reads as 0.00487 — harder to check than 0.405%. Keep decimal',
+    '     rates for formulas that only other formulas use.',
     'Prose stays prose; only the formulas are LaTeX.',
     'Show the working in the EXPLANATION — that is what that field is for, so a',
     'display line there beats describing the arithmetic in words. Do NOT put the',
@@ -2332,6 +2351,11 @@ export function GENERATOR_PROMPT(params: {
     '',
     'If answering requires NO computation, set "numericKind": "conceptual" and omit',
     'paramSlots and derivedValues entirely.',
+    // 2026-09-14: a conceptual question came back with "a down payment in
+    // {{YEARS_SHORT}} years" — no slots, so the student read the braces.
+    'A conceptual question therefore has NO {{placeholders}} anywhere. Any number it',
+    'mentions is a fixed fact written out plainly: "a down payment in 5 years", never',
+    '"a down payment in {{YEARS}} years".',
     '',
     'ALSO conceptual, even though arithmetic is involved: a question whose OPTIONS',
     'are decisions or statements rather than values — "Accept the project" /',
@@ -2377,7 +2401,9 @@ export function GENERATOR_PROMPT(params: {
  *
  * Returns the parameterization fields to spread into `createQuestion`, plus an
  * optional `failure` note to append to the reviewer's reasoning. A conceptual
- * question returns nothing to add — the numeric gate lets it serve regardless.
+ * question has nothing to verify numerically, but it is still checked for
+ * placeholders: it has no slots, so any `{{NAME}}` in it reaches the student
+ * verbatim (2026-09-14, "a down payment in {{YEARS_SHORT}} years").
  *
  * `optionValueNames` is derived from which derived values the options actually
  * display: a helper value used only as an intermediate step in another formula
@@ -2394,7 +2420,20 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
   failure?: string;
 } {
   if (generated.numericKind !== 'numeric') {
-    return { fields: generated.numericKind ? { numericKind: generated.numericKind } : {} };
+    const fields = generated.numericKind ? { numericKind: generated.numericKind } : {};
+    const texts = [generated.stem, ...generated.options.flatMap((option) => [option.text, option.explanation ?? ''])];
+    const slot = texts.map((text) => /\{\{\s*([A-Za-z_]\w*)\s*\}\}?/.exec(text)?.[1]).find(Boolean);
+    if (slot) {
+      return {
+        fields,
+        failure: `this question is conceptual, so it has no paramSlots and {{${slot}}} can never be replaced by a `
+          + `number — the student would read "{{${slot}}}" as written. Write the value itself as a plain fixed `
+          + 'number (for example "a down payment in 5 years"), or make the question numeric and declare '
+          + `${slot} as a paramSlot`,
+      };
+    }
+    const failure = placeholderSyntaxFailure(generated, []);
+    return failure ? { fields, failure } : { fields };
   }
 
   const paramSlots = generated.paramSlots ?? [];
@@ -2407,6 +2446,9 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
       failure: 'declared numeric but supplied no derivedValues, so no value could be computed',
     };
   }
+
+  const placeholders = placeholderSyntaxFailure(generated, [...paramSlots, ...derivedValues].map((entry) => entry.name));
+  if (placeholders) return { fields: base, failure: placeholders };
 
   const optionValues = optionValueNamesForVerification(
     generated.options.map((option) => option.text),
@@ -2431,6 +2473,7 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
     slots: paramSlots,
     derivedValues,
     optionValueNames: optionValues.names,
+    optionCurrency: optionValues.currency,
   });
   if (!result.ok) {
     return {

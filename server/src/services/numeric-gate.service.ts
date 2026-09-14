@@ -7,7 +7,8 @@
 import { EVALUATOR_VERSION } from '../components/formula';
 import type { QuestionVersion } from '../types/domain';
 
-export type NumericGateVersion = Pick<QuestionVersion, 'stem' | 'options' | 'numericKind' | 'verification'>;
+export type NumericGateVersion = Pick<QuestionVersion, 'stem' | 'options' | 'numericKind' | 'verification'>
+  & Partial<Pick<QuestionVersion, 'paramSlots' | 'derivedValues' | 'generateScript'>>;
 
 /**
  * Evidence that answering requires ARITHMETIC — an amount to operate on, a
@@ -68,12 +69,35 @@ export function isNumericQuestion(version: NumericGateVersion): boolean {
 }
 
 /**
- * The gate. A conceptual question always serves. A numerical one serves only
- * with a proof from the CURRENT evaluator — R4's version check means an
- * evaluator change invalidates every stored proof at once rather than
- * silently trusting arithmetic produced by superseded code.
+ * Placeholders in the stem, option texts or explanations that substitution can
+ * never fill: a `{{NAME}}` naming no paramSlot or derivedValue, or a broken
+ * `{{NAME}` whose braces merged into LaTeX. The student would read either one
+ * verbatim. Seen 2026-09-14 on a CONCEPTUAL question — no slots at all — whose
+ * stem said "a down payment in {{YEARS_SHORT}} years". A `generateScript`
+ * supplies its variables at run time, so those versions are not checked.
+ */
+export function unresolvablePlaceholders(version: NumericGateVersion): string[] {
+  if (version.generateScript) return [];
+  const declared = new Set([...(version.paramSlots ?? []), ...(version.derivedValues ?? [])].map((entry) => entry.name));
+  const texts = [version.stem, ...version.options.flatMap((option) => [option.text, option.explanation ?? ''])];
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const match of text.matchAll(/\{\{\s*([A-Za-z_]\w*)\s*\}(\})?/g)) {
+      if (!match[2] || !declared.has(match[1]!)) found.add(match[2] ? `{{${match[1]}}}` : `{{${match[1]}}`);
+    }
+  }
+  return [...found];
+}
+
+/**
+ * The gate. A numerical question serves only with a proof from the CURRENT
+ * evaluator — R4's version check means an evaluator change invalidates every
+ * stored proof at once rather than silently trusting arithmetic produced by
+ * superseded code. Any question, conceptual included, is refused while it
+ * carries a placeholder that can never be substituted.
  */
 export function isServable(version: NumericGateVersion): boolean {
+  if (unresolvablePlaceholders(version).length > 0) return false;
   if (!isNumericQuestion(version)) return true;
   return version.verification?.evaluatorVersion === EVALUATOR_VERSION;
 }

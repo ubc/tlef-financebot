@@ -24,6 +24,7 @@
     "start": "node server/dist/server.js",
     "saml:fetch-cert": "node scripts/fetch-idp-cert.mjs",
     "migrate:theme-release": "tsx scripts/migrate-theme-release.ts",
+    "repair:latex-placeholders": "tsx scripts/repair-latex-placeholders.ts",
     "sync-plans": "bash scripts/sync-plans.sh",
     "vendor": "node scripts/vendor-client-libs.mjs",
     "postinstall": "node scripts/vendor-client-libs.mjs",

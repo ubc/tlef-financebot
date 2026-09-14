@@ -129,6 +129,23 @@ describe('params.service', () => {
       expect(substituteParams(String.raw`$\frac{{{PV}}}{2}$`, { PV: 429.07 })).toBe(String.raw`$\frac{429.07}{2}$`);
       expect(substituteParams(String.raw`$\sqrt{{{X}}}$`, { X: 16 })).toBe(String.raw`$\sqrt{16}$`);
     });
+
+    it('keeps a brace group when the placeholder IS the LaTeX argument, so multi-digit values render whole', () => {
+      // 2026-09-14: `^{{PERIODS}}` became `^24` and rendered as a superscript 2 followed by 4.
+      expect(substituteParams(String.raw`$$(1+r)^{{PERIODS}}-1$$`, { PERIODS: 24 })).toBe(String.raw`$$(1+r)^{24}-1$$`);
+      expect(substituteParams(String.raw`$x_{{N}}$`, { N: 12 })).toBe(String.raw`$x_{12}$`);
+      expect(substituteParams(String.raw`$\frac{{R_PCT}}{100}$`, { R_PCT: 12 })).toBe(String.raw`$\frac{12}{100}$`);
+      expect(substituteParams(String.raw`$\dfrac{{A}}{{B}}$`, { A: 10, B: 25 })).toBe(String.raw`$\dfrac{10}{25}$`);
+      expect(substituteParams(String.raw`$\sqrt{{X}}$`, { X: 144 })).toBe(String.raw`$\sqrt{144}$`);
+      expect(substituteParams(String.raw`$r^ {{N}}$`, { N: 36 })).toBe(String.raw`$r^ {36}$`);
+    });
+
+    it('does not add braces in prose, currency or an already-grouped argument', () => {
+      expect(substituteParams('deposit ${{AMOUNT}} for {{YEARS}} years at {{APR_PCT}}%', { AMOUNT: 750, YEARS: 6, APR_PCT: 8 }))
+        .toBe('deposit $750 for 6 years at 8%');
+      expect(substituteParams(String.raw`$(1+r)^{{{N}}}$`, { N: 24 })).toBe(String.raw`$(1+r)^{24}$`);
+      expect(substituteParams(String.raw`$C={{PAYMENT}}\times{{N}}$`, { PAYMENT: 500, N: 12 })).toBe(String.raw`$C=500\times12$`);
+    });
   });
 
   describe('findUnusedParamSlots — validation warnings', () => {
