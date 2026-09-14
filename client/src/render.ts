@@ -65,9 +65,69 @@ function protectCurrencyDollars(root: HTMLElement): void {
   }
 }
 
+/** `[start, end)` of every math span KaTeX will render: `$$…$$` or `$…$`,
+ * skipping currency dollars (currencyDollarIndices) and escaped `\$`. A span
+ * never crosses a blank line, since markdown splits those into paragraphs. */
+export function mathSpanRanges(text: string): Array<[number, number]> {
+  const currency = new Set(currencyDollarIndices(text));
+  const isDelimiter = (index: number) => text[index] === '$' && !currency.has(index) && text[index - 1] !== '\\';
+  const ranges: Array<[number, number]> = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (!isDelimiter(index)) continue;
+    const display = isDelimiter(index + 1);
+    const open = display ? 2 : 1;
+    let close = -1;
+    for (let cursor = index + open; cursor < text.length; cursor += 1) {
+      if (text.startsWith('\n\n', cursor)) break;
+      if (isDelimiter(cursor) && (!display || isDelimiter(cursor + 1))) {
+        close = cursor;
+        break;
+      }
+    }
+    if (close === -1) continue;
+    ranges.push([index, close + open]);
+    index = close + open - 1;
+  }
+  return ranges;
+}
+
+const MATH_TOKEN = /KATEXMATHTOKEN(\d+)END/g;
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Markdown runs before KaTeX, and CommonMark rewrites LaTeX: `}_{…}(r_` pairs
+ * into `<em>` (so `\mathrm{PV}_{A,n}=\mathrm{PMT}(r_{A,n},…)` never renders —
+ * seen 2026-09-14), and backslash escapes eat `\%` (a KaTeX comment then
+ * swallows the rest of the formula), `\{` and `\\`. Each math span is swapped
+ * for an alphanumeric token markdown leaves alone, and put back — HTML-escaped,
+ * after sanitizing — exactly as written.
+ */
+export function protectMath(markdown: string): { text: string; restore: (html: string) => string } {
+  const spans: string[] = [];
+  let text = '';
+  let cursor = 0;
+  for (const [start, end] of mathSpanRanges(markdown)) {
+    text += `${markdown.slice(cursor, start)}KATEXMATHTOKEN${spans.length}END`;
+    spans.push(markdown.slice(start, end));
+    cursor = end;
+  }
+  text += markdown.slice(cursor);
+  return {
+    text,
+    restore: (html) => html.replace(MATH_TOKEN, (token, index: string) => {
+      const span = spans[Number(index)];
+      return span === undefined ? token : escapeHtml(span);
+    }),
+  };
+}
+
 /** Render sanitized markdown + KaTeX into `target` (replaces its content). */
 export function renderRichText(target: HTMLElement, markdown: string): void {
-  const html = DOMPurify.sanitize(marked.parse(markdown));
+  const math = protectMath(markdown);
+  const html = math.restore(DOMPurify.sanitize(marked.parse(math.text)));
   target.innerHTML = html;
   protectCurrencyDollars(target);
   renderMathInElement(target, {
