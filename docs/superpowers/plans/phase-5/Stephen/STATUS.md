@@ -216,3 +216,8 @@ The additional QA question remains unpublished.
 - Refined approved-only Question Bank prototype: prominent topic release controls,
   complete question editing and return-to-review. Aligned production Review Queue
   top heading/tabs/toolbar. Build/lint and 10 isolated browser cases pass.
+
+- Production Question Bank implemented: approved collection, prominent topic release,
+  full version editor returning content to review, server-backed serving status,
+  compact reader/board and responsive filters. 104 service/route and 6 browser checks
+  pass; real course inspected read-only.

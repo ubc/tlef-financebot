@@ -364,8 +364,25 @@ errors or mobile overflow. Bank production integration remains pending.
 ### Production Question Bank integration
 
 **Owner:** Stephen. Approved by user: implement the refined prototype.
-- [ ] Approved-only default collection, topic release controls, reader/board,
+- [x] Approved-only default collection, topic release controls, reader/board,
   filters, archive/restore and complete content editor.
-- [ ] Add version-pinned edit-and-return-to-review with one atomic head update;
+- [x] Add version-pinned edit-and-return-to-review with one atomic head update;
   preserve version history and numerical serving checks.
-- [ ] Verify guarded contracts, real client interactions, responsive/empty states.
+- [x] Verify guarded contracts, real client interactions, responsive/empty states.
+
+Implemented: approved collection with separate Paused/Archived recovery views,
+compact reader/board, responsive topic release strip, schedule/hold controls,
+search/topic/LO/type/difficulty/source-change filters and selected-only bulk archive.
+Complete version editor supports stem, options/roles/explanations, type, difficulty,
+multiple Topic/LO assignments and advanced source/numerical definitions. Script
+configuration and append-only notes remain available through full details.
+
+The new version-pinned save-and-return-to-review path atomically updates content
+and Pending Review state, clears previous AI decisions, preserves history and checks
+source ownership. Student visibility uses course, topic and server content gates.
+
+Validation: 104 question service/route tests and 6 new browser cases passed;
+desktop/mobile-dark axe and overflow checks passed. Build and lint passed. Read-only
+real Physics2 course inspection showed 75 approved questions, 15 available and
+60 waiting, without browser errors. No real topic release or question mutation
+was performed during QA.
