@@ -156,3 +156,11 @@ See `2026-09-14-instructor-workflow-redesign.md` and
 `docs/ux/2026-09-14-instructor-workflow-audit.md`. Implementation is page-gated:
 Learning Objectives first, then wait for Stephen after each completed page.
 No app code, course data, installed skills or provider configuration changed.
+
+## Guided Learning Objectives — Page 1, 2026-09-14
+
+Implemented existing Topic/LO list, inline name editing, explicit addition to an
+existing/new Topic, save-to-list and recoverable errors. The list scrolls while
+Continue stays visible. Build/lint, 2 focused unit tests and 4 isolated browser
+cases (including scoped axe and mobile dark mode) pass. Real course read-only
+verification confirms 15 LOs. Awaiting Stephen acceptance; no Page 2 work started.

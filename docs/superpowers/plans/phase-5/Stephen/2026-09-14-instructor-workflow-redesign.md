@@ -1,6 +1,6 @@
 # Instructor workflow redesign — Stephen
 
-> Status: audit and planning only; implementation has not started.
+> Status: Page 1 implemented and locally verified; awaiting Stephen’s product acceptance. Other pages remain gated.
 > Owner: Stephen. Date: 2026-09-14.
 > Delivery rule: implement one page, demonstrate it, then STOP until Stephen says continue.
 
@@ -40,13 +40,13 @@ The audit was conducted on local `codex/action-progress`, HEAD `8c8cb03`, with e
 
 **Interfaces:** Existing course tree and LO creation/update APIs; no new wizard database state. Existing source assignments and release flags remain authoritative.
 
-- [ ] Show current Topics/LOs in course order, with real names and counts. Empty/loading/error states are distinct.
-- [ ] Make `Add learning objectives` explicit. Support existing Topic selection or a new Topic; preserve the existing materials-first path.
-- [ ] Provide focused edit behavior using existing APIs, or clearly labeled navigation to the existing editor; do not present a nonfunctional Edit button.
-- [ ] Save returns to the updated list; cancel returns without changes; failed save retains input. Continue leads to Questions without requiring another save.
-- [ ] Test existing 15-LO case, zero-LO case, add/cancel/save failure, reopen, back/forward and reload. Verify count/content consistency and unchanged assignments.
-- [ ] Run focused guide regression (`tests/unit/course-setup-guide.test.ts`, relevant guided browser flow), typecheck/build, keyboard/mobile/light/dark checks.
-- [ ] Demonstrate: Questions → Learning Objectives → existing list → Add → Cancel → Continue.
+- [x] Show current Topics/LOs in course order, with real names and counts. Empty/loading/error states are distinct.
+- [x] Make `Add learning objectives` explicit. Support existing Topic selection or a new Topic; preserve the existing materials-first path.
+- [x] Provide focused edit behavior using existing APIs, or clearly labeled navigation to the existing editor; do not present a nonfunctional Edit button.
+- [x] Save returns to the updated list; cancel returns without changes; failed save retains input. Continue leads to Questions without requiring another save.
+- [x] Test existing 15-LO case, zero-LO case, add/cancel/save failure, reopen, back/forward and reload. Verify count/content consistency and unchanged assignments.
+- [x] Run focused guide regression (`tests/unit/course-setup-guide.test.ts`, relevant guided browser flow), typecheck/build, keyboard/mobile/light/dark checks.
+- [x] Demonstrate: Questions → Learning Objectives → existing list → Add → Cancel → Continue.
 - [ ] **STOP: Stephen accepts this page and asks to continue.**
 
 Not included: generation or Review redesign. Extract only the local layout primitive needed here; do not restyle all forms.
@@ -155,4 +155,8 @@ Not included: generation or Review redesign. Extract only the local layout primi
 - [x] Found/read local design and planning skills and checked the official skill catalog without installation.
 - [x] Wrote audit, proposed layouts and sequential acceptance gates.
 - [x] Self-reviewed scope and dependencies: Page 2 only adds minimal Review integration; Page 3 owns streaming; Pages 4–6 reuse those components.
-- [ ] No page implementation is accepted yet. Next authorized step requires Stephen to select/start Page 1 or change the order.
+- [x] Stephen authorized Page 1 with “继续”; Page 1 is implemented. Product acceptance and Page 2 authorization are still pending.
+
+## Page 1 verification — 2026-09-14
+
+Build and lint pass. Focused guide unit tests: 2 passed. Isolated browser tests: 4 passed, covering existing/empty/error states, existing/new Topic saves, failed-save recovery, inline rename, step return, reopen/reload, keyboard, mobile dark/reduced motion and scoped axe. API mutations were intercepted; real PHYS 100 was checked read-only and its 15 LOs display under 5 Topics. Existing integration test expectations were updated for the intentional save-to-list behavior; their full database-backed suites were not rerun. Generated desktop/mobile screenshots were visually inspected. No backend or student visibility rules changed.
