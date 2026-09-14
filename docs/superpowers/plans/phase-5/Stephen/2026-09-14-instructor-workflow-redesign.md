@@ -314,3 +314,11 @@ coalescing; character reveal fixed that observable UX. A second real course run
 showed 8 DOM text updates while 0/1 questions were saved, then loaded the saved
 question's assessment with no browser errors. Two test questions remain Drafts in
 course 6aa8542122a8a0d1d9ee13b7; no approval or release was performed.
+
+### Follow-up: full visible question output
+
+Stephen requested answers and other outputs alongside the streamed body. Extend
+bounded unverified previews to options, proposed correct answer, option explanations
+and difficulty; render these as they arrive, reset all fields on retry, and preserve
+explanations when transitioning to the saved question. Continue excluding internal
+model reasoning, raw metadata and unfinished approval actions.
