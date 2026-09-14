@@ -205,3 +205,10 @@ reset previews; refresh restores the latest text; validation/publication unchang
 before any saved question, then successful saved-question preview. Two QA drafts
 were created and left unpublished. Existing finished runs cannot reconstruct
 historical token timing; new generation uses the streaming path.
+
+Answer-output follow-up complete: options, proposed correct answer, difficulty and
+per-option explanations stream with the body. Retry/reload behavior is preserved;
+saved readers retain explanations and answer-check reports. 97 unit tests, 9
+browser tests and light/dark live-output axe checks pass. A real one-question run
+showed answer updates before saving and all four explanations after completion.
+The additional QA question remains unpublished.

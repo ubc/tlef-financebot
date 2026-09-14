@@ -322,3 +322,17 @@ bounded unverified previews to options, proposed correct answer, option explanat
 and difficulty; render these as they arrive, reset all fields on retry, and preserve
 explanations when transitioning to the saved question. Continue excluding internal
 model reasoning, raw metadata and unfinished approval actions.
+
+Full visible output follow-up completed. The bounded incomplete-JSON parser now
+projects stem, difficulty and up to eight options with text, proposed role and
+per-option explanation. Option-only fragments trigger SSE writes. The live reader
+smoothly reveals each field, marks proposed correct answers as unverified, restores
+all fields on reload and clears them together on retry. Saved previews retain all
+option explanations and expose the recorded answer-check report.
+
+Validation: 97 focused unit tests and all 9 workstation browser cases pass; the
+new full-output case also passes light/dark scoped axe and 390px overflow checks.
+Build/typecheck, lint and whitespace checks pass. Real course run
+7f2e0025c376629c5742c263 showed 9 answer-text updates while 0/1 questions were saved,
+then displayed all 4 saved option explanations without browser errors. One new QA
+question remains a Draft in the current course, with no approval or release.
