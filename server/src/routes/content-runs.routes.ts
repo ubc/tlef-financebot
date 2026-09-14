@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
+  endActiveGenerationRuns,
+  endGenerationRun,
   getCourseContentRun,
   listCourseContentRuns,
   subscribeToCourseContentRuns,
@@ -67,6 +69,33 @@ contentRunsRouter.post(
       req.user!.puid,
     );
     res.status(202).json({ runId: runId.toHexString() });
+  },
+);
+
+/** POST /api/courses/:courseId/content-runs/end-active -> { ended }. Ends every
+ * queued or running generation run in the course (a whole batch plan). */
+contentRunsRouter.post(
+  '/courses/:courseId/content-runs/end-active',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const ended = await endActiveGenerationRuns(new ObjectId(String(req.params.courseId)));
+    res.json({ ended });
+  },
+);
+
+/** POST /api/courses/:courseId/content-runs/:runId/end -> run summary. Ends one
+ * queued or running generation run; already-finished runs come back unchanged. */
+contentRunsRouter.post(
+  '/courses/:courseId/content-runs/:runId/end',
+  validate({ params: runParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const run = await endGenerationRun(
+      new ObjectId(String(req.params.courseId)),
+      new ObjectId(String(req.params.runId)),
+    );
+    res.json(toSummary(run));
   },
 );
 

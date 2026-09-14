@@ -10,7 +10,9 @@ import {
   coverageStatus,
   difficultyAfterSecondaryChange,
   generationErrorMessage,
+  isActiveRun,
   materialMentionToken,
+  runStatusLabel,
   presetPrompt,
   secondaryLosAfterPrimaryChange,
   thinLos,
@@ -62,6 +64,27 @@ describe('generationErrorMessage', () => {
 
   it('preserves an unknown message so diagnostics are not hidden', () => {
     expect(generationErrorMessage('unexpected-provider-error')).toBe('unexpected-provider-error');
+  });
+
+  it('explains an ended run without calling it a failure', () => {
+    expect(generationErrorMessage('generation-ended')).toMatch(/Ended by an instructor/);
+  });
+});
+
+describe('ending generation runs', () => {
+  const error = (code: string) => ({ code, message: code, atStage: 'generating', retryable: true });
+
+  it('labels an instructor-ended run "ended" and every other status as itself', () => {
+    expect(runStatusLabel({ status: 'failed', error: error('generation-ended') })).toBe('ended');
+    expect(runStatusLabel({ status: 'failed', error: error('server-restarted') })).toBe('failed');
+    expect(runStatusLabel({ status: 'running' })).toBe('running');
+  });
+
+  it('offers End only while a run is queued or running', () => {
+    expect(isActiveRun({ status: 'queued' })).toBe(true);
+    expect(isActiveRun({ status: 'running' })).toBe(true);
+    expect(isActiveRun({ status: 'partial' })).toBe(false);
+    expect(isActiveRun({ status: 'failed' })).toBe(false);
   });
 });
 

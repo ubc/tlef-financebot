@@ -5,6 +5,8 @@ import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/content-runs.service', () => ({
+  endActiveGenerationRuns: jest.fn(),
+  endGenerationRun: jest.fn(),
   getCourseContentRun: jest.fn(),
   listCourseContentRuns: jest.fn(),
   subscribeToCourseContentRuns: jest.fn(),
@@ -13,6 +15,8 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
 import { contentRunsRouter } from '../../server/src/routes/content-runs.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import {
+  endActiveGenerationRuns,
+  endGenerationRun,
   getCourseContentRun,
   listCourseContentRuns,
   subscribeToCourseContentRuns,
@@ -73,6 +77,8 @@ function runFixture() {
 }
 
 beforeEach(() => {
+  jest.mocked(endActiveGenerationRuns).mockReset();
+  jest.mocked(endGenerationRun).mockReset();
   jest.mocked(getCourseContentRun).mockReset();
   jest.mocked(listCourseContentRuns).mockReset();
   jest.mocked(subscribeToCourseContentRuns).mockReset();
@@ -116,6 +122,41 @@ describe('content run route guards and snapshots', () => {
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: 'content-run-not-found' });
+  });
+
+  it('ends one run for the course instructor and returns its summary', async () => {
+    const path = `/api/courses/${courseId.toHexString()}/content-runs/${runId.toHexString()}/end`;
+    expect((await request(makeApp(userFixture('student'))).post(path)).status).toBe(403);
+    expect(endGenerationRun).not.toHaveBeenCalled();
+
+    jest.mocked(endGenerationRun).mockResolvedValue({
+      ...runFixture(), status: 'failed', error: { code: 'generation-ended', message: 'generation-ended', atStage: 'embedding', retryable: true },
+    } as never);
+    const res = await request(makeApp(userFixture('instructor'))).post(path);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'failed', error: { code: 'generation-ended' } });
+    expect(res.body.events).toBeUndefined();
+    expect(endGenerationRun).toHaveBeenCalledWith(expect.any(ObjectId), expect.any(ObjectId));
+  });
+
+  it('maps a missing or non-generation run to 404 and 409', async () => {
+    const path = `/api/courses/${courseId.toHexString()}/content-runs/${runId.toHexString()}/end`;
+    jest.mocked(endGenerationRun).mockRejectedValueOnce(new Error('content-run-not-found'));
+    expect((await request(makeApp(userFixture('instructor'))).post(path)).status).toBe(404);
+    jest.mocked(endGenerationRun).mockRejectedValueOnce(new Error('content-run-not-generation'));
+    expect((await request(makeApp(userFixture('instructor'))).post(path)).status).toBe(409);
+  });
+
+  it('ends every active run in the course and reports how many', async () => {
+    const path = `/api/courses/${courseId.toHexString()}/content-runs/end-active`;
+    expect((await request(makeApp(userFixture('student'))).post(path)).status).toBe(403);
+
+    jest.mocked(endActiveGenerationRuns).mockResolvedValue(4);
+    const res = await request(makeApp(userFixture('instructor'))).post(path);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ended: 4 });
   });
 
   it('rejects a student SSE subscription before registering a listener', async () => {

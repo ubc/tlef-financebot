@@ -34,6 +34,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
 }));
 jest.mock('../../server/src/services/content-runs.service', () => ({
+  assertContentRunActive: jest.fn(),
   createQuestionGenerationRun: jest.fn(),
   failContentRun: jest.fn(),
   getContentRun: jest.fn(),
@@ -61,6 +62,7 @@ import { createQuestion } from '../../server/src/services/questions.service';
 import { contentRunsCol, losCol, materialsCol, platformSettingsCol, questionsCol, themesCol } from '../../server/src/components/mongodb/collections';
 import { defineJob, enqueueJob } from '../../server/src/components/jobs';
 import {
+  assertContentRunActive,
   createQuestionGenerationRun,
   failContentRun,
   getContentRun,
@@ -106,6 +108,8 @@ beforeEach(() => {
   jest.mocked(getContentRun).mockReset();
   jest.mocked(updateContentRun).mockReset();
   jest.mocked(updateContentRun).mockResolvedValue({} as never);
+  jest.mocked(assertContentRunActive).mockReset();
+  jest.mocked(assertContentRunActive).mockResolvedValue(undefined);
   jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => null) } as never);
   jest.mocked(contentRunsCol).mockReturnValue({ aggregate: jest.fn(() => ({ toArray: async () => [] })) } as never);
 
@@ -913,6 +917,62 @@ describe('durable generation runs (P2-0)', () => {
     expect(jest.mocked(updateContentRun).mock.invocationCallOrder[pinnedCallIndex]!).toBeLessThan(
       jest.mocked(search).mock.invocationCallOrder[0]!,
     );
+    expect(failContentRun).not.toHaveBeenCalled();
+  });
+
+  it('stops quietly once an instructor ends the run, keeping the Draft already saved', async () => {
+    const runId = new ObjectId();
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: runId, courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 2, revision: 0, events: [], warnings: [],
+      input: {
+        loId, count: 2, type: 'mcq',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    });
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ roleAssessment: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok' });
+    // Ended while the first Draft was being saved: the checks before generating,
+    // validating and reviewing both candidates and before the first save pass
+    // (7), and the check before the second save finds the run terminal.
+    jest.mocked(assertContentRunActive).mockImplementation(async () => {
+      if (jest.mocked(assertContentRunActive).mock.calls.length > 7) throw new Error('content-run-conflict');
+    });
+
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: runId.toHexString() });
+
+    expect(createQuestion).toHaveBeenCalledTimes(1);
+    expect(failContentRun).not.toHaveBeenCalled();
+    expect(jest.mocked(updateContentRun).mock.calls.map((call) => call[1].status)).not.toContain('partial');
+  });
+
+  it('makes no model call once the run was ended before its next candidate', async () => {
+    const runId = new ObjectId();
+    jest.mocked(getContentRun).mockResolvedValue({
+      _id: runId, courseId, kind: 'question-generation', requestedBy: 'PUID-INSTR',
+      status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: 3, revision: 0, events: [], warnings: [],
+      input: {
+        loId, count: 3, type: 'mcq',
+        models: { embedding: 'embed-model', generator: 'gen-model', validator: 'val-model', reviewer: 'rev-model' },
+      },
+      result: { createdQuestionIds: [], failures: [] }, createdAt: new Date(), updatedAt: new Date(),
+    });
+    jest.mocked(assertContentRunActive).mockRejectedValue(new Error('content-run-conflict'));
+
+    registerGenerationJobs();
+    const handler = jest.mocked(defineJob).mock.calls[0]![1] as (data: { runId: string }) => Promise<void>;
+    await handler({ runId: runId.toHexString() });
+
+    expect(completeJson).not.toHaveBeenCalled();
+    expect(createQuestion).not.toHaveBeenCalled();
     expect(failContentRun).not.toHaveBeenCalled();
   });
 

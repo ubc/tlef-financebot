@@ -5,8 +5,11 @@ import { ObjectId, type WithId } from 'mongodb';
 import { contentRunsCol } from '../../server/src/components/mongodb/collections';
 import { hasPendingJob } from '../../server/src/components/jobs';
 import {
+  assertContentRunActive,
   createMaterialIngestRun,
   createQuestionGenerationRun,
+  endActiveGenerationRuns,
+  endGenerationRun,
   getContentRun,
   listCourseContentRuns,
   reconcileContentRuns,
@@ -219,6 +222,86 @@ describe('content run compare-and-set updates', () => {
         },
       }),
     ).resolves.toMatchObject({ status: 'partial' });
+  });
+});
+
+describe('ending generation runs', () => {
+  function generationRun(courseId: ObjectId) {
+    return createQuestionGenerationRun({
+      courseId,
+      requestedBy: 'PUID-1',
+      loId: new ObjectId(),
+      count: 3,
+      type: 'mcq',
+      models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' },
+    });
+  }
+
+  it('ends a running run so the pipeline cannot write progress or start another step', async () => {
+    const courseId = new ObjectId();
+    const run = await generationRun(courseId);
+    await updateContentRun(run._id, { status: 'running', stage: 'generating' });
+
+    const ended = await endGenerationRun(courseId, run._id);
+
+    expect(ended).toMatchObject({ status: 'failed', error: { code: 'generation-ended', atStage: 'generating', retryable: true } });
+    await expect(updateContentRun(run._id, { status: 'running', stage: 'generating' })).rejects.toThrow('content-run-conflict');
+    await expect(assertContentRunActive(run._id)).rejects.toThrow('content-run-conflict');
+  });
+
+  it('ends a queued run before its job starts', async () => {
+    const courseId = new ObjectId();
+    const run = await generationRun(courseId);
+
+    await expect(endGenerationRun(courseId, run._id)).resolves.toMatchObject({ status: 'failed', stage: 'queued' });
+  });
+
+  it('retries when a pipeline progress write lands between the read and the write', async () => {
+    const courseId = new ObjectId();
+    const run = await generationRun(courseId);
+    await updateContentRun(run._id, { status: 'running', stage: 'generating' });
+    findOneAndUpdate.mockImplementationOnce(async () => {
+      // The pipeline's write wins the revision race.
+      const index = docs.findIndex((doc) => doc._id.equals(run._id));
+      docs[index] = { ...docs[index]!, revision: docs[index]!.revision + 1 };
+      return null;
+    });
+
+    await expect(endGenerationRun(courseId, run._id)).resolves.toMatchObject({ status: 'failed' });
+    expect(findOneAndUpdate).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns a terminal run unchanged, and refuses material runs and runs from another course', async () => {
+    const courseId = new ObjectId();
+    const run = await generationRun(courseId);
+    await updateContentRun(run._id, { status: 'running', stage: 'generating' });
+    await endGenerationRun(courseId, run._id);
+    const writes = findOneAndUpdate.mock.calls.length;
+
+    await expect(endGenerationRun(courseId, run._id)).resolves.toMatchObject({ status: 'failed' });
+    expect(findOneAndUpdate).toHaveBeenCalledTimes(writes);
+
+    const material = materialRun({ courseId });
+    docs.push(material);
+    await expect(endGenerationRun(courseId, material._id)).rejects.toThrow('content-run-not-generation');
+    await expect(endGenerationRun(new ObjectId(), run._id)).rejects.toThrow('content-run-not-found');
+  });
+
+  it('ends every active generation run in the course and nothing else', async () => {
+    const courseId = new ObjectId();
+    const queued = await generationRun(courseId);
+    const running = await generationRun(courseId);
+    await updateContentRun(running._id, { status: 'running', stage: 'reviewing' });
+    const otherCourse = await generationRun(new ObjectId());
+    const material = materialRun({ courseId, status: 'running', stage: 'embedding' });
+    docs.push(material);
+
+    await expect(endActiveGenerationRuns(courseId)).resolves.toBe(2);
+
+    expect((await getContentRun(queued._id))?.error?.code).toBe('generation-ended');
+    expect((await getContentRun(running._id))?.error?.code).toBe('generation-ended');
+    expect((await getContentRun(otherCourse._id))?.status).toBe('queued');
+    expect((await getContentRun(material._id))?.status).toBe('running');
   });
 });
 

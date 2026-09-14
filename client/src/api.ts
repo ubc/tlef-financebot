@@ -1616,6 +1616,22 @@ export function retryContentRun(courseId: string, runId: string): Promise<{ runI
   );
 }
 
+/** POST: end one queued or running generation run. Drafts it already saved stay. */
+export function endContentRun(courseId: string, runId: string): Promise<ContentRunSummary> {
+  return request<ContentRunSummary>(
+    `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/end`,
+    { method: 'POST' },
+  );
+}
+
+/** POST: end every queued or running generation run in the course. */
+export function endActiveContentRuns(courseId: string): Promise<{ ended: number }> {
+  return request<{ ended: number }>(
+    `/api/courses/${encodeURIComponent(courseId)}/content-runs/end-active`,
+    { method: 'POST' },
+  );
+}
+
 export interface GenerationBlueprint {
   _id: string;
   courseId: string;

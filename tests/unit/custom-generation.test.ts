@@ -15,6 +15,7 @@ jest.mock('../../server/src/services/materials.service', () => ({
 }));
 jest.mock('../../server/src/services/questions.service', () => ({ createQuestion: jest.fn() }));
 jest.mock('../../server/src/services/content-runs.service', () => ({
+  assertContentRunActive: jest.fn(),
   createQuestionGenerationRun: jest.fn(),
   failContentRun: jest.fn(),
   getContentRun: jest.fn(),
