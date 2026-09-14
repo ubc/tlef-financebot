@@ -336,3 +336,16 @@ Build/typecheck, lint and whitespace checks pass. Real course run
 7f2e0025c376629c5742c263 showed 9 answer-text updates while 0/1 questions were saved,
 then displayed all 4 saved option explanations without browser errors. One new QA
 question remains a Draft in the current course, with no approval or release.
+
+### Follow-up: Question Bank prototype and aligned Review Queue header
+
+**Owner:** Stephen. User requested approved-only Question Bank membership, more
+prominent per-topic release controls, full question editing, and production
+Review Queue top alignment with the accepted Bank prototype.
+
+- [ ] Refine the isolated Bank prototype: approved collection, topic release panel,
+  complete authoring fields, and explicit return-to-review after edits.
+- [ ] Align production Review Queue heading, visible tabs and compact toolbar,
+  preserving existing filtering, bulk actions, review decisions and empty states.
+- [ ] Verify prototype interactions and responsive rendering; run existing Review
+  browser checks and client typecheck. Production Bank integration remains pending.
