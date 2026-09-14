@@ -225,7 +225,10 @@ export interface Theme {
   courseId: ObjectId;
   name: string;
   order: number;
-  availableFrom?: Date; // progressive release (ST-P01)
+  /** Progressive release (ST-P01). RELEASED once set and passed; absent means
+   * "Not released" (hidden from students, and any question tagged to this
+   * Theme is held back everywhere). See services/theme-release.ts. */
+  availableFrom?: Date;
   archivedAt?: Date;
 }
 

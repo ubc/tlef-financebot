@@ -19,6 +19,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   questionsCol: jest.fn(),
   questionVersionsCol: jest.fn(),
   reviewBookCol: jest.fn(),
+  themesCol: jest.fn(),
 }));
 jest.mock('../../server/src/services/params.service', () => ({
   drawSeed: jest.fn(() => 1234),
@@ -52,6 +53,7 @@ import {
   questionsCol,
   questionVersionsCol,
   reviewBookCol,
+  themesCol,
 } from '../../server/src/components/mongodb/collections';
 import { enqueueExamMasteryPass } from '../../server/src/services/exam-mastery.service';
 import { notifyCourseStaff } from '../../server/src/services/notifications.service';
@@ -241,6 +243,16 @@ function seed(entries: BankEntry[], templateDoc = template()): void {
   } as never);
   jest.mocked(losCol).mockReturnValue({
     find: jest.fn(() => ({ toArray: async () => los })),
+  } as never);
+  // Both Themes RELEASED (theme-release.ts): an undated Theme would hold its
+  // questions out of the exam bank.
+  jest.mocked(themesCol).mockReturnValue({
+    find: jest.fn(() => ({
+      toArray: async () => [
+        { _id: themeA, courseId, name: 'Theme A', order: 0, availableFrom: new Date(0) },
+        { _id: themeB, courseId, name: 'Theme B', order: 1, availableFrom: new Date(0) },
+      ],
+    })),
   } as never);
   jest.mocked(examAttemptsCol).mockReturnValue({
     findOne: jest.fn(async (filter: Record<string, unknown>) =>

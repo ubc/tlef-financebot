@@ -7,8 +7,31 @@
 // (statusToBadgeVariant), client/src/views/instructor/question-detail.ts
 // (isFieldEdited).
 import { bankFiltersToQuery, type BankFilters } from '../../client/src/api';
-import { statusToBadgeVariant } from '../../client/src/views/instructor/bank';
+import { heldBackTopics, statusToBadgeVariant } from '../../client/src/views/instructor/bank';
 import { isFieldEdited } from '../../client/src/views/instructor/question-detail';
+import type { CourseTree } from '../../client/src/api';
+
+describe('heldBackTopics (release holdback tag on a bank row)', () => {
+  const now = new Date('2026-09-05T12:00:00Z');
+  const tree = {
+    themes: [
+      { _id: 't1', name: 'Released', order: 1, availableFrom: '2026-09-01T00:00:00Z', los: [] },
+      { _id: 't2', name: 'Undated', order: 2, los: [] },
+      { _id: 't3', name: 'Scheduled', order: 3, availableFrom: '2026-10-01T00:00:00Z', los: [] },
+    ],
+  } as unknown as CourseTree;
+
+  it('names only the tagged Topics that are not released, in course order', () => {
+    expect(heldBackTopics(tree, ['t1'], now)).toEqual([]);
+    expect(heldBackTopics(tree, ['t1', 't2'], now)).toEqual(['Undated']);
+    expect(heldBackTopics(tree, ['t3', 't2'], now)).toEqual(['Undated', 'Scheduled']);
+  });
+
+  it('ignores Topics the question is not tagged to, and unknown ids', () => {
+    expect(heldBackTopics(tree, ['nope'], now)).toEqual([]);
+    expect(heldBackTopics(tree, [], now)).toEqual([]);
+  });
+});
 
 describe('bankFiltersToQuery', () => {
   it('returns an empty string for no filters', () => {

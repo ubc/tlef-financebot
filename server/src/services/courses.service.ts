@@ -16,6 +16,7 @@ import type {
   LoKind,
   RosterEntry,
 } from '../types/domain';
+import { isThemeReleased } from './theme-release';
 
 // -----------------------------------------------------------------------------
 // Courses service (IN-S01/S02/S03, IN-L06): course creation, Theme/LO hierarchy
@@ -238,11 +239,19 @@ export async function addTheme(
   return { _id: insertedId, ...theme };
 }
 
+/** `availableFrom: null` WITHDRAWS a release (clears the date, so the Topic
+ * and every question tagged to it are hidden again — theme-release.ts);
+ * `undefined` leaves it untouched, like any other absent field. */
 export async function updateTheme(
   themeId: ObjectId,
-  patch: Partial<Pick<Theme, 'name' | 'availableFrom' | 'order'>>,
+  patch: Partial<Pick<Theme, 'name' | 'order'>> & { availableFrom?: Date | null },
 ): Promise<WithId<Theme>> {
-  const theme = await themesCol().findOneAndUpdate({ _id: themeId }, { $set: patch }, { returnDocument: 'after' });
+  const { availableFrom, ...rest } = patch;
+  const set: Partial<Theme> = { ...rest, ...(availableFrom instanceof Date ? { availableFrom } : {}) };
+  const update = availableFrom === null
+    ? { $set: set, $unset: { availableFrom: '' as const } }
+    : { $set: set };
+  const theme = await themesCol().findOneAndUpdate({ _id: themeId }, update, { returnDocument: 'after' });
   if (!theme) throw new Error('theme-not-found');
   return theme;
 }
@@ -540,6 +549,7 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
     const approved = await questionsCol().countDocuments({ courseId, loIds: lo._id, state: 'approved' });
     if (approved < 3) thinLos.push(lo.name);
   }
+  const unreleasedThemes = themes.filter((theme) => !isThemeReleased(theme)).map((theme) => theme.name);
   return [
     { item: 'Term dates set', ok: Boolean(course.termStart && course.termEnd) },
     { item: 'At least one Theme', ok: themes.length > 0 },
@@ -548,6 +558,13 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
     {
       item: `Every LO has ≥3 Approved questions${thinLos.length ? ` (thin: ${thinLos.join(', ')})` : ''}`,
       ok: los.length > 0 && thinLos.length === 0,
+    },
+    // Topics start "Not released" (theme-release.ts), so a course can be
+    // published with nothing visible; this makes that state impossible to
+    // miss. Publishing stays allowed — a course may open with Topic 1 only.
+    {
+      item: `Every Topic released${unreleasedThemes.length ? ` (not yet: ${unreleasedThemes.join(', ')})` : ''}`,
+      ok: themes.length > 0 && unreleasedThemes.length === 0,
     },
   ];
 }

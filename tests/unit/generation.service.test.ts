@@ -108,6 +108,9 @@ beforeEach(() => {
   jest.mocked(updateContentRun).mockResolvedValue({} as never);
   jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => null) } as never);
   jest.mocked(contentRunsCol).mockReturnValue({ aggregate: jest.fn(() => ({ toArray: async () => [] })) } as never);
+  // No Themes by default: nothing is held back (theme-release.ts). R7 tests
+  // that need earlier-objective Themes override this.
+  jest.mocked(themesCol).mockReturnValue({ find: jest.fn(() => ({ toArray: async () => [] })) } as never);
 
   jest.mocked(losCol).mockReturnValue({
     findOne: loFindOne,
@@ -1539,8 +1542,8 @@ describe('preseedingProgress — per-LO approved/reviewed/unapproved counts (IN-
     const result = await preseedingProgress(courseId);
 
     expect(result).toEqual([
-      { loId: lo1, loName: 'LO one', approved: 4, reviewed: 2, unapproved: 6, target: 5 },
-      { loId: lo2, loName: 'LO two', approved: 0, reviewed: 1, unapproved: 3, target: 5 },
+      { loId: lo1, loName: 'LO one', approved: 4, reviewed: 2, unapproved: 6, heldBack: 0, target: 5 },
+      { loId: lo2, loName: 'LO two', approved: 0, reviewed: 1, unapproved: 3, heldBack: 0, target: 5 },
     ]);
 
     expect(countDocuments).toHaveBeenCalledTimes(6);

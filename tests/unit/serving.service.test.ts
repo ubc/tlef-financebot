@@ -138,7 +138,17 @@ function seedBank(specs: BankSpec[]): void {
 beforeEach(() => {
   jest.mocked(getMasteryTier).mockReset();
   jest.mocked(getLoStatuses).mockReset();
+  // The bank's one Theme is RELEASED (dated in the past) unless a test says
+  // otherwise: since the release model (theme-release.ts) an undated Theme is
+  // "Not released" and every question tagged to it is held back.
+  jest.mocked(themesCol).mockReturnValue(
+    makeFindableFake([releasedTheme()] as unknown as Record<string, unknown>[]) as never,
+  );
 });
+
+function releasedTheme(overrides: Partial<WithId<Theme>> = {}): WithId<Theme> {
+  return { _id: themeId, courseId, name: 'Released Theme', order: 1, availableFrom: new Date(0), ...overrides };
+}
 
 // A rand() that always picks the first element of whatever pool is passed to
 // Math.floor(rand() * n) — pins the "random within pool" choice so ladder
@@ -309,12 +319,7 @@ describe('selectPreviewQuestion', () => {
 
 describe('studentCourseHome', () => {
   it('case 9: hides future themes and LOs without a servable Approved version', async () => {
-    const availableTheme: WithId<Theme> = {
-      _id: themeId,
-      courseId,
-      name: 'Available Theme',
-      order: 1,
-    };
+    const availableTheme: WithId<Theme> = releasedTheme({ name: 'Available Theme' });
     const futureThemeId = new ObjectId();
     const futureTheme: WithId<Theme> = {
       _id: futureThemeId,
@@ -381,5 +386,81 @@ describe('studentCourseHome', () => {
     expect(result[0].los[0].lo._id.equals(coveredLoId)).toBe(true);
     expect(result[0].los[0].status).toBe('in-progress');
     expect(result[0].los[0].approvedCount).toBe(1);
+  });
+
+  it('hides an UNDATED theme — "Not released" is the default (theme-release.ts)', async () => {
+    const undatedLoId = new ObjectId();
+    jest.mocked(themesCol).mockReturnValue(
+      makeFindableFake([{ _id: themeId, courseId, name: 'Undated', order: 1 }]) as never,
+    );
+    jest.mocked(losCol).mockReturnValue(
+      makeFindableFake([{ _id: undatedLoId, courseId, themeId, name: 'LO', order: 1 }]) as never,
+    );
+    seedBank([{ difficulty: 'easy', state: 'approved', loIds: [undatedLoId] }]);
+    jest.mocked(getLoStatuses).mockResolvedValue(new Map());
+
+    expect(await studentCourseHome(puid, courseId)).toEqual([]);
+  });
+});
+
+describe('release holdback for multi-Theme questions (theme-release.ts)', () => {
+  const laterThemeId = new ObjectId();
+
+  /** One Theme released, a later one not; a question under `loId` that ALSO
+   * carries the later Theme's tag, next to one that does not. */
+  function seedMixed(): { plain: ObjectId; chained: ObjectId } {
+    jest.mocked(themesCol).mockReturnValue(
+      makeFindableFake([
+        releasedTheme(),
+        { _id: laterThemeId, courseId, name: 'Later Theme', order: 2 },
+      ] as unknown as Record<string, unknown>[]) as never,
+    );
+    const plain = new ObjectId();
+    const chained = new ObjectId();
+    const { questions, versions } = bank([
+      { id: plain, difficulty: 'easy', state: 'approved', loIds: [loId] },
+      { id: chained, difficulty: 'easy', state: 'approved', loIds: [loId] },
+    ]);
+    questions[1].themeIds = [themeId, laterThemeId];
+    jest.mocked(questionsCol).mockReturnValue(makeFindableFake(questions as unknown as Record<string, unknown>[]) as never);
+    jest.mocked(questionVersionsCol).mockReturnValue(makeFindableFake(versions as unknown as Record<string, unknown>[]) as never);
+    return { plain, chained };
+  }
+
+  it('never serves a question tagged to an unreleased Theme, even under a released LO', async () => {
+    const { plain, chained } = seedMixed();
+    jest.mocked(getMasteryTier).mockResolvedValue('easy');
+
+    // Ask repeatedly with the chained one "unseen": it must never be picked.
+    const result = await selectNextQuestion({ puid, courseId, loId, sessionServedIds: [plain] }, firstPick);
+    expect(result).not.toBeNull();
+    expect(result!.question._id.equals(plain)).toBe(true);
+    expect(result!.question._id.equals(chained)).toBe(false);
+  });
+
+  it('does not count a held-back question toward the LO students see', async () => {
+    seedMixed();
+    jest.mocked(losCol).mockReturnValue(
+      makeFindableFake([{ _id: loId, courseId, themeId, name: 'LO', order: 1 }]) as never,
+    );
+    jest.mocked(getLoStatuses).mockResolvedValue(new Map());
+
+    const home = await studentCourseHome(puid, courseId);
+    expect(home).toHaveLength(1);
+    expect(home[0].los[0].approvedCount).toBe(1);
+  });
+
+  it('serves it once the later Theme is released', async () => {
+    const { plain, chained } = seedMixed();
+    jest.mocked(themesCol).mockReturnValue(
+      makeFindableFake([
+        releasedTheme(),
+        { _id: laterThemeId, courseId, name: 'Later Theme', order: 2, availableFrom: new Date(0) },
+      ] as unknown as Record<string, unknown>[]) as never,
+    );
+    jest.mocked(getMasteryTier).mockResolvedValue('easy');
+
+    const result = await selectNextQuestion({ puid, courseId, loId, sessionServedIds: [plain] }, firstPick);
+    expect(result!.question._id.equals(chained)).toBe(true);
   });
 });

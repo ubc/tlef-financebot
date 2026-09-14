@@ -88,7 +88,9 @@ const themeBody = z.object({
 
 const updateThemeBody = z.object({
   name: z.string().min(1).optional(),
-  availableFrom: z.coerce.date().optional(),
+  // `null` withdraws a release (clears the date). z.null() must come FIRST:
+  // z.coerce.date() would turn null into the epoch and "release" the Topic.
+  availableFrom: z.union([z.null(), z.coerce.date()]).optional(),
   order: z.number().int().optional(),
 });
 
