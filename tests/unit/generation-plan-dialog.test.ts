@@ -9,7 +9,32 @@ import {
   combinationKey,
   defaultCombinationCounts,
   MAX_COMBINATION_SECONDARIES,
+  numberedLoName,
+  topicLoNumber,
 } from '../../client/src/views/instructor/generation-plan-dialog';
+import type { CourseTree } from '../../client/src/api';
+
+describe('Topic / LO numbering', () => {
+  const tree = {
+    themes: [
+      { _id: 't1', name: 'Budgeting', los: [{ _id: 'lo-a', name: 'Build a budget' }, { _id: 'lo-b', name: 'Track spending' }] },
+      { _id: 't2', name: 'Saving', los: [{ _id: 'lo-c', name: 'Match accounts to goals' }] },
+      { _id: 't3', name: 'Empty topic' },
+    ],
+  } as unknown as CourseTree;
+
+  it('numbers an LO by its position in the course outline', () => {
+    expect(topicLoNumber(tree, 'lo-b')).toBe('Topic 1 / LO 2');
+    expect(topicLoNumber(tree, 'lo-c')).toBe('Topic 2 / LO 1');
+  });
+
+  it('falls back to the name when the LO or the outline is missing', () => {
+    expect(topicLoNumber(tree, 'lo-missing')).toBeUndefined();
+    expect(topicLoNumber(undefined, 'lo-a')).toBeUndefined();
+    expect(numberedLoName(tree, 'lo-c', 'Match accounts to goals')).toBe('Topic 2 / LO 1: Match accounts to goals');
+    expect(numberedLoName(undefined, 'lo-c', 'Match accounts to goals')).toBe('Match accounts to goals');
+  });
+});
 
 describe('combinationKey', () => {
   it('joins the primary and secondaries in order, so order is part of identity', () => {

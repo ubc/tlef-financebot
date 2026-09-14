@@ -33,6 +33,7 @@ import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
 } from '../services/numeric-verification.service';
+import { unresolvablePlaceholders, type NumericGateVersion } from '../services/numeric-gate.service';
 import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
@@ -184,6 +185,13 @@ const previewQuestionParamsBody = z.object({
   generateScript: z.string().optional(),
   stem: z.string().optional(),
 });
+
+/** A version as the editor receives it: plus the placeholders that stop it
+ * being served (numeric-gate.service.ts), so the warning an instructor reads
+ * comes from the same check that refuses the question. */
+function withPlaceholderReport<T extends NumericGateVersion>(version: T): T & { unresolvablePlaceholders: string[] } {
+  return { ...version, unresolvablePlaceholders: unresolvablePlaceholders(version) };
+}
 
 function verifyOptionFormulas(
   options: Array<{ text: string }>,
@@ -410,7 +418,7 @@ questionsRouter.get(
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
     const { question, current, versions } = await getQuestionDetail(questionId);
-    res.json({ ...toQuestionResponse(question), current, versions });
+    res.json({ ...toQuestionResponse(question), current: withPlaceholderReport(current), versions });
   },
 );
 
@@ -455,7 +463,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
-    res.json({ ...version, ...(verificationError !== undefined ? { verificationError } : {}) });
+    res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
 
@@ -524,7 +532,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
-    res.json({ ...version, ...(verificationError !== undefined ? { verificationError } : {}) });
+    res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
 

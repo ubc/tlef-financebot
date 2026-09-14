@@ -38,9 +38,10 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import {
-  declaredVariableNames,
+  editableVariableNames,
   toDisplayPlaceholders,
   toStoredPlaceholders,
+  unresolvedPlaceholderWarning,
 } from '../../placeholders.js';
 import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
@@ -108,6 +109,18 @@ interface LoContext {
   themeIndex: number;
   lo: NonNullable<CourseTree['themes'][number]['los']>[number];
   loIndex: number;
+}
+
+/** The "Add LO" picker's choices: every LO not already tagged, labelled by its
+ * position in the whole outline. Numbered BEFORE filtering — numbering the
+ * filtered list shifted every LO after a tagged one down by one (2026-09-14: a
+ * question tagged to LO 2 listed the real LO 3 as "LO 2"). */
+export function addableLoOptions(tree: CourseTree, taggedLoIds: readonly string[]): Array<{ id: string; label: string }> {
+  return tree.themes.flatMap((theme, themeIndex) =>
+    (theme.los ?? [])
+      .map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} › LO ${loIndex + 1}: ${lo.name}` }))
+      .filter((option) => !taggedLoIds.includes(option.id)),
+  );
 }
 
 function findLoContext(tree: CourseTree, loId: string): LoContext | undefined {
@@ -194,8 +207,10 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // Variables are STORED as {{NAME}} but EDITED as [NAME] — see
   // placeholders.ts. Drafts and the edited-comparison baseline are both held
   // in display form, so the "edited" highlighting compares like with like; the
-  // save path converts back.
-  const variableNames = declaredVariableNames(detail.current);
+  // save path converts back — including names the stored text uses as
+  // placeholders without a variable, so an unrelated save cannot flatten them
+  // into literal brackets (see editableVariableNames).
+  const variableNames = editableVariableNames(detail.current);
   const toDisplay = toDisplayPlaceholders;
   const toStored = (text: string): string => toStoredPlaceholders(text, variableNames);
 
@@ -224,6 +239,25 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // where the student sees maths — which made it impossible to review the one
   // thing this panel exists to show, and hid bad LaTeX until a student hit it.
   const sampleSection = el('section', { class: 'question-sample' });
+
+  // Placeholders the server can never fill keep the question from being served.
+  // In the editor they look like any other [NAME] variable, so say so plainly.
+  const placeholderWarningSlot = el('div', {});
+  function renderPlaceholderWarning(problems: readonly string[] | undefined): void {
+    const warning = unresolvedPlaceholderWarning(problems);
+    mount(
+      placeholderWarningSlot,
+      warning
+        ? el(
+            'section',
+            { class: 'duplicate-callout question-placeholder-warning', role: 'status' },
+            el('p', { class: 'duplicate-callout__title', text: warning.title }),
+            el('p', { class: 'duplicate-callout__body', text: warning.body }),
+          )
+        : false,
+    );
+  }
+  renderPlaceholderWarning(detail.current.unresolvablePlaceholders);
 
   /** `div`, not `p`: marked emits block-level HTML, which a `<p>` auto-closes. */
   function sampleStem(stem: string): HTMLElement {
@@ -440,6 +474,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   );
 
   function applySavedVersion(saved: QuestionVersion): void {
+    renderPlaceholderWarning(saved.unresolvablePlaceholders);
     // `saved` comes from the server in STORED form; the editor works in
     // display form, so convert on the way in.
     baseline.stem = toDisplay(saved.stem);
@@ -909,11 +944,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       );
     });
 
-    const available = tree.themes.flatMap((theme, themeIndex) =>
-      (theme.los ?? [])
-        .filter((lo) => !loIds.includes(lo._id))
-        .map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} › LO ${loIndex + 1}: ${lo.name}` })),
-    );
+    const available = addableLoOptions(tree, loIds);
 
     const addSelect = el(
       'select',
@@ -1054,6 +1085,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         'div',
         { class: 'question-editor' },
         el('div', { class: 'question-meta-row' }, metaLabel, el('span', {}, el('label', { text: 'Difficulty: ' }), difficultySelect)),
+        placeholderWarningSlot,
         el('h3', { class: 'detail-section-title', text: 'Topics & LOs' }),
         chipsContainer,
         el('h3', { class: 'detail-section-title', text: 'Question Stem' }),

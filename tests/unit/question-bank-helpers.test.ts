@@ -8,8 +8,30 @@
 // (isFieldEdited).
 import { bankFiltersToQuery, type BankFilters } from '../../client/src/api';
 import { heldBackTopics, statusToBadgeVariant } from '../../client/src/views/instructor/bank';
-import { isFieldEdited } from '../../client/src/views/instructor/question-detail';
+import { addableLoOptions, isFieldEdited } from '../../client/src/views/instructor/question-detail';
 import type { CourseTree } from '../../client/src/api';
+
+describe('addableLoOptions', () => {
+  const tree = {
+    themes: [
+      { _id: 't1', name: 'Personal Finance Planning', los: [
+        { _id: 'lo-1', name: 'Build a personal budget' },
+        { _id: 'lo-2', name: 'Match accounts to goals' },
+        { _id: 'lo-3', name: 'Plan saving, investing, protection' },
+      ] },
+      { _id: 't2', name: 'Car Purchase Decision', los: [{ _id: 'lo-4', name: 'Evaluate car affordability' }] },
+    ],
+  } as unknown as CourseTree;
+
+  it('keeps each LO’s outline number when an earlier LO is already tagged', () => {
+    // 2026-09-14: tagged to LO 2, the picker listed the real LO 3 as "LO 2".
+    expect(addableLoOptions(tree, ['lo-2'])).toEqual([
+      { id: 'lo-1', label: 'Topic 1 › LO 1: Build a personal budget' },
+      { id: 'lo-3', label: 'Topic 1 › LO 3: Plan saving, investing, protection' },
+      { id: 'lo-4', label: 'Topic 2 › LO 1: Evaluate car affordability' },
+    ]);
+  });
+});
 
 describe('heldBackTopics (release holdback tag on a bank row)', () => {
   const now = new Date('2026-09-05T12:00:00Z');

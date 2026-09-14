@@ -7,6 +7,7 @@
 import {
   enqueueGenerationPlan,
   getGenerationPlan,
+  type CourseTree,
   type GenerationPlanCell,
   type GenerationPlanResult,
   type GenerationPlanRow,
@@ -26,6 +27,27 @@ export interface GenerationPlanDialogOptions {
   hasReadySource: (loId: string) => boolean;
   /** Called with the enqueue result so the page can show runs and refresh. */
   onQueued: (result: GenerationPlanResult, cells: GenerationPlanCell[]) => void;
+  /** The course outline, for "Topic 1 / LO 3" numbering — the plan rows carry
+   * names only. Rows fall back to their names when it is absent. */
+  tree?: CourseTree;
+}
+
+/** "Topic 1 / LO 3" for an LO: its position in the course outline, the same
+ * numbering the Question Bank, Review Queue and generate form use. Undefined
+ * when the LO is not in the outline. */
+export function topicLoNumber(tree: CourseTree | undefined, loId: string): string | undefined {
+  if (!tree) return undefined;
+  for (const [themeIndex, theme] of tree.themes.entries()) {
+    const loIndex = (theme.los ?? []).findIndex((lo) => lo._id === loId);
+    if (loIndex !== -1) return `Topic ${themeIndex + 1} / LO ${loIndex + 1}`;
+  }
+  return undefined;
+}
+
+/** "Topic 1 / LO 3: Build a budget", or just the name when unnumbered. */
+export function numberedLoName(tree: CourseTree | undefined, loId: string, name: string): string {
+  const number = topicLoNumber(tree, loId);
+  return number ? `${number}: ${name}` : name;
 }
 
 function emptyCounts(): PlanCounts {
@@ -107,7 +129,8 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
   const builder: { loId: string; secondary: string[] } = { loId: '', secondary: ['', ''] };
 
   const eligibleIds = (): string[] => planRows.filter((row) => options.hasReadySource(row.loId)).map((row) => row.loId);
-  const loName = (loId: string): string => planRows.find((row) => row.loId === loId)?.loName ?? 'Unknown LO';
+  const loName = (loId: string): string =>
+    numberedLoName(options.tree, loId, planRows.find((row) => row.loId === loId)?.loName ?? 'Unknown LO');
 
   const resetToAuto = (): void => {
     plan = new Map(planRows.map((row) => [row.loId, autoCounts(row)]));
@@ -179,9 +202,10 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
     const editable = options.hasReadySource(row.loId) && !busy;
     const planned = TIERS.reduce((sum, tier) => sum + counts[tier].calculation + counts[tier].conceptual, 0);
     const eligible = options.hasReadySource(row.loId);
+    const number = topicLoNumber(options.tree, row.loId);
     const toggle = el('input', {
       class: 'generation-plan__select', type: 'checkbox',
-      'aria-label': `Include ${row.loName} in this batch`,
+      'aria-label': `Include ${loName(row.loId)} in this batch`,
       ...(eligible && selected.has(row.loId) ? { checked: 'checked' } : {}),
       ...(eligible && !busy ? {} : { disabled: 'disabled' }),
     }) as HTMLInputElement;
@@ -196,7 +220,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
       el(
         'div',
         { class: 'generation-plan__copy' },
-        el('small', { text: `${row.themeName} · ${row.loKind}` }),
+        el('small', { text: [number, row.themeName, row.loKind].filter(Boolean).join(' · ') }),
         el('strong', { text: row.loName }),
         el('small', {
           text: options.hasReadySource(row.loId)
@@ -204,7 +228,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
             : 'Needs a ready assigned source',
         }),
       ),
-      tierGrid(counts, row.loName, editable, row.approved),
+      tierGrid(counts, loName(row.loId), editable, row.approved),
     );
   };
 
@@ -262,7 +286,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
         el('option', { value: '', text: allowNone ? 'None' : 'Choose…', selected: value ? undefined : 'selected' }),
         ...primaryOptions
           .filter((row) => !exclude.includes(row.loId))
-          .map((row) => el('option', { value: row.loId, text: row.loName, selected: value === row.loId ? 'selected' : undefined })),
+          .map((row) => el('option', { value: row.loId, text: loName(row.loId), selected: value === row.loId ? 'selected' : undefined })),
       ) as HTMLSelectElement;
       select.onchange = () => { onchange(select.value); refresh(); };
       return el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: label }), select);
