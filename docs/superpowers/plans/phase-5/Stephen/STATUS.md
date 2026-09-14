@@ -130,3 +130,12 @@ browser regressions; 8 action-progress browser cases including four production
 role components, source SSE transitions, mobile/dark/reduced motion and scoped axe.
 Independent review issues were resolved. Changes are uncommitted for Stephen's
 local acceptance; no course records, backend contracts or provider settings changed.
+
+## Admin appearance and local persona — 2026-09-14
+
+Admin now has explicit Admin branding, platform/teaching navigation groups and
+a monochrome dark visual identity, including body-mounted dialogs. Saved theme
+preferences remain intact outside Admin. Local IdP admin/admin was added with
+PUID PUID-ADMIN-0001 matching the existing local allowlist. Real SAML login, four
+Admin page axe scans, mobile navigation and logout-theme restoration pass.
+Typecheck/lint/build and IdP PHP syntax pass. Both repositories remain uncommitted.
