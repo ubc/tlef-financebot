@@ -72,7 +72,8 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   from the target material first, the same pattern as `questions.routes.ts`.
 - `content-runs.routes.ts` — Phase 2 P2-0 durable material/generation progress:
   recent course run history, one full snapshot, exact terminal generation
-  retry, and one course-scoped SSE stream. Instructor-gated; the stream sends
+  retry, ending one active generation run (`POST .../:runId/end`) or all of a
+  course's (`POST .../end-active`), and one course-scoped SSE stream. Instructor-gated; the stream sends
   recent persisted state before live updates.
 - `generation-blueprints.routes.ts` — Instructor-gated saved generation recipe
   list/create/update/run endpoints.

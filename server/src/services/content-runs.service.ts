@@ -306,6 +306,66 @@ export async function failContentRun(
   });
 }
 
+/** How many times ending a run re-reads and retries when the pipeline's own
+ * progress write lands between our read and our compare-and-set. */
+const END_RUN_ATTEMPTS = 5;
+
+/** Ends a queued or running generation run at an instructor's request.
+ *
+ * Ending is just a terminal write. A queued run's job sees a non-queued status
+ * and returns without starting; a running pipeline's next progress write (or
+ * its `assertContentRunActive` check before the next paid step) fails with
+ * `content-run-conflict`, which it treats as "stop quietly". An LLM call that
+ * is already in flight finishes first. Drafts already saved stay, and the run
+ * is marked failed with `generation-ended` so exact retry still works.
+ * Idempotent: a run that is already terminal is returned unchanged. */
+export async function endGenerationRun(
+  courseId: ObjectId,
+  runId: ObjectId,
+): Promise<WithId<ContentRun>> {
+  for (let attempt = 1; ; attempt += 1) {
+    const current = await getCourseContentRun(courseId, runId);
+    if (!current) throw new Error('content-run-not-found');
+    if (current.kind !== 'question-generation') throw new Error('content-run-not-generation');
+    if (TERMINAL_STATUSES.has(current.status)) return current;
+    try {
+      return await failContentRun(runId, {
+        code: 'generation-ended',
+        message: 'generation-ended',
+        atStage: current.stage,
+        retryable: true,
+      }, current.result);
+    } catch (error) {
+      if (!(error instanceof Error && error.message === 'content-run-conflict') || attempt >= END_RUN_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+}
+
+/** Ends every queued or running generation run in the course — the "End all"
+ * control, and the way to stop a whole batch plan, whose rows are separate
+ * runs with no batch record. Returns how many runs this call ended. */
+export async function endActiveGenerationRuns(courseId: ObjectId): Promise<number> {
+  const active = await contentRunsCol()
+    .find({ courseId, kind: 'question-generation', status: { $in: ['queued', 'running'] } })
+    .toArray();
+  let ended = 0;
+  for (const run of active) {
+    const next = await endGenerationRun(courseId, run._id);
+    if (next.error?.code === 'generation-ended' && next.revision > run.revision) ended += 1;
+  }
+  return ended;
+}
+
+/** Throws `content-run-conflict` once a run is terminal, so a pipeline can stop
+ * before starting its next paid LLM call or saving another Draft rather than
+ * only noticing at its next progress write. */
+export async function assertContentRunActive(runId: ObjectId): Promise<void> {
+  const current = await getContentRun(runId);
+  if (!current || TERMINAL_STATUSES.has(current.status)) throw new Error('content-run-conflict');
+}
+
 export async function reconcileContentRuns(): Promise<{ interrupted: number; missingJobs: number }> {
   const [running, queued] = await Promise.all([
     contentRunsCol().find({ status: 'running' }).toArray(),

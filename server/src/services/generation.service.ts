@@ -35,6 +35,7 @@ import {
   type ResolvedStepModels,
 } from './step-models';
 import {
+  assertContentRunActive,
   createQuestionGenerationRun,
   failContentRun,
   getContentRun,
@@ -855,6 +856,9 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     const assignedMoves = assignMovesForBatch(input.difficulty, input.hardnessMove, count, type);
     const generated: TrackedCandidate[] = [];
     for (let item = 0; item < count; item += 1) {
+      // Outside the per-item try: an ended run must stop the pipeline, not be
+      // recorded as one failed candidate. The same check guards each stage.
+      await assertContentRunActive(runId);
       try {
         const candidate = await generateValidQuestion(
           type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item], input.kind,
@@ -891,6 +895,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     });
     const validated: TrackedCandidate[] = [];
     for (const candidate of generated) {
+      await assertContentRunActive(runId);
       try {
         candidate.validation = await completeJson<ValidatorOutput>(
           VALIDATOR_PROMPT({
@@ -922,6 +927,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     });
     const reviewed: TrackedCandidate[] = [];
     for (const candidate of validated) {
+      await assertContentRunActive(runId);
       try {
         // Verified here as well as at persistence below. The two calls answer
         // different questions — this one decides what to TELL the reviewer, the
@@ -1002,6 +1008,8 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       // first-pass path above, or regenerating would launder an unverified
       // question into the bank.
       const numerics = verifyGeneratedNumerics(candidate.generated);
+      // Stop before saving another Draft once the run has been ended.
+      await assertContentRunActive(runId);
       try {
         const { questionId } = await createQuestion({
           courseId,

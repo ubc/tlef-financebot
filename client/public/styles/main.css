@@ -6135,6 +6135,27 @@ button.class-row--link:focus-visible .class-row__title {
   padding: 0;
 }
 
+/* "End all active runs" sits outside the disclosure so it stays reachable
+   while the history is collapsed (a button inside <summary> is nested
+   interactive content). */
+.content-run-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.content-run-history__actions .material-row__error {
+  margin: 0;
+  margin-right: auto;
+}
+
+.content-run-history__actions + .content-run-history {
+  margin-top: 0.5rem;
+}
+
 .content-run-history__summary {
   display: flex;
   align-items: center;
@@ -6246,6 +6267,18 @@ button.class-row--link:focus-visible .class-row__title {
   border-color: color-mix(in srgb, var(--instr-red-fg) 35%, transparent);
   background: var(--instr-red-bg);
   color: var(--instr-red-fg);
+}
+
+/* Ended by an instructor: a deliberate stop, not a failure. */
+.content-run-status--ended {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.content-run-status__note {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
 }
 
 .content-run-status--partial {

@@ -34,8 +34,11 @@ objects directly.
   read as not viewed, allowing one micro-tutorial to evolve independently.
 - `content-runs.service.ts` — Phase 2 P2-0 durable operation state. It owns
   legal status/stage transitions, revision compare-and-set writes, bounded
-  event/warning history, startup reconciliation, and post-write course
-  subscribers. Material/generation services must call this API rather than
+  event/warning history, startup reconciliation, instructor-ended generation
+  runs, and post-write course subscribers. Ending a run is only a terminal write
+  (failed, `generation-ended`): the pipeline stops at its next
+  `assertContentRunActive` check or progress write, so any long-running stage
+  loop must call that check before each paid step. Material/generation services must call this API rather than
   updating `contentRuns` directly.
 - `generation-blueprints.service.ts` — persisted, course-scoped generation
   recipes plus exact terminal-run retry. Recipes pin LO/count/type/prompt,

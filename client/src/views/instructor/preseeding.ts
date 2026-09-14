@@ -39,6 +39,8 @@ import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   createGenerationBlueprint,
+  endActiveContentRuns,
+  endContentRun,
   generateQuestions,
   getContentRun,
   getCourseTree,
@@ -60,6 +62,7 @@ import {
   type PreseedingLo,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { confirmDialog } from '../../modal.js';
 import { pageHeader, statTile, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { openGenerationPlanDialog } from './generation-plan-dialog.js';
 import { errorState, helpTip, loadingState } from '../../ui.js';
@@ -168,6 +171,8 @@ const GENERATION_ERROR_MESSAGE: Record<string, string> = {
     'The run completed, but no valid Draft questions could be created.',
   'content-run-enqueue-failed':
     'Question generation could not be queued. Please try again after the background job service recovers.',
+  'generation-ended':
+    'Ended by an instructor. Drafts it had already saved are kept.',
   'generation-secondary-lo-limit':
     'A question can integrate at most two further Learning Objectives.',
   'generation-secondary-lo-duplicate':
@@ -177,6 +182,17 @@ const GENERATION_ERROR_MESSAGE: Record<string, string> = {
   'generation-secondary-lo-no-grounding':
     'No usable content was found in a secondary Learning Objective\'s materials. Check its assigned files and try again.',
 };
+
+/** A run the instructor ended is stored as failed (so exact retry still works)
+ * but reads as "ended", not as a failure. */
+export function runStatusLabel(run: Pick<ContentRunSummary, 'status' | 'error'>): string {
+  return run.status === 'failed' && run.error?.code === 'generation-ended' ? 'ended' : run.status;
+}
+
+/** Whether a run can still be ended: queued or running. */
+export function isActiveRun(run: Pick<ContentRunSummary, 'status'>): boolean {
+  return run.status === 'queued' || run.status === 'running';
+}
 
 /** Convert persisted/server domain codes into instructor-facing recovery text. */
 export function generationErrorMessage(message: string): string {
@@ -373,6 +389,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   // reads it back rather than holding a stale node.
   let formLoSelect: HTMLSelectElement | null = null;
   const retryingRuns = new Set<string>();
+  const endingRuns = new Set<string>();
+  let endingAll = false;
+  let runsError: string | null = null;
   const blueprintNameInput = el('input', {
     class: 'input',
     type: 'text',
@@ -582,6 +601,36 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     }
   }
 
+  /** Ends one run (`scope` = that run) or every active run in the course
+   * (`scope` = 'all'). The stream delivers the resulting terminal snapshots,
+   * so the lists update without a refetch. */
+  async function endRuns(scope: ContentRunSummary | 'all'): Promise<void> {
+    const all = scope === 'all';
+    const confirmed = await confirmDialog({
+      title: all ? 'End all active generation runs?' : `End run ${scope._id.slice(-8)}?`,
+      message: all
+        ? 'Every queued or running generation run in this course stops, including the rest of a batch plan. A step already in progress finishes first. Drafts already saved are kept.'
+        : 'The run stops before its next step; a step already in progress finishes first. Drafts it already saved are kept, and you can run an exact retry later.',
+      confirmLabel: all ? 'End all runs' : 'End run',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    runsError = null;
+    if (all) endingAll = true;
+    else endingRuns.add(scope._id);
+    renderRuns();
+    try {
+      if (all) await endActiveContentRuns(courseId);
+      else await applyRunUpdate(await endContentRun(courseId, scope._id), 'live');
+    } catch (error) {
+      runsError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
+    } finally {
+      if (all) endingAll = false;
+      else endingRuns.delete(scope._id);
+      renderRuns();
+    }
+  }
+
   function runStatusText(run: ContentRunSummary): string {
     const stage = run.stage.charAt(0).toUpperCase() + run.stage.slice(1);
     const units = run.totalUnits !== undefined ? ` · ${run.completedUnits}/${run.totalUnits}` : '';
@@ -592,8 +641,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       : run.status === 'failed'
         ? ` · during ${stage}`
         : '';
-    const latest = run.status === 'running' || run.status === 'queued' ? runMessages.get(run._id) : undefined;
-    return `${run.status}${activeStage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed${latest ? ` · ${latest}` : ''}`;
+    const latest = isActiveRun(run) ? runMessages.get(run._id) : undefined;
+    return `${runStatusLabel(run)}${activeStage}${units} · ${created} Draft${created === 1 ? '' : 's'} · ${failed} failed${latest ? ` · ${latest}` : ''}`;
   }
 
   async function refreshRunMessage(runId: string): Promise<void> {
@@ -621,7 +670,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       : '';
     return el(
       'div',
-      { class: `preseeding-queued-message content-run-status content-run-status--${run.status}`, role: 'status' },
+      { class: `preseeding-queued-message content-run-status content-run-status--${runStatusLabel(run)}`, role: 'status' },
       el('strong', { text: `Run ${run._id.slice(-8)}` }),
       targetLos ? el('span', { class: 'content-run-status__target', text: ` · ${targetLos}` }) : false,
       el('span', { text: ` — ${runStatusText(run)}` }),
@@ -638,7 +687,12 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             ' Review Drafts →',
           )
         : false,
-      run.error ? el('p', { class: 'material-row__error', text: generationErrorMessage(run.error.message) }) : false,
+      run.error
+        ? el('p', {
+            class: runStatusLabel(run) === 'ended' ? 'content-run-status__note' : 'material-row__error',
+            text: generationErrorMessage(run.error.message),
+          })
+        : false,
       missingAssignedMaterial
         ? el(
             'button',
@@ -662,6 +716,18 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
               onclick: () => void retryRun(run),
             },
             retryingRuns.has(run._id) ? 'Retrying…' : 'Run exact retry',
+          )
+        : false,
+      run.kind === 'question-generation' && isActiveRun(run)
+        ? el(
+            'button',
+            {
+              class: 'btn btn--ghost btn--sm',
+              type: 'button',
+              disabled: endingAll || endingRuns.has(run._id) ? 'disabled' : undefined,
+              onclick: () => void endRuns(run),
+            },
+            endingAll || endingRuns.has(run._id) ? 'Ending…' : 'End run',
           )
         : false,
     );
@@ -1091,6 +1157,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   function renderRuns(): void {
     const generationRuns = recentRuns.filter((run) => run.kind === 'question-generation').slice(0, 8);
     const active = generationRuns.filter((run) => !['completed', 'partial', 'failed'].includes(run.status)).length;
+    // Counted over every run the page knows about, not just the eight shown: a
+    // batch plan can queue more rows than the panel lists.
+    const anyActive = recentRuns.some((run) => run.kind === 'question-generation' && isActiveRun(run));
     // A disclosure, closed by default: the list is reference material, not
     // the page's job. The summary carries the counts so a closed panel still
     // says whether anything is in flight; the form's own status panel shows
@@ -1098,6 +1167,25 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
     const summaryText = `Recent Generation Activity (${generationRuns.length}${active > 0 ? ` · ${active} in progress` : ''})`;
     mount(
       runContainer,
+      anyActive || runsError
+        ? el(
+            'div',
+            { class: 'content-run-history__actions' },
+            runsError ? el('p', { class: 'material-row__error', role: 'alert', text: runsError }) : false,
+            anyActive
+              ? el(
+                  'button',
+                  {
+                    class: 'btn btn--ghost btn--sm',
+                    type: 'button',
+                    disabled: endingAll ? 'disabled' : undefined,
+                    onclick: () => void endRuns('all'),
+                  },
+                  endingAll ? 'Ending…' : 'End all active runs',
+                )
+              : false,
+          )
+        : false,
       generationRuns.length > 0
         ? el(
             'details',
