@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { ObjectId, type WithId } from 'mongodb';
-import { AUTH_FILE } from './global-setup';
+import { AUTH_FILE, RELEASED } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
   attemptsCol, capabilitySettingsCol, coursesCol, flagsCol, losCol, questionVersionsCol, questionsCol,
@@ -79,7 +79,7 @@ test.describe('Role experience on real SAML and MongoDB', () => {
       });
       expect(created.status()).toBe(201);
       courseId = (await created.json() as { _id: string })._id;
-      const theme = await api.post(`/api/courses/${courseId}/themes`, { data: { name: 'Cash flow evidence' } });
+      const theme = await api.post(`/api/courses/${courseId}/themes`, { data: { name: 'Cash flow evidence', availableFrom: RELEASED } });
       expect(theme.status()).toBe(201);
       themeId = (await theme.json() as { _id: string })._id;
       for (const name of ['Compare cash-flow timing', 'Explain risk without attempts']) {
