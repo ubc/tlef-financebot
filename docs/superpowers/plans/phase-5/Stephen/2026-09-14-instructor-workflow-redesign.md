@@ -360,3 +360,12 @@ an isolated static fixture server, including mobile dark and axe. The applicatio
 server was unavailable on 6118, so no live course mutations were attempted. Prototype
 checks cover scheduling, answer/explanation edits and return to review without page
 errors or mobile overflow. Bank production integration remains pending.
+
+### Production Question Bank integration
+
+**Owner:** Stephen. Approved by user: implement the refined prototype.
+- [ ] Approved-only default collection, topic release controls, reader/board,
+  filters, archive/restore and complete content editor.
+- [ ] Add version-pinned edit-and-return-to-review with one atomic head update;
+  preserve version history and numerical serving checks.
+- [ ] Verify guarded contracts, real client interactions, responsive/empty states.
