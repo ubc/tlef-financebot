@@ -286,3 +286,31 @@ layout and scoped axe checks. Build, client typecheck, full lint and diff whites
 checks pass. A real PHYS 100 course was inspected read-only with no browser errors
 or horizontal overflow. No paid generation or live question decision was triggered
 in QA. The prototype remains available on port 6129; formal app is port 6118.
+
+### Follow-up: true streaming text (Stephen requested)
+
+Replace whole-response generator calls with the installed provider's streaming
+API. Publish bounded, throttled, durable unverified stem previews over the existing
+course-guarded SSE stream. Reset previews on retries and preserve final validation,
+review and publication gates. Verify actual pre-completion text arrival, reconnect
+snapshots, escaped JSON boundaries and safe terminal-run handling.
+
+Streaming follow-up completed: `completeJson` opts into the installed toolkit's
+real streaming provider callback for background question generation. A bounded
+partial-JSON decoder exposes only the top-level visible stem. Serialized preview
+writes coalesce at 250ms, preserve stage history, drain before stage transitions,
+and obey terminal CAS protection. The existing guarded SSE and replay snapshots
+carry item/attempt/stem; unverified text cannot be approved or served to students.
+The reader smoothly reveals only already-received characters (instant in reduced
+motion), resets retries, preserves manually selected saved questions, and stops
+animation on navigation. Saved-question rendering remains authoritative.
+
+Validation: 95 focused unit tests and 8 browser cases pass, including partial JSON,
+escapes, nested-content exclusion, pre-completion updates, retry reset, terminal
+conflict, durable publish order and browser reload restoration. Build/typecheck,
+lint and whitespace checks pass. A real Luna request produced 74 visible updates
+(first at 809ms; total 1447ms). The first full course run exposed fast short-stem
+coalescing; character reveal fixed that observable UX. A second real course run
+showed 8 DOM text updates while 0/1 questions were saved, then loaded the saved
+question's assessment with no browser errors. Two test questions remain Drafts in
+course 6aa8542122a8a0d1d9ee13b7; no approval or release was performed.

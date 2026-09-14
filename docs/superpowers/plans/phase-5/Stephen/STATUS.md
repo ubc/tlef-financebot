@@ -197,3 +197,11 @@ AI assessment and recorded step timeline are implemented. Existing advanced tool
 remain available. Seven focused browser tests, scoped light/dark axe, build, client
 typecheck and full lint pass; real course inspected read-only. No token-streaming
 or simulated progress added. Awaiting Stephen's visual acceptance of this page.
+
+Streaming follow-up now implemented and verified: real provider fragments → bounded
+unverified stem snapshots → existing course SSE → gradual character reveal. Retries
+reset previews; refresh restores the latest text; validation/publication unchanged.
+95 unit and 8 browser checks pass. Real course verification observed 8 text updates
+before any saved question, then successful saved-question preview. Two QA drafts
+were created and left unpublished. Existing finished runs cannot reconstruct
+historical token timing; new generation uses the streaming path.
