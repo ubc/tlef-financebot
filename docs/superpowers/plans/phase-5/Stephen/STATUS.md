@@ -139,3 +139,6 @@ preferences remain intact outside Admin. Local IdP admin/admin was added with
 PUID PUID-ADMIN-0001 matching the existing local allowlist. Real SAML login, four
 Admin page axe scans, mobile navigation and logout-theme restoration pass.
 Typecheck/lint/build and IdP PHP syntax pass. Both repositories remain uncommitted.
+
+Admin appearance correction: only the sidebar remains black; content and dialogs
+follow the restored light/dark toggle and persist the selected mode.
