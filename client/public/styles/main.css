@@ -9695,9 +9695,9 @@ button.quick-action--disabled { cursor: default; }
 }
 
 .app-shell--admin .sidebar--instructor .nav__link--active {
-  background: #f5f5f6;
-  border-color: #f5f5f6;
-  color: #111214;
+  background: #24262b;
+  border-color: #44464c;
+  color: #ffffff;
 }
 
 .app-shell--admin .sidebar--instructor .nav__link--active .nav__glyph {
@@ -9706,6 +9706,15 @@ button.quick-action--disabled { cursor: default; }
 
 .app-shell--admin .nav__link:not(.nav__link--active):hover {
   background: #24262b;
+}
+
+/* The sidebar stays dark even when the Admin content theme is light. */
+.app-shell--admin .sidebar--instructor .nav__link:not(.nav__link--disabled):is(:hover, :focus, :active, .journey-current) {
+  color: #ffffff;
+}
+
+.app-shell--admin .sidebar--instructor .nav__link.journey-current .nav__glyph {
+  color: #183328;
 }
 
 :root[data-admin="true"][data-theme="dark"] .btn--instr-primary {

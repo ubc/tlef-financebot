@@ -1,5 +1,30 @@
 import { test, expect } from '@playwright/test';
 
+for (const theme of ['light', 'dark']) {
+  test(`Admin sidebar keeps white active and focused labels during setup (${theme})`, async ({ page }) => {
+    await page.route('**/admin-nav-fixture', route => route.fulfill({ contentType: 'text/html', body: `
+      <html data-admin="true" data-theme="${theme}"><head><link rel="stylesheet" href="/styles/main.css"></head><body>
+      <div class="app-shell app-shell--instructor app-shell--admin"><aside class="sidebar sidebar--instructor"><nav class="nav">
+        <a class="nav__link nav__link--active" href="#users"><span class="nav__glyph">U</span><span class="nav__text">User Directory</span></a>
+        <a class="nav__link nav__link--active journey-current" href="#materials"><span class="nav__glyph">✓</span><span class="nav__text">Course Materials</span></a>
+      </nav></aside></div></body></html>` }));
+    await page.goto('/admin-nav-fixture');
+    for (const name of ['User Directory', 'Course Materials']) {
+      const link = page.getByRole('link', { name, exact: false });
+      await expect(link.locator('.nav__text')).toHaveCSS('color', 'rgb(255, 255, 255)');
+      await link.click();
+      await expect(link.locator('.nav__text')).toHaveCSS('color', 'rgb(255, 255, 255)');
+      await page.keyboard.press('Tab');
+      await link.focus();
+      await expect(link.locator('.nav__text')).toHaveCSS('color', 'rgb(255, 255, 255)');
+      await link.hover(); await page.mouse.down();
+      await expect(link.locator('.nav__text')).toHaveCSS('color', 'rgb(255, 255, 255)');
+      await page.mouse.up();
+    }
+    await expect(page.locator('.journey-current .nav__glyph')).toHaveCSS('color', 'rgb(24, 51, 40)');
+  });
+}
+
 test('real guide follows server progress, persists navigation, isolates courses and keeps button contrast', async ({ page }) => {
   const counts = { readyMaterials: 0, processingMaterials: 0, failedMaterials: 0, learningObjectives: 0, totalQuestions: 0, activeGenerationRuns: 0, approvedQuestions: 0, reviewQueue: 0 };
   let released = false;
