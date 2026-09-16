@@ -1,3 +1,4 @@
+import type { StructureOptions, StructureDraft, StructureResult } from './structure';
 import type { ObjectId } from 'mongodb';
 
 // -----------------------------------------------------------------------------
@@ -71,7 +72,7 @@ export type Capability =
 
 export type CapabilityRole = CourseRole | 'admin';
 
-export type ContentRunKind = 'material-ingest' | 'question-generation';
+export type ContentRunKind = 'material-ingest' | 'question-generation' | 'structure-generation';
 export type MaterialKind =
   | 'lecture'
   | 'reading'
@@ -475,10 +476,9 @@ export interface Material {
     evidence?: string;
     relationships?: Array<{ targetName: string; type: string }>;
   }>;
-  // First ~2000 chars of the ingested text, persisted at ingest time so IN-S06
-  // classification (classifyMaterial) and hierarchy suggestion (suggestHierarchy)
-  // never re-parse files or re-fetch URL materials. Absent until a material is
-  // ingested with non-empty text.
+  // First ~2000 parsed characters for lightweight classification and legacy
+  // previews. Full hierarchy generation reads all persisted MaterialChunks.
+  // Absent until a material is ingested with non-empty text.
   excerpt?: string; // IN-S06
   /** Newest durable ingest attempt. Older attempts remain in contentRuns. */
   activeRunId?: ObjectId;
@@ -576,6 +576,8 @@ export interface QuestionGenerationResult {
 }
 
 export interface QuestionGenerationRun extends ContentRunBase {
+  /** Unverified visible draft text. Never a published or reviewable question. */
+  preview?: { item: number; attempt: number; stem: string; difficulty?: string; options?: Array<{ key: string; text: string; role?: string; explanation?: string }> };
   kind: 'question-generation';
   stage: QuestionGenerationStage;
   input: {
@@ -618,7 +620,16 @@ export interface QuestionGenerationRun extends ContentRunBase {
   result?: QuestionGenerationResult;
 }
 
-export type ContentRun = MaterialIngestRun | QuestionGenerationRun;
+export interface StructureGenerationRun extends ContentRunBase {
+  kind: 'structure-generation';
+  stage: 'queued' | 'analyzing' | 'synthesizing' | 'checking';
+  input: StructureOptions & { materialIds: string[] };
+  structurePreview?: StructureDraft;
+  structureResult?: StructureResult;
+  result?: never;
+}
+
+export type ContentRun = MaterialIngestRun | QuestionGenerationRun | StructureGenerationRun;
 
 export interface GenerationBlueprint {
   courseId: ObjectId;

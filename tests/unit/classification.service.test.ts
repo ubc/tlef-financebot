@@ -1,3 +1,5 @@
+jest.mock('../../server/src/services/structure-generation.service', () => ({ generateStructure: jest.fn() }));
+import { generateStructure } from '../../server/src/services/structure-generation.service';
 // Unit test — classification.service (IN-S06) with its components MOCKED
 // (materials/themes/los collections + the genai llm component), following
 // materials.service.test.ts's pattern of isolating a service from the real
@@ -173,104 +175,19 @@ describe('classifyMaterial (IN-S06)', () => {
   });
 });
 
-describe('suggestHierarchy (IN-S06, slip candidate #3)', () => {
-  it('shapes the LLM JSON into the return type and never writes the DB', async () => {
-    const courseId = new ObjectId();
-    const material1Id = new ObjectId();
-    const material2Id = new ObjectId();
-    materialToArray.mockResolvedValue([
-      {
-        _id: material1Id,
-        courseId,
-        name: 'chapter-1.pdf',
-        status: 'ready',
-        excerpt: 'Chapter 1: discounting…',
-      },
-      {
-        _id: material2Id,
-        courseId,
-        name: 'chapter-2.pdf',
-        status: 'ready',
-        excerpt: 'Chapter 2: bonds…',
-      },
-    ]);
-    jest.mocked(completeJson).mockResolvedValue({
-      themes: [
-        {
-          name: 'Time Value of Money',
-          los: [
-            { name: 'Compute NPV', materialNumbers: [1, 2, 2, 99] },
-            { name: 'Compute IRR', materialNumbers: [1] },
-          ],
-        },
-        { name: 'Bonds', los: [{ name: 'Price a bond', materialNumbers: [2] }] },
-      ],
-    });
-
-    const result = await suggestHierarchy(courseId);
-
-    expect(result).toEqual({
-      themes: [
-        { name: 'Time Value of Money', los: ['Compute NPV', 'Compute IRR'] },
-        { name: 'Bonds', los: ['Price a bond'] },
-      ],
-      assignments: [
-        {
-          themeIndex: 0,
-          loIndex: 0,
-          materialIds: [material1Id.toHexString(), material2Id.toHexString()],
-        },
-        { themeIndex: 0, loIndex: 1, materialIds: [material1Id.toHexString()] },
-        { themeIndex: 1, loIndex: 0, materialIds: [material2Id.toHexString()] },
-      ],
-    });
-    expect(jest.mocked(completeJson).mock.calls[0][0]).toContain('Material 1: chapter-1.pdf');
-    // Never writes: no insert/update on any collection.
+describe('suggestHierarchy legacy response compatibility', () => {
+  it('uses the full-material analyzer and preserves safe source assignments', async () => {
+    const courseId = new ObjectId(), materialId = new ObjectId().toHexString();
+    jest.mocked(generateStructure).mockResolvedValue({ themes: [{ name: 'Forces', los: [{ name: 'Resolve force vectors', materialIds: [materialId], evidenceIds: ['E1'] }] }] } as never);
+    expect(await suggestHierarchy(courseId)).toEqual({ themes: [{ name: 'Forces', los: ['Resolve force vectors'] }], assignments: [{ themeIndex: 0, loIndex: 0, materialIds: [materialId] }] });
+    expect(generateStructure).toHaveBeenCalledWith(courseId, {});
     expect(materialUpdateOne).not.toHaveBeenCalled();
-    expect(materialFindOneAndUpdate).not.toHaveBeenCalled();
   });
-
-  it('returns an empty hierarchy without calling the LLM when no material is ready', async () => {
-    materialToArray.mockResolvedValue([]);
-
-    const result = await suggestHierarchy(new ObjectId());
-
-    expect(result).toEqual({ themes: [], assignments: [] });
-    expect(completeJson).not.toHaveBeenCalled();
-  });
-
-  it('drops malformed entries from the LLM (missing/blank names, non-array los)', async () => {
-    const materialId = new ObjectId();
-    materialToArray.mockResolvedValue([
-      { _id: materialId, name: 'notes.pdf', status: 'ready', excerpt: 'text' },
-    ]);
-    jest.mocked(completeJson).mockResolvedValue({
-      themes: [
-        {
-          name: 'Valid',
-          los: ['A', '', 123, { name: 'B', materialNumbers: ['bad', 1] }],
-        },
-        { name: '', los: ['x'] },
-        { los: ['y'] },
-        { name: 'NoLos' },
-      ],
-    });
-
-    const result = await suggestHierarchy(new ObjectId());
-
-    expect(result).toEqual({
-      themes: [
-        { name: 'Valid', los: ['A', 'B'] },
-        { name: 'NoLos', los: [] },
-      ],
-      assignments: [
-        {
-          themeIndex: 0,
-          loIndex: 1,
-          materialIds: [materialId.toHexString()],
-        },
-      ],
-    });
+  it('returns an empty outline when no materials are ready, and surfaces missing chunks', async () => {
+    jest.mocked(generateStructure).mockRejectedValueOnce(new Error('structure-no-materials'));
+    expect(await suggestHierarchy(new ObjectId())).toEqual({ themes: [], assignments: [] });
+    jest.mocked(generateStructure).mockRejectedValueOnce(new Error('structure-chunks-missing'));
+    await expect(suggestHierarchy(new ObjectId())).rejects.toThrow('structure-chunks-missing');
   });
 });
 

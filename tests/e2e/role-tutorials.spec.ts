@@ -225,3 +225,63 @@ test('Help can retry its initial course-list failure', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Help & Tutorials', exact: true })).toBeVisible();
   expect(loads).toBe(2);
 });
+
+test('TA workbench reads answers inline, preserves notes across board jumps and recovers from empty search', async ({ page }) => {
+  await fixture(page);
+  const questions = ['q1', 'q2'].map((id, i) => ({ id, courseId: 'test', state: 'draft', labels: [], loIds: [], themeIds: [], internalNotes: [], suggestions: [], current: { stem: `Question ${i + 1} about interest`, type: 'mcq', difficulty: 'easy', options: [{ key: 'A', text: 'Borrowing cost', role: 'correct', explanation: 'Interest is the cost of borrowing.' }] } }));
+  await page.route('**/api/courses/test/outline', route => route.fulfill({ json: { course: { name: 'Accounting' }, themes: [] } }));
+  await page.route('**/api/courses/test/capabilities/me', route => route.fulfill({ json: { 'question.review': true, 'question.suggest-edit': true, 'question.mark-reviewed': false } }));
+  await page.route('**/api/courses/test/ta/review-queue', route => route.fulfill({ json: questions }));
+  await page.route('**/api/questions/*', route => route.fulfill({ json: questions.find(q => route.request().url().endsWith(q.id)) }));
+  await page.evaluate(async () => {
+    location.hash = '/ta/course/test/review';
+    (await import('/js/views/ta/review-queue.js')).renderTaReviewQueue(document.getElementById('app')!, { id: 'test' });
+  });
+  await expect(page.getByText('Interest is the cost of borrowing.')).toBeVisible();
+  await page.locator('#ta-question-note').fill('Check this explanation');
+  await page.getByRole('button', { name: /Question board/ }).click();
+  await page.getByRole('button', { name: 'Question 2: Question 2 about interest' }).click();
+  await expect(page.locator('.question-stem')).toHaveText('Question 2 about interest');
+  await page.locator('.review-workbench__row button').first().click();
+  await expect(page.locator('#ta-question-note')).toHaveValue('Check this explanation');
+  await expect(page.getByRole('button', { name: /^(Approve|Reject|Mark reviewed)/ })).toHaveCount(0);
+  await page.getByRole('searchbox').fill('no such question');
+  await expect(page.getByRole('heading', { name: 'No matching questions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page.locator('#ta-question-note')).toHaveValue('Check this explanation');
+  await page.addStyleTag({ content: '* { animation: none !important; transition: none !important; }' });
+  await page.screenshot({ path: '/tmp/ta-workbench.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.getByText('Interest is the cost of borrowing.')).toBeVisible();
+});
+
+test('TA flags use split view, keep recommendation notes and show escalation and empty states', async ({ page }) => {
+  await fixture(page);
+  let flags = ['f1', 'f2'].map((id, i) => ({ id, questionId: `q${i}`, questionVersionId: `v${i}`, state: 'open', reason: 'Please check the answer', createdAt: '2026-09-15T12:00:00Z', currentVersion: { stem: `Flagged question ${i + 1}`, options: [{ key: 'A', text: 'Answer text', role: 'correct' }] } }));
+  await page.route('**/api/courses/test/outline', route => route.fulfill({ json: { course: { name: 'Accounting' }, themes: [] } }));
+  await page.route('**/api/courses/test/ta/flags', route => route.fulfill({ json: flags }));
+  let payload: unknown;
+  await page.route('**/api/flags/f1/escalate', route => { payload = route.request().postDataJSON(); flags[0].state = 'escalated'; return route.fulfill({ json: flags[0] }); });
+  const render = () => page.evaluate(async () => {
+    location.hash = '/ta/course/test/flags';
+    (await import('/js/views/ta/flag-triage.js')).renderTaFlagTriage(document.getElementById('app')!, { id: 'test' });
+  });
+  await render();
+  await page.getByLabel('Note (optional)').fill('Check the units');
+  await page.locator('.flags-queue button').nth(1).click();
+  await page.locator('.flags-queue button').first().click();
+  await expect(page.getByLabel('Note (optional)')).toHaveValue('Check the units');
+  await page.getByRole('button', { name: 'Escalate with recommendation' }).click();
+  await expect(page.getByText('Escalated by a TA — no recommendation recorded')).toBeVisible();
+  expect(payload).toEqual({ recommendation: 'correct', note: 'Check the units' });
+  await expect(page.getByRole('button', { name: /Return to Students|Reject & Archive/ })).toHaveCount(0);
+  await page.getByRole('searchbox').fill('missing');
+  await expect(page.getByRole('heading', { name: 'No matching flags' })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page.locator('.flags-detail')).toBeVisible();
+  flags = [];
+  await render();
+  await expect(page.getByRole('heading', { name: 'No flags need attention' })).toBeVisible();
+});

@@ -99,7 +99,7 @@ function suggestPanel(
   const hint = el('p', { class: 'muted' });
   const submit = el('button', {
     class: 'btn btn--instr-primary btn--sm', type: 'button',
-    onclick: () => void submitSuggestion(),
+    onclick: () => submitSuggestion(),
   }, 'Submit suggestion') as HTMLButtonElement;
 
   function draft(): { stem: string; difficulty: Difficulty } {
@@ -216,7 +216,7 @@ function notesPanel(detail: QuestionDetail): HTMLElement {
     noteInput,
     el('div', { class: 'cluster' },
       el('button', {
-        class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void submitNote(),
+        class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => submitNote(),
       }, 'Add note'),
       status,
     ),
@@ -237,7 +237,8 @@ function questionBody(detail: QuestionDetail): HTMLElement {
       return el('li', { class: `question-options-readonly__item${option.role === 'correct' ? ' question-options-readonly__item--correct' : ''}` },
         el('span', { class: 'question-options-readonly__key', text: `${option.key}.` }),
         textEl,
-        option.role === 'correct' ? el('span', { class: 'muted', text: '(correct)' }) : false,
+        option.role === 'correct' ? el('span', { class: 'muted', text: 'Correct answer' }) : false,
+        option.explanation ? (() => { const explanation = el('div', { class: 'ta-option-explanation' }); renderRichText(explanation, option.explanation); return explanation; })() : false,
       );
     }),
   );
@@ -271,6 +272,32 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
 
   const backPath = `/ta/course/${encodeURIComponent(courseId)}/review`;
 
+  if (outlet.classList.contains('ta-embedded')) {
+    const rich = (text: string, className = ''): HTMLElement => { const node = el('div', { class: className }); renderRichText(node, text); return node; };
+    const content = el('div', { class: 'review-workbench__body' },
+      el('div', { class: 'review-workbench__metadata', text: `${detail.current.type.toUpperCase()} · ${detail.current.difficulty} · ${detail.state}` }),
+      el('p', { class: 'review-workbench__objective', text: topicLoLabel(outline, detail.loIds, detail.themeIds) }),
+      rich(detail.current.stem, 'review-workbench__stem question-stem'),
+      el('div', { class: 'review-workbench__answers' }, ...detail.current.options.map(option =>
+        el('section', { class: `review-workbench__answer${option.role === 'correct' ? ' is-correct' : ''}` },
+          el('span', { class: 'review-workbench__key', text: option.key }),
+          el('div', {}, option.role === 'correct' ? el('span', { class: 'review-workbench__correct-label', text: 'Correct answer' }) : false,
+            rich(option.text), rich(option.explanation ?? '', 'review-workbench__explanation'))))),
+      permissions['question.suggest-edit'] ? el('details', { class: 'ta-detail-disclosure' }, el('summary', { text: 'Suggest an edit' }), suggestPanel(detail, () => void refresh())) : false,
+      el('details', { class: 'ta-detail-disclosure' }, el('summary', { text: `Your suggestions · ${detail.suggestions?.length ?? 0}` }), suggestionsList(detail.suggestions ?? [])),
+      notesPanel(detail));
+    const inspector = el('aside', { class: 'review-workbench__inspector' },
+      el('h2', { text: 'Review context' }),
+      el('section', {}, el('h3', { text: detail.agentDecision ? `AI check · ${detail.agentDecision.decision.toUpperCase()}` : 'AI check unavailable' }),
+        rich(detail.agentDecision?.reasoning ?? 'No AI review result was recorded for this question.'),
+        detail.agentDecision?.roleAssessment ? el('details', {}, el('summary', { text: 'Answer structure' }), rich(detail.agentDecision.roleAssessment)) : false),
+      el('section', {}, el('h3', { text: 'Source evidence' }),
+        ...(detail.current.sourceRefs?.length ? detail.current.sourceRefs.map((ref, index) => el('details', {}, el('summary', { text: `Reference ${index + 1}` }), rich(ref.chunk ?? 'No excerpt recorded.'))) : [el('p', { text: 'No source references recorded.' })])),
+      el('section', {}, el('h3', { text: 'Your role' }), el('p', { text: 'Suggest edits and add notes. Your instructor makes the final approval decision.' })));
+    mount(outlet, el('div', { class: 'ta-reader-layout' }, content, inspector));
+    return;
+  }
+
   body.replaceChildren(
     el('a', {
       class: 'breadcrumb-back',
@@ -286,11 +313,15 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
     ),
     el('div', { class: 'cluster' }, statusBadge(STATUS_LABEL[detail.state], statusToBadgeVariant(detail.state))),
     questionBody(detail),
-    permissions['question.suggest-edit'] ? suggestPanel(detail, () => void refresh()) : el('p', { class: 'muted', text: 'Suggested edits are unavailable. Add a review note or ask your Instructor about course permissions.' }),
+    detail.agentDecision ? el('details', { class: 'ta-detail-disclosure' },
+      el('summary', { text: `AI assessment · ${detail.agentDecision.decision.toUpperCase()}` }),
+      (() => { const report = el('div', { class: 'ta-assessment' }); renderRichText(report, detail.agentDecision.reasoning); return report; })(),
+      detail.agentDecision.roleAssessment ? (() => { const report = el('div', { class: 'ta-assessment' }); renderRichText(report, detail.agentDecision.roleAssessment); return report; })() : false) : '',
+    permissions['question.suggest-edit'] ? el('details', { class: 'ta-detail-disclosure' }, el('summary', { text: 'Suggest an edit' }), suggestPanel(detail, () => void refresh())) : el('p', { class: 'muted', text: 'Suggested edits are unavailable. Add a review note or ask your Instructor about course permissions.' }),
     suggestionsList(detail.suggestions ?? []),
     el('div', { 'data-tutorial': 'ta-question-actions' }, notesPanel(detail)),
   );
-  attachTutorial(root, 'ta-question-review', {"ta-question-content": ".question-stem"});
+  if (!outlet.classList.contains('ta-embedded')) attachTutorial(root, 'ta-question-review', {"ta-question-content": ".question-stem"});
 }
 
 export function renderTaQuestionDetail(outlet: HTMLElement, params: RouteParams): void {

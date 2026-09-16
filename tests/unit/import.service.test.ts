@@ -253,3 +253,20 @@ describe('commitImport', () => {
     expect(mockCreateQuestion).not.toHaveBeenCalled();
   });
 });
+
+it('round-trips bank CSV text, options, correct key, roles and explanations into Draft creation', async () => {
+  const { bankCsv } = await import('../../client/src/bank-csv');
+  const csv = bankCsv([{ current: { type: 'mcq', stem: 'Quoted "force",\nnext line', difficulty: 'hard', options: [
+    { key: 'A', text: 'First, choice', role: 'clearly-wrong', explanation: 'No.' },
+    { key: 'B', text: 'Correct "choice"', role: 'correct', explanation: 'Because\nthis holds.' },
+    { key: 'C', text: 'Third', role: 'partially-correct', explanation: 'Almost.' },
+    { key: 'D', text: 'Fourth', role: 'common-misconception', explanation: 'Common error.' },
+  ] } } as import('../../client/src/api').BankQuestion]);
+  const result = parseImport('csv', csv);
+  expect(result.failures).toEqual([]);
+  expect(result.candidates[0]).toMatchObject({ stem: 'Quoted "force",\nnext line', correctKey: 'B', difficulty: 'hard' });
+  expect(result.candidates[0].options[2].role).toBe('partially-correct');
+  mockCreateQuestion.mockResolvedValue({ questionId: new ObjectId() } as never);
+  await commitImport(new ObjectId(), result.candidates, { byPuid: 'teacher', format: 'csv' });
+  expect(mockCreateQuestion).toHaveBeenLastCalledWith(expect.objectContaining({ stem: 'Quoted "force",\nnext line', options: expect.arrayContaining([expect.objectContaining({ key: 'B', role: 'correct', explanation: 'Because\nthis holds.' })]) }));
+});

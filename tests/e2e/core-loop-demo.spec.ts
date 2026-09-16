@@ -266,10 +266,11 @@ test.describe('Phase 1 exit — core loop demo', () => {
         await expect(instructor.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
 
         for (const q of QUESTIONS) {
-          const row = instructor.locator('.queue-table__rows .queue-row', { hasText: q.stem.slice(0, 30) });
+          const row = instructor.locator('.review-workbench__row', { hasText: q.stem.slice(0, 30) });
           await expect(row).toBeVisible();
-          await expect(row.getByText('Pending Review')).toBeVisible();
-          await row.getByRole('button', { name: 'Approve', exact: true }).click();
+          await row.getByRole('button').click();
+      await expect(instructor.locator('.review-workbench__metadata')).toContainText('pending-review');
+          await instructor.locator('.review-workbench__reader').getByRole('button', { name: 'Approve', exact: true }).click();
           // Approved questions leave the awaiting-review queue immediately,
           // and the "N questions awaiting review" count drops with them —
           // same contract instructor-pipeline.spec.ts:201 asserts.

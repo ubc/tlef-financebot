@@ -5,6 +5,7 @@ import { ensureCapability } from '../components/auth';
 import { validate } from '../middleware/validate';
 import {
   answerDistributions,
+  examScores,
   csvSerialize,
   engagement,
   failureRates,
@@ -26,11 +27,11 @@ const rangeQuery = z.object({
   mode: z.enum(['topic-practice', 'exam-prep']).optional(),
 });
 const outcomeQuery = rangeQuery.extend({ mode: z.enum(['topic-practice', 'exam-prep']).default('topic-practice'), loId: objectId.optional() });
-const patternQuery = outcomeQuery.extend({ limit: z.coerce.number().int().min(1).max(50).default(20) });
-const distributionQuery = rangeQuery.extend({ versionId: objectId.optional(), loId: objectId.optional() });
-function filters(query: { from?: Date; to?: Date; mode?: 'topic-practice' | 'exam-prep'; loId?: string }): AnalyticsFilter {
+const patternQuery = outcomeQuery.extend({ limit: z.coerce.number().int().min(1).max(50).default(20), q: z.string().trim().max(200).optional(), themeId: objectId.optional() });
+const distributionQuery = rangeQuery.extend({ versionId: objectId.optional(), loId: objectId.optional(), themeId: objectId.optional() });
+function filters(query: { from?: Date; to?: Date; mode?: 'topic-practice' | 'exam-prep'; loId?: string; themeId?: string; q?: string }): AnalyticsFilter {
   if (query.from && query.to && query.from > query.to) throw new Error('invalid-analytics-range');
-  return { from: query.from, to: query.to, mode: query.mode, ...(query.loId ? { loId: new ObjectId(query.loId) } : {}) };
+  return { ...(query.q ? { q: query.q } : {}), ...(query.themeId ? { themeId: new ObjectId(query.themeId) } : {}), from: query.from, to: query.to, mode: query.mode, ...(query.loId ? { loId: new ObjectId(query.loId) } : {}) };
 }
 const lowQuery = z.object({ inactiveDays: z.coerce.number().int().min(1).max(365).default(7) });
 const searchQuery = z.object({ q: z.string().max(200).default('') });
@@ -125,6 +126,19 @@ analyticsRouter.get(
     new ObjectId(String(req.params.courseId)),
     String(req.params.puid),
   )),
+);
+
+
+const scoresQuery = rangeQuery.extend({ puid: z.string().trim().min(1).max(200).optional() });
+analyticsRouter.get(
+  '/courses/:courseId/analytics/exam-scores',
+  validate({ params: courseParams, query: scoresQuery }),
+  ensureCapability('analytics.individual'),
+  async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof scoresQuery>;
+    const checked = filters(query);
+    res.json(await examScores(new ObjectId(String(req.params.courseId)), { from: checked.from, to: checked.to, puid: query.puid }));
+  },
 );
 
 analyticsRouter.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {

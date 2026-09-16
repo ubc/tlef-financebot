@@ -35,21 +35,27 @@ async function fixture(page: Page, individual = true) {
 }
 test('scope, objective/version selection and CSV match; search submits with Enter', async ({ page }) => {
   await fixture(page);
-  await expect(page.getByText(/Across 2 learning objectives/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Topic Practice', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByText('Risk · 50% incorrect · 12 attempts', { exact: true }).click();
-  await expect(page.getByText('No attempts in this scope. Review question availability.')).toBeVisible();
+  await page.getByRole('button', { name: 'Risk', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: 'Duration' })).toContainText('Insufficient data');
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
+  await expect(page.getByText(/Across 2 learning objectives/)).toBeVisible();
   await page.getByRole('combobox', { name: 'Question patterns learning objective' }).selectOption(objective);
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await page.getByRole('button', { name: 'View version 1 answers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Version 1 · Historical content' })).toBeVisible();
   await expect(page.getByText('A. Recorded old answer · correct · 6 (100%)')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Review question (recorded version 1)' })).toHaveAttribute('href', new RegExp(`analyticsVersionId=${historical}`));
   const request = page.waitForRequest((req) => req.url().includes('failure-rates') && req.url().includes('mode=exam-prep'));
   await page.getByRole('button', { name: 'Exam Prep', exact: true }).click(); await request;
-  await expect(page.getByText('Risk · Insufficient data · 3 attempts', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Topics', exact: true }).click();
+  await expect(page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Risk', exact: true }) })).toContainText('Insufficient data');
   await page.getByRole('combobox', { name: 'Outcome date range' }).selectOption('7');
+  await page.getByRole('button', { name: 'Engagement', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Export weekly CSV' })).toHaveAttribute('href', /mode=exam-prep&from=.+&to=/);
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Question patterns learning objective' })).toHaveValue(objective);
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
   await page.getByRole('textbox', { name: 'Student search' }).fill('Nobody'); await page.keyboard.press('Enter');
   await expect(page.getByText('No matching students in this course.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Student search' })).toBeFocused();
@@ -64,15 +70,17 @@ test('late mode responses cannot overwrite newer selected scope', async ({ page 
   });
   await page.getByRole('button', { name: 'Exam Prep', exact: true }).click();
   await page.getByRole('button', { name: 'Topic Practice', exact: true }).click();
-  await expect(page.getByText('Risk · 50% incorrect · 12 attempts', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Risk', exact: true })).toBeVisible();
   release(); await page.waitForTimeout(150);
   await expect(page.getByText(/STALE EXAM/)).toHaveCount(0);
 });
 test('empty patterns, insufficient distribution, section retries and profile permission stay scoped', async ({ page }) => {
   await fixture(page, false);
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
   await expect(page.getByText('Individual profiles are unavailable with your course permissions.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Student search' })).toHaveCount(0);
   await page.route('**/analytics/questions/**/distribution**', (route) => route.fulfill({ json: { version: 1, stem: 'Tiny sample', isCurrent: false, attempts: 3, insufficient: true, options: [{ key: 'A', text: 'Do not infer', count: 3 }] } }));
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await page.getByRole('button', { name: 'View version 1 answers', exact: true }).click();
   await expect(page.getByText(/3 attempts · Insufficient data/)).toBeVisible();
   await expect(page.getByText(/Do not infer/)).toHaveCount(0);
@@ -80,8 +88,10 @@ test('empty patterns, insufficient distribution, section retries and profile per
   await page.route('**/analytics/engagement?**', (route) => route.fulfill({ status: 503, json: { error: 'Temporary engagement outage' } }));
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText(/No question attempts in this scope/)).toBeVisible();
+  await page.getByRole('button', { name: 'Engagement', exact: true }).click();
   await expect(page.getByText('Temporary engagement outage')).toBeVisible();
-  await expect(page.getByText('Risk · 50% incorrect · 12 attempts', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Topics', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Risk', exact: true })).toBeVisible();
 });
 for (const width of [390, 1280]) for (const theme of ['light', 'dark']) test(`analytics readable and accessible ${width}px ${theme}`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 }); await fixture(page);
@@ -99,6 +109,7 @@ test('late distribution and student search results cannot survive a newer select
     if (route.request().url().includes(historical)) await distributionGate;
     return route.fulfill({ json: { version: route.request().url().includes(historical) ? 1 : 2, stem: route.request().url().includes(historical) ? 'Stale distribution' : 'Current distribution', isCurrent: true, attempts: 6, insufficient: false, options: [] } });
   });
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await page.getByRole('button', { name: 'View version 1 answers', exact: true }).click();
   await page.getByRole('button', { name: 'View version 2 answers', exact: true }).click();
   await expect(page.getByText('Current distribution', { exact: true })).toBeVisible();
@@ -107,7 +118,9 @@ test('late distribution and student search results cannot survive a newer select
   let releaseSearch!: () => void;
   const searchGate = new Promise<void>((resolve) => { releaseSearch = resolve; });
   await page.route('**/students?q=First', async (route) => { await searchGate; return route.fulfill({ json: [{ puid: 'student', uid: 'first', displayName: 'Stale student' }] }); });
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
   await page.getByRole('textbox', { name: 'Student search' }).fill('First'); await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
   await page.getByRole('textbox', { name: 'Student search' }).fill('Second');
   releaseSearch(); await page.waitForTimeout(100);
   await expect(page.getByText(/Stale student/)).toHaveCount(0);
@@ -130,12 +143,12 @@ test('sort cannot restore previous-scope evidence while a refresh is pending or 
   await expect(sort).toBeDisabled();
   // A queued/programmatic change must also be unable to render invalidated data.
   await sort.dispatchEvent('change');
-  await expect(page.getByText('Risk · 50% incorrect · 12 attempts', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Risk', exact: true })).toHaveCount(0);
   release();
   await expect(page.getByText('New scope unavailable')).toBeVisible();
   await sort.dispatchEvent('change');
   await expect(page.getByText('New scope unavailable')).toBeVisible();
-  await expect(page.getByText('Risk · 50% incorrect · 12 attempts', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Risk', exact: true })).toHaveCount(0);
   await expect(sort).toBeDisabled();
 });
 

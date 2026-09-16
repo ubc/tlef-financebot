@@ -4,6 +4,7 @@ import {
   type ExamTemplate,
 } from '../../api.js';
 import { el } from '../../dom.js';
+import { setButtonBusy } from '../../action-state.js';
 import { copyrightFooter, pageHeader } from '../../student-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -19,6 +20,8 @@ function totalQuestions(template: ExamTemplate): number {
 function templateCard(courseId: string, template: ExamTemplate): HTMLElement {
   const start = el('button', { class: 'btn btn--primary', type: 'button' }, 'Start exam');
   start.addEventListener('click', () => {
+    if (start.getAttribute('aria-busy') === 'true') return;
+    setButtonBusy(start, true);
     start.setAttribute('disabled', 'disabled');
     start.textContent = 'Opening…';
     void startExamAttempt(courseId, template._id)
@@ -28,6 +31,7 @@ function templateCard(courseId: string, template: ExamTemplate): HTMLElement {
       .catch((error: Error) => {
         start.removeAttribute('disabled');
         start.textContent = 'Start exam';
+        setButtonBusy(start, false);
         window.alert(error.message);
       });
   });

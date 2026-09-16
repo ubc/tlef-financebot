@@ -4,6 +4,7 @@
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   losCol: jest.fn(),
   themesCol: jest.fn(),
+  generationSubmissionsCol: jest.fn(),
   questionsCol: jest.fn(),
   questionVersionsCol: jest.fn(),
 }));
@@ -13,7 +14,7 @@ jest.mock('../../server/src/services/generation.service', () => ({
 
 import { ObjectId } from 'mongodb';
 import {
-  losCol, questionsCol, questionVersionsCol, themesCol,
+  losCol, questionsCol, questionVersionsCol, themesCol, generationSubmissionsCol,
 } from '../../server/src/components/mongodb/collections';
 import { enqueueGenerationRun } from '../../server/src/services/generation.service';
 import {
@@ -143,5 +144,29 @@ describe('enqueueGenerationPlan', () => {
     expect(result.runs[0]).toEqual(expect.objectContaining({ secondaryLoIds: [secondA, secondB], runId }));
     // A plain cell carries no secondary field at all, so callers can tell the two apart.
     expect(result.runs[1]).not.toHaveProperty('secondaryLoIds');
+  });
+});
+
+
+describe('durable plan submission identity', () => {
+  it('reuses deterministic run identities after response loss and rejects a changed request', async () => {
+    const records = new Map<string, { fingerprint: string }>();
+    jest.mocked(generationSubmissionsCol).mockReturnValue({
+      insertOne: async (doc: { _id: string; fingerprint: string }) => {
+        if (records.has(doc._id)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+        records.set(doc._id, doc); return { insertedId: doc._id };
+      },
+      findOne: async (query: { _id: string }) => records.get(query._id),
+    } as never);
+    jest.mocked(enqueueGenerationRun).mockImplementation(async input => input.runId!);
+    const course = new ObjectId();
+    const cells = [{ loId: new ObjectId(), count: 2, kind: 'conceptual' as const, difficulty: 'easy' as const }];
+    const submission = { id: 'e3ac70b3-16ba-4bea-9f66-fb23af6f9562', prompt: 'Use scenarios' };
+    const first = await enqueueGenerationPlan(course, cells, 'teacher', submission);
+    const retry = await enqueueGenerationPlan(course, cells, 'teacher', submission);
+    expect(retry.runs[0].runId).toEqual(first.runs[0].runId);
+    await expect(enqueueGenerationPlan(course, [{ ...cells[0], count: 3 }], 'teacher', submission)).rejects.toThrow('generation-submission-conflict');
+    const other = await enqueueGenerationPlan(course, cells, 'other-teacher', submission);
+    expect(other.runs[0].runId).not.toEqual(first.runs[0].runId);
   });
 });

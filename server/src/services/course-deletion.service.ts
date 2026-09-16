@@ -12,6 +12,7 @@ import {
   examTemplatesCol,
   flagsCol,
   generationBlueprintsCol,
+  generationSubmissionsCol,
   losCol,
   masteryCol,
   materialChunksCol,
@@ -217,6 +218,7 @@ export async function permanentlyDeleteCourse(
     sessionSummariesCol().deleteMany({ courseId }),
     contentRunsCol().deleteMany({ courseId }),
     generationBlueprintsCol().deleteMany({ courseId }),
+    generationSubmissionsCol().deleteMany({ courseId }),
     capabilitySettingsCol().deleteMany({ scope: 'course', courseId }),
     taInvitesCol().deleteMany({ courseId }),
   ]);
@@ -234,7 +236,7 @@ export async function permanentlyDeleteCourse(
     'previewAttemptRecords', 'previewStudentSessions', 'materialChunks', 'materials',
     'masteryProfiles', 'reviewBookEntries', 'examTemplates', 'examAttempts', 'flags',
     'notifications', 'auditLogs', 'rosterEntries', 'sessionSummaries', 'contentRuns',
-    'generationBlueprints', 'capabilitySettings', 'taInvites',
+    'generationBlueprints', 'generationSubmissions', 'capabilitySettings', 'taInvites',
   ];
   return {
     deleted: true,

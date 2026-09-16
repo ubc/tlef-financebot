@@ -66,7 +66,9 @@ test.describe('question import', () => {
     await page.getByLabel('Question file').setInputFiles(fixture);
     await page.getByRole('button', { name: 'Preview import' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Preview · 4 valid' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'import-sample.csv' })).toBeVisible();
+    await expect(page.getByLabel('Question file')).toBeHidden();
+    await page.getByText('1 row needs attention', { exact: true }).click();
     await expect(page.getByText('1 row could not be imported')).toBeVisible();
     await expect(page.getByText('Row/item 6: expected-4-options')).toBeVisible();
     await expect(page.getByText('Convertible', { exact: true })).toBeVisible();
@@ -84,8 +86,48 @@ test.describe('question import', () => {
       }),
     ).toBe(1);
 
-    await page.getByRole('button', { name: 'Open Question Bank' }).click();
-    await expect(page.getByRole('heading', { name: 'Question Bank' })).toBeVisible();
-    await expect(page.getByText('4 questions')).toBeVisible();
+    await page.getByRole('button', { name: 'Open Review Queue' }).click();
+    await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+
+  });
+});
+
+
+test.describe('remaining file formats against the real import API', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+  test('JSON, XML and QTI preview and commit persisted Drafts', async ({ page }) => {
+    await login(page, 'faculty');
+    const response = await page.request.post('/api/courses', { data: { name: `Format import ${Date.now()}`, courseCode: 'FORMAT-TEST', term: '2026W' } });
+    expect(response.status()).toBe(201);
+    const id = (await response.json())._id;
+    try {
+      for (const [filename, fixtureName] of [['questions.json','import-sample.json'], ['questions.xml','import-sample-qti.xml'], ['questions.qti','import-sample-qti.xml']]) {
+        const fs = await import('node:fs');
+        const preview = await page.request.post(`/api/courses/${id}/import/preview`, { multipart: { file: { name: filename, mimeType: 'application/octet-stream', buffer: fs.readFileSync(path.resolve(__dirname, '../fixtures', fixtureName)) } } });
+        expect(preview.status()).toBe(200);
+        const data = await preview.json();
+        const candidates = data.candidates.filter((c: {type:string}) => c.type !== 'other');
+        expect(candidates.length).toBeGreaterThan(0);
+        const commit = await page.request.post(`/api/courses/${id}/import/commit`, { data: { candidates, format: data.format, sourceName: filename } });
+        expect(commit.ok()).toBe(true);
+        expect((await commit.json()).imported).toBe(candidates.length);
+      }
+      await connectMongo();
+      expect(await questionsCol().countDocuments({courseId:new ObjectId(id),state:'draft'})).toBeGreaterThan(0);
+      const head = await questionsCol().findOne({courseId:new ObjectId(id),state:'draft'});
+      const version = await questionVersionsCol().findOne({_id:head!.currentVersionId});
+      const csv = await page.evaluate(async current => { const {bankCsv} = await import('/js/bank-csv.js'); return bankCsv([{current}]); }, JSON.parse(JSON.stringify(version)));
+      const exportedPreview = await page.request.post(`/api/courses/${id}/import/preview`, { multipart: { file: {name:'question-bank.csv',mimeType:'text/csv',buffer:Buffer.from(csv)} } });
+      expect(exportedPreview.ok()).toBe(true);
+      const exported = await exportedPreview.json(); expect(exported.failures).toEqual([]);
+      expect(exported.candidates[0].stem).toBe(version!.stem);
+      const roundTrip = await page.request.post(`/api/courses/${id}/import/commit`, {data:{candidates:exported.candidates,format:'csv'}});
+      expect(roundTrip.ok()).toBe(true); expect((await roundTrip.json()).imported).toBe(1);
+
+    } finally {
+      await connectMongo(); const c = new ObjectId(id); const qs = await questionsCol().distinct('_id',{courseId:c});
+      await questionVersionsCol().deleteMany({questionId:{$in:qs}}); await questionsCol().deleteMany({courseId:c}); await coursesCol().deleteOne({_id:c});
+      await usersCol().updateMany({},{$pull:{courseRoles:{courseId:c}}});
+    }
   });
 });

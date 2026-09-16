@@ -235,7 +235,7 @@ function templateEditor(
     warningsSlot,
     errorSlot,
     statusSlot,
-    el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void save() }, `Save ${kind}`),
+    el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => save() }, `Save ${kind}`),
   );
 }
 

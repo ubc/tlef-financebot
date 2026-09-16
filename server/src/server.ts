@@ -1,3 +1,4 @@
+import { registerStructureJobs } from './services/structure-generation.service';
 import { createApp } from './app';
 import { env, assertConfig } from './config/env';
 import { connectMongo, closeMongo } from './components/mongodb';
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
   // service and app.ts mounts that router, so a module-level defineJob() would
   // run before startJobs() and crash boot (the Task 6 lesson).
   registerGenerationJobs();
+  registerStructureJobs();
 
   // Same rule for the notifications.daily-summary job (§4.3, §9.1): the
   // registration function itself calls scheduleRecurring('24 hours') after

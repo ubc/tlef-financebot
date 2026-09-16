@@ -188,11 +188,11 @@ test.describe('instructor pipeline', () => {
       const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
       await expect(guide.getByRole('heading', { name: 'How do you want to define the course?' })).toBeVisible();
       await guide.getByRole('button', { name: /I already have Learning Objectives/ }).click();
-      await expect(guide.getByRole('heading', { name: 'Add your existing Learning Objectives' })).toBeVisible();
+      await expect(guide.getByRole('heading', { name: 'Add learning objectives' })).toBeVisible();
       await guide.getByLabel('Topic name', { exact: true }).fill(TOPIC_NAME);
       await guide.locator('.course-setup-guide__lo-input').fill(`1. ${LO_NAME}\n- ${LO_NAME.toLowerCase()}`);
       await guide.getByRole('button', { name: 'Save Learning Objectives' }).click();
-      await expect(guide.getByRole('heading', { name: 'Add the sources the course should trust' })).toBeVisible();
+      await expect(guide.getByRole('heading', { name: 'Your learning objectives' })).toBeVisible();
       await guide.getByRole('button', { name: 'Close course setup guide' }).click();
 
       const tree = await fetchTree(page, courseId);
@@ -262,11 +262,12 @@ test.describe('instructor pipeline', () => {
       await page.getByRole('link', { name: 'Review Queue' }).click();
       await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
 
-      const row = page.locator('.queue-table__rows .queue-row', { hasText: STEM.slice(0, 30) });
+      const row = page.locator('.review-workbench__row', { hasText: STEM.slice(0, 30) });
       await expect(row).toBeVisible();
-      await expect(row.getByText('Pending Review')).toBeVisible();
+      await row.getByRole('button').click();
+      await expect(page.locator('.review-workbench__metadata')).toContainText('pending-review');
 
-      await row.getByRole('button', { name: 'Approve', exact: true }).click();
+      await page.locator('.review-workbench__reader').getByRole('button', { name: 'Approve', exact: true }).click();
       // Approved questions leave the awaiting-review queue immediately.
       await expect(row).toHaveCount(0);
     });

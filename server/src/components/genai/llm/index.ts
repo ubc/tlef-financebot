@@ -28,6 +28,10 @@ export const llm = new LLMModule(buildConfig());
 
 export interface CompleteJsonOptions extends ModelRequestOptions {
   systemPrompt?: string;
+  /** Recheck durable cancellation before every provider attempt, including JSON retry. */
+  beforeRequest?: () => Promise<void>;
+  /** Cumulative visible response text; resets to empty before each JSON attempt. */
+  onText?: (text: string) => void;
   /** Called with the provider's token usage after each underlying request
    * (including the JSON-retry request, so a caller may see two calls). The
    * pipeline never sets this; it exists for the prompt A/B harness
@@ -93,14 +97,23 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
     ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
   };
 
-  const first = await llm.sendMessage(prompt, sendOptions);
+  const send = async (text: string) => {
+    await options.beforeRequest?.();
+    if (!options.onText) return llm.sendMessage(text, sendOptions);
+    let content = '';
+    options.onText('');
+    return llm.streamConversation([{ role: 'user', content: text }], chunk => {
+      content += chunk;
+      options.onText?.(content);
+    }, sendOptions);
+  };
+  const first = await send(prompt);
   if (first.usage) options.onUsage?.(first.usage);
   try {
     return extractJson<T>(first.content);
   } catch {
-    const retry = await llm.sendMessage(
+    const retry = await send(
       `${prompt}\n\nYour previous reply was not valid JSON. Respond with ONLY the JSON value — no prose, no explanation, no code fences.`,
-      sendOptions,
     );
     if (retry.usage) options.onUsage?.(retry.usage);
     return extractJson<T>(retry.content);

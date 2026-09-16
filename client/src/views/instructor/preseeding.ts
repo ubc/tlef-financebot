@@ -1,3 +1,4 @@
+import { renderGenerationWorkbench } from './generation-workbench.js';
 import { attachTutorial } from '../../tutorials.js';
 // Pre-seeding Coverage (N9) + Generate Question with Custom Prompt (I12) —
 // per-LO approved-question coverage against the server's target, and the
@@ -383,6 +384,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   let formError: string | null = null;
   let formQueuedMessage: string | null = null;
   let formBusy = false;
+  let formBusyAction: 'generate' | 'save' | 'run' | null = null;
   let activeFormRunId: string | null = null;
   let selectedBlueprintId = '';
   // The current Target LO <select>; `renderForm` rebuilds it, so `openFormFor`
@@ -509,6 +511,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       return;
     }
     formBusy = true;
+    formBusyAction = 'generate';
     formError = null;
     formQueuedMessage = null;
     renderForm();
@@ -527,6 +530,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
+    formBusyAction = null;
     renderForm();
   }
 
@@ -538,6 +542,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       return;
     }
     formBusy = true;
+    formBusyAction = 'save';
     formError = null;
     renderForm();
     try {
@@ -565,12 +570,14 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
+    formBusyAction = null;
     renderForm();
   }
 
   async function runSelectedBlueprint(): Promise<void> {
     if (!selectedBlueprintId) return;
     formBusy = true;
+    formBusyAction = 'run';
     formError = null;
     renderForm();
     try {
@@ -581,6 +588,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       formError = generationErrorMessage(error instanceof ApiError ? error.message : (error as Error).message);
     }
     formBusy = false;
+    formBusyAction = null;
     renderForm();
   }
 
@@ -713,7 +721,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
               class: 'btn btn--ghost btn--sm',
               type: 'button',
               disabled: retryingRuns.has(run._id) ? 'disabled' : undefined,
-              onclick: () => void retryRun(run),
+              busy: retryingRuns.has(run._id),
+              onclick: () => retryRun(run),
             },
             retryingRuns.has(run._id) ? 'Retrying…' : 'Run exact retry',
           )
@@ -725,7 +734,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
               class: 'btn btn--ghost btn--sm',
               type: 'button',
               disabled: endingAll || endingRuns.has(run._id) ? 'disabled' : undefined,
-              onclick: () => void endRuns(run),
+              busy: endingAll || endingRuns.has(run._id),
+              onclick: () => endRuns(run),
             },
             endingAll || endingRuns.has(run._id) ? 'Ending…' : 'End run',
           )
@@ -920,8 +930,9 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             // A Saved Setup holds one LO; it cannot carry the secondary
             // objectives, so saving would silently drop them.
             disabled: formBusy || formSecondaryLoIds.length > 0 ? 'disabled' : undefined,
+            busy: formBusyAction === 'save',
             title: formSecondaryLoIds.length > 0 ? 'Saved Setups hold a single Target LO. Remove the added objectives to save.' : undefined,
-            onclick: () => void saveBlueprint(),
+            onclick: () => saveBlueprint(),
           },
           'Save setup',
         ),
@@ -932,7 +943,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
                 class: 'btn btn--ghost btn--field',
                 type: 'button',
                 disabled: formBusy ? 'disabled' : undefined,
-                onclick: () => void runSelectedBlueprint(),
+                busy: formBusyAction === 'run',
+                onclick: () => runSelectedBlueprint(),
               },
               'Run setup',
             )
@@ -1048,9 +1060,10 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
           class: 'btn btn--instr-primary',
           type: 'button',
           disabled: formBusy || !canGenerate ? 'disabled' : undefined,
-          onclick: () => void submitGenerate(),
+          busy: formBusyAction === 'generate',
+          onclick: () => submitGenerate(),
         },
-        formBusy ? 'Generating…' : 'Generate',
+        formBusyAction === 'generate' ? 'Generating…' : 'Generate',
       ),
       // The I12 wireframe also shows a synchronous "Generated output"
       // preview panel here, ending in "Review & Approve ->". Omitted: the
@@ -1179,7 +1192,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
                     class: 'btn btn--ghost btn--sm',
                     type: 'button',
                     disabled: endingAll ? 'disabled' : undefined,
-                    onclick: () => void endRuns('all'),
+                    busy: endingAll,
+                    onclick: () => endRuns('all'),
                   },
                   endingAll ? 'Ending…' : 'End all active runs',
                 )
@@ -1275,5 +1289,6 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
 }
 
 export function renderPreseeding(outlet: HTMLElement, params: RouteParams): void {
-  void renderPreseedingInner(outlet, params.id);
+  if (currentQuery().get('advanced') === '1' || currentQuery().get('type') === 'true-false') void renderPreseedingInner(outlet, params.id);
+  else void renderGenerationWorkbench(outlet, params.id);
 }

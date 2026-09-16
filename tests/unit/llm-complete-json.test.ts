@@ -4,8 +4,9 @@
 // code fences and surrounding prose, retry exactly once on a first unparseable
 // reply, and throw when even the retry is not JSON. temperature defaults to 0.
 const sendMessage = jest.fn();
+const streamConversation = jest.fn();
 jest.mock('ubc-genai-toolkit-llm', () => ({
-  LLMModule: jest.fn().mockImplementation(() => ({ sendMessage, getAvailableModels: jest.fn() })),
+  LLMModule: jest.fn().mockImplementation(() => ({ sendMessage, streamConversation, getAvailableModels: jest.fn() })),
 }));
 
 import { completeJson } from '../../server/src/components/genai/llm';
@@ -13,6 +14,7 @@ import { modelRequestOptions } from '../../server/src/components/genai/llm/model
 
 beforeEach(() => {
   sendMessage.mockReset();
+  streamConversation.mockReset();
 });
 
 it('parses a plain JSON object reply', async () => {
@@ -182,4 +184,31 @@ it('shapes the JSON-retry request identically to the first attempt', async () =>
     responseFormat: 'json',
   });
   expect(sendMessage.mock.calls[1][1].maxTokens).toBeUndefined();
+});
+
+
+it('emits cumulative visible text before completion and resets before the JSON retry', async () => {
+  const seen: string[] = [];
+  streamConversation.mockImplementationOnce(async (_messages, chunk) => {
+    chunk('not JSON');
+    expect(seen).toEqual(['', 'not JSON']);
+    return { content: 'not JSON' };
+  }).mockImplementationOnce(async (_messages, chunk) => {
+    chunk('{"stem":"A ');
+    expect(seen[seen.length - 1]).toBe('{"stem":"A ');
+    chunk('question"}');
+    return { content: '{"stem":"A question"}' };
+  });
+  await expect(completeJson('prompt', { onText: text => seen.push(text), model: 'gpt-5.6-luna', maxTokens: 100 })).resolves.toEqual({ stem: 'A question' });
+  expect(seen).toEqual(['', 'not JSON', '', '{"stem":"A ', '{"stem":"A question"}']);
+  expect(sendMessage).not.toHaveBeenCalled();
+  expect(streamConversation.mock.calls[0][2]).toMatchObject({ model: 'gpt-5.6-luna' });
+});
+
+it('checks cancellation again before an automatic JSON retry', async () => {
+  sendMessage.mockResolvedValue({ content: 'not json' });
+  const beforeRequest = jest.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('content-run-conflict'));
+  await expect(completeJson('prompt', { beforeRequest })).rejects.toThrow('content-run-conflict');
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(beforeRequest).toHaveBeenCalledTimes(2);
 });

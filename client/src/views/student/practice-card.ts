@@ -264,8 +264,9 @@ export function makeQuestionCard(
             class: 'btn btn--ghost btn--sm',
             type: 'button',
             disabled: bookmarkState === 'saving' || bookmarkState === 'saved',
+            busy: bookmarkState === 'saving',
             'aria-live': 'polite',
-            onclick: () => void saveBookmark(),
+            onclick: () => saveBookmark(),
           },
           bookmarkState === 'saving'
             ? 'Saving bookmark…'
@@ -304,6 +305,7 @@ export function makeQuestionCard(
           class: 'btn btn--ghost btn--sm',
           type: 'button',
           disabled: flagState === 'submitting',
+          busy: flagState === 'submitting',
           'aria-expanded': flagState === 'editing',
           'aria-controls': flagState === 'editing' ? flagFormId : undefined,
           onclick: () => {
@@ -391,7 +393,7 @@ export function makeQuestionCard(
         flagControl(),
         flagFormOpen
           ? false
-          : el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, onclick: () => void submit() }, 'Submit'),
+          : el('button', { class: 'btn btn--primary', type: 'button', disabled: !selectedKey || submitting, busy: submitting, onclick: () => submit() }, 'Submit'),
       );
     } else if (retry) {
       // Strategy-A retry-in-place: the original explanations for the

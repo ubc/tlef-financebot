@@ -7,6 +7,7 @@ import { hasPendingJob } from '../../server/src/components/jobs';
 import {
   assertContentRunActive,
   createMaterialIngestRun,
+  createStructureGenerationRun,
   createQuestionGenerationRun,
   endActiveGenerationRuns,
   endGenerationRun,
@@ -331,4 +332,31 @@ describe('content run listing and startup reconciliation', () => {
     expect((await getContentRun(running._id))?.error?.code).toBe('server-restarted');
     expect((await getContentRun(queued._id))?.error?.code).toBe('content-run-job-missing');
   });
+});
+
+it('persists streamed previews before publishing without evicting stage history or advancing completed units', async () => {
+  const run = await createQuestionGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq', models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } });
+  const started = await updateContentRun(run._id, { status: 'running', stage: 'generating' });
+  const seen: unknown[] = [];
+  const close = subscribeToCourseContentRuns(run.courseId, value => seen.push(value));
+  const updated = await updateContentRun(run._id, { preview: { item: 0, attempt: 1, stem: 'Two forces' } });
+  expect(updated.events).toEqual(started.events);
+  expect(updated.revision).toBe(started.revision+1);
+  expect(updated.completedUnits).toBe(0);
+  expect(persistedBeforePublish).toBe(true);
+  expect(seen).toEqual([expect.objectContaining({ preview: { item: 0, attempt: 1, stem: 'Two forces' } })]);
+  await updateContentRun(run._id, { status: 'failed', error: { code: 'generation-ended', message: 'Ended', atStage: 'generating', retryable: true } });
+  await expect(updateContentRun(run._id, { preview: { item: 0, attempt: 1, stem: 'Late text' } })).rejects.toThrow('content-run-conflict');
+  close();
+});
+
+ it('persists structure drafts on the course stream, enforces stage order and stops them independently', async () => {
+  const run = await createStructureGenerationRun({ courseId: new ObjectId(), requestedBy: 'instructor', options: { materialIds: [new ObjectId().toHexString()] } });
+  await updateContentRun(run._id, { status: 'running', stage: 'analyzing', totalUnits: 3 });
+  await updateContentRun(run._id, { stage: 'synthesizing', completedUnits: 3 });
+  const snapshot = await updateContentRun(run._id, { structurePreview: { themes: [{ name: 'Forces', los: [{ name: 'Calculate' }] }] } });
+  expect(snapshot.kind === 'structure-generation' && snapshot.structurePreview?.themes[0].name).toBe('Forces');
+  await expect(updateContentRun(run._id, { stage: 'analyzing' })).rejects.toThrow('content-run-conflict');
+  await endGenerationRun(run.courseId, run._id);
+  await expect(updateContentRun(run._id, { structurePreview: { themes: [] } })).rejects.toThrow('content-run-conflict');
 });

@@ -50,6 +50,7 @@ Two top-level states, chosen at startup from `GET /api/auth/me`:
 | `theme.ts` | Light/dark theme (persisted; `data-theme` on `<html>`). |
 | `ui.ts` | Shared UI kit: loading/empty/error states, badges, status dots. |
 | `dom.ts` | `el()` / `mount()` / `byId()` — minimal DOM helpers. |
+| `action-state.ts` | Shared explicit request-backed button progress and duplicate-submit protection. |
 | `views/landing.ts` | Pre-login screen (Figma `0 - Login`, node `148:5448`). |
 | `views/home.ts` | Overview (dashboard): welcome, system status, component map. |
 | `views/health.ts` | Reusable "System status" card (used by the signed-in overview/home only). |
@@ -115,6 +116,9 @@ token-driven.
   response types in sync with the server routes/services.
 - Keep views small and self-contained: a `render(outlet)` that builds its own DOM
   and owns its loading/empty/error states.
+- Return request promises from declarative button handlers so `el()` can show
+  the shared spinner for the real request lifetime. Use `runButtonAction()` for
+  retained buttons and native listeners. Disabled prerequisites are not busy.
 - The compiled output `client/public/js/` is generated and git-ignored. Never
   edit it by hand and never commit it.
 
@@ -124,3 +128,39 @@ rendering, with the view root supplied for stale-view cancellation. TA suggestio
 and mark-reviewed controls use `getMyCourseCapabilities` rather than assuming
 that every TA has the default capabilities. Instructor TA View still uses the
 real Instructor permission projection while keeping TA-only action surfaces.
+
+Admin accounts use a black sidebar with an explicit Admin brand and
+platform navigation. `setAdminAppearance()` applies root tokens for dialogs too,
+with user-selectable light/dark content and a persisted theme toggle. The sidebar
+stays black in both modes. Landing, Student Preview and TA View use their own role styling. The Admin sidebar has its own collapse key.
+
+Question Bank now uses `bank-workbench.ts` for the approved collection and per-topic
+release controls. `bank-editor.ts` saves a version-pinned edit and Pending Review
+state atomically; existing full details retain history, notes and script controls.
+The general browse API stays unchanged for other consumers; the Bank requests
+Approved explicitly and uses the server content gate plus course/topic availability.
+
+Teaching Assistants now uses a compact searchable roster with native invitation
+and permission dialogs. Course Settings retains input nodes across five sections
+and submits only the selected section's fields; enrollment and lifecycle keep
+their existing API flows. Help uses searchable role-scoped tutorial cards and real
+replay destinations. Prototype role switches are not production authorization
+controls. `playwright.course-admin.config.ts` checks these pages with isolated API
+fixtures, including light/dark accessibility and narrow layouts.
+
+Course Dashboard setup actions now start `setup-journey.ts`: a persistent bottom
+navigation island spanning the existing Materials, Structure, Generate, Review,
+Bank, and isolated Student Preview pages. Session storage retains only account-
+scoped navigation preferences; completion is read from workflow, topic release,
+and approved-question content checks. It refreshes every five seconds while the
+matching instructor course is visible, hides in other roles/courses/Preview, and
+restores when returning. Guide navigation never generates, approves, releases,
+or publishes content on its own.
+
+Course Structure's `structure-ai-workbench.ts` uses the approved material-composer /
+live-draft-card layout. Empty courses open AI draft; Course outline retains the
+compact saved topic navigator and manual editor. Optional settings override AI
+counts. Durable `structure-generation` snapshots retain edits, display explicit
+failure/recovery states and support selected-subset apply. Source coverage separates
+analyzed sections, mapped learning points, exclusions and gaps; exact passages can
+open the existing highlighted source preview.

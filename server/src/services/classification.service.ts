@@ -1,3 +1,4 @@
+import { generateStructure } from './structure-generation.service';
 import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
@@ -32,11 +33,6 @@ import { upsertCourseOutline } from './courses.service';
 export const AUTO_APPLY_CONFIDENCE = 0.85;
 export const REVIEW_CONFIDENCE = 0.65;
 
-// How much of each material's text the prompts use. The excerpt is persisted on
-// the Material at ingest time (materials.service.ts) — see the deviation note
-// there — so neither function re-parses files or re-fetches URL materials.
-const MAX_HIERARCHY_MATERIALS = 40;
-
 interface ClassificationResult {
   themeName?: string;
   loName?: string;
@@ -51,15 +47,6 @@ interface ClassificationResult {
     evidence?: unknown;
     relationships?: unknown;
   }>;
-}
-
-interface HierarchyResult {
-  themes?: Array<{ name?: unknown; los?: unknown }>;
-}
-
-interface HierarchyResultLo {
-  name?: unknown;
-  materialNumbers?: unknown;
 }
 
 /** Case-insensitive, whitespace-insensitive name match — the LLM echoes the
@@ -195,59 +182,19 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
   );
 }
 
-/**
- * IN-S06 AI-suggested hierarchy. From the course's ready materials' excerpts,
- * ask the LLM to propose a Theme -> LO outline. Pure read — never writes the DB;
- * the instructor applies it via the existing addTheme/addLo endpoints. Returns
- * an empty hierarchy (no LLM call) when the course has no ready materials.
- */
+/** Legacy consumers retain their response shape, using the same full-source
+ * analysis as the streaming Course Structure workspace. No outline is saved. */
 export async function suggestHierarchy(courseId: ObjectId): Promise<SuggestedHierarchy> {
-  const materials = await materialsCol()
-    .find({ courseId, status: 'ready', deletedAt: { $exists: false } })
-    .toArray();
-  const sourceMaterials = materials
-    .filter((material) => Boolean(material.excerpt?.trim()))
-    .slice(0, MAX_HIERARCHY_MATERIALS);
-  if (sourceMaterials.length === 0) return { themes: [], assignments: [] };
-
-  const existing = await themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray();
-  const raw = await completeJson<HierarchyResult>(buildHierarchyPrompt(sourceMaterials, existing), {
-    // temperature 0 is what this step has always used; an admin who sets one on
-    // the utility step is overriding it deliberately, so the spread comes last.
-    temperature: 0,
-    ...(await utilityStepConfig()),
-  });
-
-  // Shape the untrusted LLM JSON into the public contract. Material numbers
-  // are one-based positions from the prompt; translate them to real ids here
-  // so the client can never invent a link from model output.
-  const themes: SuggestedHierarchy['themes'] = [];
-  const assignments: SuggestedHierarchy['assignments'] = [];
-  for (const rawTheme of Array.isArray(raw.themes) ? raw.themes : []) {
-    if (typeof rawTheme?.name !== 'string' || rawTheme.name.trim() === '') continue;
-    const themeIndex = themes.length;
-    const los: string[] = [];
-    for (const rawLo of Array.isArray(rawTheme.los) ? rawTheme.los : []) {
-      // Accept the old string-only shape as a safe no-assignment fallback if a
-      // provider ignores the new response instructions.
-      const lo: HierarchyResultLo =
-        typeof rawLo === 'string' ? { name: rawLo, materialNumbers: [] } : (rawLo as HierarchyResultLo);
-      if (typeof lo?.name !== 'string' || lo.name.trim() === '') continue;
-      const loIndex = los.length;
-      los.push(lo.name.trim());
-      const materialIds = [
-        ...new Set(
-          (Array.isArray(lo.materialNumbers) ? lo.materialNumbers : [])
-            .filter((number): number is number => Number.isInteger(number))
-            .map((number) => sourceMaterials[number - 1]?._id.toHexString())
-            .filter((id): id is string => Boolean(id)),
-        ),
-      ];
-      if (materialIds.length > 0) assignments.push({ themeIndex, loIndex, materialIds });
-    }
-    themes.push({ name: rawTheme.name.trim(), los });
+  try {
+    const result = await generateStructure(courseId, {});
+    return {
+      themes: result.themes.map(t => ({ name: t.name, los: t.los.map(lo => lo.name) })),
+      assignments: result.themes.flatMap((t, themeIndex) => t.los.map((lo, loIndex) => ({ themeIndex, loIndex, materialIds: lo.materialIds }))),
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'structure-no-materials') return { themes: [], assignments: [] };
+    throw error;
   }
-  return { themes, assignments };
 }
 
 export interface ApplySuggestedHierarchyInput {
@@ -462,35 +409,5 @@ function buildClassificationPrompt(
     `Material title: ${material.name}`,
     'Material excerpt:',
     material.excerpt ?? '',
-  ].join('\n');
-}
-
-function buildHierarchyPrompt(materials: Array<WithId<Material>>, existing: WithId<Theme>[]): string {
-  const existingLine =
-    existing.length > 0
-      ? `The course already has these Themes (avoid duplicating them): ${existing.map((t) => t.name).join(', ')}.`
-      : 'The course has no Themes yet.';
-  const corpus = materials
-    .map((material, index) => `--- Material ${index + 1}: ${material.name} ---\n${material.excerpt?.trim() ?? ''}`)
-    .join('\n\n');
-
-  return [
-    'You are helping an instructor draft a course outline from their uploaded',
-    'materials. Propose a hierarchy of Themes, each with a short list of Learning',
-    'Objectives (LOs), covering the material below. For every LO, identify every',
-    'source material that substantively supports it. A material may support',
-    'multiple LOs, and an LO may use multiple materials.',
-    existingLine,
-    '',
-    'Respond with ONLY a JSON object of this shape:',
-    '{ "themes": [ { "name": string, "los": [',
-    '  { "name": string, "materialNumbers": number[] }',
-    '] } ] }',
-    'materialNumbers are the one-based Material numbers shown below. Use only',
-    'numbers that appear below; do not invent sources.',
-    'Keep names concise (a few words). Prefer 3-8 Themes with 2-5 LOs each.',
-    '',
-    'Materials:',
-    corpus,
   ].join('\n');
 }

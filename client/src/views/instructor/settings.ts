@@ -26,8 +26,9 @@ import {
   type RosterRejectReason,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { runButtonAction } from '../../action-state.js';
 import { helpTip, pageHeader, sectionTitleWithHelp, uploadZone } from '../../instructor-ui.js';
-import { textPromptDialog } from '../../modal.js';
+import { confirmDialog, textPromptDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 
@@ -167,7 +168,8 @@ function toDateInputValue(iso: string | undefined): string {
 
 async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course settings…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view admin-workbench settings-workbench' }, body);
+  let activeSection = 'General';
   mount(outlet, root);
 
   let course: InstructorCourse;
@@ -291,12 +293,12 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     const minAttempts = Number(minAttemptsInput.value);
     const flagPercent = Number(flagPercentInput.value);
     const flagCount = Number(flagCountInput.value);
-    if (![minAttempts, flagPercent, flagCount].every((n) => Number.isFinite(n) && n >= 0)) {
-      settingsErrorSlot.replaceChildren(errorState('Auto-pause fields must be non-negative numbers.'));
+    if (activeSection === 'Question safeguards' && (!Number.isInteger(minAttempts) || minAttempts < 1 || !Number.isInteger(flagCount) || flagCount < 0 || !Number.isFinite(flagPercent) || flagPercent < 0 || flagPercent > 100)) {
+      settingsErrorSlot.replaceChildren(errorState('Use at least 1 attempt, a flag percentage from 0 to 100, and a non-negative whole flag count.'));
       return;
     }
     if (
-      termStartInput.value
+      activeSection === 'General' && termStartInput.value
       && termEndInput.value
       && termEndInput.value < termStartInput.value
     ) {
@@ -304,22 +306,19 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
       return;
     }
     try {
-      const updated = await updateCourse(courseId, {
-        name: nameInput.value.trim(),
-        courseCode: codeInput.value.trim(),
-        section: sectionInput.value.trim() || null,
-        term: termInput.value.trim(),
+      const section = activeSection;
+      const patch = section === 'General' ? {
+        name: nameInput.value.trim(), courseCode: codeInput.value.trim(),
+        section: sectionInput.value.trim() || null, term: termInput.value.trim(),
         termStart: termStartInput.value ? new Date(termStartInput.value).toISOString() : undefined,
         termEnd: termEndInput.value ? new Date(termEndInput.value).toISOString() : undefined,
-        feedbackStrategy: selectedStrategy,
-        autoPause: { minAttempts, flagPercent, flagCount },
-      });
+      } : section === 'Learning experience' ? { feedbackStrategy: selectedStrategy }
+        : { autoPause: { minAttempts, flagPercent, flagCount } };
+      const updated = await updateCourse(courseId, patch);
       course = updated;
-      autoPause = { ...updated.autoPause };
-      selectedStrategy = updated.feedbackStrategy;
-      renderStrategyGroup();
+      if (section === 'Question safeguards') autoPause = { ...updated.autoPause };
       settingsStatusSlot.replaceChildren(
-        el('p', { class: 'preseeding-queued-message', role: 'status', text: 'Course settings saved.' }),
+        el('p', { class: 'preseeding-queued-message', role: 'status', text: `${section} saved.` }),
       );
     } catch (error) {
       settingsErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
@@ -328,6 +327,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   const changeArchiveState = async (): Promise<void> => {
     settingsErrorSlot.replaceChildren();
+    if (!await confirmDialog({ title: course.lifecycle === 'archived' ? 'Restore this course?' : 'Archive this course?', message: course.lifecycle === 'archived' ? 'Restore the course as a draft.' : 'Student access will close. Course content and records remain available to instructors.', confirmLabel: course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course' })) return;
     try {
       course = course.lifecycle === 'archived'
         ? await restoreCourse(courseId)
@@ -342,6 +342,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   const regenerateCode = async (): Promise<void> => {
     codeErrorSlot.replaceChildren();
+    if (!await confirmDialog({ title: 'Generate a new registration code?', message: 'The previous code will stop working for new enrollments. Existing students remain enrolled.', confirmLabel: 'Regenerate' })) return;
     try {
       const result = await regenerateRegistrationCode(courseId);
       registrationCode = result.registrationCode;
@@ -496,106 +497,44 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     }
   };
 
-  body.replaceChildren(
-    pageHeader('Course Settings', ''),
-    el(
-      'div',
-      { class: 'settings-layout' },
-      el(
-        'div',
-        { class: 'settings-column stack' },
-        el('h2', { class: 'section-title', text: 'General' }),
-        el(
-          'div',
-          { class: 'form-field' },
-          fieldLabel('Course Name', 'settings-course-name'),
-          nameInput,
-        ),
-        el(
-          'div',
-          { class: 'form-field' },
-          fieldLabel('Course Code', 'settings-course-code'),
-          codeInput,
-        ),
-        el('div', { class: 'form-field' }, fieldLabel('Section', 'settings-section'), sectionInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term', 'settings-term'), termInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term Start Date', 'settings-term-start'), termStartInput),
-        el('div', { class: 'form-field' }, fieldLabel('Term End Date', 'settings-term-end'), termEndInput),
-
-        sectionTitleWithHelp('Auto-pause', HELP.autoPause),
-        el('div', { class: 'form-field' }, fieldLabelWithHelp('Minimum attempts before auto-pause applies', 'settings-min-attempts', HELP.minAttempts), minAttemptsInput),
-        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag percentage threshold', 'settings-flag-percent', HELP.flagPercent), flagPercentInput),
-        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag count threshold', 'settings-flag-count', HELP.flagCount), flagCountInput),
-
-        sectionTitleWithHelp('Registration Code', HELP.registrationCode),
-        el(
-          'div',
-          { class: 'registration-code' },
-          codeValueEl,
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void regenerateCode() }, 'Regenerate'),
-        ),
-        codeErrorSlot,
-
-        settingsErrorSlot,
-        settingsStatusSlot,
-        el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void saveSettings() }, 'Save Settings'),
-        el(
-          'button',
-          {
-            class: 'btn btn--ghost',
-            type: 'button',
-            onclick: () => void changeArchiveState(),
-          },
-          course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course',
-        ),
-      ),
-      el(
-        'div',
-        { class: 'settings-column stack' },
-        sectionTitleWithHelp('Feedback Strategy', HELP.feedbackStrategy),
-        strategyGroup,
-
-        sectionTitleWithHelp('Roster', HELP.roster),
-        el('p', {
-          class: 'view__lead',
-          text: 'Upload a CSV or paste one identifier per line. Saving replaces the full roster.',
-        }),
-        uploadZone('Drop a roster CSV here or browse', (files) => {
-          if (files[0]) void uploadRoster(files[0]);
-        }),
-        rosterImportSlot,
-        fieldLabelWithHelp('Student identifiers', 'settings-roster', HELP.studentIdentifiers),
-        rosterTextarea,
-        rosterErrorSlot,
-        saveRosterButton,
-        rosterListEl,
-      ),
-    ),
-    el(
-      'section',
-      { class: 'settings-danger-zone stack', 'aria-labelledby': 'settings-danger-zone-title' },
-      el('div', {},
-        el('h2', { class: 'section-title', id: 'settings-danger-zone-title', text: 'Danger Zone' }),
-        el('p', {
-          class: 'view__lead',
-          text: 'Permanently delete this course and every record, uploaded file, and knowledge vector that belongs to it. This is different from Archive and cannot be reversed.',
-        }),
-      ),
-      deletionErrorSlot,
-      canPermanentlyDelete
-        ? el(
-            'button',
-            { class: 'btn btn--danger', type: 'button', onclick: () => void permanentlyDelete() },
-            'Delete course permanently',
-          )
-        : el('p', {
-            class: 'view__lead',
-            text: 'Only the course owner or an administrator can permanently delete this course.',
-          }),
-    ),
-  );
-  saveRosterButton.addEventListener('click', () => void saveRoster());
-  attachTutorial(root, 'instructor-course-settings', {"course-settings-dates": "#settings-term-start", "course-settings-roster": "#settings-roster"});
+  const field = (label: string, input: HTMLElement): HTMLElement => el('div', { class: 'form-field' }, fieldLabel(label, input.id), input);
+  const sections: Record<string, HTMLElement> = {
+    'General': el('div', { class: 'admin-fields' }, field('Course Name', nameInput), field('Course Code', codeInput), field('Section', sectionInput), field('Term', termInput), field('Term Start Date', termStartInput), field('Term End Date', termEndInput)),
+    'Learning experience': el('div', {}, sectionTitleWithHelp('Feedback after an incorrect answer', HELP.feedbackStrategy), strategyGroup),
+    'Question safeguards': el('div', {}, el('p', { class: 'admin-fine', text: 'Automatically pause questions that receive repeated student flags. Review paused questions in Flags.' }),
+      el('div', { class: 'admin-fields' },
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Minimum attempts before auto-pause applies', minAttemptsInput.id, HELP.minAttempts), minAttemptsInput),
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag percentage threshold', flagPercentInput.id, HELP.flagPercent), flagPercentInput),
+        el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag count threshold', flagCountInput.id, HELP.flagCount), flagCountInput))),
+    'Enrollment': el('div', {}, sectionTitleWithHelp('Registration Code', HELP.registrationCode),
+      el('div', { class: 'registration-code' }, codeValueEl, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => regenerateCode(), text: 'Regenerate' })), codeErrorSlot,
+      sectionTitleWithHelp('Roster', HELP.roster), el('p', { class: 'admin-fine', text: 'Upload a CSV or paste one identifier per line. Saving replaces the full roster.' }),
+      uploadZone('Drop a roster CSV here or browse', files => { if (files[0]) void uploadRoster(files[0]); }), rosterImportSlot,
+      fieldLabelWithHelp('Student identifiers', rosterTextarea.id, HELP.studentIdentifiers), rosterTextarea, rosterErrorSlot, saveRosterButton, rosterListEl),
+    'Course lifecycle': el('div', {}, el('h3', { text: 'Archive course' }), el('p', { class: 'admin-fine', text: 'Keep course records while closing student access. You can restore the course as a draft later.' }),
+      el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => changeArchiveState(), text: course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course' }),
+      el('section', { class: 'settings-danger-zone stack', 'aria-labelledby': 'settings-danger-zone-title' },
+        el('h3', { id: 'settings-danger-zone-title', text: 'Permanently delete course' }),
+        el('p', { class: 'admin-fine', text: 'Permanently delete this course and every record, uploaded file, and knowledge vector that belongs to it. This cannot be reversed.' }), deletionErrorSlot,
+        canPermanentlyDelete ? el('button', { class: 'btn btn--danger', type: 'button', onclick: () => permanentlyDelete(), text: 'Delete course permanently' }) : el('p', { text: 'Only the course owner or an administrator can permanently delete this course.' }))),
+  };
+  const nav = el('nav', { class: 'admin-local-nav', 'aria-label': 'Settings sections' });
+  const content = el('div', { class: 'admin-pane' });
+  const save = el('button', { class: 'btn btn--instr-primary', type: 'button', text: 'Save changes', onclick: () => saveSettings() });
+  const footer = el('div', { class: 'admin-footer' }, el('small', { text: 'Changes are saved for this section only.' }), save);
+  function selectSection(name: string): void {
+    activeSection = name;
+    nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.textContent === name)));
+    content.replaceChildren(el('div', { class: 'admin-subhead' }, el('h2', { text: name }), el('small', { text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''}` })), sections[name]);
+    footer.hidden = name === 'Enrollment' || name === 'Course lifecycle';
+    settingsStatusSlot.replaceChildren(); settingsErrorSlot.replaceChildren();
+  }
+  Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));
+  body.replaceChildren(pageHeader('Course Settings', 'Make one change at a time. Keep the rest of your course in view.'),
+    el('div', { class: 'admin-settings-grid' }, nav, el('section', { class: 'admin-panel' }, content, settingsErrorSlot, settingsStatusSlot, footer)));
+  selectSection(activeSection);
+  saveRosterButton.addEventListener('click', () => void runButtonAction(saveRosterButton, saveRoster));
+  attachTutorial(root, 'instructor-course-settings', {"course-settings-dates": "#settings-section-0", "course-settings-roster": "#settings-section-3"});
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {

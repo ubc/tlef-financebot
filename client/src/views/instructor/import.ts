@@ -1,3 +1,4 @@
+import { renderRichText } from '../../render.js';
 import {
   ApiError,
   commitScriptMigration,
@@ -12,6 +13,7 @@ import {
   type ScriptMigrationResult,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { setButtonBusy } from '../../action-state.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import type { RouteParams } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
@@ -26,41 +28,20 @@ function typeLabel(type: ImportCandidate['type']): string {
   return 'Other → auto-convert';
 }
 
-function previewTable(candidates: ImportCandidate[]): HTMLElement {
-  return el(
-    'div',
-    { class: 'bank-table' },
-    el(
-      'div',
-      { class: 'bank-row bank-row--head', 'aria-hidden': 'true' },
-      el('span', { text: '#' }),
-      el('span', { text: 'Type' }),
-      el('span', { text: 'Stem' }),
-      el('span', { text: 'Difficulty' }),
-      el('span', { text: 'Options' }),
-      el('span', { text: 'Parameterization' }),
-      el('span', { text: 'Correct' }),
-    ),
-    el(
-      'div',
-      { class: 'bank-table__rows' },
-      ...candidates.map((candidate, index) =>
-        el(
-          'div',
-          { class: 'bank-row' },
-          el('span', { class: 'mono', text: String(index + 1) }),
-          el('span', { text: typeLabel(candidate.type) }),
-          el('span', { class: 'bank-row__stem', text: candidate.stem }),
-          el('span', { text: candidate.difficulty ?? 'medium' }),
-          el('span', { text: String(candidate.options.length) }),
-          candidate.parameterizable
-            ? statusBadge('Convertible', 'below-target')
-            : statusBadge('Conceptual', 'neutral'),
-          el('span', { class: 'mono', text: candidate.correctKey || 'LLM' }),
-        ),
-      ),
-    ),
-  );
+function previewTable(candidates: ImportCandidate[], chosen: Set<number>, onSelection: () => void): HTMLElement {
+  const detail = el('article', { class: 'import-detail' });
+  const list = el('aside', { class: 'import-list', 'aria-label': 'Preview questions' });
+  function show(index: number): void {
+    const c = candidates[index]; if (!c) return;
+    list.querySelectorAll('button').forEach((b,i) => b.setAttribute('aria-pressed', String(i === index)));
+    const stem = el('div', { class: 'import-stem' }); renderRichText(stem,c.stem);
+    detail.replaceChildren(el('small', { text: `${typeLabel(c.type)} · ${c.difficulty ?? 'medium'}` }), stem,
+      ...c.options.map(o => { const text = el('div'); renderRichText(text, `${o.key}. ${o.text}`); const explanation = el('div'); renderRichText(explanation,o.explanation ?? ''); return el('div', { class: 'import-option' }, text, o.key === c.correctKey ? statusBadge('Correct answer', 'approved') : false, explanation); }),
+      ...(c.parameterizable ? [statusBadge('Convertible', 'below-target')] : []));
+  }
+  candidates.forEach((c,i) => list.append(el('div', { class: 'import-list-row' }, el('input', { type: 'checkbox', checked: chosen.has(i), 'aria-label': `Include question ${i+1}`, onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) chosen.add(i); else chosen.delete(i); onSelection(); } }),
+    el('button', { type: 'button', onclick: () => show(i), text: c.stem }))));
+  show(0); return el('div', { class: 'import-review-grid' },list,detail);
 }
 
 function failurePanel(failures: ImportPreview['failures']): HTMLElement | false {
@@ -102,6 +83,7 @@ function assignmentOptions(tree: CourseTree): Array<{ value: string; label: stri
 function scriptMigrationCard(courseId: string, tree: CourseTree): HTMLElement {
   let busy = false;
   let committed = false;
+
   let reviewed: ScriptMigrationResult | null = null;
 
   const typeSelect = el(
@@ -248,8 +230,10 @@ function scriptMigrationCard(courseId: string, tree: CourseTree): HTMLElement {
     );
   };
 
-  const setBusy = (value: boolean): void => {
+  const setBusy = (value: boolean, active: 'preview' | 'commit' = 'preview'): void => {
     busy = value;
+    setButtonBusy(previewButton, value && active === 'preview');
+    setButtonBusy(commitButton, value && active === 'commit');
     previewButton.disabled = value;
     previewButton.textContent = value ? 'Running sandbox…' : 'Run sandbox preview';
     commitButton.disabled =
@@ -284,7 +268,7 @@ function scriptMigrationCard(courseId: string, tree: CourseTree): HTMLElement {
     if (busy || committed || !reviewed || reviewed.mismatches.length > 0) return;
     void (async () => {
       errorSlot.replaceChildren();
-      setBusy(true);
+      setBusy(true, 'commit');
       try {
         const [themeId, loId] = assignmentSelect.value
           ? assignmentSelect.value.split(':')
@@ -394,7 +378,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
     outlet,
     el(
       'div',
-      { class: 'view' },
+      { class: 'view import-workbench' },
       pageHeader(
         'Import Questions',
         'Upload CSV, JSON, or QTI XML. Preview first; every confirmed question enters as a Draft.',
@@ -416,6 +400,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
   let previewSourceName: string | null = null;
   let busy = false;
   let committed = false;
+  const chosen = new Set<number>();
 
   const fileInput = el('input', {
     class: 'input',
@@ -438,7 +423,11 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
     type: 'button',
   }) as HTMLButtonElement;
 
+  const progress = el('div', { class: 'import-progress', 'aria-label': 'Import progress' });
   const renderPreview = (): void => {
+    uploadCard.hidden = Boolean(preview) || committed;
+    progress.textContent = committed ? '✓ Choose file   →   ✓ Review content   →   ✓ Drafts imported' : preview ? '✓ Choose file   →   2 · Review content   →   3 · Import drafts' : '1 · Choose file   →   2 · Review content   →   3 · Import drafts';
+    setButtonBusy(previewButton, busy);
     previewButton.textContent = busy ? 'Reading…' : 'Preview import';
     previewButton.disabled = busy;
     if (!preview) {
@@ -451,7 +440,8 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
       {
         class: 'btn btn--instr-primary',
         type: 'button',
-        disabled: busy || committed || preview.candidates.length === 0 ? true : undefined,
+        disabled: busy || committed || chosen.size === 0 ? true : undefined,
+        busy,
         onclick: async () => {
           if (!preview || busy || committed) return;
           busy = true;
@@ -462,7 +452,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
               ? assignmentSelect.value.split(':')
               : [];
             const result = await commitQuestionImport(courseId, {
-              candidates: preview.candidates,
+              candidates: preview.candidates.filter((_,i) => chosen.has(i)),
               format: preview.format,
               ...(previewSourceName ? { sourceName: previewSourceName } : {}),
               ...(themeId ? { themeId } : {}),
@@ -488,9 +478,9 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
                   {
                     class: 'btn btn--ghost btn--sm',
                     type: 'button',
-                    onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank`),
+                    onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`),
                   },
-                  'Open Question Bank',
+                  'Open Review Queue',
                 ),
               ),
             );
@@ -503,24 +493,26 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
           }
         },
       },
-      `Import ${preview.candidates.length} Draft${preview.candidates.length === 1 ? '' : 's'}`,
+      `Import ${chosen.size} Draft${chosen.size === 1 ? '' : 's'}`,
     ) as HTMLButtonElement;
 
+    if (committed) { previewSlot.replaceChildren(); return; }
     const failures = failurePanel(preview.failures);
     previewSlot.replaceChildren(
-      ...(failures ? [failures] : []),
+      ...(failures ? [el('details', { class: 'import-issues' }, el('summary', { text: `${preview.failures.length} ${preview.failures.length === 1 ? 'row needs' : 'rows need'} attention` }), failures)] : []),
       el(
         'section',
         { class: 'card' },
         el(
           'div',
           { class: 'card__body' },
-          el('h2', { text: `Preview · ${preview.candidates.length} valid` }),
+          el('div', { class: 'import-review-heading' }, el('h2', { text: previewSourceName ?? 'Review your questions' }), el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, text: 'Change file', onclick: () => { preview = null; chosen.clear(); renderPreview(); } })),
           el('p', {
             text: `Detected format: ${preview.format.toUpperCase()}. Nothing has been written yet.`,
           }),
-          previewTable(preview.candidates),
-          el('div', { class: 'form-actions' }, confirmButton),
+          el('div', { class: 'import-batch-assignment' }, el('label', { for: 'import-assignment', text: 'Assign this batch to' }), assignmentSelect),
+          previewTable(preview.candidates, chosen, () => { confirmButton.textContent = `Import ${chosen.size} Draft${chosen.size === 1 ? '' : 's'}`; confirmButton.disabled = busy || committed || chosen.size === 0; }),
+          el('div', { class: 'import-commit-bar' }, el('span', { text: 'Selected questions will enter the Review Queue as Drafts.' }), confirmButton),
         ),
       ),
     );
@@ -539,7 +531,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
     renderPreview();
     try {
       preview = await previewQuestionImport(courseId, file);
-      previewSourceName = file.name;
+      previewSourceName = file.name; chosen.clear(); preview.candidates.forEach((_,i) => chosen.add(i));
     } catch (error) {
       preview = null;
       previewSourceName = null;
@@ -551,29 +543,32 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
     }
   });
 
-  body.replaceChildren(
-    el(
-      'section',
-      { class: 'card' },
-      el(
-        'div',
-        { class: 'card__body' },
-        el('label', {
-          class: 'form-field__label',
-          for: 'import-question-file',
-          text: 'Question file',
-        }),
-        fileInput,
-        el('p', { text: 'Supported: .csv, .json, .xml, and .qti (maximum 5 MB).' }),
-        el('label', { class: 'form-field__label', for: 'import-assignment', text: 'Assign to' }),
-        assignmentSelect,
-        el('div', { class: 'form-actions' }, previewButton),
-      ),
-    ),
-    errorSlot,
-    resultSlot,
-    previewSlot,
-    scriptMigrationCard(courseId, tree),
-  );
+  const uploadCard = el('section', { class: 'card import-entry' },
+    el('div', { class: 'import-drop' },
+      el('span', { class: 'import-file-mark', text: '↑', 'aria-hidden': 'true' }),
+      el('h2', { text: 'Bring your questions along' }),
+      el('p', { text: 'Choose a question file. Review the content before adding it to your course.' }),
+      el('label', { class: 'form-field__label', for: 'import-question-file', text: 'Question file' }),
+      fileInput,
+      el('small', { text: 'CSV, JSON, XML or QTI · Up to 5 MB' }),
+      previewButton),
+    el('aside', { class: 'import-entry-aside' },
+      el('h3', { text: 'What happens next' }),
+      el('p', { text: 'Preview each question, its answers and explanations. Choose which valid rows to import.' }),
+      el('h3', { text: 'Keep your course organized' }),
+      el('p', { text: 'Assign the batch to an existing learning objective, or leave it unassigned for later.' }),
+      el('h3', { text: 'Review before release' }),
+      el('p', { text: 'Imports create Drafts. Students see questions only after approval and topic release.' })));
+  const filePanel = el('div', {}, progress, uploadCard, errorSlot, resultSlot, previewSlot);
+  const scriptPanel = el('div', { hidden: true }, scriptMigrationCard(courseId, tree));
+  const fileTab = el('button', { type: 'button', class: 'btn btn--ghost', text: 'Question file', 'aria-pressed': 'true' });
+  const scriptTab = el('button', { type: 'button', class: 'btn btn--ghost', text: 'Script migration · Advanced', 'aria-pressed': 'false' });
+  const selectMode = (script: boolean): void => {
+    filePanel.hidden = script; scriptPanel.hidden = !script;
+    fileTab.setAttribute('aria-pressed', String(!script)); scriptTab.setAttribute('aria-pressed', String(script));
+  };
+  fileTab.addEventListener('click', () => selectMode(false));
+  scriptTab.addEventListener('click', () => selectMode(true));
+  body.replaceChildren(el('div', { class: 'import-mode-tabs', 'aria-label': 'Import method' }, fileTab, scriptTab), filePanel, scriptPanel);
   renderPreview();
 }

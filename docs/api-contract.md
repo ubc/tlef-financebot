@@ -237,16 +237,25 @@ material ids are rejected before hierarchy creation begins.
 
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
-  `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion }] }` (IN-Q08)
+  `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion, contentReady }] }` (IN-Q08)
 - `GET /api/questions/:questionId` → full question + current version +
   agentDecision + notes + versions list + optional regeneration request
   history, `templateFamilyId`, and per-version `provenance`
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?,
-  themeIds?, paramSlots?, derivedValues?, numericKind? }` → creates one new
+  themeIds?, paramSlots?, derivedValues?, numericKind?, type?, sourceRefs?,
+  expectedVersionId?, submitForReview? }` → creates one new
   QuestionVersion; response includes it (IN-Q03). The numeric fields let an
   explicitly accepted regeneration replace template text and its computed
   answer definition atomically rather than briefly exposing placeholders
-  without their gate metadata.
+  without their gate metadata. `submitForReview: true` requires a version pin and
+  an Approved/Paused head; the new version pointer and Pending Review state change
+  in one compare-and-set write. Stale pins return 409, old AI decisions are cleared,
+  and existing versions/history remain intact. Type edits validate the new option
+  shape. Source-reference edits may only reference materials in the same course.
+  `contentReady` on bank rows uses the server numerical/placeholder serving gate;
+  the UI also requires course publication and release of every tagged Topic before
+  describing a question as student-visible. Default Bank UI requests Approved only;
+  the general browse endpoint retains its existing semantics for other consumers.
 - `POST /api/questions/:questionId/internal-notes { text }` → appended
   `{ puid, text, at }` teaching-team-only note. Notes are append-only and are
   excluded from student and bank-list response shapes.
@@ -267,13 +276,17 @@ material ids are rejected before hierarchy creation begins.
   question's currently-saved stem when omitted from the body; `warnings` lists
   any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
   stem. Never persists anything. (IN-Q09, Task 5)
-- `POST /api/questions/:questionId/transition { to, expectedVersionId? }` →
+- `POST /api/questions/:questionId/transition { to, expectedVersionId?, rejectionReason? }` →
   question (validated against `PUBLICATION_TRANSITIONS`; Instructor `draft →
   approved` is a legal one-click approval, and `archived → draft` is the only
   restore path). When supplied, `expectedVersionId` compare-and-sets both the
   reviewed content version and publication state; a stale version or state
   returns `409 { error: "question-conflict" }`. Omitting it preserves the
   existing state-only transition contract.
+  Optional `rejectionReason` is trimmed, limited to 2,000 characters, and only
+  accepted for `to: "archived"`. A non-empty reason is appended as a private
+  teaching-team note in the same version/state-guarded Mongo update as archival;
+  conflicts persist neither change. The response includes the appended note.
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `POST /api/questions/bulk-delete { questionIds }` → `{ deleted, skipped: [{ questionId, reason }] }` — hard-deletes never-served questions only (never approved; no attempt, exam attempt, flag or review-book reference). Anything else is skipped with `reason` ∈ `ever-approved` | `has-history` | `not-found`; archive those instead. Same course-span and instructor guards as bulk-transition.
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
@@ -607,6 +620,17 @@ structurally excluded because every calculation reads only live collections.
 - `GET /api/courses/:courseId/students?q=` searches name, CWL or email.
 - `GET /api/courses/:courseId/students/:puid/analytics` returns identity,
   chronological attempts, mastery, Review Book, engagement and flag events.
+  Additive `objectives` labels list active LOs and their topics. Attempts include
+  `recordedVersion`, rendered `stem`, and `options` from their pinned version and
+  saved parameter values when that version exists. Missing versions omit these
+  fields. This profile is a course-wide snapshot, independent of dashboard dates.
+- `GET /api/courses/:courseId/analytics/exam-scores?from=&to=&puid=` requires
+  `analytics.individual`. Returns `{items, excludedUnscored}` for submitted Exam
+  Prep sittings, filtered by submission timestamp and optional PUID. Items contain
+  `id`, `puid`, `displayName`, `templateId`, `templateKind`, `submittedAt`, `score`,
+  and `maxScore`. Unsubmitted or unscored sittings are excluded. Every sitting,
+  including repeats, counts once; clients group by template before computing a
+  normalized mean. These are practice exam results, not official course grades.
 
 The dashboard uses explicit Refresh (no analytics SSE), current course capability
 projection, scoped retries and stale-response guards. Question Bank accepts a
@@ -672,3 +696,118 @@ membership are required (Admin retains its existing override); foreign course
 reads return 403. It reuses the existing layered resolver and TA hard denies.
 It does not accept a target PUID or a role override. Instructor TA View sees the
 real Instructor's booleans, while the TA views still omit approval/resolution.
+
+
+### Guided generation submission identity (2026-09-14)
+
+`POST /api/courses/:courseId/generation-plan` additionally accepts optional
+`submissionId` (UUID) and `prompt` (trimmed, max 4000 characters). The guided
+composer supplies both; legacy callers without an ID keep existing behavior.
+The submission ID is scoped to course and authenticated PUID. Its ordered cells
+and prompt are immutable: a changed request using that ID returns 409
+`generation-submission-conflict`. Each cell derives one stable content-run ID;
+Mongo's unique `_id` prevents concurrent retries from enqueuing a second worker
+for that cell. The response remains `{ runs: [{ loId, difficulty, kind, count,
+runId?, error? }] }`. Cells failing before run creation remain independently
+retryable; an existing failed run is returned, not silently restarted. Use the
+existing explicit run retry endpoint for failed background work. If the process
+stops between run insertion and Agenda enqueue, existing startup reconciliation
+marks interrupted work failed/retryable; replay does not silently enqueue it.
+
+`generationSubmissions` stores the immutable request fingerprint, course, owner
+and creation time. It is removed with permanent course deletion. Client recovery
+stores its request identity and returned run IDs under account+course scope;
+known run IDs are fetched individually to avoid recent-history truncation.
+`GET /api/courses/:courseId/content-runs?status=queued|running` returns all matching
+active runs (history `limit` does not truncate these two status queries). Other
+status/history requests retain the existing limit behavior. Existing course
+Instructor authorization applies throughout.
+
+### Streaming generation preview (additive, instructor-only)
+
+Question-generation run summaries and full snapshots may include
+`preview: { item: number, attempt: number, stem: string }`. `item` is zero-based;
+`attempt` resets the visible text on a model/JSON retry. This is the latest
+unverified candidate's visible top-level stem, capped at 12,000 characters. It is
+not a saved question, approval target, or student-visible content. Existing guarded
+course SSE `run` events carry the cumulative preview with monotonic run revisions;
+reconnect snapshots restore it. Writes are coalesced to 250ms intervals and drained
+before normal pipeline stage transitions. Preview ticks retain stage-event history
+and never increment completed units. Validation, reviewer decisions, numerical
+proofs and publication remain authoritative after generation.
+
+The additive generation `preview` now also accepts `difficulty?: string` and
+`options?: Array<{ key: string; text: string; role?: string; explanation?: string }>`.
+Each partial option streams independently even when the stem is unchanged. At most
+8 options are exposed; option text and explanation are each capped at 4,000
+characters, key at 8 and role at 40. Difficulty is capped at 30. Only those public
+fields are projected from JSON; raw/internal metadata is excluded. Proposed roles
+are unverified and may change or be re-keyed by validation before the saved version.
+An attempt reset replaces the entire preview, clearing previous options and answers.
+
+
+### Analytics prototype interaction alignment (2026-09-15)
+Question patterns additionally accept `q` (literal search, at most 200 characters)
+and `themeId`. Search matches recorded-version stems, objective names and topic
+names before the result limit; counts reflect matching groups. Answer distributions
+also accept `themeId` so topic drilldowns keep their recorded-attempt scope.
+Engagement totals include `correctAttempts` only when at least five attempts exist.
+Student search adds latest `lastAttemptAt` and persisted `strugglingObjectives`;
+these are course-wide, independent of dashboard dates, and remain individual-gated.
+
+### Portable Question Bank CSV
+Question Bank exports the selected rows, or the current filtered view when no rows
+are selected. CSV uses the existing import columns plus optional `roleA` through
+`roleD`, preserving distractor roles and explanations. Import still creates new
+Drafts and does not copy approval, release state, source references or course IDs.
+Parameterized questions export their stable rendered sample as static questions;
+if a rendered sample is unavailable, the export fails explicitly rather than
+silently dropping the row or exporting unresolved placeholders. Script migration
+remains the separate route for preserving executable parameterization.
+
+### Course Structure: multi-material AI outline
+
+`POST /api/courses/:courseId/structure-generation` (course Instructor only) accepts
+`{ materialIds?, topicCount?, losPerTopic?, level?, emphasis?, guidance? }` and returns
+`202 { runId }`. Omitting counts lets the model choose topic boundaries and a
+separate objective count for each topic. `topicCount` is 1–30, `losPerTopic` 1–12;
+`level` is `auto | introductory | advanced`; `emphasis` is
+`auto | balanced | conceptual | applied`; guidance is at most 2,000 characters.
+Omitted materials select all ready, non-Trash course materials. Selected IDs must
+all resolve within the course. No Topics or LOs are created by generation.
+
+The run kind is `structure-generation`, with `queued → analyzing → synthesizing →
+checking` stages, delivered by the existing course `content-runs/events` SSE route.
+`completedUnits/totalUnits` measure analyzed source sections, not claimed semantic
+coverage. `structurePreview.themes[].{name,los:[{name}]}` contains unverified visible
+provider text; resets replace that preview on a provider retry. On completion,
+`structureResult` contains reviewed-ready themes with full LO names, evidence IDs
+and server-resolved material IDs; an evidence ledger of exact source quotes and
+chunk indices; and coverage including per-material counts, unmapped learning
+points, exclusions and warnings. It never exposes provider reasoning.
+
+Run snapshots survive navigation and reconnect. A partial unique index allows
+one active structure run per course; concurrent starts return that run. Existing
+`POST .../content-runs/:runId/end` stops a structure run, while `end-active` remains
+question-generation-only. An in-flight provider call may finish; subsequent calls
+and writes are blocked. New generation is explicit. Interrupted runs are marked
+retryable on startup. Completed drafts are read-only history until the existing
+`apply-suggested-hierarchy` endpoint is explicitly called with reviewed selections;
+apply preserves existing Topics/LOs and material assignments.
+
+The analyzer reads every persisted chunk of every selected material, partitions
+long chunks with overlap, extracts grounded learning points per section, then
+synthesizes across the entire ledger. It uses neither top-k vector retrieval nor
+beginning-only excerpts. Every section must be accounted for; quotes and reference
+IDs are checked against their source. Missing chunks, changed sources and exceeded
+capacity fail explicitly rather than silently omitting input. Limits are 100
+materials / 1,000,000 source characters and a 180,000-character synthesis ledger.
+Coverage refers to parsed text, not image-only content or absent syllabus topics.
+The legacy GET `suggest-hierarchy` retains its old response shape but now uses the
+same full-source analyzer.
+
+Structure-generation compact run summaries also expose optional `progressMessage`
+(the latest durable stage/progress message), so the UI can show source analysis and
+reference-repair progress without fetching full event history. Full run snapshots
+retain their existing event history. Extraction uses server-numbered passage IDs;
+`structureResult.evidence[].quote` remains the exact resolved original passage.

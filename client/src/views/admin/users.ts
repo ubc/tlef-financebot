@@ -140,7 +140,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     pageHeader('User Directory', 'Search identities, manage course roles, and revoke platform access without deleting records.'),
     el('form', {
       class: 'admin-directory-search',
-      onsubmit: (event: Event) => { event.preventDefault(); void load(); },
+      onsubmit: (event: Event) => { event.preventDefault(); return load(); },
     },
     el('label', { class: 'form-field', for: 'admin-directory-search' },
       el('span', { class: 'form-field__label', text: 'Find a user' }),

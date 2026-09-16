@@ -128,3 +128,12 @@ Other services will appear as more components are built up.
   bounded question/version patterns and version-isolated distributions. Engagement
   includes empty weeks and active-LO coverage; durations describe observed attempt
   spans. Historical metadata never substitutes a current version.
+
+`structure-generation.service.ts` owns the `structure.generate` background job.
+It scans all selected materials' stored chunks (not excerpt/top-k retrieval),
+validates per-section extraction using numbered source-passage IDs (resolving the
+original quote on the server), retries invalid batches in smaller sections, and streams the synthesized
+outline into a dedicated durable run preview. Counts default to AI choice; explicit
+counts are validated. Source/size failures never produce a silently partial outline.
+Coverage gaps and exclusions accompany the draft. `classification.suggestHierarchy`
+uses the same analyzer through its legacy read-only response shape.

@@ -1,3 +1,4 @@
+import { withGenerationPreview } from './generation-preview';
 import { ObjectId } from 'mongodb';
 import { BUILTIN_REFERENCE } from '../components/formula';
 import { completeJson } from '../components/genai/llm';
@@ -146,6 +147,8 @@ const DIFFICULTIES: ReadonlySet<Difficulty> = new Set<Difficulty>(['easy', 'medi
 const DECISIONS = new Set(['pass', 'flag', 'reject']);
 
 export interface GenerationInput {
+  /** Internal deterministic identity for a retry-safe plan cell. */
+  runId?: ObjectId;
   courseId: ObjectId;
   loId: ObjectId;
   /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
@@ -256,6 +259,13 @@ export interface RegenerationVariant {
 
 /** Validate the target synchronously, persist one unique run, then enqueue it. */
 export async function enqueueGenerationRun(input: GenerationInput): Promise<ObjectId> {
+  if (input.runId) {
+    const existing = await getContentRun(input.runId);
+    if (existing) {
+      if (!existing.courseId.equals(input.courseId) || existing.requestedBy !== input.byPuid) throw new Error('generation-submission-conflict');
+      return existing._id;
+    }
+  }
   const lo = await losCol().findOne({ _id: input.loId });
   if (!lo) throw new Error('lo-not-found');
   if (!lo.courseId.equals(input.courseId)) throw new Error('lo-not-in-course');
@@ -290,7 +300,10 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
       throw new Error('generation-unknown-hardness-move');
     }
   }
-  const run = await createQuestionGenerationRun({
+  let run: Awaited<ReturnType<typeof createQuestionGenerationRun>>;
+  try {
+    run = await createQuestionGenerationRun({
+    ...(input.runId ? { runId: input.runId } : {}),
     courseId: input.courseId,
     requestedBy: input.byPuid,
     loId: input.loId,
@@ -312,6 +325,10 @@ export async function enqueueGenerationRun(input: GenerationInput): Promise<Obje
     },
     models: persistedModels(input.models ?? stepModelsFrom(platformSettings)),
   });
+  } catch (error) {
+    if (input.runId && (error as { code?: number }).code === 11000) return input.runId;
+    throw error;
+  }
   try {
     await enqueueJob<GenerationJobData>(GENERATION_JOB, { runId: run._id.toHexString() });
   } catch (error) {
@@ -861,10 +878,10 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       // recorded as one failed candidate. The same check guards each stage.
       await assertContentRunActive(runId);
       try {
-        const candidate = await generateValidQuestion(
+        const candidate = await withGenerationPreview(runId, item, onText => generateValidQuestion(
           type, lo.name, input.difficulty, prompt, chunks, models.generator, undefined, assignedMoves[item], input.kind,
-          secondaryLoNames,
-        );
+          secondaryLoNames, onText,
+        ));
         if (!candidate) throw new Error('generation-invalid-options');
         generated.push({ item, generated: candidate });
         await updateContentRun(runId, {
@@ -1493,6 +1510,7 @@ async function generateValidQuestion(
   kind?: QuestionKind,
   /** Multi-LO generation: the further objectives every attempt must integrate. */
   secondaryLoNames?: string[],
+  onText?: (text: string) => void,
 ): Promise<GeneratorOutput | null> {
   /** The last structurally-valid candidate, returned unproven if attempts run out. */
   let lastValid: GeneratorOutput | null = null;
@@ -1508,7 +1526,7 @@ async function generateValidQuestion(
       // a temperature for this step means it, and one who sets a reasoning
       // effort has knowingly given the temperature up (it is only legal at
       // effort `none`), so passing it anyway would be dropped either way.
-      { temperature: GENERATOR_TEMPERATURE, ...step },
+      { temperature: GENERATOR_TEMPERATURE, ...step, ...(onText ? { onText } : {}) },
     );
     if (
       candidate &&

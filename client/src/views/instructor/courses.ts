@@ -389,7 +389,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
   root.append(
     el(
       'form',
-      { class: 'form stack', onsubmit: (e: Event) => void submit(e) },
+      { class: 'form stack', onsubmit: (e: Event) => submit(e) },
       el(
         'div',
         { class: 'form-field' },

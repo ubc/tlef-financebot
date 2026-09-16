@@ -7,6 +7,7 @@ import {
   type GenerationPlanCell,
   type GenerationPlanRow,
   getCourseTree,
+  getContentRun,
   getInstructorWorkflow,
   getPreseeding,
   getReviewQueue,
@@ -18,6 +19,7 @@ import {
   transitionQuestion,
   uploadMaterials,
   upsertCourseOutline,
+  updateLo,
   type ContentRunSummary,
   type CourseTree,
   type InstructorWorkflowSummary,
@@ -27,10 +29,12 @@ import {
   type SuggestedHierarchy,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { getSession } from '../../auth.js';
+import { setButtonBusy } from '../../action-state.js';
 import { uploadZone } from '../../instructor-ui.js';
 import { startAnonymousPreview } from '../../preview-session.js';
 
-type GuideScreen = 'choice' | 'manual-los' | 'sources' | 'hierarchy' | 'generation' | 'review' | 'preview';
+type GuideScreen = 'choice' | 'objectives' | 'manual-los' | 'sources' | 'hierarchy' | 'generation' | 'review' | 'preview';
 
 export interface CourseSetupGuideOptions {
   courseId: string;
@@ -289,7 +293,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
 
   function screenStage(screen: GuideScreen): 'sources' | 'learning-objectives' | 'questions' | 'review' | 'student-preview' {
     if (screen === 'sources' || screen === 'choice') return 'sources';
-    if (screen === 'manual-los' || screen === 'hierarchy') return 'learning-objectives';
+    if (screen === 'objectives' || screen === 'manual-los' || screen === 'hierarchy') return 'learning-objectives';
     if (screen === 'generation') return 'questions';
     if (screen === 'review') return 'review';
     return 'student-preview';
@@ -302,7 +306,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     screen: GuideScreen;
   }> = [
     { id: 'sources', number: 1, label: 'Sources', screen: 'sources' },
-    { id: 'learning-objectives', number: 2, label: 'Learning objectives', screen: 'manual-los' },
+    { id: 'learning-objectives', number: 2, label: 'Learning objectives', screen: 'objectives' },
     { id: 'questions', number: 3, label: 'Questions', screen: 'generation' },
     { id: 'review', number: 4, label: 'Review', screen: 'review' },
     { id: 'student-preview', number: 5, label: 'Student preview', screen: 'preview' },
@@ -354,6 +358,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   function renderScreen(next: GuideScreen): void {
     if (closed) return;
     currentScreen = next;
+    body.classList.toggle('course-setup-guide__body--objectives', next === 'objectives' || next === 'generation');
+    dialog.classList.toggle('course-setup-guide--compact', next === 'objectives' || next === 'manual-los' || next === 'generation');
     screenRevision += 1;
     sourceUi = undefined;
     generationUi = undefined;
@@ -362,6 +368,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     renderProgress();
     switch (next) {
       case 'choice': renderChoiceScreen(); break;
+      case 'objectives': void renderObjectivesScreen(); break;
       case 'manual-los': renderManualLoScreen(); break;
       case 'sources': renderSourcesScreen(); break;
       case 'hierarchy': renderHierarchyScreen(); break;
@@ -430,7 +437,81 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     );
   }
 
+  async function renderObjectivesScreen(): Promise<void> {
+    const revision = screenRevision;
+    const content = el('div', { class: 'course-setup-guide__objectives', role: 'region', 'aria-label': 'Learning objectives by topic', tabindex: '0' });
+    mount(body, screenHeading('Your learning objectives', 'Review what students should learn, then continue to questions.'), content);
+    content.append(el('p', { role: 'status', text: 'Loading learning objectives…' }));
+    try {
+      const tree = await getCourseTree(options.courseId);
+      if (closed || revision !== screenRevision) return;
+      courseTree = tree;
+      const topics = [...tree.themes].sort((a, b) => a.order - b.order);
+      const count = topics.reduce((total, topic) => total + (topic.los?.length ?? 0), 0);
+      learningObjectiveCount = count;
+      const addButton = el('button', {
+        class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('manual-los'),
+      }, '+ Add learning objectives');
+      mount(content,
+        el('div', { class: 'course-setup-guide__objective-toolbar' },
+          el('p', { class: 'course-setup-guide__hint', text: `${count} learning objective${count === 1 ? '' : 's'} across ${topics.length} topic${topics.length === 1 ? '' : 's'}` }),
+          addButton),
+        count === 0 ? el('div', { class: 'course-setup-guide__objective-empty' },
+          el('h4', { text: 'What should students be able to do?' }),
+          el('p', { text: 'Add your learning objectives, or create a suggested outline from your course materials.' }),
+          el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('sources') }, 'Start from course materials')) : false,
+        ...topics.map((topic, index) => el('section', { class: 'course-setup-guide__objective-topic', 'aria-label': topic.name },
+          el('header', {}, el('span', { class: 'course-setup-guide__hint', text: `Topic ${index + 1}` }),
+            el('h4', { text: topic.name })),
+          ...(topic.los?.length ? [...topic.los].sort((a, b) => a.order - b.order).map((lo) => {
+            const row = el('div', { class: 'course-setup-guide__objective-row' });
+            const show = (): void => {
+              const edit = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'aria-label': `Edit ${lo.name}`, onclick: () => {
+                const input = el('input', { class: 'input', value: lo.name, maxlength: '500', 'aria-label': 'Learning objective name' }) as HTMLInputElement;
+                const error = el('p', { role: 'alert', class: 'course-setup-guide__form-error' });
+                let saving = false;
+                const cancel = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => { show(); row.querySelector('button')?.focus(); } }, 'Cancel') as HTMLButtonElement;
+                const save = el('button', { class: 'btn btn--instr-primary btn--sm', type: 'submit' }, 'Save') as HTMLButtonElement;
+                const form = el('form', { class: 'course-setup-guide__objective-edit' }, input,
+                  el('div', {}, cancel, save), error);
+                form.addEventListener('submit', async (event) => {
+                  event.preventDefault();
+                  if (saving) return;
+                  if (!input.value.trim()) { error.textContent = 'Enter a learning objective.'; input.focus(); return; }
+                  saving = true;
+                  save.disabled = cancel.disabled = input.disabled = true;
+                  setButtonBusy(save, true);
+                  try {
+                    const updated = await updateLo(lo._id, { name: input.value.trim() });
+                    lo.name = updated.name;
+                    notifyChanged();
+                    if (closed || revision !== screenRevision) return;
+                    show();
+                    row.querySelector('button')?.focus();
+                    setLive('Learning objective updated.', 'success');
+                  } catch (caught) { error.textContent = errorMessage(caught); }
+                  finally { saving = false; save.disabled = cancel.disabled = input.disabled = false; setButtonBusy(save, false); }
+                });
+                mount(row, form);
+                input.focus();
+              } }, 'Edit');
+              mount(row, el('span', { text: lo.name }), edit);
+            };
+            show();
+            return row;
+          }) : [el('p', { class: 'course-setup-guide__hint', text: 'No learning objectives yet.' })]))));
+      body.append(actionRow('Open Course Structure', coursePath('/structure'),
+        el('button', { class: 'btn btn--instr-primary', type: 'button', disabled: count === 0, onclick: () => renderScreen('generation') }, 'Continue to questions →')));
+    } catch (caught) {
+      if (closed || revision !== screenRevision) return;
+      mount(content, el('p', { role: 'alert', class: 'course-setup-guide__form-error', text: errorMessage(caught) }),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('objectives') }, 'Try again'));
+    }
+  }
+
   function renderManualLoScreen(): void {
+    const revision = screenRevision;
+    let saving = false;
     const topicInput = el('input', {
       class: 'input',
       id: 'course-setup-topic-name',
@@ -439,6 +520,15 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       value: 'Topic 1',
       placeholder: 'e.g. Time Value of Money',
     }) as HTMLInputElement;
+    const topics = [...(courseTree?.themes ?? [])].sort((a, b) => a.order - b.order);
+    const topicSelect = el('select', { class: 'input', id: 'course-setup-topic-selection' },
+      ...topics.map((topic) => el('option', { value: topic._id, text: topic.name })),
+      el('option', { value: '', text: 'Create a new topic' })) as HTMLSelectElement;
+    const topicField = el('label', { class: 'form-field', for: 'course-setup-topic-name' },
+      el('span', { class: 'form-field__label', text: 'Topic name' }), topicInput);
+    const updateTopicField = (): void => { topicField.hidden = topicSelect.value !== ''; };
+    topicSelect.addEventListener('change', updateTopicField);
+    updateTopicField();
     const loInput = el('textarea', {
       class: 'input input--area course-setup-guide__lo-input',
       id: 'course-setup-lo-lines',
@@ -450,12 +540,9 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     const form = el(
       'form',
       { class: 'course-setup-guide__form' },
-      el(
-        'label',
-        { class: 'form-field', for: 'course-setup-topic-name' },
-        el('span', { class: 'form-field__label', text: 'Topic name' }),
-        topicInput,
-      ),
+      el('label', { class: 'form-field', for: 'course-setup-topic-selection' },
+        el('span', { class: 'form-field__label', text: 'Topic' }), topicSelect),
+      topicField,
       el(
         'label',
         { class: 'form-field', for: 'course-setup-lo-lines' },
@@ -467,14 +554,15 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       actionRow(
         'Open Course Structure',
         coursePath('/structure'),
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('choice') }, 'Back'),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('objectives') }, 'Cancel'),
         saveButton,
       ),
     ) as HTMLFormElement;
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const topicName = topicInput.value.trim();
+      if (saving) return;
+      const topicName = topics.find((topic) => topic._id === topicSelect.value)?.name ?? topicInput.value.trim();
       const los = parseLearningObjectiveLines(loInput.value);
       error.textContent = '';
       if (!topicName) {
@@ -487,7 +575,10 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         loInput.focus();
         return;
       }
+      saving = true;
+      topicSelect.disabled = topicInput.disabled = loInput.disabled = true;
       saveButton.disabled = true;
+      setButtonBusy(saveButton, true);
       saveButton.textContent = 'Saving\u2026';
       try {
         const result = await upsertCourseOutline(options.courseId, [{ name: topicName, los }]);
@@ -501,19 +592,23 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
             : 'Those Topic and Learning Objective names already exist; no duplicates were created.',
           'success',
         );
-        renderScreen('sources');
+        if (revision === screenRevision) renderScreen('objectives');
       } catch (caught) {
         error.textContent = errorMessage(caught);
         saveButton.disabled = false;
         saveButton.textContent = 'Save Learning Objectives';
+      } finally {
+        saving = false;
+        topicSelect.disabled = topicInput.disabled = loInput.disabled = false;
+        setButtonBusy(saveButton, false);
       }
     });
 
     mount(
       body,
       screenHeading(
-        'Add your existing Learning Objectives',
-        'Create one Topic and several Learning Objectives in a single save. Add more Topics later from the full workspace.',
+        'Add learning objectives',
+        'Choose a topic and describe what students should be able to do. Add one objective per line.',
       ),
       form,
     );
@@ -523,6 +618,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     summary: HTMLElement;
     list: HTMLElement;
     status: HTMLElement;
+    processingNotice: HTMLElement;
     continueButton: HTMLButtonElement;
   }
   let sourceUi: SourceUi | undefined;
@@ -557,7 +653,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
             class: 'btn btn--ghost btn--sm',
             type: 'button',
             disabled: retryingMaterials.has(material._id) ? 'disabled' : undefined,
-            onclick: () => void retrySource(material),
+            busy: retryingMaterials.has(material._id),
+            onclick: () => retrySource(material),
           },
           retryingMaterials.has(material._id) ? 'Retrying\u2026' : 'Retry',
         )
@@ -570,7 +667,12 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         'div',
         { class: 'course-setup-guide__source-copy' },
         el('strong', { text: material.name }),
-        el('small', { text: progressText }),
+        el(
+          'small',
+          { class: run && !isTerminal(run) ? 'course-setup-guide__source-progress' : undefined },
+          run && !isTerminal(run) ? el('span', { class: 'spinner spinner--inline', 'aria-hidden': 'true' }) : false,
+          progressText,
+        ),
       ),
       el('span', { class: `course-setup-guide__status course-setup-guide__status--${material.status}`, text: material.status }),
       retryButton,
@@ -603,6 +705,15 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       : learningObjectiveCount > 0
         ? 'Continue to questions'
         : 'Create a draft structure';
+    sourceUi.processingNotice.replaceChildren();
+    if (!sourceMutationBusy && ready === 0 && processing > 0) {
+      sourceUi.processingNotice.append(
+        el('span', { class: 'spinner spinner--inline', 'aria-hidden': 'true' }),
+        ` ${processing} source${processing === 1 ? ' is' : 's are'} still processing. This page updates as each stage completes.`,
+      );
+    } else if (!sourceMutationBusy && ready === 0 && failed > 0 && processing === 0) {
+      sourceUi.processingNotice.textContent = 'No source is ready. Retry a failed source or add another source to continue.';
+    }
   }
 
   async function loadSources(revision = screenRevision): Promise<void> {
@@ -624,7 +735,10 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     if (sourceMutationBusy || files.length === 0 || !sourceUi) return;
     const ui = sourceUi;
     sourceMutationBusy = true;
-    ui.status.textContent = `Uploading ${files.length} file${files.length === 1 ? '' : 's'}\u2026`;
+    ui.status.replaceChildren(
+      el('span', { class: 'spinner spinner--inline', 'aria-hidden': 'true' }),
+      ` Uploading ${files.length} file${files.length === 1 ? '' : 's'}\u2026`,
+    );
     try {
       const created = await uploadMaterials(options.courseId, files);
       if (closed) return;
@@ -676,6 +790,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     }) as HTMLInputElement;
     const urlButton = el('button', { class: 'btn btn--ghost', type: 'submit' }, 'Add link') as HTMLButtonElement;
     const status = el('p', { class: 'course-setup-guide__upload-status', role: 'status', 'aria-live': 'polite' });
+    const processingNotice = el('p', { class: 'course-setup-guide__upload-status', role: 'status', 'aria-live': 'polite' });
     const summary = el('div', { class: 'course-setup-guide__source-summary' });
     const list = el('div', { class: 'course-setup-guide__source-list' });
     const continueButton = el(
@@ -698,8 +813,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       const url = urlInput.value.trim();
       if (!url || sourceMutationBusy) return;
       sourceMutationBusy = true;
-      urlButton.disabled = true;
-      status.textContent = 'Adding link\u2026';
+      status.replaceChildren(el('span', { class: 'spinner spinner--inline', 'aria-hidden': 'true' }), ' Adding link\u2026');
+      setButtonBusy(urlButton, true);
       try {
         const created = await addUrlMaterial(options.courseId, url);
         if (closed) return;
@@ -714,11 +829,11 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         status.className = 'course-setup-guide__form-error';
       } finally {
         sourceMutationBusy = false;
-        urlButton.disabled = false;
+        setButtonBusy(urlButton, false);
       }
     });
 
-    sourceUi = { summary, list, status, continueButton };
+    sourceUi = { summary, list, status, processingNotice, continueButton };
     mount(
       body,
       screenHeading(
@@ -738,6 +853,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         ),
       ),
       status,
+      processingNotice,
       summary,
       list,
       alert('Live processing status is durable. You can close this window and return later without losing progress.'),
@@ -937,7 +1053,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         class: 'btn btn--instr-primary',
         type: 'button',
         disabled: hierarchyBusy || (materialsLoaded && readySources === 0) ? 'disabled' : undefined,
-        onclick: () => void requestHierarchySuggestion(),
+        busy: hierarchyBusy,
+        onclick: () => requestHierarchySuggestion(),
       },
       hierarchyBusy ? 'Generating AI draft\u2026' : 'Generate an AI draft',
     );
@@ -950,7 +1067,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
             'Open Course Structure',
             coursePath('/structure'),
             el('button', { class: 'btn btn--ghost', type: 'button', disabled: applyingHierarchy ? 'disabled' : undefined, onclick: () => { hierarchyDrafts = undefined; renderHierarchyScreen(); } }, 'Discard draft'),
-            el('button', { class: 'btn btn--instr-primary', type: 'button', disabled: applyingHierarchy ? 'disabled' : undefined, onclick: () => void applyHierarchy() }, applyingHierarchy ? 'Applying\u2026' : 'Apply selected structure'),
+            el('button', { class: 'btn btn--instr-primary', type: 'button', busy: applyingHierarchy, onclick: () => applyHierarchy() }, applyingHierarchy ? 'Applying\u2026' : 'Apply selected structure'),
           ),
         ]
       : [
@@ -976,8 +1093,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
             'Open Course Structure',
             coursePath('/structure'),
             el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('manual-los') }, 'Enter LOs manually'),
-            el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('sources') }, 'Back to sources'),
-          ),
+              ),
         ];
     mount(
       body,
@@ -1007,6 +1123,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     runs: HTMLElement;
     status: HTMLElement;
     generateButton: HTMLButtonElement;
+    selection: HTMLElement;
+    planSummary: HTMLElement;
   }
   let generationUi: GenerationUi | undefined;
 
@@ -1023,6 +1141,28 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   let planRows: GenerationPlanRow[] = [];
   let plan = new Map<string, PlanCounts>();
   let planDirty = false;
+  let generationLoaded = false;
+  let additionalQuestions = false;
+  let perObjectiveCount = 0;
+  let generationPrompt = '';
+  const deselectedObjectives = new Set<string>();
+  type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[] };
+  const submissionKey = `guided-generation:${getSession().user?.puid ?? 'anonymous'}:${options.courseId}`;
+  let submission: Submission | undefined;
+  function readSubmission(): void {
+    try { submission = JSON.parse(localStorage.getItem(submissionKey) ?? 'null') ?? undefined; } catch { /* Keep the in-memory request when storage is unavailable. */ }
+  }
+  function storeSubmission(): void {
+    try { if (submission) localStorage.setItem(submissionKey, JSON.stringify(submission)); else localStorage.removeItem(submissionKey); } catch { /* Server idempotency still protects in-session retries. */ }
+  }
+  readSubmission();
+  function submissionActive(): boolean {
+    return !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || !isTerminal(runs.get(id)!)));
+  }
+  function plannedCells(): GenerationPlanCell[] {
+    return planCellsFor(new Set(generationRows().filter(row => row.hasReadySource && !row.active && !deselectedObjectives.has(row.loId)).map(row => row.loId)));
+  }
+
 
   function emptyCounts(): PlanCounts {
     return { easy: { calculation: 0, conceptual: 0 }, medium: { calculation: 0, conceptual: 0 }, hard: { calculation: 0, conceptual: 0 } };
@@ -1030,6 +1170,24 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   function autoCounts(row: GenerationPlanRow): PlanCounts {
     const counts = emptyCounts();
     for (const cell of row.cells) counts[cell.difficulty][cell.kind] += cell.count;
+    const pending = preseeding.find(item => item.loId === row.loId)?.unapproved ?? 0;
+    if (!additionalQuestions) {
+      let remaining = pending;
+      for (const tier of TIERS) for (const kind of KINDS) {
+        const used = Math.min(remaining, counts[tier][kind]);
+        counts[tier][kind] -= used; remaining -= used;
+      }
+    }
+    if (perObjectiveCount > 0 || additionalQuestions) {
+      const current = TIERS.reduce((sum, tier) => sum + counts[tier].calculation + counts[tier].conceptual, 0);
+      const target = additionalQuestions ? (perObjectiveCount || 5) : Math.min(current, perObjectiveCount);
+      for (const tier of TIERS) for (const kind of KINDS) counts[tier][kind] = 0;
+      for (let i = 0; i < target; i++) {
+        const tier = (['easy', 'medium', 'easy', 'medium', 'hard'] as Tier[])[i % 5];
+        const kind = row.loKind === 'calculation' ? 'calculation' : row.loKind === 'conceptual' ? 'conceptual' : i % 2 ? 'calculation' : 'conceptual';
+        counts[tier][kind]++;
+      }
+    }
     return counts;
   }
   function resetPlanToAuto(): void {
@@ -1114,7 +1272,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     const auto = planRows.find((candidate) => candidate.loId === row.loId);
     const counts = plan.get(row.loId) ?? (auto ? autoCounts(auto) : emptyCounts());
     if (!plan.has(row.loId)) plan.set(row.loId, counts);
-    const editable = row.hasReadySource && !row.active;
+    const editable = row.hasReadySource && !row.active && !submissionActive();
     const planned = TIERS.reduce((sum, tier) => sum + counts[tier].calculation + counts[tier].conceptual, 0);
     const tierCells = TIERS.map((tier) => {
       const approved = auto?.approved[tier] ?? 0;
@@ -1164,44 +1322,31 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   function refreshGenerationPanel(): void {
     if (!generationUi || currentScreen !== 'generation') return;
     const rows = generationRows();
-    const thin = rows.filter((row) => row.approved < row.target);
-    const eligible = thin.filter((row) => row.needed > 0 && row.hasReadySource && !row.active);
-    const active = thin.filter((row) => row.active).length;
-    const awaitingReview = thin.reduce((count, row) => count + row.unapproved, 0);
-    mount(
-      generationUi.summary,
-      el('strong', { text: `${rows.length - thin.length}/${rows.length} LOs at target` }),
-      el('span', { text: `${eligible.length} ready to generate` }),
-      el('span', { text: `${active} generating` }),
-      el('span', { text: `${awaitingReview} awaiting review` }),
-    );
-    const generationNodes = !courseTree
-      ? [el('p', { class: 'course-setup-guide__empty', text: 'Loading Learning Objective coverage\u2026' })]
-      : rows.length === 0
-        ? [el('p', { class: 'course-setup-guide__empty', text: 'No Learning Objectives yet. Add or generate a structure before creating questions.' })]
-        : rows.map((row) => renderPlanRow(row));
-    mount(generationUi.list, ...generationNodes);
-    const runNodes = renderGenerationRuns();
-    mount(
-      generationUi.runs,
-      runNodes.length > 0
-        ? el('div', { class: 'course-setup-guide__run-list' }, el('h4', { text: 'Recent generation activity' }), ...runNodes)
-        : false,
-    );
-    const plannable = new Set(rows.filter((row) => row.hasReadySource && !row.active).map((row) => row.loId));
-    const plannedCells = planCellsFor(plannable);
-    const plannedQuestions = plannedCells.reduce((sum, cell) => sum + cell.count, 0);
-    const plannedLos = new Set(plannedCells.map((cell) => cell.loId)).size;
-    generationUi.generateButton.disabled = generationBusy || plannedQuestions === 0;
-    generationUi.generateButton.textContent = generationBusy
-      ? 'Queuing generation\u2026'
-      : plannedQuestions > 0
-        ? `Generate ${plannedQuestions} question${plannedQuestions === 1 ? '' : 's'} across ${plannedLos} LO${plannedLos === 1 ? '' : 's'} \u2192 ${plannedQuestions} to review`
-        : active > 0
-          ? 'Generation is already running'
-          : awaitingReview > 0
-            ? 'Review existing questions before generating more'
-          : 'Nothing planned \u2014 adjust a count or press Auto';
+    const active = rows.filter(row => row.active).length;
+    const awaitingReview = rows.reduce((count, row) => count + row.unapproved, 0);
+    const approved = rows.reduce((count, row) => count + row.approved, 0);
+    mount(generationUi.summary,
+      el('span', { text: `${approved} approved objective assignments` }),
+      el('span', { text: `${awaitingReview} awaiting-review objective assignments` }),
+      el('span', { text: `${active} objectives in progress` }));
+    mount(generationUi.selection, ...rows.map(row => el('label', { class: 'guide-composer__objective' },
+      el('input', { type: 'checkbox', checked: !deselectedObjectives.has(row.loId), disabled: !row.hasReadySource || row.active || submissionActive(),
+        onchange: (event: Event) => { if ((event.target as HTMLInputElement).checked) deselectedObjectives.delete(row.loId); else deselectedObjectives.add(row.loId); refreshGenerationPanel(); } }),
+      el('span', {}, el('strong', { text: row.loName }), el('small', { text: row.active ? 'In progress' : !row.hasReadySource ? 'Assign a ready source to continue' : `${row.themeName} · ${row.approved} approved · ${row.unapproved} awaiting review` })))));
+    mount(generationUi.list, ...rows.filter(row => !deselectedObjectives.has(row.loId)).map(row => renderPlanRow(row)));
+    const cells = plannedCells();
+    const total = cells.reduce((sum, cell) => sum + cell.count, 0);
+    const objectives = new Set(cells.map(cell => cell.loId)).size;
+    mount(generationUi.planSummary,
+      el('strong', { text: submissionActive() ? 'Your submitted batch is still in progress' : `${total} question${total === 1 ? '' : 's'} across ${objectives} learning objective${objectives === 1 ? '' : 's'}` }),
+      el('p', { text: !generationLoaded ? 'Loading objectives and sources…' : total === 0 && awaitingReview > 0 ? 'Review existing drafts before adding more. You can explicitly request additional questions below.' : 'Questions are saved as drafts for your review. Student access still requires approval and release.' }));
+    mount(generationUi.runs, ...renderGenerationRuns());
+    setButtonBusy(generationUi.generateButton, generationBusy);
+    generationUi.generateButton.disabled = generationBusy || !generationLoaded || (!!submission?.runIds && submissionActive()) || (!submissionActive() && total === 0);
+    generationUi.generateButton.textContent = generationBusy ? 'Submitting…' : submission && !submission.runIds ? 'Resume submission' : submissionActive() ? 'Generation in progress' : 'Generate questions';
+    body.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.guide-composer__fields input, .guide-composer__fields select, .guide-composer__fields textarea, .guide-composer__additional input').forEach(control => { control.disabled = generationBusy || submissionActive(); });
+    const reload = body.querySelector<HTMLElement>('[data-generation-reload]');
+    if (reload) reload.hidden = !generationError;
     generationUi.status.textContent = generationError || generationMessage;
     generationUi.status.className = generationError
       ? 'course-setup-guide__form-error'
@@ -1214,7 +1359,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         getCourseTree(options.courseId),
         listMaterials(options.courseId),
         getPreseeding(options.courseId),
-        listContentRuns(options.courseId, { kind: 'question-generation', limit: 30 }),
+        Promise.all([listContentRuns(options.courseId, { kind: 'question-generation', limit: 30 }), listContentRuns(options.courseId, { kind: 'question-generation', status: 'queued' }), listContentRuns(options.courseId, { kind: 'question-generation', status: 'running' }), ...(submission?.runIds ?? []).map(id => getContentRun(options.courseId, id).then(run => [run]))]).then(groups => groups.flat()),
         getGenerationPlan(options.courseId),
       ]);
       if (closed) return;
@@ -1223,6 +1368,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       materialsLoaded = true;
       preseeding = coverage;
       planRows = autoPlan;
+      generationLoaded = true;
+      generationError = '';
       if (!planDirty) resetPlanToAuto();
       learningObjectiveCount = tree.themes.reduce((count, theme) => count + (theme.los?.length ?? 0), 0);
       for (const run of recentRuns) runs.set(run._id, run);
@@ -1235,10 +1382,14 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
 
   async function generateStarterQuestions(): Promise<void> {
     if (generationBusy) return;
-    const plannable = new Set(generationRows().filter((row) => row.hasReadySource && !row.active).map((row) => row.loId));
-    const cells = planCellsFor(plannable);
+    readSubmission();
+    if (submission?.runIds && submissionActive()) { refreshGenerationPanel(); return; }
+    const revision = screenRevision;
+    const cells = submission && !submission.runIds ? submission.cells : plannedCells();
     if (cells.length === 0) return;
     const eligible = [...new Set(cells.map((cell) => cell.loId))].map((loId) => ({ loId }));
+    if (!submission || submission.runIds) submission = { submissionId: crypto.randomUUID(), cells, prompt: generationPrompt };
+    storeSubmission();
     generationBusy = true;
     generationError = '';
     generationMessage = '';
@@ -1246,7 +1397,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     refreshGenerationPanel();
     let planResult: Awaited<ReturnType<typeof enqueueGenerationPlan>>;
     try {
-      planResult = await enqueueGenerationPlan(options.courseId, cells);
+      planResult = await enqueueGenerationPlan(options.courseId, cells, { submissionId: submission.submissionId, prompt: submission.prompt });
     } catch (caught) {
       if (closed) return;
       generationBusy = false;
@@ -1261,6 +1412,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     // exactly what did not happen.
     const started = planResult.runs.filter((run) => run.runId);
     const failed = planResult.runs.filter((run) => !run.runId);
+    submission.runIds = started.map(run => run.runId!);
+    storeSubmission();
     planDirty = false;
     for (const { loId } of eligible) {
       const firstRun = started.find((run) => run.loId === loId);
@@ -1271,7 +1424,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     const queuedQuestions = started.reduce((sum, run) => sum + run.count, 0);
     generationBusy = false;
     generationMessage = started.length > 0
-      ? `Queued ${started.length} run${started.length === 1 ? '' : 's'} (${queuedQuestions} question${queuedQuestions === 1 ? '' : 's'}) — they will arrive in the review queue as they finish.`
+      ? `Your batch of ${queuedQuestions} questions has been submitted. Drafts will appear here as they become ready.`
       : '';
     if (failed.length > 0) {
       const byLo = new Map<string, string>();
@@ -1289,65 +1442,51 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       // SSE will still deliver the durable run snapshot.
     }
     refreshGenerationPanel();
+    if (started.length && !closed && revision === screenRevision && currentScreen === 'generation') {
+      renderScreen('review');
+      setLive(generationError || generationMessage, generationError ? 'error' : 'default');
+    }
   }
 
   function renderGenerationScreen(): void {
+    generationLoaded = false;
     const revision = screenRevision;
-    generationError = '';
     const summary = el('div', { class: 'course-setup-guide__source-summary' });
     const list = el('div', { class: 'course-setup-guide__generation-list' });
+    const selection = el('div', { class: 'guide-composer__objectives' });
+    const planSummary = el('div', { class: 'guide-composer__summary', role: 'status' });
     const runList = el('div');
-    const status = el('p', { class: 'course-setup-guide__upload-status', role: 'status', 'aria-live': 'polite' });
-    const generateButton = el(
-      'button',
-      { class: 'btn btn--instr-primary', type: 'button', onclick: () => void generateStarterQuestions() },
-      'Load coverage first',
-    ) as HTMLButtonElement;
-    generationUi = { summary, list, runs: runList, status, generateButton };
-    mount(
-      body,
-      screenHeading(
-        'Plan a batch of questions',
-        'Auto suggests how many easy, medium and hard questions each Learning Objective needs, split into calculation and conceptual by the objective’s kind. Adjust any count, then generate. Every new question enters the review queue before students can see it.',
-      ),
-      summary,
-      list,
-      alert('This is an AI action and may incur model cost. It starts only after you press the generation button.'),
-      el(
-        'section',
-        {
-          class: 'course-setup-guide__alert course-setup-guide__alert--info',
-          'aria-labelledby': 'course-setup-guide-import-title',
-        },
-        el('h4', { id: 'course-setup-guide-import-title', text: 'Already have questions? Import them instead' }),
-        el('p', {
-          text: 'As an advanced alternative, upload CSV, JSON, or QTI in Question Import. You will preview the questions first, and confirmed questions still enter the Review stage as Drafts.',
-        }),
-        el(
-          'button',
-          {
-            class: 'btn btn--ghost',
-            type: 'button',
-            'aria-label': 'Open the Question Import workspace and close this setup guide',
-            onclick: () => navigate(coursePath('/import')),
-          },
-          'Open Question Import workspace \u2197',
-        ),
-      ),
+    const status = el('p', { class: 'course-setup-guide__upload-status', role: 'status' });
+    const generateButton = el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => generateStarterQuestions() }, 'Generate questions') as HTMLButtonElement;
+    const count = el('select', { class: 'input', 'aria-label': 'Questions per objective', onchange: (event: Event) => {
+      perObjectiveCount = Number((event.target as HTMLSelectElement).value); resetPlanToAuto(); refreshGenerationPanel();
+    } }, ...[0, 3, 5, 10].map(value => el('option', { value: String(value), selected: value === perObjectiveCount, text: value ? `Up to ${value} per objective` : 'Recommended: fill remaining gaps' })));
+    const instructions = el('textarea', { class: 'input', rows: '2', maxlength: '4000', 'aria-label': 'Optional instructions', placeholder: 'e.g. Use short practical scenarios and focus on common misconceptions.', oninput: (event: Event) => { generationPrompt = (event.target as HTMLTextAreaElement).value; } }, generationPrompt);
+    generationUi = { summary, list, selection, planSummary, runs: runList, status, generateButton };
+    mount(body,
+      screenHeading('Generate questions', 'Choose what students should practise. We suggest a balanced mix of questions.'),
+      planSummary,
+      el('details', { class: 'guide-composer__details' }, el('summary', { text: 'Choose learning objectives' }), selection),
+      el('div', { class: 'guide-composer__fields' },
+        el('label', {}, el('span', { text: 'Questions per objective' }), count),
+        el('label', {}, el('span', { text: 'Optional instructions' }), instructions)),
+      el('details', { class: 'guide-composer__details' }, el('summary', { text: 'Customize distribution & existing supply' }),
+        summary,
+        el('label', { class: 'guide-composer__additional' }, el('input', { type: 'checkbox', checked: additionalQuestions, onchange: (event: Event) => { additionalQuestions = (event.target as HTMLInputElement).checked; resetPlanToAuto(); refreshGenerationPanel(); } }), 'Generate additional questions beyond existing supply'),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => { resetPlanToAuto(); refreshGenerationPanel(); } }, 'Reset to suggested mix'), list),
+      el('details', { class: 'guide-composer__details' }, el('summary', { text: 'Generation activity' }), runList,
+        workspaceButton('Open generation workspace for stop and retry controls', coursePath('/preseeding'))),
       status,
-      runList,
-      actionRow(
-        'Open Question Workspace',
-        coursePath('/preseeding'),
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('sources') }, 'Check sources'),
-        el('button', {
-          class: 'btn btn--ghost', type: 'button', title: 'Reset every count to the suggested plan',
-          onclick: () => { resetPlanToAuto(); refreshGenerationPanel(); },
-        }, 'Auto'),
-        generateButton,
-        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => renderScreen('review') }, 'Continue to review \u2192'),
-      ),
-    );
+      el('button', { class: 'btn btn--ghost', type: 'button', 'data-generation-reload': 'true', hidden: true, onclick: () => loadGenerationData() }, 'Retry loading'),
+      el('p', { class: 'course-setup-guide__hint', text: 'Uses AI generation. Starts only when you submit this plan.' }),
+      actionRow('Review existing questions', coursePath('/queue'),
+        generateButton),
+      el('div', { class: 'guide-composer__links' }, workspaceButton('Sources', coursePath('/materials')), workspaceButton('Advanced workspace & import', coursePath('/preseeding'))));
+    const heading = body.firstElementChild!;
+    const footer = body.querySelector('.course-setup-guide__actions')!;
+    const content = el('div', { class: 'guide-composer__content', role: 'region', 'aria-label': 'Generation settings', tabindex: '0' });
+    for (const child of Array.from(body.children)) if (child !== heading && child !== footer) content.append(child);
+    body.replaceChildren(heading, content, footer);
     refreshGenerationPanel();
     void loadGenerationData(revision);
   }

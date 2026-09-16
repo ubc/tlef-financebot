@@ -25,7 +25,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
-import { emptyState, errorState, loadingState } from '../../ui.js';
+import { errorState, loadingState } from '../../ui.js';
 import {
   byCreatedAtDesc,
   groupFlags,
@@ -180,7 +180,7 @@ type HighlightOnce = { applied: boolean };
 
 async function renderInner(outlet: HTMLElement, courseId: string, highlight: HighlightOnce): Promise<void> {
   const body = el('div', {}, loadingState('Loading flag triage…'));
-  mount(outlet, el('div', { class: 'view' }, body));
+  mount(outlet, el('div', { class: 'view flags-workbench ta-flags-workbench' }, body));
 
   let outline: CourseOutline;
   let flags: Flag[];
@@ -272,6 +272,12 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
         {},
         stemCell,
         el('p', { class: 'flag-row__topic', text: topicLo }),
+        group.version?.options?.length ? el('div', { class: 'flags-options' }, ...group.version.options.map(option => {
+          const answer = el('div', { class: `flags-option${option.role === 'correct' ? ' flags-option--correct' : ''}` });
+          const text = el('div', {}); renderRichText(text, option.text);
+          answer.append(el('small', { text: `${option.key}${option.role === 'correct' ? ' · Correct answer' : ''}` }), text);
+          return answer;
+        })) : false,
         reasonsSummary(group),
         staleVersionNote(group),
         escalationSummary(group),
@@ -291,26 +297,37 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
     );
   }
 
-  body.replaceChildren(
-    pageHeader(
-      'TA Flag Triage',
-      `${flagCount} flag${flagCount === 1 ? '' : 's'} across ${groups.length} question version${groups.length === 1 ? '' : 's'} · Escalate a recommendation to the instructor. Resolution is instructor-only.`,
-    ),
-    groups.length
-      ? el(
-          'div',
-          { class: 'flag-table' },
-          el(
-            'div',
-            { class: 'flag-row flag-row--head' },
-            el('span', { text: 'Question' }),
-            el('span', { text: 'Flags' }),
-            el('span', { text: 'Recommendation' }),
-          ),
-          el('div', { class: 'flag-table__rows' }, ...groups.map(groupRow)),
-        )
-      : emptyState('No open flags.'),
-  );
+  let query = '';
+  let tab = 'all';
+  const targetFlag = highlight.applied ? null : currentQuery().get('flag');
+  let active = groups.find(group => group.flags.some(flag => flag.id === targetFlag)) ?? groups[0];
+  const cached = new Map<FlagGroup, HTMLElement>();
+  const results = el('div', { class: 'flag-table' });
+  const tabs = el('div', { class: 'flags-tabs' });
+  const search = el('input', { class: 'input', type: 'search', placeholder: 'Search flagged questions…', 'aria-label': 'Search flagged questions', oninput: (event: Event) => { query = (event.target as HTMLInputElement).value.toLowerCase(); draw(); } });
+  function draw(): void {
+    const visible = groups.filter(group => (group.version?.stem ?? '').toLowerCase().includes(query) && (tab === 'all' || (tab === 'open' ? group.flags.some(flag => flag.state === 'open') : !group.flags.some(flag => flag.state === 'open'))));
+    if (!visible.includes(active)) active = visible[0];
+    mount(tabs, ...[['all', 'All active'], ['open', 'Needs triage'], ['escalated', 'Escalated']].map(([value, label]) => el('button', { type: 'button', text: label, 'aria-pressed': String(tab === value), onclick: () => { tab = value; draw(); } })));
+    if (!active) {
+      mount(results, el('section', { class: 'flags-empty-panel' }, el('div', { class: 'flags-empty' },
+        el('div', { class: 'flags-empty-mark', text: groups.length ? '⌕' : '✓', 'aria-hidden': 'true' }),
+        el('h2', { text: groups.length ? 'No matching flags' : 'No flags need attention' }),
+        el('p', { text: groups.length ? 'Try a different search or filter.' : 'Student reports will appear here. Review the question, add a recommendation, and send it to your instructor.' }),
+        groups.length ? el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { query = ''; search.value = ''; tab = 'all'; draw(); } }) : false)));
+      return;
+    }
+    if (!cached.has(active)) cached.set(active, groupRow(active));
+    mount(results, el('div', { class: 'flags-layout' },
+      el('nav', { class: 'flags-queue', 'aria-label': 'Flagged questions' }, ...visible.map(group => el('button', { type: 'button', 'aria-pressed': String(group === active), onclick: () => { active = group; draw(); } },
+        el('strong', { text: group.version?.stem ?? 'Question unavailable' }),
+        el('small', { text: `${openFlags(group).length} reports · ${group.flags.some(flag => flag.state === 'open') ? 'Needs triage' : 'Escalated'}` })))),
+      el('article', { class: 'flags-detail' }, cached.get(active)!)));
+  }
+  body.replaceChildren(pageHeader('Flags', 'Review student reports and send recommendations to your instructor.'),
+    el('p', { class: 'flags-counts', text: `${flagCount} active reports · ${groups.length} questions` }),
+    ...(groups.length ? [tabs, el('div', { class: 'flags-search' }, search)] : []), results);
+  draw();
 
   attachTutorial(body, 'ta-flags', {"ta-flags-context": ".page-header", "ta-flags-items": ".flag-table"});
 

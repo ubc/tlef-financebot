@@ -33,7 +33,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
-import { emptyState, errorState, loadingState } from '../../ui.js';
+import { errorState, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { subscribeFlagsChanged } from '../../flag-sync.js';
 import {
@@ -182,7 +182,7 @@ function staleVersionNote(group: FlagGroup): HTMLElement | false {
 
 async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading flags…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view flags-workbench' }, body);
   mount(outlet, root);
 
   let tree: CourseTree;
@@ -199,17 +199,22 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   let actionErrorMessage: string | null = null;
 
   const resultsContainer = el('div', {});
-  const initialGroups = groupFlags(flags);
+  let activeView = 'open';
+  let selectedVersion = '';
+  const tabs = el('nav', { class: 'flags-tabs', 'aria-label': 'Flag views' });
+  const counts = el('div', { class: 'flags-counts' });
+  const search = el('input', { class: 'input', type: 'search', 'aria-label': 'Search flags', placeholder: 'Search question, topic or feedback…' });
   const header = pageHeader(
     'Flags',
-    `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${initialGroups.length} question version${initialGroups.length === 1 ? '' : 's'}`,
+    'Understand reported issues. Review the question. Close the loop.',
   );
   const headerSubtitle = header.querySelector('.page-header__subtitle');
 
   function updateHeader(): void {
     const groups = groupFlags(flags);
-    const text = `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${groups.length} question version${groups.length === 1 ? '' : 's'}`;
-    if (headerSubtitle) headerSubtitle.textContent = text;
+    const text = `${groups.filter(isGroupOpen).length} questions need review · ${groups.filter(g => g.question?.state === 'paused').length} paused in practice · ${groups.filter(g => !isGroupOpen(g)).length} resolved`;
+    counts.textContent = text;
+    if (headerSubtitle) headerSubtitle.textContent = 'Understand reported issues. Review the question. Close the loop.';
   }
 
   // Task 6 (§6.2 remediation): per-group state, keyed by `questionVersionId`
@@ -543,7 +548,7 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
             ? el('span', { class: 'remediation-panel__notified', text: ` Notified ${notified} student${notified === 1 ? '' : 's'}.` })
             : el(
                 'button',
-                { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void handleNotify(group) },
+                { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => handleNotify(group) },
                 'Notify affected students',
               ),
         ),
@@ -557,6 +562,14 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     if (group.version) renderRichText(stemCell, group.version.stem);
     else stemCell.textContent = '(question content unavailable)';
 
+    if (group.version) {
+      const options = el('div', { class: 'flags-options' });
+      for (const option of group.version.options) {
+        const text = el('div'); renderRichText(text, `${option.key}. ${option.text}`);
+        options.append(el('div', { class: option.role === 'correct' ? 'flags-option flags-option--correct' : 'flags-option' }, text, el('small', { text: option.role.replace(/-/g, ' ') })));
+      }
+      stemCell.append(options);
+    }
     const topicLo = group.question ? topicLoLabel(tree, group.question.loIds, group.question.themeIds) : '—';
     const open = isGroupOpen(group);
     const resolutionAction = latestResolutionAction(group);
@@ -589,8 +602,8 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
       ? el(
           'div',
           { class: 'flag-row__actions' },
-          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => handleEdit(group) }, 'Edit'),
-          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClear(group) }, 'Return to Students'),
+          el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => handleEdit(group) }, 'Review & edit'),
+          el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => handleClear(group) }, 'Clear reports'),
           el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => handleEdit(group, 'archive') }, 'Reject & Archive'),
         )
       : false;
@@ -634,6 +647,9 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
         'data-flag-ids': group.flags.map((flag) => flag.id).join(' '),
       },
       row,
+      el('details', { class: 'flags-history' }, el('summary', { text: `All feedback · ${group.flags.length}` }), ...group.flags.slice().sort(byCreatedAtDesc).map(f => el('article', {},
+        el('small', { text: `${f.raisedBy === 'ta' ? 'TA' : 'Student'} · ${new Date(f.createdAt).toLocaleString()}` }), el('p', { text: f.reason || 'No explanation recorded.' }),
+        f.resolution ? el('p', { text: `${RESOLUTION_LABEL[f.resolution.action]} · ${new Date(f.resolution.at).toLocaleDateString()}${f.resolution.comment ? ` · ${f.resolution.comment}` : ''}` }) : false))),
       remediationPanel(group),
     );
   }
@@ -688,32 +704,46 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
     match.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  function guidance(): HTMLElement {
+    return el('div', { class: 'flags-guidance' }, ...[
+      ['01 · Collect feedback', 'Student reports and TA escalations appear here, grouped by question version.'],
+      ['02 · Inspect the context', 'Read the question, feedback and version changes before deciding.'],
+      ['03 · Close the loop', 'Edit or clear the report. Resolved feedback remains available for reference.'],
+    ].map(([title, text]) => el('div', {}, el('h3', { text: title }), el('p', { text }))));
+  }
   function renderResults(): void {
-    const groups = sortGroups(groupFlags(flags));
-    mount(
-      resultsContainer,
-      loadErrorMessage ? errorState(loadErrorMessage, () => void reload()) : false,
-      actionErrorMessage ? errorState(actionErrorMessage) : false,
-      groups.length
-        ? el(
-            'div',
-            { class: 'flag-table' },
-            el(
-              'div',
-              { class: 'flag-row flag-row--head' },
-              el('span', { text: 'Question' }),
-              el('span', { text: 'Flags' }),
-              el('span', { text: 'Actions' }),
-            ),
-            el('div', { class: 'flag-table__rows' }, ...groups.map(groupRow)),
-          )
-        : emptyState('No flagged questions.'),
-    );
+    const all = sortGroups(groupFlags(flags));
+    if (!highlightApplied) {
+      const query = currentQuery();
+      const target = all.find(g => query.get('question') === g.questionId || g.flags.some(f => f.id === query.get('flag')));
+      if (target) { selectedVersion = target.questionVersionId; activeView = isGroupOpen(target) ? 'open' : 'resolved'; search.value = ''; }
+    }
+    tabs.replaceChildren(...['open', 'resolved'].map(view => el('button', { type: 'button', 'aria-pressed': String(view === activeView), onclick: () => { activeView = view; search.value = ''; renderResults(); } }, `${view === 'open' ? 'Needs review' : 'Resolved'} · ${all.filter(g => isGroupOpen(g) === (view === 'open')).length}`)));
+    const query = search.value.trim().toLowerCase();
+    const groups = all.filter(g => isGroupOpen(g) === (activeView === 'open')).filter(g => [g.version?.stem, ...(g.flags.map(f => f.reason)), g.question ? topicLoLabel(tree, g.question.loIds, g.question.themeIds) : ''].join(' ').toLowerCase().includes(query));
+    const selected = groups.find(g => g.questionVersionId === selectedVersion) ?? groups[0];
+    if (selected) selectedVersion = selected.questionVersionId;
+    let content: HTMLElement;
+    if (selected) {
+      content = el('div', { class: 'flags-layout' },
+        el('aside', { class: 'flags-queue', 'aria-label': 'Reported questions' }, ...groups.map(g => el('button', { type: 'button', 'aria-pressed': String(g === selected), onclick: () => { selectedVersion = g.questionVersionId; renderResults(); } },
+          el('strong', { text: g.version?.stem ?? 'Question content unavailable' }), el('small', { text: `${g.flags.length} reports · ${isGroupEscalated(g) ? 'TA escalation' : isGroupOpen(g) ? 'Needs review' : 'Resolved'}` })))),
+        el('div', { class: 'flags-detail' }, groupRow(selected)));
+    } else {
+      const title = query ? 'No matching feedback' : activeView === 'resolved' ? 'No resolved feedback yet' : all.length ? 'You’re all caught up' : 'No feedback to review';
+      const description = query ? 'Try another keyword or clear your search.' : activeView === 'resolved' ? 'Completed reviews and their resolution notes will appear here.' : all.length ? 'Every reported question has been reviewed. Revisit the decisions in Resolved.' : 'When a student reports an issue or a TA escalates a question, you’ll find it here. There’s nothing you need to do right now.';
+      content = el('div', { class: 'flags-empty-panel' }, el('div', { class: 'flags-empty' }, el('span', { class: 'flags-empty-mark', 'aria-hidden': 'true', text: query ? '⌕' : all.length ? '✓' : '⚑' }), el('h2', { text: title }), el('p', { text: description }),
+        query ? el('button', { class: 'btn btn--secondary btn--sm', onclick: () => { search.value = ''; renderResults(); } }, 'Clear search') : all.length && activeView === 'open' ? el('button', { class: 'btn btn--secondary btn--sm', onclick: () => { activeView = 'resolved'; renderResults(); } }, 'View resolved feedback') : el('a', { class: 'btn btn--secondary btn--sm', href: `#/instructor/course/${courseId}/bank`, text: 'Open Question Bank' })), query ? false : guidance());
+    }
+    mount(resultsContainer, loadErrorMessage ? errorState(loadErrorMessage, () => void reload()) : false, actionErrorMessage ? errorState(actionErrorMessage) : false, content);
     highlightFromQuery();
   }
+  search.addEventListener('input', renderResults);
 
   body.replaceChildren(
     header,
+    el('details', { class: 'flags-help' }, el('summary', { text: 'How flags work' }), guidance(), el('p', { text: 'Flags contain student feedback and TA escalations. AI generation review stays in Review Queue. Correctness-affecting changes retain the existing remediation process.' })),
+    counts, tabs, el('div', { class: 'flags-search' }, search),
     resultsContainer,
   );
   updateHeader();

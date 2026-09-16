@@ -445,6 +445,20 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
     expect(res.body.error).toBe('invalid-options:expected-4-options');
   });
 
+  it('requires a version pin for save-and-return-to-review', async () => {
+    const res = await request(makeApp(instructor)).patch(`/api/questions/${questionId.toHexString()}`).send({ stem: 'Edited', submitForReview: true });
+    expect(res.status).toBe(400);
+    expect(editQuestion).not.toHaveBeenCalled();
+  });
+
+  it('forwards the bank edit version pin and review intent', async () => {
+    const pin = new ObjectId();
+    jest.mocked(editQuestion).mockResolvedValue({ _id: new ObjectId(), stem: 'Edited', options: [mcqOption()] } as never);
+    const res = await request(makeApp(instructor)).patch(`/api/questions/${questionId.toHexString()}`).send({ stem: 'Edited', expectedVersionId: pin.toHexString(), submitForReview: true });
+    expect(res.status).toBe(200);
+    expect(jest.mocked(editQuestion).mock.calls[0][1]).toMatchObject({ expectedVersionId: pin, submitForReview: true });
+  });
+
   it('200s a valid patch and returns the service result', async () => {
     const version = { _id: new ObjectId(), version: 2, stem: 'Updated', options: [mcqOption()] };
     jest.mocked(editQuestion).mockResolvedValue(version as never);
@@ -667,6 +681,19 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('question-conflict');
+  });
+
+  it('forwards a rejection reason with the expected version and rejects invalid uses', async () => {
+    const versionId = new ObjectId();
+    jest.mocked(transitionQuestion).mockResolvedValue({ _id: questionId, courseId, state: 'archived' } as never);
+    const response = await request(makeApp(instructor)).post(`/api/questions/${questionId}/transition`)
+      .send({ to: 'archived', expectedVersionId: versionId.toHexString(), rejectionReason: '  Ambiguous  ' });
+    expect(response.status).toBe(200);
+    expect(transitionQuestion).toHaveBeenCalledWith(questionId, 'archived', instructor.puid, versionId, 'Ambiguous');
+    for (const body of [{ to: 'approved', rejectionReason: 'No' }, { to: 'archived', rejectionReason: 'x'.repeat(2001) }]) {
+      const invalid = await request(makeApp(instructor)).post(`/api/questions/${questionId}/transition`).send(body);
+      expect(invalid.status).toBe(400);
+    }
   });
 
   it('200s a valid transition', async () => {

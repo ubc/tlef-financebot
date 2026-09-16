@@ -1,5 +1,6 @@
 // Tiny DOM helpers. No framework — just enough to build elements declaratively
 // and keep the view code readable. See client/AGENTS.md.
+import { isButtonBusy, runButtonAction, setButtonBusy } from './action-state.js';
 
 type Child = Node | string | null | undefined | false;
 
@@ -23,13 +24,35 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   ...children: Child[]
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
+  const busy = attrs.busy;
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null || value === false) continue;
     if (key === 'class') node.className = String(value);
     else if (key === 'text') node.textContent = String(value);
     else if (key === 'html') node.innerHTML = String(value);
-    else if (key.startsWith('on') && typeof value === 'function') {
-      node.addEventListener(key.slice(2), value as EventListener);
+    else if (key === 'busy') {
+      continue;
+    } else if (key.startsWith('on') && typeof value === 'function') {
+      const listener = value as (event: Event) => unknown;
+      node.addEventListener(key.slice(2), (event) => {
+        if (!(node instanceof HTMLButtonElement)) {
+          const submitter = event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement
+            ? event.submitter
+            : undefined;
+          if (submitter && isButtonBusy(submitter)) {
+            event.preventDefault();
+            return;
+          }
+          const result = listener(event);
+          if (submitter && result instanceof Promise && !isButtonBusy(submitter)) {
+            void runButtonAction(submitter, () => result);
+          }
+          return;
+        }
+        if (isButtonBusy(node)) return;
+        const result = listener(event);
+        if (result instanceof Promise) void runButtonAction(node, () => result);
+      });
     } else {
       node.setAttribute(key, String(value));
     }
@@ -38,6 +61,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
     if (child === null || child === undefined || child === false) continue;
     node.append(child);
   }
+  if (node instanceof HTMLButtonElement && busy !== undefined) setButtonBusy(node, Boolean(busy));
   return node;
 }
 

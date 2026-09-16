@@ -117,3 +117,107 @@ _Last updated: 2026-09-09_
 
 This is Stephen-owned product workflow work started after Phase 3 completed
 29/29. It does not claim or alter Phase 4's protected Test & Harden scope.
+
+## Action progress — 2026-09-14
+
+Local `codex/action-progress` adds visible button spinners across roles, removes
+cursor-based waiting, and exposes source-processing stages and counts. Pending
+actions survive queue/workspace redraws; prerequisite-only disabled controls do
+not spin. Error recovery and duplicate prevention remain explicit.
+
+Verification: typecheck/lint/build; 107 Jest suites / 1,394 tests; 15 tutorial
+browser regressions; 8 action-progress browser cases including four production
+role components, source SSE transitions, mobile/dark/reduced motion and scoped axe.
+Independent review issues were resolved. Changes are uncommitted for Stephen's
+local acceptance; no course records, backend contracts or provider settings changed.
+
+## Admin appearance and local persona — 2026-09-14
+
+Admin now has explicit Admin branding, platform/teaching navigation groups and
+a monochrome dark visual identity, including body-mounted dialogs. Saved theme
+preferences remain intact outside Admin. Local IdP admin/admin was added with
+PUID PUID-ADMIN-0001 matching the existing local allowlist. Real SAML login, four
+Admin page axe scans, mobile navigation and logout-theme restoration pass.
+Typecheck/lint/build and IdP PHP syntax pass. Both repositories remain uncommitted.
+
+Admin appearance correction: only the sidebar remains black; content and dialogs
+follow the restored light/dark toggle and persist the selected mode.
+
+## Instructor workflow UX audit — 2026-09-14
+
+Documentation only: reviewed Stephen's 12 screenshots, read-only inspected the
+live Instructor journey and checked its implementation. The audit identifies
+missing existing-LO presentation, inconsistent generation eligibility, run-only
+progress, fragmented review/preview rendering and excessive configuration.
+The historical unapproved-supply claim above must be re-verified against the
+current batch planner; no generation behavior was changed in this audit.
+
+See `2026-09-14-instructor-workflow-redesign.md` and
+`docs/ux/2026-09-14-instructor-workflow-audit.md`. Implementation is page-gated:
+Learning Objectives first, then wait for Stephen after each completed page.
+No app code, course data, installed skills or provider configuration changed.
+
+## Guided Learning Objectives — Page 1, 2026-09-14
+
+Implemented existing Topic/LO list, inline name editing, explicit addition to an
+existing/new Topic, save-to-list and recoverable errors. The list scrolls while
+Continue stays visible. Build/lint, 2 focused unit tests and 4 isolated browser
+cases (including scoped axe and mobile dark mode) pass. Real course read-only
+verification confirms 15 LOs. Awaiting Stephen acceptance; no Page 2 work started.
+
+## Guided Questions — Page 2, 2026-09-14
+
+Page 1 accepted. Guided Questions now has compact settings and progressive
+disclosure, pending-draft-aware recommendations, explicit extra generation,
+immutable retry-safe submission identity and one-time Review navigation.
+Exact run restoration and all-active queries avoid recent-history truncation.
+Full Jest: 107 suites / 1,397 tests; 16 focused browser cases pass.
+Awaiting Stephen acceptance. Streaming and redesigned Review remain Page 3.
+
+## Review workstation B — 2026-09-14
+
+Stephen chose and authorized B after prototype refinement. The formal Instructor
+Review Queue is implemented with compact queue, same-page reader/editing, question
+board and optional atomic rejection reasons. 97 related unit/route tests and eight
+browser cases pass, including dark/mobile axe; build/typecheck/lint pass. Real
+course inspected read-only. Awaiting page acceptance; guided streaming remains
+separate, and no subsequent page is started.
+
+B acceptance refinement: empty queue now has its own compact illustrated layout
+and next-step links, with separate resettable search/filter no-results state.
+Ten browser cases pass across the final focused runs, including empty-state
+light/dark axe. Awaiting Stephen's visual review.
+
+
+## Generate Questions workstation — 2026-09-14
+
+Approved prototype integrated into the real default page. Compact objective/brief/
+batch layout, real source eligibility, immutable batch recovery, saved-draft reader,
+AI assessment and recorded step timeline are implemented. Existing advanced tools
+remain available. Seven focused browser tests, scoped light/dark axe, build, client
+typecheck and full lint pass; real course inspected read-only. No token-streaming
+or simulated progress added. Awaiting Stephen's visual acceptance of this page.
+
+Streaming follow-up now implemented and verified: real provider fragments → bounded
+unverified stem snapshots → existing course SSE → gradual character reveal. Retries
+reset previews; refresh restores the latest text; validation/publication unchanged.
+95 unit and 8 browser checks pass. Real course verification observed 8 text updates
+before any saved question, then successful saved-question preview. Two QA drafts
+were created and left unpublished. Existing finished runs cannot reconstruct
+historical token timing; new generation uses the streaming path.
+
+Answer-output follow-up complete: options, proposed correct answer, difficulty and
+per-option explanations stream with the body. Retry/reload behavior is preserved;
+saved readers retain explanations and answer-check reports. 97 unit tests, 9
+browser tests and light/dark live-output axe checks pass. A real one-question run
+showed answer updates before saving and all four explanations after completion.
+The additional QA question remains unpublished.
+
+- Refined approved-only Question Bank prototype: prominent topic release controls,
+  complete question editing and return-to-review. Aligned production Review Queue
+  top heading/tabs/toolbar. Build/lint and 10 isolated browser cases pass.
+
+- Production Question Bank implemented: approved collection, prominent topic release,
+  full version editor returning content to review, server-backed serving status,
+  compact reader/board and responsive filters. 104 service/route and 6 browser checks
+  pass; real course inspected read-only.

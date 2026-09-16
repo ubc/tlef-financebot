@@ -226,6 +226,16 @@ export async function getCourseKnowledgeGraph(courseId: ObjectId): Promise<Cours
       materialId: material._id,
       ...(material.deletedAt ? { trashed: true } : {}),
     });
+    // Preserve explicit assignments even when concept extraction produced no nodes.
+    for (const assignment of material.assignments) {
+      addEdge({
+        id: `edge:assignment:${materialHex}:${assignment.loId?.toHexString() ?? assignment.themeId.toHexString()}`,
+        source: materialNodeId,
+        target: assignment.loId ? `lo:${assignment.loId.toHexString()}` : `topic:${assignment.themeId.toHexString()}`,
+        type: 'covers',
+        label: 'Assigned source',
+      });
+    }
     const materialChunks = chunks
       .filter((chunk) => chunk.materialId.equals(material._id))
       .map((chunk) => ({ index: chunk.index, text: chunk.text }));

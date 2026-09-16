@@ -13,6 +13,7 @@ import {
   type GenerationPlanRow,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { setButtonBusy } from '../../action-state.js';
 
 type Tier = 'easy' | 'medium' | 'hard';
 type Kind = 'calculation' | 'conceptual';
@@ -322,6 +323,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
   };
 
   const refresh = (): void => {
+    setButtonBusy(generateButton, busy);
     const planned = cells();
     const questions = planned.reduce((sum, cell) => sum + cell.count, 0);
     const los = new Set(planned.map((cell) => cell.loId)).size;
@@ -388,7 +390,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
   };
 
   autoButton.onclick = () => { resetToAuto(); refresh(); };
-  generateButton.onclick = () => void generate();
+  generateButton.onclick = () => generate();
   cancelButton.onclick = close;
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
   dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });

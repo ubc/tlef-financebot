@@ -248,6 +248,7 @@ function parseCsvImport(raw: string): ImportParseResult {
         key: targetKeys[optionIndex],
         text: row[`option${sourceKey}`] ?? '',
         explanation: row[`explanation${sourceKey}`] ?? '',
+        role: row[`role${sourceKey}`] as OptionRole | undefined,
       }))
       .filter((option) => option.text.trim() !== '');
 

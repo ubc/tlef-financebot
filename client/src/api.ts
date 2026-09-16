@@ -747,7 +747,7 @@ export async function skipLo(courseId: string, loId: string, attempted: boolean)
 
 export interface SessionEndSummary {
   losCovered: string[];
-  questionsAttempted: number;
+  questionsAttempted: number; correctAttempts?: number;
   accuracyByLo: Array<{ loId: string; attempted: number; correct: number; accuracy: number }>;
   reviewBookAdditions: Array<{ entryId: string; questionId: string; loId: string; themeId: string }>;
   missedQuestions: string[];
@@ -1508,7 +1508,7 @@ export type MaterialKind =
 
 // --- Instructor: durable content runs (Phase 2 P2-0) ------------------------
 
-export type ContentRunKind = 'material-ingest' | 'question-generation';
+export type ContentRunKind = 'material-ingest' | 'question-generation' | 'structure-generation';
 export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 
 export interface ContentRunError {
@@ -1555,6 +1555,7 @@ export interface MaterialIngestRun extends ContentRunBase {
 }
 
 export interface QuestionGenerationRun extends ContentRunBase {
+  preview?: { item: number; attempt: number; stem: string; difficulty?: string; options?: Array<{ key: string; text: string; role?: string; explanation?: string }> };
   kind: 'question-generation';
   input: {
     loId: string;
@@ -1575,7 +1576,43 @@ export interface QuestionGenerationRun extends ContentRunBase {
   };
 }
 
-export type ContentRunSummary = MaterialIngestRun | QuestionGenerationRun;
+export interface StructureOptions {
+  materialIds?: string[];
+  topicCount?: number;
+  losPerTopic?: number;
+  level?: 'auto' | 'introductory' | 'advanced';
+  emphasis?: 'auto' | 'balanced' | 'conceptual' | 'applied';
+  guidance?: string;
+}
+export interface StructureDraft { themes: Array<{ name: string; los: Array<{ name: string }> }> }
+export interface StructureEvidence {
+  id: string; objective: string; materialId: string; materialName: string; chunkIndex: number; quote: string;
+}
+export interface StructureResult {
+  themes: Array<{ name: string; los: Array<{ name: string; evidenceIds: string[]; materialIds: string[] }> }>;
+  evidence: StructureEvidence[];
+  coverage: {
+    materials: Array<{ materialId: string; name: string; chunks: number; sections: number; mappedObjectives: number }>;
+    analyzedSections: number; extractedObjectives: number; mappedObjectives: number;
+    unmappedEvidenceIds: string[];
+    excludedSections: Array<{ materialId: string; chunkIndex: number; reason: string }>;
+    warnings: string[];
+  };
+}
+export interface StructureGenerationRun extends ContentRunBase {
+  progressMessage?: string;
+  kind: 'structure-generation'; input: StructureOptions & { materialIds: string[] };
+  structurePreview?: StructureDraft;
+  structureResult?: StructureResult;
+  result?: never;
+}
+export type ContentRunSummary = MaterialIngestRun | QuestionGenerationRun | StructureGenerationRun;
+
+export function startStructureGeneration(courseId: string, options: StructureOptions): Promise<{ runId: string }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options),
+  });
+}
 
 export interface ContentRunEvent {
   revision: number;
@@ -1973,11 +2010,11 @@ export function getGenerationPlan(courseId: string): Promise<GenerationPlanRow[]
 }
 
 /** POST /api/courses/:courseId/generation-plan -> one run per cell. */
-export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[]): Promise<GenerationPlanResult> {
+export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string }): Promise<GenerationPlanResult> {
   return request<GenerationPlanResult>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cells }),
+    body: JSON.stringify({ cells, ...submission }),
   });
 }
 
@@ -2275,6 +2312,8 @@ export interface QuestionHead {
  * full `QuestionHead` (no `agentDecision`/`internalNotes`; those are reserved
  * for the single-question `getQuestion`). */
 export interface BankQuestion {
+  /** Server numerical/placeholder gate; availability also needs course and topic release. */
+  contentReady?: boolean;
   id: string;
   state: PublicationState;
   labels: QuestionLabel[];
@@ -2354,6 +2393,10 @@ export function getQuestion(questionId: string): Promise<QuestionDetail> {
 export function editQuestion(
   questionId: string,
   patch: {
+    expectedVersionId?: string;
+    submitForReview?: boolean;
+    type?: QuestionType;
+    sourceRefs?: QuestionVersion['sourceRefs'];
     stem?: string;
     options?: QuestionOption[];
     difficulty?: Difficulty;
@@ -2393,6 +2436,7 @@ export function transitionQuestion(
   questionId: string,
   to: PublicationState,
   expectedVersionId?: string,
+  rejectionReason?: string,
 ): Promise<QuestionHead> {
   return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
     method: 'POST',
@@ -2400,6 +2444,7 @@ export function transitionQuestion(
     body: JSON.stringify({
       to,
       ...(expectedVersionId !== undefined ? { expectedVersionId } : {}),
+      ...(rejectionReason !== undefined ? { rejectionReason } : {}),
     }),
   });
 }
@@ -2733,7 +2778,7 @@ export interface AnswerDistribution {
 
 export interface EngagementAnalytics {
   totals: {
-    questionsAttempted: number;
+    questionsAttempted: number; correctAttempts?: number;
     avgSessionMinutes: number;
     sessionsPerStudent: number;
     loCoverageRate: number;
@@ -2741,7 +2786,7 @@ export interface EngagementAnalytics {
   };
   weeks: Array<{
     week: string;
-    questionsAttempted: number;
+    questionsAttempted: number; correctAttempts?: number;
     sessions: number;
     activeStudents: number;
     avgSessionMinutes: number;
@@ -2751,6 +2796,7 @@ export interface EngagementAnalytics {
 }
 
 export interface AnalyticsStudent {
+  strugglingObjectives?: number;
   puid: string;
   uid: string;
   displayName: string;
@@ -2761,14 +2807,15 @@ export interface AnalyticsStudent {
 
 export interface StudentAnalyticsProfile {
   student: AnalyticsStudent;
-  history: Array<{ _id: string; mode: string; correct: boolean; createdAt: string; loId: string; themeId: string }>;
-  mastery: Array<{ loId: string; status: string; attemptCount: number; windowAccuracy: number; examVerified?: boolean; rationale?: string }>;
+  objectives?: Array<{ loId: string; name: string; themeId: string; topic: string }>;
+  history: Array<{ _id: string; mode: string; correct: boolean; createdAt: string; loId: string; themeId: string; questionId: string; questionVersionId: string; selectedKey: string; selectedRole: string; difficulty: string; isRetry: boolean; recordedVersion?: number; stem?: string; options?: Array<{ key: string; text: string; explanation: string; role: string }> }>;
+  mastery: Array<{ loId: string; status: string; attemptCount: number; windowAccuracy: number; examVerified?: boolean; rationale?: string; updatedAt?: string; skipped?: string }>;
   reviewBook: Array<{ _id: string; questionId: string; updatedAt: string }>;
   flags: Array<{ _id: string; questionId: string; state: string; reason?: string; createdAt: string }>;
   engagement: { attempts: number; sessions: number; lastAttemptAt?: string; examPrepAttempts: number; topicPracticeAttempts: number };
 }
 
-export interface AnalyticsFilter { mode?: 'topic-practice' | 'exam-prep'; from?: string; to?: string; loId?: string }
+export interface AnalyticsFilter { mode?: 'topic-practice' | 'exam-prep'; from?: string; to?: string; loId?: string; themeId?: string; q?: string }
 export interface QuestionPattern extends AnalyticsRate {
   questionId: string; versionId: string; stem: string; loId: string; loName: string;
   themeId: string; themeName: string; misconceptionRate?: number; version?: number;
@@ -3050,4 +3097,14 @@ export function resetTutorialProgress(role: TutorialRole): Promise<{ count: numb
 /** Session-owned effective course permissions; no assignment or other-user data. */
 export function getMyCourseCapabilities(courseId: string): Promise<Record<Capability, boolean>> {
   return request<Record<Capability, boolean>>(`/api/courses/${encodeURIComponent(courseId)}/capabilities/me`);
+}
+
+export interface AnalyticsExamScore {
+  id: string; puid: string; displayName: string; templateId: string;
+  templateKind: string; submittedAt: string; score: number; maxScore: number;
+}
+export function getAnalyticsExamScores(courseId: string, filter: { from?: string; to?: string; puid?: string } = {}): Promise<{ items: AnalyticsExamScore[]; excludedUnscored: number }> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) if (value) query.set(key, value);
+  return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/exam-scores?${query}`);
 }

@@ -39,11 +39,13 @@ export async function renderExamAttempt(outlet: HTMLElement, params: RouteParams
     const finish = async (): Promise<void> => {
       if (submitting) return;
       submitting = true;
+      render();
       try {
         await submitExamAttempt(attemptId);
         window.location.hash = resultHash(courseId, attemptId);
       } catch (error) {
         submitting = false;
+        render();
         window.alert((error as Error).message);
       }
     };
@@ -141,11 +143,13 @@ export async function renderExamAttempt(outlet: HTMLElement, params: RouteParams
           el('button', {
             class: 'btn btn--primary',
             type: 'button',
+            busy: submitting,
             onclick: () => {
               const warning = unanswered.length
                 ? `Questions ${unanswered.join(', ')} are unanswered. Submit anyway?`
                 : 'Submit this exam? You cannot change answers afterward.';
-              if (window.confirm(warning)) void finish();
+              if (window.confirm(warning)) return finish();
+              return undefined;
             },
           }, `Submit exam${unanswered.length ? ` (${unanswered.length} unanswered)` : ''}`),
         ),

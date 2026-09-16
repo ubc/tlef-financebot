@@ -7,6 +7,7 @@ import {
   type AdminAccount,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { setButtonBusy } from '../../action-state.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import type { RouteParams } from '../../router.js';
@@ -123,6 +124,7 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
 
   const grantPuid = async (puid: string, button: HTMLButtonElement): Promise<void> => {
     button.disabled = true;
+    setButtonBusy(button, true);
     feedbackSlot.replaceChildren();
     try {
       const account = await grantPlatformInstructor(puid);
@@ -139,6 +141,8 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     } catch (error) {
       button.disabled = false;
       feedbackSlot.replaceChildren(errorState(errorMessage(error)));
+    } finally {
+      setButtonBusy(button, false);
     }
   };
 
@@ -160,6 +164,7 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
       tone: 'danger',
     })) return;
     button.disabled = true;
+    setButtonBusy(button, true);
     feedbackSlot.replaceChildren();
     try {
       await revokePlatformInstructor(account.puid);
@@ -170,6 +175,8 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     } catch (error) {
       button.disabled = false;
       feedbackSlot.replaceChildren(errorState(errorMessage(error)));
+    } finally {
+      setButtonBusy(button, false);
     }
   };
 
@@ -183,9 +190,9 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
     grantButton.disabled = false;
   };
 
-  const search = (event: Event): void => {
+  const search = (event: Event): Promise<void> => {
     event.preventDefault();
-    void load();
+    return load();
   };
 
   mount(
@@ -201,7 +208,7 @@ async function renderAccountsInner(outlet: HTMLElement): Promise<void> {
         'form',
         {
           class: 'card admin-account-create',
-          onsubmit: (event: Event) => void grantNew(event),
+          onsubmit: (event: Event) => grantNew(event),
         },
         el(
           'div',

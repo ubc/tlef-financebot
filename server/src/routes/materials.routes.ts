@@ -1,3 +1,4 @@
+import { enqueueStructureGeneration, structureOptionsSchema } from '../services/structure-generation.service';
 import fs from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -385,6 +386,17 @@ materialsRouter.get(
   },
 );
 
+/** Persisted generation uses the existing course SSE stream. */
+materialsRouter.post(
+  '/courses/:courseId/structure-generation',
+  validate({ params: courseIdParams }), ensureCourseInstructor(),
+  validate({ body: structureOptionsSchema }),
+  async (req, res) => {
+    const run = await enqueueStructureGeneration(new ObjectId(String(req.params.courseId)), req.user!.puid, req.body);
+    res.status(202).json({ runId: run._id.toHexString() });
+  },
+);
+
 /**
  * POST /api/courses/:courseId/apply-suggested-hierarchy
  * Creates the reviewed Topic/LO subset and automatically merges the AI source
@@ -411,6 +423,11 @@ materialsRouter.post(
 // contract) mapped to HTTP status here, matching courses.routes.ts's and
 // questions.routes.ts's router-scoped normalizer pattern.
 const MATERIAL_ERROR_STATUS: Record<string, number> = {
+  'structure-no-materials': 409,
+  'structure-material-unavailable': 409,
+  'structure-chunks-missing': 409,
+  'structure-corpus-too-large': 413,
+  'structure-enqueue-failed': 503,
   'material-not-found': 404,
   'material-retry-conflict': 409,
   'material-restore-conflict': 409,

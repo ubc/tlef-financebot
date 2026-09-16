@@ -11,12 +11,13 @@ import {
   type InstructorWorkflowSummary,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { setButtonBusy } from '../../action-state.js';
 import { checklistRow, statTile } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
 import { suggestedTermDates } from '../../academic-terms.js';
-import { openCourseSetupGuide } from './course-setup-guide.js';
+import { startSetupJourney } from '../../setup-journey.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -393,6 +394,7 @@ function openCourseDatesDialog(
       return;
     }
     saveButton.disabled = true;
+    setButtonBusy(saveButton, true);
     saveButton.textContent = 'Saving…';
     try {
       await updateCourse(course.id, {
@@ -405,6 +407,8 @@ function openCourseDatesDialog(
       error.textContent = caught instanceof ApiError ? caught.message : (caught as Error).message;
       saveButton.disabled = false;
       saveButton.textContent = 'Save dates';
+    } finally {
+      setButtonBusy(saveButton, false);
     }
   });
 
@@ -494,12 +498,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
     }
 
     function openGuideById(actionId: string): void {
-      openCourseSetupGuide({
-        courseId,
-        actionId,
-        learningObjectiveCount: data.counts.learningObjectives,
-        onChanged: () => void renderDashboardInner(outlet, courseId),
-      });
+      startSetupJourney(courseId, actionId);
     }
 
     function openGuide(action: InstructorWorkflowAction): void {
@@ -522,6 +521,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       el(
         'div',
         { class: 'project-hero__actions' },
+        el('button', { class: 'btn btn--ghost', type: 'button', text: 'Open setup guide', onclick: () => openGuideById('upload-sources') }),
         el('span', {
           class: `project-hero__status project-hero__status--${course.lifecycle}`,
           text: lifecycleBadge,
@@ -533,7 +533,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
               {
                 class: 'btn btn--instr-primary',
                 type: 'button',
-                onclick: () => void publish(),
+                onclick: () => publish(),
               },
               course.lifecycle === 'published' ? 'Return to draft' : 'Publish course →',
             ),

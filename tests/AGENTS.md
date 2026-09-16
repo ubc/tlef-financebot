@@ -125,3 +125,38 @@ The real Student axe flows explicitly exercise all nine Student tutorial
 contexts. Instructor/Admin full-page scans seed dismissed optional-help state
 so a dialog cannot hide the underlying page from axe. Original tutorial progress
 is restored afterward; dialog accessibility is checked separately.
+
+`action-progress.spec.ts` uses `playwright.action-progress.config.ts` for
+request-lifetime loading feedback tests against compiled production components.
+Build first, then run `npx playwright test --config playwright.action-progress.config.ts`.
+All APIs are intercepted: the suite checks shared action binding, Admin grants,
+Student submit/retry, TA review during filtering, Instructor parameter preview,
+workspace generation during redraw, and source-guide SSE failure/readiness/cleanup.
+Source-guide desktop/light and mobile/dark cases include scoped axe scans and
+reduced-motion verification. It makes no live record changes or provider calls.
+
+`admin-appearance.spec.ts` uses `playwright.admin-appearance.config.ts` and the
+local IdP `admin/admin` persona (PUID `PUID-ADMIN-0001`, in the local Admin
+allowlist). It verifies real SAML identity, the four Admin pages, desktop/mobile
+axe and logout theme restoration. It performs no directory/settings mutations;
+normal login creates or refreshes the test account. Tutorial reads are intercepted.
+
+`review-workbench.spec.ts` uses `playwright.review-workbench.config.ts` with
+intercepted course/question APIs. It covers compact queue/board/search, optional
+rejection reason and failed retry, version-pinned approval after edits, response
+races, unsaved edits, mismatched samples, keyboard and mobile dark scoped axe.
+The real pipeline specs now select a queue row and approve in the same-page reader.
+
+`setup-journey.spec.ts` uses `playwright.setup-journey.config.ts` against the
+compiled client with intercepted course APIs. It checks server-derived progress,
+release gates, navigation persistence, course/role isolation, retry, mobile width,
+and primary-button focus/pressed contrast. It makes no live course changes.
+
+`structure-ai.spec.ts` / `playwright.structure-ai.config.ts` exercise the production
+Course Structure editor with intercepted APIs and streamed snapshots: progressive
+text, refresh recovery, initial editable values, source evidence, selected-subset
+apply, failure recovery, narrow layouts and accessibility. The service tests verify
+complete chunk traversal, validated citations, gap reporting, optional counts,
+duplicate-run protection and stop semantics. `scripts/verify-structure-generation.ts`
+is an opt-in real-provider smoke using only synthetic teaching text; it cleans up
+its temporary material/chunk/run records and never reads uploaded course materials.

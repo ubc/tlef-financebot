@@ -6,6 +6,7 @@ import type {
   ContentRunError,
   ContentRunEvent,
   ContentRunKind,
+  StructureGenerationRun,
   ContentRunStatus,
   ContentRunWarning,
   Difficulty,
@@ -49,6 +50,9 @@ export interface ContentRunUpdate {
   totalUnits?: number;
   result?: MaterialIngestResult | QuestionGenerationResult;
   grounding?: QuestionGenerationRun['grounding'];
+  structurePreview?: StructureGenerationRun['structurePreview'];
+  structureResult?: StructureGenerationRun['structureResult'];
+  preview?: QuestionGenerationRun['preview'];
   warning?: Omit<ContentRunWarning, 'at'>;
   error?: ContentRunError;
   eventType?: ContentRunEvent['type'];
@@ -56,7 +60,7 @@ export interface ContentRunUpdate {
 }
 
 function stageOrder(run: ContentRun): readonly string[] {
-  return run.kind === 'material-ingest' ? MATERIAL_STAGES : GENERATION_STAGES;
+  return run.kind === 'structure-generation' ? ['queued', 'analyzing', 'synthesizing', 'checking'] : run.kind === 'material-ingest' ? MATERIAL_STAGES : GENERATION_STAGES;
 }
 
 function assertLegalUpdate(current: WithId<ContentRun>, update: ContentRunUpdate): void {
@@ -164,7 +168,22 @@ export async function createMaterialIngestRun(input: {
   return { _id: insertedId, ...doc };
 }
 
+export async function createStructureGenerationRun(input: {
+  courseId: ObjectId; requestedBy: string; options: StructureGenerationRun['input'];
+}): Promise<WithId<StructureGenerationRun>> {
+  const now = new Date();
+  const doc: StructureGenerationRun = {
+    courseId: input.courseId, requestedBy: input.requestedBy, kind: 'structure-generation',
+    status: 'queued', stage: 'queued', completedUnits: 0, revision: 0,
+    events: [], warnings: [], input: input.options, createdAt: now, updatedAt: now,
+  };
+  doc.events = [initialEvent(doc)];
+  const { insertedId } = await contentRunsCol().insertOne(doc);
+  return { _id: insertedId, ...doc };
+}
+
 export async function createQuestionGenerationRun(input: {
+  runId?: ObjectId;
   courseId: ObjectId;
   requestedBy: string;
   loId: ObjectId;
@@ -181,7 +200,8 @@ export async function createQuestionGenerationRun(input: {
   models: QuestionGenerationRun['input']['models'];
 }): Promise<WithId<QuestionGenerationRun>> {
   const now = new Date();
-  const doc: QuestionGenerationRun = {
+  const doc: QuestionGenerationRun & { _id?: ObjectId } = {
+    ...(input.runId ? { _id: input.runId } : {}),
     courseId: input.courseId,
     kind: 'question-generation',
     requestedBy: input.requestedBy,
@@ -236,7 +256,7 @@ export async function listCourseContentRuns(
       ...(filters.status ? { status: filters.status } : {}),
     })
     .sort({ createdAt: -1 })
-    .limit(filters.limit ?? 25)
+    .limit(filters.status === 'queued' || filters.status === 'running' ? 0 : (filters.limit ?? 25))
     .toArray();
 }
 
@@ -268,7 +288,7 @@ export async function updateContentRun(runId: ObjectId, update: ContentRunUpdate
     completedUnits: nextCompleted,
     revision: nextRevision,
     updatedAt: now,
-    events: [...current.events, event].slice(-MAX_EVENTS),
+    events: (update.preview || update.structurePreview) && !update.message ? current.events : [...current.events, event].slice(-MAX_EVENTS),
   };
   if (nextTotal !== undefined) set.totalUnits = nextTotal;
   if (current.status === 'queued' && nextStatus === 'running') set.startedAt = now;
@@ -276,6 +296,11 @@ export async function updateContentRun(runId: ObjectId, update: ContentRunUpdate
   if (update.error) set.error = update.error;
   if (update.result) set.result = update.result;
   if (update.grounding) set.grounding = update.grounding;
+  if (update.preview && current.kind === 'question-generation') set.preview = update.preview;
+  if (current.kind === 'structure-generation') {
+    if (update.structurePreview) set.structurePreview = update.structurePreview;
+    if (update.structureResult) set.structureResult = update.structureResult;
+  }
   if (update.warning) {
     set.warnings = [...current.warnings, { ...update.warning, at: now }].slice(-MAX_WARNINGS);
   }
@@ -326,7 +351,7 @@ export async function endGenerationRun(
   for (let attempt = 1; ; attempt += 1) {
     const current = await getCourseContentRun(courseId, runId);
     if (!current) throw new Error('content-run-not-found');
-    if (current.kind !== 'question-generation') throw new Error('content-run-not-generation');
+    if (current.kind !== 'question-generation' && current.kind !== 'structure-generation') throw new Error('content-run-not-generation');
     if (TERMINAL_STATUSES.has(current.status)) return current;
     try {
       return await failContentRun(runId, {
@@ -385,7 +410,7 @@ export async function reconcileContentRuns(): Promise<{ interrupted: number; mis
   }
 
   for (const run of queued) {
-    const name = run.kind === 'material-ingest' ? 'material.ingest' : 'generation.run';
+    const name = run.kind === 'structure-generation' ? 'structure.generate' : run.kind === 'material-ingest' ? 'material.ingest' : 'generation.run';
     if (await hasPendingJob(name, run._id.toHexString())) continue;
     await failContentRun(run._id, {
       code: 'content-run-job-missing',

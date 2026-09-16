@@ -15,6 +15,7 @@ import {
   type QuestionDetail,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { runButtonAction } from '../../action-state.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -411,7 +412,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   }
 
   previewButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(previewButton, async () => {
       errorSlot.replaceChildren();
       try {
         const result = await previewQuestionParams(questionId, { ...currentPatch(), stem });
@@ -419,11 +420,11 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
       }
-    })();
+    });
   });
 
   saveButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(saveButton, async () => {
       errorSlot.replaceChildren();
       try {
         const saved = await patchQuestionParams(questionId, currentPatch());
@@ -450,7 +451,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       } catch (error) {
         errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
       }
-    })();
+    });
   });
 
   body.replaceChildren(

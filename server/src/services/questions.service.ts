@@ -1,6 +1,7 @@
 import type { WithId } from 'mongodb';
 import { ObjectId } from 'mongodb';
 import {
+  materialsCol,
   attemptsCol,
   auditCol,
   examAttemptsCol,
@@ -35,7 +36,7 @@ import type {
 // -----------------------------------------------------------------------------
 
 type ContentKey = 'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
-  | 'derivedValues' | 'numericKind';
+  | 'derivedValues' | 'numericKind' | 'type' | 'sourceRefs';
 
 /** Enforces MCQ/T-F option shape (PRD §9.1). T/F wrong-role is coerced, never rejected. */
 function assertOptionInvariants(type: QuestionType, options: QuestionOption[]): QuestionOption[] {
@@ -182,16 +183,24 @@ export async function editQuestion(
   patch: Partial<Pick<
     QuestionVersion,
     'stem' | 'options' | 'difficulty' | 'paramSlots' | 'generateScript'
-    | 'derivedValues' | 'numericKind' | 'verification'
+    | 'derivedValues' | 'numericKind' | 'verification' | 'type' | 'sourceRefs'
   >> & {
     loIds?: ObjectId[];
     themeIds?: ObjectId[];
+    expectedVersionId?: ObjectId;
+    submitForReview?: boolean;
   },
   byPuid: string,
 ): Promise<WithId<QuestionVersion>> {
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
 
+  if (patch.expectedVersionId && !question.currentVersionId.equals(patch.expectedVersionId)) throw new Error('question-conflict');
+  if (patch.submitForReview && (!patch.expectedVersionId || !['approved', 'paused'].includes(question.state))) throw new Error('question-conflict');
+  if (patch.sourceRefs !== undefined) {
+    const ids = [...new Map(patch.sourceRefs.map(ref => [ref.materialId.toHexString(), ref.materialId])).values()];
+    if (ids.length && await materialsCol().countDocuments({ _id: { $in: ids }, courseId: question.courseId }) !== ids.length) throw new Error('invalid-options:source-outside-course');
+  }
   const current = await questionVersionsCol().findOne({ _id: question.currentVersionId });
   if (!current) throw new Error('version-not-found');
 
@@ -199,6 +208,12 @@ export async function editQuestion(
   // validated against the version's existing (unpatchable) type.
   const contentPatch: Partial<Pick<QuestionVersion, ContentKey>> = {};
   const editedFields: ContentKey[] = [];
+  if (patch.type !== undefined) {
+    contentPatch.type = patch.type;
+    contentPatch.options = assertOptionInvariants(patch.type, patch.options ?? current.options);
+    editedFields.push('type');
+  }
+  if (patch.sourceRefs !== undefined) { contentPatch.sourceRefs = patch.sourceRefs; editedFields.push('sourceRefs'); }
   if (patch.stem !== undefined) {
     contentPatch.stem = patch.stem;
     editedFields.push('stem');
@@ -209,7 +224,7 @@ export async function editQuestion(
     // already been shuffled once; an edit is a human stating the order they
     // want, and re-randomizing that on every save would undo a deliberate
     // reorder and move the options out from under the form that submitted them.
-    contentPatch.options = assertOptionInvariants(current.type, patch.options);
+    contentPatch.options = assertOptionInvariants(patch.type ?? current.type, patch.options);
     editedFields.push('options');
   }
   if (patch.difficulty !== undefined) {
@@ -233,7 +248,9 @@ export async function editQuestion(
     editedFields.push('numericKind');
   }
 
-  const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds'>> = {};
+  const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds' | 'state'>> = {};
+  if (patch.submitForReview) headPatch.state = 'pending-review';
+  const headFilter = { _id: questionId, ...(patch.expectedVersionId ? { currentVersionId: patch.expectedVersionId, state: question.state } : {}) };
   if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
   if (patch.themeIds !== undefined) headPatch.themeIds = patch.themeIds;
 
@@ -244,7 +261,8 @@ export async function editQuestion(
     if (Object.keys(headPatch).length === 0) {
       return current;
     }
-    await questionsCol().updateOne({ _id: questionId }, { $set: { updatedAt: new Date(), ...headPatch } });
+    const result = await questionsCol().updateOne(headFilter, { $set: { updatedAt: new Date(), ...headPatch }, ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}) });
+    if (patch.expectedVersionId && result.matchedCount !== 1) throw new Error('question-conflict');
     return current;
   }
 
@@ -272,14 +290,19 @@ export async function editQuestion(
 
   const { insertedId } = await questionVersionsCol().insertOne(next);
 
-  await questionsCol().updateOne(
-    { _id: questionId },
+  const result = await questionsCol().updateOne(
+    headFilter,
     {
       $set: { currentVersionId: insertedId, currentVersion: next.version, updatedAt: now, ...headPatch },
       $addToSet: { labels: 'manually-edited' },
+      ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}),
     },
   );
 
+  if (patch.expectedVersionId && result.matchedCount !== 1) {
+    await questionVersionsCol().deleteMany({ _id: insertedId });
+    throw new Error('question-conflict');
+  }
   return { _id: insertedId, ...next };
 }
 
@@ -289,6 +312,7 @@ export async function transitionQuestion(
   to: PublicationState,
   byPuid: string,
   expectedVersionId?: ObjectId,
+  rejectionReason?: string,
 ): Promise<WithId<Question>> {
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
@@ -302,13 +326,17 @@ export async function transitionQuestion(
   }
   if (!canTransition(question.state, to)) throw new Error(`invalid-transition:${question.state}->${to}`);
   const now = new Date();
+  const reason = rejectionReason?.trim();
+  const note = to === 'archived' && reason
+    ? { puid: byPuid, text: `Rejection reason: ${reason}`, at: now }
+    : undefined;
   const result = await questionsCol().updateOne(
     {
       _id: questionId,
       state: question.state,
       ...(expectedVersionId !== undefined ? { currentVersionId: expectedVersionId } : {}),
     },
-    { $set: { state: to, updatedAt: now } },
+    { $set: { state: to, updatedAt: now }, ...(note ? { $push: { internalNotes: note } } : {}) },
   );
   if (result.matchedCount !== 1) throw new Error('question-conflict');
   await auditCol().insertOne({
@@ -320,7 +348,7 @@ export async function transitionQuestion(
     detail: { from: question.state, to },
     createdAt: now,
   });
-  return { ...question, state: to, updatedAt: now };
+  return { ...question, state: to, updatedAt: now, ...(note ? { internalNotes: [...(question.internalNotes ?? []), note] } : {}) };
 }
 
 /** Append-only teaching-team note. Notes never create content versions and

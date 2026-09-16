@@ -19,6 +19,13 @@ function apply(theme: Theme): void {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
+/** Admin identity is independent of the user's persisted light/dark choice. */
+export function setAdminAppearance(active: boolean): void {
+  if (active) document.documentElement.setAttribute('data-admin', 'true');
+  else document.documentElement.removeAttribute('data-admin');
+  apply(getTheme());
+}
+
 /** Apply the persisted/system theme. Call once at startup (before first paint). */
 export function initTheme(): void {
   apply(getTheme());

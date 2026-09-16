@@ -107,7 +107,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       {
         class: `notif-item${n.priority === 'elevated' ? ' notif-item--elevated' : ''}${unread ? ' notif-item--unread' : ''}`,
         type: 'button',
-        onclick: () => void handleActivate(n),
+        onclick: () => handleActivate(n),
       },
       el('span', {
         class: `notif-item__icon${n.priority === 'elevated' ? ' notif-item__icon--elevated' : ''}`,
@@ -138,7 +138,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
         el('span', { text: 'Notifications' }),
         el(
           'button',
-          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void handleClearAll() },
+          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => handleClearAll() },
           'Clear all',
         ),
       ),

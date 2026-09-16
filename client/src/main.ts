@@ -1,3 +1,4 @@
+import { syncSetupJourney } from './setup-journey.js';
 import { renderTutorialHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
 // shell based on GET /api/auth/me, builds the sidebar + top bar, and starts the
@@ -5,7 +6,7 @@ import { renderTutorialHelp } from './views/tutorial-help.js';
 // compiled output as native ES modules (see client/AGENTS.md).
 import { APP } from './config.js';
 import { byId, el, mount } from './dom.js';
-import { initTheme, createThemeToggle } from './theme.js';
+import { initTheme, createThemeToggle, setAdminAppearance } from './theme.js';
 import {
   createAnonymousNotificationBell,
   createNotificationBell,
@@ -401,12 +402,13 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
  * rebuilt on every `onNavigate` rather than just toggling an active class.
  */
 function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle {
-  const sidebarPreferenceKey = 'financebot:instructor-sidebar-collapsed';
+  const isAdmin = session.user?.isAdmin === true;
+  const sidebarPreferenceKey = isAdmin ? 'financebot:admin-sidebar-collapsed' : 'financebot:instructor-sidebar-collapsed';
   const startsCollapsed = window.localStorage.getItem(sidebarPreferenceKey) === 'true';
   const shell = el('div', {
-    class: `app-shell app-shell--instructor${startsCollapsed ? ' is-collapsed' : ''}`,
+    class: `app-shell app-shell--instructor${isAdmin ? ' app-shell--admin' : ''}${startsCollapsed ? ' is-collapsed' : ''}`,
   });
-  const nav = el('nav', { class: 'nav', 'aria-label': 'Instructor' });
+  const nav = el('nav', { class: 'nav', 'aria-label': isAdmin ? 'Admin' : 'Instructor' });
   const anchors: Array<{
     item: InstructorNavItem;
     link: HTMLAnchorElement;
@@ -429,7 +431,11 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
             { label: 'Help & Tutorials', path: '/admin/help', glyph: '?' },
           ],
         },
-        ...INSTRUCTOR_NAV,
+        ...INSTRUCTOR_NAV.map((group) => group.label ? group : {
+          ...group,
+          label: 'Teaching tools',
+          items: group.items.map((item) => item.path === '/instructor/help' ? { ...item, label: 'Course tutorials' } : item),
+        }),
       ]
     : INSTRUCTOR_NAV;
 
@@ -496,13 +502,13 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       { class: 'sidebar__brand-row' },
       el(
         'a',
-        { class: 'brand', href: '#/instructor/courses', title: APP.name },
-        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
-        el('span', { class: 'brand__name', text: APP.name }),
+        { class: 'brand', href: isAdmin ? '#/admin/users' : '#/instructor/courses', title: isAdmin ? `${APP.name} Admin` : APP.name },
+        el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: isAdmin ? 'A' : 'F' }),
+        el('span', { class: 'brand__name', text: isAdmin ? 'Admin' : APP.name }),
       ),
       collapseButton,
     ),
-    el('span', { class: 'instructor-pill', text: 'INSTRUCTOR' }),
+    el('span', { class: 'instructor-pill', text: isAdmin ? 'PLATFORM CONSOLE' : 'INSTRUCTOR' }),
     courseContext,
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
@@ -527,6 +533,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       'div',
       { class: 'topbar__right' },
       createNotificationBell('instructor'),
+      isAdmin ? el('span', { class: 'admin-topbar-badge', text: 'Admin' }) : false,
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
@@ -581,7 +588,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
   return startRouter({
     routes,
     outlet,
-    fallback: session.user?.isAdmin ? '/admin/accounts' : '/instructor/courses',
+    fallback: isAdmin ? '/admin/users' : '/instructor/courses',
     onNavigate: (path) => {
       const courseId = courseIdFromPath(path);
       updateCourseContext(courseId, path);
@@ -606,7 +613,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       for (const section of sections) {
         section.element.hidden = section.courseScoped && !courseId;
       }
-      document.title = `${path.startsWith('/admin/') ? 'Admin' : 'Instructor'} · ${APP.name}`;
+      document.title = `${isAdmin ? 'Admin' : 'Instructor'} · ${APP.name}`;
     },
   });
 }
@@ -1030,10 +1037,12 @@ async function bootstrap(): Promise<void> {
   const root = byId('app');
   const session = await loadSession();
   activeSession = session;
+  syncSetupJourney();
 
   if (redirectLegacyPreview(session)) return;
 
   activeMode = shellMode(session, hashPath());
+  setAdminAppearance(activeMode === 'instructor' && session.user?.isAdmin === true);
   if (activeMode === 'landing') {
     document.title = APP.name;
     renderLanding(root);

@@ -1,44 +1,5 @@
 import { attachTutorial } from '../../tutorials.js';
-// Review Queue (I5) — the instructor's prioritized worklist: agent-decision
-// filter tabs, inline approve, bulk approve (Task 15, Task F). See
-// docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
-// (node-id `148:3779`) and `.superpowers/sdd/task-15/i5-review-queue.png`.
-//
-// Data-shape note (verified against server/src/services/bank.service.ts's
-// reviewQueue() + questions.routes.ts's GET /courses/:courseId/review-queue,
-// see api.ts's `ReviewQueueItem`): the queue endpoint returns the same
-// trimmed shape as `browseBank` (id/state/labels/loIds/themeIds/current) plus
-// `priority` — it does NOT include `agentDecision`. `agentDecision` is
-// reserved for the single-question `getQuestion` (Task E's own note, same
-// server-side toBankItem() function backs both endpoints). The wireframe's
-// "Agent: Flag/Reject/Pass" tabs and per-row Agent Decision badge need real
-// (not fabricated) `agentDecision.decision` values, so this view enriches the
-// queue with one `getQuestion(id)` per item (Promise.allSettled — a single
-// failed lookup doesn't fail the page; that item's Agent Decision just reads
-// "—" and never matches an Agent: tab). No server change; `getQuestion`
-// already exists (Task E). This trades an extra request per row for real data
-// instead of a fake/derived agent decision — flagged in the Task F report as
-// a perf tradeoff worth reconsidering if course review queues grow large.
-//
-// First-paint note (Task F re-review fix): enrichment runs in the
-// BACKGROUND, not awaited before the first render — the header/tabs/table/
-// stem/status need none of it (all already on `ReviewQueueItem`); only the
-// Agent Decision column/tabs do, and they render "—"/0 until enrichment
-// fills in. `loadToken` + `root.isConnected` guard `enrichAgentDecisions`'s
-// eventual DOM write against two staleness cases: (1) a `reload()`/bulk-
-// approve refetch starting a newer enrichment while an older one is still
-// in flight (the older one's token no longer matches `loadToken`, so its
-// resolution is a no-op), and (2) the user navigating away entirely before
-// enrichment settles (`root` is detached from `outlet` by then).
-//
-// Omitted vs. the wireframe (no data source; "omit rather than fake" per the
-// Task F brief): the row flag indicators for "High error rate" and
-// "Under-covered LO" — neither an error rate nor a coverage number is
-// returned by any endpoint in scope (the server only uses coverage
-// internally to rank `priority` tier 3, see reviewQueue()'s doc comment; it
-// never serializes the number). "Student Flagged" renders as a plain flag
-// (present in `labels`) without the wireframe's fabricated count, since the
-// queue item only carries a boolean label, not a per-question flag count.
+import { createReviewWorkbench } from './review-workbench.js';
 import {
   ApiError,
   bulkDelete,
@@ -48,20 +9,15 @@ import {
   getCourseTree,
   getQuestion,
   getReviewQueue,
-  transitionQuestion,
   type CourseTree,
-  type PublicationState,
   type QuestionLabel,
   type ReviewQueueItem,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { rowStemText } from '../../placeholders.js';
-import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { filterTabs, pageHeader } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
-import { renderRichText } from '../../render.js';
-import { emptyState, errorState, loadingState } from '../../ui.js';
+import { errorState, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
-import { STATUS_LABEL, TYPE_LABEL, statusToBadgeVariant } from './bank.js';
 
 /** Arrival from a generation run (`?runId=` — preseeding.ts's "Review
  * Drafts" links): how many of the run's created questions are in the queue
@@ -105,8 +61,6 @@ const TYPE_FILTER_LABEL: Record<QueueTypeFilter, string> = {
 export function matchesType(item: { current: { type: 'mcq' | 'true-false' } }, filter: QueueTypeFilter): boolean {
   return filter === 'all' || item.current.type === filter;
 }
-
-const DIFFICULTY_LABEL: Record<'easy' | 'medium' | 'hard', string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
 const QUEUE_TABS: QueueTab[] = ['all', 'flagged', 'agent-flag', 'agent-reject', 'agent-pass'];
 
@@ -156,46 +110,11 @@ export function queueTabCounts(items: QueueTabInput[]): Record<QueueTab, number>
   return counts;
 }
 
-const AGENT_BADGE_VARIANT: Record<AgentDecisionInfo['decision'], BadgeVariant> = {
-  pass: 'pass',
-  flag: 'flag',
-  reject: 'reject',
-};
-
-/** Approve always moves toward 'approved' one legal PUBLICATION_TRANSITIONS
- * edge at a time — mirrors question-detail.ts's `approveTarget` exactly (Task
- * F brief: "reuse the same legal-transition logic pattern Task E used"). A
- * Draft question goes to pending-review first (no draft->approved edge);
- * pending-review/reviewed/paused go straight to approved. `null` means no
- * further approval step applies (already approved, or archived). */
-function approveTarget(state: PublicationState): PublicationState | null {
-  if (state === 'draft' || state === 'pending-review' || state === 'reviewed' || state === 'paused') return 'approved';
-  return null;
-}
-
-/** "Topic 1 / LO 1, LO 4" style label for a question's tagged Topics/LOs —
- * same convention as bank.ts's `topicLoLabel` (kept identical across
- * instructor views rather than the wireframe's literal "LO 2 / Topic 1"
- * order, so a question's Topic/LO column reads the same way everywhere). */
-function topicLoLabel(tree: CourseTree, loIds: string[], themeIds: string[]): string {
-  const parts: string[] = [];
-  tree.themes.forEach((theme, themeIndex) => {
-    const los = (theme.los ?? []).filter((lo) => loIds.includes(lo._id));
-    if (los.length > 0) {
-      const loLabels = los.map((lo) => `LO ${(theme.los ?? []).findIndex((l) => l._id === lo._id) + 1}`).join(', ');
-      parts.push(`Topic ${themeIndex + 1} / ${loLabels}`);
-    } else if (themeIds.includes(theme._id)) {
-      parts.push(`Topic ${themeIndex + 1}`);
-    }
-  });
-  return parts.length ? parts.join('; ') : '—';
-}
-
 type SortKey = 'priority' | 'stem';
 
 async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading review queue…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view view--review-workbench' }, body);
   mount(outlet, root);
 
   // Arrival from a generation run: the run's created question ids become a
@@ -269,8 +188,8 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
    * has one — not on every re-render, which would yank the page around while
    * the instructor works. */
   function scrollToHighlight(): void {
-    if (highlightScrolled) return;
-    const first = resultsContainer.querySelector<HTMLElement>('.queue-row--highlight');
+    if (highlightScrolled || !highlightIds) return;
+    const first = resultsContainer.querySelector<HTMLElement>('.review-workbench__row.is-current');
     if (!first) return;
     highlightScrolled = true;
     first.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -293,7 +212,15 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
    * `agentDecisions` and re-renders the tabs (counts) + rows (badges). */
   async function enrichAgentDecisions(items: ReviewQueueItem[]): Promise<void> {
     const token = ++loadToken;
-    const results = await Promise.allSettled(items.map((item) => getQuestion(item.id)));
+    const results: Array<PromiseSettledResult<Awaited<ReturnType<typeof getQuestion>>>> = [];
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
+      while (cursor < items.length && token === loadToken && root.isConnected) {
+        const index = cursor++;
+        try { results[index] = { status: 'fulfilled', value: await getQuestion(items[index].id) }; }
+        catch (reason) { results[index] = { status: 'rejected', reason }; }
+      }
+    }));
     if (token !== loadToken || !root.isConnected) return;
     results.forEach((result, i) => {
       agentDecisions.set(items[i].id, result.status === 'fulfilled' ? result.value.agentDecision : undefined);
@@ -309,11 +236,32 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   let loadErrorMessage: string | null = null;
   let actionErrorMessage: string | null = null;
   let bulkMessage: string | null = null;
+  let bulkBusy = false;
 
-  const tabsContainer = el('div', {});
+  const tabsContainer = el('div', { class: 'review-workbench-tabs' });
+  const filtersContainer = el('div', { class: 'review-workbench-filters' });
   const controlsContainer = el('div', { 'data-tutorial': 'review-filters' });
-  const resultsContainer = el('div', { 'data-tutorial': 'review-actions' });
-  const layout = el('div', {}, tabsContainer, controlsContainer, resultsContainer);
+  const messages = el('div', {});
+  const workbench = createReviewWorkbench({ courseId, tree, selected, preferredId: queueItems.find(item => highlightIds?.has(item.id))?.id,
+    onSelection: renderControls,
+    onClearFilters: () => {
+      activeTab = 'all'; typeFilter = 'all'; sortKey = 'priority';
+      searchInput.value = ''; workbench.search('');
+      renderTabs(); renderControls(); renderResults(); searchInput.focus();
+    },
+    onDetail: (detail) => { agentDecisions.set(detail.id, detail.agentDecision); renderTabs(); },
+    onDecision: (id) => {
+      queueItems = queueItems.filter(item => item.id !== id);
+      selected.delete(id); renderTabs(); renderControls(); renderResults();
+      // Refresh authoritative queue in the background without remounting the reader.
+      void reload();
+    },
+  });
+  const resultsContainer = el('div', {}, messages, workbench.root);
+  const searchInput = el('input', { class: 'input', type: 'search', 'aria-label': 'Search review questions', placeholder: 'Search questions or objectives…', oninput: () => workbench.search(searchInput.value) });
+  const advanced = el('details', { class: 'review-workbench-tools' }, el('summary', { text: 'Bulk actions' }), controlsContainer);
+  const toolbar = el('div', { class: 'review-workbench-toolbar' }, searchInput, filtersContainer, advanced);
+  const layout = el('div', {}, tabsContainer, toolbar, resultsContainer);
 
   function tabInputs(): QueueTabInput[] {
     return queueItems.map((item) => ({ labels: item.labels, agentDecision: agentDecisions.get(item.id) }));
@@ -345,31 +293,20 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     );
   }
 
-  async function approveOne(item: ReviewQueueItem): Promise<void> {
-    const to = approveTarget(item.state);
-    if (!to) return;
-    actionErrorMessage = null;
-    try {
-      await transitionQuestion(item.id, to);
-      // The server queue intentionally excludes Approved questions. Rebuild
-      // from that authoritative list so the approved row disappears and the
-      // header/tab counts update together; merely changing the row's local
-      // state left an Approved item inside “awaiting review”.
-      await renderReviewQueueInner(outlet, courseId);
-      return;
-    } catch (error) {
-      actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
-    }
-    renderResults();
-  }
-
   /** Runs one bulk action over the selection, then refetches the queue. The
    * action returns the message to show; a thrown error shows as the action
    * error and keeps the selection so the instructor can retry. */
   async function runBulk(action: (ids: string[]) => Promise<string>): Promise<void> {
+    if (bulkBusy) return;
+    if (workbench.isLocked()) {
+      actionErrorMessage = 'Finish editing or wait for the current decision before applying a bulk action.';
+      renderResults(); return;
+    }
     const ids = [...selected];
+    bulkBusy = true;
     actionErrorMessage = null;
     bulkMessage = null;
+    renderControls();
     try {
       bulkMessage = await action(ids);
       selected.clear();
@@ -379,6 +316,8 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       void enrichAgentDecisions(queueItems); // background — see the module note
     } catch (error) {
       actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
+    } finally {
+      bulkBusy = false;
     }
     renderControls();
     renderResults();
@@ -390,7 +329,7 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     if (selected.size === 0) return;
     if (!await confirmDialog({
       title: 'Approve selected questions?',
-      message: `${plural(selected.size)} will become available for student practice.`,
+      message: `${plural(selected.size)} will be approved. Student access still follows course publication, topic release and validation checks.`,
       confirmLabel: 'Approve questions',
     })) return;
     await runBulk(async (ids) => {
@@ -509,17 +448,18 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       {
         class: 'btn btn--ghost',
         type: 'button',
-        disabled: selected.size === 0 ? 'disabled' : undefined,
-        onclick: () => void bulkApprove(),
+        disabled: selected.size === 0 || bulkBusy ? 'disabled' : undefined,
+        busy: bulkBusy,
+        onclick: () => bulkApprove(),
       },
-      'Bulk Approve…',
+      bulkBusy ? 'Applying…' : 'Bulk Approve…',
     );
     const moreActions = el(
       'select',
       {
         class: 'input',
         'aria-label': 'More bulk actions',
-        disabled: selected.size === 0 ? 'disabled' : undefined,
+        disabled: selected.size === 0 || bulkBusy ? 'disabled' : undefined,
         onchange: (e: Event) => {
           const menu = e.target as HTMLSelectElement;
           const action = menu.value;
@@ -533,111 +473,21 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el('option', { value: 'delete', text: 'Delete selected…' }),
     ) as HTMLSelectElement;
 
-    return el('div', { class: 'queue-controls' }, selectAllLabel, typeSelect, sortSelect, bulkButton, moreActions);
-  }
-
-  function flagIndicator(item: ReviewQueueItem): HTMLElement | false {
-    if (!item.labels.includes('student-flagged')) return false;
-    return el('p', { class: 'queue-row__flag queue-row__flag--red', text: '🔴 Student Flagged' });
-  }
-
-  function agentBadge(item: ReviewQueueItem): HTMLElement {
-    const decision = agentDecisions.get(item.id);
-    if (!decision) return statusBadge('—', 'neutral');
-    return statusBadge(decision.decision.toUpperCase(), AGENT_BADGE_VARIANT[decision.decision]);
-  }
-
-  function questionRow(item: ReviewQueueItem): HTMLElement {
-    const stemCell = el('div', { class: 'queue-row__stem' });
-    // The STUDENT's view of the question, not the template — real numbers read
-    // far better than `[RATE_PCT]` when triaging a queue. Falls back to `[NAME]`
-    // placeholders (never `{{NAME}}`) when the server drew no sample.
-    renderRichText(stemCell, rowStemText(item));
-
-    const approveTo = approveTarget(item.state);
-    const checkbox = el('input', {
-      type: 'checkbox',
-      'aria-label': 'Select question',
-      checked: selected.has(item.id) ? 'checked' : undefined,
-      onchange: (e: Event) => {
-        if ((e.target as HTMLInputElement).checked) selected.add(item.id);
-        else selected.delete(item.id);
-        renderControls();
-        renderResults();
-      },
-    }) as HTMLInputElement;
-
-    const highlighted = highlightIds?.has(item.id) === true;
-    return el(
-      'div',
-      { class: highlighted ? 'queue-row queue-row--highlight' : 'queue-row' },
-      checkbox,
-      el('div', {}, stemCell, flagIndicator(item)),
-      el('div', { class: 'queue-row__type-lo' }, el('span', { text: TYPE_LABEL[item.current.type] }), el('span', { text: topicLoLabel(tree, item.loIds, item.themeIds) })),
-      agentBadge(item),
-      statusBadge(STATUS_LABEL[item.state], statusToBadgeVariant(item.state)),
-      el(
-        'div',
-        { class: 'queue-row__actions' },
-        // Difficulty next to the decision buttons (2026-09-04): approving is
-        // partly a "does the label fit" call, so the label sits where the
-        // instructor's eye already is.
-        el('span', {
-          class: `queue-row__difficulty queue-row__difficulty--${item.current.difficulty}`,
-          text: DIFFICULTY_LABEL[item.current.difficulty] ?? item.current.difficulty,
-        }),
-        el(
-          'button',
-          {
-            class: 'btn btn--instr-primary btn--sm',
-            type: 'button',
-            onclick: () => navigate(
-              `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(item.id)}?from=queue`,
-            ),
-          },
-          'Review →',
-        ),
-        el(
-          'button',
-          {
-            class: 'btn btn--ghost btn--sm',
-            type: 'button',
-            disabled: approveTo === null ? 'disabled' : undefined,
-            title: approveTo ? `Move to ${STATUS_LABEL[approveTo]}` : 'No further approval step from this state',
-            onclick: () => void approveOne(item),
-          },
-          'Approve',
-        ),
-      ),
-    );
+    filtersContainer.replaceChildren(typeSelect, sortSelect);
+    return el('div', { class: 'queue-controls' }, selectAllLabel, bulkButton, moreActions);
   }
 
   function renderResults(): void {
     const rows = visibleRows();
-    mount(
-      resultsContainer,
+    for (const [id, decision] of agentDecisions) workbench.setAgent(id, decision?.decision);
+    mount(messages,
       loadErrorMessage ? errorState(loadErrorMessage, () => void reload()) : false,
       actionErrorMessage ? errorState(actionErrorMessage) : false,
       bulkMessage ? el('p', { class: 'queue-message', text: bulkMessage }) : false,
-      highlightBanner(),
-      el(
-        'div',
-        { class: 'queue-table' },
-        el(
-          'div',
-          { class: 'queue-row queue-row--head' },
-          el('span', {}),
-          el('span', { text: 'Question' }),
-          el('span', { text: 'Type / LO' }),
-          el('span', { text: 'Agent Decision' }),
-          el('span', { text: 'Status' }),
-          el('span', { text: 'Actions' }),
-        ),
-        rows.length
-          ? el('div', { class: 'queue-table__rows' }, ...rows.map(questionRow))
-          : emptyState('No questions match this filter.'),
-      ),
-    );
+      highlightBanner());
+    toolbar.hidden = queueItems.length === 0;
+    tabsContainer.hidden = queueItems.length === 0;
+    workbench.update(rows, queueItems.length);
     scrollToHighlight();
   }
 
@@ -666,7 +516,8 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   body.replaceChildren(
     pageHeader(
       'Review Queue',
-      `${queueItems.length} question${queueItems.length === 1 ? '' : 's'} awaiting review · Prioritized: flagged first, then high-error pre-approved, then under-covered LOs`,
+      'Check each question, then approve it for your Question Bank.',
+      { text: 'Open Question Bank →', onClick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank`) },
     ),
     layout,
   );

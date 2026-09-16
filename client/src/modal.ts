@@ -75,6 +75,7 @@ export interface TextPromptDialogOptions extends ConfirmDialogOptions {
   fieldLabel: string;
   placeholder?: string;
   maxLength?: number;
+  initialValue?: string;
 }
 
 /** Application-styled optional-text confirmation. `null` means cancelled;
@@ -93,6 +94,7 @@ export function textPromptDialog(options: TextPromptDialogOptions): Promise<stri
       placeholder: options.placeholder,
       'aria-label': options.fieldLabel,
     }) as HTMLTextAreaElement;
+    input.value = options.initialValue ?? '';
     const cancelButton = el(
       'button',
       { class: 'btn btn--ghost', type: 'button' },

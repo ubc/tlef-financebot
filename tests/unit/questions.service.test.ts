@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import {
+  materialsCol,
   questionsCol,
   questionVersionsCol,
   auditCol,
@@ -11,6 +12,7 @@ import {
 } from '../../server/src/components/mongodb/collections';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  materialsCol: jest.fn(),
   questionsCol: jest.fn(),
   questionVersionsCol: jest.fn(),
   auditCol: jest.fn(),
@@ -310,6 +312,39 @@ describe('editQuestion (IN-Q03)', () => {
     questionsUpdateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
   });
 
+  it('atomically pins an approved edit to a new pending-review version', async () => {
+    questionsFindOne.mockResolvedValue({ ...questionHead, state: 'approved' });
+    const result = await editQuestion(questionId, { stem: 'Revised', expectedVersionId: versionId, submitForReview: true }, 'instructor');
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, currentVersionId: versionId, state: 'approved' },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'pending-review', currentVersionId: result._id }) }),
+    );
+  });
+
+  it('rejects stale bank edits before inserting a version', async () => {
+    await expect(editQuestion(questionId, { stem: 'Revised', expectedVersionId: new ObjectId(), submitForReview: true }, 'instructor')).rejects.toThrow('question-conflict');
+    expect(versionsInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('does not leave edited content approved when an edit loses the head race', async () => {
+    questionsFindOne.mockResolvedValue({ ...questionHead, state: 'approved' });
+    questionsUpdateOne.mockResolvedValue({ matchedCount: 0 });
+    await expect(editQuestion(questionId, { stem: 'Revised', expectedVersionId: versionId, submitForReview: true }, 'instructor')).rejects.toThrow('question-conflict');
+    expect(versionsDeleteMany).toHaveBeenCalled();
+  });
+
+  it('refuses to attach evidence from another course', async () => {
+    jest.mocked(materialsCol).mockReturnValue({ countDocuments: jest.fn().mockResolvedValue(0) } as never);
+    await expect(editQuestion(questionId, { sourceRefs: [{ materialId: new ObjectId() }] }, 'instructor')).rejects.toThrow('source-outside-course');
+    expect(versionsInsertOne).not.toHaveBeenCalled();
+  });
+
+  it('validates options against the newly selected type', async () => {
+    const result = await editQuestion(questionId, { type: 'true-false', options: tfOptions() }, 'instructor');
+    expect(result.type).toBe('true-false');
+    expect(result.options).toHaveLength(2);
+  });
+
   it('inserts version 2 copying unpatched fields and records editedFields for the patched key', async () => {
     const result = await editQuestion(questionId, { stem: 'Updated stem' }, 'PUID-INSTR-0002');
 
@@ -459,6 +494,24 @@ describe('editQuestion (IN-Q03)', () => {
 
 describe('transitionQuestion (IN-Q07)', () => {
   const questionId = new ObjectId();
+
+  it('archives and appends an optional rejection reason in the same version-guarded write', async () => {
+    const versionId = new ObjectId();
+    questionsFindOne.mockResolvedValue({ _id: questionId, courseId: new ObjectId(), state: 'draft', currentVersionId: versionId, internalNotes: [] });
+    questionsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+    const result = await transitionQuestion(questionId, 'archived', 'PUID-INSTR-0001', versionId, '  Ambiguous answer  ');
+    expect(questionsUpdateOne).toHaveBeenCalledWith(
+      { _id: questionId, state: 'draft', currentVersionId: versionId },
+      { $set: { state: 'archived', updatedAt: expect.any(Date) }, $push: { internalNotes: { puid: 'PUID-INSTR-0001', text: 'Rejection reason: Ambiguous answer', at: expect.any(Date) } } },
+    );
+    expect(result.internalNotes).toEqual([expect.objectContaining({ text: 'Rejection reason: Ambiguous answer' })]);
+  });
+
+  it('does not append rejection notes when the reviewed version has changed', async () => {
+    questionsFindOne.mockResolvedValue({ _id: questionId, state: 'draft', currentVersionId: new ObjectId() });
+    await expect(transitionQuestion(questionId, 'archived', 'PUID', new ObjectId(), 'Ambiguous')).rejects.toThrow('question-conflict');
+    expect(questionsUpdateOne).not.toHaveBeenCalled();
+  });
 
   it('allows pending-review -> approved and writes an audit log entry', async () => {
     const courseId = new ObjectId();

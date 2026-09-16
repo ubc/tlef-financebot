@@ -7,7 +7,7 @@ jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExist
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(),
   contentRunsCol: jest.fn(), coursesCol: jest.fn(), examAttemptsCol: jest.fn(),
-  examTemplatesCol: jest.fn(), flagsCol: jest.fn(), generationBlueprintsCol: jest.fn(),
+  examTemplatesCol: jest.fn(), flagsCol: jest.fn(), generationBlueprintsCol: jest.fn(), generationSubmissionsCol: jest.fn(),
   losCol: jest.fn(), masteryCol: jest.fn(), materialChunksCol: jest.fn(),
   materialsCol: jest.fn(), notificationsCol: jest.fn(), previewAttemptsCol: jest.fn(),
   previewStudentSessionsCol: jest.fn(), questionVersionsCol: jest.fn(), questionsCol: jest.fn(),
@@ -34,7 +34,7 @@ type FakeCollection = {
 
 const accessorNames = [
   'attemptsCol', 'auditCol', 'capabilitySettingsCol', 'contentRunsCol', 'coursesCol',
-  'examAttemptsCol', 'examTemplatesCol', 'flagsCol', 'generationBlueprintsCol', 'losCol',
+  'examAttemptsCol', 'examTemplatesCol', 'flagsCol', 'generationBlueprintsCol', 'generationSubmissionsCol', 'losCol',
   'masteryCol', 'materialChunksCol', 'materialsCol', 'notificationsCol', 'previewAttemptsCol',
   'previewStudentSessionsCol', 'questionVersionsCol', 'questionsCol', 'reviewBookCol',
   'rosterCol', 'sessionSummariesCol', 'taInvitesCol', 'themesCol', 'usersCol',

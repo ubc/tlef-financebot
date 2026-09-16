@@ -228,7 +228,9 @@ test.describe('responsive cross-role workflows', () => {
     const learningObjectivesStage = guide.getByRole('button', { name: /2\. Learning objectives/i });
     await learningObjectivesStage.focus();
     await page.keyboard.press('Enter');
-    await expect(guide.getByRole('heading', { name: 'Add your existing Learning Objectives' })).toBeFocused();
+    await expect(guide.getByRole('heading', { name: 'Your learning objectives' })).toBeFocused();
+    await guide.getByRole('button', { name: '+ Add learning objectives', exact: true }).click();
+    await guide.getByRole('combobox', { name: 'Topic', exact: true }).selectOption('');
     await guide.getByLabel('Topic name', { exact: true }).fill('Guided responsive setup');
     await guide.getByRole('textbox', { name: /Learning Objectives — one per line/i }).fill(GUIDED_LO);
     await guide.getByRole('button', { name: 'Save Learning Objectives' }).click();

@@ -33,7 +33,7 @@ import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
 } from '../services/numeric-verification.service';
-import { unresolvablePlaceholders, type NumericGateVersion } from '../services/numeric-gate.service';
+import { isServable, unresolvablePlaceholders, type NumericGateVersion } from '../services/numeric-gate.service';
 import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
@@ -127,6 +127,10 @@ const optionBody = z.object({
 });
 
 const basePatchQuestionBody = z.object({
+  type: z.enum(QUESTION_TYPES).optional(),
+  sourceRefs: z.array(z.object({ materialId: objectIdParam, chunk: z.string().optional() })).optional(),
+  expectedVersionId: objectIdParam.optional(),
+  submitForReview: z.boolean().optional(),
   stem: z.string().min(1).optional(),
   options: z.array(optionBody).optional(),
   difficulty: z.enum(DIFFICULTIES).optional(),
@@ -163,7 +167,7 @@ const patchQuestionBody = basePatchQuestionBody.extend({
   paramSlots: z.array(paramSlotBody).optional(),
   derivedValues: z.array(derivedValueBody).optional(),
   numericKind: z.enum(['numeric', 'conceptual']).optional(),
-});
+}).refine(body => !body.submitForReview || !!body.expectedVersionId, { message: 'Review submission requires expectedVersionId' });
 
 const patchQuestionParamsBody = z.object({
   paramSlots: z.array(paramSlotBody).optional(),
@@ -229,6 +233,9 @@ function verifyOptionFormulas(
 const transitionBody = z.object({
   to: z.enum(PUBLICATION_STATES),
   expectedVersionId: objectIdParam.optional(),
+  rejectionReason: z.string().trim().max(2000).optional(),
+}).refine((body) => body.rejectionReason === undefined || body.to === 'archived', {
+  message: 'A rejection reason is only valid when archiving a question',
 });
 const internalNoteBody = z.object({ text: z.string().trim().min(1).max(2000) });
 
@@ -315,6 +322,7 @@ export function toBankItem(item: BankItem): {
   loIds: BankItem['loIds'];
   themeIds: BankItem['themeIds'];
   current: BankItem['current'];
+  contentReady: boolean;
 } {
   return {
     id: item._id.toString(),
@@ -323,6 +331,7 @@ export function toBankItem(item: BankItem): {
     loIds: item.loIds,
     themeIds: item.themeIds,
     current: item.current,
+    contentReady: Array.isArray(item.current.options) && typeof item.current.stem === 'string' && isServable(item.current),
   };
 }
 
@@ -451,6 +460,10 @@ questionsRouter.patch(
     const version = await editQuestion(
       questionId,
       {
+        ...(body.type !== undefined ? { type: body.type } : {}),
+        ...(body.sourceRefs !== undefined ? { sourceRefs: body.sourceRefs.map(ref => ({ ...ref, materialId: new ObjectId(ref.materialId) })) } : {}),
+        ...(body.expectedVersionId !== undefined ? { expectedVersionId: new ObjectId(body.expectedVersionId) } : {}),
+        ...(body.submitForReview !== undefined ? { submitForReview: body.submitForReview } : {}),
         ...(body.stem !== undefined ? { stem: body.stem } : {}),
         ...(body.options !== undefined ? { options: body.options } : {}),
         ...(body.difficulty !== undefined ? { difficulty: body.difficulty } : {}),
@@ -645,8 +658,10 @@ questionsRouter.post(
   validate({ body: transitionBody }),
   async (req, res) => {
     const questionId = new ObjectId(String(req.params.questionId));
-    const { to, expectedVersionId } = req.body as z.infer<typeof transitionBody>;
-    const updated = expectedVersionId === undefined
+    const { to, expectedVersionId, rejectionReason } = req.body as z.infer<typeof transitionBody>;
+    const updated = rejectionReason !== undefined
+      ? await transitionQuestion(questionId, to, req.user!.puid, expectedVersionId ? new ObjectId(expectedVersionId) : undefined, rejectionReason)
+      : expectedVersionId === undefined
       ? await transitionQuestion(questionId, to, req.user!.puid)
       : await transitionQuestion(questionId, to, req.user!.puid, new ObjectId(expectedVersionId));
     res.json(toQuestionResponse(updated));

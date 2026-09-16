@@ -1,3 +1,4 @@
+import { createStructureAssistant } from './structure-ai-workbench.js';
 // Topic/LO Structure editor (I2) — one full-width hierarchy with item details
 // opened only when the instructor chooses Edit (Task 15, Task C). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
@@ -6,13 +7,11 @@ import {
   ApiError,
   addLo,
   addTheme,
-  applySuggestedHierarchy,
   archiveLo,
   archiveTheme,
   assignMaterial,
   getCourseTree,
   getPreseeding,
-  getSuggestedHierarchy,
   listMaterials,
   updateLo,
   updateTheme,
@@ -20,7 +19,6 @@ import {
   type CourseTreeTheme,
   type Material,
   type PreseedingLo,
-  type SuggestedHierarchy,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
@@ -115,7 +113,7 @@ interface Selection {
 function addNameForm(opts: {
   placeholder: string;
   existingNames: string[];
-  onAdd: (name: string) => void;
+  onAdd: (name: string) => Promise<void> | void;
   onCancel: () => void;
 }): HTMLElement {
   const input = el('input', { class: 'input', type: 'text', placeholder: opts.placeholder }) as HTMLInputElement;
@@ -129,9 +127,9 @@ function addNameForm(opts: {
   };
   input.addEventListener('input', updateWarning);
 
-  const submit = (): void => {
+  const submit = (): Promise<void> | void => {
     const name = input.value.trim();
-    if (name) opts.onAdd(name);
+    if (name) return opts.onAdd(name);
   };
 
   return el(
@@ -164,24 +162,24 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     return;
   }
 
+  if (!root.isConnected) return;
   const themes: CourseTreeTheme[] = tree.themes;
-  const expanded = new Set<string>(themes[0] ? [themes[0]._id] : []);
+  let activeTopic = themes[0]?._id ?? '';
+  let showAll = false;
+  let search = '';
+  let openLo = '';
   let editorSelection: Selection | null = null;
   let editorDialog: HTMLDialogElement | null = null;
   let addingTheme = false;
   let addingLoForTheme: string | null = null;
   let treeErrorMessage: string | null = null;
 
-  // AI-suggested hierarchy (IN-S06, wireframe N10): a reviewable suggestion
-  // fetched on demand. Instructors can rename generated Topics/LOs before
-  // applying them; applying still uses the same addTheme/addLo mutation path
-  // as the manual forms.
-  let suggestState: 'idle' | 'loading' | { hierarchy: SuggestedHierarchy } | { error: string } = 'idle';
-  let applyingSuggestion = false;
-  let applyError: string | null = null;
-
   const layout = el('div', { class: 'structure-layout' });
-  body.replaceChildren(pageHeader('Course Structure', 'Add, rename, and organize Topics and Learning Objectives.'), layout);
+  body.replaceChildren(pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.'), layout);
+  const assistant = createStructureAssistant(courseId, materials, refresh, async () => {
+    assistant.dispose();
+    await renderStructureInner(outlet, courseId);
+  }, root);
 
   function findTheme(id: string): CourseTreeTheme | undefined {
     return themes.find((t) => t._id === id);
@@ -195,13 +193,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     return undefined;
   }
 
-  function isReviewingSuggestion(): boolean {
-    return suggestState !== 'idle' && suggestState !== 'loading';
-  }
-
   function refresh(): void {
-    const reviewingSuggestion = isReviewingSuggestion();
-    layout.classList.toggle('structure-layout--suggestion', reviewingSuggestion);
     layout.replaceChildren(buildTreePane());
     if (editorDialog?.open && editorSelection) renderEditorDialog();
   }
@@ -281,398 +273,130 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       const created = await addTheme(courseId, name);
       themes.push({ ...created, los: created.los ?? [] });
       addingTheme = false;
-      expanded.add(created._id);
+      activeTopic = created._id; showAll = false;
       treeErrorMessage = null;
       refresh();
     } catch (error) {
       treeErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
       refresh();
     }
-  }
-
-  async function handleAddLo(themeId: string, name: string): Promise<void> {
-    try {
-      const created = await addLo(themeId, name);
-      const theme = findTheme(themeId);
-      if (theme) {
-        theme.los = [...(theme.los ?? []), created];
-      }
-      addingLoForTheme = null;
-      expanded.add(themeId);
-      treeErrorMessage = null;
-      refresh();
-    } catch (error) {
-      treeErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
-      refresh();
-    }
-  }
-
-  async function handleSuggestHierarchy(): Promise<void> {
-    suggestState = 'loading';
-    applyError = null;
-    refresh();
-    try {
-      const hierarchy = await getSuggestedHierarchy(courseId);
-      suggestState = { hierarchy };
-    } catch (error) {
-      suggestState = { error: error instanceof ApiError ? error.message : (error as Error).message };
-    }
-    refresh();
-  }
-
-  /** Selected-topic / selected-LO checkbox state for the suggestion panel,
-   * built fresh each time a hierarchy is fetched — everything starts checked. */
-  function buildSuggestionPanel(hierarchy: SuggestedHierarchy): HTMLElement {
-    if (hierarchy.themes.length === 0) {
-      return el(
-        'div',
-        { class: 'assign-checklist suggestion-panel' },
-        el('p', { class: 'materials-placeholder__text', text: 'No suggestions yet — upload and process course materials first, then try again.' }),
-        el(
-          'button',
-          { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => { suggestState = 'idle'; refresh(); } },
-          'Dismiss',
-        ),
-      );
-    }
-
-    const themeDrafts = hierarchy.themes.map((theme, themeIndex) => ({
-      checked: true,
-      name: theme.name,
-      los: theme.los.map((name, loIndex) => ({
-        checked: true,
-        name,
-        materialIds:
-          hierarchy.assignments.find(
-            (assignment) => assignment.themeIndex === themeIndex && assignment.loIndex === loIndex,
-          )?.materialIds ?? [],
-      })),
-    }));
-
-    const panel = el('div', { class: 'assign-checklist suggestion-panel' });
-
-    const renderRows = (): void => {
-      mount(
-        panel,
-        el('p', {
-          class: 'materials-placeholder__text',
-          text: 'Review and edit the AI-suggested Topics and Learning Objectives below. Applying creates the selected structure and automatically assigns each LO’s supporting materials.',
-        }),
-        el(
-          'div',
-          { class: 'suggestion-panel__grid' },
-          ...themeDrafts.map((theme, ti) =>
-            el(
-              'div',
-              { class: 'assign-checklist__theme suggestion-panel__theme' },
-              el(
-                'label',
-                { class: 'assign-checklist__lo suggestion-panel__topic' },
-                el('input', {
-                  type: 'checkbox',
-                  checked: theme.checked ? 'checked' : undefined,
-                  onchange: (e: Event) => {
-                    setSuggestionTopicSelected(
-                      theme,
-                      (e.target as HTMLInputElement).checked,
-                    );
-                    renderRows();
-                  },
-                }),
-                el('input', {
-                  class: 'input suggestion-panel__name suggestion-panel__topic-name',
-                  type: 'text',
-                  value: theme.name,
-                  disabled: theme.checked ? undefined : 'disabled',
-                  'aria-label': `Suggested Topic ${ti + 1} name`,
-                  oninput: (e: Event) => {
-                    theme.name = (e.target as HTMLInputElement).value;
-                  },
-                }),
-              ),
-              ...theme.los.map((lo, li) =>
-                el(
-                  'label',
-                  { class: 'assign-checklist__lo suggestion-panel__lo' },
-                  el('input', {
-                    type: 'checkbox',
-                    checked: lo.checked ? 'checked' : undefined,
-                    disabled: theme.checked ? undefined : 'disabled',
-                    onchange: (e: Event) => {
-                      lo.checked = (e.target as HTMLInputElement).checked;
-                    },
-                  }),
-                  el('input', {
-                    class: 'input suggestion-panel__name',
-                    type: 'text',
-                    value: lo.name,
-                    disabled: theme.checked && lo.checked ? undefined : 'disabled',
-                    'aria-label': `Suggested Topic ${ti + 1} LO ${li + 1} name`,
-                    oninput: (e: Event) => {
-                      lo.name = (e.target as HTMLInputElement).value;
-                    },
-                  }),
-                  el('span', {
-                    class: 'materials-placeholder__text suggestion-panel__sources',
-                    text:
-                      lo.materialIds.length > 0
-                        ? `${lo.materialIds.length} material${lo.materialIds.length === 1 ? '' : 's'}`
-                        : 'No matched material',
-                  }),
-                ),
-              ),
-            ),
-          ),
-        ),
-        applyError ? errorState(applyError) : false,
-        el(
-          'div',
-          { class: 'row suggestion-panel__actions' },
-          el(
-            'button',
-            {
-              class: 'btn btn--instr-primary btn--sm',
-              type: 'button',
-              disabled: applyingSuggestion || !canApplySuggestion(themeDrafts)
-                ? 'disabled'
-                : undefined,
-              onclick: () => void applySelected(),
-            },
-            applyingSuggestion ? 'Applying…' : 'Apply & auto-assign',
-          ),
-          el(
-            'button',
-            {
-              class: 'btn btn--ghost btn--sm',
-              type: 'button',
-              disabled: applyingSuggestion ? 'disabled' : undefined,
-              onclick: () => {
-                suggestState = 'idle';
-                refresh();
-              },
-            },
-            'Dismiss',
-          ),
-        ),
-      );
-    };
-
-    async function applySelected(): Promise<void> {
-      applyingSuggestion = true;
-      applyError = null;
-      renderRows();
-      try {
-        const selectedThemes = themeDrafts.filter((theme) => theme.checked);
-        if (selectedThemes.length === 0) throw new Error('Select at least one Topic to apply.');
-        for (const suggested of selectedThemes) {
-          const themeName = suggested.name.trim();
-          if (!themeName) throw new Error('Every selected Topic needs a name.');
-          const selectedLos = suggested.los.filter((lo) => lo.checked);
-          if (selectedLos.length === 0) {
-            throw new Error(`Select at least one LO under "${themeName}".`);
-          }
-          const blankLo = selectedLos.some((lo) => !lo.name.trim());
-          if (blankLo) throw new Error(`Every selected LO under "${themeName}" needs a name.`);
-        }
-
-        await applySuggestedHierarchy(courseId, {
-          themes: selectedThemes.map((theme) => ({
-            name: theme.name.trim(),
-            los: theme.los
-              .filter((lo) => lo.checked)
-              .map((lo) => ({
-                name: lo.name.trim(),
-                materialIds: lo.materialIds,
-              })),
-          })),
-        });
-        applyingSuggestion = false;
-        await renderStructureInner(outlet, courseId);
-      } catch (error) {
-        applyingSuggestion = false;
-        applyError = error instanceof ApiError ? error.message : (error as Error).message;
-        renderRows();
-      }
-    }
-
-    renderRows();
-    return panel;
   }
 
   function buildTreePane(): HTMLElement {
-    const loCount = themes.reduce((sum, theme) => sum + (theme.los?.length ?? 0), 0);
-    return el(
-      'div',
-      { class: 'structure-tree' },
-      el(
-        'div',
-        { class: 'structure-tree__heading' },
-        el('h2', { class: 'structure-tree__title', text: 'Course Structure' }),
-        el('p', {
-          class: 'structure-tree__summary',
-          text: `${themes.length} Topic${themes.length === 1 ? '' : 's'} · ${loCount} Learning Objective${loCount === 1 ? '' : 's'}`,
-        }),
-      ),
-      treeErrorMessage ? errorState(treeErrorMessage) : false,
-      el(
-        'div',
-        { class: 'row structure-tree__toolbar' },
-        addingTheme
-          ? false
-          : el(
-              'button',
-              {
-                class: 'btn btn--instr-primary structure-tree__add',
-                type: 'button',
-                onclick: () => {
-                  addingTheme = true;
-                  refresh();
-                },
-              },
-              '+ Add Topic',
-            ),
-        el(
-          'button',
-          {
-            class: 'btn btn--ghost structure-tree__add',
-            type: 'button',
-            disabled: suggestState === 'loading' ? 'disabled' : undefined,
-            onclick: () => void handleSuggestHierarchy(),
-          },
-          suggestState === 'loading' ? 'Suggesting…' : 'Suggest Structure (AI)',
-        ),
-      ),
-      addingTheme
-        ? addNameForm({
-            placeholder: 'Topic name',
-            existingNames: themes.map((t) => t.name),
-            onAdd: (name) => void handleAddTheme(name),
-            onCancel: () => {
-              addingTheme = false;
-              refresh();
-            },
-          })
-        : false,
-      suggestState !== 'idle' && suggestState !== 'loading'
-        ? 'hierarchy' in suggestState
-          ? buildSuggestionPanel(suggestState.hierarchy)
-          : errorState(suggestState.error, () => void handleSuggestHierarchy())
-        : false,
-      ...(isReviewingSuggestion() ? [] : themes.map((theme, index) => buildThemeNode(theme, index))),
-    );
-  }
-
-  function buildThemeNode(theme: CourseTreeTheme, index: number): HTMLElement {
-    const isExpanded = expanded.has(theme._id);
-    const los = theme.los ?? [];
-
-    const row = el(
-      'div',
-      { class: 'tree-theme__row' },
-      el(
-        'button',
-        {
-          class: 'tree-theme__chevron',
-          type: 'button',
-          'aria-label': isExpanded ? 'Collapse' : 'Expand',
-          onclick: (e: Event) => {
-            e.stopPropagation();
-            if (isExpanded) expanded.delete(theme._id);
-            else expanded.add(theme._id);
-            refresh();
-          },
-        },
-        isExpanded ? '▾' : '▸',
-      ),
-      el(
-        'button',
-        {
-          class: 'tree-theme__name',
-          type: 'button',
-          'aria-expanded': isExpanded ? 'true' : 'false',
-          onclick: () => {
-            if (isExpanded) expanded.delete(theme._id);
-            else expanded.add(theme._id);
-            refresh();
-          },
-        },
-        `Topic ${index + 1}: ${theme.name}`,
-      ),
-      el('span', { class: 'tree-theme__count', text: `${los.length} LO${los.length === 1 ? '' : 's'}` }),
-      themeAvailabilityPill(theme.availableFrom),
-      el(
-        'button',
-        {
-          class: 'btn btn--ghost btn--sm structure-item__edit',
-          type: 'button',
-          'aria-label': `Edit Topic ${index + 1}: ${theme.name}`,
-          onclick: () => openEditor({ type: 'theme', id: theme._id }),
-        },
-        'Edit',
-      ),
-    );
-
-    const childList = isExpanded
-      ? el(
-          'div',
-          { class: 'tree-lo-list' },
-          ...los.map((lo, loIndex) => buildLoRow(lo, loIndex, theme)),
-          addingLoForTheme === theme._id
-            ? addNameForm({
-                placeholder: 'Learning Objective name',
-                existingNames: los.map((l) => l.name),
-                onAdd: (name) => void handleAddLo(theme._id, name),
-                onCancel: () => {
-                  addingLoForTheme = null;
-                  refresh();
-                },
-              })
-            : el(
-                'button',
-                {
-                  class: 'tree-add-lo',
-                  type: 'button',
-                  onclick: () => {
-                    addingLoForTheme = theme._id;
-                    refresh();
-                  },
-                },
-                '+ Add LO',
-              ),
-        )
-      : false;
-
-    return el('div', { class: 'tree-theme' }, row, childList);
-  }
-
-  function buildLoRow(lo: CourseTreeLo, index: number, theme: CourseTreeTheme): HTMLElement {
-    const assignedCount = materials.filter((material) =>
-      material.assignments.some((assignment) => assignment.themeId === theme._id && assignment.loId === lo._id),
-    ).length;
-    const approved = preseeding.find((item) => item.loId === lo._id)?.approved ?? 0;
-    return el(
-      'div',
-      { class: 'tree-lo' },
-      el(
-        'div',
-        { class: 'tree-lo__body' },
-        el('span', { class: 'tree-lo__name', text: `LO ${index + 1}: ${lo.name}` }),
-        el('span', {
-          class: 'tree-lo__meta',
-          text: `${assignedCount} material${assignedCount === 1 ? '' : 's'} · ${approved} approved question${approved === 1 ? '' : 's'}`,
-        }),
-      ),
-      el(
-        'button',
-        {
-          class: 'btn btn--ghost btn--sm structure-item__edit',
-          type: 'button',
-          'aria-label': `Edit LO ${index + 1}: ${lo.name}`,
-          onclick: () => openEditor({ type: 'lo', id: lo._id }),
-        },
-        'Edit',
-      ),
-    );
+    if (!findTheme(activeTopic)) activeTopic = themes[0]?._id ?? '';
+    const button = (text: string, onclick: () => void | Promise<void>, primary = false) =>
+      el('button', { type: 'button', class: primary ? 'btn btn--instr-primary' : 'btn btn--ghost', onclick }, text);
+    const count = themes.reduce((n, t) => n + (t.los?.length ?? 0), 0);
+    const tabs = el('nav', { class: 'structure-view-tabs', 'aria-label': 'Structure views' },
+      el('button', { type: 'button', class: assistant.isOpen ? 'is-active' : '', 'aria-pressed': String(assistant.isOpen), onclick: () => assistant.open() }, 'AI draft'),
+      el('button', { type: 'button', class: assistant.isOpen ? '' : 'is-active', 'aria-pressed': String(!assistant.isOpen), onclick: () => assistant.close() }, `Course outline · ${count}`));
+    const actions = el('div', { class: 'structure-view-bar' }, tabs, el('div', { class: 'structure-view-actions' },
+      !assistant.isOpen && themes.length > 0 && button(showAll ? 'Topic view' : 'All objectives', () => { showAll = !showAll; openLo = ''; refresh(); }),
+      button('+ Add manually', () => { addingTheme = true; assistant.close(); })));
+    const shell = el('div', { class: 'outline-shell' }, actions);
+    if (treeErrorMessage) shell.append(errorState(treeErrorMessage));
+    if (addingTheme) shell.append(addNameForm({ placeholder: 'Topic name', existingNames: themes.map(t => t.name), onAdd: handleAddTheme, onCancel: () => { addingTheme = false; refresh(); } }));
+    if (assistant.isOpen) { shell.append(assistant.element); return shell; }
+    if (!themes.length) {
+      shell.append(el('div', { class: 'structure-saved-empty' },
+        el('span', { class: 'structure-ai-eyebrow', text: 'YOUR COURSE OUTLINE' }),
+        el('h2', { text: 'Make space for what students will learn.' }),
+        el('p', { text: 'Build a draft from your materials, or add your first topic manually.' }),
+        button('Build with AI →', () => assistant.open(), true)));
+      return shell;
+    }
+    const nav = el('aside', { class: 'outline-topics', 'aria-label': 'Topics' },
+      el('div', { class: 'outline-topic-heading', text: `TOPICS · ${themes.length}` }),
+      el('div', { class: 'outline-topic-list' }, ...themes.map((t, i) =>
+        el('button', { type: 'button', class: `outline-topic${activeTopic === t._id && !showAll ? ' is-active' : ''}`,
+          'aria-pressed': activeTopic === t._id && !showAll, onclick: () => { activeTopic = t._id; showAll = false; search = ''; openLo = ''; addingLoForTheme = null; refresh(); } },
+        el('span', { class: 'outline-number', text: String(i + 1).padStart(2, '0') }),
+        el('span', {}, el('strong', { text: t.name }), el('small', { text: `${t.los?.length ?? 0} objectives` }))))),
+      el('footer', { class: 'outline-topic-footer', text: `${count} objectives across ${themes.length} topics` }));
+    const content = el('section', { class: 'outline-content' });
+    shell.append(el('div', { class: 'outline-workspace' }, nav, content));
+    const current = findTheme(activeTopic);
+    if (!current) {
+      content.append(el('div', { class: 'outline-empty' }, el('h2', { text: 'Start with your first topic' }),
+        el('p', { text: 'Group related learning objectives into a topic.' }),
+        button('+ Add Topic', () => { addingTheme = true; refresh(); }, true)));
+      return shell;
+    }
+    const results = el('div', { class: 'outline-objectives' });
+    function drawResults(): void {
+      results.replaceChildren();
+      const matchingThemes = themes.filter(t => showAll || search || t._id === activeTopic);
+      for (const t of matchingThemes) {
+        const los = (t.los ?? []).filter(lo => !search || `${t.name} ${lo.name}`.toLowerCase().includes(search.toLowerCase()));
+        if (!los.length) continue;
+        const section = el('section', { class: 'outline-group' });
+        if (showAll || search) section.append(el('h3', { text: t.name }));
+        section.append(el('div', { class: 'outline-columns' }, el('span', { text: 'LEARNING OBJECTIVE' }), el('span', { text: 'MATERIALS · APPROVED' })));
+        for (const lo of los) {
+          const assigned = materials.filter(m => m.assignments.some(a => a.themeId === t._id && a.loId === lo._id));
+          const approved = preseeding.find(p => p.loId === lo._id)?.approved ?? 0;
+          const row = el('div', { class: 'outline-lo' });
+          row.append(el('button', { type: 'button', class: 'outline-lo-row', 'aria-expanded': openLo === lo._id,
+            onclick: () => { openLo = openLo === lo._id ? '' : lo._id; drawResults(); } },
+            el('span', { class: 'outline-number', text: `${themes.indexOf(t) + 1}.${(t.los ?? []).indexOf(lo) + 1}` }),
+            el('span', { class: 'outline-lo-name', text: lo.name }),
+            el('small', { text: `${assigned.length} materials · ${approved} approved` }), el('span', { 'aria-hidden': 'true', text: openLo === lo._id ? '−' : '+' })));
+          if (openLo === lo._id) {
+            const name = el('textarea', { class: 'input', 'aria-label': 'Learning objective', text: lo.name }) as HTMLTextAreaElement;
+            const errors = el('div');
+            row.append(el('div', { class: 'outline-lo-editor' }, name,
+              el('p', { text: assigned.length ? assigned.map(m => m.name).join(' · ') : 'No supporting materials linked yet.' }), errors,
+              el('div', { class: 'outline-inline-actions' }, button('Save changes', async () => {
+                if (!name.value.trim()) { errors.replaceChildren(errorState('Learning Objective name is required.')); return; }
+                try { const updated = await updateLo(lo._id, { name: name.value.trim() }); lo.name = updated.name; openLo = ''; drawResults(); }
+                catch (e) { errors.replaceChildren(errorState(e instanceof Error ? e.message : String(e))); }
+              }, true), button('Cancel', () => { openLo = ''; drawResults(); }),
+              button('Materials & settings', () => openEditor({ type: 'lo', id: lo._id })))));
+          }
+          section.append(row);
+        }
+        results.append(section);
+      }
+      if (!results.childElementCount) results.append(el('div', { class: 'outline-empty' },
+        el('h2', { text: search ? 'No matching objectives' : 'Give this topic a purpose' }),
+        el('p', { text: search ? 'Try a different search or clear your filters.' : 'Add what students should know or be able to do.' }),
+        button(search ? 'Clear search' : '+ Add objectives', () => {
+          if (search) { search = ''; input.value = ''; drawResults(); }
+          else { addingLoForTheme = current!._id; refresh(); }
+        })));
+    }
+    const input = el('input', { type: 'search', class: 'input', value: search, 'aria-label': 'Search all objectives', placeholder: 'Search all objectives…',
+      oninput: () => { search = input.value; drawResults(); } }) as HTMLInputElement;
+    content.append(el('header', { class: 'outline-content-heading' },
+      el('small', { text: showAll ? 'COURSE OUTLINE' : `TOPIC ${themes.indexOf(current) + 1}` }),
+      el('div', {}, el('h2', { text: showAll ? 'The complete learning journey' : current.name }),
+        button('Topic settings', () => openEditor({ type: 'theme', id: current._id }))),
+      el('p', { text: 'What should students be able to do after this topic?' }), themeAvailabilityPill(current.availableFrom)),
+      el('div', { class: 'outline-tools' }, input, button('+ Add objectives', () => { addingLoForTheme = current._id; refresh(); })));
+    if (addingLoForTheme) {
+      const target = findTheme(addingLoForTheme);
+      if (target) {
+        const names = el('textarea', { class: 'input', 'aria-label': 'New objectives, one per line', placeholder: 'One objective per line' }) as HTMLTextAreaElement;
+        const errors = el('div');
+        content.append(el('div', { class: 'outline-add' }, el('strong', { text: `Add to ${target.name}` }), names, errors,
+          button('Add objectives', async () => {
+            const pending = [...new Set(names.value.split('\n').map(n => n.trim()).filter(Boolean))];
+            if (!pending.length) { errors.replaceChildren(errorState('Enter at least one learning objective.')); return; }
+            try {
+              for (const name of pending) {
+                if (!(target.los ?? []).some(lo => lo.name.toLowerCase() === name.toLowerCase())) {
+                  const created = await addLo(target._id, name); target.los = [...(target.los ?? []), created];
+                }
+                names.value = names.value.split('\n').filter(n => n.trim() !== name).join('\n');
+              }
+              addingLoForTheme = null; refresh();
+            } catch (e) { errors.replaceChildren(errorState(`Saved objectives are retained. ${e instanceof Error ? e.message : String(e)}`)); drawResults(); }
+          }, true), button('Cancel', () => { addingLoForTheme = null; refresh(); })));
+      }
+    }
+    content.append(results, el('footer', { class: 'outline-content-footer', text: 'Click an objective to edit it. Materials & settings includes question kind and archive controls.' }));
+    drawResults();
+    return shell;
   }
 
   function buildThemeDetail(theme: CourseTreeTheme): HTMLElement {
@@ -740,7 +464,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       try {
         await archiveTheme(theme._id);
         themes.splice(themes.indexOf(theme), 1);
-        expanded.delete(theme._id);
+        if (activeTopic === theme._id) activeTopic = '';
         closeEditor();
         refresh();
       } catch (error) {
@@ -767,7 +491,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           },
           'Rename',
         ),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void archive() }, 'Archive'),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => archive() }, 'Archive'),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Name'), nameInput),
       el(
@@ -776,10 +500,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         el('span', { class: 'structure-release__label', text: 'Release' }),
         el('span', { class: 'structure-release__state', text: release.label }),
         release.state !== 'released'
-          ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void releaseNow() }, 'Release now')
+          ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => releaseNow() }, 'Release now')
           : false,
         release.state !== 'unreleased'
-          ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void withdraw() }, 'Withdraw release')
+          ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => withdraw() }, 'Withdraw release')
           : false,
       ),
       el(
@@ -793,7 +517,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         }),
       ),
       errorSlot,
-      el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void save() }, 'Save Changes'),
+      el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => save() }, 'Save Changes'),
     );
   }
 
@@ -858,7 +582,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
                 el('span', { class: 'assigned-materials__name', text: material.name }),
                 el(
                   'button',
-                  { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void remove(material) },
+                  { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => remove(material) },
                   'Remove',
                 ),
               ),
@@ -871,7 +595,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
             'div',
             { class: 'row assigned-materials__add' },
             select,
-            el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void add() }, '+ Assign material'),
+            el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => add() }, '+ Assign material'),
           )
         : el('p', { class: 'materials-placeholder__text', text: 'No unassigned materials available to add.' }),
     );
@@ -947,7 +671,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           },
           'Rename',
         ),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void archive() }, 'Archive'),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => archive() }, 'Archive'),
         // Merge/Split render inactive — out of scope (wireframe N4).
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled', title: 'Coming soon' }, 'Merge LOs…'),
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled', title: 'Coming soon' }, 'Split LO…'),
@@ -964,11 +688,11 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       // Pending/Draft counts need the question bank (Task E) — omitted rather
       // than faked; only the approved count (from `getPreseeding`) is shown.
       el('div', { class: 'stat-tile-row' }, statTile(approved, 'Approved', 'good')),
-      el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => void save() }, 'Save Changes'),
+      el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => save() }, 'Save Changes'),
     );
   }
 
-  refresh();
+  if (!themes.length) assistant.open(); else refresh();
 }
 
 export function renderStructure(outlet: HTMLElement, params: RouteParams): void {

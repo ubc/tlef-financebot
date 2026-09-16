@@ -1668,3 +1668,20 @@ describe('option order alignment', () => {
     }
   });
 });
+
+describe('deterministic plan run identity', () => {
+  it('returns existing durable work without enqueuing another job', async () => {
+    const runId = new ObjectId();
+    jest.mocked(getContentRun).mockResolvedValue({ _id: runId, courseId, requestedBy: 'PUID-INSTR' } as never);
+    await expect(enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR', runId })).resolves.toEqual(runId);
+    expect(createQuestionGenerationRun).not.toHaveBeenCalled();
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+  it('does not enqueue a second job if another request won the unique insert', async () => {
+    const runId = new ObjectId();
+    jest.mocked(getContentRun).mockResolvedValue(null);
+    jest.mocked(createQuestionGenerationRun).mockRejectedValue(Object.assign(new Error('duplicate'), { code: 11000 }));
+    await expect(enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR', runId })).resolves.toEqual(runId);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+});

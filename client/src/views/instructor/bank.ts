@@ -1,3 +1,4 @@
+import { renderBankWorkbench } from './bank-workbench.js';
 // Question Bank browser (I7) — filterable/searchable table over the course's
 // question bank, with Edit/Archive row actions and entry points into
 // Generate/Import (Task 15, Task E). See
@@ -446,7 +447,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
           class: 'btn btn--ghost',
           type: 'button',
           disabled: selected.size === 0 ? 'disabled' : undefined,
-          onclick: () => void bulkArchive(),
+          onclick: () => bulkArchive(),
         },
         'Archive selected…',
       ),
@@ -522,10 +523,10 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
         q.state === 'archived'
           ? el(
               'button',
-              { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void restore(q) },
+              { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => restore(q) },
               'Restore to Draft',
             )
-          : el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void archive(q) }, 'Archive'),
+          : el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => archive(q) }, 'Archive'),
       ),
       sourceChanged ? el('span', { class: 'bank-row__source-changed', text: 'Source changed' }) : el('span', {}),
     );
@@ -590,6 +591,10 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
   void reload();
 }
 
-export function renderBank(outlet: HTMLElement, params: RouteParams): void {
+export function renderLegacyBank(outlet: HTMLElement, params: RouteParams): void {
   void renderBankInner(outlet, params.id);
+}
+
+export function renderBank(outlet: HTMLElement, params: RouteParams): void {
+  void renderBankWorkbench(outlet, params.id);
 }

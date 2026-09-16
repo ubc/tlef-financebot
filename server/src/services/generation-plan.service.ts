@@ -1,5 +1,6 @@
-import type { ObjectId } from 'mongodb';
-import { losCol, questionsCol, questionVersionsCol, themesCol } from '../components/mongodb/collections';
+import { ObjectId } from 'mongodb';
+import { createHash } from 'node:crypto';
+import { losCol, questionsCol, questionVersionsCol, themesCol, generationSubmissionsCol } from '../components/mongodb/collections';
 import type { Difficulty, LoKind, QuestionKind } from '../types/domain';
 import { effectiveLoKind } from './courses.service';
 import { enqueueGenerationRun } from './generation.service';
@@ -123,10 +124,22 @@ export interface PlanResult {
 /** Enqueue one generation run per cell. A cell that cannot be enqueued (no
  * ready material, daily limit) reports its error and does not stop the rest:
  * the instructor sees exactly which LOs did not start. */
-export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[], byPuid: string): Promise<PlanResult> {
+export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[], byPuid: string, submission?: { id: string; prompt?: string }): Promise<PlanResult> {
+  let submissionKey: string | undefined;
+  if (submission) {
+    submissionKey = createHash('sha256').update(`${courseId}:${byPuid}:${submission.id}`).digest('hex');
+    const fingerprint = JSON.stringify({ cells, prompt: submission.prompt ?? '' });
+    try {
+      await generationSubmissionsCol().insertOne({ _id: submissionKey, courseId, requestedBy: byPuid, fingerprint, createdAt: new Date() });
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+      const previous = await generationSubmissionsCol().findOne({ _id: submissionKey });
+      if (previous?.fingerprint !== fingerprint) throw Object.assign(new Error('generation-submission-conflict', { cause: error }), { status: 409 });
+    }
+  }
   if (cells.length > PLAN_MAX_CELLS) throw new Error('generation-plan-too-large');
   const runs: PlanResult['runs'] = [];
-  for (const cell of cells) {
+  for (const [index, cell] of cells.entries()) {
     const secondary = cell.secondaryLoIds?.length ? { secondaryLoIds: cell.secondaryLoIds } : {};
     const base = { loId: cell.loId, ...secondary, difficulty: cell.difficulty, kind: cell.kind, count: cell.count };
     if (!Number.isInteger(cell.count) || cell.count < 1 || cell.count > PLAN_MAX_COUNT) {
@@ -136,6 +149,8 @@ export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[
     try {
       const runId = await enqueueGenerationRun({
         courseId, loId: cell.loId, ...secondary, count: cell.count, type: 'mcq',
+        ...(submissionKey ? { runId: new ObjectId(createHash('sha256').update(`${submissionKey}:${index}`).digest('hex').slice(0, 24)) } : {}),
+        ...(submission?.prompt ? { prompt: submission.prompt } : {}),
         difficulty: cell.difficulty, kind: cell.kind, byPuid,
       });
       runs.push({ ...base, runId });

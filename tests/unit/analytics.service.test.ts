@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   attemptsCol: jest.fn(),
+  examAttemptsCol: jest.fn(),
   flagsCol: jest.fn(),
   losCol: jest.fn(),
   masteryCol: jest.fn(),
@@ -13,6 +14,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 }));
 
 import {
+  examAttemptsCol, usersCol, masteryCol, flagsCol,
   attemptsCol,
   losCol,
   questionVersionsCol,
@@ -21,6 +23,7 @@ import {
   reviewBookCol,
 } from '../../server/src/components/mongodb/collections';
 import {
+  examScores, studentProfile,
   answerDistributions,
   clusterSessions,
   csvSerialize,
@@ -170,8 +173,12 @@ it('bounds pattern metadata and suppresses rates below five for each recorded ve
   jest.mocked(questionVersionsCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: versionId, questionId, version: 2, stem: 'Current' }, { _id: historic, questionId, version: 1, stem: 'Historic' }])) } as never);
   jest.mocked(losCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: loId, name: 'VaR', archivedAt: new Date() }])) } as never);
   jest.mocked(themesCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: themeId, name: 'Risk' }])) } as never);
-  const result = await questionPatterns(courseId, { mode: 'topic-practice', loId }, 2);
+  const result = await questionPatterns(courseId, { mode: 'topic-practice', loId, themeId, q: 'a.b' }, 2);
   expect(result).toMatchObject({ total: 23, limit: 2 });
+  const pipeline = (aggregate.mock.calls as unknown[][])[0][0] as Array<Record<string, unknown>>;
+  expect(pipeline[0]).toEqual({ $match: { courseId, mode: 'topic-practice', loId, themeId } });
+  expect(pipeline.find(stage => '$lookup' in stage)).toBeDefined();
+  expect(JSON.stringify(pipeline)).toContain('learningObjectives');
   expect(result.items[0]).toMatchObject({ failureRate: .5, loName: 'VaR (archived)', isCurrent: true, objectiveCount: 2 });
   expect(result.items[1]).toMatchObject({ insufficient: true, isCurrent: false });
   expect(result.items[1].failureRate).toBeUndefined(); expect(result.items[1].misconceptionRate).toBeUndefined();
@@ -187,4 +194,34 @@ it('counts only active LO coverage and fills empty weeks with mode-scoped activi
   expect(result.totals).toMatchObject({ questionsAttempted: 2, loCoverageRate: 1, reviewBookActivityRate: 0, sessionsPerStudent: 1, avgSessionMinutes: 10 });
   expect(result.weeks).toHaveLength(4); expect(result.weeks[1].questionsAttempted).toBe(0);
   expect(find).toHaveBeenCalledWith({ courseId, mode: 'exam-prep', createdAt: { $gte: from, $lte: to } });
+});
+
+it('scores query scopes submitted sittings by course/date and excludes invalid point totals', async () => {
+  const from = new Date('2026-09-01'), to = new Date('2026-09-15'), templateId = new ObjectId();
+  const find = jest.fn(() => cursor([
+    { _id: new ObjectId(), puid: 'student', templateId, templateKind: 'midterm', submittedAt: from, score: 6, maxScore: 10 },
+    { _id: new ObjectId(), puid: 'student', templateId, templateKind: 'midterm', submittedAt: to, score: 12, maxScore: 20 },
+    { _id: new ObjectId(), puid: 'student', templateId, templateKind: 'midterm', submittedAt: to, score: undefined, maxScore: 20 },
+  ]));
+  jest.mocked(examAttemptsCol).mockReturnValue({ find } as never);
+  jest.mocked(usersCol).mockReturnValue({ find: jest.fn(() => ({ toArray: async () => [{ puid: 'student', displayName: 'Student' }] })) } as never);
+  const result = await examScores(courseId, { from, to, puid: 'student' });
+  expect(find).toHaveBeenCalledWith({ courseId, puid: 'student', submittedAt: { $exists: true, $gte: from, $lte: to } });
+  expect(result.items.map(s => [s.score, s.maxScore])).toEqual([[6, 10], [12, 20]]);
+  expect(result.excludedUnscored).toBe(1);
+});
+
+
+it('renders student history from its recorded version and saved parameters', async () => {
+  jest.mocked(usersCol).mockReturnValue({ findOne: jest.fn(async () => ({ puid: 's', displayName: 'Student' })) } as never);
+  jest.mocked(attemptsCol).mockReturnValue({ find: jest.fn(() => cursor([{ courseId, puid: 's', questionVersionId: versionId, createdAt: new Date(), paramValues: { amount: 12 }, selectedKey: 'B' }])) } as never);
+  for (const collection of [masteryCol, reviewBookCol, flagsCol]) jest.mocked(collection).mockReturnValue({ find: jest.fn(() => cursor([])) } as never);
+  jest.mocked(losCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: loId, themeId, name: 'Value' }])) } as never);
+  jest.mocked(themesCol).mockReturnValue({ find: jest.fn(() => cursor([{ _id: themeId, name: 'Risk' }])) } as never);
+  const find = jest.fn(() => cursor([{ _id: versionId, version: 1, stem: 'Value {{amount}}', options: [{ key: 'B', text: '{{amount}}', explanation: 'Saved {{amount}}', role: 'correct' }] }]));
+  jest.mocked(questionVersionsCol).mockReturnValue({ find } as never);
+  const result = await studentProfile(courseId, 's');
+  expect(find).toHaveBeenCalledWith({ _id: { $in: [versionId] } });
+  expect(result.history).toEqual([expect.objectContaining({ recordedVersion: 1, stem: 'Value 12', selectedKey: 'B', options: [expect.objectContaining({ text: '12', explanation: 'Saved 12' })] })]);
+  expect(result.objectives).toEqual([expect.objectContaining({ name: 'Value', topic: 'Risk' })]);
 });

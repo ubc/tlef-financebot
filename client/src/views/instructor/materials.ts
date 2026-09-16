@@ -140,6 +140,23 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     },
   ];
   const feedback = el('div', { class: 'workspace-feedback', 'aria-live': 'polite' });
+  let knowledgeBuildSource: 'quick' | 'assistant' | null = null;
+  let assistantBusy = false;
+  const pendingActions = new Set<string>();
+
+  async function runMaterialAction(key: string, action: () => Promise<void>): Promise<void> {
+    if (pendingActions.has(key)) return;
+    pendingActions.add(key);
+    refresh();
+    try {
+      await action();
+    } catch (error) {
+      feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+    } finally {
+      pendingActions.delete(key);
+      refresh();
+    }
+  }
 
   async function loadDetail(materialId: string | undefined): Promise<void> {
     detail = undefined;
@@ -252,7 +269,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     refresh();
   }
 
-  async function buildKnowledgeBase(): Promise<void> {
+  async function buildKnowledgeBase(source: 'quick' | 'assistant' = 'quick'): Promise<void> {
+    if (knowledgeBuildSource) return;
+    knowledgeBuildSource = source;
     assistantMessages.push({ role: 'assistant', text: 'Analyzing the indexed materials for a draft Topic/LO structure…' });
     refresh();
     try {
@@ -270,20 +289,40 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     } catch (error) {
       assistantMessages.push({ role: 'assistant', text: error instanceof ApiError ? error.message : (error as Error).message });
     }
+    knowledgeBuildSource = null;
     refresh();
   }
 
-  function handleAssistantPrompt(input: HTMLTextAreaElement): void {
+  async function handleAssistantPrompt(input: HTMLTextAreaElement): Promise<void> {
+    if (assistantBusy) return;
     const prompt = input.value.trim();
     if (!prompt) return;
     input.value = '';
     assistantMessages.push({ role: 'user', text: prompt });
     const normalized = prompt.toLowerCase();
-    if (/build|knowledge|lo|structure|知识|学习目标/.test(normalized)) void buildKnowledgeBase();
+    if (/build|knowledge|lo|structure|知识|学习目标/.test(normalized)) {
+      assistantBusy = true;
+      refresh();
+      try {
+        await buildKnowledgeBase('assistant');
+      } finally {
+        assistantBusy = false;
+      }
+    }
     else if (/review|confidence|建议|审核/.test(normalized)) {
       fileMode = 'review';
       assistantMessages.push({ role: 'assistant', text: 'I opened every medium-confidence item that needs instructor review.' });
-    } else if (/retry|failed|失败|重试/.test(normalized)) void retryAllFailed();
+    } else if (/retry|failed|失败|重试/.test(normalized)) {
+      assistantBusy = true;
+      refresh();
+      try {
+        await retryAllFailed();
+      } catch (error) {
+        assistantMessages.push({ role: 'assistant', text: error instanceof ApiError ? error.message : (error as Error).message });
+      } finally {
+        assistantBusy = false;
+      }
+    }
     else if (/graph|map|关系|图谱/.test(normalized)) {
       rightTab = 'graph';
       assistantMessages.push({ role: 'assistant', text: 'The knowledge graph is open. Search or filter nodes, then select a source to inspect it.' });
@@ -300,6 +339,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     const run = material.activeRunId ? runs.get(material.activeRunId) : undefined;
     const isSelected = selectedId === material._id;
     const assignmentState = material.automation?.assignment;
+    const materialActionKey = `${material.deletedAt ? 'restore' : 'trash'}:${material._id}`;
     return el(
       'div',
       { class: `workspace-file-row${isSelected ? ' workspace-file-row--selected' : ''}` },
@@ -336,7 +376,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
           type: 'button',
           'aria-label': material.deletedAt ? `Restore ${material.name}` : `Move ${material.name} to Trash`,
           title: material.deletedAt ? 'Restore source' : 'Move to Trash',
-          onclick: () => material.deletedAt ? void doRestore(material) : void doTrash(material),
+          disabled: pendingActions.has(materialActionKey) ? 'disabled' : undefined,
+          busy: pendingActions.has(materialActionKey),
+          onclick: () => runMaterialAction(materialActionKey, () => material.deletedAt ? doRestore(material) : doTrash(material)),
         },
         material.deletedAt ? 'Restore' : 'Trash',
       ),
@@ -361,7 +403,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('span', { class: 'workspace-count', text: String(materials.length) }),
       ),
       uploadZone('Drop files here or browse', (files) => void doUpload(files)),
-      el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void doAddUrl(urlInput) }, '+')),
+      el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has('add-url') ? 'disabled' : undefined, busy: pendingActions.has('add-url'), onclick: () => runMaterialAction('add-url', () => doAddUrl(urlInput)) }, '+')),
       el('input', {
         class: 'input input--sm workspace-search',
         type: 'search',
@@ -421,7 +463,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         : false,
       run?.error ? el('p', { class: 'material-row__error', text: materialErrorMessage(run.error.message) }) : false,
       material?.status === 'failed'
-        ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void doRetry(material) }, 'Retry processing')
+        ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has(`retry:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`retry:${material._id}`), onclick: () => runMaterialAction(`retry:${material._id}`, () => doRetry(material)) }, pendingActions.has(`retry:${material._id}`) ? 'Retrying…' : 'Retry processing')
         : false,
     );
   }
@@ -440,7 +482,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       el(
         'div',
         { class: 'workspace-quick-actions' },
-        el('button', { class: 'workspace-action', type: 'button', onclick: () => void buildKnowledgeBase() }, el('strong', { text: 'Build knowledge base' }), el('span', { text: 'Draft Topics and LOs from evidence' })),
+        el('button', { class: 'workspace-action', type: 'button', disabled: knowledgeBuildSource ? 'disabled' : undefined, busy: knowledgeBuildSource === 'quick', onclick: () => buildKnowledgeBase() }, el('strong', { text: knowledgeBuildSource === 'quick' ? 'Building knowledge base…' : 'Build knowledge base' }), el('span', { text: 'Draft Topics and LOs from evidence' })),
         el('button', { class: 'workspace-action', type: 'button', onclick: () => { fileMode = 'review'; refresh(); } }, el('strong', { text: 'Review suggestions' }), el('span', { text: 'Resolve medium-confidence matches' })),
         el('button', { class: 'workspace-action', type: 'button', onclick: () => { rightTab = 'graph'; refresh(); } }, el('strong', { text: 'Explore graph' }), el('span', { text: 'Trace source → concept → LO → question' })),
       ),
@@ -456,7 +498,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
           ),
         ),
       ),
-      el('div', { class: 'workspace-assistant__composer' }, prompt, el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: () => handleAssistantPrompt(prompt) }, 'Send')),
+      el('div', { class: 'workspace-assistant__composer' }, prompt, el('button', { class: 'btn btn--instr-primary', type: 'button', disabled: assistantBusy ? 'disabled' : undefined, busy: assistantBusy, onclick: () => handleAssistantPrompt(prompt) }, assistantBusy ? 'Working…' : 'Send')),
       activityTimeline(),
     );
   }
@@ -492,6 +534,11 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       refresh();
     }
     const suggestion = material.classificationSuggestion;
+    const acceptClassificationKey = `classification-accept:${material._id}`;
+    const rejectClassificationKey = `classification-reject:${material._id}`;
+    const classificationBusy = pendingActions.has(acceptClassificationKey) || pendingActions.has(rejectClassificationKey);
+    const kindKey = `kind:${material._id}`;
+    const assignmentsKey = `assignments:${material._id}`;
     return el(
       'div',
       { class: 'workspace-inspector__content' },
@@ -509,11 +556,11 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
             { class: 'workspace-review-card' },
             el('strong', { text: `Suggested LO match · ${classificationLabel(suggestion.confidence)}` }),
             material.classificationSuggestions?.[0]?.rationale ? el('p', { text: material.classificationSuggestions[0].rationale }) : false,
-            el('div', { class: 'row' }, el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void resolve('accept') }, 'Accept'), el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void resolve('reject') }, 'Dismiss')),
+            el('div', { class: 'row' }, el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: classificationBusy ? 'disabled' : undefined, busy: pendingActions.has(acceptClassificationKey), onclick: () => runMaterialAction(acceptClassificationKey, () => resolve('accept')) }, 'Accept'), el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: classificationBusy ? 'disabled' : undefined, busy: pendingActions.has(rejectClassificationKey), onclick: () => runMaterialAction(rejectClassificationKey, () => resolve('reject')) }, 'Dismiss')),
           )
         : false,
-      el('label', { class: 'form-field' }, el('span', { text: 'Material type' }), el('div', { class: 'row' }, kindSelect, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void saveKind() }, 'Save'))),
-      el('div', { class: 'workspace-metadata-block' }, el('h3', { text: 'LO coverage' }), el('p', { class: 'workspace-muted', text: assignmentSummary(material, tree) }), checklist.element, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void saveAssignments() }, 'Save assignments')),
+      el('label', { class: 'form-field' }, el('span', { text: 'Material type' }), el('div', { class: 'row' }, kindSelect, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has(kindKey) ? 'disabled' : undefined, busy: pendingActions.has(kindKey), onclick: () => runMaterialAction(kindKey, () => saveKind()) }, pendingActions.has(kindKey) ? 'Saving…' : 'Save'))),
+      el('div', { class: 'workspace-metadata-block' }, el('h3', { text: 'LO coverage' }), el('p', { class: 'workspace-muted', text: assignmentSummary(material, tree) }), checklist.element, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has(assignmentsKey) ? 'disabled' : undefined, busy: pendingActions.has(assignmentsKey), onclick: () => runMaterialAction(assignmentsKey, () => saveAssignments()) }, pendingActions.has(assignmentsKey) ? 'Saving assignments…' : 'Save assignments')),
       el(
         'div',
         { class: 'workspace-metadata-block' },
@@ -639,7 +686,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('div', { class: 'workspace-preview__heading' }, el('div', {}, el('h3', { text: material.name }), el('p', { text: `${material.format.toUpperCase()} · Uploaded ${formatDate(material.uploadedAt)}` })), el('a', { class: 'btn btn--ghost btn--sm', href: materialSourceUrl(courseId, material._id), target: '_blank', rel: 'noopener', text: 'Open original' })),
         canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
         material.deletedAt ? el('p', { class: 'workspace-deleted-note', text: 'This source is in Trash. Existing questions keep their provenance, but the source no longer grounds generation.' }) : false,
-        el('div', { class: 'workspace-preview__actions' }, material.deletedAt ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void doRestore(material) }, 'Restore source') : el('button', { class: 'btn btn--danger btn--sm', type: 'button', onclick: () => void doTrash(material) }, 'Move to Trash')),
+        el('div', { class: 'workspace-preview__actions' }, material.deletedAt ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: pendingActions.has(`restore:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`restore:${material._id}`), onclick: () => runMaterialAction(`restore:${material._id}`, () => doRestore(material)) }, 'Restore source') : el('button', { class: 'btn btn--danger btn--sm', type: 'button', disabled: pendingActions.has(`trash:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`trash:${material._id}`), onclick: () => runMaterialAction(`trash:${material._id}`, () => doTrash(material)) }, 'Move to Trash')),
       );
     }
     return el(

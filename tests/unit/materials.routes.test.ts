@@ -1,3 +1,5 @@
+jest.mock('../../server/src/services/structure-generation.service', () => ({ ...jest.requireActual('../../server/src/services/structure-generation.service'), enqueueStructureGeneration: jest.fn() }));
+import { enqueueStructureGeneration } from '../../server/src/services/structure-generation.service';
 // Integration test — the materialsRouter via supertest, mirroring
 // tests/unit/questions.routes.test.ts's makeApp pattern (req.user set to a
 // domain-User fixture carrying courseRoles). materials.service is fully
@@ -546,5 +548,21 @@ describe('POST /api/courses/:courseId/apply-suggested-hierarchy', () => {
 
     expect(res.status).toBe(400);
     expect(applySuggestedHierarchy).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST structure-generation', () => {
+  const url = `/api/courses/${courseId.toHexString()}/structure-generation`;
+  it('denies students and foreign instructors before starting analysis', async () => {
+    jest.mocked(enqueueStructureGeneration).mockClear();
+    expect((await request(makeApp(student)).post(url).send({})).status).toBe(403);
+    expect((await request(makeApp(userFixture([{ courseId: otherCourseId, role: 'instructor' }]))).post(url).send({})).status).toBe(403);
+    expect(enqueueStructureGeneration).not.toHaveBeenCalled();
+  });
+  it('validates optional counts and returns a durable run id', async () => {
+    expect((await request(makeApp(instructor)).post(url).send({ topicCount: 0 })).status).toBe(400);
+    const id = new ObjectId(); jest.mocked(enqueueStructureGeneration).mockResolvedValue({ _id: id } as never);
+    expect((await request(makeApp(instructor)).post(url).send({ topicCount: 4, losPerTopic: 3 })).body).toEqual({ runId: id.toHexString() });
+    expect(enqueueStructureGeneration).toHaveBeenLastCalledWith(courseId, instructor.puid, { topicCount: 4, losPerTopic: 3 });
   });
 });

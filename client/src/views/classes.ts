@@ -167,7 +167,7 @@ export function renderClasses(outlet: HTMLElement): void {
           {},
           el(
             'button',
-            { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void showClasses() },
+            { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => showClasses() },
             '← Back to classes',
           ),
           el('h2', { class: 'classes__heading', text: `${roster.courseCode} — ${roster.title}` }),

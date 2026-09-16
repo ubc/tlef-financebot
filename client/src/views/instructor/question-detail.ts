@@ -37,6 +37,7 @@ import {
   type RegenerationVariant,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { runButtonAction } from '../../action-state.js';
 import {
   editableVariableNames,
   toDisplayPlaceholders,
@@ -535,7 +536,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       return { ok: false, changed: false };
     }
   }
-  saveButton.addEventListener('click', () => void save());
+  saveButton.addEventListener('click', () => void runButtonAction(saveButton, save));
 
   // --- Meta row (type · state text; reflected in place on Approve/Reject) --
 
@@ -598,7 +599,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       return false;
     }
   }
-  addInternalNoteButton.addEventListener('click', () => void appendInternalNote());
+  addInternalNoteButton.addEventListener('click', () => void runButtonAction(addInternalNoteButton, appendInternalNote));
 
   // --- Approve / Reject / Regenerate ---------------------------------------
 
@@ -653,15 +654,15 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     }
   }
   approveButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(approveButton, async () => {
       const saved = await save();
       if (!saved.ok || !await appendInternalNote()) return;
       const to = approveTarget(state);
       if (to) await doTransition(to);
-    })();
+    });
   });
   rejectButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(rejectButton, async () => {
       const confirmed = await confirmDialog({
         title: 'Reject and archive this question?',
         message: 'The question will be removed from student practice. It can later be restored to Draft from Question Bank.',
@@ -671,11 +672,11 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       if (!confirmed || !await appendInternalNote()) return;
       const to = rejectTarget(state);
       if (to) await doTransition(to);
-    })();
+    });
   });
-  restoreButton.addEventListener('click', () => void doTransition('draft'));
+  restoreButton.addEventListener('click', () => void runButtonAction(restoreButton, () => doTransition('draft')));
   flagUpdateButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(flagUpdateButton, async () => {
       const saved = await save();
       if (!saved.ok) return;
       if (!saved.changed) {
@@ -704,10 +705,10 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         }
       }
       navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
-    })();
+    });
   });
   flagArchiveButton.addEventListener('click', () => {
-    void (async () => {
+    void runButtonAction(flagArchiveButton, async () => {
       const confirmed = await confirmDialog({
         title: 'Reject and archive this question?',
         message: 'This resolves the open flags and removes the real question from student practice. It can later be restored to Draft.',
@@ -717,7 +718,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       if (!confirmed || !await appendInternalNote()) return;
       if (!await resolveFlagContext('archive', false)) return;
       navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
-    })();
+    });
   });
   renderActionButtons();
 
@@ -736,6 +737,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }) as HTMLTextAreaElement;
   let regenerationOpen = false;
   let regenerationBusy = false;
+  let regenerationBusyAction: 'generate' | 'replace' | null = null;
   let regenerationError: string | null = null;
   let regenerationMessage: string | null = null;
   let regenerationVariant: RegenerationVariant | null = null;
@@ -790,9 +792,10 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             class: 'btn btn--instr-primary',
             type: 'button',
             disabled: regenerationBusy ? 'disabled' : undefined,
-            onclick: () => void generateVariant(),
+            busy: regenerationBusyAction === 'generate',
+            onclick: () => generateVariant(),
           },
-          regenerationBusy ? 'Generating alternative…' : 'Generate alternative',
+          regenerationBusyAction === 'generate' ? 'Generating alternative…' : 'Generate alternative',
         ),
         el(
           'button',
@@ -827,9 +830,10 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
               class: 'btn btn--instr-primary',
               type: 'button',
               disabled: regenerationBusy ? 'disabled' : undefined,
-              onclick: () => void replaceWithVariant(),
+              busy: regenerationBusyAction === 'replace',
+              onclick: () => replaceWithVariant(),
             },
-            'Replace with variant',
+            regenerationBusyAction === 'replace' ? 'Replacing…' : 'Replace with variant',
           )
         : false,
     );
@@ -843,6 +847,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       return;
     }
     regenerationBusy = true;
+    regenerationBusyAction = 'generate';
     regenerationError = null;
     regenerationMessage = null;
     regenerationVariant = null;
@@ -855,12 +860,14 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
     }
     regenerationBusy = false;
+    regenerationBusyAction = null;
     renderRegenerationPanel();
   }
 
   async function replaceWithVariant(): Promise<void> {
     if (!regenerationVariant) return;
     regenerationBusy = true;
+    regenerationBusyAction = 'replace';
     regenerationError = null;
     regenerationMessage = null;
     renderRegenerationPanel();
@@ -886,6 +893,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
     }
     regenerationBusy = false;
+    regenerationBusyAction = null;
     renderRegenerationPanel();
   }
 
@@ -940,7 +948,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
         'span',
         { class: 'lo-chip' },
         el('span', { text: label }),
-        el('button', { class: 'lo-chip__remove', type: 'button', 'aria-label': `Remove ${label}`, onclick: () => void removeLo(loId) }, '×'),
+        el('button', { class: 'lo-chip__remove', type: 'button', 'aria-label': `Remove ${label}`, onclick: () => removeLo(loId) }, '×'),
       );
     });
 

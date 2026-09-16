@@ -20,17 +20,16 @@ const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const runParams = z.object({ courseId: objectIdParam, runId: objectIdParam });
 const listQuery = z.object({
-  kind: z.enum(['material-ingest', 'question-generation']).optional(),
+  kind: z.enum(['material-ingest', 'question-generation', 'structure-generation']).optional(),
   status: z.enum(['queued', 'running', 'completed', 'partial', 'failed']).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-type ContentRunSummary = Omit<WithId<ContentRun>, 'events'>;
+type ContentRunSummary = Omit<WithId<ContentRun>, 'events'> & { progressMessage?: string };
 
 function toSummary(run: WithId<ContentRun>): ContentRunSummary {
   const { events, ...summary } = run;
-  void events;
-  return summary;
+  return { ...summary, ...(run.kind === 'structure-generation' ? { progressMessage: events[events.length - 1]?.message } : {}) };
 }
 
 function writeEvent(

@@ -7,9 +7,8 @@ import { attachTutorial } from '../../tutorials.js';
 //
 // Deliberately absent: Approve, Bulk Approve, and any editing control. Approve
 // is `question.approve`, which no configuration grants a TA (phase-3 constraint).
-// Suggesting an edit, annotating, and escalating live on the question page
-// (views/ta/question-detail.ts) — one question at a time, like the instructor's
-// Review → flow — rather than crammed into every row.
+// The shared TA question reader is embedded here for suggestions and notes.
+// Flag escalation stays in Flag Triage; instructor mutation controls are never reused.
 //
 // Topic/LO comes from `getCourseOutline` (question.review), NOT `getCourseTree`
 // (instructor-only): a real TA 403s on the latter. See ta-ui.ts.
@@ -26,11 +25,11 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { rowStemText } from '../../placeholders.js';
-import { filterTabs, pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
-import { renderRichText } from '../../render.js';
-import { emptyState, errorState, loadingState } from '../../ui.js';
+import { filterTabs, pageHeader } from '../../instructor-ui.js';
+import { renderTaQuestionDetail } from './question-detail.js';
+import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
-import { STATUS_LABEL, TYPE_LABEL, statusToBadgeVariant } from '../instructor/bank.js';
+import { TYPE_LABEL } from '../instructor/bank.js';
 import {
   matchesTab,
   queueTabCounts,
@@ -39,9 +38,6 @@ import {
 } from '../instructor/review-queue.js';
 import { pendingSuggestionCount, topicLoLabel } from './ta-ui.js';
 
-function navigate(path: string): void {
-  window.location.hash = path;
-}
 
 const QUEUE_TABS: QueueTab[] = ['all', 'flagged', 'agent-flag', 'agent-reject', 'agent-pass'];
 
@@ -53,17 +49,11 @@ const TAB_LABEL: Record<QueueTab, string> = {
   'agent-pass': 'Agent: Pass',
 };
 
-const AGENT_BADGE_VARIANT: Record<'pass' | 'flag' | 'reject', BadgeVariant> = {
-  pass: 'pass',
-  flag: 'flag',
-  reject: 'reject',
-};
-
 type SortKey = 'priority' | 'stem';
 
 async function renderInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading TA review queue…'));
-  const root = el('div', { class: 'view' }, body);
+  const root = el('div', { class: 'view view--review-workbench ta-review-workspace' }, body);
   mount(outlet, root);
 
   let outline: CourseOutline;
@@ -97,10 +87,14 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   let activeTab: QueueTab = 'all';
   let sortKey: SortKey = 'priority';
+  let query = '';
+  let activeId = '';
+  const readers = new Map<string, HTMLElement>();
   let actionErrorMessage: string | null = null;
   let actionMessage: string | null = null;
+  const pendingReviewIds = new Set<string>();
 
-  const tabsContainer = el('div', {});
+  const tabsContainer = el('div', { class: 'review-workbench-tabs' });
   const controlsContainer = el('div', {});
   const resultsContainer = el('div', { 'data-tutorial': 'ta-review-items' });
 
@@ -110,7 +104,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   function visibleRows(): TaReviewQueueItem[] {
     const inputs = tabInputs();
-    const filtered = items.filter((_, i) => matchesTab(inputs[i], activeTab));
+    const filtered = items.filter((item, i) => matchesTab(inputs[i], activeTab) && `${rowStemText(item)} ${topicLoLabel(outline, item.loIds, item.themeIds)}`.toLowerCase().includes(query));
     if (sortKey === 'stem') return [...filtered].sort((a, b) => a.current.stem.localeCompare(b.current.stem));
     return filtered; // already server-prioritized
   }
@@ -143,12 +137,16 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
       el('option', { value: 'priority', text: 'Sort by: Priority', selected: sortKey === 'priority' ? 'selected' : undefined }),
       el('option', { value: 'stem', text: 'Sort by: Question (A–Z)', selected: sortKey === 'stem' ? 'selected' : undefined }),
     ) as HTMLSelectElement;
-    mount(controlsContainer, el('div', { class: 'queue-controls' }, sortSelect));
+    const search = el('input', { class: 'input', type: 'search', placeholder: 'Search questions or objectives…', 'aria-label': 'Search questions or objectives', value: query, oninput: (event: Event) => { query = (event.target as HTMLInputElement).value.toLowerCase(); renderResults(); } });
+    mount(controlsContainer, el('div', { class: 'ta-review-tools' }, search, sortSelect));
   }
 
   async function markReviewed(item: TaReviewQueueItem): Promise<void> {
+    if (pendingReviewIds.has(item.id)) return;
+    pendingReviewIds.add(item.id);
     actionErrorMessage = null;
     actionMessage = null;
+    renderResults();
     try {
       await markTaQuestionReviewed(item.id);
       items = await getTaReviewQueue(courseId);
@@ -158,76 +156,68 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
       void enrichAgentDecisions(items);
     } catch (error) {
       actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
+    } finally {
+      pendingReviewIds.delete(item.id);
     }
     renderResults();
   }
 
-  function agentBadge(item: TaReviewQueueItem): HTMLElement {
-    const decision = agentDecisions.get(item.id);
-    if (!decision) return statusBadge('—', 'neutral');
-    return statusBadge(decision.decision.toUpperCase(), AGENT_BADGE_VARIANT[decision.decision]);
-  }
-
-  function questionRow(item: TaReviewQueueItem): HTMLElement {
-    const stemCell = el('div', { class: 'queue-row__stem' });
-    renderRichText(stemCell, rowStemText(item));
-    const pending = pendingSuggestionCount(item);
-
-    return el('div', { class: 'queue-row queue-row--ta' },
-      el('div', {},
-        stemCell,
-        item.labels.includes('student-flagged')
-          ? el('p', { class: 'queue-row__flag queue-row__flag--red', text: '🔴 Student Flagged' })
-          : false,
-        pending > 0
-          ? el('p', { class: 'queue-row__suggestions', text: `${pending} suggestion${pending === 1 ? '' : 's'} awaiting the instructor` })
-          : false,
-      ),
-      el('div', { class: 'queue-row__type-lo' },
-        el('span', { text: TYPE_LABEL[item.current.type] }),
-        el('span', { text: topicLoLabel(outline, item.loIds, item.themeIds) }),
-      ),
-      agentBadge(item),
-      statusBadge(STATUS_LABEL[item.state], statusToBadgeVariant(item.state)),
-      el('div', { class: 'queue-row__actions' },
-        el('button', {
-          class: 'btn btn--instr-primary btn--sm', type: 'button',
-          onclick: () => navigate(`/ta/course/${encodeURIComponent(courseId)}/question/${encodeURIComponent(item.id)}`),
-        }, 'Review →'),
-        permissions['question.mark-reviewed'] ? el('button', {
-          class: 'btn btn--ghost btn--sm', type: 'button',
-          disabled: item.state === 'reviewed' ? 'disabled' : undefined,
-          title: item.state === 'reviewed' ? 'Already marked reviewed' : 'Mark this question reviewed for the instructor',
-          onclick: () => void markReviewed(item),
-        }, 'Mark reviewed') : el('p', { class: 'muted', text: 'Mark reviewed is unavailable. Ask your Instructor about course permissions.' }),
-      ),
-    );
+  function openBoard(rows: TaReviewQueueItem[]): void {
+    const dialog = el('dialog', { class: 'app-dialog ta-question-board', 'aria-label': 'Question board' }) as HTMLDialogElement;
+    dialog.append(el('div', { class: 'app-dialog__surface' }, el('h2', { text: 'Jump to a question' }),
+      el('div', { class: 'ta-board-grid' }, ...rows.map((item, index) => el('button', { type: 'button', class: 'btn btn--ghost', text: String(index + 1), title: rowStemText(item), 'aria-label': `Question ${index + 1}: ${rowStemText(item)}`, onclick: () => { activeId = item.id; dialog.close(); renderResults(); } }))),
+      el('button', { class: 'btn btn--ghost', type: 'button', text: 'Close', onclick: () => dialog.close() })));
+    dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal();
   }
 
   function renderResults(): void {
     const rows = visibleRows();
+    if (!rows.some(item => item.id === activeId)) activeId = rows[0]?.id ?? '';
+    const item = rows.find(row => row.id === activeId);
+    tabsContainer.hidden = items.length === 0;
+    controlsContainer.hidden = items.length === 0;
+    if (!item) {
+      mount(resultsContainer, el('section', { class: 'review-empty' },
+        el('div', { class: `review-empty__art${items.length ? ' is-search' : ''}`, 'aria-hidden': 'true' },
+          el('span', { class: 'review-empty__sheet review-empty__sheet--back' }),
+          el('span', { class: 'review-empty__sheet' }, el('i', {}), el('i', {}), el('i', {})),
+          el('span', { class: 'review-empty__seal', text: items.length ? '⌕' : '✓' })),
+        el('div', { class: 'review-empty__content' },
+          el('p', { class: 'review-empty__eyebrow', text: items.length ? 'REFINE YOUR SEARCH' : 'YOUR REVIEW QUEUE' }),
+          el('h2', { text: items.length ? 'No matching questions' : 'Nothing waiting for review' }),
+          el('p', { class: 'review-empty__description', text: items.length ? 'Try another keyword or clear your filters to see the rest of the queue.' : 'Newly generated and imported questions will appear here when they’re ready for your review.' }),
+          items.length ? el('div', { class: 'review-empty__actions' }, el('button', { type: 'button', class: 'btn btn--instr-primary', text: 'Clear filters', onclick: () => { query = ''; activeTab = 'all'; renderControls(); renderTabs(); renderResults(); } })) : false,
+          el('p', { class: 'review-empty__footnote', text: 'Suggest edits and leave notes here. Final approval remains instructor-only.' }))));
+      return;
+    }
+    let reader = readers.get(item.id);
+    const isNew = !reader;
+    if (!reader) { reader = el('div', { class: 'ta-embedded' }); readers.set(item.id, reader); }
+    const pending = pendingSuggestionCount(item);
+    const marking = pendingReviewIds.has(item.id);
     mount(resultsContainer,
       actionErrorMessage ? errorState(actionErrorMessage) : false,
-      actionMessage ? el('p', { class: 'queue-message', text: actionMessage }) : false,
-      el('div', { class: 'queue-table' },
-        el('div', { class: 'queue-row queue-row--ta queue-row--head' },
-          el('span', { text: 'Question' }),
-          el('span', { text: 'Type / LO' }),
-          el('span', { text: 'Agent Decision' }),
-          el('span', { text: 'Status' }),
-          el('span', { text: 'Actions' }),
-        ),
-        rows.length
-          ? el('div', { class: 'queue-table__rows' }, ...rows.map(questionRow))
-          : emptyState('No questions match this filter.'),
-      ),
-    );
+      actionMessage ? el('p', { role: 'status', text: actionMessage }) : false,
+      el('section', { class: 'ta-review-workbench' },
+        el('nav', { class: 'review-workbench__queue', 'aria-label': 'Question queue' },
+          el('div', { class: 'review-workbench__list-title', text: `QUESTIONS · ${rows.length}` }),
+          el('div', { class: 'review-workbench__list' }, ...rows.map((row, index) => el('div', { class: `review-workbench__row${row.id === activeId ? ' is-current' : ''}` },
+            el('button', { type: 'button', 'aria-current': row.id === activeId ? 'true' : undefined, onclick: () => { activeId = row.id; renderResults(); } },
+              el('span', { class: 'review-workbench__row-meta', text: `${String(index + 1).padStart(2, '0')} · ${TYPE_LABEL[row.current.type]} · ${row.current.difficulty}` }),
+              el('span', { class: 'review-workbench__row-title', text: rowStemText(row) }),
+              el('span', { class: 'review-workbench__row-status', text: row.state === 'reviewed' ? 'Reviewed' : agentDecisions.get(row.id)?.decision === 'flag' ? 'Needs attention' : 'Awaiting review' }))))),
+          el('div', { class: 'review-workbench__list-footer' }, el('button', { type: 'button', class: 'btn btn--ghost btn--sm', text: `▦ Question board · ${rows.length}`, onclick: () => openBoard(rows) }))),
+        el('article', { class: 'ta-review-reader', 'aria-label': 'Selected question' },
+          reader,
+          el('div', { class: 'ta-reader-actions' }, el('span', { text: pending ? `${pending} suggestions awaiting instructor review` : 'Final approval remains instructor-only.' }),
+            permissions['question.mark-reviewed'] ? el('button', { class: 'btn btn--instr-primary', type: 'button', text: item.state === 'reviewed' ? 'Reviewed' : 'Mark reviewed', busy: marking, disabled: marking || item.state === 'reviewed', onclick: () => markReviewed(item) }) : el('small', { text: 'Mark reviewed is unavailable for your permissions.' })))));
+    if (isNew) renderTaQuestionDetail(reader, { id: courseId, questionId: item.id });
   }
 
   body.replaceChildren(
     pageHeader(
-      'TA Review Queue',
-      `${items.length} question${items.length === 1 ? '' : 's'} awaiting review · Review, suggest an edit, or annotate. Final approval remains instructor-only.`,
+      'Review Queue',
+      'Check each question, suggest edits, and leave notes for your instructor.',
     ),
     el('div', {}, tabsContainer, controlsContainer, resultsContainer),
   );

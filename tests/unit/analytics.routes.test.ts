@@ -2,7 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
 jest.mock('../../server/src/components/auth', () => ({ ensureCapability: (capability: string) => (req: express.Request, res: express.Response, next: () => void) => req.headers['x-view-only'] && capability === 'analytics.individual' ? res.sendStatus(403) : next() }));
-jest.mock('../../server/src/services/analytics.service', () => ({ failureRates: jest.fn(async () => []), questionPatterns: jest.fn(async () => ({ items: [], total: 0, limit: 20 })), answerDistributions: jest.fn(async () => ({})), engagement: jest.fn(async () => ({ weeks: [] })), csvSerialize: jest.fn(() => ''), lowEngagement: jest.fn(), searchStudents: jest.fn(), studentProfile: jest.fn() }));
+jest.mock('../../server/src/services/analytics.service', () => ({ examScores: jest.fn(async () => ({ items: [], excludedUnscored: 0 })), failureRates: jest.fn(async () => []), questionPatterns: jest.fn(async () => ({ items: [], total: 0, limit: 20 })), answerDistributions: jest.fn(async () => ({})), engagement: jest.fn(async () => ({ weeks: [] })), csvSerialize: jest.fn(() => ''), lowEngagement: jest.fn(), searchStudents: jest.fn(), studentProfile: jest.fn() }));
 import { analyticsRouter } from '../../server/src/routes/analytics.routes';
 import { failureRates, answerDistributions, questionPatterns, engagement } from '../../server/src/services/analytics.service';
 const courseId = new ObjectId().toHexString();
@@ -34,4 +34,10 @@ it('CSV and engagement share mode/range', async () => {
 it('keeps identity-bearing follow-up behind individual permission while aggregates remain readable', async () => {
   expect((await request(app).get(`${base}/low-engagement`).set('x-view-only', 'yes')).status).toBe(403);
   expect((await request(app).get(`${base}/failure-rates`).set('x-view-only', 'yes')).status).toBe(200);
+});
+
+it('restricts named exam scores and validates the date range', async () => {
+  expect((await request(app).get(base + '/exam-scores').set('x-view-only', 'yes')).status).toBe(403);
+  expect((await request(app).get(base + '/exam-scores')).body).toEqual({ items: [], excludedUnscored: 0 });
+  expect((await request(app).get(base + '/exam-scores?from=2026-09-15&to=2026-09-01')).status).toBe(400);
 });

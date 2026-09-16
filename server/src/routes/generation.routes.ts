@@ -133,7 +133,7 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS) });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -176,6 +176,7 @@ generationRouter.post(
           : { secondaryLoIds: undefined }),
       })),
       req.user!.puid,
+      body.submissionId ? { id: body.submissionId, prompt: body.prompt } : undefined,
     );
     res.status(202).json({
       runs: result.runs.map((run) => ({

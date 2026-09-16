@@ -116,3 +116,11 @@ Streaming is supported via `streamConversation` / `conversation.stream()`.
 - `getAvailableModels()` hits the provider (fast for local Ollama; a real API
   call for hosted providers) — that is why `pingLlm` wraps it in try/catch.
 - Backend is CommonJS on Node 18+; the toolkit works with the global `fetch`.
+
+`completeJson` accepts optional `onText(cumulativeVisibleText)`. When supplied it
+uses `streamConversation` with the same model-capability options and JSON retry
+rules; the callback resets to `''` before each request. Non-streaming callers are
+unchanged. Only the provider's visible content channel is forwarded. Background
+question generation decodes bounded stems, options, proposed answer roles and
+option explanations into unverified run previews;
+never forward raw response JSON or private reasoning into product progress UI.

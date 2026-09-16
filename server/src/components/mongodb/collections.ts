@@ -1,4 +1,4 @@
-import type { Collection, Document, IndexSpecification, CreateIndexesOptions } from 'mongodb';
+import type { Collection, Document, ObjectId, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
   User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
@@ -97,6 +97,7 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'rosterEntries', keys: { courseId: 1, identifier: 1 }, options: { unique: true } },
   { collection: 'sessionSummaries', keys: { puid: 1, courseId: 1 }, options: { unique: true } },
   { collection: 'contentRuns', keys: { courseId: 1, createdAt: -1 } },
+  { collection: 'contentRuns', keys: { courseId: 1, kind: 1 }, options: { unique: true, name: 'one_active_structure_run', partialFilterExpression: { kind: 'structure-generation', status: { $in: ['queued', 'running'] } } } },
   { collection: 'contentRuns', keys: { courseId: 1, kind: 1, status: 1, createdAt: -1 } },
   { collection: 'generationBlueprints', keys: { courseId: 1, name: 1 }, options: { unique: true } },
   { collection: 'generationBlueprints', keys: { courseId: 1, updatedAt: -1 } },
@@ -125,3 +126,14 @@ export async function ensureIndexes(): Promise<void> {
     await getDb().collection<Document>(spec.collection).createIndex(spec.keys, spec.options ?? {});
   }
 }
+
+/** Immutable request manifest for retry-safe guided generation submissions. */
+export interface GenerationSubmission {
+  _id: string;
+  courseId: ObjectId;
+  requestedBy: string;
+  fingerprint: string;
+  createdAt: Date;
+}
+export const generationSubmissionsCol = (): Collection<GenerationSubmission> =>
+  getDb().collection<GenerationSubmission>('generationSubmissions');

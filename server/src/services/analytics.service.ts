@@ -1,6 +1,7 @@
 import type { ObjectId } from 'mongodb';
 import {
   attemptsCol,
+  examAttemptsCol,
   flagsCol,
   losCol,
   masteryCol,
@@ -10,6 +11,7 @@ import {
   themesCol,
   usersCol,
 } from '../components/mongodb/collections';
+import { substituteParams } from './params.service';
 import type { AttemptRecord, PracticeMode } from '../types/domain';
 
 export const ANALYTICS_MIN_ATTEMPTS = 5;
@@ -28,10 +30,11 @@ function rate(attempts: number, misses: number): RateMetric {
 }
 
 export type AnalyticsMode = Extract<PracticeMode, 'topic-practice' | 'exam-prep'>;
-export interface AnalyticsFilter { from?: Date; to?: Date; loId?: ObjectId; mode?: AnalyticsMode }
+export interface AnalyticsFilter { from?: Date; to?: Date; loId?: ObjectId; themeId?: ObjectId; q?: string; mode?: AnalyticsMode }
 function attemptFilter(courseId: ObjectId, filter: AnalyticsFilter): Record<string, unknown> {
   return { courseId, ...(filter.mode ? { mode: filter.mode } : {}),
     ...(filter.loId ? { loId: filter.loId } : {}),
+    ...(filter.themeId ? { themeId: filter.themeId } : {}),
     ...(filter.from || filter.to ? { createdAt: {
       ...(filter.from ? { $gte: filter.from } : {}), ...(filter.to ? { $lte: filter.to } : {}),
     } } : {}),
@@ -80,6 +83,12 @@ export async function questionPatterns(courseId: ObjectId, filter: AnalyticsFilt
       misconceptions: { $sum: { $cond: [{ $eq: ['$selectedRole', 'common-misconception'] }, 1, 0] } },
     } },
     { $sort: { attempts: -1, '_id.questionId': 1, '_id.versionId': 1 } },
+    ...(filter.q ? [
+      { $lookup: { from: 'questionVersions', localField: '_id.versionId', foreignField: '_id', as: 'searchVersion' } },
+      { $lookup: { from: 'learningObjectives', localField: 'objectiveIds', foreignField: '_id', as: 'searchObjectives' } },
+      { $lookup: { from: 'themes', localField: 'themeId', foreignField: '_id', as: 'searchTopic' } },
+      { $match: { $or: ['searchVersion.stem', 'searchObjectives.name', 'searchTopic.name'].map(field => ({ [field]: { $regex: filter.q!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } })) } },
+    ] : []),
     { $facet: { items: [{ $limit: limit }], count: [{ $count: 'total' }] } },
   ]).toArray();
   const rows = result?.items ?? [];
@@ -168,8 +177,8 @@ function weekStart(date: Date): string {
 }
 
 export async function engagement(courseId: ObjectId, range: { from: Date; to: Date; mode?: AnalyticsMode }): Promise<{
-  totals: { questionsAttempted: number; avgSessionMinutes: number; sessionsPerStudent: number; loCoverageRate: number; reviewBookActivityRate: number };
-  weeks: Array<{ week: string; questionsAttempted: number; sessions: number; activeStudents: number; avgSessionMinutes: number; loCoverageRate: number; reviewBookActivityRate: number }>;
+  totals: { questionsAttempted: number; correctAttempts?: number; avgSessionMinutes: number; sessionsPerStudent: number; loCoverageRate: number; reviewBookActivityRate: number };
+  weeks: Array<{ week: string; questionsAttempted: number; correctAttempts?: number; sessions: number; activeStudents: number; avgSessionMinutes: number; loCoverageRate: number; reviewBookActivityRate: number }>;
 }> {
   const [attempts, reviewEntries, activeLos] = await Promise.all([
     attemptsCol().find(attemptFilter(courseId, range)).sort({ createdAt: 1 }).toArray(),
@@ -214,6 +223,7 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
   return {
     totals: {
       questionsAttempted: attempts.length,
+      correctAttempts: attempts.length >= ANALYTICS_MIN_ATTEMPTS ? attempts.filter(a => a.correct).length : undefined,
       avgSessionMinutes: average(sessionMinutes),
       sessionsPerStudent: activeStudents.size ? sessions.length / activeStudents.size : 0,
       loCoverageRate: coverage(attempts),
@@ -254,7 +264,7 @@ export async function lowEngagement(courseId: ObjectId, inactiveDays: number, no
 }
 
 export async function searchStudents(courseId: ObjectId, query: string): Promise<Array<{
-  puid: string; uid: string; displayName: string; email: string;
+  puid: string; uid: string; displayName: string; email: string; lastAttemptAt?: Date; strugglingObjectives: number;
 }>> {
   const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = escaped ? new RegExp(escaped, 'i') : /.*/;
@@ -262,7 +272,15 @@ export async function searchStudents(courseId: ObjectId, query: string): Promise
     courseRoles: { $elemMatch: { courseId, role: 'student' } },
     $or: [{ uid: match }, { displayName: match }, { email: match }],
   }).sort({ displayName: 1 }).limit(50).toArray();
-  return users.map(({ puid, uid, displayName, email }) => ({ puid, uid, displayName, email }));
+  const puids = users.map(u => u.puid);
+  const [activity, struggles] = puids.length ? await Promise.all([
+    attemptsCol().aggregate<{ _id: string; lastAttemptAt: Date }>([{ $match: { courseId, puid: { $in: puids } } }, { $group: { _id: '$puid', lastAttemptAt: { $max: '$createdAt' } } }]).toArray(),
+    masteryCol().aggregate<{ _id: string; count: number }>([{ $match: { courseId, puid: { $in: puids }, status: 'struggling' } }, { $group: { _id: '$puid', count: { $sum: 1 } } }]).toArray(),
+  ]) : [[], []];
+  return users.map(({ puid, uid, displayName, email }) => ({ puid, uid, displayName, email,
+    lastAttemptAt: activity.find(a => a._id === puid)?.lastAttemptAt,
+    strugglingObjectives: struggles.find(a => a._id === puid)?.count ?? 0,
+  }));
 }
 
 export async function studentProfile(courseId: ObjectId, puid: string): Promise<Record<string, unknown>> {
@@ -277,10 +295,21 @@ export async function studentProfile(courseId: ObjectId, puid: string): Promise<
     reviewBookCol().find({ courseId, puid }).sort({ updatedAt: -1 }).toArray(),
     flagsCol().find({ courseId, puid }).sort({ createdAt: -1 }).toArray(),
   ]);
+  const [objectives, topics, versions] = await Promise.all([
+    losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    history.length ? questionVersionsCol().find({ _id: { $in: history.map(a => a.questionVersionId) } }).toArray() : [],
+  ]);
+  const versionMap = new Map(versions.map(v => [String(v._id), v]));
   const sessions = clusterSessions(history);
   return {
     student: { puid: user.puid, uid: user.uid, displayName: user.displayName, email: user.email },
-    history,
+    objectives: objectives.map(lo => ({ loId: lo._id, name: lo.name, themeId: lo.themeId, topic: topics.find(t => t._id.equals(lo.themeId))?.name ?? 'Archived topic' })),
+    history: history.map(a => {
+      const v = versionMap.get(String(a.questionVersionId));
+      const text = (s: string) => a.paramValues ? substituteParams(s, a.paramValues) : s;
+      return { ...a, ...(v ? { recordedVersion: v.version, stem: text(v.stem), options: v.options.map(o => ({ key: o.key, text: text(o.text), explanation: text(o.explanation ?? ''), role: o.role })) } : {}) };
+    }),
     mastery,
     reviewBook,
     flags,
@@ -302,4 +331,21 @@ export function csvSerialize(rows: Array<Record<string, unknown>>): string {
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   return [columns.map(escape).join(','), ...rows.map((row) => columns.map((column) => escape(row[column])).join(','))].join('\r\n');
+}
+
+/** Submitted sittings only. Each sitting counts once; never combine point totals
+ * across templates into a purported course grade. Identity-bearing: individual capability. */
+export async function examScores(courseId: ObjectId, filter: { from?: Date; to?: Date; puid?: string }) {
+  const sittings = await examAttemptsCol().find({
+    courseId, submittedAt: { $exists: true, ...(filter.from ? { $gte: filter.from } : {}), ...(filter.to ? { $lte: filter.to } : {}) },
+    ...(filter.puid ? { puid: filter.puid } : {}),
+  }).sort({ submittedAt: -1 }).toArray();
+  const valid = sittings.filter(s => typeof s.score === 'number' && Number.isFinite(s.score) && s.maxScore > 0 && Number.isFinite(s.maxScore));
+  const users = valid.length ? await usersCol().find({ puid: { $in: [...new Set(valid.map(s => s.puid))] }, courseRoles: { $elemMatch: { courseId, role: 'student' } } }).toArray() : [];
+  const names = new Map(users.map(u => [u.puid, u]));
+  return { items: valid.map(s => ({
+    id: s._id.toHexString(), puid: s.puid, displayName: names.get(s.puid)?.displayName ?? 'Former student',
+    templateId: s.templateId.toHexString(), templateKind: s.templateKind,
+    submittedAt: s.submittedAt, score: s.score!, maxScore: s.maxScore,
+  })), excludedUnscored: sittings.length - valid.length };
 }
