@@ -1,0 +1,216 @@
+# A production release. Deliberately manual: nothing here runs on a push.
+#
+# THE MASTER COPY OF THIS FILE LIVES IN tlef-ansible, at
+# roles/deploy_agent/workflow/deploy-production.yml, beside the deploy agent it
+# has to agree with and the tests that hold the two together. Every application
+# repository carries a copy with its own domain on the `url:` line and nothing
+# else changed. Change the master, then copy it out to every repository; step
+# 3.6 of docs/runbooks/github-deploys-onboarding.md shows how, and how to check
+# a repository's copy still matches.
+#
+# This job never touches a server and cannot -- a GitHub-hosted runner cannot
+# reach these hosts at all (verified 2026-09-11: port 22 times out from a
+# runner). All it does is record that a release was asked for. An agent on the
+# Ansible control host notices and connects outward to do the work.
+name: Deploy to production
+
+on:
+    workflow_dispatch:
+
+permissions:
+    deployments: write
+    contents: read
+
+concurrency:
+    group: deploy-production
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        # Six hours, GitHub's ceiling for a hosted job. Not an estimate of how
+        # long a deploy takes -- see the wait step -- only the point at which a
+        # control host that never answered is given up on.
+        timeout-minutes: 360
+        environment:
+            name: production
+            url: https://financebot.apps.ltic.ubc.ca
+        steps:
+            - name: Refuse anything but main
+              # workflow_dispatch offers a branch picker. Without this the
+              # button quietly becomes "deploy an arbitrary branch to
+              # production".
+              if: github.ref != 'refs/heads/main'
+              run: |
+                  echo "::error::Production deploys run from main only. Got ${{ github.ref }}."
+                  exit 1
+
+            - name: Request the deployment
+              id: request
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  # auto_merge and required_contexts are both load-bearing.
+                  # auto_merge defaults to TRUE, which makes GitHub attempt a
+                  # branch merge and return 202 with no deployment created.
+                  # A non-empty required_contexts makes it refuse with 409
+                  # until every status check passes -- a gate we do not want,
+                  # because pressing the button is the gate.
+                  # The body is built as JSON rather than with -f/-F flags,
+                  # because those cannot express an empty array and
+                  # required_contexts MUST be one.
+                  #
+                  # "task" is deliberately NOT the API default of "deploy". It
+                  # is the marker that tells the deploy agent this record came
+                  # from this pipeline, and there are two other kinds of record
+                  # in this same environment that it must not act on:
+                  #   - the deployment GitHub Actions creates by itself for any
+                  #     job declaring `environment:`, as this one does. That
+                  #     record stays in_progress for as long as the job below
+                  #     waits, which is long enough for the agent to call it
+                  #     abandoned and alert on it.
+                  #   - anything POSTed straight to the Deployments API by a
+                  #     holder of `deployments: write`. The `production`
+                  #     environment gates workflow JOBS, not that API, so the
+                  #     main-only guard above is advisory as far as the API is
+                  #     concerned.
+                  # It must equal DEPLOY_TASK in
+                  # roles/deploy_agent/files/tlef-deploy-poll; tlef-ansible's
+                  # tests/test_app_workflow.py fails if the master copy drifts.
+                  payload=$(printf '{"ref":"%s","task":"tlef-deploy","environment":"production","auto_merge":false,"required_contexts":[],"description":"Requested by %s"}' \
+                      "$GITHUB_SHA" "$GITHUB_ACTOR")
+                  id=$(printf '%s' "$payload" \
+                      | gh api "repos/${GITHUB_REPOSITORY}/deployments" --input - --jq .id)
+                  # Without this, an empty id builds ".../deployments//statuses",
+                  # whose 404 the wait loop's `|| state="pending"` swallows --
+                  # so the run spins for the full 40 minutes and then sends an
+                  # operator to investigate a control host that is perfectly
+                  # healthy. Fail here instead, saying what actually happened.
+                  case "$id" in ''|*[!0-9]*) echo "::error::No deployment id returned by the API"; exit 1 ;; esac
+                  echo "id=${id}" >> "$GITHUB_OUTPUT"
+                  echo "Deployment ${id} requested for ${GITHUB_SHA}."
+
+            - name: Wait for the control host to finish it
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  DEPLOYMENT_ID: ${{ steps.request.outputs.id }}
+              run: |
+                  # This step decides nothing about how long a deploy may take.
+                  # The control host does, and it always answers: a request it
+                  # picks up ends in success, failure (including its own
+                  # timeout) or error (abandoned), and one it does not pick up
+                  # in time is closed as expired. So this waits for that
+                  # verdict, and the control host's timeouts can grow -- as
+                  # they do when an application moves behind a load balancer --
+                  # without this file changing in every repository.
+                  #
+                  # The deadline is only for a control host that is down and
+                  # cannot answer at all. It sits 15 minutes under the job's
+                  # timeout-minutes, so this step fails on its own and the
+                  # withdraw step below still gets to run.
+                  #
+                  # The agent polls on a 60s timer, so the first minute of this
+                  # is expected silence rather than a hang.
+                  started=$(date +%s)
+                  deadline=$(( started + 345 * 60 ))
+                  next_note=$(( started + 600 ))
+                  last=''
+                  api="repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses"
+                  while [ "$(date +%s)" -lt "$deadline" ]; do
+                      # ONE call per iteration, and it sorts.
+                      #
+                      # Sorting: GitHub does not document an order for this
+                      # list, and the deploy agent on the control host does not
+                      # trust one -- it sorts every list it reads and has a
+                      # test for the case where the order is wrong. Reading
+                      # .[0] here was the other half of that disagreement: if
+                      # the agent is right, a terminal status could arrive in a
+                      # position this loop never looked at, and a successful
+                      # deploy would be reported as a 40-minute timeout. Sort
+                      # by created_at then id, descending, exactly as the agent
+                      # does, rather than trusting the position.
+                      #
+                      # One call: state and description used to be two separate
+                      # requests, so a logged description could belong to a
+                      # different status than the state logged beside it, and
+                      # the loop made ~320 API calls per run. Both fields now
+                      # come out of the same response, tab-separated.
+                      #
+                      # The `||` fallback is load-bearing. run: steps execute
+                      # under `set -e`, and errexit only skips the
+                      # while-condition, not the body -- so without it, one
+                      # transient API hiccup anywhere in this ~160-iteration,
+                      # 40-minute loop would kill the step and report a healthy
+                      # deploy as a failure. Treat a failed read as "not yet
+                      # terminal" and keep polling. The two ${} expansions
+                      # below are pure bash, so they add no new way to fail.
+                      newest=$(gh api "$api" --jq \
+                          'sort_by(.created_at, .id) | reverse | .[0] | "\(.state // "pending")\t\(.description // "")"') \
+                          || newest=$'pending\t'
+                      state=${newest%%$'\t'*}
+                      description=${newest#*$'\t'}
+                      if [ "$state" != "$last" ]; then
+                          echo "status: ${state} — ${description}"
+                          last="$state"
+                      fi
+                      case "$state" in
+                          success)  echo "Deployed."; exit 0 ;;
+                          failure|error)
+                              echo "::error::Deploy reported ${state}: ${description}"
+                              exit 1 ;;
+                          inactive)
+                              # Expired, superseded by a newer press, or
+                              # withdrawn. The description says which, and it
+                              # is all the person who pressed has to go on.
+                              echo "::error::Not deployed: ${description}"
+                              exit 1 ;;
+                      esac
+                      now=$(date +%s)
+                      if [ "$now" -ge "$next_note" ]; then
+                          echo "Still ${state} after $(( (now - started) / 60 )) minutes. If the control host has not picked it up, it closes it as expired rather than deploying it late."
+                          next_note=$(( now + 600 ))
+                      fi
+                      sleep 15
+                  done
+                  echo "::error::No answer from the control host in almost six hours, so it is probably down. Deploy by hand if this cannot wait; the next step withdraws the request if it was never picked up."
+                  exit 1
+
+            - name: Withdraw the request if the control host never picked it up
+              # This run only files a request; the control host is what acts on
+              # it. So if the run is cancelled, or gives up above while the
+              # control host is down, a request nobody has claimed stays open --
+              # and the control host deploys it the next time it looks. That
+              # could be hours later, after a newer commit has been deployed by
+              # hand, putting the older one back. Marked inactive, the agent
+              # treats it as finished.
+              #
+              # Only an UNCLAIMED request is withdrawn. Once the control host
+              # has posted a status the deploy is under way or over, cancelling
+              # this run does not stop it, and the agent's own status has to
+              # stay the last word: an inactive posted over a dead in_progress
+              # would also silence the agent's "deploy abandoned" alert.
+              #
+              # Not airtight. A cancel landing in the moment between the agent
+              # reading the statuses and posting in_progress still deploys, and
+              # closing that needs a compare-and-set the Deployments API does
+              # not offer.
+              if: ${{ (cancelled() || failure()) && steps.request.outputs.id != '' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  DEPLOYMENT_ID: ${{ steps.request.outputs.id }}
+              run: |
+                  api="repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses"
+                  if ! count=$(gh api "$api" --jq 'length'); then
+                      echo "::error::Could not read deployment ${DEPLOYMENT_ID}. If the control host has not picked it up, it will still deploy it later. Check the repository's Environments page."
+                      exit 1
+                  fi
+                  if [ "$count" = "0" ]; then
+                      gh api --method POST "$api" \
+                          -f state=inactive \
+                          -f description="Withdrawn: the run ended before the control host picked it up." \
+                          --silent \
+                          || { echo "::error::Could not withdraw deployment ${DEPLOYMENT_ID}. The control host will still deploy it when it next looks."; exit 1; }
+                      echo "Withdrew deployment ${DEPLOYMENT_ID}. Nothing will be deployed."
+                  else
+                      echo "The control host already picked up deployment ${DEPLOYMENT_ID}; its status shows how that ended."
+                  fi
