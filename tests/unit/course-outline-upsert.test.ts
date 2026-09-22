@@ -20,6 +20,7 @@ import {
 import { upsertCourseOutline } from '../../server/src/services/courses.service';
 
 const courseId = new ObjectId();
+let courseLease: { token: string; expiresAt: Date } | undefined;
 const storedThemes: Array<{
   _id: ObjectId;
   courseId: ObjectId;
@@ -53,6 +54,7 @@ function cursor<T extends { order: number }>(rows: T[]) {
 beforeEach(() => {
   storedThemes.splice(0);
   storedLos.splice(0);
+  courseLease = undefined;
 
   jest.mocked(themesCol).mockReturnValue({
     find: jest.fn((filter: { courseId?: ObjectId }) => cursor(
@@ -78,15 +80,49 @@ beforeEach(() => {
     }),
   } as never);
 
-  // These accessors are imported by courses.service but are not part of this
-  // outline operation. Stubs make an accidental new dependency fail locally.
-  jest.mocked(coursesCol).mockReturnValue({} as never);
+  jest.mocked(coursesCol).mockReturnValue({
+    updateOne: jest.fn(async (filter, update) => {
+      if (update.$set?.outlineApplyLease) {
+        if (courseLease && courseLease.expiresAt > new Date()) return { matchedCount: 0 };
+        courseLease = update.$set.outlineApplyLease;
+      } else {
+        if (courseLease?.token !== filter['outlineApplyLease.token']) return { matchedCount: 0 };
+        if (update.$unset) courseLease = undefined;
+        else if (courseLease) courseLease.expiresAt = update.$set['outlineApplyLease.expiresAt'];
+      }
+      return { matchedCount: 1 };
+    }),
+  } as never);
+  // These accessors remain unrelated to outline application.
   jest.mocked(questionsCol).mockReturnValue({} as never);
   jest.mocked(rosterCol).mockReturnValue({} as never);
   jest.mocked(usersCol).mockReturnValue({} as never);
 });
 
 describe('upsertCourseOutline', () => {
+  it('does not create duplicates or duplicate order values during simultaneous applies', async () => {
+    const input = { themes: [{ name: 'Finance', los: ['Calculate NPV', 'Compare IRR'] }] };
+    const results = await Promise.allSettled([
+      upsertCourseOutline(courseId, input),
+      upsertCourseOutline(courseId, input),
+    ]);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(result => result.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ status: 409 }) }),
+    ]);
+    expect(storedThemes).toHaveLength(1);
+    expect(storedLos.map(lo => lo.order)).toEqual([1, 2]);
+    expect(courseLease).toBeUndefined();
+    await expect(upsertCourseOutline(courseId, input)).resolves.toMatchObject({ themesCreated: 0, losCreated: 0 });
+  });
+
+  it('recovers an expired lease left by an interrupted process', async () => {
+    courseLease = { token: 'interrupted', expiresAt: new Date(Date.now() - 1) };
+    await expect(upsertCourseOutline(courseId, { themes: [{ name: 'Finance', los: ['Calculate NPV'] }] }))
+      .resolves.toMatchObject({ themesCreated: 1, losCreated: 1 });
+    expect(courseLease).toBeUndefined();
+  });
+
   it('reuses active names on retry and only creates the missing tail', async () => {
     const first = await upsertCourseOutline(courseId, {
       themes: [

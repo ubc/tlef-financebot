@@ -5,7 +5,6 @@ import {
   getCourseKnowledgeGraph,
   getCourseTree,
   getMaterialWorkspaceDetail,
-  getSuggestedHierarchy,
   listContentRuns,
   listMaterials,
   listTrashedMaterials,
@@ -13,6 +12,7 @@ import {
   resolveClassification,
   restoreMaterial,
   retryMaterial,
+  startStructureGeneration,
   subscribeContentRuns,
   trashMaterial,
   updateMaterialKind,
@@ -143,6 +143,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   let knowledgeBuildSource: 'quick' | 'assistant' | null = null;
   let assistantBusy = false;
   const pendingActions = new Set<string>();
+  // Keep metadata drafts independently of the SSE-driven render cycle. A stale
+  // draft retains its original revision so retry cannot silently overwrite edits.
+  const metadataDrafts = new Map<string, {
+    revision: number; kind: MaterialKind; assignments: MaterialAssignment[];
+    kindDirty: boolean; assignmentsDirty: boolean;
+  }>();
 
   async function runMaterialAction(key: string, action: () => Promise<void>): Promise<void> {
     if (pendingActions.has(key)) return;
@@ -275,16 +281,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     assistantMessages.push({ role: 'assistant', text: 'Analyzing the indexed materials for a draft Topic/LO structure…' });
     refresh();
     try {
-      const suggestion = await getSuggestedHierarchy(courseId);
-      const loCount = suggestion.themes.reduce((total, theme) => total + theme.los.length, 0);
+      const materialIds = materials.filter((material) => material.status === 'ready' && !material.deletedAt).map((material) => material._id);
+      await startStructureGeneration(courseId, { materialIds });
       assistantMessages.push({
         role: 'assistant',
-        text: suggestion.themes.length
-          ? `I found ${suggestion.themes.length} Topic suggestions and ${loCount} draft LOs. Review and edit them before they become course structure.`
-          : 'I could not produce a useful structure yet. Add at least one content-rich material and wait until processing finishes.',
-        ...(suggestion.themes.length
-          ? { action: { label: 'Review draft structure', run: () => navigate(`/instructor/course/${courseId}/structure`) } }
-          : {}),
+        text: 'Draft generation started. You can review its live progress, edit the result, and choose what to add to the course.',
+        action: { label: 'Review draft structure', run: () => navigate(`/instructor/course/${courseId}/structure`) },
       });
     } catch (error) {
       assistantMessages.push({ role: 'assistant', text: error instanceof ApiError ? error.message : (error as Error).message });
@@ -360,7 +362,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
             class: 'workspace-file__meta',
             text: material.deletedAt
               ? `Trash · ${formatDate(material.deletedAt)}`
-              : `${material.kind ?? 'other'} · ${run?.stage ?? material.status}`,
+              : `${material.kind ?? 'other'} · ${run && (run.status === 'queued' || run.status === 'running') ? run.stage : material.status}`,
           }),
         ),
         assignmentState?.status === 'needs-review'
@@ -504,21 +506,33 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function metadataPanel(material: Material, loaded: MaterialWorkspaceDetail | undefined): HTMLElement {
-    const checklist = buildAssignChecklist(tree, material.assignments);
+    let draft = metadataDrafts.get(material._id);
+    if (!draft || (!draft.kindDirty && !draft.assignmentsDirty && draft.revision !== (material.revision ?? 0))) {
+      draft = { revision: material.revision ?? 0, kind: material.kind ?? 'other', assignments: material.assignments.map(a => ({ ...a })), kindDirty: false, assignmentsDirty: false };
+      metadataDrafts.set(material._id, draft);
+    }
+    const retained = draft;
+    const checklist = buildAssignChecklist(tree, retained.assignments);
+    checklist.element.addEventListener('change', () => { retained.assignments = checklist.getSelected(); retained.assignmentsDirty = true; });
     const kindSelect = el(
       'select',
       { class: 'input input--sm' },
-      ...MATERIAL_KINDS.map((kind) => el('option', { value: kind, selected: (material.kind ?? 'other') === kind ? 'selected' : undefined, text: kind.charAt(0).toUpperCase() + kind.slice(1) })),
+      ...MATERIAL_KINDS.map((kind) => el('option', { value: kind, selected: retained.kind === kind ? 'selected' : undefined, text: kind.charAt(0).toUpperCase() + kind.slice(1) })),
     ) as HTMLSelectElement;
+    kindSelect.addEventListener('change', () => { retained.kind = kindSelect.value as MaterialKind; retained.kindDirty = true; });
     async function saveKind(): Promise<void> {
-      const updated = await updateMaterialKind(courseId, material._id, kindSelect.value as MaterialKind);
+      const updated = await updateMaterialKind(courseId, material._id, retained.kind, retained.revision);
+      retained.revision = updated.revision ?? 0; retained.kindDirty = false;
+      if (!retained.assignmentsDirty) retained.assignments = updated.assignments.map(a => ({ ...a }));
       materials = materials.map((item) => (item._id === updated._id ? updated : item));
       if (detail) detail.material = updated;
       flash('Material type updated. Manual corrections override AI classification.');
       refresh();
     }
     async function saveAssignments(): Promise<void> {
-      const updated = await assignMaterial(material._id, checklist.getSelected());
+      const updated = await assignMaterial(material._id, retained.assignments, retained.revision);
+      retained.revision = updated.revision ?? 0; retained.assignmentsDirty = false;
+      if (!retained.kindDirty) retained.kind = updated.kind ?? 'other';
       materials = materials.map((item) => (item._id === updated._id ? updated : item));
       detail = detail ? { ...detail, material: updated } : detail;
       await reloadGraph();
@@ -526,7 +540,9 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       refresh();
     }
     async function resolve(action: 'accept' | 'reject'): Promise<void> {
-      const updated = await resolveClassification(material._id, action);
+      const updated = await resolveClassification(material._id, action, retained.revision);
+      retained.revision = updated.revision ?? 0;
+      if (!retained.assignmentsDirty) retained.assignments = updated.assignments.map(a => ({ ...a }));
       materials = materials.map((item) => (item._id === updated._id ? updated : item));
       detail = detail ? { ...detail, material: updated } : detail;
       await reloadGraph();

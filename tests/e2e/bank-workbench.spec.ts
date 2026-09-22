@@ -38,11 +38,14 @@ test('approved collection, topic release and authoritative content gate', async 
   await page.getByRole('button', { name: 'Save topic release', exact: true }).click();
   await expect(page.locator('dialog')).toHaveCount(0);
   expect(state.calls[0].path).toBe('/api/themes/topic');
+  await expect(page.locator('.bank-workbench__availability')).toContainText('Student-visible');
+  await expect(page.locator('.bank-workbench__availability')).not.toContainText('Awaiting topic release');
   await page.getByRole('button', { name: /Student-visible/ }).first().click();
   await expect(page.locator('.bank-workbench__item')).toHaveCount(1);
   await page.getByRole('button', { name: /Not yet available/ }).first().click();
   await expect(page.locator('.bank-workbench__stem')).toContainText('Question 2');
   await expect(page.locator('.bank-workbench__availability')).toContainText('Content checks needed');
+  await expect(page.locator('.bank-workbench__list-head')).toContainText('1 question');
 });
 
 test('full editor pins version and sends answers and explanation back to review', async ({ page }) => {

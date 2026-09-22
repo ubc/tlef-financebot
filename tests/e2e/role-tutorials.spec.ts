@@ -152,7 +152,9 @@ test('detached target cancels without completion and storage denial still permit
 test('mixed-role accounts use real TA progress only on their assigned TA course', async ({ page }) => {
   const writes = await fixture(page, 'instructor');
   await page.route('**/api/auth/me', (route) => route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'mixed', isAdmin: true, platformInstructor: true, courseRoles: [{ courseId: 'ta-course', role: 'ta' }, { courseId: 'instructor-course', role: 'instructor' }] } } }));
-  await page.evaluate(async () => { await (await import('/js/auth.js')).loadSession(); location.hash = '/ta/course/ta-course/review'; });
+  await page.evaluate(async () => { await (await import('/js/auth.js')).loadSession(); location.hash = '/ta/courses'; });
+  expect(await page.evaluate(() => window.tours.tutorialRole())).toBe('ta');
+  await page.evaluate(() => { location.hash = '/ta/course/ta-course/review'; });
   expect(await page.evaluate(() => window.tours.tutorialRole())).toBe('ta');
   await page.evaluate(() => { location.hash = '/ta/course/instructor-course/review'; });
   expect(await page.evaluate(() => window.tours.tutorialRole())).toBeUndefined();

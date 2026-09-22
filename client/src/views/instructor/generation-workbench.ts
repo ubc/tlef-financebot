@@ -133,7 +133,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
           el('p', { class: 'gw-lead', text: 'Start with a few focused questions. We’ll use the materials assigned to each objective.' }), selectionSummary,
           el('label', { for: 'gw-prompt', class: 'gw-label', text: 'Instructions · optional' }), prompt,
-          el('div', { class: 'gw-suggestions' }, ...['Concept check', 'Apply a formula', 'Spot a misconception'].map((label,index) => el('button', { type: 'button', onclick: () => { prompt.value = ['Test conceptual understanding with a familiar everyday scenario.', 'Ask students to apply a formula and interpret the result.', 'Use plausible distractors to uncover common misconceptions.'][index]; prompt.focus(); } }, label))),
+          el('div', { class: 'gw-suggestions' }, ...['Concept check', 'Apply a formula', 'Spot a misconception'].map((label,index) => el('button', { type: 'button', onclick: () => { prompt.value = ['Test conceptual understanding with a familiar everyday scenario.', 'Ask students to apply a formula and interpret the result.', 'Use plausible distractors to uncover common misconceptions.'][index]; focus = index === 1 ? 'calculation' : 'conceptual'; focusSelect.value = focus; updateSetup(); prompt.focus(); } }, label))),
           settings, el('details', { class: 'gw-advanced' }, el('summary', { text: 'More control' }), el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect,
             el('p', {}, link('Open advanced generation →', `${base}/preseeding?advanced=1`)), el('small', { text: 'True / false, combined objectives, saved setups and detailed distributions.' }))),
           el('footer', { class: 'gw-footer' }, el('small', { text: 'New questions are saved for your review.' }), generate)), summary);
@@ -153,13 +153,14 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         }))]));
         objectivesList.scrollTop = scroll;
         if (focusKey) setup.querySelector<HTMLElement>(`[data-gw-focus="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
-        selectionSummary.textContent = `${selected.size} objectives selected · ${count} questions each`;
+        selectionSummary.textContent = `${selected.size} ${selected.size === 1 ? 'objective' : 'objectives'} selected · ${count} ${count === 1 ? 'question' : 'questions'} each`;
         const total = count * selected.size;
-        generate.textContent = isLocked ? 'Generation in progress' : `Generate ${total} questions →`;
+        generate.textContent = isLocked ? 'Generation in progress' : `Generate ${total} ${total === 1 ? 'question' : 'questions'} →`;
         generate.disabled = isLocked || !total || cells().length > 120;
         const selectedSources = materials.filter(m => objectives.some(lo => selected.has(lo._id) && sourcesFor(lo).some(s => s._id === m._id)));
-        mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning objectives` }),
+        mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
           el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: 'Multiple choice' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
+          el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
           el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),
           cells().length > 120 && el('p', { text: 'Choose fewer objectives for this batch.' }));
@@ -207,14 +208,18 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', { class: 'gw-footer' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: refresh, text: 'Refresh' }), el('button', { type: 'button', class: 'btn btn--primary', onclick: close, text: 'Close' })));
       root.append(dialog); dialog.showModal(); void refresh();
     }
+    function sourceRun(question: BankQuestion): QuestionGenerationRun | undefined {
+      return watched().find((run): run is QuestionGenerationRun => run.kind === 'question-generation' && (
+        run.result?.createdQuestionIds.includes(question.id) === true ||
+        (question.current.provenance?.kind === 'generated' && question.current.provenance.runId === run._id)));
+    }
     function drawLive(): void {
       if (disposed) return;
       const focusKey = document.activeElement?.getAttribute('data-gw-focus');
       const listScroll = draftList.scrollTop;
       const items = watched();
-      const ids = new Set(items.map(run => run._id));
       const streaming = items.filter((run): run is QuestionGenerationRun => run.kind === 'question-generation' && !!run.preview && active(run));
-      const drafts = bank.filter(question => question.current.provenance?.kind === 'generated' && ids.has(question.current.provenance.runId));
+      const drafts = bank.filter(question => sourceRun(question));
       mount(draftList, ...streaming.filter(run => !drafts.some(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === run._id && q.current.provenance.item === run.preview?.item)).map(run => el('button', { type: 'button', 'data-gw-focus': `preview-${run._id}`, 'aria-current': !selectedQuestion && previewRunId === run._id ? 'true' : 'false', onclick: () => { selectedQuestion = ''; previewRunId = run._id; readerRevision++; drawLive(); } },
         el('span', { text: `${run.stage === 'generating' ? 'Writing now' : 'Checking draft'} · question ${(run.preview?.item ?? 0)+1}` }), el('strong', { text: run.preview?.stem || objectives.find(lo => lo._id === run.input.loId)?.name || 'Preparing question…' }), el('small', { text: 'Live draft · not yet checked' }))), ...drafts.map((q,index) => el('button', { type: 'button', 'data-gw-focus': `question-${q.id}`, 'aria-current': q.id === selectedQuestion ? 'true' : 'false', onclick: () => { void showQuestion(q); } },
         el('span', { text: `${String(index+1).padStart(2,'0')} · ${q.current.difficulty}` }), el('strong', { text: rowStemText(q) }), el('small', { text: q.state === 'approved' ? 'Approved' : 'Saved · ready to review' }))),
@@ -335,7 +340,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         ...((question.sample?.options ?? question.current.options) ?? []).map(option => el('div', { class: `gw-answer${question.current.options?.find(original => original.key === option.key)?.role === 'correct' ? ' is-correct' : ''}` }, el('span', { text: option.key }), el('div', {}, rich(option.text,''), question.current.options?.find(original => original.key === option.key)?.role === 'correct' && el('small', { text: 'Correct answer' }), option.explanation && rich(option.explanation,'gw-option-explanation')))),
         !question.sample && el('p', { class: 'gw-plan-note', text: 'Authoring preview. Parameterized questions may show template variables; inspect a student example in the full editor.' }));
       const assessment = el('div', { class: 'gw-assessment' }); content.append(assessment);
-      mount(reader, content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/queue?runId=${encodeURIComponent(question.current.provenance?.kind === 'generated' ? question.current.provenance.runId : '')}`, true)));
+      mount(reader, content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/queue?runId=${encodeURIComponent(sourceRun(question)?._id ?? '')}`, true)));
       try {
         const detail = await getQuestion(question.id);
         if (disposed || revision !== readerRevision) return;

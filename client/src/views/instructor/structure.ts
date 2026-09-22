@@ -23,6 +23,7 @@ import {
 import { el, mount } from '../../dom.js';
 import { pageHeader, statTile } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
+import { attachTutorial } from '../../tutorials.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { addAssignment, removeAssignment } from './material-assign.js';
@@ -348,7 +349,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
               el('p', { text: assigned.length ? assigned.map(m => m.name).join(' · ') : 'No supporting materials linked yet.' }), errors,
               el('div', { class: 'outline-inline-actions' }, button('Save changes', async () => {
                 if (!name.value.trim()) { errors.replaceChildren(errorState('Learning Objective name is required.')); return; }
-                try { const updated = await updateLo(lo._id, { name: name.value.trim() }); lo.name = updated.name; openLo = ''; drawResults(); }
+                try { const updated = await updateLo(lo._id, { name: name.value.trim() }, lo.revision ?? 0); Object.assign(lo, updated); openLo = ''; drawResults(); }
                 catch (e) { errors.replaceChildren(errorState(e instanceof Error ? e.message : String(e))); }
               }, true), button('Cancel', () => { openLo = ''; drawResults(); }),
               button('Materials & settings', () => openEditor({ type: 'lo', id: lo._id })))));
@@ -413,7 +414,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     const applyTheme = async (patch: { name?: string; availableFrom?: string | null }): Promise<void> => {
       errorSlot.replaceChildren();
       try {
-        const updated = await updateTheme(theme._id, patch);
+        const updated = await updateTheme(theme._id, patch, theme.revision ?? 0);
+        theme.revision = updated.revision;
         theme.name = updated.name;
         theme.availableFrom = updated.availableFrom;
         closeEditor();
@@ -541,7 +543,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     const remove = async (material: Material): Promise<void> => {
       errorSlot.replaceChildren();
       try {
-        const updated = await assignMaterial(material._id, removeAssignment(material.assignments, theme._id, lo._id));
+        const updated = await assignMaterial(material._id, removeAssignment(material.assignments, theme._id, lo._id), material.revision ?? 0);
         materials = materials.map((m) => (m._id === updated._id ? updated : m));
         refresh();
       } catch (error) {
@@ -560,7 +562,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       const material = candidates.find((m) => m._id === select.value);
       if (!material) return;
       try {
-        const updated = await assignMaterial(material._id, addAssignment(material.assignments, theme._id, lo._id));
+        const updated = await assignMaterial(material._id, addAssignment(material.assignments, theme._id, lo._id), material.revision ?? 0);
         materials = materials.map((m) => (m._id === updated._id ? updated : m));
         refresh();
       } catch (error) {
@@ -624,7 +626,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         return;
       }
       try {
-        const updated = await updateLo(lo._id, { name, kind: kindSelect.value as CourseTreeLo['kind'] });
+        const updated = await updateLo(lo._id, { name, kind: kindSelect.value as CourseTreeLo['kind'] }, lo.revision ?? 0);
+        lo.revision = updated.revision;
         lo.name = updated.name;
         lo.kind = updated.kind;
         closeEditor();
@@ -693,6 +696,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   if (!themes.length) assistant.open(); else refresh();
+  attachTutorial(root, 'instructor-structure', {
+    'structure-views': '.structure-view-tabs',
+    'structure-outline': '.structure-layout',
+  });
 }
 
 export function renderStructure(outlet: HTMLElement, params: RouteParams): void {

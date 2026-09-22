@@ -45,11 +45,15 @@ test('real guide follows server progress, persists navigation, isolates courses 
   const originalOutlet = await page.locator('.outlet').boundingBox();
   await page.evaluate(async () => { await (await import('/js/auth.js')).loadSession(); (await import('/js/setup-journey.js')).startSetupJourney('test'); });
   await expect(page.locator('.setup-island--small')).toBeVisible();
-  expect((await page.locator('.setup-island').boundingBox())!.height).toBeLessThan(70);
-  expect(await page.locator('.outlet').boundingBox()).toEqual(originalOutlet);
+  await expect.poll(async () => (await page.locator('.setup-island').boundingBox())?.height ?? 999).toBeLessThan(70);
+  await expect.poll(async () => (await page.locator('.outlet').boundingBox())!.height).toBe(originalOutlet!.height);
+  const outletBox = (await page.locator('.outlet').boundingBox())!;
+  expect(outletBox.y + outletBox.height).toBeGreaterThan((await page.locator('.setup-island').boundingBox())!.y);
+  expect(await page.locator('.outlet').evaluate(node => parseFloat(getComputedStyle(node).paddingBottom))).toBeGreaterThan(80);
   await page.getByRole('button', { name: 'Page action', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Page action works' })).toBeVisible();
   expect(await page.locator('#setup-journey').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  await expect(page.locator('.setup-island')).toHaveCSS('box-shadow', 'none');
   const next = page.getByRole('button', { name: 'Next: Objectives →' });
   await expect(next).toBeDisabled();
   await expect(page.locator('.journey-current')).toHaveAttribute('href', '#/instructor/course/test/materials');
@@ -69,7 +73,7 @@ test('real guide follows server progress, persists navigation, isolates courses 
   await expect(page.locator('.setup-island--small')).toBeVisible();
   await page.getByRole('button', { name: 'Expand setup guide' }).click();
   await expect(page.getByRole('button', { name: 'Minimize', exact: true })).toBeFocused();
-  expect(await page.locator('.outlet').boundingBox()).toEqual(originalOutlet);
+  await expect.poll(async () => { const box = (await page.locator('.outlet').boundingBox())!; return box.y + box.height; }).toBeGreaterThan((await page.locator('.setup-island').boundingBox())!.y);
   await page.getByRole('button', { name: 'Minimize', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Expand setup guide' })).toBeFocused();
   await page.reload();

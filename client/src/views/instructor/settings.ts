@@ -314,7 +314,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         termEnd: termEndInput.value ? new Date(termEndInput.value).toISOString() : undefined,
       } : section === 'Learning experience' ? { feedbackStrategy: selectedStrategy }
         : { autoPause: { minAttempts, flagPercent, flagCount } };
-      const updated = await updateCourse(courseId, patch);
+      const updated = await updateCourse(courseId, patch, course.revision ?? 0);
       course = updated;
       if (section === 'Question safeguards') autoPause = { ...updated.autoPause };
       settingsStatusSlot.replaceChildren(

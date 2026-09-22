@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Capabilities 13 rows and immutable safety rules",
+    "pass": true
+  },
+  {
+    "name": "Capability scope, filtering, overrides, and inheritance",
+    "pass": true
+  },
+  {
+    "name": "Capability draft persistence and discard",
+    "pass": true
+  },
+  {
+    "name": "Settings model parameters and draft persistence",
+    "pass": true
+  },
+  {
+    "name": "Reviewer disabling requires explicit impact acknowledgment",
+    "pass": true
+  },
+  {
+    "name": "Invalid limits blocked, valid draft accepted",
+    "pass": true
+  },
+  {
+    "name": "Custom registration, duplicate handling, classic profile, in-use protection",
+    "pass": true
+  },
+  {
+    "name": "Settings discard reverts all tabs",
+    "pass": true
+  },
+  {
+    "name": "capabilities layout 1440px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "settings layout 1440px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "capabilities layout 580px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "settings layout 580px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "capabilities layout 390px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "settings layout 390px + accessibility",
+    "pass": true
+  },
+  {
+    "name": "No runtime errors",
+    "pass": true
+  }
+]

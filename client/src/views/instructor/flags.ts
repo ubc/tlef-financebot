@@ -34,6 +34,7 @@ import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.
 import { textPromptDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { errorState, loadingState } from '../../ui.js';
+import { attachTutorial } from '../../tutorials.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { subscribeFlagsChanged } from '../../flag-sync.js';
 import {
@@ -748,6 +749,10 @@ async function renderFlagQueueInner(outlet: HTMLElement, courseId: string): Prom
   );
   updateHeader();
   renderResults();
+  attachTutorial(root, 'instructor-flags', {
+    'flags-views': '.flags-tabs',
+    'flags-guidance': '.flags-help',
+  });
 
   const unsubscribeFlagsChanged = subscribeFlagsChanged(() => void reload());
   const refreshWhenVisible = (): void => {

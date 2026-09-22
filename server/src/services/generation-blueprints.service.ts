@@ -181,6 +181,7 @@ export async function retryGenerationRun(
     ...(run.input.secondaryLoIds?.length ? { secondaryLoIds: run.input.secondaryLoIds } : {}),
     count: run.input.count,
     type: run.input.type,
+    ...(run.input.kind ? { kind: run.input.kind } : {}),
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,

@@ -289,9 +289,10 @@ test.describe('instructor pipeline', () => {
       await page.getByRole('button', { name: new RegExp(`^[A-D]\\s+${CORRECT_OPTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
       await page.getByRole('button', { name: 'Submit', exact: true }).click();
       await expect(page.getByText('Correct!', { exact: true })).toBeVisible();
-      await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();
+      await page.getByRole('button', { name: 'Switch role, current role Student', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
 
-      await expect(page).toHaveURL(new RegExp(`#\\/instructor\\/course\\/${courseId}$`));
+      await expect(page).toHaveURL(url => url.hash === `#/instructor/course/${courseId}?workspace=instructor`);
       await expect(page.getByRole('link', { name: /5\. Student preview: Tested recently/ })).toBeVisible();
     });
 

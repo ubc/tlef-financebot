@@ -1,0 +1,26 @@
+{
+  "checks": 20,
+  "passed": true,
+  "results": [
+    "Directory search and status filtering",
+    "Last active course instructor deactivation and removal are protected",
+    "Reviewed course role assignment persists after reload",
+    "Replacement instructor unblocks deactivation; reactivation retains roles and audit",
+    "PUID duplicate and format validation; reviewed grant creates pending identity",
+    "Pending grant persists and revocation removes pre-provisioned identity",
+    "Revoking global grant retains course roles",
+    "Cancelled role review preserves original access",
+    "Reviewed course role edit",
+    "Directory CSV export",
+    "Known CWL username is not accepted as PUID",
+    "Existing identity grant becomes active",
+    "Grants CSV export",
+    "users 1440px has no document overflow",
+    "users 580px has no document overflow",
+    "users 390px has no document overflow",
+    "grants 1440px has no document overflow",
+    "grants 580px has no document overflow",
+    "grants 390px has no document overflow",
+    "No browser runtime errors"
+  ]
+}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { AUTH_FILE } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
@@ -9,6 +9,19 @@ import {
 
 const ACTIVE_PUID = 'PUID-E2E-ADMIN-ACTIVE-PROF';
 const PENDING_PUID = 'PUID-E2E-ADMIN-PENDING-PROF';
+
+async function openGrantMenu(row: Locator): Promise<Locator> {
+  const trigger = row.getByRole('button', { name: 'Grant', exact: true });
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
+  const menu = row.getByRole('menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+async function chooseGrant(row: Locator, name: string): Promise<void> {
+  const menu = await openGrantMenu(row);
+  await menu.getByRole('menuitem', { name, exact: true }).click();
+}
 
 let adminPuid = '';
 let originalIsAdmin = false;
@@ -61,6 +74,12 @@ test.describe('Admin user accounts', () => {
       createdAt: new Date(),
       lastLoginAt: new Date(),
     });
+    await platformInstructorGrantsCol().insertOne({
+      puid: PENDING_PUID,
+      grantedByPuid: adminPuid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     await usersCol().updateOne(
       { puid: adminPuid },
       { $set: { isAdmin: true } },
@@ -78,78 +97,86 @@ test.describe('Admin user accounts', () => {
     }
   });
 
-  test('lists every user and grants/searches/revokes by PUID with empty uid', async ({ page }) => {
+  test('unified directory grants existing users and filters/revokes pending PUID grants with empty uid', async ({ page }) => {
     const browserErrors: string[] = [];
     page.on('pageerror', (error) => browserErrors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') browserErrors.push(message.text());
     });
+    // Keep optional tours out of the account workflow without changing progress.
+    await page.route('**/api/tutorials**', route => route.request().method() === 'GET'
+      ? route.fulfill({ json: ['admin-users', 'admin-accounts'].map(id => ({ id, role: 'admin', version: 1, status: 'dismissed' })) })
+      : route.fallback());
 
     await page.goto('/#/admin/accounts');
-    await expect(page.getByRole('heading', { name: 'User Accounts' })).toBeVisible();
-    await expect(page.getByText('E2E Active Professor')).toBeVisible();
-
-    const puidInput = page.locator('#admin-instructor-puid');
-    await puidInput.fill(`  ${PENDING_PUID}  `);
-    await page.getByRole('button', { name: 'Add as Instructor' }).click();
-    await expect(
-      page.getByRole('status').filter({
-        hasText: `Grant saved for ${PENDING_PUID}; it will activate on first login.`,
-      }),
-    ).toBeVisible();
-    const pendingCard = page.locator('article.card').filter({
-      hasText: `PUID: ${PENDING_PUID}`,
+    await expect(page.getByRole('heading', { name: 'User Directory', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add (?:as )?Instructor/ })).toHaveCount(0);
+    await expect(page.locator('#admin-instructor-puid')).toHaveCount(0);
+    const searchInput = page.getByRole('searchbox', { name: 'Search users', exact: true });
+    await searchInput.fill('PUID-E2E-ADMIN-');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    const activeRow = page.locator('.ac-table tbody tr').filter({
+      has: page.getByRole('button', { name: 'E2E Active Professor', exact: true }),
     });
-    await expect(pendingCard).toContainText('Pending first login');
-
-    await puidInput.fill(ACTIVE_PUID);
-    await page.getByRole('button', { name: 'Add as Instructor' }).click();
-    await expect(
-      page.getByRole('status').filter({
-        hasText: 'Instructor access granted to E2E Active Professor.',
-      }),
-    ).toBeVisible();
-    const activeCard = page.locator('article.card').filter({
-      hasText: `PUID: ${ACTIVE_PUID}`,
+    const pendingRow = page.locator('.ac-table tbody tr').filter({
+      has: page.getByRole('button', { name: PENDING_PUID, exact: true }),
     });
-    await expect(activeCard).toContainText('E2E Active Professor');
-    await expect(activeCard).toContainText('CWL username was not released by SAML.');
-    await expect(activeCard).toContainText('Instructor');
+    await expect(activeRow).toBeVisible();
+    await expect(pendingRow).toContainText('Pending first login');
+    expect(await usersCol().findOne({ puid: PENDING_PUID })).toBeNull();
 
-    const searchInput = page.locator('#admin-user-search');
+    const [grantResponse] = await Promise.all([
+      page.waitForResponse(response => response.url().endsWith(`/api/admin/platform-instructors/${ACTIVE_PUID}`)
+        && response.request().method() === 'PUT'),
+      chooseGrant(activeRow, 'Grant Instructor'),
+    ]);
+    expect(grantResponse.ok()).toBe(true);
+    await expect(page.getByRole('status')).toHaveText('Instructor access granted.');
+    await expect((await openGrantMenu(activeRow)).getByRole('menuitem', { name: 'Revoke Instructor', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect.poll(async () => ({
+      grantCount: await platformInstructorGrantsCol().countDocuments({ puid: ACTIVE_PUID }),
+      platformInstructor: (await usersCol().findOne({ puid: ACTIVE_PUID }))?.platformInstructor,
+    })).toEqual({ grantCount: 1, platformInstructor: true });
+    await activeRow.getByRole('button', { name: 'E2E Active Professor', exact: true }).click();
+    await expect(page.locator('.ac-people-properties dd').first()).toHaveText('Not released');
+    await expect(page.locator('.ac-people-properties')).toContainText(ACTIVE_PUID);
+    await page.getByRole('button', { name: 'Close user details', exact: true }).click();
+
+    await page.getByLabel('Account status', { exact: true }).selectOption('pending');
+    await expect(pendingRow).toBeVisible();
+    await expect(activeRow).toHaveCount(0);
     await searchInput.fill('PENDING-PROF');
-    await page.getByRole('button', { name: 'Search' }).click();
-    await expect(pendingCard).toBeVisible();
-    await expect(activeCard).toHaveCount(0);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(pendingRow).toBeVisible();
+    await expect(activeRow).toHaveCount(0);
 
+    await page.getByLabel('Account status', { exact: true }).selectOption('');
     await searchInput.fill('Active Professor');
-    await page.getByRole('button', { name: 'Search' }).click();
-    await expect(activeCard).toBeVisible();
-    await expect(pendingCard).toHaveCount(0);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(activeRow).toBeVisible();
+    await expect(pendingRow).toHaveCount(0);
 
-    await searchInput.fill('');
-    await page.getByRole('button', { name: 'Search' }).click();
-    await expect(pendingCard).toBeVisible();
-    await expect(activeCard).toBeVisible();
+    await searchInput.fill('PUID-E2E-ADMIN-');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(pendingRow).toBeVisible();
+    await expect(activeRow).toBeVisible();
 
-    await pendingCard.getByRole('button', { name: 'Revoke Instructor' }).click();
+    await chooseGrant(pendingRow, 'Revoke Instructor');
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await platformInstructorGrantsCol().countDocuments({ puid: PENDING_PUID })).toBe(1);
+    await chooseGrant(pendingRow, 'Revoke Instructor');
     await page.getByRole('dialog').getByRole('button', { name: 'Revoke access' }).click();
-    await expect(
-      page.getByRole('status').filter({
-        hasText: `Instructor access revoked for ${PENDING_PUID}.`,
-      }),
-    ).toBeVisible();
-    await expect(pendingCard).toHaveCount(0);
+    await expect(page.getByRole('status')).toHaveText('Instructor access revoked.');
+    await expect(pendingRow).toHaveCount(0);
 
-    await activeCard.getByRole('button', { name: 'Revoke Instructor' }).click();
+    await chooseGrant(activeRow, 'Revoke Instructor');
     await page.getByRole('dialog').getByRole('button', { name: 'Revoke access' }).click();
-    await expect(
-      page.getByRole('status').filter({
-        hasText: 'Instructor access revoked for E2E Active Professor.',
-      }),
-    ).toBeVisible();
-    await expect(activeCard).toBeVisible();
-    await expect(activeCard.getByRole('button', { name: 'Grant Instructor' })).toBeVisible();
+    await expect(page.getByRole('status')).toHaveText('Instructor access revoked.');
+    await expect(activeRow).toBeVisible();
+    await expect((await openGrantMenu(activeRow)).getByRole('menuitem', { name: 'Grant Instructor', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await expect.poll(async () => {
       const [grants, user] = await Promise.all([

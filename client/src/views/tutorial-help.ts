@@ -30,8 +30,11 @@ async function destinationsFor(role: TutorialRole, course?: HelpCourse): Promise
       : !course ? { reason: role === 'student' ? 'Join a course to use this tutorial.' : 'Select an accessible course to use this tutorial.' }
       : { href: `#/${role === 'student' ? '' : `${role}/`}course/${encodeURIComponent(course.id)}${definition.path ? `/${definition.path}` : ''}` };
   }
+  if (role === 'ta') destinations['ta-courses'] = { href: '#/ta/courses' };
   if (!course) return destinations;
   if (role === 'instructor') destinations['instructor-question-editor'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose an existing question; its tutorial begins after the editor loads.' };
+  if (role === 'instructor') destinations['instructor-collaboration'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose an existing question, then select Edit together to begin this walkthrough.' };
+  if (role === 'instructor') destinations['instructor-parameters'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose a parameterized question, then open Parameters to begin this walkthrough.' };
   if (role === 'ta') destinations['ta-question-review'] = { href: `#/ta/course/${encodeURIComponent(course.id)}/review`, label: 'Open review queue', reason: 'Choose an existing question; its tutorial begins after the detail loads.' };
   if (role === 'ta') {
     const permissions = await getMyCourseCapabilities(course.id);
@@ -61,7 +64,7 @@ export async function renderTutorialHelp(outlet: HTMLElement, params: RouteParam
   const identity = JSON.stringify(getSession().user);
   const root = el('section', { class: 'admin-workbench tutorial-help' }, loadingState('Loading tutorials…'));
   outlet.append(root);
-  if (!role) { root.replaceChildren(el('p', { text: 'Exit Student Preview or TA View to use tutorials for your real role.' })); return; }
+  if (!role) { root.replaceChildren(el('p', { text: 'Use the role menu to return to your primary workspace and its tutorials.' })); return; }
   let generation = 0;
   const fresh = (): boolean => root.isConnected && tutorialRole() === role && JSON.stringify(getSession().user) === identity;
   try {

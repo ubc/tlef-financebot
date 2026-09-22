@@ -117,7 +117,7 @@ or database calls are made by the fixture.
 SAML/MongoDB. It creates a temporary owned course with two recorded question
 versions, scoped attempt evidence and a zero-attempt objective. It checks
 analytics dates/modes/versions, named-data permissions, Instructor Help replay,
-and all three TA/four Admin tutorials. Temporary course roles, Admin status,
+and the core TA/Admin tutorial flows. Temporary course roles, Admin status,
 capability settings and role tutorial progress are restored or removed by the
 fixture; no messaging or generation is invoked.
 
@@ -137,7 +137,7 @@ reduced-motion verification. It makes no live record changes or provider calls.
 
 `admin-appearance.spec.ts` uses `playwright.admin-appearance.config.ts` and the
 local IdP `admin/admin` persona (PUID `PUID-ADMIN-0001`, in the local Admin
-allowlist). It verifies real SAML identity, the four Admin pages, desktop/mobile
+allowlist). It verifies real SAML identity, the six Admin pages, inspector alignment, desktop/mobile
 axe and logout theme restoration. It performs no directory/settings mutations;
 normal login creates or refreshes the test account. Tutorial reads are intercepted.
 
@@ -160,3 +160,52 @@ complete chunk traversal, validated citations, gap reporting, optional counts,
 duplicate-run protection and stop semantics. `scripts/verify-structure-generation.ts`
 is an opt-in real-provider smoke using only synthetic teaching text; it cleans up
 its temporary material/chunk/run records and never reads uploaded course materials.
+
+`admin-diagnostics.spec.ts` / `playwright.admin-diagnostics.config.ts` use real
+local SAML and MongoDB with isolated course/question/run/attempt fixtures. They
+verify cross-user failure capture, Admin-only inspection, original-creator
+attribution, exact pinned attempt replay without student-data writes, task links,
+and desktop-light/mobile-dark accessibility. No provider generation is invoked;
+fixtures are deleted after testing. Request audit records remain as truthful
+records of the test actions.
+
+`playwright.instructor-qa.config.ts` groups the Instructor workbench suites and
+`instructor-qa-regressions.spec.ts`. Build first; all APIs are intercepted. The
+QA regressions cover unsaved route changes, stale AI assessments, generation
+focus/history, saved recipe counts, terminal material status, evidence deduplication,
+and release/guide layout updates without writing live teaching records.
+
+`playwright.admin-workspace.config.ts` covers the five production Admin workspaces and the legacy grants URL.
+The four `admin-*-workspace.spec.ts` files intercept APIs and exercise searches,
+pagination, stale responses, exact version/attempt replay, role/grant confirmation,
+sparse permission saves, model catalogue validation, draft recovery, original Help
+navigation and 1440/580/390px light/dark accessibility. Inspector geometry checks
+catch transformed-ancestor positioning regressions. `admin-appearance.spec.ts`
+adds real local SAML/read-only page verification at localhost:6118; no directory,
+permission or settings mutations are made. Build the client before running.
+
+The people workspace checks direct row grants/revocation, course-labelled TA and
+Student assignment, retained-record Ban/Unban, pending identities, duplicate-submit
+protection, failed-refresh recovery and keyboard focus during asynchronous course
+loading. Grant choices share a top-layer role menu in rows and Profile; browser
+checks cover keyboard selection, dismissal/focus return, and unclipped options
+at the last row on desktop and mobile. Ban remains independently available.
+The live Admin accounts suite seeds a pending grant in its fixture and
+exercises the unified directory through the legacy `/admin/accounts` URL.
+
+`playwright.role-workspace.config.ts` runs isolated full-app role switching tests.
+The production shell consumes intercepted Admin/Instructor/TA/Student identities,
+course lists and Preview APIs. Checks cover permitted menus and return paths,
+saved-role forgery, refresh persistence, course/session isolation, common cards,
+sidebar sizing/colors, black course actions, and mobile light/dark accessibility.
+No live grants, enrollment, or student activity are changed by these fixtures.
+
+`playwright.collaboration.config.ts` uses real faculty and ta SAML sessions and an
+isolated temporary course. It tests sharing without platform privilege, concurrent
+same-field/different-field CRDT edits, offline retries, a deliberately lost commit
+response, version comparison/rebase, presence, mobile/dark axe and live revocation.
+It cleans course, question, draft, share, presence and scoped role fixtures. No
+email or provider generation occurs. `question-collaboration.service/routes` unit
+tests cover durable CAS, replay, interrupted-save recovery, schema retention,
+state races and revoked/transient SSE behavior. `playwright.course-sharing.config.ts`
+uses intercepted APIs for dialog/page sharing. `playwright.question-edit-concurrency.config.ts` covers legacy editor conflicts and draft-schema export.

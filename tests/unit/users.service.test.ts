@@ -8,6 +8,8 @@ import {
   platformInstructorGrantsCol,
   usersCol,
 } from '../../server/src/components/mongodb/collections';
+import { projectCourseInstructorShares } from '../../server/src/services/course-sharing.service';
+import { ObjectId } from 'mongodb';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   platformInstructorGrantsCol: jest.fn(),
@@ -19,6 +21,10 @@ jest.mock('../../server/src/config/env', () => ({
     samlEnvironment: 'STAGING',
   },
   isProduction: false,
+}));
+jest.mock('../../server/src/services/course-sharing.service', () => ({
+  activateCourseInstructorInvitations: jest.fn(),
+  projectCourseInstructorShares: jest.fn(async (users: unknown[]) => users),
 }));
 
 const findOneAndUpdate = jest.fn();
@@ -149,6 +155,15 @@ describe('findUserByPuid platform authorization refresh', () => {
     createdAt: new Date(),
     lastLoginAt: new Date(),
   };
+
+  it('refreshes course sharing on every session read without granting platform Instructor', async () => {
+    const courseId = new ObjectId();
+    findUser.mockResolvedValue(storedUser);
+    jest.mocked(projectCourseInstructorShares).mockResolvedValueOnce([{ ...storedUser, platformInstructor: false, courseRoles: [{ courseId, role: 'instructor' }] }]);
+    await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ platformInstructor: false, courseRoles: [{ courseId, role: 'instructor' }] });
+    // Revocation changes only the sharing source; the same User/session refreshes.
+    await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ platformInstructor: false, courseRoles: [] });
+  });
 
   it('treats the grant collection as truth after a revoke, even if the User bit is stale', async () => {
     findUser.mockResolvedValue(storedUser);

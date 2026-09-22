@@ -1,0 +1,148 @@
+{
+  "generatedAt": "2026-09-20T22:26:21.294Z",
+  "checks": [
+    {
+      "name": "Layout 1440px",
+      "passed": true
+    },
+    {
+      "name": "Layout 1280px",
+      "passed": true
+    },
+    {
+      "name": "Layout 580px",
+      "passed": true
+    },
+    {
+      "name": "Layout 390px",
+      "passed": true
+    },
+    {
+      "name": "1280 × 720 full-height inspector",
+      "passed": true
+    },
+    {
+      "name": "Natural typing preserves search text and cursor",
+      "passed": true
+    },
+    {
+      "name": "Search and empty state",
+      "passed": true
+    },
+    {
+      "name": "Source tabs, sorting, pagination",
+      "passed": true
+    },
+    {
+      "name": "User, course, outcome, and time filters",
+      "passed": true
+    },
+    {
+      "name": "Accepted request links to failed task without rewriting outcome",
+      "passed": true
+    },
+    {
+      "name": "Unverified browser report and interrupted outcome",
+      "passed": true
+    },
+    {
+      "name": "Recorded and seeded reproduction are distinct",
+      "passed": true
+    },
+    {
+      "name": "CSV, evidence, and selected-row exports",
+      "passed": true
+    },
+    {
+      "name": "Saved view survives reload",
+      "passed": true
+    },
+    {
+      "name": "Keyboard search, tab navigation, and Escape",
+      "passed": true
+    },
+    {
+      "name": "Accessibility default",
+      "passed": true
+    },
+    {
+      "name": "Accessibility drawer",
+      "passed": true
+    },
+    {
+      "name": "Accessibility desktop-timeline",
+      "passed": true
+    },
+    {
+      "name": "Accessibility desktop-reproduction",
+      "passed": true
+    }
+  ],
+  "layouts": [
+    {
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1440,
+      "firstRowTop": 370.1875,
+      "rowHeight": 48,
+      "contentHeight": 851
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "scrollWidth": 1280,
+      "firstRowTop": 370.1875,
+      "rowHeight": 48,
+      "contentHeight": 851
+    },
+    {
+      "width": 580,
+      "height": 900,
+      "scrollWidth": 580,
+      "firstRowTop": 301,
+      "rowHeight": 48,
+      "contentHeight": 857
+    },
+    {
+      "width": 390,
+      "height": 900,
+      "scrollWidth": 390,
+      "firstRowTop": 301,
+      "rowHeight": 48,
+      "contentHeight": 857
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "inspectorTop": 49,
+      "inspectorHeight": 671,
+      "contextBottom": 528.71875
+    }
+  ],
+  "accessibility": [
+    {
+      "mode": "1280x720-inspector",
+      "violations": []
+    },
+    {
+      "mode": "default",
+      "violations": []
+    },
+    {
+      "mode": "drawer",
+      "violations": []
+    },
+    {
+      "mode": "desktop-timeline",
+      "violations": []
+    },
+    {
+      "mode": "desktop-reproduction",
+      "violations": []
+    }
+  ],
+  "consoleErrors": [],
+  "externalRequests": [],
+  "passed": 19,
+  "failed": 0
+}

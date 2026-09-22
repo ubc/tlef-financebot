@@ -1,4 +1,5 @@
 import { generateStructure } from './structure-generation.service';
+import { assertEditRevision, editConflict, editRevisionFilter } from './edit-revision';
 import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
 import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
@@ -177,8 +178,9 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
   if (aiKind && kindConfidence >= REVIEW_CONFIDENCE) set.kind = aiKind;
   if (needsReview[0]) set.classificationSuggestion = needsReview[0];
   await materialsCol().updateOne(
-    { _id: materialId, deletedAt: { $exists: false } },
-    needsReview[0] ? { $set: set } : { $set: set, $unset: { classificationSuggestion: '' } },
+    // AI work may take minutes. Do not overwrite a correction made while it ran.
+    { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(material.revision ?? 0) },
+    needsReview[0] ? { $set: set, $inc: { revision: 1 } } : { $set: set, $unset: { classificationSuggestion: '' }, $inc: { revision: 1 } },
   );
 }
 
@@ -290,6 +292,7 @@ export async function applySuggestedHierarchy(
       { _id: material._id, courseId },
       {
         $addToSet: { assignments: { $each: novel } },
+        $inc: { revision: 1 },
         $unset: { classificationSuggestion: '' },
       },
     );
@@ -313,19 +316,21 @@ export async function applySuggestedHierarchy(
 export async function resolveClassification(
   materialId: ObjectId,
   action: 'accept' | 'reject',
+  expectedRevision?: number,
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOne({ _id: materialId });
   if (!material) throw new Error('material-not-found');
+  assertEditRevision('Material', material, expectedRevision);
 
-  const clearSuggestion = { $unset: { classificationSuggestion: '', classificationSuggestions: '' } } as const;
+  const clearSuggestion = { $unset: { classificationSuggestion: '', classificationSuggestions: '' }, $inc: { revision: 1 } } as const;
 
   if (action === 'reject') {
     const updated = await materialsCol().findOneAndUpdate(
-      { _id: materialId },
+      { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision ?? material.revision ?? 0) },
       clearSuggestion,
       { returnDocument: 'after' },
     );
-    if (!updated) throw new Error('material-not-found');
+    if (!updated) throw editConflict('Material');
     return updated;
   }
 
@@ -348,11 +353,11 @@ export async function resolveClassification(
     : [...assignments, { themeId: suggestion.themeId, ...(suggestion.loId ? { loId: suggestion.loId } : {}) }];
 
   const updated = await materialsCol().findOneAndUpdate(
-    { _id: materialId },
+    { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision ?? material.revision ?? 0) },
     { $set: { assignments: nextAssignments }, ...clearSuggestion },
     { returnDocument: 'after' },
   );
-  if (!updated) throw new Error('material-not-found');
+  if (!updated) throw editConflict('Material');
   return updated;
 }
 

@@ -9,6 +9,7 @@ import {
   resetTutorialProgress,
   saveTutorialProgress,
 } from '../../server/src/services/tutorials.service';
+import { TUTORIAL_DEFINITIONS } from '../../client/src/tutorial-definitions';
 
 const find = jest.fn();
 const updateOne = jest.fn();
@@ -24,11 +25,16 @@ beforeEach(() => {
 describe('tutorial service', () => {
   it('keeps every Student micro-tutorial at 20 seconds or less', () => {
     expect(TUTORIAL_CATALOG.filter((item) => item.role === 'student')).toHaveLength(9);
-    expect(TUTORIAL_CATALOG.filter((item) => String(item.role) === 'admin')).toHaveLength(4);
-    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'instructor')).toHaveLength(9);
-    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'ta')).toHaveLength(3);
+    expect(TUTORIAL_CATALOG.filter((item) => String(item.role) === 'admin')).toHaveLength(6);
+    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'instructor')).toHaveLength(18);
+    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'ta')).toHaveLength(4);
     expect(new Set(TUTORIAL_CATALOG.map((item) => item.id)).size).toBe(TUTORIAL_CATALOG.length);
     expect(TUTORIAL_CATALOG.every((item) => item.estimatedSeconds <= 20)).toBe(true);
+  });
+
+  it('keeps the server catalogue aligned with every client walkthrough', () => {
+    const key = (item: { role: string; id: string }): string => `${item.role}:${item.id}`;
+    expect(TUTORIAL_CATALOG.map(key).sort()).toEqual(TUTORIAL_DEFINITIONS.map(key).sort());
   });
 
   it('treats missing and older-version progress as not viewed', async () => {

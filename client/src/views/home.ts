@@ -3,7 +3,9 @@
 // where to look. The student branch (ST-E01/E02/E03) replaces that stub with a
 // real "My courses" list plus a join-by-code control.
 import { el } from '../dom.js';
-import { badge, emptyState, errorState, eyebrow, loadingState } from '../ui.js';
+import { emptyState, errorState, eyebrow, loadingState } from '../ui.js';
+import { courseCard } from '../course-card.js';
+import { pageHeader } from '../instructor-ui.js';
 import { getSession, displayName } from '../auth.js';
 import {
   ApiError,
@@ -78,48 +80,24 @@ function courseCoverage(home: CourseHomeTheme[]): { covered: number; total: numb
   );
 }
 
-/** A single "My Courses" card (Figma screen 1): name, code · term, an
- * Active/Ended badge, an LO-coverage progress bar, and a primary action that
- * reads "Open →" for active courses or "View" for ended ones. */
-function courseCard(
+/** Student data and progress use the same course-project card as Instructor. */
+function studentCourseCard(
   enrollment: Enrollment,
   coverage: { covered: number; total: number } | null,
   experience: StudentExperience,
 ): HTMLElement {
-  const { covered, total } = coverage ?? { covered: 0, total: 0 };
-  const palette = ['#3658b6', '#227f72', '#8a5a2b', '#6e4ca1', '#9a3f5c'];
-  const color = palette[Array.from(enrollment.courseCode).reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length];
-  return el(
-    'article',
-    { class: 'theme-card student-course-card', style: `--course-color:${color}` },
-    el('div', { class: 'student-course-card__cover' },
-      el('span', { class: 'student-course-card__code', text: enrollment.courseCode }),
-      el('span', { class: 'student-course-card__project', text: 'Course project' }),
-    ),
-    el('div', { class: 'student-course-card__body' },
-    el(
-      'div',
-      { class: 'course-tile__head' },
-      el('h3', { class: 'theme-card__title', text: enrollment.name }),
-      badge(enrollment.active ? 'Active' : 'Ended', enrollment.active ? 'up' : 'muted'),
-    ),
-    el('p', { class: 'theme-card__coverage-label mono', text: enrollment.term }),
-    el(
-      'div',
-      { class: 'theme-card__coverage' },
-      el('div', { class: 'coverage-bar' }, el('div', { class: 'coverage-bar__fill', style: `width:${total ? (covered / total) * 100 : 0}%` })),
-      el('span', { class: 'theme-card__coverage-label mono', text: `${covered}/${total} LOs covered` }),
-    ),
-    el(
-      'a',
-      {
-        class: `btn btn--sm ${enrollment.active ? 'btn--instr-primary' : 'btn--ghost'}`,
-        href: experience.routes.course(enrollment.courseId),
-      },
-      enrollment.active ? 'Open →' : 'View',
-    ),
-    ),
-  );
+  return courseCard({
+    courseCode: enrollment.courseCode,
+    name: enrollment.name,
+    term: enrollment.term,
+    href: experience.routes.course(enrollment.courseId),
+    status: {
+      label: enrollment.active ? 'Active' : 'Ended',
+      variant: enrollment.active ? 'approved' : 'archived',
+    },
+    coverage,
+    actionLabel: enrollment.active ? 'Open →' : 'View',
+  });
 }
 
 /** "My courses" (ST-E02/E03, Figma screen 1): a card grid of the student's
@@ -133,16 +111,12 @@ function myCoursesSection(
   const joinError = el('p', {});
   const section = el(
     'div',
-    { class: 'view view--student-projects' },
-    el('header', { class: 'student-projects__header', 'data-tutorial': 'student-dashboard-intro' },
-      el('div', {},
-        el('p', { class: 'eyebrow', text: 'Learning dashboard' }),
-        el('h1', { class: 'view__title', text: 'My Courses' }),
-        el('p', { class: 'view__lead', text: 'Choose a course project and continue from your current learning progress.' }),
-      ),
+    { class: 'view view--course-projects view--student-projects' },
+    el('header', { 'data-tutorial': 'student-dashboard-intro' },
+      pageHeader('My Courses', 'Choose a course project and continue from your current learning progress.'),
     ),
     body,
-    el(
+    !experience.preview && el(
       'div',
       { class: 'join-box', 'data-tutorial': 'registration-code' },
       el('p', { class: 'eyebrow', text: 'Join a course' }),
@@ -170,7 +144,9 @@ function myCoursesSection(
     try {
       const enrollments = await experience.listEnrollments(previewCourseId);
       if (enrollments.length === 0) {
-        body.replaceChildren(emptyState('You are not enrolled in any courses yet — add one with a registration code below.'));
+        body.replaceChildren(emptyState(experience.preview
+          ? 'No courses are available in this Student Preview.'
+          : 'You are not enrolled in any courses yet — add one with a registration code below.'));
         return;
       }
       const homes = await Promise.all(
@@ -179,8 +155,8 @@ function myCoursesSection(
       body.replaceChildren(
         el(
           'div',
-          { class: 'theme-grid' },
-          ...enrollments.map((enrollment, i) => courseCard(
+          { class: 'course-list' },
+          ...enrollments.map((enrollment, i) => studentCourseCard(
             enrollment,
             homes[i] ? courseCoverage(homes[i] as CourseHomeTheme[]) : null,
             experience,

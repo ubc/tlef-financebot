@@ -228,7 +228,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       tone: 'danger',
     })) return;
     try {
-      await transitionQuestion(question.id, 'archived');
+      await transitionQuestion(question.id, 'archived', question.current._id);
       listQuestions = listQuestions.map((q) => (q.id === question.id ? { ...q, state: 'archived' } : q));
       if (filters.status !== 'archived') {
         listQuestions = listQuestions.filter((q) => q.id !== question.id);
@@ -249,7 +249,7 @@ async function renderBankInner(outlet: HTMLElement, courseId: string): Promise<v
       confirmLabel: 'Restore to Draft',
     })) return;
     try {
-      await transitionQuestion(question.id, 'draft');
+      await transitionQuestion(question.id, 'draft', question.current._id);
       listQuestions = listQuestions.map((q) => (q.id === question.id ? { ...q, state: 'draft' } : q));
       if (filters.status === 'archived') {
         listQuestions = listQuestions.filter((q) => q.id !== question.id);

@@ -17,6 +17,7 @@ import { setButtonBusy } from '../../action-state.js';
 import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import type { RouteParams } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
+import { attachTutorial } from '../../tutorials.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -374,17 +375,18 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
   }
 
   const body = el('div', {}, loadingState('Loading import options…'));
+  const root = el(
+    'div',
+    { class: 'view import-workbench' },
+    pageHeader(
+      'Import Questions',
+      'Upload CSV, JSON, or QTI XML. Preview first; every confirmed question enters as a Draft.',
+    ),
+    body,
+  );
   mount(
     outlet,
-    el(
-      'div',
-      { class: 'view import-workbench' },
-      pageHeader(
-        'Import Questions',
-        'Upload CSV, JSON, or QTI XML. Preview first; every confirmed question enters as a Draft.',
-      ),
-      body,
-    ),
+    root,
   );
 
   let tree: CourseTree;
@@ -571,4 +573,8 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
   scriptTab.addEventListener('click', () => selectMode(true));
   body.replaceChildren(el('div', { class: 'import-mode-tabs', 'aria-label': 'Import method' }, fileTab, scriptTab), filePanel, scriptPanel);
   renderPreview();
+  attachTutorial(root, 'instructor-import', {
+    'import-method': '.import-mode-tabs',
+    'import-preview': '.import-entry',
+  });
 }

@@ -1,10 +1,13 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+test.use({ baseURL: 'http://localhost:6118' });
+
 // Real local SAML persona; no directory/settings mutations. Tutorial reads are
 // suppressed without changing the account's persisted tutorial state.
-test('local admin persona has an accessible monochrome shell and keeps personal theme', async ({ page }) => {
+test('local admin persona has an accessible compact shell and keeps personal theme', async ({ page }) => {
   await page.route('**/api/tutorials**', route => route.fulfill({ json: ['admin-users', 'admin-accounts', 'admin-capabilities', 'admin-platform-settings'].map(id => ({ id, role: 'admin', version: 1, status: 'dismissed' })) }));
+  await page.setViewportSize({ width: 1728, height: 900 });
   await page.goto('/');
   await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
   await page.evaluate(() => localStorage.setItem('tlef-theme', 'light'));
@@ -20,19 +23,40 @@ test('local admin persona has an accessible monochrome shell and keeps personal 
   expect(identity.user.puid).toBe('PUID-ADMIN-0001');
   expect(identity.user.isAdmin).toBe(true);
   await expect(page.locator('.brand__name')).toHaveText('Admin');
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'User Directory', exact: true })).toHaveCount(1);
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Instructor Grants' })).toHaveCount(0);
   await expect(page.locator('html')).toHaveAttribute('data-admin', 'true');
   const toggle = page.getByRole('button', { name: 'Toggle light or dark theme' });
   await expect(toggle).toBeVisible();
   for (const theme of ['light', 'dark']) {
     if (theme === 'dark') await toggle.click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('body')).toHaveCSS('background-color', theme === 'light' ? 'rgb(245, 245, 246)' : 'rgb(8, 9, 11)');
+    await expect(page.locator('body')).toHaveCSS('background-color', theme === 'light' ? 'rgb(247, 248, 250)' : 'rgb(19, 21, 27)');
     await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(12, 13, 15)');
     expect(await page.evaluate(() => localStorage.getItem('tlef-theme'))).toBe(theme);
-    for (const [path, title] of [['users', 'User Directory'], ['accounts', 'User Accounts'], ['capabilities', 'Capability Matrix'], ['platform-settings', 'Platform Settings']]) {
+    for (const [path, title] of [['operations', 'Operations & Issues'], ['questions', 'All questions'], ['users', 'User Directory'], ['accounts', 'User Directory'], ['capabilities', 'Capabilities'], ['platform-settings', 'Platform Settings']]) {
       await page.goto(`/#/admin/${path}`);
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-      await expect(page.locator('.state--loading')).toHaveCount(0);
+      await expect(page.locator('.admin-console .spinner')).toHaveCount(0);
+      await expect(page.locator('.admin-console .state--error')).toHaveCount(0);
+      const opener = path === 'questions' ? page.locator('.aq-question-link').first() : path === 'users' ? page.locator('button[data-person]').first() : undefined;
+      if (opener && await opener.count()) {
+        await opener.click();
+        const inspector = page.locator('.ac-panel:visible');
+        await expect(inspector).toBeVisible();
+        await expect(inspector.locator('.spinner')).toHaveCount(0);
+        const rect = (await inspector.boundingBox())!;
+        expect(Math.round(rect.x + rect.width)).toBe(page.viewportSize()!.width);
+        expect(Math.round(rect.y + rect.height)).toBe(page.viewportSize()!.height);
+        await page.screenshot({ path: `audit-results/admin-workspace-2026-09-20/real-${path}-${theme}.png`, fullPage: true });
+        if (path === 'users') {
+          const coursesResponse = page.waitForResponse(response => response.url().endsWith('/api/admin/courses'));
+          await page.getByRole('tab', { name: 'Course access', exact: true }).click();
+          expect((await coursesResponse).ok()).toBe(true);
+          await expect(page.locator('.ac-panel .state--error')).toHaveCount(0);
+          await expect(page.getByLabel('Course', { exact: true })).toBeVisible();
+        }
+      }
       expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
     }
     await page.screenshot({ path: `/private/tmp/admin-console-${theme}.png`, fullPage: true });
@@ -42,7 +66,7 @@ test('local admin persona has an accessible monochrome shell and keeps personal 
     await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(12, 13, 15)');
     expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
     await page.locator('.backdrop').click({ position: { x: 360, y: 400 } });
-    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.setViewportSize({ width: 1728, height: 900 });
   }
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

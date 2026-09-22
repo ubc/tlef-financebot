@@ -36,6 +36,30 @@ import { isThemeReleased } from './theme-release';
 const PREVIEW_PUID = 'anonymous-preview';
 const MASTERY_WINDOW = 10;
 
+export interface PreviewCourseIdentity {
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+}
+
+/** Minimal identity for a teaching-team member choosing Student Preview.
+ * Independent of question-review permission and never returns private course
+ * settings, hierarchy, or any student's data. */
+export async function getPreviewCourseIdentity(courseId: ObjectId): Promise<PreviewCourseIdentity> {
+  const course = await coursesCol().findOne(
+    { _id: courseId },
+    { projection: { name: 1, courseCode: 1, section: 1, term: 1 } },
+  );
+  if (!course) throw new Error('course-not-found');
+  return {
+    name: course.name,
+    courseCode: course.courseCode,
+    ...(course.section ? { section: course.section } : {}),
+    term: course.term,
+  };
+}
+
 /**
  * A read-only launch-guide milestone. Preview attempts are already isolated
  * from live student data and expire after 24 hours, so this answers whether
@@ -54,6 +78,9 @@ export async function hasRecentPreviewAttempt(
 }
 
 export interface PreviewContext {
+  /** The authenticated teaching-team user's PUID. The stored field name is
+   * retained for existing Instructor previews; TA previews use the same
+   * per-user/session isolation and never impersonate an enrolled student. */
   instructorPuid: string;
   previewSessionId: string;
 }

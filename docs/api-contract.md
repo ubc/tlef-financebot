@@ -51,7 +51,7 @@ grant attaches to the same PUID-backed User on first SAML login.
   (capability `question.review` — the TA-accessible subset of the above: theme/LO
   names and order only, none of the course record's registrationCode, term
   dates, autoPause, or feedbackStrategy)
-- `PATCH /api/courses/:courseId { name?, courseCode?, section?, term?,
+- `PATCH /api/courses/:courseId { expectedRevision, name?, courseCode?, section?, term?,
   termStart?, termEnd?, feedbackStrategy?, autoPause?, published? }` → Course
 - Course responses expose `lifecycle: 'draft'|'published'|'archived'`,
   `published`, `updatedAt`, and optional `archivedAt`. Legacy rows derive
@@ -169,12 +169,31 @@ grant attaches to the same PUID-backed User on first SAML login.
   `[{ attemptId, kind, date, score, maxScore }]`; `attemptId` drills into the
   same results endpoint.
 
+## Authoring concurrency
+
+Course, Theme, LearningObjective and Material records expose an optional integer
+`revision`; missing legacy revisions mean `0`. The editor mutations below require
+`expectedRevision` and atomically compare it before saving, then increment the
+stored revision. Missing/invalid tokens return `400`; a stale token returns `409`
+with a draft-preservation message and makes no write. Course settings and a
+`published` change in the same PATCH share one atomic precondition. Settings and
+structure forms retain unsaved inputs on conflict; material metadata retains its
+dirty fields and original baseline through progress refreshes and rejected saves.
+
+Background ingestion/classification and explicit archive/restore actions advance
+these tokens too. AI classification compares its original material revision before
+writing, so a manual correction made during inference survives. Bulk/AI outline
+apply holds a renewable course lease and reuses active Topic/LO names on retry;
+a simultaneous apply returns `409` and preserves the submitted draft. The lease
+expires after five minutes if its process stops. Separate manual create, roster,
+and lifecycle/action endpoints keep their existing contracts.
+
 ## Hierarchy (instructor)
 - `POST /api/courses/:courseId/themes { name, availableFrom? }` → 201 Theme
-- `PATCH /api/themes/:themeId { name?, availableFrom?, order? }` → Theme
+- `PATCH /api/themes/:themeId { expectedRevision, name?, availableFrom?, order? }` → Theme
 - `POST /api/themes/:themeId/archive` → Theme
 - `POST /api/themes/:themeId/los { name }` → 201 LearningObjective
-- `PATCH /api/los/:loId { name?, order? }`, `POST /api/los/:loId/archive`
+- `PATCH /api/los/:loId { expectedRevision, name?, order?, kind? }`, `POST /api/los/:loId/archive`
 
 ## Materials (instructor)
 - `POST /api/courses/:courseId/materials` (multipart, field `files[]`; or JSON `{ url }`) → 201 `[Material]` (successfully queued entries have status `processing` + a unique `activeRunId`; an immediate run-storage/enqueue failure is returned as status `failed` so no row remains stuck)
@@ -196,11 +215,11 @@ grant attaches to the same PUID-backed User on first SAML login.
   'lecture'|'reading'|'assignment'|'assessment'|'solution'|'reference'|'other'`.
   New rows receive a deterministic name-based suggestion; legacy rows normalize
   to `other`.
-- `PATCH /api/courses/:courseId/materials/:materialId { kind }` → Material
+- `PATCH /api/courses/:courseId/materials/:materialId { kind, expectedRevision }` → Material
   (instructor correction; course-scoped)
 - `POST /api/materials/:materialId/retry` → Material with a new `activeRunId` (409 when another retry already won)
-- `PUT /api/materials/:materialId/assignments { assignments: [{ themeId, loId? }] }` → Material
-- `POST /api/materials/:materialId/classification { action: 'accept' | 'reject' }` → Material
+- `PUT /api/materials/:materialId/assignments { expectedRevision, assignments: [{ themeId, loId? }] }` → Material
+- `POST /api/materials/:materialId/classification { expectedRevision, action: 'accept' | 'reject' }` → Material
 - `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los:
   [name] }], assignments: [{ themeIndex, loIndex, materialIds }] }` (IN-S06;
   read-only AI-suggested outline plus per-LO source mappings)
@@ -243,7 +262,7 @@ material ids are rejected before hierarchy creation begins.
   history, `templateFamilyId`, and per-version `provenance`
 - `PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?,
   themeIds?, paramSlots?, derivedValues?, numericKind?, type?, sourceRefs?,
-  expectedVersionId?, submitForReview? }` → creates one new
+  expectedVersionId, expectedTags?: { loIds, themeIds }, submitForReview? }` → creates one new
   QuestionVersion; response includes it (IN-Q03). The numeric fields let an
   explicitly accepted regeneration replace template text and its computed
   answer definition atomically rather than briefly exposing placeholders
@@ -252,6 +271,8 @@ material ids are rejected before hierarchy creation begins.
   in one compare-and-set write. Stale pins return 409, old AI decisions are cleared,
   and existing versions/history remain intact. Type edits validate the new option
   shape. Source-reference edits may only reference materials in the same course.
+  Replacing either tag array requires the loaded `expectedTags` snapshot; exact
+  version, state and tag comparisons prevent silently replacing a teammate's edit.
   `contentReady` on bank rows uses the server numerical/placeholder serving gate;
   the UI also requires course publication and release of every tagged Topic before
   describing a question as student-visible. Default Bank UI requests Approved only;
@@ -259,7 +280,7 @@ material ids are rejected before hierarchy creation begins.
 - `POST /api/questions/:questionId/internal-notes { text }` → appended
   `{ puid, text, at }` teaching-team-only note. Notes are append-only and are
   excluded from student and bank-list response shapes.
-- `PATCH /api/questions/:questionId/params { paramSlots?, derivedValues?,
+- `PATCH /api/questions/:questionId/params { expectedVersionId, paramSlots?, derivedValues?,
   numericKind?, generateScript? }` → new/unchanged QuestionVersion plus
   `verification` on success or `verificationError` on failure. Numerical
   questions must display exactly one computed derived value in every option;
@@ -276,13 +297,12 @@ material ids are rejected before hierarchy creation begins.
   question's currently-saved stem when omitted from the body; `warnings` lists
   any defined `paramSlots` entry with no matching `{{name}}` placeholder in the
   stem. Never persists anything. (IN-Q09, Task 5)
-- `POST /api/questions/:questionId/transition { to, expectedVersionId?, rejectionReason? }` →
+- `POST /api/questions/:questionId/transition { to, expectedVersionId, rejectionReason? }` →
   question (validated against `PUBLICATION_TRANSITIONS`; Instructor `draft →
   approved` is a legal one-click approval, and `archived → draft` is the only
-  restore path). When supplied, `expectedVersionId` compare-and-sets both the
+  restore path). The required `expectedVersionId` compare-and-sets both the
   reviewed content version and publication state; a stale version or state
-  returns `409 { error: "question-conflict" }`. Omitting it preserves the
-  existing state-only transition contract.
+  returns `409 { error: "question-conflict" }`. Editors retain local drafts on conflict.
   Optional `rejectionReason` is trimmed, limited to 2,000 characters, and only
   accepted for `to: "archived"`. A non-empty reason is appended as a private
   teaching-team note in the same version/state-guarded Mongo update as archival;
@@ -478,10 +498,13 @@ of remaining indefinitely active.
   — computes the summary since `since` and stores (upserts) it as the student's deferred
   end-of-session summary for this course, to be surfaced by `GET .../session-summary` next time (ST-P10)
 
-## Instructor student preview
+## Teaching-team student preview
 
-All preview routes require the signed-in user to be an Instructor for the
-target course (or Admin). They do not require student enrollment and
+All preview routes require the signed-in user to be an Instructor or current
+TA for the target course (or Admin). A TA role removed by expiry or revocation
+loses access on the next request, using the same current-course role checks as
+the TA workspace. Students, nonmembers and staff in another course cannot use
+these routes. They do not grant persistent roles or require student enrollment and
 intentionally ignore `Course.published`, so an unpublished course can be
 tested before release. Theme archival/progressive release and the
 Approved-question gate still match the real student experience. Entering
@@ -491,6 +514,11 @@ clears it.
 
 Every stateful Preview request carries `previewSessionId` (UUID):
 
+- `GET /api/courses/:courseId/preview/identity` →
+  `{ name, courseCode, section?, term }`. Read-only course picker identity;
+  requires the same teaching-team Preview access, without a session UUID or
+  `question.review` capability. Returns no hierarchy or private settings and
+  does not create Preview state. The existing `/outline` gate remains unchanged.
 - `GET /api/courses/:courseId/preview/home?previewSessionId=...`
 - `POST /api/courses/:courseId/preview/practice/next`
   `{ previewSessionId, loId, sessionServedIds }`
@@ -500,11 +528,13 @@ Every stateful Preview request carries `previewSessionId` (UUID):
 - `POST /api/courses/:courseId/preview/questions/:questionId/flag`
   `{ previewSessionId, reason?, sendToInstructorQueue? }` →
   `{ flagged: true, testQueued }`. The option defaults to false; when true it
-  additionally creates a live queue item sourced as
+  additionally creates a live queue item for course Instructors/Admins sourced as
   `instructor-preview-test`. The Preview **UI** always sends the option
-  (2026-08-08, PI feedback), so every flag filed from Preview files a TEST
-  queue item — there is no client control over it. The API default itself is
-  unchanged, and the live student path never sends the option.
+  for Instructor/Admin previews (2026-08-08, PI feedback). TA previews always
+  keep flags isolated: the server ignores `sendToInstructorQueue: true` for
+  a user whose only teaching-team access to this course is TA and returns
+  `testQueued: false`. The API default itself is unchanged, and the live
+  student path never sends the option.
 - `GET /api/courses/:courseId/preview/review-book?previewSessionId=...&sort=theme|date`
 - `POST /api/courses/:courseId/preview/questions/:questionId/bookmark`
   `{ previewSessionId }`
@@ -515,7 +545,7 @@ Every stateful Preview request carries `previewSessionId` (UUID):
 - `GET /api/courses/:courseId/preview/session-summary?previewSessionId=...&since=...`
   — omit `since` for the start-of-session shape.
 - `GET /api/courses/:courseId/preview/los/:loId/materials/:materialId/source`
-  — Instructor-gated remediation source with the same course/LO assignment
+  — teaching-team-gated remediation source with the same course/LO assignment
   checks as Student mode.
 
 The response shapes match their Student equivalents. Preview attempts replay
@@ -525,11 +555,12 @@ and remediation links remain usable.
 
 Isolation is structural rather than a client-controlled `preview` flag:
 submissions write only `previewAttemptRecords`, while mutable Review Book and
-flag state lives only in `previewStudentSessions`. Both are keyed by Instructor,
-course, and Preview session and expire after 24 hours. Preview never writes live
+flag state lives only in `previewStudentSessions`. Both are keyed by the signed-in
+teaching-team user (the existing stored `instructorPuid` field), course, and
+Preview session and expire after 24 hours. Preview never writes live
 attempt, mastery, Review Book, summary, progression, or analytics collections.
 The `sendToInstructorQueue` TEST option is the sole exception, and since
-2026-08-08 the Preview UI sends it on every flag — so a Preview walkthrough
+2026-08-08 the Instructor/Admin Preview UI sends it on every flag — so their Preview walkthrough
 that flags a question always writes one live instructor-queue flag and one
 staff notification. It never adds a student-flag label, contributes to
 auto-pause, or notifies a real student, and it leaves every other live
@@ -644,6 +675,12 @@ operation writes an audit entry.
 
 - `GET /api/admin/directory?q=&role=&courseId=` — searchable user directory
   with course roles and deactivation state.
+- `GET /api/admin/courses` →
+  `[{ _id, name, courseCode, section?, term, lifecycle: 'draft' | 'published' | 'archived' }]`
+  — minimal all-course identities for Admin role assignment, including archived
+  courses; sorted by term descending, then course code, section and name. This
+  does not change the Instructor-scoped `GET /api/courses` contract and never
+  returns registration codes or private course settings.
 - `PUT|DELETE /api/admin/users/:puid/courses/:courseId/roles/:role` — assign or
   remove a Student, Instructor, or TA role. Removing a course's final Instructor
   first returns `409 { warning: 'orphans-course' }`; repeat the DELETE with
@@ -811,3 +848,62 @@ Structure-generation compact run summaries also expose optional `progressMessage
 reference-repair progress without fetching full event history. Full run snapshots
 retain their existing event history. Extraction uses server-numbered passage IDs;
 `structureResult.evidence[].quote` remains the exact resolved original passage.
+
+## Course sharing and collaborative question drafts
+
+Course sharing requires a real Instructor role in the course, or Admin. Only
+its owner/Admin can manage members. Sharing never grants platform-wide course
+creation permission. An owner/Admin can enter either a CWL login name or UBC
+email. CWL must resolve to an existing User; email may remain pending and match
+the canonical email saved by SAML on first login. Grants persist the canonical
+PUID after activation. No email delivery is performed.
+
+- `GET /api/courses/:courseId/instructors` → `{ courseId, courseName, courseCode,
+  section?, term, ownerPuid, canManage, members, invitations }`.
+- `POST /api/courses/:courseId/instructor-invitations { identifier }` → same
+  summary. `identifier` accepts CWL or UBC email. Known users activate
+  immediately; an unknown UBC email remains pending until first login. Unknown
+  CWL returns `404 course-sharing-cwl-not-found`. The legacy `{ email }` body is
+  accepted for compatibility.
+- `DELETE /api/courses/:courseId/instructor-invitations/:invitationId` → summary.
+- `DELETE /api/courses/:courseId/instructors/:puid` → summary; owner removal409.
+  Revocation removes share-derived access on the next authenticated request,
+  including already-open collaborative streams. Other course roles are retained.
+
+Below, `D` is `/api/courses/:courseId/questions/:questionId/draft`. These routes
+require real Instructor/Admin authoring capability, reject archived resources,
+validate both resource ids together, and re-read permissions for every request
+and stream tick. Teaching-role previews do not confer permissions.
+
+- `GET D` → snapshot `{ state, revision, baseVersionId, currentVersionId,
+  questionType, optionKeys, conflict, committing, updatedAt, collaborators }`.
+  `state` is a base64 Yjs document; ordered `optionKeys` and `questionType` come
+  from its persisted base version, even after an external schema change.
+- `POST D/updates { update }` → snapshot. Base64 incremental Yjs updates merge
+  under a Mongo compare-and-set and are safe to retry after a lost response.
+  Inputs are bounded to90000 base64 characters and durable state to2MB.
+- `GET D/events` → authenticated SSE `snapshot` events from durable state.
+  Streams re-read at one-second intervals across processes. Auth/lifecycle
+  failures send `unavailable` then close; transient failures reconnect normally.
+- `PUT D/presence { clientId: UUID, field }` →204. Identity/name come from the
+  session; presence expires after30 seconds, with ten-second browser heartbeats.
+- `DELETE D/presence/:clientId` →204; only that session user's presence is removed.
+- `POST D/commit { expectedRevision, requestId: UUID }` → `{ versionId }`.
+  Saves one validated immutable version and moves it to Pending Review. Numeric
+  answers are verified against the stored formulas; shared drafts never approve
+  or publish themselves. A short persisted lease protects the submitted snapshot.
+  Private version journal markers recover interrupted head/draft updates; retries
+  use the same request id. Existing attempts retain their original versions.
+- `POST D/rebase { expectedRevision, expectedVersionId }` → snapshot. After an
+  explicit side-by-side comparison, retains the shared content against the newly
+  confirmed saved baseline. Both revisions must match. Different question types
+  or option keys require manual merge in the full editor; download preserves all
+  original draft fields. No automatic overwrite or destructive reset occurs.
+
+The browser's `Edit together` action is available from Bank, Review and question
+details. Text uses shared CRDT fields; difficulty/answer-role choices use shared
+map values and are validated together at commit. Unsynced changes remain in the
+open tab with retry, download and leave protection. This is not a promise of
+browser-crash/offline-disk recovery or simultaneous binary-file editing. Course,
+Theme, LO and material forms use revision conflicts rather than text merging;
+explicit roster/lifecycle actions retain their existing action contracts.

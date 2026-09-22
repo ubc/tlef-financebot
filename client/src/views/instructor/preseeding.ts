@@ -32,11 +32,7 @@ import { attachTutorial } from '../../tutorials.js';
 // `loId` (client-side join, same "no server change" approach as
 // bank.ts/review-queue.ts's own `topicLoLabel`).
 //
-// No `count` field: `generateQuestions` accepts an optional `count` (1-20,
-// server defaults to 3), but the Task G brief's field list for this form is
-// Target LO / Question Type / Difficulty / custom prompt only — `count` is
-// left to the server default rather than adding a field the brief and I12
-// screenshot don't show.
+// Question count is part of the saved recipe and is restored with the setup.
 import {
   ApiError,
   createGenerationBlueprint,
@@ -555,7 +551,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
       const created = await createGenerationBlueprint(courseId, {
         name,
         loId: formLoId,
-        count: 3,
+        count: formCount,
         type: formType,
         difficulty: formDifficulty,
         prompt: prompt || undefined,
@@ -758,6 +754,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
             formLoId = selected.loId;
             formSecondaryLoIds = [];
             formType = selected.type;
+            formCount = selected.count;
             formDifficulty = selected.difficulty ?? 'medium';
             promptTextarea.value = selected.prompt ?? '';
             blueprintNameInput.value = selected.name;

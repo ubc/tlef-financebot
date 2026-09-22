@@ -20,6 +20,9 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 // way materials.service.test.ts / generation.service.test.ts mock it, so
 // importing notifications.service.ts never requires a started Agenda.
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), scheduleRecurring: jest.fn() }));
+jest.mock('../../server/src/services/course-sharing.service', () => ({
+  activeSharedInstructorPuids: jest.fn(async () => []),
+}));
 
 import {
   notify,
@@ -31,6 +34,7 @@ import {
   dismissAllNotifications,
 } from '../../server/src/services/notifications.service';
 import type { Course, User, Notification } from '../../server/src/types/domain';
+import { activeSharedInstructorPuids } from '../../server/src/services/course-sharing.service';
 
 const notificationsInsertOne = jest.fn();
 const notificationsFind = jest.fn();
@@ -126,6 +130,18 @@ function staffUser(puid: string, role: 'instructor' | 'ta', courseId: ObjectId):
 // --- notifyCourseStaff ------------------------------------------------------
 
 describe('notifyCourseStaff', () => {
+  it('includes shared co-instructors using the same authoritative course grants', async () => {
+    const courseId = new ObjectId();
+    jest.mocked(activeSharedInstructorPuids).mockResolvedValueOnce(['SHARED']);
+    usersFindToArray.mockResolvedValue([{ puid: 'OWNER' }, { puid: 'SHARED' }]);
+    await notifyCourseStaff(courseId, { kind: 'flag', priority: 'standard', body: 'A question was flagged.' });
+    expect(usersFind).toHaveBeenCalledWith({ $or: [
+      { courseRoles: { $elemMatch: { courseId, role: { $in: ['instructor', 'ta'] } } } },
+      { puid: { $in: ['SHARED'] }, deactivatedAt: { $exists: false } },
+    ] }, { projection: { puid: 1 } });
+    expect(notificationsInsertOne.mock.calls.map(([doc]) => doc.recipientPuid)).toEqual(['OWNER', 'SHARED']);
+  });
+
   it('1. flag emission targets exactly the course staff (instructor + TA), one notification each', async () => {
     const courseId = new ObjectId();
     const instructor = staffUser('PUID-INSTR-0001', 'instructor', courseId);

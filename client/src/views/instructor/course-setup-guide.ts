@@ -482,7 +482,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
                   save.disabled = cancel.disabled = input.disabled = true;
                   setButtonBusy(save, true);
                   try {
-                    const updated = await updateLo(lo._id, { name: input.value.trim() });
+                    const updated = await updateLo(lo._id, { name: input.value.trim() }, lo.revision ?? 0);
+                    lo.revision = updated.revision;
                     lo.name = updated.name;
                     notifyChanged();
                     if (closed || revision !== screenRevision) return;
@@ -1725,7 +1726,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
             {},
             el('li', { text: 'Only Approved questions and available content are visible.' }),
             el('li', { text: 'Course wording, navigation, practice, explanations, and remediation feel clear.' }),
-            el('li', { text: 'You can exit Preview at any time and return to this course project.' }),
+            el('li', { text: 'Use the role menu at any time to return to this course project.' }),
           ),
         ),
       ),

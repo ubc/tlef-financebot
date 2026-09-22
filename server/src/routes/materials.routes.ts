@@ -57,7 +57,7 @@ const materialKind = z.enum([
   'reference',
   'other',
 ]);
-const materialMetadataBody = z.object({ kind: materialKind });
+const materialMetadataBody = z.object({ kind: materialKind, expectedRevision: z.number().int().nonnegative() });
 
 function publicMaterial<T extends { storagePath?: string }>(material: T): Omit<T, 'storagePath'> {
   const safe = { ...material };
@@ -68,10 +68,11 @@ function publicMaterial<T extends { storagePath?: string }>(material: T): Omit<T
 const urlMaterialBody = z.object({ url: z.string().url() });
 
 const assignmentsBody = z.object({
+  expectedRevision: z.number().int().nonnegative(),
   assignments: z.array(z.object({ themeId: objectIdParam, loId: objectIdParam.optional() })),
 });
 
-const classificationBody = z.object({ action: z.enum(['accept', 'reject']) });
+const classificationBody = z.object({ action: z.enum(['accept', 'reject']), expectedRevision: z.number().int().nonnegative() });
 const applySuggestedHierarchyBody = z.object({
   themes: z
     .array(
@@ -308,6 +309,7 @@ materialsRouter.patch(
         new ObjectId(String(req.params.courseId)),
         new ObjectId(String(req.params.materialId)),
         (req.body as z.infer<typeof materialMetadataBody>).kind,
+        (req.body as z.infer<typeof materialMetadataBody>).expectedRevision,
       ),
     );
   },
@@ -337,13 +339,14 @@ materialsRouter.put(
   validate({ body: assignmentsBody }),
   async (req, res) => {
     const materialId = new ObjectId(String(req.params.materialId));
-    const { assignments } = req.body as z.infer<typeof assignmentsBody>;
+    const { assignments, expectedRevision } = req.body as z.infer<typeof assignmentsBody>;
     const material = await assignMaterial(
       materialId,
       assignments.map((a) => ({
         themeId: new ObjectId(a.themeId),
         ...(a.loId ? { loId: new ObjectId(a.loId) } : {}),
       })),
+      expectedRevision,
     );
     res.json(material);
   },
@@ -365,8 +368,8 @@ materialsRouter.post(
   validate({ body: classificationBody }),
   async (req, res) => {
     const materialId = new ObjectId(String(req.params.materialId));
-    const { action } = req.body as z.infer<typeof classificationBody>;
-    res.json(await resolveClassification(materialId, action));
+    const { action, expectedRevision } = req.body as z.infer<typeof classificationBody>;
+    res.json(await resolveClassification(materialId, action, expectedRevision));
   },
 );
 

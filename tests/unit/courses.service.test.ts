@@ -62,6 +62,7 @@ beforeEach(() => {
   coursesFind.mockReset();
   coursesToArray.mockReset();
   coursesUpdateOne.mockReset();
+  coursesUpdateOne.mockResolvedValue({ matchedCount: 1 });
   usersUpdateOne.mockReset();
   themesFind.mockReset();
   themesSort.mockReset();
@@ -265,6 +266,7 @@ describe('updateCourse (IN-S02: term dates)', () => {
           updatedAt: expect.any(Date),
         },
         $unset: { section: '' },
+        $inc: { revision: 1 },
       },
     );
     expect(updated.section).toBeUndefined();
@@ -353,14 +355,14 @@ describe('updateTheme — release date (theme-release.ts)', () => {
     await updateTheme(themeId, { name: 'T', availableFrom: released });
     expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
       { _id: themeId },
-      { $set: { name: 'T', availableFrom: released } },
+      { $set: { name: 'T', availableFrom: released }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
 
     await updateTheme(themeId, { availableFrom: null });
     expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
       { _id: themeId },
-      { $set: {}, $unset: { availableFrom: '' } },
+      { $set: {}, $unset: { availableFrom: '' }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
 
@@ -368,7 +370,7 @@ describe('updateTheme — release date (theme-release.ts)', () => {
     await updateTheme(themeId, { name: 'Renamed' });
     expect(themesFindOneAndUpdate).toHaveBeenLastCalledWith(
       { _id: themeId },
-      { $set: { name: 'Renamed' } },
+      { $set: { name: 'Renamed' }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
   });
@@ -447,6 +449,7 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
           lifecycle: 'published',
           updatedAt: expect.any(Date),
         },
+        $inc: { revision: 1 },
       },
     );
     expect(course.published).toBe(true);
@@ -477,6 +480,7 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
         updatedAt: expect.any(Date),
       },
       $unset: { archivedAt: '' },
+      $inc: { revision: 1 },
     });
   });
 });
@@ -543,5 +547,79 @@ describe('putRoster (ST-E02)', () => {
     expect(count).toBe(0);
     expect(rosterDeleteMany).toHaveBeenCalledWith({ courseId });
     expect(rosterBulkWrite).not.toHaveBeenCalled();
+  });
+});
+
+describe('authoring concurrency', () => {
+  it('allows one course save from a shared baseline and preserves the winning fields', async () => {
+    const courseId = new ObjectId();
+    let saved = { _id: courseId, name: 'Original', term: '2026W1', published: false, revision: 4 };
+    coursesFindOne.mockImplementation(async () => ({ ...saved }));
+    coursesUpdateOne.mockImplementation(async (filter, update) => {
+      if (filter.revision !== saved.revision) return { matchedCount: 0 };
+      saved = { ...saved, ...update.$set, revision: saved.revision + update.$inc.revision };
+      return { matchedCount: 1 };
+    });
+
+    const results = await Promise.allSettled([
+      updateCourse(courseId, { name: 'First instructor' }, 4),
+      updateCourse(courseId, { name: 'Second instructor', term: '2027W1' }, 4),
+    ]);
+
+    expect(results[0]).toMatchObject({ status: 'fulfilled', value: { name: 'First instructor', revision: 5 } });
+    expect(results[1]).toMatchObject({ status: 'rejected', reason: { status: 409 } });
+    expect(saved).toMatchObject({ name: 'First instructor', term: '2026W1', revision: 5 });
+  });
+
+  it('treats a legacy missing revision as zero only for the first human save', async () => {
+    const courseId = new ObjectId();
+    coursesFindOne.mockResolvedValue({ _id: courseId, name: 'Legacy', published: false });
+    await expect(updateCourse(courseId, { name: 'Edited' }, 0)).resolves.toMatchObject({ revision: 1 });
+    expect(coursesUpdateOne.mock.calls[0][0]).toEqual({
+      _id: courseId, $or: [{ revision: 0 }, { revision: { $exists: false } }],
+    });
+    coursesFindOne.mockResolvedValue({ _id: courseId, name: 'Edited', revision: 1 });
+    await expect(updateCourse(courseId, { name: 'Stale' }, 0)).rejects.toMatchObject({ status: 409 });
+    expect(coursesUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a topic edit after another author archived or updated it', async () => {
+    themesFindOneAndUpdate.mockResolvedValue(null);
+    await expect(updateTheme(new ObjectId(), { name: 'My draft' }, 3)).rejects.toMatchObject({ status: 409 });
+    expect(themesFindOneAndUpdate.mock.calls[0][0]).toMatchObject({ revision: 3, archivedAt: { $exists: false } });
+  });
+
+  it('keeps simultaneous outline applies apart and releases the lease for a retry', async () => {
+    const courseId = new ObjectId();
+    const themeId = new ObjectId();
+    const loId = new ObjectId();
+    let token: string | undefined;
+    coursesUpdateOne.mockImplementation(async (filter, update) => {
+      if (update.$set?.outlineApplyLease) {
+        if (token) return { matchedCount: 0 };
+        token = update.$set.outlineApplyLease.token;
+      } else {
+        if (filter['outlineApplyLease.token'] !== token) return { matchedCount: 0 };
+        if (update.$unset) token = undefined;
+      }
+      return { matchedCount: 1 };
+    });
+    let finishRead!: (value: unknown[]) => void;
+    themesToArray.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    losToArray.mockResolvedValue([{ _id: loId, themeId, courseId, name: 'Explain cash flow' }]);
+    const input = { themes: [{ name: 'Foundations', los: ['Explain cash flow'] }] };
+    const first = upsertCourseOutline(courseId, input);
+    // Acquisition is asynchronous; the first hierarchy read starts on the next turn.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(upsertCourseOutline(courseId, input)).rejects.toMatchObject({ status: 409 });
+    expect(themesToArray).toHaveBeenCalledTimes(1);
+    const existing = [{ _id: themeId, courseId, name: 'Foundations' }];
+    finishRead(existing);
+    await expect(first).resolves.toMatchObject({ themesCreated: 0, losCreated: 0 });
+    expect(token).toBeUndefined();
+    themesToArray.mockResolvedValue(existing);
+    await expect(upsertCourseOutline(courseId, input)).resolves.toMatchObject({ themesCreated: 0, losCreated: 0 });
+    expect(themesInsertOne).not.toHaveBeenCalled();
+    expect(losInsertOne).not.toHaveBeenCalled();
   });
 });

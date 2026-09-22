@@ -62,7 +62,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Exam Templates', path: '/instructor/course/:id/exam-templates', glyph: '▤' },
       { label: 'Teaching Assistants', path: '/instructor/course/:id/tas', glyph: '♙' },
       { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙' },
-      { label: 'Co-instructors', path: null, disabled: true, glyph: '+' },
+      { label: 'Co-instructors', path: '/instructor/course/:id/co-instructors', glyph: '+' },
     ],
   },
 ];

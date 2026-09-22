@@ -6,8 +6,9 @@ import { attachTutorial } from '../../tutorials.js';
 // (node-ids `194:2` / `198:2`).
 import { ApiError, createCourse, listInstructorCourses, type InstructorCourse } from '../../api.js';
 import { getSession } from '../../auth.js';
+import { courseCard } from '../../course-card.js';
 import { el, mount } from '../../dom.js';
-import { pageHeader, statusBadge } from '../../instructor-ui.js';
+import { pageHeader } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import {
@@ -61,48 +62,20 @@ function courseHref(courseId: string): string {
   return `#/instructor/course/${encodeURIComponent(courseId)}`;
 }
 
-function courseTone(course: InstructorCourse): number {
-  const seed = `${course.courseCode}${course.section ?? ''}`;
-  return [...seed].reduce((total, character) => total + character.charCodeAt(0), 0) % 6;
-}
-
-function courseCard(course: InstructorCourse): HTMLElement {
+function instructorCourseCard(course: InstructorCourse): HTMLElement {
   const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
   const label = lifecycle === 'archived' ? 'Archived' : lifecycle === 'published' ? 'Published' : 'Sandbox';
-  return el(
-    'a',
-    {
-      class: `course-card course-card--tone-${courseTone(course)}`,
-      href: courseHref(course._id),
-      'aria-label': `Open ${course.courseCode} ${course.name}`,
+  return courseCard({
+    courseCode: course.courseCode,
+    name: course.name,
+    term: course.term,
+    section: course.section,
+    href: courseHref(course._id),
+    status: {
+      label,
+      variant: lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral',
     },
-    el(
-      'div',
-      { class: 'course-card__cover' },
-      el('span', { class: 'course-card__code', text: course.courseCode }),
-      statusBadge(label, lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral'),
-      el('span', {
-        class: 'course-card__monogram',
-        'aria-hidden': 'true',
-        text: course.courseCode.split(/\s+/).map((part) => part[0]).join('').slice(0, 3),
-      }),
-    ),
-    el(
-      'div',
-      { class: 'course-card__main' },
-      el('h3', { class: 'course-card__title', text: course.name }),
-      el('p', {
-        class: 'course-card__meta',
-        text: [course.term, course.section ? `Section ${course.section}` : ''].filter(Boolean).join(' · '),
-      }),
-    ),
-    el(
-      'div',
-      { class: 'course-card__footer' },
-      el('span', { text: 'Course project' }),
-      el('strong', { text: 'Open →' }),
-    ),
-  );
+  });
 }
 
 /** My Courses (N1): the instructor's courses, or an empty state when they
@@ -115,7 +88,7 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
   const body = el('div', {}, loadingState('Loading your courses…'));
   const root = el(
     'div',
-    { class: 'view' },
+    { class: 'view view--course-projects' },
     pageHeader(
       'My Courses',
       canCreateCourse
@@ -170,7 +143,7 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
       resultCount.textContent = `${visible.length} project${visible.length === 1 ? '' : 's'}`;
       grid.replaceChildren(
         ...(visible.length
-          ? visible.map(courseCard)
+          ? visible.map(instructorCourseCard)
           : [el('div', { class: 'course-projects__empty' }, emptyState('No course projects match this search.'))]),
       );
     }
@@ -229,7 +202,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
       outlet,
       el(
         'div',
-        { class: 'view' },
+        { class: 'view view--course-projects' },
         pageHeader('Create Course', ''),
         errorState('Platform Instructor access is required to create a course.'),
       ),
@@ -239,7 +212,7 @@ export async function renderCreateCourse(outlet: HTMLElement): Promise<void> {
 
   const root = el(
     'div',
-    { class: 'view' },
+    { class: 'view view--course-projects' },
     pageHeader('Create Course', "Set up a new course. You'll configure Topics, materials, and questions next."),
   );
   mount(outlet, root);

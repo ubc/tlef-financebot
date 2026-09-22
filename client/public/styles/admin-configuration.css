@@ -1,0 +1,71 @@
+/* Compact administration editors; all values are backed by the existing Admin APIs. */
+.admin-configuration .ac-config-inspector:empty{display:none}
+.admin-configuration .ac-config-inspector{display:contents}
+.admin-configuration .ac-config-content{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.admin-configuration .ac-config-pane{display:flex;flex-direction:column;flex:1;min-height:0}
+.admin-configuration .ac-config-intro{padding:17px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.admin-configuration .ac-config-intro h2{display:flex;align-items:center;gap:7px;font-size:14px;margin:0}
+.admin-configuration .ac-config-intro p{font-size:12px;color:var(--muted);margin:5px 0 0}
+.admin-configuration .ac-config-intro--actions{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.admin-configuration .ac-config-status:has(.form-status:empty){display:none}
+.admin-configuration .ac-config-status{padding:7px 14px;border-top:1px solid var(--border);font-size:12px}
+.admin-configuration .ac-config-scope{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;padding:9px 14px;margin:0;border-bottom:1px solid var(--border)}
+.admin-configuration .ac-config-scope strong{font-size:10px;overflow-wrap:anywhere}
+.admin-configuration .ac-course-scope{max-width:205px!important;min-width:130px!important;font-family:var(--mono)}
+.admin-configuration .ac-toolbar .input[type=search]{flex:1;min-width:140px}
+.admin-configuration .ac-capability-table{table-layout:fixed;width:100%;min-width:0}
+.admin-configuration .ac-capability-table th:first-child{width:44%}
+.admin-configuration .ac-capability-table th:not(:first-child),.admin-configuration .ac-capability-table td:not(:first-child){text-align:center}
+.admin-configuration .ac-capability-table td{height:50px}
+.admin-configuration .ac-capability-name{white-space:normal;overflow-wrap:anywhere;line-height:1.4;text-align:left}
+.admin-configuration .ac-capability-cell{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.admin-configuration .ac-capability-cell input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.admin-configuration .ac-capability-cell small{font-size:10px;color:var(--muted);line-height:1.3;overflow-wrap:anywhere;max-width:100%}
+.admin-configuration .ac-capability-cell:has(input:disabled){cursor:default}
+.admin-configuration .ac-capability-table .is-changed{background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.admin-configuration .ac-cell-secondary{display:block;font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}
+.admin-configuration .ac-config-save-status{font-size:12px;font-weight:600;min-width:0}
+.admin-configuration .ac-config-key{display:block;font:12px var(--mono);padding:10px;border:1px solid var(--border);background:var(--surface-2);border-radius:6px;overflow-wrap:anywhere}
+.admin-configuration .ac-config-roles{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.admin-configuration .ac-config-roles>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-bottom:1px solid var(--border)}
+.admin-configuration .ac-config-roles>div:last-child{border-bottom:0}
+.admin-configuration .ac-config-roles strong{font-size:12px}
+.admin-configuration .ac-config-roles small{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+.admin-configuration .ac-config-roles select{width:105px;min-width:105px!important}
+.admin-configuration .ac-config-precedence{padding-left:23px;font-size:12px;color:var(--muted)}
+.admin-configuration .ac-config-precedence li{padding:5px 0}
+.admin-configuration .ac-panel h3{font-size:12px;margin:22px 0 10px}
+.admin-configuration .ac-panel-body .ac-note{margin:0 0 16px;line-height:1.7}
+.admin-configuration .ac-config-profile{padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);font-size:12px;margin:16px 0}
+.admin-configuration .ac-config-profile p{margin:5px 0 0;color:var(--muted);line-height:1.65}
+.admin-configuration .ac-config-fields{display:grid;gap:15px}
+.admin-configuration .ac-config-model-id{font-size:12px;overflow-wrap:anywhere;max-width:230px;white-space:normal}
+.admin-configuration .ac-pipeline-table td{height:68px}
+.admin-configuration .ac-pipeline-table th:first-child{width:27%}
+.admin-configuration .ac-config-parameter{font-size:12px;color:var(--muted)}
+.admin-configuration .ac-config-pane>.ac-note{padding:12px 18px;border-top:1px solid var(--border);margin:0;font-size:12px;line-height:1.65}
+.admin-configuration .ac-config-setting-list{margin:18px;border:1px solid var(--border);border-radius:7px;overflow:hidden;flex-shrink:0}
+.admin-configuration .ac-config-setting{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:22px 17px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
+.admin-configuration .ac-config-setting:last-child{border-bottom:0}
+.admin-configuration .ac-config-setting small{display:block;color:var(--muted);font-size:12px;line-height:1.6;margin-top:5px;max-width:650px}
+.admin-configuration .ac-config-setting>input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0;margin:0}
+.admin-configuration .ac-config-setting>input[type=number]{width:125px!important;min-width:90px!important;flex-shrink:0}
+.admin-configuration .ac-config-warning{color:var(--instr-amber-fg);background:var(--instr-amber-bg)}
+.admin-configuration .ac-config-errors,.ac-config-dialog .ac-config-errors{font-size:12px;color:var(--err-fg);background:var(--err-bg);padding:9px 14px;margin:0;line-height:1.6}
+.ac-config-dialog .ac-config-errors:empty{display:none}
+.admin-configuration .ac-config-empty{display:flex;flex:1;min-height:200px;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:25px;color:var(--muted);font-size:12px}
+.admin-configuration .ac-config-empty h3{font-size:15px;color:var(--text);margin:0 0 9px}
+.admin-configuration .ac-config-empty p{max-width:380px;margin:0;line-height:1.7}
+.ac-config-dialog .form-field{margin:15px 0}.ac-config-dialog .ac-note{font-size:12px;color:var(--muted);line-height:1.7}
+body:has(.admin-configuration) .app-dialog__message{white-space:pre-line;max-height:55vh;overflow:auto}
+@media(max-width:1000px){.admin-configuration .ac-capability-table th:first-child{width:40%}.admin-configuration .ac-capability-table th,.admin-configuration .ac-capability-table td{padding-left:8px;padding-right:8px}.admin-configuration .ac-config-scope{align-items:flex-start}.admin-configuration .ac-config-scope strong{max-width:180px;text-align:right}}
+@media(max-width:680px){.admin-configuration .ac-toolbar{flex-wrap:wrap}.admin-configuration .ac-toolbar>select{max-width:130px}.admin-configuration .ac-course-scope{flex:1;max-width:none!important}.admin-configuration .ac-toolbar .input[type=search]{flex-basis:55%}.admin-configuration .ac-capability-table th:first-child{width:40%}.admin-configuration .ac-capability-table th{font-size:10px;padding:8px 4px}.admin-configuration .ac-capability-table td{padding:7px 4px}.admin-configuration .ac-capability-cell small{font-size:9px}.admin-configuration .ac-capability-name{font-size:11px}.admin-configuration .ac-config-save-status{font-size:11px}.admin-configuration .ac-config-scope{font-size:10px;line-height:1.6;gap:10px}.admin-configuration .ac-config-intro{padding:13px 12px}.admin-configuration .ac-config-intro h2{font-size:13px}.admin-configuration .ac-config-intro p{font-size:11px}.admin-configuration .ac-config-setting-list{margin:12px}.admin-configuration .ac-config-setting{padding:17px 12px}.admin-configuration .ac-config-setting small{font-size:11px}.admin-configuration .ac-config-pane>.ac-note{padding:12px;font-size:11px}.admin-configuration .ac-config-parameter{display:none}.admin-configuration .ac-pipeline-table th:nth-child(3){display:none}.admin-configuration .ac-pipeline-table th:first-child{width:37%}.admin-configuration .ac-config-model-id{font-size:10px}.admin-configuration .ac-pipeline-table td{padding:8px;line-height:1.5}.admin-configuration .ac-cell-secondary{font-size:10px}.admin-configuration .ac-config-intro--actions{gap:8px}.admin-configuration .ac-config-intro--actions>div{min-width:0}.admin-configuration .ac-config-intro--actions>button{flex-shrink:0}}
+.admin-configuration .ac-link{font:inherit;font-weight:550;color:var(--text);border:0;background:none;padding:0;cursor:pointer;text-align:left;line-height:1.5}
+.admin-configuration .ac-link:hover{color:var(--accent)}
+.admin-configuration .ac-metric small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-configuration .ac-config-setting-list~.ac-note{border-top:0}
+/* Keep tutorial anchors without inheriting the previous stacked editor layouts. */
+.admin-configuration .admin-toolbar{margin:0;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;align-items:center;flex-direction:row}
+.admin-configuration .admin-save-bar{margin:0}
+.admin-configuration .admin-save-bar .btn{width:auto}
+.admin-configuration .admin-step-list{gap:0;align-items:stretch}

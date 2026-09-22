@@ -10,6 +10,12 @@ interface Journey { courseId: string; step: number; collapsed: boolean }
 let journey: Journey | undefined;
 let owner = '';
 let host: HTMLElement | undefined;
+let guideResize: ResizeObserver | undefined;
+function measureGuide(): void {
+  const island = host?.firstElementChild;
+  const height = island ? Math.ceil(island.getBoundingClientRect().height) + 40 : 0;
+  document.body.style.setProperty('--setup-guide-space', `${height}px`);
+}
 let summary: InstructorWorkflowSummary | undefined;
 let released = false;
 let error = '';
@@ -47,24 +53,35 @@ function details(): string[] {
     `${c.totalQuestions} questions · ${c.activeGenerationRuns} active runs. Start generation on this page.`,
     `${c.reviewQueue} awaiting review · ${c.approvedQuestions} approved. Review answers before approving.`,
     released ? 'Approved, checked questions are ready for preview. Live access also requires a published course.' : 'Approve a question, then release its topics in Manage topic releases. Content checks must pass.',
-    'Use the isolated Student Preview, then exit preview to return here. No live student records are affected.' ];
+    'Use the isolated Student Preview, then return through the role menu. No live student records are affected.' ];
 }
 function go(step: number): void {
   if (!journey) return;
-  journey.step = Math.max(0, Math.min(5, step)); save();
-  if (step === 5) {
-    if (!released) { journey.step = 4; save(); location.hash = `${base()}/bank`; draw(); return; }
+  const nextStep = Math.max(0, Math.min(5, step));
+  if (nextStep === 5) {
+    if (!released) { location.hash = `${base()}/bank`; return; }
     startAnonymousPreview(journey.courseId);
     location.hash = `/preview/course/${encodeURIComponent(journey.courseId)}`;
-  } else location.hash = `${base()}/${routes[journey.step]}`;
-  draw();
+  } else location.hash = `${base()}/${routes[nextStep]}`;
+  // Persist the new step only after the router accepts navigation.
+  // Cancelling an unsaved-edit prompt must leave the guide on this page.
 }
 function stop(): void { journey = undefined; revision++; pending = false; save(); draw(); }
 function draw(): void {
   clearSidebar();
   document.body.classList.toggle('has-setup-journey', visible());
-  if (!host?.isConnected) { rendered = ''; host = el('div', { id: 'setup-journey' }); document.body.append(host); }
-  if (!visible()) { host.replaceChildren(); rendered = ''; return; }
+  if (!host?.isConnected) {
+    rendered = '';
+    host = el('div', { id: 'setup-journey' });
+    document.body.append(host);
+    guideResize ??= new ResizeObserver(measureGuide);
+    new MutationObserver(() => {
+      guideResize?.disconnect();
+      if (host?.firstElementChild) guideResize?.observe(host.firstElementChild);
+      measureGuide();
+    }).observe(host, { childList: true });
+  }
+  if (!visible()) { guideResize?.disconnect(); document.body.style.removeProperty('--setup-guide-space'); host.replaceChildren(); rendered = ''; return; }
   const j = journey!;
   const done = completions();
   routes.forEach((route, index) => {
@@ -135,6 +152,7 @@ async function refresh(): Promise<void> {
   finally { if (revision === token) { pending = false; draw(); if (refreshAgain) { refreshAgain = false; void refresh(); } } }
 }
 function onRoute(): void {
+  if (journey && path() === `/preview/course/${encodeURIComponent(journey.courseId)}`) { journey.step = 5; save(); }
   if (journey && visible()) {
     const suffix = path().slice(base().length + 1).split('/')[0]; const index = routes.indexOf(suffix);
     if (index >= 0) journey.step = index;

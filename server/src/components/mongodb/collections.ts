@@ -1,3 +1,6 @@
+import type { OperationEvent } from '../../types/domain';
+import type { CourseInstructorShare } from '../../types/course-sharing';
+import type { QuestionDraft, QuestionPresence } from '../../types/collaboration';
 import type { Collection, Document, ObjectId, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
@@ -48,6 +51,12 @@ export const platformSettingsCol = (): Collection<PlatformSettings> =>
 export const tutorialProgressCol = (): Collection<TutorialProgress> =>
   getDb().collection<TutorialProgress>('tutorialProgress');
 
+export const operationEventsCol = (): Collection<OperationEvent> => getDb().collection<OperationEvent>('operationEvents');
+export const courseInstructorSharesCol = (): Collection<CourseInstructorShare> =>
+  getDb().collection<CourseInstructorShare>('courseInstructorShares');
+export const questionDraftsCol = (): Collection<QuestionDraft> => getDb().collection<QuestionDraft>('questionDrafts');
+export const questionPresenceCol = (): Collection<QuestionPresence> => getDb().collection<QuestionPresence>('questionPresence');
+
 export interface IndexSpec {
   collection: string;
   keys: IndexSpecification;
@@ -56,6 +65,20 @@ export interface IndexSpec {
 
 /** Exported for tests; applied by ensureIndexes(). */
 export const INDEX_SPECS: IndexSpec[] = [
+  { collection: 'questionDrafts', keys: { questionId: 1 }, options: { unique: true } },
+  { collection: 'questionPresence', keys: { questionId: 1, clientId: 1, puid: 1 }, options: { unique: true } },
+  { collection: 'questionPresence', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: 'courseInstructorShares', keys: { courseId: 1, email: 1 }, options: { unique: true } },
+  { collection: 'courseInstructorShares', keys: { status: 1, recipientPuid: 1 } },
+  { collection: 'courseInstructorShares', keys: { status: 1, email: 1 } },
+  { collection: 'operationEvents', keys: { requestId: 1 }, options: { unique: true } },
+  { collection: 'operationEvents', keys: { createdAt: -1, _id: -1 } },
+  { collection: 'operationEvents', keys: { 'actor.puid': 1, createdAt: -1 } },
+  { collection: 'operationEvents', keys: { outcome: 1, createdAt: -1 } },
+  { collection: 'operationEvents', keys: { 'targets.courseId': 1, createdAt: -1 } },
+  { collection: 'contentRuns', keys: { operationId: 1 } },
+  { collection: 'contentRuns', keys: { requestedBy: 1, createdAt: -1 } },
+
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'platformInstructorPuidGrants', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },

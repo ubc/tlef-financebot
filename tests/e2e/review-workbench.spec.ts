@@ -114,6 +114,26 @@ for (const mode of ['desktop', 'mobile-dark']) test(`${mode} layout, keyboard bo
   await expect(page.getByRole('button', { name: 'Open question board' })).toBeFocused();
 });
 
+test('laptop layout keeps decisions docked while only the question content scrolls', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page);
+  const reader = page.locator('.review-workbench__reader');
+  const body = page.locator('.review-workbench__body');
+  const actions = page.locator('.review-workbench__actions');
+  await body.evaluate(node => { const spacer = document.createElement('div'); spacer.style.height = '1200px'; spacer.style.flex = 'none'; node.append(spacer); });
+  const before = await actions.boundingBox();
+  const readerBox = await reader.boundingBox();
+  expect(before).not.toBeNull();
+  expect(readerBox).not.toBeNull();
+  expect(Math.abs(before!.y + before!.height - (readerBox!.y + readerBox!.height))).toBeLessThanOrEqual(1);
+  expect(await body.evaluate(node => getComputedStyle(node).overflowY)).toBe('auto');
+  await body.evaluate(node => { node.scrollTop = 600; });
+  await expect.poll(() => body.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  const after = await actions.boundingBox();
+  expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1.5);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+});
+
 
 test('reject without a reason and protect unsaved edits while changing questions', async ({ page }) => {
   const state = await setup(page);
@@ -166,3 +186,41 @@ test('no search results differs from an empty queue and can be cleared', async (
   await expect(page.getByLabel('Search review questions')).toHaveValue('');
   await expect(page.locator('.review-workbench__stem')).toContainText('Question 1:');
 });
+
+ test('router keeps unsaved edits on cancellation and permits confirmed navigation', async ({ page }) => {
+   await setup(page);
+   await page.evaluate(async () => {
+     const { startRouter } = await import('/js/router.js');
+     const { renderReviewQueue } = await import('/js/views/instructor/review-queue.js');
+     history.replaceState(null, '', '#/review');
+     Object.assign(window, { shellNavigations: 0 });
+     window.addEventListener('hashchange', event => { if (router.guardNavigation(event)) return; (window as unknown as { shellNavigations: number }).shellNavigations++; });
+     const router = startRouter({ outlet: document.querySelector('main')!, fallback: '/review', routes: [
+       { path: '/review', render: outlet => renderReviewQueue(outlet, { id: 'course' }) },
+       { path: '/bank', render: outlet => { outlet.textContent = 'Bank destination'; } },
+     ] });
+     const link = document.createElement('a'); link.href = '#/bank'; link.textContent = 'Sidebar Bank'; document.body.prepend(link);
+   });
+   await page.getByRole('button', { name: 'Edit', exact: true }).click();
+   await page.getByLabel('Question stem', { exact: true }).fill('Unsaved sidebar edit');
+   await page.getByRole('link', { name: 'Sidebar Bank' }).click();
+   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+   await expect(page).toHaveURL(/#\/review$/);
+   expect(await page.evaluate(() => (window as unknown as { shellNavigations: number }).shellNavigations)).toBe(0);
+   await expect(page.getByLabel('Question stem', { exact: true })).toHaveValue('Unsaved sidebar edit');
+   expect(await page.evaluate(() => { const e = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; })).toBe(true);
+   await page.getByRole('link', { name: 'Sidebar Bank' }).click();
+   await page.getByRole('button', { name: 'Discard edits', exact: true }).click();
+   await expect(page.locator('main')).toHaveText('Bank destination');
+   expect(await page.evaluate(() => { const e = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; })).toBe(false);
+ });
+
+ test('editing invalidates the visible AI assessment immediately', async ({ page }) => {
+   await setup(page);
+   await expect(page.locator('.review-workbench__inspector')).toContainText('AI check · FLAG');
+   await page.getByRole('button', { name: 'Edit', exact: true }).click();
+   await page.getByLabel('Question stem', { exact: true }).fill('Changed meaning of the question');
+   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+   await expect(page.locator('.review-workbench__inspector')).toContainText('AI check unavailable');
+   await expect(page.locator('.review-workbench__inspector')).not.toContainText('AI check · FLAG');
+ });

@@ -1,4 +1,5 @@
 import type { Filter, WithId, ObjectId } from 'mongodb';
+import { randomUUID } from 'node:crypto';
 import { customAlphabet } from 'nanoid';
 import {
   coursesCol,
@@ -17,6 +18,7 @@ import type {
   RosterEntry,
 } from '../types/domain';
 import { isThemeReleased } from './theme-release';
+import { assertEditRevision, editConflict, editRevisionFilter } from './edit-revision';
 
 // -----------------------------------------------------------------------------
 // Courses service (IN-S01/S02/S03, IN-L06): course creation, Theme/LO hierarchy
@@ -38,6 +40,7 @@ export function courseLifecycle(course: Pick<Course, 'published' | 'lifecycle' |
 function normalizeCourse(course: WithId<Course>): WithId<Course> {
   const publicCourse = { ...course };
   delete publicCourse.identityKey;
+  delete publicCourse.outlineApplyLease;
   return { ...publicCourse, lifecycle: courseLifecycle(course) };
 }
 
@@ -177,16 +180,20 @@ export async function updateCourse(
       | 'autoPause'
       | 'reviewBacklogThreshold'
     >
-  > & { section?: string | null },
+  > & { section?: string | null; published?: boolean },
+  expectedRevision?: number,
 ): Promise<WithId<Course>> {
   const course = await getCourse(courseId);
+  assertEditRevision('Course', course, expectedRevision);
+  if (patch.published !== undefined && courseLifecycle(course) === 'archived') throw new Error('course-archived');
   const termStart = patch.termStart ?? course.termStart;
   const termEnd = patch.termEnd ?? course.termEnd;
   if (termStart && termEnd && termEnd <= termStart) {
     throw new Error('term-end-before-start');
   }
   const updatedAt = new Date();
-  const { section, ...setPatch } = patch;
+  const { section, published, ...fields } = patch;
+  const setPatch = { ...fields, ...(published !== undefined ? { published, lifecycle: published ? 'published' as const : 'draft' as const } : {}) };
   const identityChanged = patch.courseCode !== undefined || patch.section !== undefined || patch.term !== undefined;
   const identityKey = identityChanged
     ? courseIdentityKey({
@@ -196,9 +203,10 @@ export async function updateCourse(
       })
     : undefined;
   try {
-    await coursesCol().updateOne(
-      { _id: courseId },
+    const result = await coursesCol().updateOne(
+      { _id: courseId, ...editRevisionFilter(expectedRevision) },
       {
+        $inc: { revision: 1 },
         $set: {
           ...setPatch,
           ...(section !== undefined && section !== null ? { section } : {}),
@@ -208,6 +216,7 @@ export async function updateCourse(
         ...(section === null ? { $unset: { section: '' } } : {}),
       },
     );
+    if (expectedRevision !== undefined && result.matchedCount !== 1) throw editConflict('Course');
   } catch (error) {
     throwCourseWriteError(error);
   }
@@ -216,12 +225,15 @@ export async function updateCourse(
     ...setPatch,
     ...(section === null ? { section: undefined } : section !== undefined ? { section } : {}),
     updatedAt,
+    revision: (course.revision ?? 0) + 1,
   };
 }
 
 /** IN-S03: regenerate the course's registration code. */
 export async function regenerateRegistrationCode(courseId: ObjectId): Promise<string> {
   const code = registrationCode();
+  // This independent action never writes editor-owned fields. Advancing the
+  // editor token here would invalidate the same page's retained settings draft.
   await coursesCol().updateOne({ _id: courseId }, { $set: { registrationCode: code } });
   return code;
 }
@@ -245,14 +257,15 @@ export async function addTheme(
 export async function updateTheme(
   themeId: ObjectId,
   patch: Partial<Pick<Theme, 'name' | 'order'>> & { availableFrom?: Date | null },
+  expectedRevision?: number,
 ): Promise<WithId<Theme>> {
   const { availableFrom, ...rest } = patch;
   const set: Partial<Theme> = { ...rest, ...(availableFrom instanceof Date ? { availableFrom } : {}) };
   const update = availableFrom === null
     ? { $set: set, $unset: { availableFrom: '' as const } }
     : { $set: set };
-  const theme = await themesCol().findOneAndUpdate({ _id: themeId }, update, { returnDocument: 'after' });
-  if (!theme) throw new Error('theme-not-found');
+  const theme = await themesCol().findOneAndUpdate({ _id: themeId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { ...update, $inc: { revision: 1 } }, { returnDocument: 'after' });
+  if (!theme) throw expectedRevision !== undefined ? editConflict('Topic') : new Error('theme-not-found');
   return theme;
 }
 
@@ -276,11 +289,11 @@ export async function archiveTheme(themeId: ObjectId): Promise<WithId<Theme>> {
   const archivedAt = new Date();
   const theme = await themesCol().findOneAndUpdate(
     { _id: themeId },
-    { $set: { archivedAt } },
+    { $set: { archivedAt }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
   if (!theme) throw new Error('theme-not-found');
-  await losCol().updateMany({ themeId, archivedAt: { $exists: false } }, { $set: { archivedAt } });
+  await losCol().updateMany({ themeId, archivedAt: { $exists: false } }, { $set: { archivedAt }, $inc: { revision: 1 } });
   return theme;
 }
 
@@ -348,6 +361,40 @@ function normalizedOutlineName(name: string): string {
   return name.trim().toLocaleLowerCase();
 }
 
+// Serialize bulk apply across server processes. A crashed apply can be retried
+// after expiry; by-name reuse recovers its already-written prefix. Each insert
+// renews ownership so a long apply stops if its lease has been taken over.
+const OUTLINE_LEASE_MS = 5 * 60 * 1000;
+async function withOutlineApplyLease<T>(
+  courseId: ObjectId,
+  apply: (renew: () => Promise<void>) => Promise<T>,
+): Promise<T> {
+  const token = randomUUID();
+  const now = new Date();
+  const acquired = await coursesCol().updateOne(
+    { _id: courseId, $or: [{ outlineApplyLease: { $exists: false } }, { 'outlineApplyLease.expiresAt': { $lte: now } }] },
+    { $set: { outlineApplyLease: { token, expiresAt: new Date(now.getTime() + OUTLINE_LEASE_MS) } } },
+  );
+  if (acquired.matchedCount !== 1) {
+    throw Object.assign(new Error('Another course outline is being applied. Your draft is unchanged; try applying it again shortly.'), { status: 409 });
+  }
+  const renew = async () => {
+    const result = await coursesCol().updateOne(
+      { _id: courseId, 'outlineApplyLease.token': token },
+      { $set: { 'outlineApplyLease.expiresAt': new Date(Date.now() + OUTLINE_LEASE_MS) } },
+    );
+    if (result.matchedCount !== 1) throw editConflict('Course outline');
+  };
+  try {
+    return await apply(renew);
+  } finally {
+    await coursesCol().updateOne(
+      { _id: courseId, 'outlineApplyLease.token': token },
+      { $unset: { outlineApplyLease: '' } },
+    );
+  }
+}
+
 /**
  * Idempotent-by-name outline creation for bulk paste/import and reviewed AI
  * suggestions. Existing active Topics and LOs are reused, so retrying after a
@@ -374,65 +421,71 @@ export async function upsertCourseOutline(
     throw new Error('course-outline-invalid');
   }
 
-  const existingThemes = await themesCol()
-    .find({ courseId, archivedAt: { $exists: false } })
-    .sort({ order: 1 })
-    .toArray();
-  const activeLos = await losCol()
-    .find({ courseId, archivedAt: { $exists: false } })
-    .sort({ order: 1 })
-    .toArray();
-  const themesByName = new Map(existingThemes.map((theme) => [normalizedOutlineName(theme.name), theme]));
+  return withOutlineApplyLease(courseId, async (renew) => {
 
-  let themesCreated = 0;
-  let losCreated = 0;
-  const themes: UpsertCourseOutlineResult['themes'] = [];
-  for (const requestedTheme of requested) {
-    const themeKey = normalizedOutlineName(requestedTheme.name);
-    let theme = themesByName.get(themeKey);
-    let themeCreated = false;
-    if (!theme) {
-      theme = await addTheme(courseId, { name: requestedTheme.name });
-      themesByName.set(themeKey, theme);
-      themesCreated += 1;
-      themeCreated = true;
-    }
+    const existingThemes = await themesCol()
+      .find({ courseId, archivedAt: { $exists: false } })
+      .sort({ order: 1 })
+      .toArray();
+    const activeLos = await losCol()
+      .find({ courseId, archivedAt: { $exists: false } })
+      .sort({ order: 1 })
+      .toArray();
+    const themesByName = new Map(existingThemes.map((theme) => [normalizedOutlineName(theme.name), theme]));
 
-    const themeLos = activeLos.filter((lo) => lo.themeId.equals(theme!._id));
-    const losByName = new Map(themeLos.map((lo) => [normalizedOutlineName(lo.name), lo]));
-    const resultLos: UpsertCourseOutlineResult['themes'][number]['los'] = [];
-    for (const requestedLo of requestedTheme.los) {
-      const loKey = normalizedOutlineName(requestedLo);
-      let lo = losByName.get(loKey);
-      let created = false;
-      if (!lo) {
-        lo = await addLo(courseId, theme._id, { name: requestedLo });
-        losByName.set(loKey, lo);
-        activeLos.push(lo);
-        losCreated += 1;
-        created = true;
+    let themesCreated = 0;
+    let losCreated = 0;
+    const themes: UpsertCourseOutlineResult['themes'] = [];
+    for (const requestedTheme of requested) {
+      const themeKey = normalizedOutlineName(requestedTheme.name);
+      let theme = themesByName.get(themeKey);
+      let themeCreated = false;
+      if (!theme) {
+        await renew();
+        theme = await addTheme(courseId, { name: requestedTheme.name });
+        themesByName.set(themeKey, theme);
+        themesCreated += 1;
+        themeCreated = true;
       }
-      resultLos.push({ _id: lo._id, name: lo.name, created });
-    }
-    themes.push({ _id: theme._id, name: theme.name, created: themeCreated, los: resultLos });
-  }
 
-  return { themesCreated, losCreated, themes };
+      const themeLos = activeLos.filter((lo) => lo.themeId.equals(theme!._id));
+      const losByName = new Map(themeLos.map((lo) => [normalizedOutlineName(lo.name), lo]));
+      const resultLos: UpsertCourseOutlineResult['themes'][number]['los'] = [];
+      for (const requestedLo of requestedTheme.los) {
+        const loKey = normalizedOutlineName(requestedLo);
+        let lo = losByName.get(loKey);
+        let created = false;
+        if (!lo) {
+          await renew();
+          lo = await addLo(courseId, theme._id, { name: requestedLo });
+          losByName.set(loKey, lo);
+          activeLos.push(lo);
+          losCreated += 1;
+          created = true;
+        }
+        resultLos.push({ _id: lo._id, name: lo.name, created });
+      }
+      themes.push({ _id: theme._id, name: theme.name, created: themeCreated, los: resultLos });
+    }
+
+    return { themesCreated, losCreated, themes };
+  });
 }
 
 export async function updateLo(
   loId: ObjectId,
   patch: Partial<Pick<LearningObjective, 'name' | 'order' | 'kind'>>,
+  expectedRevision?: number,
 ): Promise<WithId<LearningObjective>> {
-  const lo = await losCol().findOneAndUpdate({ _id: loId }, { $set: patch }, { returnDocument: 'after' });
-  if (!lo) throw new Error('lo-not-found');
+  const lo = await losCol().findOneAndUpdate({ _id: loId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { $set: patch, $inc: { revision: 1 } }, { returnDocument: 'after' });
+  if (!lo) throw expectedRevision !== undefined ? editConflict('Learning objective') : new Error('lo-not-found');
   return lo;
 }
 
 export async function archiveLo(loId: ObjectId): Promise<WithId<LearningObjective>> {
   const lo = await losCol().findOneAndUpdate(
     { _id: loId },
-    { $set: { archivedAt: new Date() } },
+    { $set: { archivedAt: new Date() }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
   if (!lo) throw new Error('lo-not-found');
@@ -570,12 +623,14 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
 }
 
 /** Publish is allowed even with checklist warnings (thin LOs) — IN-L06. */
-export async function setPublished(courseId: ObjectId, published: boolean): Promise<WithId<Course>> {
+export async function setPublished(courseId: ObjectId, published: boolean, expectedRevision?: number): Promise<WithId<Course>> {
   const course = await getCourse(courseId);
+  assertEditRevision('Course', course, expectedRevision);
   if (course.lifecycle === 'archived') throw new Error('course-archived');
-  await coursesCol().updateOne(
-    { _id: courseId },
+  const result = await coursesCol().updateOne(
+    { _id: courseId, ...editRevisionFilter(expectedRevision) },
     {
+      $inc: { revision: 1 },
       $set: {
         published,
         lifecycle: published ? 'published' : 'draft',
@@ -583,6 +638,7 @@ export async function setPublished(courseId: ObjectId, published: boolean): Prom
       },
     },
   );
+  if (expectedRevision !== undefined && result.matchedCount !== 1) throw editConflict('Course');
   return getCourse(courseId);
 }
 
@@ -593,6 +649,7 @@ export async function archiveCourse(courseId: ObjectId): Promise<WithId<Course>>
   await coursesCol().updateOne(
     { _id: courseId },
     {
+      $inc: { revision: 1 },
       $set: {
         published: false,
         lifecycle: 'archived',
@@ -611,6 +668,7 @@ export async function restoreCourse(courseId: ObjectId): Promise<WithId<Course>>
   await coursesCol().updateOne(
     { _id: courseId },
     {
+      $inc: { revision: 1 },
       $set: { published: false, lifecycle: 'draft', updatedAt },
       $unset: { archivedAt: '' },
     },

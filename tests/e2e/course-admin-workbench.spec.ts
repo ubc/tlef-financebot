@@ -36,7 +36,7 @@ test('settings retain drafts and save only the current section', async ({ page }
   await page.getByRole('button', { name: 'Learning experience', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0].body).toEqual({ feedbackStrategy: 'adaptive' });
+  expect(writes[0].body).toEqual({ feedbackStrategy: 'adaptive', expectedRevision: 0 });
   await page.getByRole('button', { name: 'General', exact: true }).click();
   await expect(page.getByLabel('Course Name', { exact: true })).toHaveValue('Unsaved physics name');
   await page.getByRole('button', { name: 'Enrollment', exact: true }).click();

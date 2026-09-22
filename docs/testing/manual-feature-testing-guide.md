@@ -260,6 +260,14 @@ LLM_AVAILABLE=1 npm run test:e2e
 4. 到期后 Re-invite。
 5. 多门课分配不同权限，切换 TA course picker，数据不能串课。
 
+### 6.2a Co-instructors
+
+1. 以 course owner 打开 **Share / Co-instructors**，先输入已登录过的 CWL；确认立即成为 Active。
+2. 输入尚未登录的 UBC email；确认显示 Pending，并明确页面不会发送邮件。
+3. 用该 email 对应的 CWL 首次登录；确认 pending grant 激活且能进入共享课程。
+4. 两个 Instructor 同时打开同一题的 **Edit together**，分别修改 stem 与 explanation；确认双向同步且只生成一次合并内容。
+5. 两边断网编辑后恢复网络；确认保留离线文字并重新同步。随后撤销 co-instructor，确认已打开的编辑器即时变成只读且 API 返回 403。
+
 ### 6.3 TA Workspace
 
 1. 以 TA 登录，进入 **Review Queue**。

@@ -18,6 +18,7 @@ import { el, mount } from '../../dom.js';
 import { runButtonAction } from '../../action-state.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
+import { attachTutorial } from '../../tutorials.js';
 import type { RouteParams } from '../../router.js';
 
 function navigate(path: string): void {
@@ -118,6 +119,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   }
 
   const courseId = detail.courseId || fallbackCourseId;
+  let expectedVersionId = detail.current._id;
   const stem = detail.current.stem;
 
   const draftSlots: SlotDraft[] = (detail.current.paramSlots ?? []).map((s) => ({
@@ -427,7 +429,8 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
     void runButtonAction(saveButton, async () => {
       errorSlot.replaceChildren();
       try {
-        const saved = await patchQuestionParams(questionId, currentPatch());
+        const saved = await patchQuestionParams(questionId, { ...currentPatch(), expectedVersionId });
+        expectedVersionId = saved._id;
         draftSlots.length = 0;
         for (const s of saved.paramSlots ?? []) {
           draftSlots.push({
@@ -521,6 +524,10 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       }),
     ),
   );
+  attachTutorial(root, 'instructor-parameters', {
+    'parameter-definitions': '.param-config-layout',
+    'parameter-verification': '.param-config-actions',
+  });
 }
 
 export function renderParamConfig(outlet: HTMLElement, params: RouteParams): void {

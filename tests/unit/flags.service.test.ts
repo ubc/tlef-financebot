@@ -312,7 +312,7 @@ describe('checkAutoPause (§4.3)', () => {
 
     expect(paused).toBe(true);
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: question._id, state: 'approved' },
+      { _id: question._id, state: 'approved', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
     );
     expect(auditInsertOne).toHaveBeenCalledTimes(1);
@@ -346,7 +346,7 @@ describe('checkAutoPause (§4.3)', () => {
 
     expect(paused).toBe(true);
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: question._id, state: 'approved' },
+      { _id: question._id, state: 'approved', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
     );
   });
@@ -382,7 +382,7 @@ describe('checkAutoPause (§4.3)', () => {
 
     expect(paused).toBe(true);
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: question._id, state: 'approved' },
+      { _id: question._id, state: 'approved', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
     );
   });
@@ -422,7 +422,7 @@ describe('resolveFlag (§6.2)', () => {
 
     expect(result.state).toBe('resolved-archived');
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: questionId, state: 'approved' },
+      { _id: questionId, state: 'approved', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'archived' }) }),
     );
   });
@@ -440,7 +440,7 @@ describe('resolveFlag (§6.2)', () => {
     // transitionQuestion's own CAS update proves the question-side effect
     // actually fired (paused -> approved), not just that no error was thrown.
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: questionId, state: 'paused' },
+      { _id: questionId, state: 'paused', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
     );
     const [, flagUpdate] = flagsUpdateOne.mock.calls[0];
@@ -469,7 +469,7 @@ describe('resolveFlag (§6.2)', () => {
       expect.objectContaining({ _id: { $ne: flag._id } }),
     );
     expect(questionsUpdateOne).toHaveBeenCalledWith(
-      { _id: questionId, state: 'paused' },
+      { _id: questionId, state: 'paused', currentVersionId: question.currentVersionId },
       expect.objectContaining({ $set: expect.objectContaining({ state: 'approved' }) }),
     );
   });
@@ -679,7 +679,7 @@ describe('Task 3: notification wiring', () => {
 
       await expect(checkAutoPause(question._id)).resolves.toBe(true);
       expect(questionsUpdateOne).toHaveBeenCalledWith(
-        { _id: question._id, state: 'approved' },
+        { _id: question._id, state: 'approved', currentVersionId: question.currentVersionId },
         expect.objectContaining({ $set: expect.objectContaining({ state: 'paused' }) }),
       );
     });

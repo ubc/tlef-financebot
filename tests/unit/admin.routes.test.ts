@@ -5,6 +5,7 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/admin.service', () => ({
   grantPlatformInstructor: jest.fn(),
   listAdminAccounts: jest.fn(),
+  listAdminCourses: jest.fn(),
   revokePlatformInstructor: jest.fn(),
 }));
 
@@ -12,6 +13,7 @@ import { adminRouter } from '../../server/src/routes/admin.routes';
 import {
   grantPlatformInstructor,
   listAdminAccounts,
+  listAdminCourses,
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
 
@@ -45,6 +47,7 @@ describe('Admin user-account routes', () => {
   beforeEach(() => {
     jest.mocked(grantPlatformInstructor).mockReset();
     jest.mocked(listAdminAccounts).mockReset();
+    jest.mocked(listAdminCourses).mockReset();
     jest.mocked(revokePlatformInstructor).mockReset();
   });
 
@@ -83,6 +86,29 @@ describe('Admin user-account routes', () => {
     expect(res.body).toEqual([
       expect.objectContaining({ puid: 'ESIPROF00001', displayName: 'Finance Professor' }),
     ]);
+  });
+
+  it('protects all-course options from signed-out users and non-Admin roles', async () => {
+    const student = userFixture(false);
+    const instructor = { ...student, platformInstructor: true };
+    expect((await request(makeApp()).get('/api/admin/courses')).status).toBe(401);
+    expect((await request(makeApp(student)).get('/api/admin/courses')).status).toBe(403);
+    expect((await request(makeApp(instructor)).get('/api/admin/courses')).status).toBe(403);
+    expect(listAdminCourses).not.toHaveBeenCalled();
+  });
+
+  it('lists course identities for an Admin without course membership', async () => {
+    const courses = [{
+      _id: '000000000000000000000001', name: 'Finance', courseCode: 'COMM 298',
+      section: '101', term: '2026W1', lifecycle: 'archived' as const,
+    }];
+    jest.mocked(listAdminCourses).mockResolvedValue(courses);
+
+    const res = await request(makeApp(userFixture(true))).get('/api/admin/courses');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(courses);
+    expect(listAdminCourses).toHaveBeenCalledWith();
   });
 
   it('grants and revokes by PUID as the session Admin', async () => {

@@ -257,11 +257,11 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       void reload();
     },
   });
-  const resultsContainer = el('div', {}, messages, workbench.root);
+  const resultsContainer = el('div', { class: 'review-workbench-results' }, messages, workbench.root);
   const searchInput = el('input', { class: 'input', type: 'search', 'aria-label': 'Search review questions', placeholder: 'Search questions or objectives…', oninput: () => workbench.search(searchInput.value) });
   const advanced = el('details', { class: 'review-workbench-tools' }, el('summary', { text: 'Bulk actions' }), controlsContainer);
   const toolbar = el('div', { class: 'review-workbench-toolbar' }, searchInput, filtersContainer, advanced);
-  const layout = el('div', {}, tabsContainer, toolbar, resultsContainer);
+  const layout = el('div', { class: 'review-workbench-layout' }, tabsContainer, toolbar, resultsContainer);
 
   function tabInputs(): QueueTabInput[] {
     return queueItems.map((item) => ({ labels: item.labels, agentDecision: agentDecisions.get(item.id) }));

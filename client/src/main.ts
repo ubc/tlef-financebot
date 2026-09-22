@@ -1,3 +1,8 @@
+import { createRoleSwitcher, selectedWorkspaceRole, rememberWorkspaceRole } from './role-workspace.js';
+import { renderWorkspaceCourses } from './views/workspace-courses.js';
+import { installClientDiagnostics } from './diagnostics.js';
+import { renderAdminOperations, renderAdminOperationDetail } from './views/admin/operations.js';
+import { renderAdminQuestions, renderAdminQuestionDetail } from './views/admin/questions.js';
 import { syncSetupJourney } from './setup-journey.js';
 import { renderTutorialHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
@@ -61,6 +66,9 @@ import { renderSettings } from './views/instructor/settings.js';
 import { renderExamTemplates } from './views/instructor/exam-templates.js';
 import { renderBank } from './views/instructor/bank.js';
 import { renderQuestionDetail } from './views/instructor/question-detail.js';
+import { renderCoInstructors } from './views/instructor/co-instructors.js';
+import { openCourseSharing } from './course-sharing.js';
+import { renderCollaborativeEditor } from './views/instructor/collaborative-editor.js';
 import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
@@ -89,6 +97,8 @@ import {
   getAnonymousPreviewSession,
   startAnonymousPreview,
 } from './preview-session.js';
+
+installClientDiagnostics();
 
 // Path -> view. Adding a page: add a NAV entry (config.ts) and a line here.
 // Param routes (`:id`, etc.) are matched by router.ts's matchRoute; more
@@ -124,6 +134,10 @@ const ROUTES: Route[] = [
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/help', render: renderTutorialHelp },
+  { path: '/admin/operations', render: renderAdminOperations },
+  { path: '/admin/operations/:kind/:id', render: renderAdminOperationDetail },
+  { path: '/admin/questions', render: renderAdminQuestions },
+  { path: '/admin/questions/:id', render: renderAdminQuestionDetail },
   { path: '/admin/help', render: renderTutorialHelp },
   { path: '/admin/platform-settings', render: renderAdminPlatformSettings },
   { path: '/admin/capabilities', render: renderAdminCapabilities },
@@ -135,6 +149,8 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/materials', render: renderMaterials },
   { path: '/instructor/course/:id/content-map', render: renderContentMap },
   { path: '/instructor/course/:id/settings', render: renderSettings },
+  { path: '/instructor/course/:id/co-instructors', render: renderCoInstructors },
+  { path: '/instructor/course/:id/bank/:questionId/collaborate', render: renderCollaborativeEditor },
   { path: '/instructor/course/:id/exam-templates', render: renderExamTemplates },
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
@@ -192,29 +208,6 @@ function taCourseIdFromPath(path: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
-/**
- * Set when an INSTRUCTOR is inspecting the TA workspace for one of their own
- * courses instead of a real TA (a user holding a `ta` courseRole) being in it.
- *
- * Unlike the anonymous student preview, this is NOT a sandbox: there is no
- * parallel `/api/preview/*` surface for the TA endpoints, so the views here
- * read and write the course's real review queue and flags. What it does
- * faithfully reproduce is the TA's reduced ACTION SURFACE, because that
- * reduction lives in the views themselves (views/ta/* offer suggest/annotate/
- * escalate and never approve or resolve) rather than being computed from the
- * signed-in user's capabilities.
- *
- * What it does NOT reproduce is capability-driven DENIAL: the TA endpoints are
- * gated by `ensureCapability('question.review' | 'flag.triage')`, which an
- * instructor passes on their own course regardless of how those capabilities
- * are configured for the `ta` role. A course that has revoked `flag.triage`
- * from its TAs still shows a working Flag Triage page here.
- */
-interface TaViewAs {
-  courseId: string;
-  exitHref: string;
-}
-
 function createSidebarCollapse(
   shell: HTMLElement,
   preferenceKey: string,
@@ -243,17 +236,24 @@ function createSidebarCollapse(
   return button;
 }
 
-function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): RouterHandle {
-  // An instructor in `viewAs` holds no `ta` courseRole, so the session-derived
-  // list is empty — scope the shell to the one course they came in through.
-  const courseIds = viewAs ? [viewAs.courseId] : taCourseIds(session);
-  const initialCourseId = taCourseIdFromPath(hashPath()) ?? courseIds[0];
+/** TA View uses live course data and the TA action surface. Instructor/Admin
+ * permissions remain those of the signed-in account; only real TAs exercise
+ * capability denials configured for their course role. */
+function buildTaShell(root: HTMLElement, session: Session, viewAs = false): RouterHandle {
+  // The same shell can navigate actual TA courses and Instructor TA views.
+  // Admins also reach all-course choices through the shared My Courses page.
+  const courseIds = [...new Set(session.user?.courseRoles.filter(entry => entry.role === 'ta' || (viewAs && entry.role === 'instructor')).map(entry => entry.courseId) ?? [])];
+  const initialCourseId = taCourseIdFromPath(hashPath());
   const preferenceKey = 'financebot:ta-sidebar-collapsed';
   const startsCollapsed = window.localStorage.getItem(preferenceKey) === 'true';
   const shell = el('div', {
-    class: `app-shell app-shell--role app-shell--ta${startsCollapsed ? ' is-collapsed' : ''}`,
+    class: `app-shell app-shell--unified app-shell--role app-shell--ta${startsCollapsed ? ' is-collapsed' : ''}`,
   });
   const nav = el('nav', { class: 'nav', 'aria-label': 'Teaching assistant' });
+  const coursesLink = el('a', { class: 'nav__link', href: '#/ta/courses', title: 'My Courses' },
+    el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: 'C' }),
+    el('span', { class: 'nav__text', text: 'My Courses' }),
+  );
   const reviewLink = el('a', { class: 'nav__link', title: 'Review Queue' },
     el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '1' }),
     el('span', { class: 'nav__text', text: 'Review Queue' }),
@@ -272,14 +272,13 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
     value: courseId,
     text: `Course project ${index + 1}`,
   }))) as HTMLSelectElement;
-  nav.append(
-    el('div', { class: 'nav__section' },
-      el('p', { class: 'nav__group', text: 'Course workflow' }),
-      reviewLink,
-      flagsLink,
-    ),
+  const workflowSection = el('div', { class: 'nav__section' },
+    el('p', { class: 'nav__group', text: 'Course workflow' }),
+    reviewLink,
+    flagsLink,
   );
-  const helpLink = el('a', { class: 'nav__link', href: '#' }, 'Help & Tutorials');
+  nav.append(el('div', { class: 'nav__section' }, coursesLink), workflowSection);
+  const helpLink = el('a', { class: 'nav__link', href: '#', title: 'Help & Tutorials' }, el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '?' }), el('span', { class: 'nav__text', text: 'Help & Tutorials' }));
   if (!viewAs) nav.append(helpLink);
   const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
   const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
@@ -295,7 +294,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
   const collapseButton = createSidebarCollapse(shell, preferenceKey, startsCollapsed);
   const aside = el('aside', { class: 'sidebar sidebar--instructor sidebar--ta' },
     el('div', { class: 'sidebar__brand-row' },
-      el('a', { class: 'brand', href: `#/ta/course/${encodeURIComponent(initialCourseId)}/review`, title: APP.name },
+      el('a', { class: 'brand', href: '#/ta/courses', title: APP.name },
         el('span', { class: 'brand__mark', 'aria-hidden': 'true', text: 'F' }),
         el('span', { class: 'brand__name', text: APP.name }),
       ),
@@ -320,10 +319,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
       viewAs
         ? el('span', { class: 'preview-mode-label', text: 'Viewing as TA · live course data' })
         : false,
-      createNotificationBell('ta'), createThemeToggle(),
-      viewAs
-        ? el('a', { class: 'btn btn--ghost btn--sm', href: viewAs.exitHref }, 'Exit TA View')
-        : false,
+      createNotificationBell('ta'), createRoleSwitcher(session, 'ta'), createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
   );
@@ -367,11 +363,24 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
     }).catch(() => undefined);
   }
   return startRouter({
-    routes: TA_ROUTES,
+    routes: [{ path: '/ta/courses', render: outlet => renderWorkspaceCourses(outlet, 'ta') }, ...TA_ROUTES],
     outlet,
-    fallback: `/ta/course/${encodeURIComponent(initialCourseId)}/review`,
+    fallback: initialCourseId ? `/ta/course/${encodeURIComponent(initialCourseId)}/review` : '/ta/courses',
     onNavigate: (path) => {
-      const courseId = taCourseIdFromPath(path) ?? initialCourseId;
+      const courseId = taCourseIdFromPath(path);
+      courseContext.hidden = !courseId;
+      workflowSection.hidden = !courseId;
+      helpLink.hidden = !courseId;
+      coursesLink.classList.toggle('nav__link--active', !courseId);
+      if (courseId) coursesLink.removeAttribute('aria-current');
+      else coursesLink.setAttribute('aria-current', 'page');
+      shell.classList.remove('is-open');
+      if (!courseId) {
+        ++contextVersion;
+        topbarTitle.textContent = 'My courses';
+        document.title = `My Courses · ${APP.name}`;
+        return;
+      }
       updateCourseContext(courseId);
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
@@ -401,12 +410,12 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs?: TaViewAs): R
  * — unlike the default shell's static NAV hrefs — the anchors here are
  * rebuilt on every `onNavigate` rather than just toggling an active class.
  */
-function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle {
-  const isAdmin = session.user?.isAdmin === true;
+function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = session.user?.isAdmin === true): RouterHandle {
+  const anonymousInstructorPreview = session.user?.isAdmin === true && !isAdmin;
   const sidebarPreferenceKey = isAdmin ? 'financebot:admin-sidebar-collapsed' : 'financebot:instructor-sidebar-collapsed';
   const startsCollapsed = window.localStorage.getItem(sidebarPreferenceKey) === 'true';
   const shell = el('div', {
-    class: `app-shell app-shell--instructor${isAdmin ? ' app-shell--admin' : ''}${startsCollapsed ? ' is-collapsed' : ''}`,
+    class: `app-shell app-shell--unified app-shell--instructor${isAdmin ? ' app-shell--admin' : ''}${anonymousInstructorPreview ? ' app-shell--instructor-preview' : ''}${startsCollapsed ? ' is-collapsed' : ''}`,
   });
   const nav = el('nav', { class: 'nav', 'aria-label': isAdmin ? 'Admin' : 'Instructor' });
   const anchors: Array<{
@@ -416,25 +425,25 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     courseScoped: boolean;
   }> = [];
   const sections: Array<{ element: HTMLElement; courseScoped: boolean }> = [];
-  const routes = session.user?.isAdmin
+  const routes = isAdmin
     ? INSTRUCTOR_ROUTES
     : INSTRUCTOR_ROUTES.filter((route) => !route.path.startsWith('/admin/'));
-  const navGroups = session.user?.isAdmin
+  const navGroups = isAdmin
     ? [
         {
           label: 'Admin',
           items: [
+            { label: 'Operations & Issues', path: '/admin/operations', glyph: 'O' },
+            { label: 'All Questions', path: '/admin/questions', glyph: 'Q' },
             { label: 'User Directory', path: '/admin/users', glyph: 'U' },
-            { label: 'Instructor Grants', path: '/admin/accounts', glyph: 'G' },
             { label: 'Capabilities', path: '/admin/capabilities', glyph: 'C' },
             { label: 'Platform Settings', path: '/admin/platform-settings', glyph: 'S' },
-            { label: 'Help & Tutorials', path: '/admin/help', glyph: '?' },
           ],
         },
         ...INSTRUCTOR_NAV.map((group) => group.label ? group : {
           ...group,
           label: 'Teaching tools',
-          items: group.items.map((item) => item.path === '/instructor/help' ? { ...item, label: 'Course tutorials' } : item),
+          items: group.items.map((item) => item.path === '/instructor/help' ? { ...item, label: 'Help & Tutorials', path: '/admin/help' } : item),
         }),
       ]
     : INSTRUCTOR_NAV;
@@ -508,13 +517,17 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       ),
       collapseButton,
     ),
-    el('span', { class: 'instructor-pill', text: isAdmin ? 'PLATFORM CONSOLE' : 'INSTRUCTOR' }),
+    el('span', { class: 'instructor-pill', text: isAdmin ? 'PLATFORM CONSOLE' : anonymousInstructorPreview ? 'PREVIEW MODE' : 'INSTRUCTOR' }),
     courseContext,
     nav,
     user ? el('div', { class: 'sidebar__foot', text: displayName(user) }) : false,
   );
 
   const topbarTitle = el('span', { class: 'topbar__title', text: 'All courses' });
+  const shareButton = el('button', { class: 'btn btn--instr-primary btn--sm', hidden: true, onclick: () => {
+    const courseId = courseIdFromPath(hashPath());
+    if (courseId) openCourseSharing(courseId);
+  } }, 'Share');
   const topbar = el(
     'header',
     { class: 'topbar' },
@@ -532,8 +545,17 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
     el(
       'div',
       { class: 'topbar__right' },
+      anonymousInstructorPreview
+        ? el('span', {
+            class: 'preview-mode-label',
+            text: 'Anonymous Instructor Preview',
+            title: 'Admin identity retained · course changes are live',
+            'aria-label': 'Anonymous Instructor Preview; course changes are live',
+          })
+        : false,
       createNotificationBell('instructor'),
-      isAdmin ? el('span', { class: 'admin-topbar-badge', text: 'Admin' }) : false,
+      shareButton,
+      createRoleSwitcher(session, isAdmin ? 'admin' : 'instructor'),
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
@@ -553,13 +575,14 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
   let courseContextVersion = 0;
   function updateCourseContext(courseId: string | null, path: string): void {
     const version = ++courseContextVersion;
+    shareButton.hidden = !courseId;
     if (!courseId) {
       courseContext.hidden = true;
       topbarTitle.textContent = path.startsWith('/admin/')
         ? 'Platform administration'
         : path === '/instructor/courses/new'
           ? 'Create course project'
-          : 'Course projects';
+          : anonymousInstructorPreview ? 'Instructor preview' : 'Course projects';
       return;
     }
     courseContext.hidden = false;
@@ -597,7 +620,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
         const href = item.path === '/instructor/help' && courseId ? `${resolvedHref}?courseId=${encodeURIComponent(courseId)}` : resolvedHref;
         link.hidden = courseScoped && !courseId;
         link.setAttribute('href', href ?? '#');
-        const active = isNavItemActive(item, path);
+        const active = isNavItemActive(item, isAdmin && path === '/admin/accounts' ? '/admin/users' : path);
         link.classList.toggle('nav__link--active', active);
         link.classList.toggle('nav__link--disabled', !href);
         if (href) {
@@ -613,7 +636,7 @@ function buildInstructorShell(root: HTMLElement, session: Session): RouterHandle
       for (const section of sections) {
         section.element.hidden = section.courseScoped && !courseId;
       }
-      document.title = `${isAdmin ? 'Admin' : 'Instructor'} · ${APP.name}`;
+      document.title = `${isAdmin ? 'Admin' : anonymousInstructorPreview ? 'Instructor Preview' : 'Instructor'} · ${APP.name}`;
     },
   });
 }
@@ -657,8 +680,7 @@ interface StudentShellConfig {
   practicePath(path: string): boolean;
   loadCourseContext(courseId: string): Promise<{ name: string; courseCode: string; term: string }>;
   preview?: {
-    courseId: string;
-    exitHref: string;
+    courseId?: string;
   };
 }
 
@@ -685,12 +707,12 @@ function isPreviewPracticePath(path: string): boolean {
   return /^\/preview\/course\/[^/]+\/practice(-theme)?\//.test(path);
 }
 
-function previewNavItems(courseId: string): StudentNavItem[] {
+function previewNavItems(courseId?: string): StudentNavItem[] {
   const routes = previewNavRoutes();
   return [
-    { label: 'My Courses', glyph: 'C', path: () => routes.courses(courseId).replace(/^#/, '') },
-    { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId).replace(/^#/, '') },
-    { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId).replace(/^#/, '') },
+    { label: 'My Courses', glyph: 'C', path: () => '/preview/courses' },
+    { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId ?? '').replace(/^#/, '') },
+    { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId ?? '').replace(/^#/, '') },
     { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
   ];
 }
@@ -716,8 +738,9 @@ function buildStudentShell(
     : 'financebot:student-sidebar-collapsed';
   const startsCollapsed = window.localStorage.getItem(preferenceKey) === 'true';
   const shell = el('div', {
-    class: `app-shell app-shell--role app-shell--student${startsCollapsed ? ' is-collapsed' : ''}`,
+    class: `app-shell app-shell--unified app-shell--role app-shell--student${startsCollapsed ? ' is-collapsed' : ''}`,
   });
+  shell.dataset.previewCourse = config.preview?.courseId ?? '';
   const nav = el('nav', { class: 'nav', 'aria-label': 'Student' });
   const overviewSection = el('div', { class: 'nav__section' },
     el('p', { class: 'nav__group', text: 'Courses' }),
@@ -828,18 +851,8 @@ function buildStudentShell(
         ? el('span', { class: 'preview-mode-label', text: 'Anonymous Student Preview' })
         : false,
       config.preview ? createAnonymousNotificationBell() : createNotificationBell('student'),
+      createRoleSwitcher(session, 'student'),
       createThemeToggle(),
-      config.preview
-        ? el(
-            'a',
-            {
-              class: 'btn btn--ghost btn--sm',
-              href: config.preview.exitHref,
-              onclick: () => endAnonymousPreview(),
-            },
-            'Exit Preview',
-          )
-        : false,
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
   );
@@ -973,13 +986,13 @@ function hashPath(): string {
 function buildPreviewStudentShell(
   root: HTMLElement,
   session: Session,
-  courseId: string,
+  courseId?: string,
 ): RouterHandle {
-  const previewSessionId = getAnonymousPreviewSession(courseId);
-  const experience = createPreviewStudentExperience(previewSessionId);
+  const previewSessionId = getAnonymousPreviewSession(courseId ?? 'course-picker');
+  const experience = createPreviewStudentExperience(previewSessionId, { sendToInstructorQueue: Boolean(session.user?.isAdmin || session.user?.courseRoles.some(entry => entry.courseId === courseId && entry.role === 'instructor')) });
   return buildStudentShell(root, session, {
-    routes: buildPreviewStudentRoutes(experience),
-    fallback: `/preview/course/${encodeURIComponent(courseId)}`,
+    routes: [{ path: '/preview/courses', render: outlet => renderWorkspaceCourses(outlet, 'student') }, ...buildPreviewStudentRoutes(experience)],
+    fallback: courseId ? `/preview/course/${encodeURIComponent(courseId)}` : '/preview/courses',
     navItems: previewNavItems(courseId),
     courseIdFromPath: previewCourseIdFromPath,
     practicePath: isPreviewPracticePath,
@@ -991,33 +1004,37 @@ function buildPreviewStudentShell(
     },
     preview: {
       courseId,
-      exitHref: `#/instructor/course/${encodeURIComponent(courseId)}`,
     },
   });
 }
 
-type ShellMode = 'landing' | 'instructor' | 'ta' | 'ta-view' | 'student' | 'preview';
+type ShellMode = 'landing' | 'admin' | 'instructor' | 'ta' | 'ta-view' | 'student' | 'preview';
 let activeRouter: RouterHandle | undefined;
 let activeMode: ShellMode | undefined;
 let activeSession: Session | undefined;
+let bootstrapGeneration = 0;
 
 /**
  * `ta-view` is kept distinct from `ta` rather than folded into it with a
  * boolean, because the hashchange listener rebuilds the shell only when the
- * MODE string changes. Sharing one mode would leave the "TA VIEW" pill and
- * Exit button stale when a hand-typed URL moves between a course the user
+ * MODE string changes. Sharing one mode would leave the "TA VIEW" state
+ * stale when a hand-typed URL moves between a course the user
  * really TAs and one they only instruct.
  */
 function shellMode(session: Session, path: string): ShellMode {
   if (!session.authenticated) return 'landing';
-  if (isInstructor(session) && previewCourseIdFromPath(path)) return 'preview';
+  if ((isInstructor(session) || isTa(session)) && path.startsWith('/preview/')) return 'preview';
+  const preferred = selectedWorkspaceRole(session);
   const taCourseId = taCourseIdFromPath(path);
-  // A real `ta` grant on THIS course wins over an instructor grant elsewhere,
-  // so a user who both instructs one course and TAs another gets the genuine
-  // TA shell (no Exit button back to a dashboard they cannot open) on the
-  // course they actually TA.
-  if (taCourseId && taCourseIds(session).includes(taCourseId)) return 'ta';
-  if (taCourseId && isInstructor(session)) return 'ta-view';
+  if (path.startsWith('/ta/') && (isInstructor(session) || isTa(session))) {
+    if (taCourseId && taCourseIds(session).includes(taCourseId)) return 'ta';
+    return isInstructor(session) ? 'ta-view' : 'ta';
+  }
+  if (path.startsWith('/admin/') && session.user?.isAdmin) return 'admin';
+  if (path.startsWith('/instructor/') && isInstructor(session)) return session.user?.isAdmin && preferred !== 'instructor' ? 'admin' : 'instructor';
+  if (preferred === 'student' && (isInstructor(session) || isTa(session))) return 'preview';
+  if (preferred === 'ta') return isInstructor(session) ? 'ta-view' : 'ta';
+  if (preferred === 'admin' && session.user?.isAdmin) return 'admin';
   if (isInstructor(session)) return 'instructor';
   return isTa(session) ? 'ta' : 'student';
 }
@@ -1032,41 +1049,35 @@ function redirectLegacyPreview(session: Session): boolean {
 }
 
 async function bootstrap(): Promise<void> {
+  const generation = ++bootstrapGeneration;
   activeRouter?.stop();
   activeRouter = undefined;
   const root = byId('app');
   const session = await loadSession();
+  if (generation !== bootstrapGeneration) return;
   activeSession = session;
   syncSetupJourney();
 
   if (redirectLegacyPreview(session)) return;
 
   activeMode = shellMode(session, hashPath());
-  setAdminAppearance(activeMode === 'instructor' && session.user?.isAdmin === true);
+  setAdminAppearance(activeMode === 'admin');
+  if (activeMode !== 'landing') rememberWorkspaceRole(session, activeMode === 'preview' ? 'student' : activeMode === 'ta-view' ? 'ta' : activeMode);
   if (activeMode === 'landing') {
     document.title = APP.name;
     renderLanding(root);
     return;
   }
   if (activeMode === 'preview') {
-    const courseId = previewCourseIdFromPath(hashPath());
-    if (courseId) {
-      activeRouter = buildPreviewStudentShell(root, session, courseId);
-      return;
-    }
+    activeRouter = buildPreviewStudentShell(root, session, previewCourseIdFromPath(hashPath()));
+    return;
   }
   if (activeMode === 'ta-view') {
-    const courseId = taCourseIdFromPath(hashPath());
-    if (courseId) {
-      activeRouter = buildTaShell(root, session, {
-        courseId,
-        exitHref: `#/instructor/course/${encodeURIComponent(courseId)}`,
-      });
-      return;
-    }
+    activeRouter = buildTaShell(root, session, true);
+    return;
   }
-  activeRouter = activeMode === 'instructor'
-    ? buildInstructorShell(root, session)
+  activeRouter = activeMode === 'instructor' || activeMode === 'admin'
+    ? buildInstructorShell(root, session, activeMode === 'admin')
     : activeMode === 'ta'
       ? buildTaShell(root, session)
       : buildStudentShell(root, session);
@@ -1078,7 +1089,17 @@ setUnauthorizedHandler(() => void bootstrap());
 
 initTheme();
 window.addEventListener('hashchange', (event) => {
+  if (activeRouter?.guardNavigation(event)) return;
   if (!activeSession) return;
+  // A share can grant Instructor access while this tab still has its older
+  // Student/TA session projection. Resolve the new deep-link with fresh roles.
+  if (activeSession.authenticated && hashPath().startsWith('/instructor/') && !isInstructor(activeSession)) {
+    activeRouter?.stop();
+    activeRouter = undefined;
+    event.stopImmediatePropagation();
+    void bootstrap();
+    return;
+  }
   if (redirectLegacyPreview(activeSession)) {
     activeRouter?.stop();
     activeRouter = undefined;
@@ -1086,7 +1107,8 @@ window.addEventListener('hashchange', (event) => {
     return;
   }
   const nextMode = shellMode(activeSession, hashPath());
-  if (nextMode === activeMode) return;
+  if (nextMode === activeMode && !(nextMode === 'preview' && (previewCourseIdFromPath(hashPath()) ?? '') !== document.querySelector<HTMLElement>('.app-shell')?.dataset.previewCourse)) return;
+  if (activeMode === 'preview' && nextMode !== 'preview') endAnonymousPreview();
   activeRouter?.stop();
   activeRouter = undefined;
   void bootstrap();

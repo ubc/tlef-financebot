@@ -9,6 +9,7 @@ import {
   flagPreviewQuestion,
   getCourseHome,
   getCourseTree,
+  getPreviewCourseIdentity,
   getNextPracticeQuestion,
   getNextPreviewQuestion,
   getPreviewCourseHome,
@@ -134,6 +135,7 @@ export function previewStudentRoutes(): StudentRoutes {
 
 export function createPreviewStudentExperience(
   previewSessionId: string,
+  options: { sendToInstructorQueue?: boolean } = {},
 ): StudentExperience {
   const routes = previewStudentRoutes();
   return {
@@ -141,7 +143,7 @@ export function createPreviewStudentExperience(
     routes,
     listEnrollments: async (courseId) => {
       if (!courseId) return [];
-      const { course } = await getCourseTree(courseId);
+      const course = await getPreviewCourseIdentity(courseId);
       return [{
         courseId,
         name: course.name,
@@ -163,7 +165,8 @@ export function createPreviewStudentExperience(
       getNextPreviewQuestion(courseId, previewSessionId, input),
     submit: (courseId, input) =>
       submitPreviewAttempt(courseId, previewSessionId, input),
-    // Always TEST-queued. Preview exists to exercise the real flag loop end to
+    // Instructor previews can TEST-queue flags; TA previews remain isolated.
+    // Preview exists to exercise the real flag loop end to
     // end, and the alternative — a flag written only to
     // `previewStudentSessions.flags`, which nothing reads and which the 24h TTL
     // discards — is indistinguishable from not flagging at all. The instructor
@@ -176,7 +179,7 @@ export function createPreviewStudentExperience(
         previewSessionId,
         questionId,
         reason,
-        true,
+        options.sendToInstructorQueue ?? true,
       );
       if (result.testQueued) {
         broadcastNotificationsChanged();

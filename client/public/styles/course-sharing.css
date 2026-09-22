@@ -1,0 +1,57 @@
+.view--course-sharing { max-width: 1000px; }
+.course-sharing {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.course-sharing [hidden] { display: none !important; }
+.course-sharing p, .course-sharing h3 { margin: 0; }
+.course-sharing__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.course-sharing__course { font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+.course-sharing__meta { margin-top: 5px !important; font-size: 11px; color: var(--muted); }
+.course-sharing .btn, .course-sharing .input { font-size: 12px; }
+.course-sharing__section-title { font-size: 12px; font-weight: 650; margin-bottom: 10px !important; }
+.course-sharing__note { display: block; font-size: 11px; line-height: 1.65; color: var(--muted); }
+.course-sharing__invite { display: flex; flex-direction: column; gap: 8px; }
+.course-sharing__label { font-size: 12px; font-weight: 600; }
+.course-sharing__invite-row, .course-sharing__link-row { display: flex; align-items: center; gap: 8px; }
+.course-sharing__invite-row .input, .course-sharing__link { flex: 1; min-width: 0; }
+.course-sharing__invite-row .btn, .course-sharing__link-row .btn { flex-shrink: 0; }
+.course-sharing .course-sharing__primary { background: #1a1f1a; border-color: #1a1f1a; color: #fff; }
+.course-sharing .course-sharing__primary:hover { background: #2c332c; border-color: #2c332c; }
+.course-sharing__readonly { padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); line-height: 1.6; }
+.course-sharing__person { display: flex; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.course-sharing__person:last-child { border-bottom: 0; }
+.course-sharing__avatar { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 11px; font-weight: 600; }
+.course-sharing__person-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.course-sharing__person-copy strong { display: block; font-size: 12px; font-weight: 600; }
+.course-sharing__badge { padding: 4px 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); font-size: 10px; white-space: nowrap; }
+.course-sharing__badge--pending { color: var(--text); }
+.course-sharing .course-sharing__remove { flex-shrink: 0; color: var(--text); }
+.course-sharing__restricted { padding-top: 20px; border-top: 1px solid var(--border); }
+.course-sharing__link-row { margin-top: 12px; }
+.course-sharing__notice, .course-sharing__error { padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; line-height: 1.6; }
+.course-sharing__notice:empty, .course-sharing__error:empty { display: none; }
+.course-sharing__notice { background: var(--surface-2); }
+.course-sharing__error { color: var(--down); }
+.course-sharing-dialog { width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.course-sharing-dialog__header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--border); }
+.course-sharing-dialog__header h2 { margin: 0; font-size: 19px; }
+.course-sharing-dialog__header .icon-btn { flex-shrink: 0; width: 32px; height: 32px; font-size: 22px; }
+.course-sharing-dialog .course-sharing { border: 0; border-radius: 0; }
+@media (max-width: 580px) {
+  .course-sharing { padding: 18px 16px; gap: 18px; }
+  .course-sharing__heading { gap: 8px; }
+  .course-sharing__heading > .btn { padding: 5px 7px; font-size: 10px; }
+  .course-sharing__invite-row { align-items: stretch; flex-direction: column; }
+  .course-sharing__person { gap: 8px; flex-wrap: wrap; }
+  .course-sharing__person-copy { flex-basis: calc(100% - 40px); }
+  .course-sharing__badge { margin-left: 40px; }
+  .course-sharing-dialog__header { padding: 16px; }
+}

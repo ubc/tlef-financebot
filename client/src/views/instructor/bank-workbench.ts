@@ -3,6 +3,7 @@ import { browseBank, getCourseTree, getQuestion, updateTheme, transitionQuestion
 import { el, mount } from '../../dom.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
+import { attachTutorial } from '../../tutorials.js';
 import { renderRichText } from '../../render.js';
 import { rowStemText } from '../../placeholders.js';
 import { currentQuery } from '../../router.js';
@@ -45,7 +46,11 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
       const [nextTree, approved, paused, archived] = await Promise.all([getCourseTree(courseId), browseBank(courseId, { state: 'approved' }), browseBank(courseId, { state: 'paused' }), browseBank(courseId, { state: 'archived' })]);
       if (request !== loadRevision || !root.isConnected) return;
       tree = nextTree; rows = [...approved.questions, ...paused.questions, ...archived.questions].filter(q => ['approved', 'paused', 'archived'].includes(q.state));
-      selected.clear(); drawToolbar(); draw();
+      selected.clear();
+      const previousId = activeId;
+      drawToolbar(); draw();
+      const active = rows.find(q => q.id === activeId);
+      if (active && previousId === activeId) await drawReader(active);
     } catch (e) { notice.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void reload())); }
   }
   function drawToolbar(): void {
@@ -118,7 +123,7 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
         const parsed = new Date(date.value);
         if (timing === 'schedule' && (!date.value || !Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now())) throw new Error('Choose a future date and time.');
         busy = true; d.dataset.busy = 'true'; radios.forEach(r => { r.disabled = true; }); date.disabled = true; cancel.disabled = true;
-        await updateTheme(t._id, { availableFrom: timing === 'hold' ? null : timing === 'now' ? new Date().toISOString() : parsed.toISOString() });
+        await updateTheme(t._id, { availableFrom: timing === 'hold' ? null : timing === 'now' ? new Date().toISOString() : parsed.toISOString() }, t.revision ?? 0);
         noticeText = `Release settings saved for ${t.name}.`; close(); await reload();
       } catch (e) { errors.replaceChildren(errorState(e instanceof Error ? e.message : String(e))); }
       finally { busy = false; d.dataset.busy = 'false'; radios.forEach(r => { r.disabled = false; }); date.disabled = timing !== 'schedule'; cancel.disabled = false; }
@@ -176,7 +181,7 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
       el('button', { type: 'button', 'aria-pressed': q.id === activeId, onclick: () => { activeId = q.id; draw(); void drawReader(q); } }, el('span', { class: 'bank-workbench__row-stem', text: rowStemText(q) }), el('small', { text: `${i + 1} · ${status(q)} · ${q.current.difficulty}` })))));
     list.scrollTop = scroll;
     const selectAll = el('input', { type: 'checkbox', 'aria-label': 'Select all bank questions', checked: shown.every(q => selected.has(q.id)), disabled: tab === 'archived', onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) shown.filter(q => q.state !== 'archived').forEach(q => selected.add(q.id)); else selected.clear(); draw(); } });
-    collection.replaceChildren(el('div', { class: 'bank-workbench__list-head' }, el('label', {}, selectAll, ' Select all'), el('span', { text: `${shown.length} questions` })), list, btn('▦ Question board', () => {
+    collection.replaceChildren(el('div', { class: 'bank-workbench__list-head' }, el('label', {}, selectAll, ' Select all'), el('span', { text: `${shown.length} ${shown.length === 1 ? 'question' : 'questions'}` })), list, btn('▦ Question board', () => {
       const { d, close } = dialog('Question board'); d.append(el('div', { class: 'review-question-board__grid' }, ...shown.map((q, i) => el('button', { type: 'button', class: 'review-question-board__square', 'aria-label': `Question ${i + 1}: ${status(q)}`, onclick: () => { activeId = q.id; close(); draw(); void drawReader(q); } }, String(i + 1)))), btn('Close', close));
     }));
     if (!shown.some(q => q.id === activeId)) { activeId = shown[0].id; draw(); void drawReader(shown[0]); }
@@ -191,7 +196,7 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
       const reading = el('div', { class: 'bank-workbench__reading' }, el('div', { class: 'bank-workbench__meta', text: `${detail.current.type === 'mcq' ? 'MULTIPLE CHOICE' : 'TRUE / FALSE'} · ${detail.current.difficulty} · Version ${detail.currentVersion}` }), el('p', { class: 'muted', text: objectiveNames(q) }), rich(useSample?.stem ?? detail.current.stem, 'bank-workbench__stem'), ...options.map(o => el('div', { class: `bank-workbench__answer${o.role === 'correct' ? ' is-correct' : ''}` }, el('span', { text: o.key }), el('div', {}, o.role === 'correct' ? el('small', { text: 'Correct answer' }) : false, rich(o.text), rich(o.explanation ?? '', 'bank-workbench__explanation')))));
       reading.append(el('section', { class: 'bank-workbench__availability' }, el('strong', { text: status(q) }), el('p', { text: q.state === 'archived' ? 'Restore this question to review it again.' : heldTopics(q).length ? `Waiting on: ${heldTopics(q).map(t => t.name).join(', ')}. All tagged topics must be released.` : !courseOpen() ? 'Publish the course after completing its checklist.' : q.contentReady === false ? 'This version needs numerical or placeholder checks. Edit the question before approving it again.' : q.contentReady === true ? 'Approval, topic release and content checks are complete.' : 'Refresh to confirm content availability.' }), ...heldTopics(q).map(t => btn(`Release ${t.name} →`, () => editRelease(t), true)), !courseOpen() ? btn('Open course checklist', () => go('')) : false));
       reading.append(el('details', {}, el('summary', { text: 'Source references & version history' }), ...detail.current.sourceRefs.map(ref => el('p', { text: ref.chunk ?? `Source ${ref.materialId}` })), ...detail.versions.map(v => el('p', { text: `Version ${v.version} · ${new Date(v.createdAt).toLocaleString()}` }))));
-      reader.replaceChildren(reading, el('footer', { class: 'bank-workbench__footer' }, btn('Open full details', () => go(`bank/${q.id}`)), detail.state === 'archived' ? btn('Restore to review', () => restore(q), true) : btn('Edit question', () => openBankEditor(detail, tree, async () => { noticeText = 'Changes saved. This question is back in Review Queue.'; activeId = ''; await reload(); }), true), detail.state !== 'archived' ? btn('Archive', () => archive(q)) : false));
+      reader.replaceChildren(reading, el('footer', { class: 'bank-workbench__footer' }, btn('Open full details', () => go(`bank/${q.id}`)), detail.state !== 'archived' ? btn('Edit together', () => go(`bank/${q.id}/collaborate`)) : false, detail.state === 'archived' ? btn('Restore to review', () => restore(q), true) : btn('Edit question', () => openBankEditor(detail, tree, async () => { noticeText = 'Changes saved. This question is back in Review Queue.'; activeId = ''; await reload(); }), true), detail.state !== 'archived' ? btn('Archive', () => archive(q)) : false));
     } catch (e) { if (request === revision) reader.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void drawReader(q))); }
   }
   const portability = el('div', { class: 'cluster bank-portability' }, btn('Import questions', () => go('import')), btn('Export CSV', async () => {
@@ -202,4 +207,8 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
   }));
   root.replaceChildren(pageHeader('Question Bank', 'Approved questions. Organize, refine, and release by topic.', { text: 'Manage topic releases', onClick: showTopics }), portability, tabs, releases, toolbar, bulk, notice, workspace, empty);
   await reload();
+  attachTutorial(root, 'instructor-bank', {
+    'bank-status': '.bank-workbench__tabs',
+    'bank-releases': '.bank-releases',
+  });
 }

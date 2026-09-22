@@ -273,6 +273,18 @@ an Instructor grant never passes `ensureAdmin()`.
 `ensurePlatformInstructor()` protects course creation.
 Access to an existing course continues to use `ensureCourseInstructor()` from
 `course-guards.ts`, so a platform Instructor cannot inspect every course.
+`ensureCourseStudentPreview()` allows that course's Instructor or current TA
+(and Admins) into the isolated anonymous Student Preview routes only. It uses
+the same current-role checks as the other course guards; TA expiry removes the
+role and Passport reloads it on the next request. It does not authorize live
+Student APIs or Instructor tools.
+
+Co-instructor sharing adds active, course-scoped Instructor roles during each
+Passport user reload from the authoritative `courseInstructorShares` records.
+Pending shares activate only against canonical CWL email on login. Revocation
+is effective on the next request; deleted courses and deactivated users cannot
+gain access. Sharing never changes platform Instructor access. When course
+roles coexist, capability resolution uses Instructor, then TA, then Student.
 
 ```ts
 import { ensureRole } from '../components/auth';

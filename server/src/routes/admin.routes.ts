@@ -15,6 +15,7 @@ import {
   deactivateUser,
   getPlatformSettings,
   listAdminAccounts,
+  listAdminCourses,
   listUsers,
   reactivateUser,
   removeRole,
@@ -110,6 +111,14 @@ adminRouter.delete(
   validate({ params: puidParams }),
   async (req, res) => {
     res.json(await revokePlatformInstructor(String(req.params.puid), req.user!.puid));
+  },
+);
+
+adminRouter.get(
+  '/admin/courses',
+  ensureAdmin(),
+  async (_req, res) => {
+    res.json(await listAdminCourses());
   },
 );
 

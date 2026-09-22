@@ -340,6 +340,191 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
     ]
   },
   {
+    "id": "instructor-structure",
+    "role": "instructor",
+    "label": "Course Structure",
+    "path": "structure",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"structure-views\"]",
+        "title": "Build from evidence or edit manually",
+        "body": "Use AI draft to generate a reviewable Topic and Learning Objective outline from ready sources. Nothing enters the course until you select and add it."
+      },
+      {
+        "selector": "[data-tutorial=\"structure-outline\"]",
+        "title": "Keep the saved outline teachable",
+        "body": "Review objective wording, assigned materials and question kind. Topic release controls when its approved questions can reach students."
+      }
+    ]
+  },
+  {
+    "id": "instructor-bank",
+    "role": "instructor",
+    "label": "Question Bank and releases",
+    "path": "bank",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"bank-status\"]",
+        "title": "Separate approval from availability",
+        "body": "Approved questions can still be held by course publication, topic release or content checks. Use these views to see the exact state."
+      },
+      {
+        "selector": "[data-tutorial=\"bank-releases\"]",
+        "title": "Release by Topic",
+        "body": "Manage each Topic’s release explicitly. Releasing a Topic does not publish a draft course, and archiving preserves question history."
+      }
+    ]
+  },
+  {
+    "id": "instructor-coverage",
+    "role": "instructor",
+    "label": "Coverage Map",
+    "path": "content-map",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"coverage-summary\"]",
+        "title": "Read the coverage target",
+        "body": "Coverage combines a ready supporting source with approved-question supply. It helps prioritize authoring but does not itself grant student access."
+      },
+      {
+        "selector": "[data-tutorial=\"coverage-controls\"]",
+        "title": "Find the next gap",
+        "body": "Filter gaps or review backlog, search objectives, and switch to the evidence graph when you need to inspect relationships."
+      }
+    ]
+  },
+  {
+    "id": "instructor-sharing",
+    "role": "instructor",
+    "label": "Share with co-instructors",
+    "path": "co-instructors",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"sharing-people\"]",
+        "title": "Share authoring access",
+        "body": "Owners and Admins can add a CWL login name or UBC email. CWL must match an existing account; email can remain pending until the matching first sign-in."
+      },
+      {
+        "selector": "[data-tutorial=\"sharing-link\"]",
+        "title": "Copy a restricted link",
+        "body": "The course link works only for people who already have access. Sending the link never grants permission by itself."
+      }
+    ]
+  },
+  {
+    "id": "instructor-collaboration",
+    "role": "instructor",
+    "label": "Edit a question together",
+    "path": "bank",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"collaboration-presence\"]",
+        "title": "See who is editing",
+        "body": "Presence and connection status show the active shared draft. Concurrent field edits merge into this draft without changing the saved question."
+      },
+      {
+        "selector": "[data-tutorial=\"collaboration-editor\"]",
+        "title": "Work in the shared draft",
+        "body": "Edit the stem, answers and explanations together. If the saved question changes elsewhere, compare versions before continuing."
+      },
+      {
+        "selector": "[data-tutorial=\"collaboration-save\"]",
+        "title": "Save one reviewed version",
+        "body": "Saving validates the shared draft and creates a new question version in Review Queue. Download a copy before leaving if updates cannot be confirmed."
+      }
+    ]
+  },
+  {
+    "id": "instructor-parameters",
+    "role": "instructor",
+    "label": "Parameterized questions",
+    "path": "bank",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"parameter-definitions\"]",
+        "title": "Define every student-facing value",
+        "body": "Drawn variables set allowed inputs. Computed values derive the correct answer and distractors; formulas should preserve units and the intended misconception."
+      },
+      {
+        "selector": "[data-tutorial=\"parameter-verification\"]",
+        "title": "Verify before saving",
+        "body": "Re-roll examples and read verification results. Saving parameterization does not approve the question, and numerical uniqueness does not replace instructor review."
+      }
+    ]
+  },
+  {
+    "id": "instructor-import",
+    "role": "instructor",
+    "label": "Import questions",
+    "path": "import",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"import-method\"]",
+        "title": "Choose a supported import path",
+        "body": "Use Question file for CSV, JSON or QTI. Script migration is an advanced sandbox for reviewing a parameterized generator before conversion."
+      },
+      {
+        "selector": "[data-tutorial=\"import-preview\"]",
+        "title": "Preview before writing",
+        "body": "Inspect detected questions, assignments and rejected rows. Imported items enter Review Queue as Drafts and remain hidden from students."
+      }
+    ]
+  },
+  {
+    "id": "instructor-tas",
+    "role": "instructor",
+    "label": "Teaching Assistants",
+    "path": "tas",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"ta-team\"]",
+        "title": "Invite the course team",
+        "body": "Invite the UBC email used for CWL. Pending access activates on matching sign-in and expires with the configured course term."
+      },
+      {
+        "selector": "[data-tutorial=\"ta-boundaries\"]",
+        "title": "Delegate with clear boundaries",
+        "body": "Choose review, suggested-edit, analytics and flag-triage capabilities. Final question approval and flag resolution remain Instructor-only."
+      }
+    ]
+  },
+  {
+    "id": "instructor-flags",
+    "role": "instructor",
+    "label": "Student flags",
+    "path": "flags",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"flags-views\"]",
+        "title": "Separate active work from history",
+        "body": "Use status views and search to find reported questions. Preview TEST flags stay labelled and do not represent live student activity."
+      },
+      {
+        "selector": "[data-tutorial=\"flags-guidance\"]",
+        "title": "Resolve with evidence",
+        "body": "Inspect the recorded question version, student reason and TA escalation. Correctness-changing edits keep the remediation workflow explicit."
+      }
+    ]
+  },
+  {
+    "id": "ta-courses",
+    "role": "ta",
+    "label": "Choose a TA workspace",
+    "path": "courses",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"ta-course-heading\"]",
+        "title": "Choose the course you are helping",
+        "body": "Your TA workspace is course-scoped. Check the course identity before reviewing questions or student feedback."
+      },
+      {
+        "selector": "[data-tutorial=\"ta-course-list\"]",
+        "title": "Open the assigned workspace",
+        "body": "Each card opens that course’s Review Queue. Available actions still follow the permissions set by its Instructor."
+      }
+    ]
+  },
+  {
     "id": "ta-review",
     "role": "ta",
     "label": "Your review queue",
@@ -396,18 +581,18 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
   {
     "id": "admin-accounts",
     "role": "admin",
-    "label": "Instructor grants",
+    "label": "Manage user access",
     "path": "accounts",
     "steps": [
       {
-        "selector": "[data-tutorial=\"admin-grants-form\"]",
+        "selector": "[data-tutorial=\"admin-users-search\"]",
         "title": "Grant platform Instructor access",
-        "body": "Grant by PUID, including before first login. This permits course creation; it is separate from Admin status and course roles."
+        "body": "Find the user, open Grant in their row, then choose Instructor to allow course creation. TA and Student ask you to choose a course. Ban user remains a separate action."
       },
       {
-        "selector": "[data-tutorial=\"admin-grants-list\"]",
+        "selector": "[data-tutorial=\"admin-users-list\"]",
         "title": "Check current and pending grants",
-        "body": "Review the account list before changing access. Revoking a platform grant does not remove existing course roles."
+        "body": "Current and pending grants appear in this directory. Ban user blocks all platform access while retaining roles and records; Unban user restores access."
       }
     ]
   },
@@ -425,7 +610,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"admin-users-list\"]",
         "title": "Manage access with retained records",
-        "body": "Deactivation retains records. Review course ownership before removing access; the system protects against orphaning courses."
+        "body": "Banning retains records. Review course ownership before removing course roles; the system protects against orphaning courses."
       }
     ]
   },
@@ -462,6 +647,42 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
         "selector": "[data-tutorial=\"admin-platform-quality\"]",
         "title": "Review limits and quality",
         "body": "Set daily generation limits and quality checks deliberately. Disabling review affects quality reporting; changes require an explicit save."
+      }
+    ]
+  },
+  {
+    "id": "admin-operations",
+    "role": "admin",
+    "label": "Operations and issues",
+    "path": "operations",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"admin-operations-filters\"]",
+        "title": "Trace the right activity",
+        "body": "Switch between user operations, background tasks and change history. Filter by user, course, outcome or time before drawing a conclusion."
+      },
+      {
+        "selector": "[data-tutorial=\"admin-operations-results\"]",
+        "title": "Inspect retained evidence",
+        "body": "Open a row to review request context and linked background work. An accepted request is not proof that its task later completed."
+      }
+    ]
+  },
+  {
+    "id": "admin-questions",
+    "role": "admin",
+    "label": "All Questions diagnostics",
+    "path": "questions",
+    "steps": [
+      {
+        "selector": "[data-tutorial=\"admin-question-filters\"]",
+        "title": "Find a retained question",
+        "body": "Search across courses and publication states. Filters affect diagnosis only and never change the question served to students."
+      },
+      {
+        "selector": "[data-tutorial=\"admin-question-results\"]",
+        "title": "Reproduce with recorded evidence",
+        "body": "Inspect versions, flags and saved attempts, then reproduce a seeded or recorded variant. Reproduction is read-only and preserves the original evidence."
       }
     ]
   }

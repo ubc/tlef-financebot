@@ -4,6 +4,7 @@ import { pageHeader } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { coverageGraph } from './coverage-graph.js';
+import { attachTutorial } from '../../tutorials.js';
 
 async function renderContentMapInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const root = el('div', { class: 'view view--coverage' }, loadingState('Loading coverage…')); mount(outlet, root);
@@ -68,6 +69,10 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
       panel.replaceChildren(el('div', { class: 'coverage-layout' }, el('div', { class: 'coverage-table-wrap' }, table), inspector));
     }
     await draw();
+    attachTutorial(root, 'instructor-coverage', {
+      'coverage-summary': '.coverage-summary',
+      'coverage-controls': '.coverage-toolbar',
+    });
   } catch (e) { root.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void renderContentMapInner(outlet, courseId))); }
 }
 export function renderContentMap(outlet: HTMLElement, params: RouteParams): void { void renderContentMapInner(outlet, params.id); }

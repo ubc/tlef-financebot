@@ -25,7 +25,7 @@ function requestCourseId(req: Parameters<RequestHandler>[0], res: Parameters<Req
  * type level and does nothing at runtime. */
 export const NO_COURSE_ACCESS_BODY = Object.freeze({ error: 'You do not have access to this course.' } as const);
 
-function ensureCourseRole(role: CourseRole): RequestHandler {
+function ensureCourseRole(...roles: CourseRole[]): RequestHandler {
   return (req, res, next) => {
     if (!req.isAuthenticated() || !req.user) {
       res.status(401).json({ error: 'Authentication required.' });
@@ -34,7 +34,7 @@ function ensureCourseRole(role: CourseRole): RequestHandler {
     if (req.user.isAdmin) return next();
     const courseId = requestCourseId(req, res);
     const match = courseId && req.user.courseRoles.some(
-      (r) => r.role === role && r.courseId.toString() === new ObjectId(courseId).toString(),
+      (r) => roles.includes(r.role) && r.courseId.toString() === new ObjectId(courseId).toString(),
     );
     if (!match) {
       res.status(403).json(NO_COURSE_ACCESS_BODY);
@@ -47,3 +47,8 @@ function ensureCourseRole(role: CourseRole): RequestHandler {
 export const ensureCourseInstructor = (): RequestHandler => ensureCourseRole('instructor');
 export const ensureCourseStudent = (): RequestHandler => ensureCourseRole('student');
 export const ensureCourseTa = (): RequestHandler => ensureCourseRole('ta');
+
+/** Only for isolated anonymous Student Preview; this never grants access to
+ * live Student records or Instructor tools. TA expiry/revocation removes the
+ * course role, which Passport reloads on every authenticated request. */
+export const ensureCourseStudentPreview = (): RequestHandler => ensureCourseRole('instructor', 'ta');

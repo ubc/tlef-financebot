@@ -1,0 +1,50 @@
+[
+  {
+    "name": "capabilities-1440",
+    "axe": []
+  },
+  {
+    "name": "settings-1440",
+    "axe": []
+  },
+  {
+    "name": "capabilities-580",
+    "axe": []
+  },
+  {
+    "name": "settings-580",
+    "axe": []
+  },
+  {
+    "name": "capabilities-390",
+    "axe": []
+  },
+  {
+    "name": "settings-390",
+    "axe": []
+  },
+  {
+    "name": "capabilities-inspector",
+    "axe": []
+  },
+  {
+    "name": "settings-inspector",
+    "axe": []
+  },
+  {
+    "name": "settings-quality",
+    "axe": []
+  },
+  {
+    "name": "settings-review-warning",
+    "axe": []
+  },
+  {
+    "name": "settings-usage",
+    "axe": []
+  },
+  {
+    "name": "settings-custom-model",
+    "axe": []
+  }
+]

@@ -7,6 +7,7 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
+import { errorHandler } from '../../server/src/middleware/error-handler';
 
 jest.mock('../../server/src/services/courses.service', () => ({
   createCourse: jest.fn(),
@@ -41,6 +42,9 @@ jest.mock('../../server/src/services/course-deletion.service', () => ({
 import { coursesRouter } from '../../server/src/routes/courses.routes';
 import {
   createCourse,
+  updateCourse,
+  updateTheme,
+  updateLo,
   listInstructorCourses,
   setPublished,
   publishChecklist,
@@ -93,6 +97,7 @@ function makeApp(user?: User): Express {
     next();
   });
   app.use('/api', coursesRouter);
+  app.use(errorHandler);
   return app;
 }
 
@@ -425,5 +430,35 @@ describe('Theme/LO routes authenticate before the stash DB lookup', () => {
     const res = await request(makeApp(undefined)).post(`/api/los/${loId.toHexString()}/archive`);
     expect(res.status).toBe(401);
     expect(getLoCourseId).not.toHaveBeenCalled();
+  });
+});
+
+describe('human authoring revision contract', () => {
+  it.each(['course', 'theme', 'lo'] as const)('requires a revision before writing %s edits', async (resource) => {
+    jest.mocked(getThemeCourseId).mockResolvedValue(courseId);
+    jest.mocked(getLoCourseId).mockResolvedValue(courseId);
+    const path = resource === 'course' ? `/api/courses/${courseId}` : `/api/${resource === 'theme' ? 'themes' : 'los'}/${new ObjectId()}`;
+    const res = await request(makeApp(instructor)).patch(path).send({ name: 'Draft' });
+    expect(res.status).toBe(400);
+    expect(updateCourse).not.toHaveBeenCalled();
+    expect(updateTheme).not.toHaveBeenCalled();
+    expect(updateLo).not.toHaveBeenCalled();
+  });
+
+  it('saves settings and publication together using one revision precondition', async () => {
+    jest.mocked(updateCourse).mockResolvedValue({ _id: courseId, name: 'New name', published: true, revision: 3 } as never);
+    const res = await request(makeApp(instructor)).patch(`/api/courses/${courseId}`)
+      .send({ name: 'New name', published: true, expectedRevision: 2 });
+    expect(res.status).toBe(200);
+    expect(updateCourse).toHaveBeenCalledWith(courseId, { name: 'New name', published: true }, 2);
+    expect(setPublished).not.toHaveBeenCalled();
+  });
+
+  it('returns the conflict as JSON rather than claiming a stale course draft saved', async () => {
+    jest.mocked(updateCourse).mockRejectedValue(Object.assign(new Error('Course changed. Keep your draft.'), { status: 409 }));
+    const res = await request(makeApp(instructor)).patch(`/api/courses/${courseId}`)
+      .send({ name: 'My draft', expectedRevision: 1 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('Keep your draft');
   });
 });

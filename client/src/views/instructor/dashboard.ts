@@ -400,7 +400,7 @@ function openCourseDatesDialog(
       await updateCourse(course.id, {
         termStart: new Date(`${startInput.value}T00:00:00.000Z`).toISOString(),
         termEnd: new Date(`${endInput.value}T23:59:59.999Z`).toISOString(),
-      });
+      }, course.revision ?? 0);
       close();
       onSaved();
     } catch (caught) {
@@ -475,7 +475,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
 
     async function publish(): Promise<void> {
       try {
-        await updateCourse(courseId, { published: course.lifecycle !== 'published' });
+        await updateCourse(courseId, { published: course.lifecycle !== 'published' }, course.revision ?? 0);
         await renderDashboardInner(outlet, courseId);
       } catch (error) {
         const message = error instanceof ApiError ? error.message : (error as Error).message;

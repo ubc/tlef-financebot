@@ -61,7 +61,7 @@ function material(
 
 function contentMapMaterial(
   status: 'processing' | 'ready' | 'failed' = 'ready',
-  latestRun?: { runId: ObjectId; status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'; stage: string },
+  latestRun?: { runId: ObjectId; status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'; stage: string; errorCode?: string },
 ) {
   return {
     materialId,
@@ -92,7 +92,7 @@ function mockCourse(lifecycle: 'draft' | 'published' | 'archived' = 'draft'): vo
 
 function mockHealthyContent(overrides: {
   gaps?: Array<'no-material' | 'no-approved-questions' | 'thin-approved-set'>;
-  latestGenerationRun?: { runId: ObjectId; status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'; stage: string };
+  latestGenerationRun?: { runId: ObjectId; status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'; stage: string; errorCode?: string };
   approved?: number;
 } = {}): void {
   const approved = overrides.approved ?? 5;
@@ -355,3 +355,11 @@ describe('Instructor workflow summary', () => {
     expect(result.setup.primaryAction).toMatchObject({ id: 'restore-course', presentation: 'workspace' });
   });
 });
+
+ it('does not count instructor-ended generation as a processing fault', async () => {
+   mockHealthyContent({ latestGenerationRun: { runId: new ObjectId(), status: 'failed', stage: 'generating', errorCode: 'generation-ended' } });
+   const result = await instructorWorkflowSummary(courseId, instructorPuid);
+   expect(result.counts.contentIssues).toBe(0);
+   expect(result.actions.some(action => action.title === 'Repair content processing issues')).toBe(false);
+   expect(result.setup.steps.find(step => step.id === 'questions')?.status).not.toBe('needs-attention');
+ });

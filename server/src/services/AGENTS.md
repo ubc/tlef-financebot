@@ -80,7 +80,7 @@ objects directly.
   present, leaves a pending grant otherwise, lists safe persisted User fields,
   and writes role assignment/revocation audit events. Raw SAML assertions never
   enter its response shapes.
-- `preview.service.ts` — Instructor-only anonymous Student Preview
+- `preview.service.ts` — teaching-team anonymous Student Preview
   orchestration. It exposes the currently released Approved-question
   hierarchy and reuses the production grading, mastery, strategy, Review Book,
   flag, summary, skip, remediation, and material-source behaviours against a
@@ -90,7 +90,8 @@ objects directly.
   Book, mastery, or analytics. An explicit “send as TEST” option is the sole
   exception: it creates a clearly sourced live instructor-queue flag and a
   staff notification, while still skipping student labels, auto-pause, and
-  all real-student notifications.
+  all real-student notifications. The route permits that TEST option only for
+  course Instructors/Admins; current course TAs use fully isolated Preview state.
 - `exam-templates.service.ts` — Phase 3 WS-10 midterm/final configuration.
   Validates course-scoped Theme selections and exam counts/windows, computes
   split-aware Approved-question supply warnings without blocking saves, and
@@ -116,6 +117,14 @@ objects directly.
 
 Other services will appear as more components are built up.
 
+`course-sharing.service.ts` owns owner/Admin-managed co-instructor invitations
+and revocation. `courseInstructorShares` is the grant authority; session reads
+project active grants into `courseRoles` without copying them into User or
+granting platform Instructor. Pending invitations match canonical CWL email
+and use revision/status CAS, so revoke cannot race login into re-granting access.
+Admin directory/removal and staff notification readers use this same authority.
+No outbound email or public bearer link is created.
+
 ## Adding a service
 
 1. Create `<name>.service.ts` exporting plain functions (or a small class).
@@ -137,3 +146,17 @@ outline into a dedicated durable run preview. Counts default to AI choice; expli
 counts are validated. Source/size failures never produce a silently partial outline.
 Coverage gaps and exclusions accompany the draft. `classification.suggestHierarchy`
 uses the same analyzer through its legacy read-only response shape.
+
+Admin diagnostics lives in `admin-diagnostics.service.ts`: global, Admin-gated
+read models over request outcomes, existing change history, durable runs and
+question/version/attempt evidence. `operation-audit.service.ts` persists bounded,
+redacted telemetry; `operation-context.ts` carries request IDs into run creation.
+Read-only reproduction uses the existing parameter evaluator and pinned versions;
+it must not silently substitute fresh parameters for missing attempt evidence.
+
+`question-collaboration.service.ts` owns durable question drafts and expiring
+presence. Fresh course/capability checks apply to reads, writes and SSE ticks;
+Mongo revision CAS merges Yjs updates across processes. Explicit commits validate
+content, create immutable Pending Review versions, and journal the commit id on
+the version so interrupted head/draft updates can recover without duplicate
+versions. Normal question editing requires version pins and tag snapshots.

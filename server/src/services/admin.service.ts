@@ -2,6 +2,7 @@ import { ObjectId, type Filter, type WithId } from 'mongodb';
 import {
   auditCol,
   capabilitySettingsCol,
+  coursesCol,
   platformInstructorGrantsCol,
   platformSettingsCol,
   usersCol,
@@ -19,9 +20,12 @@ import {
   saveCapabilitySettings,
 } from './capabilities.service';
 import { PIPELINE_STEPS } from '../types/domain';
+import { courseLifecycle } from './courses.service';
+import { activeSharedInstructorPuids, projectCourseInstructorShares, revokeSharedInstructorGrants } from './course-sharing.service';
 import type {
   CapabilityRole,
   CapabilitySettings,
+  CourseLifecycle,
   CourseRole,
   PipelineStep,
   PlatformInstructorGrant,
@@ -201,6 +205,33 @@ export interface AdminUserDirectoryFilters {
   courseId?: ObjectId;
 }
 
+export interface AdminCourseOption {
+  _id: string;
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+  lifecycle: CourseLifecycle;
+}
+
+/** Minimal all-course identities for Admin role assignment, including archived courses. */
+export async function listAdminCourses(): Promise<AdminCourseOption[]> {
+  const courses = await coursesCol().find({}, {
+    projection: {
+      _id: 1, name: 1, courseCode: 1, section: 1, term: 1,
+      lifecycle: 1, published: 1, archivedAt: 1,
+    },
+  }).sort({ term: -1, courseCode: 1, section: 1, name: 1, _id: 1 }).toArray();
+  return courses.map((course) => ({
+    _id: course._id.toHexString(),
+    name: course.name,
+    courseCode: course.courseCode,
+    ...(course.section !== undefined ? { section: course.section } : {}),
+    term: course.term,
+    lifecycle: courseLifecycle(course),
+  }));
+}
+
 export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promise<Array<WithId<User>>> {
   const query: Filter<User> = {};
   if (filters.q?.trim()) {
@@ -210,12 +241,15 @@ export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promis
     }));
   }
   if (filters.role || filters.courseId) {
-    query.courseRoles = { $elemMatch: {
+    const courseRoles = { $elemMatch: {
       ...(filters.courseId ? { courseId: filters.courseId } : {}),
       ...(filters.role ? { role: filters.role } : {}),
     } };
+    const sharedPuids = !filters.role || filters.role === 'instructor' ? await activeSharedInstructorPuids(filters.courseId) : [];
+    if (sharedPuids.length) query.$and = [{ $or: [{ courseRoles }, { puid: { $in: sharedPuids } }] }];
+    else query.courseRoles = courseRoles;
   }
-  return usersCol().find(query).sort({ lastLoginAt: -1 }).limit(200).toArray();
+  return projectCourseInstructorShares(await usersCol().find(query).sort({ lastLoginAt: -1 }).limit(200).toArray(), { includeDeactivated: true });
 }
 
 async function auditUserMutation(
@@ -260,16 +294,18 @@ export async function removeRole(
 ): Promise<{ removed: boolean; warning?: 'orphans-course'; courseId?: string }> {
   const user = await usersCol().findOne({ puid });
   if (!user) throw new Error('admin-user-not-found');
-  const hasRole = user.courseRoles.some((entry) => entry.courseId.equals(courseId) && entry.role === role);
+  const effectiveUser = role === 'instructor' ? (await projectCourseInstructorShares([user], { includeDeactivated: true }))[0] : user;
+  const hasRole = effectiveUser.courseRoles.some((entry) => entry.courseId.equals(courseId) && entry.role === role);
   if (!hasRole) return { removed: false };
   if (role === 'instructor') {
-    const instructorCount = await usersCol().countDocuments({
-      courseRoles: { $elemMatch: { courseId, role: 'instructor' } },
-    });
+    const sharedPuids = await activeSharedInstructorPuids(courseId);
+    const directRoles = { courseRoles: { $elemMatch: { courseId, role: 'instructor' as const } } };
+    const instructorCount = await usersCol().countDocuments(sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles);
     if (instructorCount <= 1 && !confirm) {
       return { removed: false, warning: 'orphans-course', courseId: courseId.toHexString() };
     }
   }
+  if (role === 'instructor') await revokeSharedInstructorGrants(courseId, puid);
   await usersCol().updateOne(
     { _id: user._id },
     { $pull: { courseRoles: { courseId, role } } },

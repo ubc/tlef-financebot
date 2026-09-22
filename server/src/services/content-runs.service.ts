@@ -1,3 +1,4 @@
+import { operationContext } from './operation-context';
 import type { ObjectId, WithId } from 'mongodb';
 import { hasPendingJob } from '../components/jobs';
 import { contentRunsCol } from '../components/mongodb/collections';
@@ -144,6 +145,7 @@ export async function createMaterialIngestRun(input: {
 }): Promise<WithId<MaterialIngestRun>> {
   const now = new Date();
   const doc: MaterialIngestRun = {
+    operationId: operationContext.getStore(),
     courseId: input.courseId,
     kind: 'material-ingest',
     requestedBy: input.requestedBy,
@@ -173,6 +175,7 @@ export async function createStructureGenerationRun(input: {
 }): Promise<WithId<StructureGenerationRun>> {
   const now = new Date();
   const doc: StructureGenerationRun = {
+    operationId: operationContext.getStore(),
     courseId: input.courseId, requestedBy: input.requestedBy, kind: 'structure-generation',
     status: 'queued', stage: 'queued', completedUnits: 0, revision: 0,
     events: [], warnings: [], input: input.options, createdAt: now, updatedAt: now,
@@ -201,6 +204,7 @@ export async function createQuestionGenerationRun(input: {
 }): Promise<WithId<QuestionGenerationRun>> {
   const now = new Date();
   const doc: QuestionGenerationRun & { _id?: ObjectId } = {
+    operationId: operationContext.getStore(),
     ...(input.runId ? { _id: input.runId } : {}),
     courseId: input.courseId,
     kind: 'question-generation',

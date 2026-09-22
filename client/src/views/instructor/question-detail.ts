@@ -202,6 +202,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     }
   }
   let state: PublicationState = detail.state;
+  let expectedVersionId = detail.current._id;
   let loIds: string[] = [...detail.loIds];
   let themeIds: string[] = [...detail.themeIds];
 
@@ -475,6 +476,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   );
 
   function applySavedVersion(saved: QuestionVersion): void {
+    expectedVersionId = saved._id;
     renderPlaceholderWarning(saved.unresolvablePlaceholders);
     // `saved` comes from the server in STORED form; the editor works in
     // display form, so convert on the way in.
@@ -526,7 +528,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     if (Object.keys(patch).length === 0) return { ok: true, changed: false };
 
     try {
-      const saved = await editQuestion(questionId, patch);
+      const saved = await editQuestion(questionId, { ...patch, expectedVersionId });
       // The saved version becomes the new edited-comparison baseline
       // (Task-15 Task E: "Reset after a successful save").
       applySavedVersion(saved);
@@ -643,7 +645,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   async function doTransition(to: PublicationState): Promise<void> {
     errorSlot.replaceChildren();
     try {
-      const updated = await transitionQuestion(questionId, to);
+      const updated = await transitionQuestion(questionId, to, expectedVersionId);
       // Approve/Reject move state and reflect it immediately — no full
       // reload (Task-15 Task E acceptance criteria).
       state = updated.state;
@@ -873,6 +875,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     renderRegenerationPanel();
     try {
       const saved = await editQuestion(questionId, {
+        expectedVersionId,
         stem: regenerationVariant.stem,
         options: regenerationVariant.options,
         difficulty: regenerationVariant.difficulty,
@@ -917,7 +920,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     chipsErrorSlot.replaceChildren();
     const nextLoIds = loIds.filter((id) => id !== loId);
     try {
-      await editQuestion(questionId, { loIds: nextLoIds });
+      await editQuestion(questionId, { expectedVersionId, expectedTags: { loIds, themeIds }, loIds: nextLoIds });
       loIds = nextLoIds;
       renderChips();
     } catch (error) {
@@ -931,7 +934,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     const nextThemeIds = context && !themeIds.includes(context.theme._id) ? [...themeIds, context.theme._id] : themeIds;
     const nextLoIds = [...loIds, loId];
     try {
-      await editQuestion(questionId, { loIds: nextLoIds, themeIds: nextThemeIds });
+      await editQuestion(questionId, { expectedVersionId, expectedTags: { loIds, themeIds }, loIds: nextLoIds, themeIds: nextThemeIds });
       loIds = nextLoIds;
       themeIds = nextThemeIds;
       renderChips();
@@ -1084,6 +1087,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       fromFlags ? '← Back to Flag Queue' : fromQueue ? '← Back to Review Queue' : '← Back to Question Bank',
     ),
     pageHeader('Question', ''),
+    ...(detail.state !== 'archived' ? [el('a', { class: 'btn btn--instr-primary', href: `#/instructor/course/${detail.courseId}/bank/${questionId}/collaborate`, text: 'Edit together' })] : []),
     ...(analyticsVersionId ? [analyticsNotice] : []),
     ...(flagBanner ? [flagBanner] : []),
     el(

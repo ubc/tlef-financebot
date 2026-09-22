@@ -11,6 +11,7 @@ import {
   PLATFORM_DEFAULTS,
   effectivePermission,
   hasCapability,
+  courseRole,
 } from '../../server/src/services/capabilities.service';
 
 const courseId = new ObjectId();
@@ -44,6 +45,23 @@ beforeEach(() => {
 });
 
 describe('capability resolution (§4.2)', () => {
+  it.each([
+    ['student', 'ta', 'instructor'],
+    ['ta', 'instructor', 'student'],
+    ['instructor', 'student', 'ta'],
+  ] as const)('resolves mixed roles independently of insertion order: %s, %s, %s', async (...roles) => {
+    const mixed = { ...user('student'), courseRoles: roles.map(role => ({ courseId, role })) };
+    expect(courseRole(mixed, courseId)).toBe('instructor');
+    await expect(hasCapability(mixed, courseId, 'question.approve')).resolves.toBe(true);
+    await expect(hasCapability(mixed, courseId, 'flag.resolve')).resolves.toBe(true);
+  });
+
+  it('never imports an Instructor role from another course into TA permissions', async () => {
+    const mixed = { ...user('ta'), courseRoles: [{ courseId: new ObjectId(), role: 'instructor' as const }, { courseId, role: 'ta' as const }] };
+    expect(courseRole(mixed, courseId)).toBe('ta');
+    await expect(hasCapability(mixed, courseId, 'question.approve')).resolves.toBe(false);
+  });
+
   it('keeps instructor defaults all true and Student defaults all false', () => {
     for (const capability of CAPABILITIES) {
       expect(PLATFORM_DEFAULTS[capability].instructor).toBe(true);

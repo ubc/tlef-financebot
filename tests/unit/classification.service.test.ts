@@ -95,7 +95,7 @@ describe('classifyMaterial (IN-S06)', () => {
     expect(completeJson).toHaveBeenCalledTimes(1);
     expect(materialUpdateOne).toHaveBeenCalledTimes(1);
     const [filter, update] = materialUpdateOne.mock.calls[0];
-    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false } });
+    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false }, $or: [{ revision: 0 }, { revision: { $exists: false } }] });
     expect(update.$set.assignments).toEqual([{ themeId, loId }]);
     expect(update.$set.automation.assignment.status).toBe('auto-applied');
     expect(update.$unset).toEqual({ classificationSuggestion: '' });
@@ -254,6 +254,7 @@ describe('applySuggestedHierarchy', () => {
           },
         },
         $unset: { classificationSuggestion: '' },
+        $inc: { revision: 1 },
       },
     );
     expect(materialUpdateOne).toHaveBeenNthCalledWith(
@@ -264,6 +265,7 @@ describe('applySuggestedHierarchy', () => {
           assignments: { $each: [{ themeId: createdThemeId, loId: createdLo1Id }] },
         },
         $unset: { classificationSuggestion: '' },
+        $inc: { revision: 1 },
       },
     );
     expect(result).toEqual({
@@ -309,7 +311,7 @@ describe('resolveClassification accept/reject (IN-S06)', () => {
     await resolveClassification(materialId, 'accept');
 
     const [filter, update] = materialFindOneAndUpdate.mock.calls[0];
-    expect(filter).toEqual({ _id: materialId });
+    expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false }, $or: [{ revision: 0 }, { revision: { $exists: false } }] });
     expect(update.$set.assignments).toEqual([{ themeId, loId }]);
     expect(update.$unset).toEqual({ classificationSuggestion: '', classificationSuggestions: '' });
   });
@@ -342,5 +344,34 @@ describe('resolveClassification accept/reject (IN-S06)', () => {
   it('throws material-not-found when the material does not exist', async () => {
     materialFindOne.mockResolvedValue(null);
     await expect(resolveClassification(new ObjectId(), 'reject')).rejects.toThrow('material-not-found');
+  });
+});
+
+describe('classification concurrency', () => {
+  it('leaves a manual correction intact when the AI finishes against an older revision', async () => {
+    const materialId = new ObjectId();
+    const courseId = new ObjectId();
+    const themeId = new ObjectId();
+    const loId = new ObjectId();
+    const manualAssignment = { themeId: new ObjectId() };
+    let saved = { _id: materialId, courseId, excerpt: 'cash flow', revision: 1, assignments: [] as Array<{ themeId: ObjectId; loId?: ObjectId }> };
+    materialFindOne.mockImplementation(async () => ({ ...saved }));
+    themeToArray.mockResolvedValue([{ _id: themeId, courseId, name: 'Finance' }]);
+    loToArray.mockResolvedValue([{ _id: loId, courseId, themeId, name: 'Explain cash flow' }]);
+    jest.mocked(completeJson).mockImplementation(async () => {
+      // A co-author saves while model inference is in flight.
+      saved = { ...saved, revision: 2, assignments: [manualAssignment] };
+      return { themeName: 'Finance', loName: 'Explain cash flow', confidence: 0.99 } as never;
+    });
+    materialUpdateOne.mockImplementation(async (filter, update) => {
+      if (filter.revision !== saved.revision) return { matchedCount: 0 };
+      saved = { ...saved, ...update.$set, revision: saved.revision + update.$inc.revision };
+      return { matchedCount: 1 };
+    });
+
+    await classifyMaterial(materialId);
+
+    expect(materialUpdateOne).toHaveBeenCalledTimes(1);
+    expect(saved).toMatchObject({ revision: 2, assignments: [manualAssignment] });
   });
 });

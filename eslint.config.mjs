@@ -46,6 +46,23 @@ export default tseslint.config(
     languageOptions: { sourceType: 'commonjs', globals: nodeGlobals },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
+  // Design verification scripts run in Node and pass callbacks into a browser
+  // page, so both sets of globals are intentional in the same CommonJS file.
+  {
+    files: ['docs/design/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...nodeGlobals,
+        document: 'readonly',
+        window: 'readonly',
+        localStorage: 'readonly',
+        innerWidth: 'readonly',
+        getComputedStyle: 'readonly',
+      },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
   // Ambient declaration files legitimately declaration-merge empty interfaces.
   {
     files: ['**/*.d.ts'],

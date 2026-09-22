@@ -44,12 +44,13 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   `PUT/DELETE /api/admin/platform-instructors/:puid`. Every route is protected
   by `ensureAdmin()`; PUT may create a pending PUID grant before first SAML
   login, and DELETE is idempotent.
-- `preview.routes.ts` — explicit course-Instructor-only anonymous Student
+- `preview.routes.ts` — explicit course-Instructor/current-TA (or Admin) anonymous Student
   Preview. Its `/preview/*` namespace mirrors Student home, practice, attempt,
   flag, Review Book/bookmark/remove, skip, summary, and remediation-material
   capabilities. Every stateful call carries a server-validated
   `previewSessionId`; these routes intentionally do not weaken
-  `ensureCourseStudent()` or call live student workflows.
+  `ensureCourseStudent()` or call live student workflows. TA flags remain
+  isolated even if the client requests the Instructor/Admin TEST queue option.
 - `exams.routes.ts` — Phase 3 WS-10. Exposes course-Instructor list/upsert
   endpoints for midterm/final Exam Prep templates plus course-Student active
   template, single-sitting start/resume, sanitized attempt-state, answer, and
@@ -113,3 +114,9 @@ the "Protecting routes" section of `components/auth/AGENTS.md`.
   question-pattern limits. Aggregate routes require `analytics.view`; all named
   follow-up lists/search/profiles require `analytics.individual`. Distribution
   resolves an explicit version against the course-owned question.
+
+`course-sharing.routes.ts` exposes owner/Admin-managed invitations and members.
+`question-collaboration.routes.ts` exposes authenticated course/question-scoped
+shared snapshots, updates, presence, SSE, commit and explicit comparison/rebase.
+Permanent access/lifecycle failures end streams; transient failures reconnect.
+See the detailed wire contracts in `docs/api-contract.md`.

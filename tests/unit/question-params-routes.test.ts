@@ -57,6 +57,7 @@ jest.mock('../../server/src/services/bank.service', () => ({
 import { questionsRouter } from '../../server/src/routes/questions.routes';
 
 const questionId = new ObjectId();
+const loadedVersionId = new ObjectId();
 
 function app(): Express {
   const instance = express();
@@ -78,11 +79,11 @@ const soundBody = {
 };
 
 function patchWith(body: object) {
-  return request(app()).patch(`/api/questions/${questionId.toHexString()}/params`).send(body);
+  return request(app()).patch(`/api/questions/${questionId.toHexString()}/params`).send({ expectedVersionId: loadedVersionId.toHexString(), ...body });
 }
 
 function patchQuestion(body: object) {
-  return request(app()).patch(`/api/questions/${questionId.toHexString()}`).send(body);
+  return request(app()).patch(`/api/questions/${questionId.toHexString()}`).send({ expectedVersionId: loadedVersionId.toHexString(), ...body });
 }
 
 beforeEach(() => {

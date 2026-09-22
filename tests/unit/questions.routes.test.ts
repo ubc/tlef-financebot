@@ -42,6 +42,7 @@ import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransiti
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
 const questionId = new ObjectId();
+const loadedVersionId = new ObjectId();
 
 function userFixture(courseRoles: User['courseRoles']): User {
   return {
@@ -415,10 +416,44 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
     jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
   });
 
+  it('requires a loaded version for every human edit', async () => {
+    for (const path of [`/api/questions/${questionId}`, `/api/questions/${questionId}/params`]) {
+      const response = await request(makeApp(instructor)).patch(path).send({ stem: 'Stale draft', paramSlots: [] });
+      expect(response.status).toBe(400);
+    }
+    expect(editQuestion).not.toHaveBeenCalled();
+  });
+
+  it('requires the loaded tag arrays and passes the snapshot as ObjectIds', async () => {
+    const target = new ObjectId(), previous = new ObjectId();
+    const path = `/api/questions/${questionId}`;
+    const missing = await request(makeApp(instructor)).patch(path).send({ expectedVersionId: loadedVersionId.toHexString(), loIds: [target.toHexString()] });
+    expect(missing.status).toBe(400);
+    expect(editQuestion).not.toHaveBeenCalled();
+    jest.mocked(editQuestion).mockResolvedValue({ _id: loadedVersionId, stem: 'Question', options: [mcqOption()] } as never);
+    const response = await request(makeApp(instructor)).patch(path).send({ expectedVersionId: loadedVersionId.toHexString(),
+      expectedTags: { loIds: [previous.toHexString()], themeIds: [] }, loIds: [target.toHexString()],
+      collaborationDraftId: new ObjectId().toHexString(), collaborationCommitId: 'untrusted',
+    });
+    expect(response.status).toBe(200);
+    expect(editQuestion).toHaveBeenCalledWith(questionId, {
+      expectedVersionId: loadedVersionId, expectedTags: { loIds: [previous], themeIds: [] }, loIds: [target],
+    }, instructor.puid);
+  });
+
+  it('returns a conflict for a stale parameter edit without retrying it against a newer version', async () => {
+    jest.mocked(editQuestion).mockRejectedValue(new Error('question-conflict'));
+    const response = await request(makeApp(instructor)).patch(`/api/questions/${questionId}/params`)
+      .send({ expectedVersionId: loadedVersionId.toHexString(), generateScript: 'function generate(){return {vars:{}};}' });
+    expect(response.status).toBe(409);
+    expect(editQuestion).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(editQuestion).mock.calls[0][1].expectedVersionId).toEqual(loadedVersionId);
+  });
+
   it('validates options element shape via zod (missing explanation) without calling the service', async () => {
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}`)
-      .send({ options: [{ key: 'A', text: 'Option A', role: 'correct' }] });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), options: [{ key: 'A', text: 'Option A', role: 'correct' }] });
 
     expect(res.status).toBe(400);
     expect(editQuestion).not.toHaveBeenCalled();
@@ -427,7 +462,7 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
   it('rejects an invalid option role via zod without calling the service', async () => {
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}`)
-      .send({ options: [mcqOption({ role: 'not-a-real-role' })] });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), options: [mcqOption({ role: 'not-a-real-role' })] });
 
     expect(res.status).toBe(400);
     expect(editQuestion).not.toHaveBeenCalled();
@@ -438,7 +473,7 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}`)
-      .send({ options: [mcqOption({ key: 'A' }), mcqOption({ key: 'B', role: 'clearly-wrong' })] });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), options: [mcqOption({ key: 'A' }), mcqOption({ key: 'B', role: 'clearly-wrong' })] });
 
     expect(editQuestion).toHaveBeenCalled();
     expect(res.status).toBe(400);
@@ -465,7 +500,7 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}`)
-      .send({ stem: 'Updated' });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), stem: 'Updated' });
 
     expect(res.status).toBe(200);
     expect(res.body.stem).toBe('Updated');
@@ -482,7 +517,7 @@ describe('PATCH /api/questions/:questionId (IN-Q03)', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}`)
-      .send({ stem: 'A down payment in {{YEARS}} years.' });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), stem: 'A down payment in {{YEARS}} years.' });
 
     expect(res.status).toBe(200);
     expect(res.body.unresolvablePlaceholders).toEqual(['{{YEARS}}', '{{N}']);
@@ -532,7 +567,7 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
   it('403s a non-instructor', async () => {
     const res = await request(makeApp(student))
       .patch(`/api/questions/${questionId.toHexString()}/params`)
-      .send({ paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
 
     expect(res.status).toBe(403);
     expect(editQuestion).not.toHaveBeenCalled();
@@ -544,12 +579,12 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}/params`)
-      .send({ paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), paramSlots: [{ name: 'rate', min: 1, max: 10 }] });
 
     expect(res.status).toBe(200);
     expect(editQuestion).toHaveBeenCalledWith(
       questionId,
-      { paramSlots: [{ name: 'rate', min: 1, max: 10 }] },
+      { expectedVersionId: loadedVersionId, paramSlots: [{ name: 'rate', min: 1, max: 10 }] },
       instructor.puid,
     );
     expect(res.body.paramSlots).toEqual([{ name: 'rate', min: 1, max: 10 }]);
@@ -560,12 +595,12 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}/params`)
-      .send({ generateScript: 'function generate(random){ return { vars: {} }; }' });
+      .send({ expectedVersionId: loadedVersionId.toHexString(), generateScript: 'function generate(random){ return { vars: {} }; }' });
 
     expect(res.status).toBe(200);
     expect(editQuestion).toHaveBeenCalledWith(
       questionId,
-      { generateScript: 'function generate(random){ return { vars: {} }; }' },
+      { expectedVersionId: loadedVersionId, generateScript: 'function generate(random){ return { vars: {} }; }' },
       instructor.puid,
     );
   });
@@ -573,7 +608,7 @@ describe('PATCH /api/questions/:questionId/params (IN-Q09)', () => {
   it('rejects a malformed paramSlots element via zod without calling the service', async () => {
     const res = await request(makeApp(instructor))
       .patch(`/api/questions/${questionId.toHexString()}/params`)
-      .send({ paramSlots: [{ min: 1, max: 10 }] }); // missing required `name`
+      .send({ expectedVersionId: loadedVersionId.toHexString(), paramSlots: [{ min: 1, max: 10 }] }); // missing required `name`
 
     expect(res.status).toBe(400);
     expect(editQuestion).not.toHaveBeenCalled();
@@ -661,12 +696,18 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
     jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
   });
 
+  it('requires the version that the instructor reviewed', async () => {
+    const response = await request(makeApp(instructor)).post(`/api/questions/${questionId}/transition`).send({ to: 'approved' });
+    expect(response.status).toBe(400);
+    expect(transitionQuestion).not.toHaveBeenCalled();
+  });
+
   it('409s with the service\'s invalid-transition message', async () => {
     jest.mocked(transitionQuestion).mockRejectedValue(new Error('invalid-transition:archived->approved'));
 
     const res = await request(makeApp(instructor))
       .post(`/api/questions/${questionId.toHexString()}/transition`)
-      .send({ to: 'approved' });
+      .send({ to: 'approved', expectedVersionId: loadedVersionId.toHexString() });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('invalid-transition:archived->approved');
@@ -677,7 +718,7 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
 
     const res = await request(makeApp(instructor))
       .post(`/api/questions/${questionId.toHexString()}/transition`)
-      .send({ to: 'approved' });
+      .send({ to: 'approved', expectedVersionId: loadedVersionId.toHexString() });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('question-conflict');
@@ -691,7 +732,7 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
     expect(response.status).toBe(200);
     expect(transitionQuestion).toHaveBeenCalledWith(questionId, 'archived', instructor.puid, versionId, 'Ambiguous');
     for (const body of [{ to: 'approved', rejectionReason: 'No' }, { to: 'archived', rejectionReason: 'x'.repeat(2001) }]) {
-      const invalid = await request(makeApp(instructor)).post(`/api/questions/${questionId}/transition`).send(body);
+      const invalid = await request(makeApp(instructor)).post(`/api/questions/${questionId}/transition`).send({ ...body, expectedVersionId: loadedVersionId.toHexString() });
       expect(invalid.status).toBe(400);
     }
   });
@@ -705,15 +746,15 @@ describe('POST /api/questions/:questionId/transition (IN-Q04/Q07)', () => {
 
     const res = await request(makeApp(instructor))
       .post(`/api/questions/${questionId.toHexString()}/transition`)
-      .send({ to: 'approved' });
+      .send({ to: 'approved', expectedVersionId: loadedVersionId.toHexString() });
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(questionId.toHexString());
     expect(res.body.state).toBe('approved');
-    expect(transitionQuestion).toHaveBeenCalledWith(questionId, 'approved', instructor.puid);
+    expect(transitionQuestion).toHaveBeenCalledWith(questionId, 'approved', instructor.puid, loadedVersionId);
   });
 
-  it('forwards an optional expectedVersionId as an ObjectId for content-version CAS', async () => {
+  it('forwards the required expectedVersionId as an ObjectId for content-version CAS', async () => {
     const expectedVersionId = new ObjectId();
     jest.mocked(transitionQuestion).mockResolvedValue({
       _id: questionId,

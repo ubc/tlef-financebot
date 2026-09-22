@@ -89,7 +89,7 @@ export async function hasCapability(
   capability: Capability,
 ): Promise<boolean> {
   if (user.isAdmin) return true;
-  const role = user.courseRoles.find((entry) => entry.courseId.equals(courseId))?.role;
+  const role = courseRole(user, courseId);
   if (!role) return false;
   return (await effectivePermission(courseId, role, capability, user.puid)).value;
 }
@@ -138,7 +138,10 @@ export async function saveCapabilitySettings(
 }
 
 export function courseRole(user: User, courseId: ObjectId): CourseRole | undefined {
-  return user.courseRoles.find((entry) => entry.courseId.equals(courseId))?.role;
+  // Roles coexist, so insertion order cannot decide which permission model
+  // applies when a Student/TA is subsequently invited as a co-instructor.
+  const roles = user.courseRoles.filter((entry) => entry.courseId.equals(courseId)).map(entry => entry.role);
+  return (['instructor', 'ta', 'student'] as const).find(role => roles.includes(role));
 }
 
 /** Read-only projection of this session user's effective course permissions.

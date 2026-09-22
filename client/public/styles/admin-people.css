@@ -1,0 +1,89 @@
+/* Compact people and provisioning details within the shared Admin console. */
+.admin-people .ac-people-inspector-slot{display:contents}
+.admin-people .ac-person{display:flex;align-items:center;gap:10px;min-width:0}
+.admin-people .ac-person-avatar{width:30px;height:30px;display:grid;place-items:center;flex-shrink:0;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:10px;font-weight:650;color:var(--muted)}
+.admin-people .ac-person-copy{min-width:0}
+.admin-people .ac-person-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);line-height:1.6}
+.admin-people .ac-cell-link,.admin-people .ac-sort{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.admin-people .ac-cell-link{font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.admin-people .ac-cell-link:hover{text-decoration:underline}
+.admin-people .ac-people-table{table-layout:fixed}
+.admin-people .ac-people-table th:first-child{width:30%}
+.admin-people .ac-people-table .ac-people-roles{width:23%}
+.admin-people .ac-people-table .ac-people-courses{width:70px}
+.admin-people .ac-people-table .ac-people-date{width:160px}
+.admin-people .ac-people-table td{overflow-wrap:anywhere}
+.admin-people .ac-people-roles .ac-badge{margin:2px 4px 2px 0}
+.admin-people .ac-grants-table .ac-grants-puid{width:21%;font-size:11px}
+.admin-people .ac-grants-table .ac-grants-account{width:105px}
+.admin-people .ac-people-properties{display:grid;grid-template-columns:94px minmax(0,1fr);gap:13px 10px;margin:20px 0;font-size:12px;line-height:1.5}
+.admin-people .ac-people-properties dt{color:var(--muted);margin:0}
+.admin-people .ac-people-properties dd{margin:0;overflow-wrap:anywhere}
+.admin-people .ac-people-section-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:24px 0 12px}
+.admin-people .ac-people-link{display:block;padding:12px 0;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;text-decoration:none;font-weight:550}
+.admin-people .ac-people-link:hover{text-decoration:underline}
+.admin-people .ac-people-course-role{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0;border-bottom:1px solid var(--border)}
+.admin-people .ac-people-course-role .mono{display:block;font-size:11px;overflow-wrap:anywhere;margin-top:7px}
+.admin-people .ac-people-course-role>div{min-width:0}
+.admin-people .ac-people-role-form{display:grid;gap:12px}
+.admin-people .ac-people-role-form .form-field{margin:0}
+.admin-people .ac-people-role-form .form-field__label{font-size:12px}
+.admin-people .ac-people-role-form .btn{justify-self:start}
+.admin-people .ac-people-callout,.ac-people-dialog .ac-people-callout{border:1px solid var(--border);background:var(--bg);border-radius:7px;padding:12px 14px;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.admin-people .ac-feedback:empty,.ac-people-dialog .ac-feedback:empty{display:none}
+.admin-people .ac-feedback,.ac-people-dialog .ac-feedback{font-size:12px;padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}
+.admin-people .ac-feedback--error,.ac-people-dialog .ac-feedback--error{color:var(--ac-danger,#a82d38)}
+.ac-people-dialog{max-width:500px;width:calc(100% - 32px)}
+.ac-people-dialog .app-dialog__surface{padding:24px;display:grid;gap:16px}
+.ac-people-dialog .admin-account-create{padding:0;border:0;background:none;display:grid;grid-template-columns:1fr;gap:16px;box-shadow:none;margin:0}
+.ac-people-dialog .ac-note{font-size:12px;line-height:1.7;color:var(--muted);margin:0}
+.ac-people-dialog p{margin:0;line-height:1.6}
+.ac-people-dialog .input{font-size:13px}
+.ac-people-dialog .app-dialog__actions{margin-top:8px}
+@media(max-width:1400px){.admin-people.has-inspector .ac-people-date,.admin-people.has-inspector .ac-grants-puid{display:none}.admin-people.has-inspector .ac-people-table th:first-child{width:40%}}
+@media(max-width:1000px){.admin-people .ac-people-date{display:none}.admin-people .ac-people-limit{display:none}.admin-people .ac-people-table th:first-child{width:36%}}
+@media(max-width:680px){.admin-people .ac-people-courses,.admin-people .ac-grants-puid,.admin-people .ac-grants-account{display:none}.admin-people .ac-people-table th:first-child,.admin-people.has-inspector .ac-people-table th:first-child{width:45%}.admin-people .ac-person-avatar{display:none}.admin-people .ac-grants-table th:first-child,.admin-people.has-inspector .ac-grants-table th:first-child{width:56%}.admin-people .ac-grants-table .ac-badge{white-space:normal}.admin-people .ac-toolbar.admin-directory-search{flex-wrap:wrap}.admin-people .admin-directory-search input{min-width:130px;flex:1 1 160px}.admin-people .admin-directory-search select{width:auto;min-width:90px;flex:1}.admin-people .admin-account-search .btn{white-space:nowrap}}
+@media(max-width:450px){.admin-people .ac-people-roles{display:none}.admin-people .ac-people-table th:first-child,.admin-people.has-inspector .ac-people-table th:first-child{width:63%}.admin-people .ac-footer>.ac-actions .btn{padding-left:7px;padding-right:7px}.admin-people .ac-person-copy small{max-width:180px}.admin-people .admin-account-search{flex-wrap:wrap}.admin-people .admin-account-search input{flex-basis:100%}.admin-people .ac-grants-table th:first-child,.admin-people.has-inspector .ac-grants-table th:first-child{width:55%}}
+
+.admin-people .ac-badge--warning{color:var(--ac-warn)}.admin-people .ac-badge--info{color:var(--ac-accent)}.admin-people .ac-eyebrow{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:5px}
+
+/* Access actions belong to each identity in the unified directory. */
+.admin-people .ac-person-actions{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.admin-people .ac-person-actions .btn{white-space:nowrap;min-height:29px;font-size:10px;padding:5px 8px}
+.admin-people .ac-people-table th:first-child{width:25%}
+.admin-people .ac-people-table .ac-people-roles{width:20%}
+.admin-people .ac-people-table .ac-people-access{width:190px}
+.admin-people .ac-people-table .ac-badge{white-space:normal}
+.admin-people .ac-badge--danger{color:var(--ac-danger)}
+.admin-people .ac-panel .ac-person-actions{margin:14px 0}
+@media(max-width:1400px){.admin-people.has-inspector .ac-people-roles,.admin-people.has-inspector .ac-people-courses{display:none}.admin-people.has-inspector .ac-people-table th:first-child{width:30%}.admin-people.has-inspector .ac-people-table .ac-people-access{width:220px}}
+@media(max-width:1050px){.admin-people .ac-people-courses{display:none}.admin-people .ac-people-table .ac-people-access{width:220px}}
+@media(max-width:680px){.admin-people .ac-people-roles{display:none}.admin-people .ac-people-table th:first-child,.admin-people.has-inspector .ac-people-table th:first-child{width:33%}.admin-people .ac-people-table .ac-people-access,.admin-people.has-inspector .ac-people-table .ac-people-access{width:43%}.admin-people .ac-person-copy small{font-size:9px}.admin-people .ac-person-actions .btn{font-size:9px;padding:4px 5px;min-height:28px}.admin-people .ac-person-actions{gap:4px}.admin-people .ac-panel .ac-person-actions .btn{font-size:11px;padding:6px 9px}}
+
+/* The user inspector's tabs sit outside its scrolling body. Keep every section
+   on one inset and give profile actions their own size, separate from row actions. */
+.admin-people .ac-panel{--people-panel-inset:20px}
+.admin-people .ac-panel-header{padding:18px var(--people-panel-inset);align-items:center}
+.admin-people .ac-panel-header>.btn{width:32px;height:32px;min-height:32px;padding:0;justify-content:center;font-size:20px;line-height:1}
+.admin-people .ac-panel>.ac-tabs{padding:0 var(--people-panel-inset);margin:0;gap:20px;min-height:43px}
+.admin-people .ac-panel>.ac-tabs button{font-size:12px;min-height:43px}
+.admin-people .ac-panel-body{padding:20px var(--people-panel-inset)}
+.admin-people .ac-panel-footer{padding:12px var(--people-panel-inset)}
+.admin-people .ac-panel .ac-note{font-size:12px;line-height:1.65}
+.admin-people .ac-panel .ac-person-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:16px 0}
+.admin-people .ac-panel .ac-person-actions .btn{width:100%;min-width:0;min-height:36px;padding:8px 10px;font-size:12px;line-height:1.4;white-space:normal;justify-content:center;text-align:center}
+.admin-people .ac-panel .ac-person-actions .btn--ghost{border-color:var(--border);color:var(--text)}
+@media(max-width:680px){
+  .admin-people .ac-panel{--people-panel-inset:16px}
+  .admin-people .ac-panel .ac-people-properties{grid-template-columns:86px minmax(0,1fr)}
+}
+
+/* Native popovers keep role choices above the scrolling table and inspector. */
+.admin-people .ac-grant-trigger{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.admin-people .ac-grant-menu{position:fixed;inset:auto;margin:0;width:220px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;padding:5px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);box-shadow:0 10px 32px #0002}
+.admin-people .ac-grant-option{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:10px 11px;border:0;border-radius:5px;background:transparent;color:var(--text);font:500 12px/1.4 var(--ui);text-align:left;cursor:pointer}
+.admin-people .ac-grant-option small{font-size:10px;font-weight:400;color:var(--muted)}
+.admin-people .ac-grant-option:is(:hover,:focus-visible):not(:disabled){background:var(--surface-2)}
+.admin-people .ac-grant-option:focus-visible{outline:2px solid var(--ac-accent);outline-offset:-2px}
+.admin-people .ac-grant-option:disabled{opacity:.5;cursor:not-allowed}
+.admin-people .ac-grant-option--revoke>span{color:var(--ac-danger)}

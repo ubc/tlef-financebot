@@ -72,6 +72,7 @@ export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowActio
 
 export interface InstructorWorkflowSummary {
   course: {
+    revision?: number;
     id: string;
     name: string;
     courseCode: string;
@@ -161,7 +162,7 @@ export async function instructorWorkflowSummary(
     }
   }
   for (const lo of los) {
-    if (lo.latestGenerationRun && ['failed', 'partial'].includes(lo.latestGenerationRun.status)) {
+    if (lo.latestGenerationRun && lo.latestGenerationRun.errorCode !== 'generation-ended' && ['failed', 'partial'].includes(lo.latestGenerationRun.status)) {
       failedRunIds.add(lo.latestGenerationRun.runId.toHexString());
     }
   }
@@ -410,7 +411,7 @@ export async function instructorWorkflowSummary(
           id: 'questions', number: 3, label: 'Questions', status: 'in-progress', destination: 'preseeding',
           detail: `${activeGenerationRuns} run${activeGenerationRuns === 1 ? '' : 's'} active`, count: totalQuestions,
         }
-      : generationRuns.some((run) => run.status === 'failed' || run.status === 'partial')
+      : generationRuns.some((run) => run.errorCode !== 'generation-ended' && (run.status === 'failed' || run.status === 'partial'))
         ? {
             id: 'questions', number: 3, label: 'Questions', status: 'needs-attention', destination: 'preseeding',
             detail: 'Generation needs attention', count: totalQuestions,
@@ -503,6 +504,7 @@ export async function instructorWorkflowSummary(
   return {
     course: {
       id: tree._id.toHexString(),
+      revision: tree.revision ?? 0,
       name: tree.name,
       courseCode: tree.courseCode,
       ...(tree.section ? { section: tree.section } : {}),

@@ -29,7 +29,7 @@ export interface ContentMapMaterial {
   kind: MaterialKind;
   status: 'processing' | 'ready' | 'failed';
   assessmentLike: boolean;
-  latestRun?: { runId: ObjectId; status: ContentRunStatus; stage: string };
+  latestRun?: { runId: ObjectId; status: ContentRunStatus; stage: string; errorCode?: string };
 }
 
 export interface ContentMapLo {
@@ -39,7 +39,7 @@ export interface ContentMapLo {
   materials: ContentMapMaterial[];
   materialCounts: Partial<Record<MaterialKind, number>>;
   questionCounts: Record<PublicationState, number>;
-  latestGenerationRun?: { runId: ObjectId; status: ContentRunStatus; stage: string };
+  latestGenerationRun?: { runId: ObjectId; status: ContentRunStatus; stage: string; errorCode?: string };
   gaps: Array<'no-material' | 'no-approved-questions' | 'thin-approved-set'>;
 }
 
@@ -129,6 +129,7 @@ export async function getCourseContentMap(courseId: ObjectId): Promise<CourseCon
                   runId: latest._id,
                   status: latest.status,
                   stage: latest.stage,
+                  ...(latest.error?.code ? { errorCode: latest.error.code } : {}),
                 },
               }
             : {}),

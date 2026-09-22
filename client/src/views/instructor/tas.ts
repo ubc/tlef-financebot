@@ -11,6 +11,7 @@ import { el, mount } from '../../dom.js';
 import { pageHeader } from '../../instructor-ui.js';
 import type { RouteParams } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
+import { attachTutorial } from '../../tutorials.js';
 
 const STANDARD_TA: Capability[] = [
   'question.review',
@@ -103,5 +104,9 @@ async function renderTasInner(outlet: HTMLElement, courseId: string): Promise<vo
       el('aside', { class: 'admin-aside' }, el('small', { class: 'admin-eyebrow', text: 'Shared work, clear ownership' }), el('h2', { text: 'Support your team. Keep final decisions.' }), el('p', { text: 'TAs can review and suggest changes within their assigned permissions.' }),
         el('p', { text: 'Approve questions · Instructor only' }), el('p', { text: 'Resolve flags · Instructor only' }), el('p', { text: 'Invitations activate when the matching UBC account signs in with CWL.' }))));
   renderList();
+  attachTutorial(root, 'instructor-tas', {
+    'ta-team': '.admin-pane',
+    'ta-boundaries': '.admin-aside',
+  });
 }
 export function renderTas(outlet: HTMLElement, params: RouteParams): void { void renderTasInner(outlet, params.id); }

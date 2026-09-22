@@ -358,6 +358,16 @@ describe('getDistinctQuestionCourseIds', () => {
 });
 
 describe('getQuestionDetail', () => {
+  it('hides legacy generation assessments inherited by a manually edited version', async () => {
+    const head = makeQuestion({ agentDecision: { decision: 'pass', reasoning: 'Original content', roleAssessment: 'Original answers' } });
+    const current = makeVersion(head._id, head.currentVersionId, { version: 2, provenance: { kind: 'edited', parentVersionId: new ObjectId() } });
+    questionsFindOne.mockResolvedValue(head);
+    versionsFindOne.mockResolvedValue(current);
+    versionsFindToArray.mockResolvedValueOnce([current]);
+    const result = await getQuestionDetail(head._id);
+    expect(result.question.agentDecision).toBeUndefined();
+    expect(head.agentDecision).toBeDefined();
+  });
   it('returns the head, current version, and version-list metadata', async () => {
     const head = makeQuestion();
     const current = makeVersion(head._id, head.currentVersionId);

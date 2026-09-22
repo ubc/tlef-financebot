@@ -8,6 +8,9 @@ import {
   capabilitySettingsCol,
   contentRunsCol,
   coursesCol,
+  courseInstructorSharesCol,
+  questionDraftsCol,
+  questionPresenceCol,
   examAttemptsCol,
   examTemplatesCol,
   flagsCol,
@@ -221,6 +224,9 @@ export async function permanentlyDeleteCourse(
     generationSubmissionsCol().deleteMany({ courseId }),
     capabilitySettingsCol().deleteMany({ scope: 'course', courseId }),
     taInvitesCol().deleteMany({ courseId }),
+    courseInstructorSharesCol().deleteMany({ courseId }),
+    questionDraftsCol().deleteMany({ courseId }),
+    questionPresenceCol().deleteMany({ courseId }),
   ]);
 
   await usersCol().updateMany(
@@ -237,6 +243,8 @@ export async function permanentlyDeleteCourse(
     'masteryProfiles', 'reviewBookEntries', 'examTemplates', 'examAttempts', 'flags',
     'notifications', 'auditLogs', 'rosterEntries', 'sessionSummaries', 'contentRuns',
     'generationBlueprints', 'generationSubmissions', 'capabilitySettings', 'taInvites',
+    'courseInstructorShares',
+    'questionDrafts', 'questionPresence',
   ];
   return {
     deleted: true,

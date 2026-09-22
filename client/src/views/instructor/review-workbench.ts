@@ -1,6 +1,7 @@
 import { ApiError, editQuestion, getQuestion, transitionQuestion, type CourseTree, type QuestionDetail, type ReviewQueueItem } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { confirmDialog, textPromptDialog } from '../../modal.js';
+import { protectUnsavedChanges } from '../../router.js';
 import { rowStemText } from '../../placeholders.js';
 import { renderRichText } from '../../render.js';
 import { errorState, loadingState } from '../../ui.js';
@@ -35,7 +36,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
     el('nav', { class: 'review-workbench__queue', 'aria-label': 'Question queue' },
       el('div', { class: 'review-workbench__list-title', text: 'QUESTIONS' }), list, listFooter), reader, inspector);
   const empty = el('section', { class: 'review-empty', hidden: true, 'aria-labelledby': 'review-empty-title' });
-  const root = el('div', {}, status, node, empty);
+  const root = el('div', { class: 'review-workbench-shell' }, status, node, empty);
   let rows: ReviewQueueItem[] = [];
   let activeId = '';
   let detail: QuestionDetail | undefined;
@@ -43,6 +44,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
   let busy = false;
   let editing = false;
   let dirty = false;
+  protectUnsavedChanges(root, () => dirty, () => confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' }));
   let search = '';
   let totalAvailable = 0;
   const agentStates = new Map<string, string>();
@@ -143,7 +145,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
     // answer key with a sample drawn from an older version.
     const sample = item?.current._id === current.current._id ? item.sample : undefined;
     const parameterized = !!(current.current.paramSlots?.length || current.current.generateScript || current.current.derivedValues?.length);
-    const body = el('div', { class: 'review-workbench__body' },
+    const body = el('div', { class: 'review-workbench__body', tabindex: '0', 'aria-label': 'Question content' },
       el('div', { class: 'review-workbench__metadata', text: `${TYPE_LABEL[current.current.type]} · ${current.current.difficulty} · ${current.state} · Version ${current.current.version}` }),
       el('p', { class: 'review-workbench__objective', text: objectiveNames(current).join(' · ') || 'No learning objective assigned' }));
     let saveEdits: (() => Promise<void>) | undefined;
@@ -161,9 +163,12 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
         const formControls = reader.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>('button, textarea');
         formControls.forEach(control => { control.disabled = true; });
         try {
-          const version = await editQuestion(current.id, { stem: stem.value, options: draftOptions });
+          const version = await editQuestion(current.id, { stem: stem.value, options: draftOptions, expectedVersionId: current.currentVersionId });
           if (!root.isConnected || activeId !== current.id) return;
           detail = { ...current, current: version, currentVersionId: version._id };
+          delete detail.agentDecision;
+          agentStates.delete(current.id);
+          options.onDetail(detail);
           const row = rows.find(row => row.id === current.id); if (row) { row.current = version; delete row.sample; }
           dirty = false; editing = false; status.textContent = 'Changes saved. Review the updated question before approving.';
           busy = false; drawReader(); drawList();
@@ -199,6 +204,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
       el('section', {}, el('h3', { text: 'Source evidence' }), current.current.sourceRefs.length ? el('div', {}, ...current.current.sourceRefs.map((ref, index) => el('details', {}, el('summary', { text: `Reference ${index + 1}` }), ref.chunk ? rich(ref.chunk) : el('p', { text: 'No excerpt recorded.' }), el('a', { href: `#/instructor/course/${encodeURIComponent(options.courseId)}/materials`, text: 'Open course materials ↗' })))) : el('p', { text: 'No source references recorded.' })),
       el('section', {}, el('h3', { text: 'Student availability' }), el('p', { text: held.length ? `Awaiting topic release: ${held.join(', ')}.` : 'Topic release dates are ready. Students receive approved questions when the course is published and validation checks pass.' })),
       current.internalNotes?.length ? el('details', {}, el('summary', { text: `Teaching-team notes (${current.internalNotes.length})` }), ...current.internalNotes.map(note => el('p', { text: note.text }))) : false,
+      current.state !== 'archived' ? el('a', { class: 'btn btn--instr-primary btn--sm', href: `#/instructor/course/${encodeURIComponent(options.courseId)}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
       el('a', { class: 'review-workbench__advanced', href: `#/instructor/course/${encodeURIComponent(options.courseId)}/bank/${encodeURIComponent(current.id)}?from=queue`, text: 'Open full editor ↗' }),
       el('button', { class: 'btn btn--ghost btn--sm', disabled: busy, onclick: () => selectQuestion(activeId, true) }, 'Reload question'));
   }

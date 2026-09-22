@@ -5,6 +5,7 @@ import {
 import { env } from '../config/env';
 import type { User } from '../types/domain';
 import { activatePendingTaInvites } from './tas.service';
+import { activateCourseInstructorInvitations, projectCourseInstructorShares } from './course-sharing.service';
 
 /** Stephen's explicit staging bootstrap identity. Never grants production Admin. */
 export const STAGING_BOOTSTRAP_ADMIN_PUID = 'ESI5CZY7J307';
@@ -71,7 +72,9 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
     },
     { upsert: true, returnDocument: 'after' },
   );
-  return activatePendingTaInvites(result as unknown as User);
+  const user = await activatePendingTaInvites(result as unknown as User);
+  await activateCourseInstructorInvitations(user);
+  return (await projectCourseInstructorShares([user]))[0];
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
@@ -82,5 +85,5 @@ export async function findUserByPuid(puid: string): Promise<User | null> {
   // during Passport deserialization makes revoke effective on the next
   // request even if a login/revoke race left the denormalized User bit stale.
   const grant = await platformInstructorGrantsCol().findOne({ puid });
-  return { ...user, platformInstructor: Boolean(grant) };
+  return (await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0];
 }

@@ -1,0 +1,56 @@
+/* Shared course-project presentation for Admin, Instructor and Student. */
+.view--course-projects {
+  --instr-dark: #1a1f1a;
+  --instr-dark-hover: #2c332c;
+}
+
+/* Admin appearance sets its primary token to purple; project actions share
+   the same black button in every workspace and appearance mode. */
+.app-shell .view--course-projects .btn.btn--instr-primary {
+  background: var(--instr-dark);
+  border-color: var(--instr-dark);
+  color: #fff;
+}
+
+.app-shell .view--course-projects .btn.btn--instr-primary:hover {
+  background: var(--instr-dark-hover);
+  border-color: var(--instr-dark-hover);
+}
+
+.course-card,
+.course-card__main {
+  min-width: 0;
+}
+
+.course-card__cover {
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.course-card__code,
+.course-card__title,
+.course-card__meta {
+  overflow-wrap: anywhere;
+}
+
+.course-card__cover .status-badge {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.course-card__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.course-card__progress .coverage-bar__fill {
+  background: var(--instr-green-fg);
+}
+
+.course-card__progress-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}

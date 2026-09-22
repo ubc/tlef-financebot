@@ -1,11 +1,12 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { ensureCourseInstructor } from '../components/auth/course-guards';
+import { ensureCourseStudentPreview } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   flagPreviewQuestion,
   getNextPreviewQuestion,
+  getPreviewCourseIdentity,
   getPreviewHome,
   getPreviewRedirectMaterialSource,
   getPreviewSessionStart,
@@ -73,9 +74,18 @@ function context(req: Request, id: string) {
 }
 
 previewRouter.get(
+  '/courses/:courseId/preview/identity',
+  validate({ params: courseParams }),
+  ensureCourseStudentPreview(),
+  async (req, res) => {
+    res.json(await getPreviewCourseIdentity(new ObjectId(String(req.params.courseId))));
+  },
+);
+
+previewRouter.get(
   '/courses/:courseId/preview/home',
   validate({ params: courseParams, query: sessionQuery }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const query = req.query as z.infer<typeof sessionQuery>;
     res.json(await getPreviewHome(
@@ -88,7 +98,7 @@ previewRouter.get(
 previewRouter.post(
   '/courses/:courseId/preview/practice/next',
   validate({ params: courseParams, body: nextBody }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const body = req.body as z.infer<typeof nextBody>;
     res.json(await getNextPreviewQuestion({
@@ -104,7 +114,7 @@ previewRouter.post(
 previewRouter.post(
   '/courses/:courseId/preview/attempts',
   validate({ params: courseParams, body: attemptBody }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const body = req.body as z.infer<typeof attemptBody>;
     res.json(await submitPreviewAttempt({
@@ -124,15 +134,21 @@ previewRouter.post(
 previewRouter.post(
   '/courses/:courseId/preview/questions/:questionId/flag',
   validate({ params: questionParams, body: flagBody }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const body = req.body as z.infer<typeof flagBody>;
+    const courseId = new ObjectId(String(req.params.courseId));
+    // TA role switching must stay isolated. Only the original Instructor/Admin
+    // preview may additionally create a live TEST queue item and notification.
+    const canSendTestFlag = req.user!.isAdmin || req.user!.courseRoles.some(
+      (role) => role.role === 'instructor' && role.courseId.equals(courseId),
+    );
     res.json(await flagPreviewQuestion(
-      new ObjectId(String(req.params.courseId)),
+      courseId,
       context(req, body.previewSessionId),
       new ObjectId(String(req.params.questionId)),
       body.reason,
-      body.sendToInstructorQueue,
+      body.sendToInstructorQueue && canSendTestFlag,
     ));
   },
 );
@@ -140,7 +156,7 @@ previewRouter.post(
 previewRouter.get(
   '/courses/:courseId/preview/review-book',
   validate({ params: courseParams, query: reviewBookQuery }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const query = req.query as z.infer<typeof reviewBookQuery>;
     res.json(await listPreviewReviewBook(
@@ -154,7 +170,7 @@ previewRouter.get(
 previewRouter.post(
   '/courses/:courseId/preview/questions/:questionId/bookmark',
   validate({ params: questionParams, body: bookmarkBody }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const body = req.body as z.infer<typeof bookmarkBody>;
     res.json(await togglePreviewBookmark(
@@ -169,7 +185,7 @@ previewRouter.post(
 previewRouter.delete(
   '/courses/:courseId/preview/questions/:questionId/bookmark',
   validate({ params: questionParams, query: sessionQuery }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const query = req.query as z.infer<typeof sessionQuery>;
     res.json(await togglePreviewBookmark(
@@ -184,7 +200,7 @@ previewRouter.delete(
 previewRouter.delete(
   '/courses/:courseId/preview/review-book/:entryId',
   validate({ params: entryParams, query: sessionQuery }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const query = req.query as z.infer<typeof sessionQuery>;
     await removePreviewReviewBookEntry(
@@ -199,7 +215,7 @@ previewRouter.delete(
 previewRouter.post(
   '/courses/:courseId/preview/los/:loId/skip',
   validate({ params: loParams, body: skipBody }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const body = req.body as z.infer<typeof skipBody>;
     await skipPreviewLo(
@@ -214,7 +230,7 @@ previewRouter.post(
 previewRouter.get(
   '/courses/:courseId/preview/session-summary',
   validate({ params: courseParams, query: summaryQuery }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res) => {
     const query = req.query as z.infer<typeof summaryQuery>;
     const courseId = new ObjectId(String(req.params.courseId));
@@ -228,7 +244,7 @@ previewRouter.get(
 previewRouter.get(
   '/courses/:courseId/preview/los/:loId/materials/:materialId/source',
   validate({ params: materialParams }),
-  ensureCourseInstructor(),
+  ensureCourseStudentPreview(),
   async (req, res, next) => {
     const source = await getPreviewRedirectMaterialSource(
       new ObjectId(String(req.params.courseId)),

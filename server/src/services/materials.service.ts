@@ -10,6 +10,7 @@ import { deletePointsByFilter, ensureCollection, upsertPoints } from '../compone
 import { defineJob, enqueueJob } from '../components/jobs';
 import { materialChunksCol, materialsCol } from '../components/mongodb/collections';
 import { classifyMaterial } from './classification.service';
+import { editConflict, editRevisionFilter } from './edit-revision';
 import {
   createMaterialIngestRun,
   failContentRun,
@@ -249,7 +250,7 @@ export async function trashMaterial(
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOneAndUpdate(
     { _id: materialId, courseId, deletedAt: { $exists: false } },
-    { $set: { deletedAt: new Date(), deletedBy } },
+    { $set: { deletedAt: new Date(), deletedBy }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
   if (!material) throw new Error('material-not-found');
@@ -287,6 +288,7 @@ export async function restoreMaterial(
     { _id: materialId, courseId, deletedAt: current.deletedAt },
     {
       $set: { status: 'processing', activeRunId: run._id },
+      $inc: { revision: 1 },
       $unset: { deletedAt: '', deletedBy: '', error: '' },
     },
     { returnDocument: 'after' },
@@ -320,7 +322,7 @@ export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'
   });
   const material = await materialsCol().findOneAndUpdate(
     { _id: materialId, status: 'failed', ...(current.activeRunId ? { activeRunId: current.activeRunId } : {}) },
-    { $set: { status: 'processing', activeRunId: run._id }, $unset: { error: '' } },
+    { $set: { status: 'processing', activeRunId: run._id }, $unset: { error: '' }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
   if (!material) {
@@ -353,14 +355,15 @@ async function attachAndEnqueueRun(
       ...(trigger !== 'upload' && material.activeRunId ? { previousRunId: material.activeRunId } : {}),
     });
     failureCode = 'material-run-link-failed';
-    const linked = await materialsCol().updateOne({ _id: material._id }, { $set: { activeRunId: run._id } });
+    const linked = await materialsCol().updateOne({ _id: material._id }, { $set: { activeRunId: run._id }, $inc: { revision: 1 } });
     if (linked.matchedCount === 0) throw new Error('material-run-link-failed');
+    material = { ...material, revision: (material.revision ?? 0) + 1 };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const writes: Array<Promise<unknown>> = [
       materialsCol().updateOne(
         { _id: material._id },
-        { $set: { status: 'failed', error: message } },
+        { $set: { status: 'failed', error: message }, $inc: { revision: 1 } },
       ),
     ];
     if (run) {
@@ -374,7 +377,7 @@ async function attachAndEnqueueRun(
       );
     }
     await Promise.allSettled(writes);
-    return { ...material, status: 'failed', error: message };
+    return { ...material, status: 'failed', error: message, revision: (material.revision ?? 0) + 1 };
   }
   return enqueueMaterialRun({ ...material, activeRunId: run._id }, run._id, trigger);
 }
@@ -402,10 +405,10 @@ async function enqueueMaterialRun(
       }),
       materialsCol().updateOne(
         { _id: material._id, activeRunId: runId },
-        { $set: { status: 'failed', error: message } },
+        { $set: { status: 'failed', error: message }, $inc: { revision: 1 } },
       ),
     ]);
-    return { ...material, status: 'failed', error: message };
+    return { ...material, status: 'failed', error: message, revision: (material.revision ?? 0) + 1 };
   }
 }
 
@@ -414,16 +417,18 @@ async function enqueueMaterialRun(
 export async function assignMaterial(
   materialId: ObjectId,
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>,
+  expectedRevision?: number,
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOneAndUpdate(
-    { _id: materialId, deletedAt: { $exists: false } },
+    { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision) },
     {
       $set: { assignments },
+      $inc: { revision: 1 },
       $unset: { classificationSuggestion: '', classificationSuggestions: '' },
     },
     { returnDocument: 'after' },
   );
-  if (!material) throw new Error('material-not-found');
+  if (!material) throw expectedRevision !== undefined ? editConflict('Material') : new Error('material-not-found');
   return material;
 }
 
@@ -431,13 +436,14 @@ export async function updateMaterialKind(
   courseId: ObjectId,
   materialId: ObjectId,
   kind: MaterialKind,
+  expectedRevision?: number,
 ): Promise<WithId<Material>> {
   const material = await materialsCol().findOneAndUpdate(
-    { _id: materialId, courseId },
-    { $set: { kind, 'automation.kind': { value: kind, confidence: 1, source: 'manual' } } },
+    { _id: materialId, courseId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision) },
+    { $set: { kind, 'automation.kind': { value: kind, confidence: 1, source: 'manual' } }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
-  if (!material) throw new Error('material-not-found');
+  if (!material) throw expectedRevision !== undefined ? editConflict('Material') : new Error('material-not-found');
   return material;
 }
 
@@ -765,7 +771,7 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
         deletedAt: { $exists: false },
         ...(runId ? { activeRunId: new ObjectId(runId) } : {}),
       },
-      { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' } },
+      { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' }, $inc: { revision: 1 } },
     );
     if (runId && ready.matchedCount === 0) {
       await deletePointsByFilter(collectionName, {
@@ -833,7 +839,7 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
     try {
       await materialsCol().updateOne(
         { _id: id, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
-        { $set: { status: 'failed', error: message } },
+        { $set: { status: 'failed', error: message }, $inc: { revision: 1 } },
       );
       if (runId) {
         await failContentRun(

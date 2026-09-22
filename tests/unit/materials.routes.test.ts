@@ -270,20 +270,21 @@ describe('PATCH /api/courses/:courseId/materials/:materialId', () => {
 
     const res = await request(makeApp(instructor))
       .patch(`/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}`)
-      .send({ kind: 'assessment' });
+      .send({ kind: 'assessment', expectedRevision: 0 });
 
     expect(res.status).toBe(200);
     expect(updateMaterialKind).toHaveBeenCalledWith(
       expect.any(ObjectId),
       expect.any(ObjectId),
       'assessment',
+      0,
     );
   });
 
   it('rejects a non-instructor before updating metadata', async () => {
     const res = await request(makeApp(student))
       .patch(`/api/courses/${courseId.toHexString()}/materials/${materialId.toHexString()}`)
-      .send({ kind: 'assessment' });
+      .send({ kind: 'assessment', expectedRevision: 0 });
 
     expect(res.status).toBe(403);
     expect(updateMaterialKind).not.toHaveBeenCalled();
@@ -380,10 +381,10 @@ describe('materialId-scoped routes authenticate BEFORE the stash DB lookup', () 
 
     const res = await request(makeApp(instructor))
       .put(`/api/materials/${materialId.toHexString()}/assignments`)
-      .send({ assignments: [{ themeId }] });
+      .send({ assignments: [{ themeId }], expectedRevision: 0 });
 
     expect(res.status).toBe(200);
-    expect(assignMaterial).toHaveBeenCalledWith(expect.any(ObjectId), [{ themeId: expect.any(ObjectId) }]);
+    expect(assignMaterial).toHaveBeenCalledWith(expect.any(ObjectId), [{ themeId: expect.any(ObjectId) }], 0);
   });
 });
 
@@ -413,7 +414,7 @@ describe('POST /api/materials/:materialId/classification (IN-S06)', () => {
   it('401s a signed-out caller without calling getMaterialCourseId', async () => {
     const res = await request(makeApp(undefined))
       .post(`/api/materials/${materialId.toHexString()}/classification`)
-      .send({ action: 'accept' });
+      .send({ action: 'accept', expectedRevision: 0 });
     expect(res.status).toBe(401);
     expect(getMaterialCourseId).not.toHaveBeenCalled();
     expect(resolveClassification).not.toHaveBeenCalled();
@@ -423,7 +424,7 @@ describe('POST /api/materials/:materialId/classification (IN-S06)', () => {
     jest.mocked(getMaterialCourseId).mockResolvedValue(otherCourseId);
     const res = await request(makeApp(instructor))
       .post(`/api/materials/${materialId.toHexString()}/classification`)
-      .send({ action: 'accept' });
+      .send({ action: 'accept', expectedRevision: 0 });
     expect(res.status).toBe(403);
     expect(resolveClassification).not.toHaveBeenCalled();
   });
@@ -443,10 +444,10 @@ describe('POST /api/materials/:materialId/classification (IN-S06)', () => {
 
     const res = await request(makeApp(instructor))
       .post(`/api/materials/${materialId.toHexString()}/classification`)
-      .send({ action: 'accept' });
+      .send({ action: 'accept', expectedRevision: 0 });
 
     expect(res.status).toBe(200);
-    expect(resolveClassification).toHaveBeenCalledWith(expect.any(ObjectId), 'accept');
+    expect(resolveClassification).toHaveBeenCalledWith(expect.any(ObjectId), 'accept', 0);
   });
 
   it('400s "no-classification-suggestion" from the service via the normalizer', async () => {
@@ -455,7 +456,7 @@ describe('POST /api/materials/:materialId/classification (IN-S06)', () => {
 
     const res = await request(makeApp(instructor))
       .post(`/api/materials/${materialId.toHexString()}/classification`)
-      .send({ action: 'accept' });
+      .send({ action: 'accept', expectedRevision: 0 });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('no-classification-suggestion');
@@ -564,5 +565,30 @@ describe('POST structure-generation', () => {
     const id = new ObjectId(); jest.mocked(enqueueStructureGeneration).mockResolvedValue({ _id: id } as never);
     expect((await request(makeApp(instructor)).post(url).send({ topicCount: 4, losPerTopic: 3 })).body).toEqual({ runId: id.toHexString() });
     expect(enqueueStructureGeneration).toHaveBeenLastCalledWith(courseId, instructor.puid, { topicCount: 4, losPerTopic: 3 });
+  });
+});
+
+describe('material authoring revision contract', () => {
+  it('requires a revision for manual metadata, assignments and classification decisions', async () => {
+    jest.mocked(getMaterialCourseId).mockResolvedValue(courseId);
+    const metadata = await request(makeApp(instructor))
+      .patch(`/api/courses/${courseId}/materials/${materialId}`).send({ kind: 'reading' });
+    const assignments = await request(makeApp(instructor))
+      .put(`/api/materials/${materialId}/assignments`).send({ assignments: [] });
+    const classification = await request(makeApp(instructor))
+      .post(`/api/materials/${materialId}/classification`).send({ action: 'accept' });
+    expect([metadata.status, assignments.status, classification.status]).toEqual([400, 400, 400]);
+    expect(updateMaterialKind).not.toHaveBeenCalled();
+    expect(assignMaterial).not.toHaveBeenCalled();
+    expect(resolveClassification).not.toHaveBeenCalled();
+  });
+
+  it('returns a 409 while preserving a useful conflict message', async () => {
+    jest.mocked(updateMaterialKind).mockRejectedValue(Object.assign(new Error('Material changed. Keep your draft.'), { status: 409 }));
+    const res = await request(makeApp(instructor))
+      .patch(`/api/courses/${courseId}/materials/${materialId}`)
+      .send({ kind: 'reading', expectedRevision: 2 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('Keep your draft');
   });
 });

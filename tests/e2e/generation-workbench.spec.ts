@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 'ready') {
-  const calls: Array<{ cells: Array<{ count: number }>; submissionId: string; prompt: string }> = [];
+  const calls: Array<{ cells: Array<{ count: number; kind: string }>; submissionId: string; prompt: string }> = [];
   const runs: Array<Record<string, unknown>> = [];
   const questions: Array<Record<string, unknown>> = [];
   let fail = false;
@@ -64,6 +64,17 @@ test('focused selection excludes covered and ungrounded objectives; exact batch 
   await expect(page.getByRole('button', { name: 'Generation in progress', exact: true })).toBeDisabled();
 });
 
+test('single-question batch uses singular labels', async ({ page }) => {
+  await fixture(page);
+  await page.getByRole('button', { name: 'Fewer questions per objective' }).click();
+  await page.getByRole('button', { name: 'Fewer questions per objective' }).click();
+  await expect(page.getByText('1 objective selected · 1 question each', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate 1 question →', exact: true })).toBeVisible();
+  const summary = page.getByRole('complementary', { name: 'Batch summary' });
+  await expect(summary).toContainText('1question');
+  await expect(summary).toContainText('Across 1 learning objective');
+});
+
 test('lost response and reload recover identical immutable request', async ({ page }) => {
   const state = await fixture(page); state.fail(true);
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
@@ -104,6 +115,26 @@ test('desktop and mobile dark mode stay readable and pass scoped accessibility',
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '/tmp/generation-production-mobile.png', fullPage: true });
   expect((await new AxeBuilder({ page }).include('.generation-workbench').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+});
+
+test('laptop layout docks generate actions and scrolls the teaching brief independently', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fixture(page);
+  const composer = page.locator('.gw-composer');
+  const body = composer.locator('.gw-body');
+  const footer = composer.locator('.gw-footer');
+  await body.evaluate(node => { const spacer = document.createElement('div'); spacer.style.height = '1200px'; spacer.style.flex = 'none'; node.append(spacer); });
+  const before = await footer.boundingBox();
+  const composerBox = await composer.boundingBox();
+  expect(before).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(Math.abs(before!.y + before!.height - (composerBox!.y + composerBox!.height))).toBeLessThanOrEqual(1);
+  expect(await body.evaluate(node => getComputedStyle(node).overflowY)).toBe('auto');
+  await body.evaluate(node => { node.scrollTop = 600; });
+  await expect.poll(() => body.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
+  const after = await footer.boundingBox();
+  expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1.5);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
 });
 
 for (const scenario of ['empty','sources'] as const) test(`${scenario} state offers a working next step`, async ({ page }) => {
@@ -180,3 +211,26 @@ test('answers and explanations stream, reset on retry, and persist in the saved 
   await expect(page.getByText('Final explanation retained.')).toBeVisible();
   await expect(page.getByText('Correct answer',{exact:true})).toBeVisible();
 });
+
+ for (const [shortcut, kind] of [['Concept check', 'conceptual'], ['Apply a formula', 'calculation'], ['Spot a misconception', 'conceptual']]) {
+   test(`shortcut ${shortcut} sets the submitted practice focus`, async ({ page }) => {
+     const state = await fixture(page);
+     await page.getByRole('checkbox', { name: /Combine forces/ }).check();
+     await page.getByRole('button', { name: shortcut, exact: true }).click();
+     await expect(page.locator('#gw-focus')).toHaveValue(kind);
+     await expect(page.getByRole('complementary', { name: 'Batch summary' })).toContainText(kind === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice');
+     await page.getByRole('button', { name: 'Generate 6 questions →' }).click();
+     await expect.poll(() => state.calls.length).toBe(1);
+     expect(state.calls[0].cells.every(cell => cell.kind === kind)).toBe(true);
+   });
+ }
+ test('edited generated questions remain in history and retain their run review link', async ({ page }) => {
+   const state = await fixture(page);
+   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
+   await expect(page.locator('.gw-run')).toHaveCount(3);
+   state.questions.push({ id: 'q', state: 'draft', loIds: ['a'], themeIds: ['topic'], labels: [], current: { _id: 'v', version: 2, type: 'mcq', difficulty: 'easy', stem: 'Edited generated question', provenance: { kind: 'edited', parentVersionId: 'old-v' }, options: [{ key: 'A', text: 'Answer', role: 'correct' }] } });
+   Object.assign(state.runs[0], { status: 'completed', stage: 'persisting', revision: 2, result: { createdQuestionIds: ['q'], failures: [] } });
+   await page.evaluate(run => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(run), state.runs[0]);
+   await expect(page.locator('.gw-stem')).toHaveText('Edited generated question');
+   await expect(page.getByRole('link', { name: 'Review questions →', exact: true })).toHaveAttribute('href', '#/instructor/course/course/queue?runId=r0');
+ });

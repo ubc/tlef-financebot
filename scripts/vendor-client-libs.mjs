@@ -2,6 +2,7 @@
 // client/public/vendor/ so the no-bundler client can load them via script tags.
 import { cpSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { build } from 'esbuild';
 
 const root = path.resolve(import.meta.dirname, '..');
 const vendor = path.join(root, 'client/public/vendor');
@@ -20,3 +21,6 @@ for (const [src, dest] of copies) {
   cpSync(path.join(root, src), path.join(vendor, dest), { recursive: true });
 }
 console.log('[vendor] client libs copied to client/public/vendor');
+// Bundle only the third-party CRDT library; application modules remain plain tsc output.
+await build({ entryPoints: [path.join(root, 'node_modules/yjs/src/index.js')], bundle: true,
+  format: 'esm', platform: 'browser', outfile: path.join(vendor, 'yjs.js'), minify: true });

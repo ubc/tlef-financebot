@@ -197,8 +197,12 @@ export async function getQuestionDetail(questionId: ObjectId): Promise<QuestionD
     .sort({ version: 1 })
     .toArray();
 
+  // Old edited versions may predate write-time AI-result invalidation. An
+  // inherited generation assessment must not be presented as their review.
+  const currentHead = { ...question };
+  if (current.provenance?.kind === 'edited') delete currentHead.agentDecision;
   return {
-    question,
+    question: currentHead,
     current,
     versions: versions.map((v) => ({
       version: v.version,

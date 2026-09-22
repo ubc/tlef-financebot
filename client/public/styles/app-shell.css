@@ -1,0 +1,240 @@
+/* Shared role chrome. Role palettes remain in main.css; layout belongs here. */
+:root {
+  --sidebar-w: 210px;
+  --sidebar-collapsed-w: 60px;
+  --topbar-h: 52px;
+}
+
+.app-shell.app-shell--unified {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.app-shell--unified .sidebar {
+  padding: 20px 12px 12px;
+  overflow-x: hidden;
+}
+
+.app-shell--unified .sidebar__brand-row { gap: 8px; margin-bottom: 8px; }
+.app-shell--unified .brand { gap: 9px; }
+.app-shell--unified .brand__mark {
+  width: 29px;
+  height: 29px;
+  border-radius: 7px;
+  font-size: 17px;
+}
+.app-shell--unified .sidebar .brand__name {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+}
+.app-shell--unified :is(.instructor-pill, .student-preview-pill) {
+  margin: 3px 10px 18px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.app-shell--unified .sidebar__collapse { width: 26px; height: 26px; font-size: 16px; }
+.app-shell--unified .nav { gap: 18px; }
+.app-shell--unified .nav__section { gap: 3px; }
+.app-shell--unified .nav__group {
+  padding: 0 10px;
+  margin: 8px 0;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+}
+.app-shell--unified .nav__link {
+  min-height: 35px;
+  padding: 9px 10px;
+  gap: 9px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 450;
+}
+.app-shell--unified .nav__link--active { font-weight: 600; }
+.app-shell--unified .nav__glyph {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  font-size: 11px;
+  font-weight: 550;
+}
+.app-shell--unified .sidebar__foot { font-size: 11px; }
+.app-shell--unified .course-context { padding: 9px; border-radius: 7px; }
+.app-shell--unified .course-context__back { font-size: 10px; }
+.app-shell--unified .course-context__mark { width: 28px; height: 28px; font-size: 11px; }
+.app-shell--unified .course-context__name { font-size: 11px; }
+.app-shell--unified .course-context__meta { font-size: 9px; }
+.app-shell--unified .ta-course-picker { min-height: 30px; font-size: 11px; }
+
+.app-shell--unified .topbar {
+  height: var(--topbar-h);
+  min-height: var(--topbar-h);
+  flex-shrink: 0;
+  padding: 0 22px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.app-shell--unified .topbar__title { font-size: 11px; font-weight: 500; color: var(--muted); }
+.app-shell--unified .topbar__right { gap: 10px; flex-shrink: 0; }
+.app-shell--unified .topbar .btn { font-size: 11px; min-height: 29px; padding: 4px 9px; }
+.app-shell--unified .topbar .icon-btn { width: 29px; height: 29px; font-size: 16px; }
+.app-shell--unified .preview-mode-label { font-size: 10px; }
+
+/* Admin keeps its black rail and neutral text in either content theme. */
+.app-shell--admin .sidebar { --muted: #aeb0b8; border-right: 1px solid #303238; }
+.app-shell--admin .brand__mark { background: #f5f5f6; color: #111214; border: 0; }
+.app-shell--admin :is(.instructor-pill, .nav__group, .sidebar__foot) { color: var(--muted); }
+.app-shell--admin .sidebar__collapse { color: var(--muted); border-color: #44464c; }
+.app-shell--admin .sidebar--instructor .nav__link--active {
+  background: #24262b;
+  border-color: #44464c;
+  color: #fff;
+}
+.app-shell--admin .sidebar--instructor .nav__link:not(.nav__link--disabled):is(:hover, :focus, :active) {
+  background: #24262b;
+  color: #fff;
+}
+
+/* One topbar role menu for every shell, including a return to the home role. */
+.role-switcher { position: relative; flex: 0 0 auto; }
+.app-shell--unified .role-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: 600 11px/1.4 var(--ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.role-switcher__trigger:is(:hover, [aria-expanded="true"]) { background: var(--surface-2); }
+.role-switcher[open] > .role-switcher__trigger { background: var(--surface-2); }
+.role-switcher__trigger::-webkit-details-marker { display: none; }
+.role-switcher__trigger::marker { content: ''; }
+.role-switcher__trigger::after { content: '⌄'; font-size: 12px; line-height: 1; }
+.role-switcher__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - var(--topbar-h) - 24px);
+  padding: 7px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 30px #11182726;
+}
+.role-switcher__menu[hidden] { display: none; }
+.role-switcher:not([open]) > .role-switcher__menu { display: none; }
+.role-switcher__menu > .role-switcher__hint {
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.role-switcher__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: 500 12px/1.4 var(--ui);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.role-switcher__option:is(:hover, :focus-visible, [aria-checked="true"], [aria-selected="true"], [aria-current="page"], .is-current) {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.role-switcher__hint { color: var(--muted); font-size: 10px; }
+
+@media (max-width: 1199px) {
+  :root { --sidebar-w: 190px; }
+}
+
+/* Resolve desktop collapse in one place, including the legacy 860px breakpoint. */
+@media (min-width: 761px) {
+  body:has(.app-shell--unified.app-shell--instructor) { --setup-sidebar-offset: var(--sidebar-w); }
+  body:has(.app-shell--unified.app-shell--instructor.is-collapsed) { --setup-sidebar-offset: var(--sidebar-collapsed-w); }
+  .app-shell--unified .sidebar {
+    position: static;
+    width: auto;
+    transform: none;
+  }
+  .app-shell--unified .topbar__menu,
+  .app-shell--unified .backdrop { display: none; }
+  .app-shell--unified .sidebar__collapse { display: grid; }
+  .app-shell--unified.is-collapsed {
+    grid-template-columns: var(--sidebar-collapsed-w) minmax(0, 1fr);
+  }
+  .app-shell--unified.is-collapsed .sidebar { width: auto; padding: 17px 7px 10px; }
+  .app-shell--unified.is-collapsed .sidebar__brand-row { flex-direction: column; }
+  .app-shell--unified.is-collapsed .sidebar__brand-row .brand,
+  .app-shell--unified.is-collapsed :is(.brand__name, .instructor-pill, .student-preview-pill, .nav__group, .nav__text, .sidebar__foot, .course-context__back, .course-context__body, .course-context__picker, .practice-context-slot) {
+    display: none;
+  }
+  .app-shell--unified.is-collapsed .course-context { display: grid; place-items: center; padding: 5px; }
+  .app-shell--unified.is-collapsed .course-context[hidden] { display: none; }
+  .app-shell--unified.is-collapsed .course-context__project { justify-content: center; }
+  .app-shell--unified.is-collapsed .nav__link { justify-content: center; padding: 9px 5px; }
+  .app-shell--unified.is-collapsed .nav__glyph { width: 18px; height: 18px; }
+}
+
+@media (max-width: 760px) {
+  .app-shell.app-shell--unified,
+  .app-shell--unified.is-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .app-shell--unified .sidebar,
+  .app-shell--unified.is-collapsed .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(230px, 86vw);
+    padding: 20px 12px;
+    z-index: 150;
+    transform: translateX(-100%);
+  }
+  .app-shell--unified.is-open .sidebar { transform: translateX(0); }
+  .app-shell--unified.is-open .backdrop { display: block; z-index: 140; }
+  .app-shell--unified .topbar__menu { display: inline-flex; }
+  .app-shell--unified .topbar { padding: 0 12px; gap: 8px; }
+  .app-shell--unified .topbar__right { gap: 6px; }
+  .role-switcher__menu { position: fixed; top: calc(var(--topbar-h) + 8px); right: 12px; }
+  .app-shell--unified .sidebar__collapse { display: none; }
+  .app-shell--unified.is-collapsed .sidebar__brand-row { flex-direction: row; }
+  .app-shell--unified.is-collapsed .sidebar__brand-row .brand { display: flex; }
+  .app-shell--unified.is-collapsed :is(.brand__name, .nav__group, .nav__text, .course-context__body, .course-context__picker, .sidebar__foot) { display: block; }
+  .app-shell--unified.is-collapsed :is(.instructor-pill, .student-preview-pill, .course-context__back) { display: inline-block; }
+  .app-shell--unified.is-collapsed .course-context { display: block; padding: 9px; }
+  .app-shell--unified.is-collapsed .course-context[hidden] { display: none; }
+  .app-shell--unified.is-collapsed .course-context__project { justify-content: flex-start; }
+  .app-shell--unified.is-collapsed .nav__link { justify-content: flex-start; padding: 9px 10px; }
+  .app-shell--unified.is-collapsed .nav__glyph { width: 18px; height: 18px; }
+  .app-shell--unified.is-collapsed .practice-context-slot:not(:empty) { display: block; }
+}
+
+@media (max-width: 440px) {
+  .app-shell--unified .topbar__title { font-size: 10px; }
+}

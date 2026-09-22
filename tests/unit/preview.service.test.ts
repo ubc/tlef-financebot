@@ -60,6 +60,7 @@ import { flagQuestion } from '../../server/src/services/flags.service';
 import {
   flagPreviewQuestion,
   getPreviewSessionSummary,
+  getPreviewCourseIdentity,
   getPreviewHome,
   getNextPreviewQuestion,
   listPreviewReviewBook,
@@ -260,6 +261,26 @@ beforeEach(() => {
 });
 
 describe('Instructor student preview service', () => {
+  it('returns only course identity without hierarchy, private settings, or creating Preview state', async () => {
+    jest.mocked(coursesCol).mockReturnValue(collectionFake([{ ...course, section: '101' }]) as never);
+
+    await expect(getPreviewCourseIdentity(courseId)).resolves.toEqual({
+      name: course.name,
+      courseCode: course.courseCode,
+      section: '101',
+      term: course.term,
+    });
+    expect(themesCol).not.toHaveBeenCalled();
+    expect(losCol).not.toHaveBeenCalled();
+    expect(previewAttemptsCol).not.toHaveBeenCalled();
+    expect(previewStudentSessionsCol).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing course identity', async () => {
+    jest.mocked(coursesCol).mockReturnValue(collectionFake([]) as never);
+    await expect(getPreviewCourseIdentity(courseId)).rejects.toThrow('course-not-found');
+  });
+
   it('shows an unpublished course but hides future themes and LOs without approved questions', async () => {
     const futureThemeId = new ObjectId();
     const futureLoId = new ObjectId();
@@ -323,11 +344,11 @@ describe('Instructor student preview service', () => {
     expect(JSON.stringify(served)).not.toMatch(/common-misconception|explanation|correct/);
   });
 
-  it('writes one isolated preview snapshot and touches no live learning collection', async () => {
+  it.each(['PUID-INSTRUCTOR-0001', 'PUID-TA-0001'])('writes isolated preview activity for %s without touching live learning collections', async (previewUserPuid) => {
     jest.mocked(selectPreviewRetryQuestion).mockResolvedValue(null);
 
     const result = await submitPreviewAttempt({
-      instructorPuid,
+      instructorPuid: previewUserPuid,
       previewSessionId,
       courseId,
       questionVersionId: versionId,
@@ -342,7 +363,7 @@ describe('Instructor student preview service', () => {
     expect(result.mastery).toEqual({ loStatus: 'in-progress' });
     expect(result.reviewBook).toEqual({ added: false });
     expect(previewCollection.insertOne).toHaveBeenCalledWith(expect.objectContaining({
-      instructorPuid,
+      instructorPuid: previewUserPuid,
       previewSessionId,
       preview: true,
       courseId,

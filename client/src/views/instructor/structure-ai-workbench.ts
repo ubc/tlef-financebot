@@ -232,7 +232,8 @@ export function createStructureAssistant(courseId: string, materials: Material[]
       } }) as HTMLInputElement;
       const name = el('textarea', { class: 'structure-ai-lo-text', rows: 2, maxlength: 500, 'aria-label': `Objective ${index + 1}.${i + 1}`, text: lo.name,
         oninput: () => { lo.name = name.value; updateControls(); fitDraftFields(); } }) as HTMLTextAreaElement;
-      const refs = result!.evidence.filter(e => lo.evidenceIds.includes(e.id));
+      const refs = [...new Map(result!.evidence.filter(e => lo.evidenceIds.includes(e.id))
+        .map(e => [JSON.stringify([e.materialId, e.chunkIndex, e.quote]), e])).values()];
       const sources = el('details', { class: 'structure-ai-evidence' }, el('summary', { text: `${lo.materialIds.length} supporting ${lo.materialIds.length === 1 ? 'material' : 'materials'} · View evidence` }));
       for (const ref of refs) sources.append(el('div', {}, el('a', { href: materialSourceUrl(courseId, ref.materialId), target: '_blank', rel: 'noopener', text: `${ref.materialName} · Section ${ref.chunkIndex + 1} ↗` }), el('blockquote', { text: ref.quote }), el('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => previewEvidence(courseId, ref.materialId, ref.chunkIndex, ref.quote) }, 'Show passage in context')));
       rows.append(el('div', { class: 'structure-ai-review-row' }, el('div', { class: 'structure-ai-check' }, check, el('small', { text: `${index + 1}.${i + 1}` })), el('div', {}, name, sources)));

@@ -66,7 +66,7 @@ export function openBankEditor(detail: QuestionDetail, tree: CourseTree, onSaved
       const loIds = loChecks.filter(x => x.node.checked).map(x => x.id);
       const themeIds = [...new Set([...topicChecks.filter(x => x.node.checked).map(x => x.id), ...loChecks.filter(x => x.node.checked).map(x => x.themeId)])];
       busy = true; form.inert = true;
-      await editQuestion(detail.id, { expectedVersionId: detail.currentVersionId, submitForReview: true, stem: stem.value.trim(), type: type.value as QuestionType, difficulty: difficulty.value as Difficulty, options, loIds, themeIds,
+      await editQuestion(detail.id, { expectedVersionId: detail.currentVersionId, expectedTags: { loIds: detail.loIds, themeIds: detail.themeIds }, submitForReview: true, stem: stem.value.trim(), type: type.value as QuestionType, difficulty: difficulty.value as Difficulty, options, loIds, themeIds,
         ...(current.paramSlots?.length || slots.value !== JSON.stringify(current.paramSlots ?? [], null, 2) ? { paramSlots } : {}),
         ...(current.derivedValues?.length || derived.value !== JSON.stringify(current.derivedValues ?? [], null, 2) ? { derivedValues } : {}),
         ...(sourceRefs.value !== JSON.stringify(current.sourceRefs, null, 2) ? { sourceRefs: refs } : {}) });

@@ -59,6 +59,7 @@ const autoPauseBody = z.object({
 });
 
 const updateCourseBody = z.object({
+  expectedRevision: z.number().int().nonnegative(),
   name: z.string().trim().min(1).optional(),
   courseCode: z.string().trim().min(1).optional(),
   section: z.string().trim().max(40).nullable().optional(),
@@ -87,6 +88,7 @@ const themeBody = z.object({
 });
 
 const updateThemeBody = z.object({
+  expectedRevision: z.number().int().nonnegative(),
   name: z.string().min(1).optional(),
   // `null` withdraws a release (clears the date). z.null() must come FIRST:
   // z.coerce.date() would turn null into the epoch and "release" the Topic.
@@ -103,6 +105,7 @@ const courseOutlineBody = z.object({
 });
 
 const updateLoBody = z.object({
+  expectedRevision: z.number().int().nonnegative(),
   name: z.string().min(1).optional(),
   order: z.number().int().optional(),
   /** The instructor's override of the verb-inferred kind; drives the planner's Auto. */
@@ -245,11 +248,11 @@ coursesRouter.patch(
   validate({ body: updateCourseBody }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
-    const { published, ...patch } = req.body;
-    let course = Object.keys(patch).length > 0 ? await updateCourse(courseId, patch) : undefined;
-    if (published !== undefined) {
-      course = await setPublished(courseId, published);
-    }
+    const { published, expectedRevision, ...patch } = req.body as z.infer<typeof updateCourseBody>;
+    // A mixed settings/publication save must be one compare-and-set write.
+    const course = Object.keys(patch).length > 0
+      ? await updateCourse(courseId, { ...patch, ...(published !== undefined ? { published } : {}) }, expectedRevision)
+      : published !== undefined ? await setPublished(courseId, published, expectedRevision) : undefined;
     res.json(course ?? (await getCourse(courseId)));
   },
 );
@@ -410,7 +413,8 @@ coursesRouter.patch(
   ensureCourseInstructor(),
   validate({ body: updateThemeBody }),
   async (req, res) => {
-    res.json(await updateTheme(new ObjectId(String(req.params.themeId)), req.body));
+    const { expectedRevision, ...patch } = req.body as z.infer<typeof updateThemeBody>;
+    res.json(await updateTheme(new ObjectId(String(req.params.themeId)), patch, expectedRevision));
   },
 );
 
@@ -450,7 +454,8 @@ coursesRouter.patch(
   ensureCourseInstructor(),
   validate({ body: updateLoBody }),
   async (req, res) => {
-    res.json(await updateLo(new ObjectId(String(req.params.loId)), req.body));
+    const { expectedRevision, ...patch } = req.body as z.infer<typeof updateLoBody>;
+    res.json(await updateLo(new ObjectId(String(req.params.loId)), patch, expectedRevision));
   },
 );
 

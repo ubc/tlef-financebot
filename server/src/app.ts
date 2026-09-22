@@ -1,3 +1,6 @@
+import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
+import { operationAudit } from './middleware/operation-audit';
+import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
 import { selfCapabilitiesRouter } from './routes/capabilities.routes';
 import path from 'node:path';
 import express, { type Express } from 'express';
@@ -13,6 +16,8 @@ import { rolesRouter } from './routes/roles.routes';
 import { classesRouter } from './routes/classes.routes';
 import { coursesRouter } from './routes/courses.routes';
 import { questionsRouter } from './routes/questions.routes';
+import { courseSharingRouter } from './routes/course-sharing.routes';
+import { questionCollaborationRouter } from './routes/question-collaboration.routes';
 import { enrollmentRouter } from './routes/enrollment.routes';
 import { practiceRouter } from './routes/practice.routes';
 import { reviewBookRouter } from './routes/review-book.routes';
@@ -43,6 +48,7 @@ const CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../client/public');
  */
 export function createApp(): Express {
   const app = express();
+  app.use('/api', operationAudit);
 
   app.use(
     helmet({
@@ -77,6 +83,8 @@ export function createApp(): Express {
   app.use('/api', classesRouter); // EXAMPLE (Academic API classes demo) — role-gated; safe to remove.
   app.use('/api', coursesRouter); // Courses/Hierarchy/Roster (IN-S01/S02/S03, IN-L06) — instructor authoring surface.
   app.use('/api', questionsRouter); // Question bank browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08).
+  app.use('/api', courseSharingRouter);
+  app.use('/api', questionCollaborationRouter);
   app.use('/api', enrollmentRouter); // Enrollment by code + roster cross-check (ST-E02/E03).
   app.use('/api', materialsRouter); // Material upload + async RAG ingestion (IN-S04/S05).
   app.use('/api', generationRouter); // Three-agent question generation pipeline + pre-seeding (§9.1, IN-Q10).
@@ -84,6 +92,8 @@ export function createApp(): Express {
   app.use('/api', contentRunsRouter); // Durable material/generation run history + live course progress (Phase 2 P2-0).
   app.use('/api', contentMapRouter); // Instructor content coverage + material-kind map (P2-I5).
   app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
+  app.use('/api', clientDiagnosticsRouter);
+  app.use('/api', adminDiagnosticsRouter);
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
   app.use('/api', examsRouter); // Exam templates and Exam Prep attempts/results (Phase 3 WS-10).

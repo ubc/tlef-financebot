@@ -1,3 +1,4 @@
+import { reportClientFailure } from './diagnostics.js';
 // Typed client for the backend API. One function per endpoint, so the UI code
 // (views/*) never builds URLs or parses responses by hand. Keep the response
 // types in sync with the server (see server/src/routes and services).
@@ -7,6 +8,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -27,17 +29,24 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  let response: Response;
+  try { response = await fetch(path, init); }
+  catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.');
+    throw error;
+  }
   if (!response.ok) {
     const message = await errorMessage(response, `Request to ${path} failed (${response.status}).`);
     if (response.status === 401) onUnauthorized?.();
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, response.headers.get('X-Request-ID') ?? undefined);
   }
   // 204 No Content (e.g. the skip/bookmark-delete endpoints) has no body to
   // parse; callers of those endpoints declare Promise<void> and never read it.
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+export { request as apiRequest };
 
 // --- Health (public) ---------------------------------------------------------
 
@@ -121,6 +130,20 @@ export function listAdminUsers(filters: { q?: string; role?: CourseRole; courseI
   if (filters.role) query.set('role', filters.role);
   if (filters.courseId) query.set('courseId', filters.courseId);
   return request<AdminDirectoryUser[]>(`/api/admin/directory${query.size ? `?${query}` : ''}`);
+}
+
+export interface AdminCourseOption {
+  _id: string;
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+  lifecycle: 'draft' | 'published' | 'archived';
+}
+
+/** Admin-only course identities for role assignment, including archived courses. */
+export function listAdminCourses(): Promise<AdminCourseOption[]> {
+  return request<AdminCourseOption[]>('/api/admin/courses');
 }
 
 export function assignAdminCourseRole(puid: string, courseId: string, role: CourseRole): Promise<void> {
@@ -562,7 +585,19 @@ export function submitAttempt(input: SubmitAttemptInput): Promise<AttemptResult>
   });
 }
 
-/** Instructor-only hierarchy for one isolated anonymous-student preview. */
+/** Minimal teaching-team course identity, without private settings or hierarchy. */
+export interface PreviewCourseIdentity {
+  name: string;
+  courseCode: string;
+  section?: string;
+  term: string;
+}
+
+export function getPreviewCourseIdentity(courseId: string): Promise<PreviewCourseIdentity> {
+  return request<PreviewCourseIdentity>(`/api/courses/${encodeURIComponent(courseId)}/preview/identity`);
+}
+
+/** Teaching-team hierarchy for one isolated anonymous-student preview. */
 export function getPreviewCourseHome(
   courseId: string,
   previewSessionId: string,
@@ -862,6 +897,7 @@ export interface AutoPauseConfig {
 }
 
 export interface InstructorCourse {
+  revision?: number;
   _id: string;
   ownerPuid: string;
   name: string;
@@ -885,6 +921,7 @@ export type LoKind = 'calculation' | 'conceptual' | 'mixed';
 export type QuestionKind = 'calculation' | 'conceptual';
 
 export interface CourseTreeLo {
+  revision?: number;
   _id: string;
   name: string;
   order: number;
@@ -894,6 +931,7 @@ export interface CourseTreeLo {
 }
 
 export interface CourseTreeTheme {
+  revision?: number;
   _id: string;
   name: string;
   order: number;
@@ -960,6 +998,7 @@ export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowActio
 
 export interface InstructorWorkflowSummary {
   course: {
+    revision?: number;
     id: string;
     name: string;
     courseCode: string;
@@ -1072,11 +1111,12 @@ export function updateCourse(
     autoPause?: AutoPauseConfig;
     published?: boolean;
   },
+  expectedRevision: number,
 ): Promise<InstructorCourse> {
   return request<InstructorCourse>(`/api/courses/${encodeURIComponent(courseId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ ...patch, expectedRevision }),
   });
 }
 
@@ -1333,11 +1373,12 @@ export function updateTheme(
   themeId: string,
   /** `availableFrom: null` withdraws a release; `undefined` leaves it alone. */
   patch: { name?: string; availableFrom?: string | null; order?: number },
+  expectedRevision: number,
 ): Promise<CourseTreeTheme> {
   return request<CourseTreeTheme>(`/api/themes/${encodeURIComponent(themeId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ ...patch, expectedRevision }),
   });
 }
 
@@ -1382,11 +1423,11 @@ export function upsertCourseOutline(
 }
 
 /** PATCH /api/los/:loId { name?, order? } -> LearningObjective. */
-export function updateLo(loId: string, patch: { name?: string; order?: number; kind?: LoKind }): Promise<CourseTreeLo> {
+export function updateLo(loId: string, patch: { name?: string; order?: number; kind?: LoKind }, expectedRevision: number): Promise<CourseTreeLo> {
   return request<CourseTreeLo>(`/api/los/${encodeURIComponent(loId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ ...patch, expectedRevision }),
   });
 }
 
@@ -1463,6 +1504,7 @@ export interface MaterialAssignment {
 }
 
 export interface Material {
+  revision?: number;
   _id: string;
   courseId: string;
   name: string;
@@ -1820,11 +1862,11 @@ export function retryMaterial(materialId: string): Promise<Material> {
 
 /** PUT /api/materials/:materialId/assignments { assignments } -> Material
  * (IN-S05; replaces the full assignments list). */
-export function assignMaterial(materialId: string, assignments: MaterialAssignment[]): Promise<Material> {
+export function assignMaterial(materialId: string, assignments: MaterialAssignment[], expectedRevision: number): Promise<Material> {
   return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/assignments`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assignments }),
+    body: JSON.stringify({ assignments, expectedRevision }),
   });
 }
 
@@ -1832,13 +1874,14 @@ export function updateMaterialKind(
   courseId: string,
   materialId: string,
   kind: MaterialKind,
+  expectedRevision: number,
 ): Promise<Material> {
   return request<Material>(
     `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind }),
+      body: JSON.stringify({ kind, expectedRevision }),
     },
   );
 }
@@ -1849,7 +1892,7 @@ export interface ContentMapMaterial {
   kind: MaterialKind;
   status: Material['status'];
   assessmentLike: boolean;
-  latestRun?: { runId: string; status: ContentRunStatus; stage: string };
+  latestRun?: { runId: string; status: ContentRunStatus; stage: string; errorCode?: string };
 }
 
 export interface ContentMapLo {
@@ -1859,7 +1902,7 @@ export interface ContentMapLo {
   materials: ContentMapMaterial[];
   materialCounts: Partial<Record<MaterialKind, number>>;
   questionCounts: Record<PublicationState, number>;
-  latestGenerationRun?: { runId: string; status: ContentRunStatus; stage: string };
+  latestGenerationRun?: { runId: string; status: ContentRunStatus; stage: string; errorCode?: string };
   gaps: Array<'no-material' | 'no-approved-questions' | 'thin-approved-set'>;
 }
 
@@ -1905,11 +1948,11 @@ export function getCourseKnowledgeGraph(courseId: string): Promise<CourseKnowled
 /** POST /api/materials/:materialId/classification { action } -> Material
  * (IN-S06; 'accept' merges the suggestion into assignments and clears it,
  * 'reject' clears it). */
-export function resolveClassification(materialId: string, action: 'accept' | 'reject'): Promise<Material> {
+export function resolveClassification(materialId: string, action: 'accept' | 'reject', expectedRevision: number): Promise<Material> {
   return request<Material>(`/api/materials/${encodeURIComponent(materialId)}/classification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, expectedRevision }),
   });
 }
 
@@ -2393,7 +2436,8 @@ export function getQuestion(questionId: string): Promise<QuestionDetail> {
 export function editQuestion(
   questionId: string,
   patch: {
-    expectedVersionId?: string;
+    expectedVersionId: string;
+    expectedTags?: { loIds: string[]; themeIds: string[] };
     submitForReview?: boolean;
     type?: QuestionType;
     sourceRefs?: QuestionVersion['sourceRefs'];
@@ -2428,14 +2472,13 @@ export function addQuestionInternalNote(
   );
 }
 
-/** POST /api/questions/:questionId/transition { to, expectedVersionId? } -> the
+/** POST /api/questions/:questionId/transition { to, expectedVersionId } -> the
  * updated question head (validated against PUBLICATION_TRANSITIONS; 409 on an
- * invalid move or a stale expected version). Omitting expectedVersionId keeps
- * the existing state-only transition behavior. Instructor-only. (IN-Q04/Q07) */
+ * invalid move or a stale expected version). Instructor-only. (IN-Q04/Q07) */
 export function transitionQuestion(
   questionId: string,
   to: PublicationState,
-  expectedVersionId?: string,
+  expectedVersionId: string,
   rejectionReason?: string,
 ): Promise<QuestionHead> {
   return request<QuestionHead>(`/api/questions/${encodeURIComponent(questionId)}/transition`, {
@@ -2517,6 +2560,7 @@ export type ParamsSaveResult = QuestionVersion & {
 export function patchQuestionParams(
   questionId: string,
   patch: {
+    expectedVersionId: string;
     paramSlots?: ParamSlotInput[];
     derivedValues?: DerivedValueInput[];
     numericKind?: 'numeric' | 'conceptual';
@@ -3108,3 +3152,54 @@ export function getAnalyticsExamScores(courseId: string, filter: { from?: string
   for (const [key, value] of Object.entries(filter)) if (value) query.set(key, value);
   return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/exam-scores?${query}`);
 }
+
+// Platform diagnostics (Admin only).
+export interface DiagnosticFilters {
+  page?: number; limit?: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
+  outcome?: string; status?: string; state?: string; from?: string; until?: string; requestId?: string;
+}
+export interface DiagnosticIdentities {
+  courses?: Array<{ _id: string; name: string; courseCode: string; section?: string }>;
+  users?: Array<{ puid: string; displayName: string; uid: string }>;
+}
+export interface DiagnosticPage<T> extends DiagnosticIdentities {
+  items: T[]; total: number; page: number;
+  monitoring?: { failedWrites: number; pendingWrites: number; lastFailureAt?: string; oldestRecordAt: string | null };
+}
+export interface OperationRecord {
+  _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
+  outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial'; statusCode: number;
+  actor?: { puid: string; uid: string; displayName: string };
+  targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;
+}
+export type DiagnosticRun = ContentRunSnapshot & { operationId?: string };
+export interface AuditHistoryRecord { _id: string; actorPuid: string; action: string; targetType: string; targetId: string; courseId?: string; createdAt: string; detail?: Record<string, unknown> }
+export interface AdminQuestionRow {
+  _id: string; courseId: string; state: PublicationState; currentVersion: number; currentVersionId: string;
+  createdAt: string; creator?: string; stem?: string; type?: string; origin?: QuestionVersion['provenance'];
+  agentDecision?: QuestionHead['agentDecision'];
+}
+export interface AdminQuestionDiagnostic extends DiagnosticIdentities {
+  recentAttempts: Array<{ _id: string; puid: string; questionVersionId: string; createdAt: string; selectedKey: string; correct: boolean; mode: string }>;
+  recentFlags: Array<{ _id: string; puid: string; questionVersionId: string; reason?: string; state: string; createdAt: string }>;
+  question: Omit<QuestionHead, 'id'> & { _id: string };
+  versions: Array<Pick<QuestionVersion, '_id' | 'version' | 'createdBy' | 'createdAt' | 'provenance' | 'editedFields'>>;
+}
+export interface QuestionReproduction {
+  version: QuestionVersion; rendered: { stem: string; options: QuestionOption[] }; values: Record<string, number>;
+  error?: string; warnings: string[]; seed: number | null; source: 'recorded-attempt' | 'seeded-sample';
+  attempt: { _id: string; puid: string; selectedKey: string; correct: boolean; createdAt: string } | null;
+}
+function diagnosticQuery(filters: DiagnosticFilters): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') query.set(key, String(value));
+  return query.toString();
+}
+export const listAdminOperations = (filters: DiagnosticFilters) => request<DiagnosticPage<OperationRecord>>(`/api/admin/operations?${diagnosticQuery(filters)}`);
+export const getAdminOperation = (id: string) => request<{ operation: OperationRecord; runs: DiagnosticRun[] }>(`/api/admin/operations/${encodeURIComponent(id)}`);
+export const listAdminRuns = (filters: DiagnosticFilters) => request<DiagnosticPage<DiagnosticRun>>(`/api/admin/diagnostic-runs?${diagnosticQuery(filters)}`);
+export const getAdminRun = (id: string) => request<{ run: DiagnosticRun } & DiagnosticIdentities>(`/api/admin/diagnostic-runs/${encodeURIComponent(id)}`);
+export const listAdminAuditHistory = (filters: DiagnosticFilters) => request<DiagnosticPage<AuditHistoryRecord>>(`/api/admin/audit-history?${diagnosticQuery(filters)}`);
+export const listAdminQuestions = (filters: DiagnosticFilters) => request<DiagnosticPage<AdminQuestionRow>>(`/api/admin/all-questions?${diagnosticQuery(filters)}`);
+export const getAdminQuestion = (id: string) => request<AdminQuestionDiagnostic>(`/api/admin/all-questions/${encodeURIComponent(id)}`);
+export const reproduceAdminQuestion = (id: string, input: { versionId?: string; seed?: number; attemptId?: string }) => request<QuestionReproduction>(`/api/admin/all-questions/${encodeURIComponent(id)}/reproduce?${new URLSearchParams(Object.entries(input).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`);

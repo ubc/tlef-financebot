@@ -1,0 +1,29 @@
+.collaborative-editor { max-width: 1180px; margin-inline: auto; }
+.collaborative-editor__header { display: flex; align-items: start; justify-content: space-between; gap: 24px; margin-block: 20px; }
+.collaborative-editor__header h1 { margin: 0 0 8px; }
+.collaborative-editor__header p { max-width: 660px; line-height: 1.6; margin: 0; }
+.collaborative-editor__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.collaborative-editor__presence { border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; background: var(--surface); }
+.collaborative-editor__status { margin: 0; font-size: 14px; font-weight: 600; }
+.collaborative-editor__people { display: flex; flex-wrap: wrap; gap: 8px; }
+.collaborative-editor__person { border: 1px solid var(--border); padding: 5px 9px; border-radius: 20px; font-size: 12px; margin-top: 10px; }
+.collaborative-editor__notice { padding: 16px; border: 1px solid var(--border); border-left: 3px solid var(--text); border-radius: 8px; line-height: 1.6; }
+.collaborative-editor__paper { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; }
+.collaborative-editor__field { display: grid; gap: 8px; margin-bottom: 20px; min-width: 0; }
+.collaborative-editor__field label { font-size: 14px; font-weight: 600; }
+.collaborative-editor__field textarea { width: 100%; resize: vertical; min-height: 70px; line-height: 1.7; box-sizing: border-box; }
+.collaborative-editor__field select { max-width: 280px; }
+.collaborative-editor__option { border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 24px 0 0; min-width: 0; }
+.collaborative-editor__option legend { padding-inline: 8px; font-weight: 600; }
+.collaborative-editor__option .collaborative-editor__field:last-child { margin-bottom: 0; }
+.collaborative-editor__compare { max-width: 1000px; width: calc(100vw - 32px); }
+.collaborative-editor__comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-height: 55vh; overflow: auto; }
+.collaborative-editor__comparison section { min-width: 0; overflow-wrap: anywhere; }
+.collaborative-editor__comparison p { white-space: pre-wrap; }
+@media (max-width: 760px) {
+  .collaborative-editor__header { flex-direction: column; }
+  .collaborative-editor__actions { flex-wrap: wrap; }
+  .collaborative-editor__paper { padding: 16px; }
+  .collaborative-editor__option { padding: 12px; }
+  .collaborative-editor__comparison { grid-template-columns: 1fr; }
+}

@@ -222,7 +222,7 @@ describe('createMaterials — independent processing (IN-S04)', () => {
     );
     expect(updateOne).toHaveBeenLastCalledWith(
       { _id: material!._id, activeRunId: material!.activeRunId },
-      { $set: { status: 'failed', error: 'agenda down' } },
+      { $set: { status: 'failed', error: 'agenda down' }, $inc: { revision: 1 } },
     );
   });
 
@@ -235,7 +235,7 @@ describe('createMaterials — independent processing (IN-S04)', () => {
     expect(material!.activeRunId).toBeUndefined();
     expect(updateOne).toHaveBeenLastCalledWith(
       { _id: material!._id },
-      { $set: { status: 'failed', error: 'run storage unavailable' } },
+      { $set: { status: 'failed', error: 'run storage unavailable' }, $inc: { revision: 1 } },
     );
     expect(enqueueJob).not.toHaveBeenCalled();
   });
@@ -388,7 +388,7 @@ describe('ingestMaterial — success path (IN-S04)', () => {
 
     expect(updateOne).toHaveBeenLastCalledWith(
       { _id: materialId, activeRunId: runId },
-      { $set: { status: 'failed', error: 'corrupt pdf with arbitrary detail' } },
+      { $set: { status: 'failed', error: 'corrupt pdf with arbitrary detail' }, $inc: { revision: 1 } },
     );
     expect(failContentRun).toHaveBeenCalledWith(
       runId,
@@ -988,6 +988,7 @@ describe('assignMaterial (IN-S05)', () => {
     expect(update).toEqual({
       $set: { assignments: [{ themeId, loId }] },
       $unset: { classificationSuggestion: '', classificationSuggestions: '' },
+      $inc: { revision: 1 },
     });
     expect(options).toEqual({ returnDocument: 'after' });
     expect(deleteOne).not.toHaveBeenCalled();
@@ -1023,7 +1024,7 @@ describe('retryMaterial', () => {
     expect(result).toBe(updated);
     const [filter, update, options] = findOneAndUpdate.mock.calls[0]!;
     expect(filter).toEqual({ _id: materialId, status: 'failed' });
-    expect(update).toEqual({ $set: { status: 'processing', activeRunId: runId }, $unset: { error: '' } });
+    expect(update).toEqual({ $set: { status: 'processing', activeRunId: runId }, $unset: { error: '' }, $inc: { revision: 1 } });
     expect(options).toEqual({ returnDocument: 'after' });
     expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { runId: runId.toString() });
   });
@@ -1087,7 +1088,7 @@ describe('knowledge workspace material lifecycle', () => {
 
     expect(findOneAndUpdate).toHaveBeenCalledWith(
       { _id: materialId, courseId, deletedAt: { $exists: false } },
-      { $set: { deletedAt: expect.any(Date), deletedBy: 'PUID-INSTR' } },
+      { $set: { deletedAt: expect.any(Date), deletedBy: 'PUID-INSTR' }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
     expect(deletePointsByFilter).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, {
@@ -1115,6 +1116,7 @@ describe('knowledge workspace material lifecycle', () => {
       {
         $set: { status: 'processing', activeRunId: runId },
         $unset: { deletedAt: '', deletedBy: '', error: '' },
+        $inc: { revision: 1 },
       },
       { returnDocument: 'after' },
     );
@@ -1158,8 +1160,8 @@ describe('material kind metadata', () => {
 
     await expect(updateMaterialKind(courseId, materialId, 'reading')).resolves.toBe(corrected);
     expect(findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: materialId, courseId },
-      { $set: { kind: 'reading', 'automation.kind': { value: 'reading', confidence: 1, source: 'manual' } } },
+      { _id: materialId, courseId, deletedAt: { $exists: false } },
+      { $set: { kind: 'reading', 'automation.kind': { value: 'reading', confidence: 1, source: 'manual' } }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
   });
@@ -1183,5 +1185,30 @@ describe('getMaterialCourseId', () => {
     findOne.mockResolvedValue(null);
 
     await expect(getMaterialCourseId(new ObjectId())).resolves.toBeNull();
+  });
+});
+
+describe('material metadata concurrency', () => {
+  it('prevents a competing assignment save from replacing metadata after another author saves', async () => {
+    const materialId = new ObjectId();
+    const courseId = new ObjectId();
+    const originalAssignment = { themeId: new ObjectId() };
+    let saved = { ...materialFixture(materialId, courseId, 'notes.pdf'),
+      kind: 'other', revision: 2, assignments: [originalAssignment],
+    };
+    findOneAndUpdate.mockImplementation(async (filter, update) => {
+      if (filter.revision !== saved.revision) return null;
+      saved = { ...saved, ...update.$set, revision: (saved.revision ?? 0) + update.$inc.revision };
+      return { ...saved };
+    });
+
+    const results = await Promise.allSettled([
+      updateMaterialKind(courseId, materialId, 'reading', 2),
+      assignMaterial(materialId, [], 2),
+    ]);
+
+    expect(results[0]).toMatchObject({ status: 'fulfilled', value: { kind: 'reading', revision: 3 } });
+    expect(results[1]).toMatchObject({ status: 'rejected', reason: { status: 409 } });
+    expect(saved.assignments).toEqual([originalAssignment]);
   });
 });

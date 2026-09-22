@@ -188,15 +188,28 @@ export async function editQuestion(
     loIds?: ObjectId[];
     themeIds?: ObjectId[];
     expectedVersionId?: ObjectId;
+    expectedState?: PublicationState;
+    expectedTags?: { loIds: ObjectId[]; themeIds: ObjectId[] };
     submitForReview?: boolean;
+    collaborationDraftId?: ObjectId;
+    collaborationCommitId?: string;
   },
   byPuid: string,
 ): Promise<WithId<QuestionVersion>> {
   const question = await questionsCol().findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
+  const sharedCommit = Boolean(patch.collaborationDraftId && patch.collaborationCommitId);
 
   if (patch.expectedVersionId && !question.currentVersionId.equals(patch.expectedVersionId)) throw new Error('question-conflict');
-  if (patch.submitForReview && (!patch.expectedVersionId || !['approved', 'paused'].includes(question.state))) throw new Error('question-conflict');
+  if (patch.expectedState !== undefined && question.state !== patch.expectedState) throw new Error('question-conflict');
+  if (patch.expectedTags && (JSON.stringify(question.loIds) !== JSON.stringify(patch.expectedTags.loIds)
+    || JSON.stringify(question.themeIds) !== JSON.stringify(patch.expectedTags.themeIds))) throw new Error('question-conflict');
+  if (patch.submitForReview) {
+    const reviewable = sharedCommit
+      ? patch.expectedState !== undefined && question.state !== 'archived'
+      : ['approved', 'paused'].includes(question.state);
+    if (!patch.expectedVersionId || !reviewable) throw new Error('question-conflict');
+  }
   if (patch.sourceRefs !== undefined) {
     const ids = [...new Map(patch.sourceRefs.map(ref => [ref.materialId.toHexString(), ref.materialId])).values()];
     if (ids.length && await materialsCol().countDocuments({ _id: { $in: ids }, courseId: question.courseId }) !== ids.length) throw new Error('invalid-options:source-outside-course');
@@ -250,7 +263,8 @@ export async function editQuestion(
 
   const headPatch: Partial<Pick<Question, 'loIds' | 'themeIds' | 'state'>> = {};
   if (patch.submitForReview) headPatch.state = 'pending-review';
-  const headFilter = { _id: questionId, ...(patch.expectedVersionId ? { currentVersionId: patch.expectedVersionId, state: question.state } : {}) };
+  const headFilter = { _id: questionId, currentVersionId: question.currentVersionId, state: question.state,
+    ...((patch.loIds !== undefined || patch.themeIds !== undefined) ? { loIds: question.loIds, themeIds: question.themeIds } : {}) };
   if (patch.loIds !== undefined) headPatch.loIds = patch.loIds;
   if (patch.themeIds !== undefined) headPatch.themeIds = patch.themeIds;
 
@@ -262,7 +276,7 @@ export async function editQuestion(
       return current;
     }
     const result = await questionsCol().updateOne(headFilter, { $set: { updatedAt: new Date(), ...headPatch }, ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}) });
-    if (patch.expectedVersionId && result.matchedCount !== 1) throw new Error('question-conflict');
+    if (result.matchedCount !== 1) throw new Error('question-conflict');
     return current;
   }
 
@@ -279,6 +293,13 @@ export async function editQuestion(
     createdBy: byPuid,
     createdAt: now,
   };
+  // A later ordinary edit must never inherit another commit's recovery marker.
+  delete next.collaborationDraftId;
+  delete next.collaborationCommitId;
+  if (patch.collaborationDraftId && patch.collaborationCommitId) {
+    next.collaborationDraftId = patch.collaborationDraftId;
+    next.collaborationCommitId = patch.collaborationCommitId;
+  }
 
   // R4: a verification proof belongs to the exact content it was computed
   // over. `next` spreads the PREVIOUS version, so without this the old proof
@@ -288,18 +309,33 @@ export async function editQuestion(
   if (patch.verification !== undefined) next.verification = patch.verification;
   else delete next.verification;
 
-  const { insertedId } = await questionVersionsCol().insertOne(next);
+  let insertedId: ObjectId;
+  try { ({ insertedId } = await questionVersionsCol().insertOne(next)); }
+  catch (error) {
+    // Two edits can race on the immutable (questionId, version) unique index
+    // before either reaches the head CAS. Surface the same retryable conflict.
+    if ((error as { code?: number }).code === 11000) throw new Error('question-conflict', { cause: error });
+    throw error;
+  }
 
   const result = await questionsCol().updateOne(
     headFilter,
     {
       $set: { currentVersionId: insertedId, currentVersion: next.version, updatedAt: now, ...headPatch },
       $addToSet: { labels: 'manually-edited' },
-      ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}),
+      // AI review applies only to the content version it evaluated.
+      $unset: { agentDecision: '' as const },
     },
   );
 
-  if (patch.expectedVersionId && result.matchedCount !== 1) {
+  if (result.matchedCount !== 1) {
+    if (sharedCommit) {
+      // A shared-draft recovery may have published this immutable version
+      // between insertOne and our head CAS. Version numbers are unique per
+      // question, so a head at this number (or later) includes this commit.
+      const recovered = await questionsCol().findOne({ _id: questionId });
+      if (recovered && recovered.currentVersion >= next.version) return { _id: insertedId, ...next };
+    }
     await questionVersionsCol().deleteMany({ _id: insertedId });
     throw new Error('question-conflict');
   }
@@ -334,7 +370,7 @@ export async function transitionQuestion(
     {
       _id: questionId,
       state: question.state,
-      ...(expectedVersionId !== undefined ? { currentVersionId: expectedVersionId } : {}),
+      currentVersionId: question.currentVersionId,
     },
     { $set: { state: to, updatedAt: now }, ...(note ? { $push: { internalNotes: note } } : {}) },
   );

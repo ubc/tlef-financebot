@@ -74,6 +74,7 @@
     "ubc-genai-toolkit-document-parsing": "0.2.0",
     "ubc-genai-toolkit-embeddings": "0.1.1",
     "ubc-genai-toolkit-llm": "0.3.0",
+    "yjs": "^13.6.32",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -89,6 +90,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^7.2.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.7.0",
     "jest": "^30.4.2",
     "jest-monocart-coverage": "^1.1.1",

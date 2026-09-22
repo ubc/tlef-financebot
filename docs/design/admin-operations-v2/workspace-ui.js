@@ -1,0 +1,28 @@
+/* global window, document, localStorage, URLSearchParams, URL, Blob, setTimeout, clearTimeout */
+(() => {
+'use strict';
+const h = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const paths = {activity:'M3 12h4l3-8 4 16 3-8h4',grid:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',book:'M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1z M12 5v15',users:'M14 7a4 4 0 1 0-8 0 4 4 0 0 0 8 0 M2 21v-2a8 8 0 0 1 16 0v2 M18 4a4 4 0 0 1 0 7 M22 21v-3a6 6 0 0 0-3-5',key:'M14 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10 M9 12H2 M2 12v5 M5 12v3',settings:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',help:'M9 8a3 3 0 0 1 6 0c0 2-3 2-3 5 M12 17h.01 M22 12a10 10 0 1 0-20 0 10 10 0 0 0 20 0',chevron:'M9 5l7 7-7 7',down:'M6 9l6 6 6-6',left:'M15 5l-7 7 7 7',close:'M5 5l14 14 M5 19L19 5',search:'M17 10a7 7 0 1 0-14 0 7 7 0 0 0 14 0 M15 15l6 6',refresh:'M20 7a8 8 0 0 0-14-1L3 9 M3 3v6h6 M4 17a8 8 0 0 0 14 1l3-3 M21 21v-6h-6',download:'M12 3v13 M7 11l5 5 5-5 M3 16v5h18v-5',filter:'M4 6h16 M7 12h10 M10 18h4',columns:'M3 4h18v16H3z M9 4v16 M15 4v16',density:'M4 5h16 M4 10h16 M4 15h16 M4 20h16',check:'M4 12l5 5L20 6',alert:'M12 3l10 18H2z M12 9v5 M12 18h.01',clock:'M12 7v6l4 2 M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0',circle:'M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0',copy:'M8 8h13v13H8z M16 8V3H3v13h5',code:'M8 6l-6 6 6 6 M16 6l6 6-6 6 M14 3l-4 18',run:'M8 4l12 8-12 8z',history:'M3 10a9 9 0 1 1 3 9 M3 3v7h7 M12 7v6l4 2',globe:'M21 12a9 9 0 1 0-18 0 9 9 0 0 0 18 0 M3 12h18 M12 3c-5 5-5 13 0 18 5-5 5-13 0-18',external:'M13 3h8v8 M21 3L10 14 M9 3H3v18h18v-6',star:'M12 3l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z',bell:'M6 9a6 6 0 0 1 12 0v7l3 2H3l3-2z M10 21h4',collapse:'M3 4h18v16H3z M9 4v16 M15 9l-3 3 3 3',arrow:'M4 12h16 M14 6l6 6-6 6',sort:'M8 4v16 M4 16l4 4 4-4 M16 20V4 M12 8l4-4 4 4',shield:'M12 2l9 4v6c0 6-9 10-9 10S3 18 3 12V6z M8 12l3 3 5-6'};
+Object.assign(paths,{plus:'M12 4v16 M4 12h16',edit:'M15 4l5 5 M4 16L16 4a3 3 0 0 1 4 4L8 20H4z'});
+const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name]||paths.activity}"/></svg>`;
+const button = (label,action,{id='',icon:symbol='',className='',disabled=false}={}) => `<button type="button" class="${className}" data-action="${h(action)}" data-id="${h(id)}" aria-label="${h(label)}" ${disabled?'disabled':''}>${symbol?icon(symbol):''}<span>${h(label)}</span></button>`;
+const read = (key,fallback) => {try{return JSON.parse(localStorage.getItem('financebot-admin-suite:'+key))??fallback;}catch{return fallback;}};
+const save = (key,value) => {try{localStorage.setItem('financebot-admin-suite:'+key,JSON.stringify(value));}catch{/* The current page remains usable without storage. */}};
+let toastTimer;
+function toast(message){clearTimeout(toastTimer);document.querySelector('#toast').textContent=message;toastTimer=setTimeout(()=>{document.querySelector('#toast').textContent='';},4000);}
+function modal(title,body,footer=''){const el=document.querySelector('#modal');el.innerHTML=`<header class="modal-header"><h2 id="modal-title">${h(title)}</h2>${button('Close dialog','ui-close-modal',{icon:'close',className:'icon-button icon-only'})}</header><div class="modal-body">${body}</div>${footer?`<footer class="modal-footer">${footer}</footer>`:''}`;if(!el.open)el.showModal();}
+function closeModal(){document.querySelector('#modal').close();}
+function download(name,text,mime='text/plain'){const url=URL.createObjectURL(new Blob([text],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Export prepared from sample data.');}
+function link(page,params={}){const query=new URLSearchParams(params);return page==='operations'?'index.html'+(query.size?'#'+query:''):'workspace.html?'+new URLSearchParams({page,...params});}
+function panel({title,eyebrow='',body,footer=''}){return `<div class="ws-panel-backdrop" data-action="ui-close-panel"></div><aside class="ws-panel" aria-label="${h(title)} details"><header class="ws-panel-head"><div><small>${h(eyebrow)}</small><h2>${h(title)}</h2></div>${button('Close details','ui-close-panel',{icon:'close',className:'icon-button icon-only'})}</header><div class="ws-panel-body" tabindex="0" aria-label="Detail content">${body}</div>${footer?`<footer class="ws-panel-footer">${footer}</footer>`:''}</aside>`;}
+function heading(title,subtitle,actions=''){return `<header class="page-heading"><div><div class="headline"><h1>${h(title)}</h1></div><p class="subtitle">${h(subtitle)}</p></div>${actions?`<div class="actions">${actions}</div>`:''}</header>`;}
+function metrics(items){return `<div class="summary-strip ws-metrics" style="--metric-count:${items.length}" aria-label="Summary">${items.map(item=>`<div class="metric"><span><span class="metric-label">${h(item.label)}</span><span class="metric-value"><strong>${h(item.value)}</strong>${item.note?`<small>${h(item.note)}</small>`:''}</span></span></div>`).join('')}</div>`;}
+window.AdminPages={};
+window.AdminUI={h,icon,button,read,save,toast,modal,closeModal,download,link,panel,heading,metrics,
+ badge:(text,tone='neutral')=>`<span class="pill ${h(tone)}"><span class="dot"></span>${h(text)}</span>`,
+ avatar:name=>`<span class="avatar" aria-hidden="true">${h(String(name).split(' ').map(x=>x[0]).slice(0,2).join(''))}</span>`,
+ csv:rows=>rows.map(row=>row.map(cell=>'"'+String(cell??'').replace(/"/g,'""')+'"').join(',')).join('\n'),
+ empty:(title,description,actions='')=>`<div class="empty-state">${icon('search')}<h2>${h(title)}</h2><p>${h(description)}</p>${actions}</div>`,
+ render:()=>{},
+};
+})();

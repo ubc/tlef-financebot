@@ -8,6 +8,7 @@ import {
 } from '../components/mongodb/collections';
 import { defineJob, scheduleRecurring } from '../components/jobs';
 import type { Notification } from '../types/domain';
+import { activeSharedInstructorPuids } from './course-sharing.service';
 
 // -----------------------------------------------------------------------------
 // Notifications service (§4.3, §9.1): in-app notification creation, the
@@ -60,9 +61,11 @@ export async function notify(input: NotifyInput): Promise<void> {
 /** Resolve a course's instructor(s) and TAs from `User.courseRoles` — never a
  * student, regardless of what else is passed in. */
 async function courseStaffPuids(courseId: ObjectId): Promise<string[]> {
+  const sharedPuids = await activeSharedInstructorPuids(courseId);
+  const directRoles = { courseRoles: { $elemMatch: { courseId, role: { $in: ['instructor', 'ta'] as const } } } };
   const staff = await usersCol()
     .find(
-      { courseRoles: { $elemMatch: { courseId, role: { $in: ['instructor', 'ta'] } } } },
+      sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles,
       { projection: { puid: 1 } },
     )
     .toArray();
@@ -151,8 +154,10 @@ export async function runDailySummary(): Promise<void> {
     const total = newFlags + pendingReviewChanges;
     if (total === 0) continue;
 
+    const sharedPuids = await activeSharedInstructorPuids(course._id);
+    const directRoles = { courseRoles: { $elemMatch: { courseId: course._id, role: 'instructor' as const } } };
     const instructors = await usersCol()
-      .find({ courseRoles: { $elemMatch: { courseId: course._id, role: 'instructor' } } }, { projection: { puid: 1 } })
+      .find(sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles, { projection: { puid: 1 } })
       .toArray();
     const body =
       `${newFlags} new flag${newFlags === 1 ? '' : 's'} and ${pendingReviewChanges} ` +

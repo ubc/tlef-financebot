@@ -224,6 +224,7 @@ describe('exact generation retry', () => {
         loId,
         count: 10,
         type: 'mcq',
+        kind: 'calculation',
         difficulty: 'easy',
         prompt: 'Original prompt',
         models: {
@@ -244,6 +245,7 @@ describe('exact generation retry', () => {
       loId,
       count: 10,
       type: 'mcq',
+      kind: 'calculation',
       difficulty: 'easy',
       prompt: 'Original prompt',
       byPuid: 'PUID-INSTR',

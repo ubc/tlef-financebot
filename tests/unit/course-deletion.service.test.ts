@@ -12,7 +12,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   materialsCol: jest.fn(), notificationsCol: jest.fn(), previewAttemptsCol: jest.fn(),
   previewStudentSessionsCol: jest.fn(), questionVersionsCol: jest.fn(), questionsCol: jest.fn(),
   reviewBookCol: jest.fn(), rosterCol: jest.fn(), sessionSummariesCol: jest.fn(),
-  taInvitesCol: jest.fn(), themesCol: jest.fn(), usersCol: jest.fn(),
+  taInvitesCol: jest.fn(), themesCol: jest.fn(), usersCol: jest.fn(), courseInstructorSharesCol: jest.fn(), questionDraftsCol: jest.fn(), questionPresenceCol: jest.fn(),
 }));
 
 import { lstat, rm } from 'node:fs/promises';
@@ -37,7 +37,8 @@ const accessorNames = [
   'examAttemptsCol', 'examTemplatesCol', 'flagsCol', 'generationBlueprintsCol', 'generationSubmissionsCol', 'losCol',
   'masteryCol', 'materialChunksCol', 'materialsCol', 'notificationsCol', 'previewAttemptsCol',
   'previewStudentSessionsCol', 'questionVersionsCol', 'questionsCol', 'reviewBookCol',
-  'rosterCol', 'sessionSummariesCol', 'taInvitesCol', 'themesCol', 'usersCol',
+  'rosterCol', 'sessionSummariesCol', 'taInvitesCol', 'themesCol', 'usersCol', 'courseInstructorSharesCol',
+  'questionDraftsCol', 'questionPresenceCol',
 ] as const;
 
 function fakeCollection(rows: unknown[] = []): FakeCollection {

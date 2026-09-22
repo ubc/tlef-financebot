@@ -18,6 +18,8 @@ export interface Route {
 }
 
 export interface RouterHandle {
+  /** Shell switches must consult this before replacing the active router. */
+  guardNavigation(event: Event): boolean;
   navigate(path: string): void;
   stop(): void;
 }
@@ -65,10 +67,46 @@ function resolve(routes: Route[], fallback: string, path: string): Matched {
   return { route: fallbackRoute, params: {} };
 }
 
+let leaveGuard: { root: HTMLElement; dirty: () => boolean; confirm: () => Promise<boolean> } | undefined;
+
+/** Guard only the connected editor; detached views cannot block later routes. */
+export function protectUnsavedChanges(root: HTMLElement, dirty: () => boolean, confirm: () => Promise<boolean>): void {
+  leaveGuard = { root, dirty, confirm };
+}
+function hasUnsavedChanges(): boolean {
+  return !!leaveGuard?.root.isConnected && leaveGuard.dirty();
+}
+
 export function startRouter(options: RouterOptions): RouterHandle {
   const { routes, outlet, fallback, onNavigate } = options;
 
+  let acceptedHash = window.location.hash;
+  let confirming = false;
+  let stopped = false;
+  const guardNavigation = (event: Event): boolean => {
+    if (confirming) {
+      event.stopImmediatePropagation();
+      history.replaceState(null, '', acceptedHash || '#/');
+      return true;
+    }
+    if (hasUnsavedChanges()) {
+      event.stopImmediatePropagation();
+      const destination = window.location.hash;
+      history.replaceState(null, '', acceptedHash || '#/');
+      confirming = true;
+      void leaveGuard!.confirm().then(allowed => {
+        confirming = false;
+        if (!allowed || stopped) return;
+        leaveGuard = undefined;
+        history.replaceState(null, '', destination || '#/');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      }).catch(() => { confirming = false; });
+      return true;
+    }
+    return false;
+  };
   const handle = (): void => {
+    acceptedHash = window.location.hash;
     const path = currentPath();
     const { route, params } = resolve(routes, fallback, path);
     // No pattern matched at all (unknown/empty hash): normalize to fallback.
@@ -82,15 +120,27 @@ export function startRouter(options: RouterOptions): RouterHandle {
     void route.render(outlet, params);
   };
 
+  const beforeUnload = (event: BeforeUnloadEvent): void => {
+    if (!hasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+  window.addEventListener('beforeunload', beforeUnload);
+  window.addEventListener('hashchange', guardNavigation);
   window.addEventListener('hashchange', handle);
   handle();
 
   return {
+    guardNavigation,
     navigate(path: string) {
-      if (currentPath() === path) handle();
+      if (currentPath() === path) window.dispatchEvent(new HashChangeEvent('hashchange'));
       else window.location.hash = path;
     },
     stop() {
+      stopped = true;
+      leaveGuard = undefined;
+      window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('hashchange', guardNavigation);
       window.removeEventListener('hashchange', handle);
     },
   };

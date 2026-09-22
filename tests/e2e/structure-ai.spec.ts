@@ -55,13 +55,14 @@ test('inline AI outline streams, recovers, edits, inspects evidence and applies 
   await page.reload(); await mount(); await page.getByRole('button', { name: 'AI draft', exact: true }).click();
   await expect(page.locator('.structure-ai-draft-row')).toContainText('Calculate acceleration using force vectors');
   run = { ...run, status: 'completed', revision: 4, structureResult: {
-    themes: [{ name: 'Mechanics', los: [{ name: 'Calculate acceleration', evidenceIds: ['E1', 'E2'], materialIds: [m1, m2] }, { name: 'Resolve force vectors', evidenceIds: ['E2'], materialIds: [m2] }] }],
-    evidence: [{ id: 'E1', materialId: m1, materialName: 'Lecture.pdf', chunkIndex: 9, quote: 'Newton’s second law relates force to acceleration.' }, { id: 'E2', materialId: m2, materialName: 'Assignment.pdf', chunkIndex: 1, quote: 'Resolve the force vector into components.' }],
+    themes: [{ name: 'Mechanics', los: [{ name: 'Calculate acceleration', evidenceIds: ['E1', 'E2', 'E3'], materialIds: [m1, m2] }, { name: 'Resolve force vectors', evidenceIds: ['E2'], materialIds: [m2] }] }],
+    evidence: [{ id: 'E3', materialId: m1, materialName: 'Lecture.pdf', chunkIndex: 9, quote: 'Newton’s second law relates force to acceleration.' }, { id: 'E1', materialId: m1, materialName: 'Lecture.pdf', chunkIndex: 9, quote: 'Newton’s second law relates force to acceleration.' }, { id: 'E2', materialId: m2, materialName: 'Assignment.pdf', chunkIndex: 1, quote: 'Resolve the force vector into components.' }],
     coverage: { materials: [{ materialId: m1, name: 'Lecture.pdf', chunks: 10, mappedObjectives: 1 }, { materialId: m2, name: 'Assignment.pdf', chunks: 2, mappedObjectives: 1 }], analyzedSections: 12, extractedObjectives: 2, mappedObjectives: 2, unmappedEvidenceIds: [], excludedSections: [], warnings: ['Check source diagrams.'] },
   } };
   await emit();
   await expect(page.getByRole('textbox', { name: 'Draft topic 1 name', exact: true })).toHaveValue('Mechanics');
   await expect(page.getByRole('textbox', { name: 'Objective 1.2', exact: true })).toHaveValue('Resolve force vectors');
+  await expect(page.locator('.structure-ai-evidence').first().locator('blockquote')).toHaveCount(2);
   const longObjective = 'Analyze a complete physical situation by identifying every external force, resolving the forces into components, calculating the resulting acceleration, and explaining the assumptions and the direction of the result.';
   await page.getByRole('textbox', { name: 'Objective 1.1', exact: true }).fill(longObjective);
   await page.setViewportSize({ width: 900, height: 900 });

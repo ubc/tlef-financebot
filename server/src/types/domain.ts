@@ -199,12 +199,16 @@ export interface TaInvite {
 }
 
 export interface Course {
+  /** Optimistic concurrency token for human authoring; legacy documents start at zero. */
+  revision?: number;
   name: string;
   courseCode: string; // e.g. "COMM 298"
   section?: string; // e.g. "101"; separate from the catalog course code
   term: string; // e.g. "2026W1"
   /** Internal normalized courseCode/section/term key; omitted from API responses. */
   identityKey?: string;
+  /** Internal expiring lease for retryable bulk outline application. Never exposed by course reads. */
+  outlineApplyLease?: { token: string; expiresAt: Date };
   ownerPuid: string;
   registrationCode: string; // unique; regenerable (IN-S03)
   termStart?: Date;
@@ -223,6 +227,7 @@ export interface Course {
 }
 
 export interface Theme {
+  revision?: number;
   courseId: ObjectId;
   name: string;
   order: number;
@@ -240,6 +245,7 @@ export type LoKind = 'calculation' | 'conceptual' | 'mixed';
 export type QuestionKind = 'calculation' | 'conceptual';
 
 export interface LearningObjective {
+  revision?: number;
   courseId: ObjectId;
   themeId: ObjectId;
   name: string;
@@ -312,6 +318,9 @@ export interface QuestionVersion {
   // the whole version chain is the union of editedFields over every version
   // from v2 up to this one.
   editedFields?: string[];
+  /** Private recovery markers for an explicitly committed collaborative draft. */
+  collaborationDraftId?: ObjectId;
+  collaborationCommitId?: string;
   createdBy: string; // puid or 'pipeline'
   createdAt: Date;
 }
@@ -439,6 +448,7 @@ export interface PreviewStudentSession {
 }
 
 export interface Material {
+  revision?: number;
   courseId: ObjectId;
   name: string;
   format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'md' | 'url';
@@ -527,6 +537,8 @@ export interface ContentRunEvent {
 }
 
 interface ContentRunBase {
+  /** HTTP operation that originally queued this work; absent on historical runs. */
+  operationId?: string;
   courseId: ObjectId;
   requestedBy: string;
   status: ContentRunStatus;
@@ -821,4 +833,19 @@ export const PUBLICATION_TRANSITIONS: Record<PublicationState, PublicationState[
 
 export function canTransition(from: PublicationState, to: PublicationState): boolean {
   return PUBLICATION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** API outcomes, separate from durable background-run completion. */
+export interface OperationEvent {
+  requestId: string;
+  createdAt: Date;
+  durationMs: number;
+  method: string;
+  route: string;
+  statusCode: number;
+  outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial';
+  actor?: { puid: string; uid: string; displayName: string };
+  targets: Record<string, string>;
+  input: Record<string, string | number | boolean>;
+  response: Record<string, unknown>;
 }

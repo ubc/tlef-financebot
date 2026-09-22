@@ -182,7 +182,8 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Review Book', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Exam Prep', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Exit Preview', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Exit (?:Preview|TA View)$/, includeHidden: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Switch role, current role Student', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
     await expect(page.getByText(THEME_NAME)).toBeVisible();
 
@@ -194,12 +195,12 @@ test.describe('Instructor student preview', () => {
 
     // The practice context is useful in the expanded sidebar but has no
     // readable icon-rail form. Collapsing must hide it wholesale instead of
-    // squeezing every label and action into a 76px column.
+    // squeezing every label and action into a 60px column.
     await expect(page.locator('.practice-context')).toBeVisible();
     await page.getByRole('button', { name: 'Collapse navigation' }).click();
     await expect(page.locator('.app-shell--student')).toHaveClass(/is-collapsed/);
     await expect(page.locator('.practice-context-slot')).toBeHidden();
-    await expect(page.locator('.sidebar--student')).toHaveCSS('width', '76px');
+    await expect(page.locator('.sidebar--student')).toHaveCSS('width', '60px');
     await page.getByRole('button', { name: 'Expand navigation' }).click();
     await expect(page.locator('.practice-context')).toBeVisible();
 
@@ -286,7 +287,8 @@ test.describe('Instructor student preview', () => {
     expect(liveFlags[0]?.source).toBe('instructor-preview-test');
     expect(liveFlags[0]?.reason).toBe('Anonymous preview isolation check');
 
-    await page.getByRole('link', { name: 'Exit Preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Switch role, current role Student', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
     await expect(page.locator('.sidebar--instructor')).toBeVisible();
     await expect(page.locator('.sidebar--student')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();

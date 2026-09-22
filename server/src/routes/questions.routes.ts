@@ -129,7 +129,8 @@ const optionBody = z.object({
 const basePatchQuestionBody = z.object({
   type: z.enum(QUESTION_TYPES).optional(),
   sourceRefs: z.array(z.object({ materialId: objectIdParam, chunk: z.string().optional() })).optional(),
-  expectedVersionId: objectIdParam.optional(),
+  expectedVersionId: objectIdParam,
+  expectedTags: z.object({ loIds: z.array(objectIdParam), themeIds: z.array(objectIdParam) }).optional(),
   submitForReview: z.boolean().optional(),
   stem: z.string().min(1).optional(),
   options: z.array(optionBody).optional(),
@@ -167,9 +168,12 @@ const patchQuestionBody = basePatchQuestionBody.extend({
   paramSlots: z.array(paramSlotBody).optional(),
   derivedValues: z.array(derivedValueBody).optional(),
   numericKind: z.enum(['numeric', 'conceptual']).optional(),
-}).refine(body => !body.submitForReview || !!body.expectedVersionId, { message: 'Review submission requires expectedVersionId' });
+}).refine(body => (body.loIds === undefined && body.themeIds === undefined) || body.expectedTags !== undefined, {
+  message: 'Replacing question tags requires the loaded expectedTags snapshot',
+});
 
 const patchQuestionParamsBody = z.object({
+  expectedVersionId: objectIdParam,
   paramSlots: z.array(paramSlotBody).optional(),
   derivedValues: z.array(derivedValueBody).optional(),
   numericKind: z.enum(['numeric', 'conceptual']).optional(),
@@ -232,7 +236,7 @@ function verifyOptionFormulas(
 
 const transitionBody = z.object({
   to: z.enum(PUBLICATION_STATES),
-  expectedVersionId: objectIdParam.optional(),
+  expectedVersionId: objectIdParam,
   rejectionReason: z.string().trim().max(2000).optional(),
 }).refine((body) => body.rejectionReason === undefined || body.to === 'archived', {
   message: 'A rejection reason is only valid when archiving a question',
@@ -462,7 +466,11 @@ questionsRouter.patch(
       {
         ...(body.type !== undefined ? { type: body.type } : {}),
         ...(body.sourceRefs !== undefined ? { sourceRefs: body.sourceRefs.map(ref => ({ ...ref, materialId: new ObjectId(ref.materialId) })) } : {}),
-        ...(body.expectedVersionId !== undefined ? { expectedVersionId: new ObjectId(body.expectedVersionId) } : {}),
+        expectedVersionId: new ObjectId(body.expectedVersionId),
+        ...(body.expectedTags ? { expectedTags: {
+          loIds: body.expectedTags.loIds.map(id => new ObjectId(id)),
+          themeIds: body.expectedTags.themeIds.map(id => new ObjectId(id)),
+        } } : {}),
         ...(body.submitForReview !== undefined ? { submitForReview: body.submitForReview } : {}),
         ...(body.stem !== undefined ? { stem: body.stem } : {}),
         ...(body.options !== undefined ? { options: body.options } : {}),
@@ -535,6 +543,7 @@ questionsRouter.patch(
     const version = await editQuestion(
       questionId,
       {
+        expectedVersionId: new ObjectId(body.expectedVersionId),
         ...(body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {}),
         ...(body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {}),
         ...(body.numericKind !== undefined ? { numericKind: body.numericKind } : {}),
@@ -646,8 +655,8 @@ questionsRouter.post(
   },
 );
 
-/** POST /api/questions/:questionId/transition { to, expectedVersionId? } -> question.
- * Instructor-only. The optional version id prevents approving a version that
+/** POST /api/questions/:questionId/transition { to, expectedVersionId } -> question.
+ * Instructor-only. The loaded version id prevents approving a version that
  * changed after the reviewer loaded it. (IN-Q04/Q07) */
 questionsRouter.post(
   '/questions/:questionId/transition',
@@ -660,9 +669,7 @@ questionsRouter.post(
     const questionId = new ObjectId(String(req.params.questionId));
     const { to, expectedVersionId, rejectionReason } = req.body as z.infer<typeof transitionBody>;
     const updated = rejectionReason !== undefined
-      ? await transitionQuestion(questionId, to, req.user!.puid, expectedVersionId ? new ObjectId(expectedVersionId) : undefined, rejectionReason)
-      : expectedVersionId === undefined
-      ? await transitionQuestion(questionId, to, req.user!.puid)
+      ? await transitionQuestion(questionId, to, req.user!.puid, new ObjectId(expectedVersionId), rejectionReason)
       : await transitionQuestion(questionId, to, req.user!.puid, new ObjectId(expectedVersionId));
     res.json(toQuestionResponse(updated));
   },

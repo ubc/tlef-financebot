@@ -8,7 +8,7 @@ const patterns = { items: [
   { questionId: question, versionId: historical, version: 1, isCurrent: false, available: true, stem: 'How much is the historical value?', loId: objective, loName: 'Value at Risk', themeId: 'theme', themeName: 'Risk', attempts: 6, insufficient: false, failureRate: 0 },
   { questionId: question, versionId: current, version: 2, isCurrent: true, available: true, objectiveCount: 2, stem: 'How much is the current value?', loId: objective, loName: 'Value at Risk', themeId: 'theme', themeName: 'Risk', attempts: 6, insufficient: false, failureRate: 1 },
 ], total: 2, limit: 20 };
-async function fixture(page: Page, individual = true) {
+async function fixture(page: Page, individual = true, emptyObjectives = false) {
   await page.route('**/analytics-fixture', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><title>Analytics</title><link rel="stylesheet" href="/styles/main.css"></head><body><main id="app"></main></body></html>' }));
   await page.route('**/api/**', (route) => {
     const url = new URL(route.request().url());
@@ -16,7 +16,7 @@ async function fixture(page: Page, individual = true) {
     if (path.endsWith('/auth/me')) return route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'teacher', courseRoles: [{ courseId: course, role: 'instructor' }] } } });
     if (path.includes('/tutorials')) return route.fulfill({ json: [] });
     if (path.endsWith('/capabilities/me')) return route.fulfill({ json: { 'analytics.individual': individual } });
-    if (path.endsWith('/failure-rates')) return route.fulfill({ json: url.searchParams.get('mode') === 'exam-prep' ? [{ ...rates[0], attempts: 3, insufficient: true, failureRate: undefined, los: rates[0].los.map((item) => ({ ...item, attempts: 3, insufficient: true, failureRate: undefined })) }] : rates });
+    if (path.endsWith('/failure-rates')) return route.fulfill({ json: emptyObjectives ? [] : url.searchParams.get('mode') === 'exam-prep' ? [{ ...rates[0], attempts: 3, insufficient: true, failureRate: undefined, los: rates[0].los.map((item) => ({ ...item, attempts: 3, insufficient: true, failureRate: undefined })) }] : rates });
     if (path.endsWith('/question-patterns')) return route.fulfill({ json: patterns });
     if (path.endsWith('/distribution')) return route.fulfill({ json: { questionId: question, versionId: historical, version: 1, stem: 'Recorded historical stem', isCurrent: false, attempts: 6, insufficient: false, misconceptionHighlight: false, options: [{ key: 'A', text: 'Recorded old answer', role: 'correct', count: 6, pct: 1 }] } });
     if (path.endsWith('/engagement')) return route.fulfill({ json: { totals: { questionsAttempted: 12, sessionsPerStudent: 2, avgSessionMinutes: 5, loCoverageRate: .5, reviewBookActivityRate: 0 }, weeks: [{ week: '2026-08-30', questionsAttempted: 12, sessions: 2, activeStudents: 1, avgSessionMinutes: 5 }, { week: '2026-09-06', questionsAttempted: 0, sessions: 0, activeStudents: 0, avgSessionMinutes: 0 }] } });
@@ -33,6 +33,21 @@ async function fixture(page: Page, individual = true) {
   }, course);
   await expect(page.getByText(/Last updated/)).toBeVisible();
 }
+test('empty objectives use a padded action state instead of loose text at the card edge', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await fixture(page, true, true);
+  const empty = page.locator('.analytics-empty-state');
+  await expect(empty.getByRole('heading', { name: 'No active objectives yet' })).toBeVisible();
+  await expect(empty.getByRole('link', { name: 'Open Coverage Map' })).toHaveAttribute('href', `#/instructor/course/${course}/content-map`);
+  const layout = await empty.evaluate((node) => {
+    const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return { display: style.display, topPadding: parseFloat(style.paddingTop), height: rect.height, overflow: document.documentElement.scrollWidth > innerWidth };
+  });
+  expect(layout).toMatchObject({ display: 'flex', overflow: false });
+  expect(layout.topPadding).toBeGreaterThanOrEqual(24);
+  expect(layout.height).toBeGreaterThanOrEqual(140);
+});
 test('scope, objective/version selection and CSV match; search submits with Enter', async ({ page }) => {
   await fixture(page);
   await expect(page.getByRole('button', { name: 'Topic Practice', exact: true })).toHaveAttribute('aria-pressed', 'true');

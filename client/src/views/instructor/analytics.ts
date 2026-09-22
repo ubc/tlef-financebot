@@ -145,7 +145,14 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
     tableBody.querySelectorAll<HTMLButtonElement>('tr:not(.analytics-lo-row) td:first-child button').forEach((b, i) => { b.setAttribute('aria-expanded', String(openThemes.has(rates.slice().sort(compare)[i].themeId))); b.prepend(el('span', { class: 'analytics-chevron', 'aria-hidden': 'true', text: '›' })); });
     outcomes.replaceChildren(
       el('div', { class: 'analytics-table-wrap' }, el('table', { class: 'analytics-table' }, el('thead', {}, el('tr', {}, ...['Topic / learning objective', 'Accuracy', 'Correct / attempts'].map(text => el('th', { scope: 'col', text })))), tableBody)));
-    if (!rates.length) outcomes.append(el('p', { text: 'No active objectives yet.' }), link('Open Coverage Map', 'content-map'));
+    if (!rates.length) outcomes.append(
+      el('div', { class: 'analytics-empty-state', role: 'status' },
+        el('span', { class: 'analytics-empty-state__icon', 'aria-hidden': 'true', text: '◇' }),
+        el('div', {},
+          el('h3', { text: 'No active objectives yet' }),
+          el('p', { text: 'Add learning objectives to the course structure to start tracking topic performance.' })),
+        el('a', { class: 'btn btn--instr-primary btn--sm', href: `${base}/content-map`, text: 'Open Coverage Map' })),
+    );
     const previous = lo.value;
     lo.replaceChildren(el('option', { value: '', text: 'All learning objectives' }), ...allLos.map((item) => el('option', { value: item.loId, text: `${item.themeName} / ${item.name}` })));
     lo.value = allLos.some((item) => item.loId === previous) ? previous : '';
