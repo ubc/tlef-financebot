@@ -1,25 +1,33 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-async function setup(page: Page, staleSample = false, count = 18) {
+async function setup(page: Page, staleSample = false, count = 18, withMath = false) {
   const questions = Array.from({ length: count }, (_, i) => ({ id: `q${i}`, courseId: 'course', currentVersionId: `v${i}`, currentVersion: 1, state: 'draft', themeIds: ['topic'], loIds: ['lo'], labels: [], internalNotes: [], versions: [], agentDecision: { decision: i % 3 ? 'pass' : 'flag', reasoning: 'Check the direction and magnitude of each force.', roleAssessment: 'The answer correctly uses vector addition.' }, current: { _id: `v${i}`, questionId: `q${i}`, version: 1, type: 'mcq', difficulty: 'easy', stem: `Question ${i + 1}: Two opposite forces act on the same object. Which statement describes the net force?`, options: [ { key: 'A', text: 'They always cancel.', role: 'clearly-wrong', explanation: 'Opposite direction is insufficient.' }, { key: 'B', text: 'The larger force determines the net direction.', role: 'correct', explanation: 'Add the signed forces.' } ], sourceRefs: [{ materialId: 'material', chunk: 'The resultant force is the vector sum.' }] } }));
+  if (questions[1]) { questions[1].themeIds = ['motion']; questions[1].loIds = ['motion-lo']; }
+  if (questions[2]) questions[2].loIds = [];
+  if (questions[3]) questions[3].loIds = ['lo', 'lo-extra'];
+  if (withMath) questions[0].current.stem = String.raw`Question 1: Compare $R_f$ and $\beta$. Is $\alpha > 0$?`;
   if (staleSample) Object.assign(questions[1], { sample: { stem: 'OUTDATED SAMPLE', options: [], seed: 1, parameterized: true } });
   const calls: Array<{ id: string; body: Record<string, string> }> = [];
   let fail = false;
+  const failIds = new Set<string>();
   let delay = 0;
   let slowId = '';
   await page.route('**/review-fixture', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><title>Review</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/vendor/katex.min.css"><script src="/vendor/katex.min.js"></script><script src="/vendor/katex-auto-render.min.js"></script><script src="/vendor/marked.min.js"></script><script src="/vendor/purify.min.js"></script></head><body><main></main></body></html>' }));
   await page.route('**/api/**', async r => {
     const path = new URL(r.request().url()).pathname;
     if (path.endsWith('/review-queue')) return r.fulfill({ json: questions.filter(q => q.state === 'draft') });
-    if (path === '/api/courses/course') return r.fulfill({ json: { _id: 'course', themes: [{ _id: 'topic', name: 'Forces', los: [{ _id: 'lo', name: 'Combine forces to find net force' }] }] } });
+    if (path === '/api/courses/course') return r.fulfill({ json: { _id: 'course', themes: [
+      { _id: 'topic', name: 'Forces', los: [{ _id: 'lo', name: 'Combine forces to find net force' }, { _id: 'lo-extra', name: 'Explain vector addition' }] },
+      { _id: 'motion', name: 'Motion', los: [{ _id: 'motion-lo', name: 'Describe motion' }] },
+    ] } });
     const match = path.match(/\/questions\/(q\d+)(\/transition)?$/);
     if (match) {
       const question = questions.find(q => q.id === match[1])!;
       if (match[2]) {
         const body = r.request().postDataJSON(); calls.push({ id: question.id, body });
         if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-        if (fail) return r.fulfill({ status: 409, json: { error: 'Question version changed' } });
+        if (fail || failIds.has(question.id)) return r.fulfill({ status: 409, json: { error: 'Question version changed' } });
         question.state = body.to;
         if (body.rejectionReason) (question.internalNotes as unknown[]).push({ text: body.rejectionReason });
         return r.fulfill({ json: question });
@@ -40,7 +48,7 @@ async function setup(page: Page, staleSample = false, count = 18) {
   });
   if (count) await expect(page.locator('.review-workbench__stem')).toContainText('Question 1:');
   else await expect(page.getByRole('heading', { name: 'Nothing waiting for review' })).toBeVisible();
-  return { questions, calls, fail: (value: boolean) => { fail = value; }, delay: (value: number) => { delay = value; }, slow: (id: string) => { slowId = id; } };
+  return { questions, calls, fail: (value: boolean) => { fail = value; }, failIds, delay: (value: number) => { delay = value; }, slow: (id: string) => { slowId = id; } };
 }
 
 test('compact reader, board navigation, source evidence and search', async ({ page }) => {
@@ -55,6 +63,103 @@ test('compact reader, board navigation, source evidence and search', async ({ pa
   await page.getByLabel('Search review questions').fill('Question 17:');
   await expect(page.locator('.review-workbench__row')).toHaveCount(1);
   await expect(page.locator('.review-workbench__stem')).toContainText('Question 17:');
+});
+
+test('LaTeX renders in the question list and reviewed question board', async ({ page }) => {
+  await setup(page, false, 18, true);
+  const row = page.locator('.review-workbench__row').first();
+  await expect(row.locator('.katex')).toHaveCount(3);
+  await expect(row).not.toContainText('$R_f$');
+  await page.screenshot({ path: '/tmp/review-latex-list.png' });
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.getByRole('button', { name: 'Open question board' }).click();
+  await page.getByText('1 reviewed this visit').click();
+  const completed = page.locator('.review-question-board__completed');
+  await expect(completed.locator('.katex')).toHaveCount(3);
+  await expect(completed).not.toContainText('$R_f$');
+  await page.screenshot({ path: '/tmp/review-latex-board.png' });
+});
+
+test('topic and learning-objective filters follow the course tree and rows expose their assignments', async ({ page }) => {
+  await setup(page);
+  await expect(page.locator('.review-workbench__row').first().locator('.review-workbench__row-tag')).toContainText(['Forces', 'Combine forces to find net force']);
+  await expect(page.locator('.review-workbench__row').nth(2)).toContainText('No LO assigned');
+  await expect(page.locator('.review-workbench__row').nth(3)).toContainText('+1 LO');
+  const topic = page.getByLabel('Filter the review queue by topic');
+  const objective = page.getByLabel('Filter the review queue by learning objective');
+  await topic.selectOption('motion');
+  await expect(topic).toBeFocused();
+  await expect(page.locator('.review-workbench__row')).toHaveCount(1);
+  await expect(page.locator('.review-workbench__list-title')).toHaveText('QUESTIONS · 1');
+  await expect(objective.locator('option')).toHaveCount(2);
+  await objective.selectOption('motion-lo');
+  await expect(objective).toBeFocused();
+  await expect(page.locator('.review-workbench__row')).toHaveCount(1);
+  await topic.selectOption('topic');
+  await expect(objective).toHaveValue('');
+  await expect(page.locator('.review-workbench__row')).toHaveCount(17);
+  await objective.selectOption('lo-extra');
+  await expect(page.locator('.review-workbench__row')).toHaveCount(1);
+  await expect(page.locator('.review-workbench__row')).toContainText('Question 4:');
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page.locator('.review-workbench__row')).toHaveCount(18);
+});
+
+test('batch approval reports partial failures, retains failed selection, and Review Queue offers Reject', async ({ page }) => {
+  const state = await setup(page);
+  state.failIds.add('q1');
+  await page.getByRole('checkbox', { name: 'Select question 1', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'Select question 2', exact: true }).check();
+  await expect(page.locator('.review-workbench__selected-count')).toHaveText('2 selected');
+  await page.getByText('Bulk actions').click();
+  await expect(page.getByRole('button', { name: 'Reject selected…' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Archive selected' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete selected' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Approve selected…' }).click();
+  await page.getByRole('button', { name: 'Approve questions' }).click();
+  await expect(page.locator('.review-workbench__selected-count')).toHaveText('1 selected');
+  await expect(page.locator('.queue-message')).toContainText('Approved 1 of 2 questions');
+  await expect(page.locator('.review-workbench__row')).toHaveCount(17);
+  expect(state.calls.map(call => call.id).sort()).toEqual(['q0', 'q1']);
+  await expect(page.locator('.review-workbench__row.is-selected')).toHaveCount(1);
+});
+
+test('bulk Approve and Reject apply to every selected question', async ({ page }) => {
+  const state = await setup(page);
+  for (const number of [1, 2, 3]) await page.getByRole('checkbox', { name: `Select question ${number}`, exact: true }).check();
+  await page.getByText('Bulk actions').click();
+  await page.getByRole('button', { name: 'Approve selected…' }).click();
+  await page.getByRole('button', { name: 'Approve questions' }).click();
+  await expect(page.locator('.queue-message')).toContainText('Approved 3 of 3 questions');
+  await expect(page.locator('.review-workbench__row')).toHaveCount(15);
+  expect(state.calls.map(call => call.id).sort()).toEqual(['q0', 'q1', 'q2']);
+  for (const number of [4, 5]) await page.getByRole('checkbox', { name: `Select question ${number}`, exact: true }).check();
+  await page.getByText('Bulk actions').click();
+  await page.getByRole('button', { name: 'Reject selected…' }).click();
+  await page.getByRole('button', { name: 'Reject questions' }).click();
+  await expect(page.locator('.queue-message')).toContainText('Rejected 2 of 2 questions');
+  await expect(page.locator('.review-workbench__row')).toHaveCount(13);
+  expect(state.calls.filter(call => call.body.to === 'archived')).toHaveLength(2);
+  expect(state.questions.filter(question => question.state === 'archived')).toHaveLength(2);
+});
+
+test('review reader and actions stay usable across laptop, tablet and phone widths', async ({ page }) => {
+  await setup(page);
+  for (const width of [1440, 1280, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 850 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const reader = await page.locator('.review-workbench__reader').boundingBox();
+    const approve = await page.getByRole('button', { name: 'Approve', exact: true }).boundingBox();
+    expect(reader).not.toBeNull(); expect(approve).not.toBeNull();
+    expect(reader!.width).toBeGreaterThanOrEqual(width === 390 ? 300 : 340);
+    expect(approve!.x + approve!.width).toBeLessThanOrEqual(reader!.x + reader!.width + 1);
+    await page.screenshot({ path: `/tmp/review-queue-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1428, height: 850 });
+  await page.locator('main').evaluate(node => { node.style.width = 'calc(100% - 260px)'; node.style.marginLeft = '260px'; });
+  const reader = await page.locator('.review-workbench__reader').boundingBox();
+  expect(reader!.width).toBeGreaterThan(600);
+  await page.screenshot({ path: '/tmp/review-queue-with-sidebar.png' });
 });
 
 test('reject cancellation, retained failed reason, atomic request and next question', async ({ page }) => {

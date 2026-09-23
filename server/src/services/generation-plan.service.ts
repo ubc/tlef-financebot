@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { createHash } from 'node:crypto';
 import { losCol, questionsCol, questionVersionsCol, themesCol, generationSubmissionsCol } from '../components/mongodb/collections';
-import type { Difficulty, LoKind, QuestionKind } from '../types/domain';
+import type { Difficulty, LoKind, QuestionKind, QuestionType } from '../types/domain';
 import { effectiveLoKind } from './courses.service';
 import { enqueueGenerationRun } from './generation.service';
 
@@ -28,6 +28,7 @@ export const PLAN_MAX_COUNT = 20;
 
 export interface PlanCell {
   loId: ObjectId;
+  type?: QuestionType;
   /** Combination rows (multi-LO batch generation, 2026-09-04): the further
    * objectives every question from this cell must integrate. Validated by
    * enqueueGenerationRun like the single form's secondaries; a failure is
@@ -112,6 +113,7 @@ export async function autoGenerationPlan(courseId: ObjectId): Promise<AutoPlanRo
 export interface PlanResult {
   runs: Array<{
     loId: ObjectId;
+    type?: QuestionType;
     secondaryLoIds?: ObjectId[];
     difficulty: Difficulty;
     kind: QuestionKind;
@@ -141,14 +143,14 @@ export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[
   const runs: PlanResult['runs'] = [];
   for (const [index, cell] of cells.entries()) {
     const secondary = cell.secondaryLoIds?.length ? { secondaryLoIds: cell.secondaryLoIds } : {};
-    const base = { loId: cell.loId, ...secondary, difficulty: cell.difficulty, kind: cell.kind, count: cell.count };
+    const base = { loId: cell.loId, ...secondary, type: cell.type ?? 'mcq', difficulty: cell.difficulty, kind: cell.kind, count: cell.count };
     if (!Number.isInteger(cell.count) || cell.count < 1 || cell.count > PLAN_MAX_COUNT) {
       runs.push({ ...base, error: 'generation-plan-invalid-count' });
       continue;
     }
     try {
       const runId = await enqueueGenerationRun({
-        courseId, loId: cell.loId, ...secondary, count: cell.count, type: 'mcq',
+        courseId, loId: cell.loId, ...secondary, count: cell.count, type: cell.type ?? 'mcq',
         ...(submissionKey ? { runId: new ObjectId(createHash('sha256').update(`${submissionKey}:${index}`).digest('hex').slice(0, 24)) } : {}),
         ...(submission?.prompt ? { prompt: submission.prompt } : {}),
         difficulty: cell.difficulty, kind: cell.kind, byPuid,

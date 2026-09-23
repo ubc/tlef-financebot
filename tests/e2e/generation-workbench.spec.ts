@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 'ready') {
-  const calls: Array<{ cells: Array<{ count: number; kind: string }>; submissionId: string; prompt: string }> = [];
+  const calls: Array<{ cells: Array<{ count: number; kind: string; type: string }>; submissionId: string; prompt: string }> = [];
   const runs: Array<Record<string, unknown>> = [];
   const questions: Array<Record<string, unknown>> = [];
   let fail = false;
@@ -27,7 +27,7 @@ async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 're
       if (!submissions.has(body.submissionId)) submissions.set(body.submissionId, submissions.size ? `batch${submissions.size}-` : 'r');
       const result = body.cells.map((cell: Record<string, unknown>, i: number) => {
         const runId = `${submissions.get(body.submissionId)}${i}`;
-        if (!runs.some(run => run._id === runId)) runs.push({ _id: runId, courseId: 'course', kind: 'question-generation', input: { loId: cell.loId, count: cell.count, type: 'mcq' }, status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: cell.count, revision: 1, createdAt: new Date().toISOString(), result: { createdQuestionIds: [], failures: [] }, events: [{ at: new Date().toISOString(), stage: 'retrieving', status: 'running', completedUnits: 0, message: 'Retrieved relevant source passages.' }] });
+        if (!runs.some(run => run._id === runId)) runs.push({ _id: runId, courseId: 'course', kind: 'question-generation', input: { loId: cell.loId, count: cell.count, type: cell.type }, status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: cell.count, revision: 1, createdAt: new Date().toISOString(), result: { createdQuestionIds: [], failures: [] }, events: [{ at: new Date().toISOString(), stage: 'retrieving', status: 'running', completedUnits: 0, message: 'Retrieved relevant source passages.' }] });
         return { ...cell, runId };
       });
       if (fail) return r.abort();
@@ -212,18 +212,27 @@ test('answers and explanations stream, reset on retry, and persist in the saved 
   await expect(page.getByText('Correct answer',{exact:true})).toBeVisible();
 });
 
- for (const [shortcut, kind] of [['Concept check', 'conceptual'], ['Apply a formula', 'calculation'], ['Spot a misconception', 'conceptual']]) {
-   test(`shortcut ${shortcut} sets the submitted practice focus`, async ({ page }) => {
+ for (const [shortcut, prompt] of [['Concept check', 'Test conceptual understanding'], ['Apply a formula', 'Ask students to apply a formula'], ['Spot a misconception', 'Use plausible distractors']]) {
+   test(`shortcut ${shortcut} suggests instructions without overriding practice focus`, async ({ page }) => {
      const state = await fixture(page);
      await page.getByRole('checkbox', { name: /Combine forces/ }).check();
+     await page.getByLabel('Practice focus').selectOption('calculation');
      await page.getByRole('button', { name: shortcut, exact: true }).click();
-     await expect(page.locator('#gw-focus')).toHaveValue(kind);
-     await expect(page.getByRole('complementary', { name: 'Batch summary' })).toContainText(kind === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice');
+     await expect(page.getByLabel('Practice focus')).toHaveValue('calculation');
+     await expect(page.getByLabel('Instructions · optional')).toHaveValue(new RegExp(prompt));
      await page.getByRole('button', { name: 'Generate 6 questions →' }).click();
      await expect.poll(() => state.calls.length).toBe(1);
-     expect(state.calls[0].cells.every(cell => cell.kind === kind)).toBe(true);
+     expect(state.calls[0].cells.every(cell => cell.kind === 'calculation')).toBe(true);
    });
  }
+test('question type selection reaches the generation request', async ({ page }) => {
+  const state = await fixture(page);
+  await page.getByLabel('Question type').selectOption('true-false');
+  await expect(page.getByRole('complementary', { name: 'Batch summary' })).toContainText('True / false');
+  await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
+  await expect.poll(() => state.calls.length).toBe(1);
+  expect(state.calls[0].cells.every(cell => cell.type === 'true-false')).toBe(true);
+});
  test('edited generated questions remain in history and retain their run review link', async ({ page }) => {
    const state = await fixture(page);
    await page.getByRole('button', { name: 'Generate 3 questions →' }).click();

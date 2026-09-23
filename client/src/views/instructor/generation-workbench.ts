@@ -56,6 +56,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let count = 3;
     let difficulty: Tier | 'balanced' = 'balanced';
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
+    let questionType: 'mcq' | 'true-false' = 'mcq';
     let bank: BankQuestion[] = [];
     let selectedQuestion = '';
     let previewRunId = '';
@@ -80,7 +81,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       mount(tabs, ...(['setup', 'live'] as const).map(value => el('button', { type: 'button', 'aria-pressed': mode === value, onclick: () => { mode = value; showMode(); } }, value === 'setup' ? 'Create a batch' : 'Generation activity')));
     }
     function showMode(): void { setup.hidden = mode !== 'setup'; live.hidden = mode !== 'live'; drawTabs(); if (mode === 'live') { drawLive(); void refreshDrafts(); } }
-    mount(root, el('header', { class: 'gw-header' }, el('div', {}, el('h1', { text: 'Generate questions' }), el('p', { text: 'Choose what to teach. Shape the practice. Review what arrives.' })), tabs), notice, setup, live);
+    mount(root, el('header', { class: 'gw-header' }, el('div', {}, el('h1', { text: 'Generate questions' }), el('p', { text: 'Create focused questions from your course materials.' })), tabs), notice, setup, live);
     if (!objectives.length || !objectives.some(lo => sourcesFor(lo).length)) {
       mount(setup, el('div', { class: 'gw-empty' }, el('div', { class: 'gw-empty-mark', 'aria-hidden': 'true', text: '＋' }),
         el('h2', { text: objectives.length ? 'Give your questions a starting point' : 'Start with your learning objectives' }),
@@ -101,7 +102,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           const tier: Tier = difficulty === 'balanced' ? (['easy','medium','hard','easy','medium'] as Tier[])[i] : difficulty;
           const kind = focus !== 'auto' ? focus : lo.kind === 'calculation' ? 'calculation' : lo.kind === 'mixed' && i % 2 ? 'calculation' : 'conceptual';
           const existing = result.find(cell => cell.difficulty === tier && cell.kind === kind);
-          if (existing) existing.count++; else result.push({ loId: lo._id, difficulty: tier, kind, count: 1 });
+          if (existing) existing.count++; else result.push({ loId: lo._id, difficulty: tier, kind, type: questionType, count: 1 });
         }
         return result;
       });
@@ -118,6 +119,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const tiers = el('div', { class: 'gw-segments', role: 'group', 'aria-label': 'Difficulty' });
       const focusSelect = el('select', { id: 'gw-focus', onchange: () => { focus = focusSelect.value as typeof focus; updateSetup(); } },
         el('option', { value: 'auto', text: 'Match each objective' }), el('option', { value: 'conceptual', text: 'Conceptual understanding' }), el('option', { value: 'calculation', text: 'Calculation practice' }));
+      const typeSelect = el('select', { id: 'gw-type', onchange: () => { questionType = typeSelect.value as typeof questionType; updateSetup(); } },
+        el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
         selectedQuestion = ''; previewRunId = ''; previewKey = ''; readerRevision++;
@@ -127,21 +130,24 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('button', { type: 'button', onclick: () => { selected.clear(); updateSetup(); } }, 'Clear'));
       const settings = el('fieldset', { class: 'gw-settings' }, el('legend', { class: 'sr-only', text: 'Question settings' }),
         el('div', {}, el('span', { class: 'gw-label', text: 'Questions per objective' }), el('div', { class: 'gw-stepper' }, minus, amount, plus)),
-        el('div', {}, el('span', { class: 'gw-label', text: 'Difficulty' }), tiers));
+        el('div', {}, el('span', { class: 'gw-label', text: 'Difficulty' }), tiers),
+        el('div', {}, el('label', { for: 'gw-type', class: 'gw-label', text: 'Question type' }), typeSelect),
+        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect));
       mount(setup, el('aside', { class: 'gw-objectives', 'aria-label': 'Learning objectives' }, el('div', { class: 'gw-pane-title', text: 'LEARNING OBJECTIVES' }), selections, objectivesList,
         el('div', { class: 'gw-pane-foot', text: 'Existing drafts count toward coverage. You can select an objective to create additional practice.' })),
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
           el('p', { class: 'gw-lead', text: 'Start with a few focused questions. We’ll use the materials assigned to each objective.' }), selectionSummary,
           el('label', { for: 'gw-prompt', class: 'gw-label', text: 'Instructions · optional' }), prompt,
-          el('div', { class: 'gw-suggestions' }, ...['Concept check', 'Apply a formula', 'Spot a misconception'].map((label,index) => el('button', { type: 'button', onclick: () => { prompt.value = ['Test conceptual understanding with a familiar everyday scenario.', 'Ask students to apply a formula and interpret the result.', 'Use plausible distractors to uncover common misconceptions.'][index]; focus = index === 1 ? 'calculation' : 'conceptual'; focusSelect.value = focus; updateSetup(); prompt.focus(); } }, label))),
-          settings, el('details', { class: 'gw-advanced' }, el('summary', { text: 'More control' }), el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect,
-            el('p', {}, link('Open advanced generation →', `${base}/preseeding?advanced=1`)), el('small', { text: 'True / false, combined objectives, saved setups and detailed distributions.' }))),
+          el('small', { class: 'gw-example-label', text: 'Example instructions · these only fill the text above' }),
+          el('div', { class: 'gw-suggestions', 'aria-label': 'Example instructions' }, ...['Concept check', 'Apply a formula', 'Spot a misconception'].map((label,index) => el('button', { type: 'button', onclick: () => { prompt.value = ['Test conceptual understanding with a familiar everyday scenario.', 'Ask students to apply a formula and interpret the result.', 'Use plausible distractors to uncover common misconceptions.'][index]; prompt.focus(); } }, label))),
+          settings, el('details', { class: 'gw-advanced' }, el('summary', { text: 'More control' }),
+            el('p', {}, link('Open advanced generation →', `${base}/preseeding?advanced=1`)), el('small', { text: 'Combined objectives, saved setups and detailed distributions.' }))),
           el('footer', { class: 'gw-footer' }, el('small', { text: 'New questions are saved for your review.' }), generate)), summary);
       updateSetup = () => {
         const focusKey = document.activeElement?.getAttribute('data-gw-focus');
         const isLocked = locked();
         amount.value = String(count); minus.disabled = isLocked || count === 1; plus.disabled = isLocked || count === 5;
-        settings.disabled = isLocked; prompt.disabled = isLocked; focusSelect.disabled = isLocked;
+        settings.disabled = isLocked; prompt.disabled = isLocked;
         selections.querySelectorAll('button').forEach(button => { button.disabled = isLocked; });
         setup.querySelectorAll<HTMLButtonElement>('.gw-suggestions button').forEach(button => { button.disabled = isLocked; });
         mount(tiers, ...(['balanced','easy','medium','hard'] as const).map(tier => el('button', { type: 'button', 'aria-pressed': tier === difficulty, 'data-gw-focus': `tier-${tier}`, disabled: isLocked, onclick: () => { difficulty = tier; updateSetup(); } }, tier[0].toUpperCase()+tier.slice(1))));
@@ -159,7 +165,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         generate.disabled = isLocked || !total || cells().length > 120;
         const selectedSources = materials.filter(m => objectives.some(lo => selected.has(lo._id) && sourcesFor(lo).some(s => s._id === m._id)));
         mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
-          el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: 'Multiple choice' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
+          el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : 'True / false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
           el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
           el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),

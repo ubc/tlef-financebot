@@ -14,6 +14,7 @@ interface WorkbenchOptions {
   onSelection: () => void;
   onDecision: (id: string) => void;
   onDetail: (detail: QuestionDetail) => void;
+  isBatchBusy?: () => boolean;
   preferredId?: string;
   onClearFilters: () => void;
 }
@@ -28,13 +29,14 @@ function rich(text: string, className = ''): HTMLElement {
 /** Owns the active reader independently of filter/agent-list redraws. */
 export function createReviewWorkbench(options: WorkbenchOptions) {
   const list = el('div', { class: 'review-workbench__list' });
+  const listTitle = el('div', { class: 'review-workbench__list-title', text: 'QUESTIONS' });
   const listFooter = el('div', { class: 'review-workbench__list-footer' });
   const reader = el('article', { class: 'review-workbench__reader', 'aria-label': 'Question review' });
   const inspector = el('aside', { class: 'review-workbench__inspector', 'aria-label': 'Review context' });
   const status = el('p', { class: 'review-workbench__notice', role: 'status' });
   const node = el('section', { class: 'review-workbench', 'data-tutorial': 'review-actions' },
     el('nav', { class: 'review-workbench__queue', 'aria-label': 'Question queue' },
-      el('div', { class: 'review-workbench__list-title', text: 'QUESTIONS' }), list, listFooter), reader, inspector);
+      listTitle, list, listFooter), reader, inspector);
   const empty = el('section', { class: 'review-empty', hidden: true, 'aria-labelledby': 'review-empty-title' });
   const root = el('div', { class: 'review-workbench-shell' }, status, node, empty);
   let rows: ReviewQueueItem[] = [];
@@ -45,13 +47,15 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
   let editing = false;
   let dirty = false;
   protectUnsavedChanges(root, () => dirty, () => confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' }));
-  let search = '';
   let totalAvailable = 0;
   const agentStates = new Map<string, string>();
   const completed = new Map<string, { label: string; state: string }>();
   const rejectionDrafts = new Map<string, string>();
 
-  const filtered = () => rows.filter(item => `${item.current.stem} ${objectiveNames(item).join(' ')}`.toLowerCase().includes(search));
+  const filtered = () => rows;
+  function topicNames(item: ReviewQueueItem | QuestionDetail): string[] {
+    return options.tree.themes.filter(theme => item.themeIds.includes(theme._id)).map(theme => theme.name);
+  }
   function objectiveNames(item: ReviewQueueItem | QuestionDetail): string[] {
     return options.tree.themes.flatMap(theme => (theme.los ?? []).filter(lo => item.loIds.includes(lo._id)).map(lo => lo.name));
   }
@@ -63,21 +67,33 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
   function drawList(): void {
     const top = list.scrollTop;
     const visible = filtered();
+    listTitle.textContent = `QUESTIONS · ${visible.length}`;
     mount(list, ...visible.map((item, index) => {
-      const checkbox = el('input', { type: 'checkbox', 'aria-label': `Select question ${index + 1}`, checked: options.selected.has(item.id), disabled: busy,
+      const checkbox = el('input', { type: 'checkbox', 'aria-label': `Select question ${index + 1}`, checked: options.selected.has(item.id), disabled: busy || options.isBatchBusy?.(),
         onchange: () => { if (checkbox.checked) options.selected.add(item.id); else options.selected.delete(item.id); options.onSelection(); } });
-      return el('div', { class: `review-workbench__row${activeId === item.id ? ' is-current' : ''}` }, checkbox,
-        el('button', { type: 'button', 'aria-current': activeId === item.id ? 'true' : 'false', disabled: busy,
+      const preview = rich(rowStemText(item), 'review-workbench__row-title');
+      preview.title = rowStemText(item);
+      const topics = topicNames(item);
+      const objectives = objectiveNames(item);
+      const tags = el('span', { class: 'review-workbench__row-tags' },
+        topics.length ? el('span', { class: 'review-workbench__row-tag is-topic', text: topics[0], title: topics.join(' · ') }) : false,
+        objectives.length ? el('span', { class: 'review-workbench__row-tag is-objective', text: objectives[0], title: objectives.join(' · ') })
+          : el('span', { class: 'review-workbench__row-tag is-missing', text: 'No LO assigned' }),
+        objectives.length > 1 ? el('span', { class: 'review-workbench__row-tag is-more', text: `+${objectives.length - 1} LO`, title: objectives.slice(1).join(' · ') }) : false);
+      return el('div', { class: `review-workbench__row${activeId === item.id ? ' is-current' : ''}${options.selected.has(item.id) ? ' is-selected' : ''}` }, checkbox,
+        el('button', { type: 'button', 'aria-current': activeId === item.id ? 'true' : 'false', disabled: busy || options.isBatchBusy?.(),
           onclick: () => selectQuestion(item.id) },
-          el('span', { class: 'review-workbench__row-meta', text: `${String(index + 1).padStart(2, '0')} · ${item.current.difficulty} · ${TYPE_LABEL[item.current.type]}` }),
-          el('span', { class: 'review-workbench__row-title', text: rowStemText(item), title: rowStemText(item) }),
+          el('span', { class: 'review-workbench__row-meta' }, `${String(index + 1).padStart(2, '0')} · ${item.current.difficulty} · ${TYPE_LABEL[item.current.type]}`,
+            activeId === item.id ? el('b', { class: 'review-workbench__viewing', text: 'Viewing' }) : false),
+          preview,
+          tags,
           el('span', { class: `review-workbench__row-status${item.labels.includes('student-flagged') || ['flag', 'reject'].includes(agentStates.get(item.id) ?? '') ? ' needs-attention' : ''}`, text: stateText(item) })));
     }), visible.length ? false : el('p', { class: 'muted', text: 'No matching questions.' }));
     list.scrollTop = top;
     mount(listFooter, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: openBoard, disabled: busy }, `▦  Question board · ${visible.length}`));
   }
   async function selectQuestion(id: string, force = false): Promise<void> {
-    if (busy || (id === activeId && detail && !force)) return;
+    if (busy || options.isBatchBusy?.() || (id === activeId && detail && !force)) return;
     if (dirty && !await confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' })) return;
     activeId = id; detail = undefined; editing = false; dirty = false;
     const revision = ++requestRevision;
@@ -107,7 +123,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
       el('p', { class: 'muted', text: `${visible.length} questions in your current filters. Choose a number to jump.` }),
       el('div', { class: 'review-question-board__grid' }, ...squares),
       el('p', { class: 'muted', text: 'Outlined: current question · Amber: needs attention' }),
-      completed.size ? el('details', {}, el('summary', { text: `${completed.size} reviewed this visit` }), ...[...completed.values()].map(item => el('p', { text: `${item.state} · ${item.label}` }))) : false));
+      completed.size ? el('details', {}, el('summary', { text: `${completed.size} reviewed this visit` }), ...[...completed.values()].map(item => el('div', { class: 'review-question-board__completed' }, el('strong', { text: `${item.state} · ` }), rich(item.label)))) : false));
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
     dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) close(); } });
     document.body.append(dialog); dialog.showModal();
@@ -116,7 +132,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
     dialog.addEventListener('close', () => observer.disconnect(), { once: true });
   }
   async function decide(to: 'approved' | 'archived'): Promise<void> {
-    if (!detail || busy) return;
+    if (!detail || busy || options.isBatchBusy?.()) return;
     const snapshot = detail;
     let reason: string | undefined;
     if (to === 'archived') {
@@ -146,7 +162,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
     const sample = item?.current._id === current.current._id ? item.sample : undefined;
     const parameterized = !!(current.current.paramSlots?.length || current.current.generateScript || current.current.derivedValues?.length);
     const body = el('div', { class: 'review-workbench__body', tabindex: '0', 'aria-label': 'Question content' },
-      el('div', { class: 'review-workbench__metadata', text: `${TYPE_LABEL[current.current.type]} · ${current.current.difficulty} · ${current.state} · Version ${current.current.version}` }),
+      el('div', { class: 'review-workbench__metadata', text: `Question ${Math.max(1, filtered().findIndex(row => row.id === current.id) + 1)} of ${filtered().length} · ${TYPE_LABEL[current.current.type]} · ${current.current.difficulty} · ${current.state} · Version ${current.current.version}` }),
       el('p', { class: 'review-workbench__objective', text: objectiveNames(current).join(' · ') || 'No learning objective assigned' }));
     let saveEdits: (() => Promise<void>) | undefined;
     if (editing) {
@@ -187,13 +203,14 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
               rich(drawn?.text ?? option.text), rich(drawn?.explanation ?? option.explanation, 'review-workbench__explanation')));
         })));
     }
+    const actionBusy = busy || !!options.isBatchBusy?.();
     const buttons = editing
       ? [el('button', { class: 'btn btn--ghost btn--sm', disabled: busy, onclick: () => { editing = false; dirty = false; drawReader(); } }, 'Cancel editing'), el('button', { class: 'btn btn--instr-primary btn--sm', onclick: saveEdits }, 'Save changes')]
-      : [el('button', { class: 'btn btn--ghost btn--sm', disabled: busy, onclick: () => { editing = true; drawReader(); reader.querySelector('textarea')?.focus(); } }, 'Edit'),
-        el('button', { class: 'btn btn--ghost btn--sm', disabled: busy || current.state === 'archived', onclick: () => decide('archived') }, 'Reject'),
-        el('button', { class: 'btn btn--instr-primary btn--sm', disabled: busy || ['approved', 'archived'].includes(current.state), busy, onclick: () => decide('approved') }, busy ? 'Saving decision…' : 'Approve')];
+      : [el('button', { class: 'btn btn--ghost btn--sm', disabled: actionBusy, onclick: () => { editing = true; drawReader(); reader.querySelector('textarea')?.focus(); } }, 'Edit'),
+        el('button', { class: 'btn btn--ghost btn--sm', disabled: actionBusy || current.state === 'archived', onclick: () => decide('archived') }, 'Reject'),
+        el('button', { class: 'btn btn--instr-primary btn--sm', disabled: actionBusy || ['approved', 'archived'].includes(current.state), busy: actionBusy, onclick: () => decide('approved') }, actionBusy ? 'Saving decision…' : 'Approve')];
     mount(reader, body, el('footer', { class: 'review-workbench__actions' },
-      el('button', { class: 'btn btn--ghost btn--sm', disabled: busy, 'aria-label': 'Open question board', onclick: openBoard }, `▦ ${Math.max(1, filtered().findIndex(row => row.id === activeId) + 1)} / ${filtered().length}`),
+      el('button', { class: 'btn btn--ghost btn--sm', disabled: actionBusy, 'aria-label': 'Open question board', onclick: openBoard }, `▦ ${Math.max(1, filtered().findIndex(row => row.id === activeId) + 1)} / ${filtered().length}`),
       el('span', { class: 'review-workbench__spacer' }), ...buttons));
     const held = heldBackTopics(options.tree, current.themeIds);
     mount(inspector,
@@ -211,7 +228,7 @@ export function createReviewWorkbench(options: WorkbenchOptions) {
   return {
     root,
     isLocked: () => busy || editing,
-    search(value: string) { search = value.trim().toLowerCase(); this.update(rows, totalAvailable); },
+    refresh() { drawList(); if (detail) drawReader(); },
     setAgent(id: string, decision?: string) { agentStates.set(id, decision ?? ''); },
     update(nextRows: ReviewQueueItem[], total = nextRows.length) {
       rows = nextRows; totalAvailable = total; drawList();

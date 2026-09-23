@@ -2035,6 +2035,7 @@ export interface GenerationPlanRow {
 
 export interface GenerationPlanCell {
   loId: string;
+  type?: 'mcq' | 'true-false';
   /** Combination rows (multi-LO batch generation): further objectives every
    * question from this cell must integrate; the questions are tagged to all. */
   secondaryLoIds?: string[];

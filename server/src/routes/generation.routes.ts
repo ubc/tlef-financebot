@@ -121,6 +121,7 @@ generationRouter.post(
 
 const planCell = z.object({
   loId: objectIdParam,
+  type: z.enum(['mcq', 'true-false']).optional(),
   /** Combination rows: the objectives every question from this cell must
    * integrate. Same bounds and service re-validation as the single form. */
   secondaryLoIds: z.array(objectIdParam).max(MAX_SECONDARY_LOS).optional(),

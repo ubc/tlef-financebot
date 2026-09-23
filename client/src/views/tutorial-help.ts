@@ -1,5 +1,5 @@
 import {
-  listEnrollments, getCourseHome, listInstructorCourses, getCourseOutline, getExamHistory, getMyCourseCapabilities,
+  listEnrollments, getCourseHome, listInstructorCourses, getCourseOutline, getExamHistory, listActiveExams, getMyCourseCapabilities,
   type TutorialRole,
 } from '../api.js';
 import { getSession } from '../auth.js';
@@ -51,9 +51,11 @@ async function destinationsFor(role: TutorialRole, course?: HelpCourse): Promise
   destinations['student-practice'] = lo ? { href: `${base}/practice/${encodeURIComponent(lo.lo._id)}` } : { reason };
   destinations['student-feedback'] = lo ? { href: `${base}/practice/${encodeURIComponent(lo.lo._id)}`, label: 'Open practice', reason: 'Answer a question to open feedback help.' } : { reason };
   destinations['student-session-summary'] = { href: `${base}/summary`, label: 'Open Session Summary', reason: 'The tutorial is available when you have a saved session summary.' };
+  const activeExams = await listActiveExams(course.id).catch(() => []);
+  if (!activeExams.length) destinations['student-exam-prep'] = { reason: 'No exam is currently available in this course.' };
   const history = await getExamHistory(course.id).catch(() => []);
   destinations['student-exam-results'] = history.length ? { href: `${base}/exam-attempt/${encodeURIComponent(history[0].attemptId)}/results` }
-    : { href: `${base}/exam-history`, label: 'Open exam history', reason: 'Complete a sitting to review your results.' };
+    : { reason: 'Complete an exam sitting to review your results.' };
   if (!course.active) for (const id of ['student-course-home', 'student-exam-prep']) destinations[id] = { reason };
   return destinations;
 }
@@ -76,6 +78,9 @@ export async function renderTutorialHelp(outlet: HTMLElement, params: RouteParam
       const version = ++generation;
       const [tutorials, destinations] = await Promise.all([loadTutorials(role, true), destinationsFor(role, selected)]);
       if (!fresh() || version !== generation) return;
+      // Only list walkthroughs whose destination this account can currently open.
+      // Course capabilities can differ per TA and change when the course picker moves.
+      const availableTutorials = tutorials.filter((tutorial) => Boolean(destinations[tutorial.id]?.href));
       const picker = el('select', { class: 'input', 'aria-label': 'Tutorial course' }, ...courses.map((course) => el('option', { value: course.id, selected: selected?.id === course.id ? 'selected' : undefined, text: `${course.name}${course.active ? '' : ' (inactive)'}` }))) as HTMLSelectElement;
       picker.addEventListener('change', () => { selected = courses.find((course) => course.id === picker.value); void render().catch(showError); });
       const reset = el('button', { class: 'btn btn--ghost btn--sm', type: 'button' }, `Reset ${role} tutorials`);
@@ -89,12 +94,12 @@ export async function renderTutorialHelp(outlet: HTMLElement, params: RouteParam
       const search = el('input', { class: 'input help-search', type: 'search', placeholder: 'Search a task, e.g. release questions', 'aria-label': 'Search tutorials' }) as HTMLInputElement;
       const renderCards = (): void => {
         const term = search.value.trim().toLowerCase();
-        const matches = tutorials.filter(tutorial => `${tutorial.title} ${tutorial.description}`.toLowerCase().includes(term));
+        const matches = availableTutorials.filter(tutorial => `${tutorial.title} ${tutorial.description}`.toLowerCase().includes(term));
         grid.replaceChildren(...matches.map(tutorial => {
           const destination = destinations[tutorial.id] ?? { reason: 'Open the relevant page to use this tutorial.' };
           const button = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: destination.href ? undefined : 'disabled' }, destination.label ?? (tutorial.status === 'not-viewed' ? 'Start walkthrough' : 'Replay walkthrough'));
           button.addEventListener('click', () => { if (destination.href && fresh()) replayTutorialAt(tutorial.id, destination.href); });
-          return el('article', { class: 'admin-panel help-lesson' },
+          return el('article', { class: 'admin-panel help-lesson', 'data-tutorial-id': tutorial.id },
             el('small', { class: 'admin-eyebrow', text: `${role} · About ${tutorial.estimatedSeconds} seconds` }),
             el('h3', { text: tutorial.title }), el('p', { class: 'muted', text: tutorial.description }),
             el('small', { class: 'admin-status', text: tutorial.status === 'completed' ? 'Completed' : tutorial.status === 'dismissed' ? 'Skipped' : 'Not viewed' }),
@@ -108,7 +113,7 @@ export async function renderTutorialHelp(outlet: HTMLElement, params: RouteParam
         el('div', { class: 'help-welcome' }, el('div', {}, el('small', { class: 'admin-eyebrow', text: `Your ${role} guide` }), el('h3', { text: 'What would you like to do?' }), el('p', { text: 'Pick a task. Learn the essentials in a few steps, then return to your course.' })),
           courses.length ? el('label', { class: 'form-field' }, el('span', { text: 'Course for tutorials' }), picker) : false),
         search,
-        el('div', { class: 'admin-subhead' }, el('h3', { text: `${role[0].toUpperCase()}${role.slice(1)} tutorials` }), el('small', { text: `${tutorials.filter(t => t.status === 'completed').length} of ${tutorials.length} completed · Replay anytime` })), grid,
+        el('div', { class: 'admin-subhead' }, el('h3', { text: `${role[0].toUpperCase()}${role.slice(1)} tutorials` }), el('small', { text: `${availableTutorials.filter(t => t.status === 'completed').length} of ${availableTutorials.length} completed · Replay anytime` })), grid,
         role === 'instructor' && selected ? el('aside', { class: 'help-context' }, el('h3', { text: 'More course help' }),
           ...[['structure', 'Open course structure'], ['flags', 'Open flag queue'], ['tas', 'Manage teaching team']].map(([path, label]) => el('a', { class: 'btn btn--ghost btn--sm', href: `#/instructor/course/${encodeURIComponent(selected!.id)}/${path}`, text: label }))) : false);
       renderCards();

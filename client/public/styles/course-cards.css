@@ -4,8 +4,7 @@
   --instr-dark-hover: #2c332c;
 }
 
-/* Admin appearance sets its primary token to purple; project actions share
-   the same black button in every workspace and appearance mode. */
+/* Project actions share the same black button in every workspace and appearance mode. */
 .app-shell .view--course-projects .btn.btn--instr-primary {
   background: var(--instr-dark);
   border-color: var(--instr-dark);

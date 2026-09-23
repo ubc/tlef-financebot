@@ -2,20 +2,18 @@ import { attachTutorial } from '../../tutorials.js';
 import { createReviewWorkbench } from './review-workbench.js';
 import {
   ApiError,
-  bulkDelete,
-  type BulkDeleteSkipReason,
-  bulkTransition,
   getContentRun,
   getCourseTree,
   getQuestion,
   getReviewQueue,
+  transitionQuestion,
   type CourseTree,
   type QuestionLabel,
   type ReviewQueueItem,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { filterTabs, pageHeader } from '../../instructor-ui.js';
-import { confirmDialog } from '../../modal.js';
+import { confirmDialog, textPromptDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 
@@ -231,6 +229,9 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
 
   let activeTab: QueueTab = 'all';
   let typeFilter: QueueTypeFilter = 'all';
+  let topicFilter = '';
+  let loFilter = '';
+  let searchTerm = '';
   let sortKey: SortKey = 'priority';
   const selected = new Set<string>();
   let loadErrorMessage: string | null = null;
@@ -241,12 +242,14 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
   const tabsContainer = el('div', { class: 'review-workbench-tabs' });
   const filtersContainer = el('div', { class: 'review-workbench-filters' });
   const controlsContainer = el('div', { 'data-tutorial': 'review-filters' });
+  const selectedCount = el('span', { class: 'review-workbench__selected-count', role: 'status' });
   const messages = el('div', {});
   const workbench = createReviewWorkbench({ courseId, tree, selected, preferredId: queueItems.find(item => highlightIds?.has(item.id))?.id,
+    isBatchBusy: () => bulkBusy,
     onSelection: renderControls,
     onClearFilters: () => {
-      activeTab = 'all'; typeFilter = 'all'; sortKey = 'priority';
-      searchInput.value = ''; workbench.search('');
+      activeTab = 'all'; typeFilter = 'all'; topicFilter = ''; loFilter = ''; searchTerm = ''; sortKey = 'priority';
+      searchInput.value = '';
       renderTabs(); renderControls(); renderResults(); searchInput.focus();
     },
     onDetail: (detail) => { agentDecisions.set(detail.id, detail.agentDecision); renderTabs(); },
@@ -258,18 +261,29 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     },
   });
   const resultsContainer = el('div', { class: 'review-workbench-results' }, messages, workbench.root);
-  const searchInput = el('input', { class: 'input', type: 'search', 'aria-label': 'Search review questions', placeholder: 'Search questions or objectives…', oninput: () => workbench.search(searchInput.value) });
+  const searchInput = el('input', { class: 'input', type: 'search', 'aria-label': 'Search review questions', placeholder: 'Search questions or objectives…', oninput: () => { searchTerm = searchInput.value.trim().toLowerCase(); renderControls(); renderResults(); } });
   const advanced = el('details', { class: 'review-workbench-tools' }, el('summary', { text: 'Bulk actions' }), controlsContainer);
-  const toolbar = el('div', { class: 'review-workbench-toolbar' }, searchInput, filtersContainer, advanced);
+  const toolbar = el('div', { class: 'review-workbench-toolbar' }, searchInput, filtersContainer, selectedCount, advanced);
   const layout = el('div', { class: 'review-workbench-layout' }, tabsContainer, toolbar, resultsContainer);
 
   function tabInputs(): QueueTabInput[] {
     return queueItems.map((item) => ({ labels: item.labels, agentDecision: agentDecisions.get(item.id) }));
   }
 
+  function matchesSearch(item: ReviewQueueItem): boolean {
+    if (!searchTerm) return true;
+    const assignmentNames = tree.themes.flatMap(theme =>
+      (theme.los ?? []).filter(lo => item.loIds.includes(lo._id)).map(lo => `${theme.name} ${lo.name}`));
+    return `${item.current.stem} ${assignmentNames.join(' ')}`.toLowerCase().includes(searchTerm);
+  }
+
   function visibleRows(): ReviewQueueItem[] {
     const inputs = tabInputs();
-    const filtered = queueItems.filter((item, i) => matchesTab(inputs[i], activeTab) && matchesType(item, typeFilter));
+    const filtered = queueItems.filter((item, i) => matchesTab(inputs[i], activeTab)
+      && matchesType(item, typeFilter)
+      && (!topicFilter || item.themeIds.includes(topicFilter))
+      && (!loFilter || item.loIds.includes(loFilter))
+      && matchesSearch(item));
     if (sortKey === 'stem') {
       return [...filtered].sort((a, b) => a.current.stem.localeCompare(b.current.stem));
     }
@@ -293,33 +307,48 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     );
   }
 
-  /** Runs one bulk action over the selection, then refetches the queue. The
-   * action returns the message to show; a thrown error shows as the action
-   * error and keeps the selection so the instructor can retry. */
-  async function runBulk(action: (ids: string[]) => Promise<string>): Promise<void> {
+  /** Each decision pins the displayed version. Report partial failures and
+   * keep those questions selected so none silently disappear from the batch. */
+  async function runSelectedDecision(to: 'approved' | 'archived', reason?: string): Promise<void> {
     if (bulkBusy) return;
     if (workbench.isLocked()) {
       actionErrorMessage = 'Finish editing or wait for the current decision before applying a bulk action.';
       renderResults(); return;
     }
-    const ids = [...selected];
+    const rows = [...selected].map(id => queueItems.find(item => item.id === id)).filter((item): item is ReviewQueueItem => !!item);
+    if (!rows.length) { selected.clear(); renderControls(); return; }
     bulkBusy = true;
     actionErrorMessage = null;
     bulkMessage = null;
-    renderControls();
+    renderControls(); workbench.refresh();
+    const outcomes: Array<PromiseSettledResult<unknown>> = [];
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
+      while (cursor < rows.length) {
+        const index = cursor++;
+        try { outcomes[index] = { status: 'fulfilled', value: await transitionQuestion(rows[index].id, to, rows[index].current._id, reason) }; }
+        catch (error) { outcomes[index] = { status: 'rejected', reason: error }; }
+      }
+    }));
+    const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected' ? [{ item: rows[index], error: outcome.reason }] : []);
+    rows.forEach((item, index) => { if (outcomes[index].status === 'fulfilled') selected.delete(item.id); });
+    const succeeded = rows.length - failed.length;
+    bulkMessage = `${to === 'approved' ? 'Approved' : 'Rejected'} ${succeeded} of ${plural(rows.length)}.${failed.length ? ` ${failed.length} still selected for review.` : ''}`;
+    if (failed.length) actionErrorMessage = failed.slice(0, 3).map(({ item, error }) => {
+      const detail = error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
+      return `${item.current.stem.slice(0, 45)}: ${detail}`;
+    }).join(' · ');
     try {
-      bulkMessage = await action(ids);
-      selected.clear();
       queueItems = await getReviewQueue(courseId);
       agentDecisions.clear();
       renderTabs();
-      void enrichAgentDecisions(queueItems); // background — see the module note
+      void enrichAgentDecisions(queueItems);
     } catch (error) {
-      actionErrorMessage = error instanceof ApiError ? error.message : (error as Error).message;
-    } finally {
-      bulkBusy = false;
+      const detail = error instanceof ApiError ? error.message : (error as Error).message;
+      actionErrorMessage = `${actionErrorMessage ? `${actionErrorMessage} · ` : ''}Could not refresh the queue: ${detail}`;
     }
-    renderControls();
+    bulkBusy = false;
+    renderControls(); workbench.refresh();
     renderResults();
   }
 
@@ -332,47 +361,16 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       message: `${plural(selected.size)} will be approved. Student access still follows course publication, topic release and validation checks.`,
       confirmLabel: 'Approve questions',
     })) return;
-    await runBulk(async (ids) => {
-      const { updated } = await bulkTransition(ids, 'approved');
-      return `Approved ${updated} of ${plural(ids.length)} (others were not in an approvable state).`;
-    });
+    advanced.open = false;
+    await runSelectedDecision('approved');
   }
 
-  async function bulkArchive(): Promise<void> {
+  async function bulkReject(): Promise<void> {
     if (selected.size === 0) return;
-    if (!await confirmDialog({
-      title: 'Archive selected questions?',
-      message: `${plural(selected.size)} will leave the queue and stop being served. Archived questions keep their history and can be restored from the Archived tab.`,
-      confirmLabel: 'Archive questions',
-    })) return;
-    await runBulk(async (ids) => {
-      const { updated } = await bulkTransition(ids, 'archived');
-      return `Archived ${updated} of ${plural(ids.length)}.`;
-    });
-  }
-
-  const SKIP_REASON_TEXT: Record<BulkDeleteSkipReason, string> = {
-    'ever-approved': 'already approved once — archive instead',
-    'has-history': 'referenced by student attempts, flags or review books — archive instead',
-    'not-found': 'no longer exist',
-  };
-
-  async function bulkDeleteSelected(): Promise<void> {
-    if (selected.size === 0) return;
-    if (!await confirmDialog({
-      title: 'Delete selected questions permanently?',
-      message: `${plural(selected.size)} will be deleted, with every version. This cannot be undone. Only questions that were never approved and never served are deleted; anything with student history is skipped and reported so you can archive it instead.`,
-      confirmLabel: 'Delete permanently',
-      tone: 'danger',
-    })) return;
-    await runBulk(async (ids) => {
-      const { deleted, skipped } = await bulkDelete(ids);
-      const reasons = (['ever-approved', 'has-history', 'not-found'] as const)
-        .map((reason) => ({ reason, count: skipped.filter((entry) => entry.reason === reason).length }))
-        .filter((entry) => entry.count > 0)
-        .map((entry) => `${entry.count} ${SKIP_REASON_TEXT[entry.reason]}`);
-      return `Deleted ${deleted} of ${plural(ids.length)}.${reasons.length ? ` Skipped: ${reasons.join('; ')}.` : ''}`;
-    });
+    const reason = await textPromptDialog({ title: 'Reject selected questions?', message: `${plural(selected.size)} will leave the Review Queue. You can restore them from Question Bank.`, fieldLabel: 'Reason for rejecting (optional)', confirmLabel: 'Reject questions', cancelLabel: 'Keep reviewing', tone: 'danger' });
+    if (reason === null) return;
+    advanced.open = false;
+    await runSelectedDecision('archived', reason);
   }
 
   function renderControls(): void {
@@ -397,7 +395,10 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
     // Type filter with live counts over the current tab, so "True/False only
     // (0)" tells the instructor there is nothing to find before they click.
     const inputs = tabInputs();
-    const onTab = queueItems.filter((_, i) => matchesTab(inputs[i], activeTab));
+    const onTab = queueItems.filter((item, i) => matchesTab(inputs[i], activeTab)
+      && (!topicFilter || item.themeIds.includes(topicFilter))
+      && (!loFilter || item.loIds.includes(loFilter))
+      && matchesSearch(item));
     const typeSelect = el(
       'select',
       {
@@ -417,6 +418,28 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
         }),
       ),
     ) as HTMLSelectElement;
+
+    const topicSelect = el('select', {
+      class: 'input', 'aria-label': 'Filter the review queue by topic',
+      onchange: (event: Event) => {
+        topicFilter = (event.target as HTMLSelectElement).value;
+        loFilter = '';
+        renderControls(); renderResults();
+        filtersContainer.querySelector<HTMLSelectElement>('select[aria-label="Filter the review queue by topic"]')?.focus();
+      },
+    }, el('option', { value: '', text: 'All topics' }),
+    ...tree.themes.map(theme => el('option', { value: theme._id, text: theme.name, selected: topicFilter === theme._id }))) as HTMLSelectElement;
+    const loChoices = tree.themes.filter(theme => !topicFilter || theme._id === topicFilter)
+      .flatMap(theme => (theme.los ?? []).map(lo => ({ id: lo._id, label: topicFilter ? lo.name : `${theme.name} / ${lo.name}` })));
+    const loSelect = el('select', {
+      class: 'input', 'aria-label': 'Filter the review queue by learning objective',
+      onchange: (event: Event) => {
+        loFilter = (event.target as HTMLSelectElement).value;
+        renderControls(); renderResults();
+        filtersContainer.querySelector<HTMLSelectElement>('select[aria-label="Filter the review queue by learning objective"]')?.focus();
+      },
+    }, el('option', { value: '', text: 'All learning objectives' }),
+    ...loChoices.map(lo => el('option', { value: lo.id, text: lo.label, selected: loFilter === lo.id }))) as HTMLSelectElement;
 
     // Select all / none over the rows this tab + sort currently shows.
     const visible = visibleRows();
@@ -441,8 +464,6 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
       el('span', { text: selected.size > 0 ? `${selected.size} selected` : 'Select all' }),
     );
 
-    // Bulk Approve stays the one-click action; Archive and Delete sit behind
-    // a native <select> so the dangerous actions take a deliberate pick.
     const bulkButton = el(
       'button',
       {
@@ -452,29 +473,22 @@ async function renderReviewQueueInner(outlet: HTMLElement, courseId: string): Pr
         busy: bulkBusy,
         onclick: () => bulkApprove(),
       },
-      bulkBusy ? 'Applying…' : 'Bulk Approve…',
+      bulkBusy ? 'Applying…' : 'Approve selected…',
     );
-    const moreActions = el(
-      'select',
-      {
-        class: 'input',
-        'aria-label': 'More bulk actions',
-        disabled: selected.size === 0 || bulkBusy ? 'disabled' : undefined,
-        onchange: (e: Event) => {
-          const menu = e.target as HTMLSelectElement;
-          const action = menu.value;
-          menu.value = '';
-          if (action === 'archive') void bulkArchive();
-          else if (action === 'delete') void bulkDeleteSelected();
-        },
-      },
-      el('option', { value: '', text: 'More actions…', selected: 'selected' }),
-      el('option', { value: 'archive', text: 'Archive selected' }),
-      el('option', { value: 'delete', text: 'Delete selected…' }),
-    ) as HTMLSelectElement;
+    const rejectButton = el('button', { class: 'btn btn--ghost', type: 'button', disabled: selected.size === 0 || bulkBusy,
+      onclick: () => bulkReject() }, 'Reject selected…');
 
-    filtersContainer.replaceChildren(typeSelect, sortSelect);
-    return el('div', { class: 'queue-controls' }, selectAllLabel, bulkButton, moreActions);
+    const clearFilters = el('button', {
+      type: 'button', class: 'review-workbench__clear-filters',
+      hidden: !topicFilter && !loFilter && !searchTerm && typeFilter === 'all' && activeTab === 'all' && sortKey === 'priority',
+      onclick: () => {
+        activeTab = 'all'; typeFilter = 'all'; topicFilter = ''; loFilter = ''; searchTerm = ''; sortKey = 'priority';
+        searchInput.value = ''; renderTabs(); renderControls(); renderResults(); searchInput.focus();
+      },
+    }, 'Clear filters');
+    filtersContainer.replaceChildren(topicSelect, loSelect, typeSelect, sortSelect, clearFilters);
+    selectedCount.textContent = `${selected.size} selected`;
+    return el('div', { class: 'queue-controls' }, selectAllLabel, bulkButton, rejectButton);
   }
 
   function renderResults(): void {

@@ -228,6 +228,25 @@ test('Help can retry its initial course-list failure', async ({ page }) => {
   expect(loads).toBe(2);
 });
 
+test('TA Help only lists walkthroughs allowed by current course capabilities', async ({ page }) => {
+  await fixture(page);
+  let canReview = false;
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'ta-account', uid: 'ta', isAdmin: false, platformInstructor: false, courseRoles: [{ courseId: 'test', role: 'ta' }] } } }));
+  await page.route('**/api/tutorials?role=ta', route => route.fulfill({ json: ['ta-courses', 'ta-review', 'ta-question-review', 'ta-flags'].map(id => ({ id, role: 'ta', status: 'not-viewed' })) }));
+  await page.route('**/api/courses/test/outline', route => route.fulfill({ json: { course: { courseCode: 'TEST', name: 'Accounting' }, themes: [] } }));
+  await page.route('**/api/courses/test/capabilities/me', route => route.fulfill({ json: { 'question.review': canReview, 'flag.triage': false } }));
+  await page.evaluate(async () => { await (await import('/js/auth.js')).loadSession(); location.hash = '/ta/course/test/help'; await (await import('/js/views/tutorial-help.js')).renderTutorialHelp(document.querySelector('#app')!); });
+  await expect(page.locator('[data-tutorial-id="ta-courses"]')).toBeVisible();
+  await expect(page.locator('[data-tutorial-id="ta-review"]')).toHaveCount(0);
+  await expect(page.locator('[data-tutorial-id="ta-question-review"]')).toHaveCount(0);
+  await expect(page.locator('[data-tutorial-id="ta-flags"]')).toHaveCount(0);
+  canReview = true;
+  await page.evaluate(async () => { document.querySelector('#app')!.replaceChildren(); await (await import('/js/views/tutorial-help.js')).renderTutorialHelp(document.querySelector('#app')!); });
+  await expect(page.locator('[data-tutorial-id="ta-review"]')).toBeVisible();
+  await expect(page.locator('[data-tutorial-id="ta-question-review"]')).toBeVisible();
+  await expect(page.locator('[data-tutorial-id="ta-flags"]')).toHaveCount(0);
+});
+
 test('TA workbench reads answers inline, preserves notes across board jumps and recovers from empty search', async ({ page }) => {
   await fixture(page);
   const questions = ['q1', 'q2'].map((id, i) => ({ id, courseId: 'test', state: 'draft', labels: [], loIds: [], themeIds: [], internalNotes: [], suggestions: [], current: { stem: `Question ${i + 1} about interest`, type: 'mcq', difficulty: 'easy', options: [{ key: 'A', text: 'Borrowing cost', role: 'correct', explanation: 'Interest is the cost of borrowing.' }] } }));
@@ -253,6 +272,13 @@ test('TA workbench reads answers inline, preserves notes across board jumps and 
   await expect(page.locator('#ta-question-note')).toHaveValue('Check this explanation');
   await page.addStyleTag({ content: '* { animation: none !important; transition: none !important; }' });
   await page.screenshot({ path: '/tmp/ta-workbench.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const reader = page.locator('.ta-embedded');
+  await reader.evaluate((node) => { const spacer = document.createElement('div'); spacer.style.height = '1200px'; node.append(spacer); });
+  expect(await reader.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto');
+  await reader.evaluate((node) => { node.scrollTop = 500; });
+  await expect.poll(() => reader.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect(page.locator('.ta-reader-actions')).toBeInViewport();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -178,7 +178,7 @@ export async function renderBankWorkbench(outlet: HTMLElement, courseId: string)
     const scroll = list.scrollTop;
     list.replaceChildren(...shown.map((q, i) => el('div', { class: `bank-workbench__item${q.id === activeId ? ' is-current' : ''}` },
       el('input', { type: 'checkbox', 'aria-label': `Select question ${i + 1}`, checked: selected.has(q.id), disabled: q.state === 'archived', onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) selected.add(q.id); else selected.delete(q.id); draw(); } }),
-      el('button', { type: 'button', 'aria-pressed': q.id === activeId, onclick: () => { activeId = q.id; draw(); void drawReader(q); } }, el('span', { class: 'bank-workbench__row-stem', text: rowStemText(q) }), el('small', { text: `${i + 1} · ${status(q)} · ${q.current.difficulty}` })))));
+      el('button', { type: 'button', 'aria-pressed': q.id === activeId, onclick: () => { activeId = q.id; draw(); void drawReader(q); } }, rich(rowStemText(q), 'bank-workbench__row-stem'), el('small', { text: `${i + 1} · ${status(q)} · ${q.current.difficulty}` })))));
     list.scrollTop = scroll;
     const selectAll = el('input', { type: 'checkbox', 'aria-label': 'Select all bank questions', checked: shown.every(q => selected.has(q.id)), disabled: tab === 'archived', onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) shown.filter(q => q.state !== 'archived').forEach(q => selected.add(q.id)); else selected.clear(); draw(); } });
     collection.replaceChildren(el('div', { class: 'bank-workbench__list-head' }, el('label', {}, selectAll, ' Select all'), el('span', { text: `${shown.length} ${shown.length === 1 ? 'question' : 'questions'}` })), list, btn('▦ Question board', () => {

@@ -111,14 +111,14 @@ describe('enqueueGenerationPlan', () => {
       .mockRejectedValueOnce(new Error('generation-no-assigned-materials'));
 
     const result = await enqueueGenerationPlan(courseId, [
-      { loId: loA, difficulty: 'hard', kind: 'calculation', count: 1 },
+      { loId: loA, difficulty: 'hard', kind: 'calculation', type: 'true-false', count: 1 },
       { loId: loB, difficulty: 'easy', kind: 'conceptual', count: 2 },
       { loId: loB, difficulty: 'medium', kind: 'conceptual', count: 0 },
     ], 'PUID-INSTR');
 
     expect(enqueueGenerationRun).toHaveBeenCalledTimes(2);
     expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({
-      courseId, loId: loA, count: 1, type: 'mcq', difficulty: 'hard', kind: 'calculation', byPuid: 'PUID-INSTR',
+      courseId, loId: loA, count: 1, type: 'true-false', difficulty: 'hard', kind: 'calculation', byPuid: 'PUID-INSTR',
     }));
     expect(result.runs).toEqual([
       expect.objectContaining({ loId: loA, runId: runA }),
