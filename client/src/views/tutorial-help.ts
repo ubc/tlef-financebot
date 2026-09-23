@@ -9,6 +9,66 @@ import { setButtonBusy } from '../action-state.js';
 import { currentQuery, type RouteParams } from '../router.js';
 import { errorState, loadingState } from '../ui.js';
 import { loadTutorials, replayTutorialAt, resetTutorials, tutorialRole, TUTORIAL_DEFINITIONS } from '../tutorials.js';
+import { workspaceCourses } from './workspace-courses.js';
+
+/** Role previews use the live pages, but never record tutorial completion on the
+ * signed-in account. Keep their help self-contained and link only to pages the
+ * preview actually exposes. */
+export async function renderWorkspacePreviewHelp(outlet: HTMLElement, role: 'student' | 'ta', courseId?: string): Promise<void> {
+  const root = el('section', { class: 'admin-workbench tutorial-help' }, loadingState('Loading tutorials…'));
+  outlet.append(root);
+  try {
+    const courses = await workspaceCourses(getSession());
+    if (!root.isConnected) return;
+    const preferred = courseId ?? currentQuery().get('courseId');
+    const course = courses.find(item => item._id === preferred) ?? courses[0];
+    const base = course ? `#/${role === 'ta' ? 'ta' : 'preview'}/course/${encodeURIComponent(course._id)}` : undefined;
+    const guideIds = role === 'student'
+      ? ['student-course-home', 'student-topics', 'student-practice', 'student-feedback', 'student-review-book', 'student-session-summary']
+      : ['ta-courses', 'ta-review', 'ta-question-review', 'ta-flags'];
+    const destinations: Record<string, string | undefined> = role === 'student' ? {
+      'student-course-home': base,
+      'student-topics': base,
+      'student-practice': base,
+      'student-feedback': base,
+      'student-review-book': base && `${base}/review-book`,
+      'student-session-summary': base,
+    } : {
+      'ta-courses': '#/ta/courses',
+      'ta-review': base && `${base}/review`,
+      'ta-question-review': base && `${base}/review`,
+      'ta-flags': base && `${base}/flags`,
+    };
+    const definitions = TUTORIAL_DEFINITIONS.filter(item => item.role === role && guideIds.includes(item.id) && destinations[item.id]);
+    const grid = el('div', { class: 'help-lesson-grid' }, ...definitions.map(definition =>
+      el('article', { class: 'admin-panel help-lesson', 'data-tutorial-id': definition.id },
+        el('small', { class: 'admin-eyebrow', text: `${role} · Preview guide` }),
+        el('h3', { text: definition.label }),
+        el('ol', { class: 'help-preview-steps' }, ...definition.steps.map(step => el('li', {},
+          el('strong', { text: step.title }), el('p', { text: step.body })))),
+        el('a', { class: 'btn btn--ghost btn--sm', href: destinations[definition.id], text:
+          definition.id === 'ta-courses' ? 'Open My Courses'
+            : definition.id === 'ta-question-review' ? 'Choose a question'
+              : ['student-topics', 'student-practice', 'student-feedback', 'student-session-summary'].includes(definition.id) ? 'Start from Course Home'
+                : 'Open page' }),
+      )));
+    mount(root,
+      el('div', { class: 'admin-heading' }, el('div', {},
+        el('h2', { class: 'help-title', text: 'Help & Tutorials' }),
+        el('p', { class: 'admin-fine', text: `Guides for the ${role === 'ta' ? 'TA view' : 'anonymous Student Preview'}. Tutorial progress is not saved in this view.` }))),
+      el('div', { class: 'help-welcome' }, el('div', {},
+        el('small', { class: 'admin-eyebrow', text: `${role} view` }),
+        el('h3', { text: course ? `${course.courseCode} · ${course.name}` : 'Choose a course to get started' }),
+        el('p', { text: role === 'student' ? 'Explore the learning workflow using isolated preview progress.' : 'Review questions and flags in the selected course.' })),
+        course ? el('a', { class: 'btn btn--ghost btn--sm', href: role === 'ta' ? '#/ta/courses' : '#/preview/courses', text: 'Change course' }) : false),
+      definitions.length ? grid : el('div', { class: 'admin-panel admin-empty' }, el('h3', { text: 'No course guides yet' }),
+        el('a', { class: 'btn btn--ghost', href: role === 'ta' ? '#/ta/courses' : '#/preview/courses', text: 'Choose a course' })));
+  } catch (error) {
+    if (root.isConnected) root.replaceChildren(errorState((error as Error).message, () => {
+      root.remove(); void renderWorkspacePreviewHelp(outlet, role, courseId);
+    }));
+  }
+}
 
 interface HelpCourse { id: string; name: string; active: boolean }
 interface Destination { href?: string; reason?: string; label?: string }

@@ -7,7 +7,7 @@ import { emptyState, errorState, loadingState } from '../ui.js';
 import { attachTutorial } from '../tutorials.js';
 
 /** Identity-only choices: selecting a workspace never grants course membership. */
-async function workspaceCourses(session: Session): Promise<AdminCourseOption[]> {
+export async function workspaceCourses(session: Session): Promise<AdminCourseOption[]> {
   if (session.user?.isAdmin) return listAdminCourses();
   const courses = session.user?.platformInstructor || session.user?.courseRoles.some(entry => entry.role === 'instructor')
     ? await listInstructorCourses() : [];

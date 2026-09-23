@@ -10252,6 +10252,51 @@ button.quick-action--disabled { cursor: default; }
 @media(max-width:1200px){.ta-reader-layout{grid-template-columns:1fr}.ta-reader-layout .review-workbench__inspector{border-left:0;border-top:1px solid var(--border)}}@media(max-width:760px){.ta-review-workbench{grid-template-columns:1fr}.ta-reader-layout .review-workbench__body{padding:20px 16px}}
 .ta-review-workbench{height:clamp(420px,calc(100dvh - 290px),900px);align-items:stretch}.ta-review-workbench .review-workbench__queue{position:static;max-height:none;min-height:0;display:flex;flex-direction:column;overflow:hidden}.ta-review-workbench .review-workbench__list{flex:1;min-height:0;max-height:none;overflow-y:auto}.ta-review-reader{display:flex;flex-direction:column;min-height:0;overflow:hidden}.ta-embedded{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}.ta-reader-actions{position:static;flex:none}
 @media(max-width:760px){.ta-review-workbench{height:auto;min-height:0}.ta-review-workbench .review-workbench__queue{max-height:240px}.ta-review-workbench .review-workbench__list{max-height:160px}.ta-review-reader{overflow:visible}.ta-embedded{overflow:visible}}
+/* Keep the TA reading column wide enough for formulas and answer explanations. */
+.ta-review-workbench{grid-template-columns:clamp(190px,17vw,240px) minmax(0,1fr)}
+.ta-reader-layout{grid-template-columns:minmax(0,1fr) minmax(280px,310px)}
+.ta-reader-layout>*{min-width:0}
+.ta-reader-layout .review-workbench__inspector{overflow-wrap:anywhere}
+.ta-reader-layout .review-workbench__inspector p{line-height:1.65}
+.ta-embedded .review-workbench__answer>div{min-width:0;overflow-wrap:anywhere}
+@media(max-width:1450px){.ta-reader-layout{grid-template-columns:minmax(0,1fr)}.ta-reader-layout .review-workbench__inspector{border-left:0;border-top:1px solid var(--border)}}
+@media(max-width:760px){.ta-review-workbench{grid-template-columns:minmax(0,1fr)}}
+.help-preview-steps{padding-left:1.2rem;margin:.25rem 0 0;display:grid;gap:.7rem}
+.help-preview-steps li{font-size:12px;line-height:1.6}
+.help-preview-steps p{margin:.2rem 0 0;color:var(--muted)}
+/* The previewed bank question remains obvious beside bulk-selection checkboxes. */
+.bank-workbench__item.is-current{background:color-mix(in srgb,var(--instr-green-fg) 11%,var(--surface));box-shadow:inset 4px 0 var(--instr-green-fg)}
+.bank-workbench__viewing{display:inline-block;margin:0 0 4px;color:var(--instr-green-fg);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+/* Match Review Queue's compact header and keep the question reader in view. */
+.view--bank-workbench .page-header{gap:8px 14px;flex-wrap:wrap;margin-bottom:10px}
+.view--bank-workbench .page-header__text{flex:1;min-width:220px}
+.view--bank-workbench .page-header__title{font-size:23px}
+.view--bank-workbench .page-header__subtitle{margin-top:3px;line-height:1.4}
+.view--bank-workbench .bank-portability{margin:0;gap:8px;flex-wrap:wrap}
+.view--bank-workbench .bank-workbench__tabs{margin-bottom:8px}
+.view--bank-workbench .bank-workbench__tabs button{padding:8px 0}
+.view--bank-workbench .bank-releases{margin-bottom:9px;padding:7px 12px}
+.view--bank-workbench .bank-releases__topics{max-block-size:min(22dvh,220px);overflow:auto}
+.view--bank-workbench .bank-workbench__toolbar{margin-bottom:9px}
+.view--bank-workbench .bank-workbench__list-head{padding:10px 12px}
+.view--bank-workbench .bank-workbench__reading{padding:18px 22px;min-block-size:0;scrollbar-gutter:stable;overscroll-behavior:contain}
+.view--bank-workbench .bank-workbench__meta{margin-bottom:9px}
+.view--bank-workbench .bank-workbench__reading>.muted{margin-bottom:9px}
+.view--bank-workbench .bank-workbench__stem{font-size:19px;line-height:1.45;margin-bottom:15px}
+.view--bank-workbench .bank-workbench__answer{padding:9px 11px;margin-bottom:7px;font-size:12px;line-height:1.45}
+.view--bank-workbench .bank-workbench__footer{flex:none;padding:9px 14px;background:var(--surface)}
+@media(min-width:851px){
+  .view--bank-workbench{box-sizing:border-box;display:flex;flex-direction:column;block-size:calc(100dvh - var(--topbar-h) - clamp(2.5rem,6vw,4.5rem));min-block-size:560px;overflow:hidden;padding:12px 18px}
+  .view--bank-workbench .page-header,.view--bank-workbench .bank-workbench__tabs,.view--bank-workbench .bank-releases,.view--bank-workbench .bank-workbench__toolbar,.view--bank-workbench .bank-workbench__bulk,.view--bank-workbench .bank-workbench__notice{flex:none}
+  .view--bank-workbench .bank-workbench:not([hidden]){flex:1;block-size:auto;min-block-size:0}
+  .view--bank-workbench .bank-workbench__collection,.view--bank-workbench .bank-workbench__reader,.view--bank-workbench .bank-workbench__list{min-block-size:0}
+  .view--bank-workbench .bank-workbench__reader{overflow:hidden}
+  .view--bank-workbench .bank-workbench__reading{overflow-y:auto}
+  .view--bank-workbench .bank-empty:not([hidden]){flex:1;min-block-size:0;overflow:auto}
+  body.has-setup-journey .view--bank-workbench{block-size:calc(100dvh - var(--topbar-h) - clamp(2.5rem,6vw,4.5rem) - var(--setup-guide-space,100px))}
+}
+@media(min-width:761px) and (max-width:850px){.view--bank-workbench .bank-workbench{height:auto;min-height:0}}
+@media(max-width:600px){.view--bank-workbench .page-header__text{min-width:0}.view--bank-workbench .bank-portability{justify-content:flex-start}}
 /* Reserve the measured guide height so page actions remain visible and clickable. */
 #setup-journey {
   position: fixed;
@@ -10431,6 +10476,27 @@ body.has-setup-journey .outlet:focus { outline: none; }
   body.has-setup-journey .outlet:has(> .generation-workbench) {
     padding-bottom:clamp(1.25rem,3vw,2.25rem);
   }
+}
+/* The TA queue shares the viewport-bound review shell. Let its nested content
+   consume the remaining space instead of adding a second viewport calculation. */
+@media (min-width:851px) {
+  .ta-review-workspace__body,
+  .ta-review-workspace__content,
+  .ta-review-workspace__results {
+    display:flex;
+    flex:1;
+    flex-direction:column;
+    min-block-size:0;
+  }
+  .ta-review-workspace__results { overflow:hidden; }
+  .ta-review-workspace .ta-review-workbench {
+    flex:1;
+    block-size:auto;
+    min-block-size:0;
+  }
+}
+@media (max-width:850px) {
+  .ta-review-workspace .ta-review-workbench { height:auto; }
 }
 /* The two-column review layout must also win over the later viewport-bound
    workbench rule; otherwise the inspector occupies an empty third track while

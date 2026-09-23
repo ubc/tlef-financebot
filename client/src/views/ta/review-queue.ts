@@ -52,7 +52,7 @@ const TAB_LABEL: Record<QueueTab, string> = {
 type SortKey = 'priority' | 'stem';
 
 async function renderInner(outlet: HTMLElement, courseId: string): Promise<void> {
-  const body = el('div', {}, loadingState('Loading TA review queue…'));
+  const body = el('div', { class: 'ta-review-workspace__body' }, loadingState('Loading TA review queue…'));
   const root = el('div', { class: 'view view--review-workbench ta-review-workspace' }, body);
   mount(outlet, root);
 
@@ -96,7 +96,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
 
   const tabsContainer = el('div', { class: 'review-workbench-tabs' });
   const controlsContainer = el('div', {});
-  const resultsContainer = el('div', { 'data-tutorial': 'ta-review-items' });
+  const resultsContainer = el('div', { class: 'ta-review-workspace__results', 'data-tutorial': 'ta-review-items' });
 
   function tabInputs(): QueueTabInput[] {
     return items.map((item) => ({ labels: item.labels, agentDecision: agentDecisions.get(item.id) }));
@@ -211,7 +211,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
           reader,
           el('div', { class: 'ta-reader-actions' }, el('span', { text: pending ? `${pending} suggestions awaiting instructor review` : 'Final approval remains instructor-only.' }),
             permissions['question.mark-reviewed'] ? el('button', { class: 'btn btn--instr-primary', type: 'button', text: item.state === 'reviewed' ? 'Reviewed' : 'Mark reviewed', busy: marking, disabled: marking || item.state === 'reviewed', onclick: () => markReviewed(item) }) : el('small', { text: 'Mark reviewed is unavailable for your permissions.' })))));
-    if (isNew) renderTaQuestionDetail(reader, { id: courseId, questionId: item.id });
+    if (isNew) renderTaQuestionDetail(reader, { id: courseId, questionId: item.id }, item.sample, item.current._id);
   }
 
   body.replaceChildren(
@@ -219,7 +219,7 @@ async function renderInner(outlet: HTMLElement, courseId: string): Promise<void>
       'Review Queue',
       'Check each question, suggest edits, and leave notes for your instructor.',
     ),
-    el('div', {}, tabsContainer, controlsContainer, resultsContainer),
+    el('div', { class: 'ta-review-workspace__content' }, tabsContainer, controlsContainer, resultsContainer),
   );
   renderTabs();
   renderControls();

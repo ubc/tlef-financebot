@@ -4,7 +4,7 @@ import { installClientDiagnostics } from './diagnostics.js';
 import { renderAdminOperations, renderAdminOperationDetail } from './views/admin/operations.js';
 import { renderAdminQuestions, renderAdminQuestionDetail } from './views/admin/questions.js';
 import { syncSetupJourney } from './setup-journey.js';
-import { renderTutorialHelp } from './views/tutorial-help.js';
+import { renderTutorialHelp, renderWorkspacePreviewHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
 // shell based on GET /api/auth/me, builds the sidebar + top bar, and starts the
 // hash router. Imports use a `.js` extension because the browser loads the
@@ -279,7 +279,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
   );
   nav.append(el('div', { class: 'nav__section' }, coursesLink), workflowSection);
   const helpLink = el('a', { class: 'nav__link', href: '#', title: 'Help & Tutorials' }, el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '?' }), el('span', { class: 'nav__text', text: 'Help & Tutorials' }));
-  if (!viewAs) nav.append(helpLink);
+  nav.append(helpLink);
   const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
   const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
   const courseContext = el('section', { class: 'course-context', 'aria-label': 'Current course' },
@@ -363,17 +363,26 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     }).catch(() => undefined);
   }
   return startRouter({
-    routes: [{ path: '/ta/courses', render: outlet => renderWorkspaceCourses(outlet, 'ta') }, ...TA_ROUTES],
+    routes: [
+      { path: '/ta/courses', render: outlet => renderWorkspaceCourses(outlet, 'ta') },
+      { path: '/ta/help', render: outlet => viewAs ? renderWorkspacePreviewHelp(outlet, 'ta') : renderTutorialHelp(outlet) },
+      ...TA_ROUTES.map(route => viewAs && route.path === '/ta/course/:id/help'
+        ? { ...route, render: (outlet: HTMLElement, params: { id?: string }) => renderWorkspacePreviewHelp(outlet, 'ta', params.id) }
+        : route),
+    ],
     outlet,
     fallback: initialCourseId ? `/ta/course/${encodeURIComponent(initialCourseId)}/review` : '/ta/courses',
     onNavigate: (path) => {
       const courseId = taCourseIdFromPath(path);
       courseContext.hidden = !courseId;
       workflowSection.hidden = !courseId;
-      helpLink.hidden = !courseId;
-      coursesLink.classList.toggle('nav__link--active', !courseId);
-      if (courseId) coursesLink.removeAttribute('aria-current');
-      else coursesLink.setAttribute('aria-current', 'page');
+      helpLink.href = courseId ? `#/ta/course/${encodeURIComponent(courseId)}/help` : '#/ta/help';
+      helpLink.classList.toggle('nav__link--active', path === '/ta/help' || path.endsWith('/help'));
+      if (helpLink.classList.contains('nav__link--active')) helpLink.setAttribute('aria-current', 'page');
+      else helpLink.removeAttribute('aria-current');
+      coursesLink.classList.toggle('nav__link--active', path === '/ta/courses');
+      if (path === '/ta/courses') coursesLink.setAttribute('aria-current', 'page');
+      else coursesLink.removeAttribute('aria-current');
       shell.classList.remove('is-open');
       if (!courseId) {
         ++contextVersion;
@@ -385,7 +394,6 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
       picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
-      helpLink.href = `#/ta/course/${encodeURIComponent(courseId)}/help`;
       reviewLink.classList.toggle(
         'nav__link--active',
         path.endsWith('/review') || path.includes('/question/'),
@@ -711,6 +719,7 @@ function previewNavItems(courseId?: string): StudentNavItem[] {
   const routes = previewNavRoutes();
   return [
     { label: 'My Courses', glyph: 'C', path: () => '/preview/courses' },
+    { label: 'Help & Tutorials', glyph: '?', path: () => '/preview/help' },
     { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId ?? '').replace(/^#/, '') },
     { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId ?? '').replace(/^#/, '') },
     { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
@@ -752,7 +761,7 @@ function buildStudentShell(
 
   for (const item of config.navItems) {
     const courseScoped = studentNavNeedsCourse(item)
-      || (config.preview !== undefined && item.label !== 'My Courses');
+      || (config.preview !== undefined && item.label !== 'My Courses' && item.label !== 'Help & Tutorials');
     const link = el(
       'a',
       {
@@ -991,7 +1000,11 @@ function buildPreviewStudentShell(
   const previewSessionId = getAnonymousPreviewSession(courseId ?? 'course-picker');
   const experience = createPreviewStudentExperience(previewSessionId, { sendToInstructorQueue: Boolean(session.user?.isAdmin || session.user?.courseRoles.some(entry => entry.courseId === courseId && entry.role === 'instructor')) });
   return buildStudentShell(root, session, {
-    routes: [{ path: '/preview/courses', render: outlet => renderWorkspaceCourses(outlet, 'student') }, ...buildPreviewStudentRoutes(experience)],
+    routes: [
+      { path: '/preview/courses', render: outlet => renderWorkspaceCourses(outlet, 'student') },
+      { path: '/preview/help', render: outlet => renderWorkspacePreviewHelp(outlet, 'student') },
+      ...buildPreviewStudentRoutes(experience),
+    ],
     fallback: courseId ? `/preview/course/${encodeURIComponent(courseId)}` : '/preview/courses',
     navItems: previewNavItems(courseId),
     courseIdFromPath: previewCourseIdFromPath,

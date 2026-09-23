@@ -273,6 +273,11 @@ test('TA workbench reads answers inline, preserves notes across board jumps and 
   await page.addStyleTag({ content: '* { animation: none !important; transition: none !important; }' });
   await page.screenshot({ path: '/tmp/ta-workbench.png', fullPage: true });
   await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByRole('button', { name: /Question board/ })).toBeInViewport();
+  await expect(page.locator('.ta-reader-actions')).toBeInViewport();
+  const workbench = await page.locator('.ta-review-workbench').boundingBox();
+  expect(workbench).not.toBeNull();
+  expect(workbench!.y + workbench!.height).toBeLessThanOrEqual(800);
   const reader = page.locator('.ta-embedded');
   await reader.evaluate((node) => { const spacer = document.createElement('div'); spacer.style.height = '1200px'; node.append(spacer); });
   expect(await reader.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto');

@@ -30,10 +30,12 @@ import {
   getMyCourseCapabilities,
   type Capability,
   getQuestion,
+  getQuestionSample,
   suggestTaQuestionEdit,
   type CourseOutline,
   type Difficulty,
   type QuestionDetail,
+  type QuestionSample,
   type QuestionSuggestion,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
@@ -226,19 +228,20 @@ function notesPanel(detail: QuestionDetail): HTMLElement {
 /** Read-only question body: rich-text stem, then the options list with the
  * correct option marked. No inputs bound to the live question anywhere in
  * this section — a TA can read the question, never edit it in place. */
-function questionBody(detail: QuestionDetail): HTMLElement {
+function questionBody(detail: QuestionDetail, sample?: QuestionSample): HTMLElement {
   const stemEl = el('div', { class: 'question-stem' });
-  renderRichText(stemEl, detail.current.stem);
+  renderRichText(stemEl, sample?.stem ?? detail.current.stem);
 
   const optionsList = el('ol', { class: 'question-options-readonly' },
     ...detail.current.options.map((option) => {
       const textEl = el('span', {});
-      renderRichText(textEl, option.text);
+      const drawn = sample?.options.find(value => value.key === option.key);
+      renderRichText(textEl, drawn?.text ?? option.text);
       return el('li', { class: `question-options-readonly__item${option.role === 'correct' ? ' question-options-readonly__item--correct' : ''}` },
         el('span', { class: 'question-options-readonly__key', text: `${option.key}.` }),
         textEl,
         option.role === 'correct' ? el('span', { class: 'muted', text: 'Correct answer' }) : false,
-        option.explanation ? (() => { const explanation = el('div', { class: 'ta-option-explanation' }); renderRichText(explanation, option.explanation); return explanation; })() : false,
+        drawn?.explanation || option.explanation ? (() => { const explanation = el('div', { class: 'ta-option-explanation' }); renderRichText(explanation, drawn?.explanation ?? option.explanation ?? ''); return explanation; })() : false,
       );
     }),
   );
@@ -250,7 +253,7 @@ function questionBody(detail: QuestionDetail): HTMLElement {
   );
 }
 
-async function renderInner(outlet: HTMLElement, courseId: string, questionId: string): Promise<void> {
+async function renderInner(outlet: HTMLElement, courseId: string, questionId: string, listSample?: QuestionSample, listVersionId?: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading question…'));
   const root = el('div', { class: 'view' }, body);
   mount(outlet, root);
@@ -265,6 +268,10 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
     body.replaceChildren(errorState(message, () => void renderInner(outlet, courseId, questionId)));
     return;
   }
+  const parameterized = Boolean(detail.current.paramSlots?.length || detail.current.generateScript || detail.current.derivedValues?.length);
+  const sample = parameterized
+    ? (listVersionId === detail.current._id ? listSample : undefined) ?? await getQuestionSample(questionId).catch(() => undefined)
+    : undefined;
 
   async function refresh(): Promise<void> {
     await renderInner(outlet, courseId, questionId);
@@ -277,12 +284,14 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
     const content = el('div', { class: 'review-workbench__body' },
       el('div', { class: 'review-workbench__metadata', text: `${detail.current.type.toUpperCase()} · ${detail.current.difficulty} · ${detail.state}` }),
       el('p', { class: 'review-workbench__objective', text: topicLoLabel(outline, detail.loIds, detail.themeIds) }),
-      rich(detail.current.stem, 'review-workbench__stem question-stem'),
+      parameterized ? el('p', { class: 'review-workbench__sample-note', text: sample ? 'One computed sample. Students may receive different values.' : 'Template preview. Sample values are unavailable for this question.' }) : false,
+      rich(sample?.stem ?? detail.current.stem, 'review-workbench__stem question-stem'),
       el('div', { class: 'review-workbench__answers' }, ...detail.current.options.map(option =>
         el('section', { class: `review-workbench__answer${option.role === 'correct' ? ' is-correct' : ''}` },
           el('span', { class: 'review-workbench__key', text: option.key }),
           el('div', {}, option.role === 'correct' ? el('span', { class: 'review-workbench__correct-label', text: 'Correct answer' }) : false,
-            rich(option.text), rich(option.explanation ?? '', 'review-workbench__explanation'))))),
+            rich(sample?.options.find(value => value.key === option.key)?.text ?? option.text),
+            rich(sample?.options.find(value => value.key === option.key)?.explanation ?? option.explanation ?? '', 'review-workbench__explanation'))))),
       permissions['question.suggest-edit'] ? el('details', { class: 'ta-detail-disclosure' }, el('summary', { text: 'Suggest an edit' }), suggestPanel(detail, () => void refresh())) : false,
       el('details', { class: 'ta-detail-disclosure' }, el('summary', { text: `Your suggestions · ${detail.suggestions?.length ?? 0}` }), suggestionsList(detail.suggestions ?? [])),
       notesPanel(detail));
@@ -312,7 +321,8 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
       topicLoLabel(outline, detail.loIds, detail.themeIds),
     ),
     el('div', { class: 'cluster' }, statusBadge(STATUS_LABEL[detail.state], statusToBadgeVariant(detail.state))),
-    questionBody(detail),
+    ...(parameterized ? [el('p', { class: 'review-workbench__sample-note', text: sample ? 'One computed sample. Students may receive different values.' : 'Template preview. Sample values are unavailable for this question.' })] : []),
+    questionBody(detail, sample),
     detail.agentDecision ? el('details', { class: 'ta-detail-disclosure' },
       el('summary', { text: `AI assessment · ${detail.agentDecision.decision.toUpperCase()}` }),
       (() => { const report = el('div', { class: 'ta-assessment' }); renderRichText(report, detail.agentDecision.reasoning); return report; })(),
@@ -324,6 +334,6 @@ async function renderInner(outlet: HTMLElement, courseId: string, questionId: st
   if (!outlet.classList.contains('ta-embedded')) attachTutorial(root, 'ta-question-review', {"ta-question-content": ".question-stem"});
 }
 
-export function renderTaQuestionDetail(outlet: HTMLElement, params: RouteParams): void {
-  void renderInner(outlet, params.id, params.questionId);
+export function renderTaQuestionDetail(outlet: HTMLElement, params: RouteParams, sample?: QuestionSample, sampleVersionId?: string): void {
+  void renderInner(outlet, params.id, params.questionId, sample, sampleVersionId);
 }

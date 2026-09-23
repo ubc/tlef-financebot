@@ -122,6 +122,87 @@ test('Admin cycles every workspace and returns; sidebar dimensions match and cou
   state.assertClean();
 });
 
+test('Admin role views keep usable TA and Student help without writing tutorial progress', async ({ page }) => {
+  const state = await fixture(page, 'admin');
+  await switchRole(page, 'admin', 'ta');
+  const taHelp = page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' });
+  await expect(taHelp).toBeVisible();
+  await taHelp.click();
+  await expect(page.getByRole('heading', { name: 'Help & Tutorials' })).toBeVisible();
+  await expect(page.locator('.help-lesson')).toHaveCount(4);
+  await expect(page.locator('.help-lesson[data-tutorial-id^="student-"]')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Open page' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+  await expect(taHelp).toHaveAttribute('href', `#/ta/course/${COURSE}/help`);
+  await switchRole(page, 'ta', 'student');
+  const studentHelp = page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' });
+  await expect(studentHelp).toBeVisible();
+  await studentHelp.click();
+  await expect(page.getByRole('heading', { name: 'Help & Tutorials' })).toBeVisible();
+  await expect(page.locator('.help-lesson')).toHaveCount(6);
+  await expect(page.locator('.help-lesson[data-tutorial-id="student-exam-prep"]')).toHaveCount(0);
+  await expect(page.locator('.help-lesson[data-tutorial-id^="ta-"]')).toHaveCount(0);
+  await expect(page.getByText('Tutorial progress is not saved in this view.')).toBeVisible();
+  await switchRole(page, 'student', 'admin', true);
+  state.assertClean();
+  expect(state.requests.some(url => url.pathname === '/api/tutorials' && url.searchParams.get('role') === 'student')).toBe(false);
+  expect(state.requests.some(url => url.pathname === '/api/tutorials' && url.searchParams.get('role') === 'ta')).toBe(false);
+});
+
+test('Admin TA view keeps a parameterized question readable and scrollable at laptop sizes', async ({ page }) => {
+  const state = await fixture(page, 'admin');
+  const options = ['10%', '12%', '14%', '16%'].map((text, index) => ({
+    key: String.fromCharCode(65 + index), role: index === 1 ? 'correct' : 'distractor',
+    text: `{{VALUE_${index}}}`, explanation: `Calculation and explanation for option ${index + 1}. `.repeat(12),
+  }));
+  const current = { _id: 'version-1', type: 'mcq', difficulty: 'easy', version: 1,
+    stem: 'What is the return when X = {{X}}?', options, paramSlots: [{ name: 'X' }], sourceRefs: [] };
+  const sample = { seed: 3, parameterized: true, stem: 'What is the return when X = 10?',
+    options: options.map((option, index) => ({ key: option.key, text: ['10%', '12%', '14%', '16%'][index], explanation: option.explanation })) };
+  const question = { id: 'question-1', courseId: COURSE, currentVersionId: current._id, currentVersion: 1,
+    state: 'draft', labels: [], loIds: [], themeIds: [], current, priority: 1, sample, suggestions: [], internalNotes: [], versions: [],
+    agentDecision: { decision: 'pass', reasoning: 'Evidence and calculation checked. '.repeat(18), roleAssessment: '' } };
+  await page.route(`**/api/courses/${COURSE}/ta/review-queue`, route => route.fulfill({ json: [question] }));
+  await page.route('**/api/questions/question-1', route => route.fulfill({ json: question }));
+  await switchRole(page, 'admin', 'ta');
+  await page.locator('.course-card').first().click();
+  await expect(page.locator('.ta-reader-layout .question-stem')).toContainText('X = 10');
+  await expect(page.locator('.ta-reader-layout .question-stem')).not.toContainText('{{X}}');
+  await expect(page.locator('.ta-reader-layout .review-workbench__answer').first()).toContainText('10%');
+  for (const width of [1280, 1440, 1728]) {
+    await page.setViewportSize({ width, height: 800 });
+    const frame = await page.locator('.ta-review-workbench').boundingBox();
+    const actions = await page.locator('.ta-reader-actions').boundingBox();
+    const board = await page.getByRole('button', { name: /Question board/ }).boundingBox();
+    expect(frame).not.toBeNull();
+    expect(actions).not.toBeNull();
+    expect(board).not.toBeNull();
+    expect(frame!.y + frame!.height).toBeLessThanOrEqual(800);
+    expect(actions!.y + actions!.height).toBeLessThanOrEqual(800);
+    expect(board!.y + board!.height).toBeLessThanOrEqual(800);
+    const geometry = await page.locator('.ta-reader-layout').evaluate(element => {
+      const reader = element.querySelector<HTMLElement>('.review-workbench__body')!;
+      const inspector = element.querySelector<HTMLElement>('.review-workbench__inspector')!;
+      const scroll = element.closest<HTMLElement>('.ta-embedded')!;
+      scroll.scrollTop = scroll.scrollHeight;
+      return { width: element.getBoundingClientRect().width, readerWidth: reader.getBoundingClientRect().width,
+        inspectorWidth: inspector.getBoundingClientRect().width, scrollTop: scroll.scrollTop,
+        documentWidth: document.documentElement.scrollWidth };
+    });
+    expect(geometry.readerWidth).toBeGreaterThan(500);
+    expect(geometry.inspectorWidth).toBeGreaterThan(270);
+    expect(geometry.scrollTop).toBeGreaterThan(0);
+    expect(geometry.documentWidth).toBeLessThanOrEqual(width);
+  }
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(page.locator('.ta-reader-layout .question-stem')).toBeVisible();
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth).toBeLessThanOrEqual(width);
+  }
+  state.assertClean();
+});
+
 test('Instructor offers TA and isolated Student workspaces with a return to Instructor', async ({ page }) => {
   const state = await fixture(page, 'instructor');
   const menu = await openRoles(page, 'instructor');
@@ -147,6 +228,7 @@ test('Instructor offers TA and isolated Student workspaces with a return to Inst
 
 test('TA can preview assigned courses as Student and return without higher-role controls', async ({ page }) => {
   const state = await fixture(page, 'ta');
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
   await expect(page.locator('.sidebar .nav').getByRole('link', { name: 'My Courses', exact: true })).toHaveAttribute('aria-current', 'page');
   const sidebar = (await page.locator('.sidebar').boundingBox())!;
   const footer = (await page.locator('.sidebar__foot').boundingBox())!;
@@ -193,6 +275,7 @@ test('Student Preview switches course identity and isolated session, and refresh
 
 test('real Student shares course cards but cannot gain higher workspaces through saved preferences or query parameters', async ({ page }) => {
   const state = await fixture(page, 'student', { forgedRole: 'admin', path: '/admin/users?workspace=admin' });
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
   await expect(roleButton(page, 'student')).toBeVisible();
   await expect(page.locator('.course-card')).toHaveCount(2);
   await expect(page.getByRole('link', { name: 'Open FIN 101 Finance Foundations', exact: true })).toBeVisible();
