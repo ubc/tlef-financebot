@@ -907,3 +907,35 @@ open tab with retry, download and leave protection. This is not a promise of
 browser-crash/offline-disk recovery or simultaneous binary-file editing. Course,
 Theme, LO and material forms use revision conflicts rather than text merging;
 explicit roster/lifecycle actions retain their existing action contracts.
+
+## Canvas integration (2026-09-28)
+
+All endpoints require a CWL session. `/canvas/*` connection/course listing requires
+Admin, platform Instructor, or an existing course Instructor. Course endpoints
+require `ensureCourseInstructor()`. Mutations require same-origin JSON requests.
+OAuth uses the read-only UBC LMS toolkit scopes; tokens are never returned.
+
+| Method | Endpoint | Result |
+| --- | --- | --- |
+| GET | `/api/canvas/status` | `{configured, connected, domain, canvasUserId?}` |
+| POST | `/api/canvas/connect` | `{returnTo?}` → `{url}` for Canvas OAuth |
+| GET | `/api/canvas/callback` | Validates single-use session/user-bound state; redirects |
+| POST | `/api/canvas/disconnect` | 204; deletes tokens and pauses dependent Canvas grants |
+| GET | `/api/canvas/courses` | Active teacher courses `{id,name,code}[]` |
+| GET | `/api/courses/:courseId/canvas` | Link revision, sources, sync timestamps/error, autoEnroll, masked roster; or null |
+| PUT | `/api/courses/:courseId/canvas` | `{sourceIds: string[], revision: string|null, autoEnroll: boolean}` → 204 |
+| POST | `/api/courses/:courseId/canvas/sync` | 204; atomic complete-roster refresh |
+| DELETE | `/api/courses/:courseId/canvas` | `{revision}` → 204; Canvas-only grants end |
+| GET | `/api/courses/:courseId/canvas/files` | Source-labelled file metadata; no signed URLs |
+| POST | `/api/courses/:courseId/canvas/import` | `{sourceId,fileId}` → 201 `{materialId,name,status}` |
+
+One Canvas course can be linked to one FinanceBot course; one FinanceBot course
+can combine up to 20 Canvas courses. Entire Canvas course rosters include their
+native sections. Only active student enrollments participate. The roster is
+unioned by exact PUID and consistent Canvas user ID; missing/conflicting PUIDs
+abort the refresh. Source changes use revision CAS; collisions return 409.
+Snapshots refresh every five minutes and grant access for at most thirty minutes
+without a successful refresh. CWL session projection grants only published,
+nonarchived courses within term dates and never persists Canvas grants into
+manual User.courseRoles. Importing the same Canvas file version is idempotent;
+changed versions create separate materials with `canvasSource` provenance.

@@ -1,3 +1,4 @@
+import { registerCanvasJobs } from './services/canvas.service';
 import { registerStructureJobs } from './services/structure-generation.service';
 import { createApp } from './app';
 import { env, assertConfig } from './config/env';
@@ -77,6 +78,7 @@ async function main(): Promise<void> {
   // Term-end TA access sweep. The operation is idempotent and removes only
   // course-scoped TA roles; re-invitation remains available to instructors.
   await registerTaJobs();
+  await registerCanvasJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

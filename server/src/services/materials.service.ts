@@ -162,6 +162,7 @@ export async function createMaterials(
   courseId: ObjectId,
   files: UploadedFile[],
   requestedBy = 'system',
+  canvasSource?: Material['canvasSource'],
 ): Promise<WithId<Material>[]> {
   const prepared = files.map((file) => ({ file, format: detectUploadFormat(file.originalname) }));
   const invalid = prepared.find((p) => !p.format);
@@ -173,6 +174,7 @@ export async function createMaterials(
   for (const { file, format } of prepared) {
     const doc: Material = {
       courseId,
+      ...(canvasSource ? { canvasSource } : {}),
       name: file.originalname,
       format: format as UploadFormat,
       kind: inferMaterialKind(file.originalname),

@@ -211,3 +211,14 @@ incremental shared drafts, shows presence, and explicitly saves validated versio
 back into Review Queue. It retains failed updates and commit ids, compares external
 versions before rebase, and exports the original draft schema. The application
 still compiles with tsc; esbuild only packages the third-party Yjs vendor module.
+
+`views/instructor/canvas.ts` adds account authorization, multi-select Canvas course
+links (new or existing FinanceBot courses), combined roster and explicit file
+import. My Courses retains its existing shared course cards. Connection/roster
+access is Instructor-only; students auto-enroll through the existing CWL session.
+
+Canvas connection uses a compact account menu, course selector and Course links /
+Students / Materials tabs. Course selection remains multi-select in a native dialog.
+The roster searches before paginating (20 rows by default; 10/20/50 options), resets
+to page one on search/page-size changes, and exposes range and disabled edge controls.
+Canvas material import statuses derive from persisted source/version provenance.

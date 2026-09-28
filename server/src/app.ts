@@ -1,3 +1,4 @@
+import { canvasRouter } from './routes/canvas.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
@@ -86,6 +87,7 @@ export function createApp(): Express {
   app.use('/api', courseSharingRouter);
   app.use('/api', questionCollaborationRouter);
   app.use('/api', enrollmentRouter); // Enrollment by code + roster cross-check (ST-E02/E03).
+  app.use('/api', canvasRouter); // Canvas OAuth, linked courses, roster sync and file import.
   app.use('/api', materialsRouter); // Material upload + async RAG ingestion (IN-S04/S05).
   app.use('/api', generationRouter); // Three-agent question generation pipeline + pre-seeding (§9.1, IN-Q10).
   app.use('/api', generationBlueprintsRouter); // Reusable generation blueprints + exact run provenance (P2-I2).

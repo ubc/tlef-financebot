@@ -242,7 +242,12 @@ integrations in `components/`.
 - Every new variable a component needs must be added to `.env.example` with a
   comment.
 
-## Two-developer convention (FinanceBot build)
+## Current ownership
+
+Stephen is the sole maintainer. Earlier two-developer coordination is historical;
+Stephen’s instructions govern current tasks.
+
+## Historical two-developer convention (FinanceBot build)
 
 Two developers — **Saurav** and **Stephen** — build this project in parallel,
 each running their own agent sessions. The shared state between the two sessions
@@ -355,3 +360,11 @@ See `tests/AGENTS.md` for the full testing guide (unit/integration, e2e, a11y).
 - CI wiring (e.g. GitHub Actions) to run `npm run typecheck`, `npm test`, and the
   Playwright suites on push. The tests exist (`tests/`); automating them in CI —
   including standing up MongoDB + the IdP for e2e — is the next step.
+
+## Canvas integration
+
+Optional UBC LMS toolkit OAuth connects multiple Canvas courses to one new or
+existing FinanceBot course. Fresh PUID roster snapshots project CWL student
+access without registration codes; files import through material ingestion.
+Compact tabs preserve existing course cards and paginate students (10/20/50).
+See docs/design/canvas-integration/IMPLEMENTATION.md for identity requirements.

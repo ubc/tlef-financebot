@@ -405,6 +405,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('span', { class: 'workspace-count', text: String(materials.length) }),
       ),
       uploadZone('Drop files here or browse', (files) => void doUpload(files)),
+      el('a', { class: 'btn btn--secondary', href: `#/instructor/course/${courseId}/canvas`, text: 'Import from Canvas' }),
       el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has('add-url') ? 'disabled' : undefined, busy: pendingActions.has('add-url'), onclick: () => runMaterialAction('add-url', () => doAddUrl(urlInput)) }, '+')),
       el('input', {
         class: 'input input--sm workspace-search',

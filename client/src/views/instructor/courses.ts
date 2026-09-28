@@ -101,6 +101,7 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
           }
         : undefined,
     ),
+    el('section', { class: 'canvas-entry' }, el('div', {}, el('strong', { text: 'Teach with Canvas' }), el('p', { text: 'Connect sections, automatically enroll students, and import materials.' })), el('a', { class: 'btn btn--secondary', href: '#/instructor/canvas', text: 'Connect or link Canvas' })),
     body,
   );
   mount(outlet, root);

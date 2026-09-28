@@ -448,6 +448,7 @@ export interface PreviewStudentSession {
 }
 
 export interface Material {
+  canvasSource?: { key: string; domain: string; courseId: string; fileId: string; updatedAt?: string };
   revision?: number;
   courseId: ObjectId;
   name: string;

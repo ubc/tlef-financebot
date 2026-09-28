@@ -1,3 +1,4 @@
+import { projectCanvasEnrollment } from './canvas-enrollment.service';
 import {
   platformInstructorGrantsCol,
   usersCol,
@@ -74,7 +75,7 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
   );
   const user = await activatePendingTaInvites(result as unknown as User);
   await activateCourseInstructorInvitations(user);
-  return (await projectCourseInstructorShares([user]))[0];
+  return projectCanvasEnrollment((await projectCourseInstructorShares([user]))[0]);
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
@@ -85,5 +86,5 @@ export async function findUserByPuid(puid: string): Promise<User | null> {
   // during Passport deserialization makes revoke effective on the next
   // request even if a login/revoke race left the denormalized User bit stale.
   const grant = await platformInstructorGrantsCol().findOne({ puid });
-  return (await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0];
+  return projectCanvasEnrollment((await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0]);
 }

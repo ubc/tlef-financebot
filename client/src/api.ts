@@ -1504,6 +1504,7 @@ export interface MaterialAssignment {
 }
 
 export interface Material {
+  canvasSource?: { key: string; domain: string; courseId: string; fileId: string; updatedAt?: string };
   revision?: number;
   _id: string;
   courseId: string;
@@ -3204,3 +3205,23 @@ export const listAdminAuditHistory = (filters: DiagnosticFilters) => request<Dia
 export const listAdminQuestions = (filters: DiagnosticFilters) => request<DiagnosticPage<AdminQuestionRow>>(`/api/admin/all-questions?${diagnosticQuery(filters)}`);
 export const getAdminQuestion = (id: string) => request<AdminQuestionDiagnostic>(`/api/admin/all-questions/${encodeURIComponent(id)}`);
 export const reproduceAdminQuestion = (id: string, input: { versionId?: string; seed?: number; attemptId?: string }) => request<QuestionReproduction>(`/api/admin/all-questions/${encodeURIComponent(id)}/reproduce?${new URLSearchParams(Object.entries(input).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`);
+
+// Canvas connection and many-to-one course linking.
+export interface CanvasSource { id: string; name: string; code: string; }
+export interface CanvasConnection { configured: boolean; connected: boolean; domain: string; canvasUserId?: string; }
+export interface CanvasLink {
+  revision: string; sources: CanvasSource[]; syncedAt?: string; validUntil?: string; syncError?: string; autoEnroll: boolean;
+  students: Array<{ canvasUserId: string; name: string; sourceIds: string[]; identity: string; status: string }>;
+}
+export interface CanvasFile { id: string; sourceId: string; sourceName: string; name: string; size?: number; supported: boolean; updatedAt?: string; }
+const canvasJson = (method: string, body: unknown = {}): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export const getCanvasConnection = (): Promise<CanvasConnection> => request('/api/canvas/status');
+export const connectCanvas = (returnTo: string): Promise<{ url: string }> => request('/api/canvas/connect', canvasJson('POST', { returnTo }));
+export const disconnectCanvas = (): Promise<void> => request('/api/canvas/disconnect', canvasJson('POST'));
+export const getCanvasCourses = (): Promise<CanvasSource[]> => request('/api/canvas/courses');
+export const getCanvasLink = (id: string): Promise<CanvasLink | null> => request(`/api/courses/${id}/canvas`);
+export const saveCanvasLink = (id: string, sourceIds: string[], revision: string | null, autoEnroll: boolean): Promise<void> => request(`/api/courses/${id}/canvas`, canvasJson('PUT', { sourceIds, revision, autoEnroll }));
+export const syncCanvasLink = (id: string): Promise<void> => request(`/api/courses/${id}/canvas/sync`, canvasJson('POST'));
+export const unlinkCanvas = (id: string, revision: string): Promise<void> => request(`/api/courses/${id}/canvas`, canvasJson('DELETE', { revision }));
+export const getCanvasFiles = (id: string): Promise<CanvasFile[]> => request(`/api/courses/${id}/canvas/files`);
+export const importCanvasFile = (id: string, sourceId: string, fileId: string): Promise<{ materialId: string; name: string; status: string; reused: boolean }> => request(`/api/courses/${id}/canvas/import`, canvasJson('POST', { sourceId, fileId }));

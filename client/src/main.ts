@@ -1,3 +1,4 @@
+import { renderCanvas } from './views/instructor/canvas.js';
 import { createRoleSwitcher, selectedWorkspaceRole, rememberWorkspaceRole } from './role-workspace.js';
 import { renderWorkspaceCourses } from './views/workspace-courses.js';
 import { installClientDiagnostics } from './diagnostics.js';
@@ -133,6 +134,8 @@ const ROUTES: Route[] = [
 // these patterns never actually shadow one another. All instructor views
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
+  { path: '/instructor/canvas', render: renderCanvas },
+  { path: '/instructor/course/:id/canvas', render: renderCanvas },
   { path: '/instructor/help', render: renderTutorialHelp },
   { path: '/admin/operations', render: renderAdminOperations },
   { path: '/admin/operations/:kind/:id', render: renderAdminOperationDetail },

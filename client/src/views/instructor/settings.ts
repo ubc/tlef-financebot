@@ -531,6 +531,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   }
   Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));
   body.replaceChildren(pageHeader('Course Settings', 'Make one change at a time. Keep the rest of your course in view.'),
+    el('a', { class: 'btn btn--secondary', href: `#/instructor/course/${courseId}/canvas`, text: 'Link Canvas courses & sections' }),
     el('div', { class: 'admin-settings-grid' }, nav, el('section', { class: 'admin-panel' }, content, settingsErrorSlot, settingsStatusSlot, footer)));
   selectSection(activeSection);
   saveRosterButton.addEventListener('click', () => void runButtonAction(saveRosterButton, saveRoster));

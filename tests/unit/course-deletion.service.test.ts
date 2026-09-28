@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { ObjectId } from 'mongodb';
 
+jest.mock('../../server/src/components/mongodb', () => ({ getDb: () => ({ collection: () => ({ deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }) }) }) }));
+
 jest.mock('node:fs/promises', () => ({ lstat: jest.fn(), rm: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest.fn() }));
 jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExists: jest.fn() }));

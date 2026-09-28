@@ -81,6 +81,12 @@ function csvList(key: string): string[] {
  * See .env.example for the full set of variables each component will need.
  */
 export const env = {
+  canvasDomain: optional('CANVAS_DOMAIN', ''),
+  canvasClientId: optional('CANVAS_CLIENT_ID', ''),
+  canvasClientSecret: optional('CANVAS_CLIENT_SECRET', ''),
+  canvasRedirectUri: optional('CANVAS_REDIRECT_URI', ''),
+  canvasTokenKey: optional('CANVAS_TOKEN_KEY', ''),
+
   nodeEnv: optional('NODE_ENV', 'development'),
   port: Number(optional('PORT', '3000')),
 
@@ -183,6 +189,14 @@ export const isProduction = env.nodeEnv === 'production';
  * server.ts before listening. Development is never blocked.
  */
 export function assertConfig(): void {
+  const canvasValues = [env.canvasDomain, env.canvasClientId, env.canvasClientSecret, env.canvasRedirectUri, env.canvasTokenKey];
+  if (canvasValues.some(Boolean)) {
+    if (!canvasValues.every(Boolean) || !/^[a-f0-9]{64}$/i.test(env.canvasTokenKey)) throw new Error('Canvas requires all five CANVAS_* settings and a 64-hex-character token key.');
+    const canvasOrigin = new URL(env.canvasDomain.includes('://') ? env.canvasDomain : `https://${env.canvasDomain}`);
+    const callback = new URL(env.canvasRedirectUri);
+    if (canvasOrigin.username || canvasOrigin.password || canvasOrigin.search || canvasOrigin.hash || canvasOrigin.pathname !== '/') throw new Error('CANVAS_DOMAIN must contain only the Canvas origin.');
+    if (isProduction && (canvasOrigin.protocol !== 'https:' || callback.protocol !== 'https:')) throw new Error('Deployed Canvas connections require HTTPS.');
+  }
   if (!isProduction) return;
   const problems: string[] = [];
   if (env.sessionSecret === 'dev-insecure-secret-change-me') {

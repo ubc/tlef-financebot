@@ -1,3 +1,4 @@
+import { getDb } from '../components/mongodb';
 import { lstat, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { ObjectId } from 'mongodb';
@@ -218,6 +219,7 @@ export async function permanentlyDeleteCourse(
     notificationsCol().deleteMany({ courseId }),
     auditCol().deleteMany({ $or: auditTargets }),
     rosterCol().deleteMany({ courseId }),
+    getDb().collection('canvasLinks').deleteOne({ _id: courseId }),
     sessionSummariesCol().deleteMany({ courseId }),
     contentRunsCol().deleteMany({ courseId }),
     generationBlueprintsCol().deleteMany({ courseId }),
