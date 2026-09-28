@@ -33,6 +33,11 @@ also shows that more taxonomy does not automatically improve navigation.
    status, availability, question count, and the next action. Opening a draft
    keeps Paper, Quality, Access, and Student Preview together. A published exam
    keeps its Results and Issues with that exam.
+   The proposed type chooser includes Midterm, Final, and a short Topic / LO
+   Quiz. A quiz uses only this course's LOs, course bank or new LO questions,
+   instructor review, a scheduled access window, and explicit attempts and
+   answer-release settings. Midterm / Final exist in the current Exam Builder;
+   the quiz is a design concept and needs its own server support.
 3. **Make readiness actionable.** Show the exact blockers and their destination:
    unreviewed item, failed variant check, missing access window, or potential
    practice exposure. Existing server-side publish guards remain authoritative.
@@ -47,7 +52,8 @@ also shows that more taxonomy does not automatically improve navigation.
 
 ## Prototype screens
 
-- **Catalog:** attention row, grouped exams/practice list, lifecycle labels.
+- **Catalog:** attention row, grouped exams/quiz/practice list, lifecycle labels.
+- **New assessment:** type selection and a sample Topic / LO Quiz setup.
 - **Draft exam:** Paper, Quality, Access, Student Preview tabs; persistent
   summary and a publish action that shows blockers.
 - **Published exam:** Results & Issues context plus immutable publication note.

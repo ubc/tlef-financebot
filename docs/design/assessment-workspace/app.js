@@ -30,20 +30,54 @@ function showToast(message) {
 
 function catalog() {
   return [
-    heading('ASSESSMENT WORKSPACE', 'Assessments', 'Build an exam, decide who can access it, then follow its results.', button('+ New assessment', 'new', 'primary')),
-    '<div class="note"><strong>One place for assessments.</strong> Midterms and finals are formal exams. Practice remains a separate experience, with different feedback and mastery rules.</div>',
+    heading('ASSESSMENT WORKSPACE', 'Assessments', 'Build exams and LO quizzes, decide who can access them, then follow their results.', button('+ New assessment', 'new', 'primary')),
+    '<div class="note"><strong>One place for assessed work.</strong> Midterms and finals use formal papers. A Topic / LO quiz is a proposed shorter assessment focused on selected course objectives. Exam Prep practice keeps separate feedback and mastery rules.</div>',
     '<div class="attention"><div><strong>Fall midterm needs 3 actions before publication</strong><p>Review one question, repair one variant, and confirm the student access window.</p></div>' + button('Continue midterm →', 'open-midterm') + '</div>',
     '<div class="catalog-toolbar"><div class="segmented" role="group" aria-label="Filter assessments">',
-    '<button type="button" data-filter="all" class="' + (catalogFilter === 'all' ? 'active' : '') + '">All 3</button>',
+    '<button type="button" data-filter="all" class="' + (catalogFilter === 'all' ? 'active' : '') + '">All 4</button>',
     '<button type="button" data-filter="exams" class="' + (catalogFilter === 'exams' ? 'active' : '') + '">Exams 2</button>',
+    '<button type="button" data-filter="quizzes" class="' + (catalogFilter === 'quizzes' ? 'active' : '') + '">Quizzes 1</button>',
     '<button type="button" data-filter="practice" class="' + (catalogFilter === 'practice' ? 'active' : '') + '">Practice 1</button></div>',
     '<input class="search" type="search" aria-label="Search assessments" placeholder="Search assessments…"></div>',
     '<section class="panel table-wrap" aria-label="Assessment list"><table class="catalog-table"><thead><tr><th>Assessment</th><th>Type</th><th>Status</th><th>Student access</th><th>Questions</th><th></th></tr></thead><tbody>',
     '<tr data-kind="exams" data-search="fall midterm"><td><strong>Fall midterm</strong><small>Last edited today · 3 actions needed</small></td><td>Formal exam</td><td><span class="pill amber">Draft</span></td><td>Not available</td><td>12</td><td>' + button('Open →', 'open-midterm') + '</td></tr>',
     '<tr data-kind="exams" data-search="final exam"><td><strong>Final exam</strong><small>Published revision 1</small></td><td>Formal exam</td><td><span class="pill green">Published</span></td><td>Sep 10 – Oct 18</td><td>24</td><td>' + button('Open →', 'open-final') + '</td></tr>',
+    '<tr data-kind="quizzes" data-search="newton laws topic lo quiz"><td><strong>Newton’s laws LO quiz</strong><small>Proposed example · focused on 2 course LOs</small></td><td>Topic / LO quiz</td><td><span class="pill blue">Design concept</span></td><td>Not available</td><td>6</td><td>' + button('Explore →', 'open-quiz') + '</td></tr>',
     '<tr data-kind="practice" data-search="exam prep practice"><td><strong>Exam Prep practice</strong><small>Existing practice templates</small></td><td>Practice</td><td><span class="pill blue">Active</span></td><td>Available now</td><td>Question pool</td><td>' + button('Explore →', 'open-practice') + '</td></tr>',
     '</tbody></table></section>',
-    '<p class="footer-note">Prototype proposal: the existing Exam Builder and Exam Prep remain separate data models. This page clarifies their purposes before any migration.</p>',
+    '<p class="footer-note">Current product: Exam Builder supports Midterm / Final, and Exam Prep is separate. Topic / LO quiz is a proposed new type, not an implemented course feature.</p>',
+  ].join('');
+}
+
+function newAssessment() {
+  return [
+    '<button type="button" class="back" data-action="back">← All assessments</button>',
+    heading('ASSESSMENT WORKSPACE', 'What are you creating?', 'Choose the purpose first. Each type then uses the same paper, quality, access and preview workflow.'),
+    '<div class="type-grid">',
+    '<section class="panel type-card"><span class="pill green">CURRENT TYPE</span><h2>Midterm</h2><p>A fixed paper for a course checkpoint. Select from the course bank or generate questions against course LOs.</p><ul><li>One scheduled sitting</li><li>Instructor controlled answer release</li></ul>' + button('See midterm workflow →', 'open-midterm') + '</section>',
+    '<section class="panel type-card"><span class="pill green">CURRENT TYPE</span><h2>Final</h2><p>A fixed paper covering a broader set of course LOs, with the same version and publication safeguards.</p><ul><li>Longer paper and duration</li><li>Published versions stay pinned</li></ul>' + button('See final workflow →', 'open-final') + '</section>',
+    '<section class="panel type-card"><span class="pill blue">PROPOSED TYPE</span><h2>Topic / LO quiz</h2><p>A short assessment scoped to a topic or selected learning objectives in this course.</p><ul><li>Bank questions or new LO questions</li><li>Short duration and configurable attempts</li></ul>' + button('Design an LO quiz →', 'open-quiz', 'primary') + '</section>',
+    '</div><div class="note" style="margin-top:18px">Exam Prep practice remains available in the catalog as a separate student practice experience. The quiz type shown here is a design proposal; creating one does not yet save data.</div>',
+  ].join('');
+}
+
+function quizSetup() {
+  return [
+    '<button type="button" class="back" data-action="new">← Choose assessment type</button>',
+    heading('ASSESSMENT · PROPOSED LO QUIZ', 'New Topic / LO quiz', 'Focus a short quiz on this course’s learning objectives, then assemble and review its paper.'),
+    '<div class="workbench"><div class="workbench-main">',
+    '<section class="panel"><div class="panel-header"><div><h2>1 · Scope and purpose</h2><p>Only learning objectives from PHYS 100 can be selected.</p></div><span class="pill blue">Design concept</span></div><div class="pad field-grid">',
+    '<label class="field">Quiz title<input type="text" value="Newton’s laws LO quiz"></label>',
+    '<label class="field">Topic<select><option>Forces and motion</option><option>Energy</option></select></label>',
+    '<div class="field span-two"><strong>Learning objectives</strong><div class="lo-options"><label><input type="checkbox" checked> Apply Newton’s first law to motion</label><label><input type="checkbox" checked> Use Newton’s third law as action–reaction</label><label><input type="checkbox"> Construct correct free-body diagrams</label></div><small>Topic filters the list; the selected LOs determine the question scope.</small></div>',
+    '</div></section>',
+    '<section class="panel"><div class="panel-header"><div><h2>2 · Paper and delivery</h2><p>Start with a small fixed paper so review and student preview stay predictable.</p></div></div><div class="pad field-grid">',
+    '<label class="field">Questions<input type="number" min="1" value="6"></label><label class="field">Duration<input type="text" value="20 minutes"></label>',
+    '<label class="field">Attempts<select><option>One attempt</option><option>Two attempts</option><option>Three attempts</option></select></label><label class="field">Results and answers<select><option>Release after closing time</option><option>Release after each submission</option><option>Instructor release</option></select></label>',
+    '<div class="span-two action-row">' + button('Add from course bank', 'bank') + button('Generate from selected LOs', 'generate') + '</div>',
+    '</div></section>',
+    '<div class="note">Quiz questions still need instructor review and verified answer versions before publication. Attempt and feedback policy must be enforced by the server, not only by this form.</div>',
+    '</div><aside class="panel pad summary-side"><div class="eyebrow">DESIGN DECISION</div><h2 style="margin:8px 0 12px">One assessment workflow</h2><p class="lead">Midterm, Final and LO Quiz share the course question bank, quality checks, access window, student preview and results context.</p><hr><p class="lead">The quiz changes defaults: fewer questions, shorter time and a chosen LO scope. It does not reuse Exam Prep mastery records.</p><div style="margin-top:18px">' + button('Preview quiz workflow', 'quiz-preview', 'primary') + '</div><p class="footer-note">Prototype only · no quiz is created.</p></aside></div>',
   ].join('');
 }
 
@@ -163,15 +197,15 @@ function otherScreen() {
 }
 
 function render() {
-  const title = screen === 'catalog' ? 'Assessments' : screen === 'detail' ? exams[selectedExam].title : screen === 'practice' ? 'Practice' : screen.charAt(0).toUpperCase() + screen.slice(1);
+  const title = screen === 'catalog' ? 'Assessments' : screen === 'detail' ? exams[selectedExam].title : screen === 'new' ? 'New assessment' : screen === 'quiz' ? 'LO quiz' : screen === 'practice' ? 'Practice' : screen.charAt(0).toUpperCase() + screen.slice(1);
   breadcrumb.innerHTML = '<b>PHYS 100</b> <span>›</span> ' + (screen === 'detail' ? 'Assessments <span>›</span> ' : '') + title;
   document.querySelectorAll('[data-nav]').forEach(function (item) {
-    const active = item.dataset.nav === (screen === 'detail' || screen === 'practice' ? 'catalog' : screen);
+    const active = item.dataset.nav === (['detail', 'practice', 'new', 'quiz'].includes(screen) ? 'catalog' : screen);
     item.classList.toggle('active', active);
     if (active) item.setAttribute('aria-current', 'page');
     else item.removeAttribute('aria-current');
   });
-  app.innerHTML = screen === 'catalog' ? catalog() : screen === 'detail' ? detail() : otherScreen();
+  app.innerHTML = screen === 'catalog' ? catalog() : screen === 'detail' ? detail() : screen === 'new' ? newAssessment() : screen === 'quiz' ? quizSetup() : otherScreen();
   if (screen === 'catalog') filterRows();
 }
 
@@ -191,6 +225,9 @@ document.addEventListener('click', function (event) {
   if (tabButton) { tab = tabButton.dataset.tab; render(); return; }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
+  if (action === 'new') { screen = 'new'; render(); return; }
+  if (action === 'open-quiz') { screen = 'quiz'; render(); return; }
+  if (action === 'quiz-preview') { showToast('Design sample: a reviewed LO quiz would use the same student preview before publication.'); return; }
   if (action === 'open-midterm' || action === 'open-final') { selectedExam = action === 'open-midterm' ? 'midterm' : 'final'; tab = 'paper'; screen = 'detail'; render(); return; }
   if (action === 'back') { screen = 'catalog'; render(); return; }
   if (action === 'open-practice') { screen = 'practice'; render(); return; }
