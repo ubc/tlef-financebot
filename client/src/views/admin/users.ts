@@ -35,7 +35,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   const root = el('div', { class: 'view view--admin admin-console admin-people' });
   const metrics = el('div', { class: 'ac-metrics', 'aria-label': 'Loaded directory summary' });
   const status = el('div', { class: 'ac-feedback', role: 'status', 'aria-live': 'polite' });
-  const search = el('input', { class: 'input', id: 'admin-directory-search', type: 'search', maxlength: '100', placeholder: 'Name, CWL, email or PUID', 'aria-label': 'Search users' });
+  const search = el('input', { class: 'input', id: 'admin-directory-search', type: 'search', maxlength: '100', placeholder: 'Name, email, Login ID (PUID) or CWL username', 'aria-label': 'Search users' });
   search.value = query.get('puid') || '';
   const accountFilter = el('select', { class: 'input', 'aria-label': 'Account status' },
     el('option', { value: '', text: 'All statuses' }), el('option', { value: 'active', text: 'Active' }), el('option', { value: 'deactivated', text: 'Banned' }), el('option', { value: 'pending', text: 'Pending first login' }));
@@ -107,7 +107,8 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
             el('span', { class: 'ac-person-avatar', 'aria-hidden': 'true', text: (user.displayName || user.puid).split(/\s+/).slice(0, 2).map(value => value[0]).join('').toUpperCase() }),
             el('div', { class: 'ac-person-copy' },
               el('button', { type: 'button', class: 'ac-cell-link', 'data-person': user.puid, text: user.displayName || user.puid, onclick: () => inspect(user) }),
-              el('small', { text: user.email || user.uid || user.puid })))),
+              el('small', { text: user.email || 'Email not released' }),
+              el('small', { class: 'ac-person-login', title: user.puid }, 'Login ID (PUID): ', el('code', { text: user.puid }))))),
           el('td', { class: 'ac-people-roles' }, user.isAdmin ? badge('Admin', 'info') : false, user.platformInstructor ? badge('Instructor', 'info') : false, ...roles.map(role => badge(role)), !roles.length && !user.isAdmin && !user.platformInstructor ? 'No roles' : false),
           el('td', { class: 'ac-people-courses', text: String(new Set(user.courseRoles.map(entry => entry.courseId)).size) }),
           el('td', {}, badge(personStatus(user), user.deactivatedAt ? 'danger' : user.pending ? 'warning' : 'success')),
@@ -277,7 +278,12 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     const content = el('div', { class: 'ac-panel-body', id: 'user-detail-content', role: 'tabpanel', 'aria-labelledby': `user-detail-tab-${detailTab === 'Profile' ? '0' : '1'}` });
     if (detailTab === 'Profile') {
       content.append(el('div', { class: 'ac-people-section ac-actions' }, badge(personStatus(user), user.deactivatedAt ? 'danger' : user.pending ? 'warning' : 'success'), user.isAdmin ? badge('Admin', 'info') : ''),
-        properties([['CWL', user.uid || 'Not released'], ['PUID', user.puid], ['Email', user.email || 'Not released'], ['Last sign-in', date(user.lastLoginAt)], ['Affiliations', user.affiliations.join(', ') || 'Not released']]),
+        properties([['Login ID (PUID)', user.puid], ['CWL username', user.uid || 'Not released'], ['Email', user.email || 'Not released'], ['Last sign-in', date(user.lastLoginAt)], ['Affiliations', user.affiliations.join(', ') || 'Not released']]),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Copy Login ID', onclick: async () => {
+          try { await navigator.clipboard.writeText(user.puid); notice('Login ID copied.'); }
+          catch { notice('Unable to copy. Select the Login ID above and copy it manually.'); }
+        } }),
+        el('p', { class: 'ac-note', text: user.pending ? 'Provisioned PUID; awaiting first CWL sign-in.' : 'Identity received from CWL (ubcEduCwlPuid). Canvas identity matching must be verified separately.' }),
         el('h3', { class: 'ac-people-section-title', text: 'Investigation' }),
         el('a', { class: 'ac-people-link', text: 'View activity →', href: `#/admin/operations?actor=${encodeURIComponent(user.puid)}` }),
         el('a', { class: 'ac-people-link', text: 'Created questions →', href: `#/admin/questions?actor=${encodeURIComponent(user.puid)}` }),

@@ -400,3 +400,25 @@ for (const name of ['users', 'accounts'] as const) for (const theme of ['light',
     await expect(page.locator('.ac-panel')).toHaveCount(0);
   });
 }
+
+test('login identity remains distinct from username, preserves case and supports copying without access changes', async ({ page, context }) => {
+  const { writes } = await fixture(page, 'users');
+  const row = personRow(page, 'Case Member');
+  await expect(row.locator('.ac-person-login')).toHaveText(`Login ID (PUID): ${OPAQUE_PUID}`);
+  await expect(row).toContainText('case@example.edu');
+  await page.getByLabel('Search users', { exact: true }).fill(OPAQUE_PUID);
+  await expect(page.locator('.ac-table tbody tr')).toHaveCount(1);
+  await row.getByRole('button', { name: 'Case Member', exact: true }).click();
+  const details = page.locator('.ac-panel');
+  await expect(details.getByText('CWL username', { exact: true })).toBeVisible();
+  await expect(details.getByText('case', { exact: true })).toBeVisible();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await details.getByRole('button', { name: 'Copy Login ID', exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(OPAQUE_PUID);
+  await page.screenshot({ path: 'audit-results/admin-workspace-2026-09-20/login-id-profile.png' });
+  await page.getByRole('button', { name: 'Close user details' }).click();
+  await page.getByLabel('Search users', { exact: true }).fill(PENDING_PUID);
+  await page.getByRole('button', { name: PENDING_PUID, exact: true }).click();
+  await expect(details.getByText('Provisioned PUID; awaiting first CWL sign-in.')).toBeVisible();
+  expect(writes).toEqual([]);
+});
