@@ -149,8 +149,8 @@ test('Admin role views keep usable TA and Student help without writing tutorial 
   expect(state.requests.some(url => url.pathname === '/api/tutorials' && url.searchParams.get('role') === 'ta')).toBe(false);
 });
 
-test('Admin TA view keeps a parameterized question readable and scrollable at laptop sizes', async ({ page }) => {
-  const state = await fixture(page, 'admin');
+for (const role of ['admin', 'instructor', 'ta'] as const) test(`${role} TA review scrolls long questions with the mouse wheel`, async ({ page }) => {
+  const state = await fixture(page, role);
   const options = ['10%', '12%', '14%', '16%'].map((text, index) => ({
     key: String.fromCharCode(65 + index), role: index === 1 ? 'correct' : 'distractor',
     text: `{{VALUE_${index}}}`, explanation: `Calculation and explanation for option ${index + 1}. `.repeat(12),
@@ -164,7 +164,7 @@ test('Admin TA view keeps a parameterized question readable and scrollable at la
     agentDecision: { decision: 'pass', reasoning: 'Evidence and calculation checked. '.repeat(18), roleAssessment: '' } };
   await page.route(`**/api/courses/${COURSE}/ta/review-queue`, route => route.fulfill({ json: [question] }));
   await page.route('**/api/questions/question-1', route => route.fulfill({ json: question }));
-  await switchRole(page, 'admin', 'ta');
+  if (role !== 'ta') await switchRole(page, role, 'ta');
   await page.locator('.course-card').first().click();
   await expect(page.locator('.ta-reader-layout .question-stem')).toContainText('X = 10');
   await expect(page.locator('.ta-reader-layout .question-stem')).not.toContainText('{{X}}');
@@ -184,21 +184,42 @@ test('Admin TA view keeps a parameterized question readable and scrollable at la
       const reader = element.querySelector<HTMLElement>('.review-workbench__body')!;
       const inspector = element.querySelector<HTMLElement>('.review-workbench__inspector')!;
       const scroll = element.closest<HTMLElement>('.ta-embedded')!;
-      scroll.scrollTop = scroll.scrollHeight;
+      scroll.scrollTop = 0;
       return { width: element.getBoundingClientRect().width, readerWidth: reader.getBoundingClientRect().width,
-        inspectorWidth: inspector.getBoundingClientRect().width, scrollTop: scroll.scrollTop,
+        inspectorWidth: inspector.getBoundingClientRect().width,
         documentWidth: document.documentElement.scrollWidth };
     });
     expect(geometry.readerWidth).toBeGreaterThan(500);
     expect(geometry.inspectorWidth).toBeGreaterThan(270);
-    expect(geometry.scrollTop).toBeGreaterThan(0);
     expect(geometry.documentWidth).toBeLessThanOrEqual(width);
+    const content = await page.locator('.ta-reader-layout .review-workbench__body').boundingBox();
+    await page.mouse.move(content!.x + 80, content!.y + 70);
+    await page.mouse.wheel(0, 1000);
+    await expect.poll(() => page.locator('.ta-embedded').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await page.mouse.wheel(0, 5000);
+    await expect(page.getByLabel('Add a note')).toBeInViewport();
+    const after = await page.locator('.ta-reader-actions').boundingBox();
+    expect(Math.abs(after!.y - actions!.y)).toBeLessThanOrEqual(1);
+    if (role === 'ta' && width === 1728) await page.screenshot({ path: '/tmp/ta-review-scroll-fixed.png' });
+    await page.locator('.ta-embedded').evaluate(element => { element.scrollTop = 0; });
+    const inspector = await page.locator('.ta-reader-layout .review-workbench__inspector').boundingBox();
+    // On laptops the context follows the question; on wide screens it is
+    // beside it. Wheel input must reach the same outer reader in either case.
+    await page.locator('.ta-reader-layout .review-workbench__inspector h2').scrollIntoViewIfNeeded();
+    const context = await page.locator('.ta-reader-layout .review-workbench__inspector h2').boundingBox();
+    const scrollBefore = await page.locator('.ta-embedded').evaluate(element => element.scrollTop);
+    await page.mouse.move(inspector!.x + 30, context!.y + 30);
+    await page.mouse.wheel(0, width <= 1450 ? -500 : 500);
+    await expect.poll(() => page.locator('.ta-embedded').evaluate(element => element.scrollTop)).not.toBe(scrollBefore);
   }
-  for (const width of [390, 768]) {
+  for (const width of [390, 768, 850, 851]) {
     await page.setViewportSize({ width, height: 800 });
+    await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
     await expect(page.locator('.ta-reader-layout .question-stem')).toBeVisible();
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(width);
+    await page.getByLabel('Add a note').scrollIntoViewIfNeeded();
+    await expect(page.getByLabel('Add a note')).toBeInViewport();
   }
   state.assertClean();
 });

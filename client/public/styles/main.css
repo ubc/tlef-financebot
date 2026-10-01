@@ -10494,6 +10494,15 @@ body.has-setup-journey .outlet:focus { outline: none; }
     block-size:auto;
     min-block-size:0;
   }
+  /* .ta-embedded owns scrolling for both columns. The shared Instructor
+     rules create inner scroll containers without a bounded height here;
+     their overscroll containment traps wheel/trackpad input. */
+  .ta-reader-layout .review-workbench__body,
+  .ta-reader-layout .review-workbench__inspector {
+    overflow:visible;
+    overscroll-behavior:auto;
+    scrollbar-gutter:auto;
+  }
 }
 @media (max-width:850px) {
   .ta-review-workspace .ta-review-workbench { height:auto; }
