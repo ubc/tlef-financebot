@@ -1,7 +1,7 @@
 import {
   getCanvasConnection, connectCanvas, disconnectCanvas, getCanvasCourses, getCanvasLink, saveCanvasLink,
   syncCanvasLink, unlinkCanvas, getCanvasFiles, importCanvasFile, listInstructorCourses, createCourse, listMaterials,
-  type CanvasLink, type CanvasSource,
+  type CanvasLink, type CanvasSource, type CanvasPerson,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
@@ -9,7 +9,7 @@ import { loadingState } from '../../ui.js';
 import { confirmDialog } from '../../modal.js';
 import type { RouteParams } from '../../router.js';
 
-type Tab = 'courses' | 'students' | 'materials';
+type Tab = 'courses' | 'people' | 'materials';
 const field = (label: string, node: HTMLElement): HTMLElement => el('label', { class: 'canvas-field' }, el('span', { text: label }), node);
 const button = (text: string, onclick: () => unknown, style = ''): HTMLButtonElement => el('button', { type: 'button', class: `canvas-button ${style}`, text, onclick });
 const empty = (title: string, message: string, action?: HTMLElement): HTMLElement => el('section', { class: 'canvas-panel canvas-empty' }, el('h2', { text: title }), el('p', { text: message }), action);
@@ -17,13 +17,17 @@ const tableHead = (labels: string[]): HTMLElement => el('thead', {}, el('tr', {}
 
 /** Compact course-scoped UI over the existing Canvas APIs. No simulated authorization or sync state. */
 export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Promise<void> {
+  if (location.hash.startsWith('#/instructor/course/') && params.id) {
+    location.replace(`#/instructor/canvas/${params.id}${location.hash.includes('canvas=cancelled') ? '?canvas=cancelled' : ''}`);
+    return;
+  }
   const root = el('div', { class: 'view canvas-workspace' });
   const notice = el('div', { class: 'canvas-notice', role: 'status', 'aria-live': 'polite' });
   const content = el('div', {}, loadingState('Loading Canvas connection…'));
   const accountSlot = el('div', { class: 'canvas-account-slot' });
-  root.append(el('p', { class: 'canvas-breadcrumb', text: 'Course settings / Integrations' }),
+  root.append(el('p', { class: 'canvas-breadcrumb', text: 'Teaching tools / Integrations' }),
     el('header', { class: 'canvas-pagehead' }, el('div', {}, el('h1', { text: 'Canvas connection' }),
-      el('p', { text: 'Manage linked sections, students and materials.' })), accountSlot), notice, content);
+      el('p', { text: 'Manage Canvas connections, course links, people and materials across your courses.' })), accountSlot), notice, content);
   mount(outlet, root);
   const report = (message: string, error = false): void => {
     notice.className = `canvas-notice${error ? ' canvas-notice--error' : ''}`;
@@ -129,7 +133,7 @@ export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Pr
         button('Create draft', d.attempt(async () => {
           if (![name, code, term].every(input => input.reportValidity() && input.value.trim())) throw new Error('Enter the course name, code and term.');
           const created = await createCourse({ name: name.value.trim(), courseCode: code.value.trim(), term: term.value.trim(), section: section.value.trim() || undefined });
-          d.close(); location.hash = `/instructor/course/${created._id}/canvas`;
+          d.close(); location.hash = `/instructor/canvas/${created._id}`;
         }), 'canvas-button--primary')));
       name.focus();
     }
@@ -141,14 +145,14 @@ export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Pr
     target.addEventListener('change', () => {
       const next = target.value;
       if (next === 'new') { target.value = courseId; createDraft(); }
-      else location.hash = next ? `/instructor/course/${next}/canvas` : '/instructor/canvas';
+      else location.hash = next ? `/instructor/canvas/${next}` : '/instructor/canvas';
     });
     const lifecycle = course?.lifecycle ?? (course?.published ? 'published' : 'draft');
     content.replaceChildren(el('div', { class: 'canvas-project-row' }, el('label', { for: target.id, text: 'FinanceBot course' }), target,
       course && el('span', { class: `canvas-badge ${lifecycle !== 'published' ? 'canvas-badge--draft' : ''}`, text: lifecycle === 'published' ? 'Published' : lifecycle === 'archived' ? 'Archived' : 'Draft' })),
       el('div', { class: 'canvas-tabbar' }, tabs, el('div', { class: 'canvas-sync' }, syncTime, syncButton)), warning, panel);
-    const tabButtons = (['courses', 'students', 'materials'] as Tab[]).map(key => {
-      const label = key === 'courses' ? 'Course links' : key === 'students' ? 'Students' : 'Materials';
+    const tabButtons = (['courses', 'people', 'materials'] as Tab[]).map(key => {
+      const label = key === 'courses' ? 'Course links' : key === 'people' ? 'People' : 'Materials';
       const b = button(label, () => { tab = key; renderTab(); }, 'canvas-tab');
       b.setAttribute('role', 'tab'); b.id = `canvas-tab-${key}`; b.setAttribute('aria-controls', panel.id);
       b.dataset.tab = key;
@@ -221,58 +225,65 @@ export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Pr
         const remove = button('Unlink', action(() => removeSource(source)), 'canvas-button--quiet'); remove.dataset.canvasMutation = '';
         remove.setAttribute('aria-label', `Unlink ${source.code || source.name}`);
         return el('tr', {}, el('td', {}, el('strong', { text: source.code || source.name }), el('small', { class: 'canvas-secondary', text: source.name })),
-          el('td', { text: String(current.students.filter(s => s.sourceIds.includes(source.id)).length) }),
+          el('td', { text: String(peopleOf(current).filter(s => s.sourceIds.includes(source.id)).length) }),
           el('td', { class: 'canvas-hide-small' }, el('span', { class: 'canvas-matched', text: 'Linked' })), el('td', { class: 'canvas-row-actions' }, remove));
       });
       const auto = button('', action(async () => {
         const snapshot = link;
         if (!snapshot) return;
         await changeLink(() => saveCanvasLink(courseId, snapshot.sources.map(s => s.id), snapshot.revision, !snapshot.autoEnroll));
-        report(link?.autoEnroll ? 'Automatic student enrollment enabled.' : 'Automatic student enrollment paused.');
+        report(link?.autoEnroll ? 'Automatic course access enabled.' : 'Automatic course access paused.');
       }), 'canvas-toggle');
-      auto.dataset.canvasMutation = ''; auto.setAttribute('role', 'switch'); auto.setAttribute('aria-label', 'Automatic student enrollment'); auto.setAttribute('aria-checked', String(current.autoEnroll));
+      auto.dataset.canvasMutation = ''; auto.setAttribute('role', 'switch'); auto.setAttribute('aria-label', 'Automatic course access'); auto.setAttribute('aria-checked', String(current.autoEnroll));
       panel.replaceChildren(el('section', { class: 'canvas-panel' },
         el('div', { class: 'canvas-panel-head' }, el('div', {}, el('h2', { text: 'Linked Canvas courses' }), el('p', { text: 'Multiple sections share one FinanceBot course.' })), editButton()),
-        el('div', { class: 'canvas-table-scroll' }, el('table', { class: 'canvas-table canvas-source-table' }, tableHead(['Canvas course', 'Students', 'Status', 'Actions']), el('tbody', {}, ...rows))),
-        el('div', { class: 'canvas-panel-footer' }, el('span', { text: `${current.sources.length} sources → 1 FinanceBot course` }), el('span', { text: `${current.students.length} unique students` }))),
-        el('section', { class: 'canvas-setting' }, el('div', {}, el('h2', { text: 'Automatic student enrollment' }), el('p', { text: 'Students join after CWL login when this course is published and within its access dates.' })), auto),
+        el('div', { class: 'canvas-table-scroll' }, el('table', { class: 'canvas-table canvas-source-table' }, tableHead(['Canvas course', 'People', 'Status', 'Actions']), el('tbody', {}, ...rows))),
+        el('div', { class: 'canvas-panel-footer' }, el('span', { text: `${current.sources.length} sources → 1 FinanceBot course` }), el('span', { text: `${peopleOf(current).length} unique people` }))),
+        el('section', { class: 'canvas-setting' }, el('div', {}, el('h2', { text: 'Automatic course access' }), el('p', { text: 'Eligible Canvas roles are applied after CWL login. Students need a published course within its access dates.' })), auto),
         el('p', { class: 'canvas-inline-note', text: 'Students are matched by verified CWL identity. Switching between linked sections keeps their progress in this FinanceBot course.' }));
     }
-    function renderStudents(current: CanvasLink): void {
-      const search = el('input', { class: 'canvas-search', type: 'search', placeholder: 'Search name or Canvas ID…', 'aria-label': 'Search students' });
+    function peopleOf(current: CanvasLink): CanvasPerson[] {
+      return current.people ?? current.students.map(s => ({ ...s, roles: ['Student'], states: ['active'], isSelf: false }));
+    }
+    function renderPeople(current: CanvasLink): void {
+      const search = el('input', { class: 'canvas-search', type: 'search', placeholder: 'Search name or Canvas ID…', 'aria-label': 'Search people' });
+      const people = peopleOf(current);
+      const roleFilter = el('select', { 'aria-label': 'Filter by Canvas role' }, el('option', { value: '', text: 'All roles' }), ...[...new Set(people.flatMap(p => p.roles))].sort().map(role => el('option', { value: role, text: role })));
       const rows = el('tbody'); const count = el('span', { role: 'status', 'aria-live': 'polite' });
       let page = 1;
       let pageSize = 20;
-      const size = el('select', { 'aria-label': 'Students per page' }, ...[10, 20, 50].map(n => el('option', { value: String(n), text: String(n) })));
+      const size = el('select', { 'aria-label': 'People per page' }, ...[10, 20, 50].map(n => el('option', { value: String(n), text: String(n) })));
       size.value = String(pageSize);
       const pageLabel = el('span', { class: 'canvas-page-label' });
       const previous = button('Previous', () => { page--; draw(); });
       const next = button('Next', () => { page++; draw(); });
-      const pagination = el('nav', { class: 'canvas-pagination', 'aria-label': 'Student pages' },
+      const pagination = el('nav', { class: 'canvas-pagination', 'aria-label': 'People pages' },
         field('Per page', size), previous, pageLabel, next);
       size.addEventListener('change', () => { pageSize = Number(size.value); page = 1; draw(); });
       const draw = (): void => {
         const q = search.value.trim().toLowerCase();
-        const visible = current.students.filter(s => `${s.name} ${s.canvasUserId}`.toLowerCase().includes(q));
+        const visible = people.filter(s => `${s.name} ${s.canvasUserId}`.toLowerCase().includes(q) && (!roleFilter.value || s.roles.includes(roleFilter.value)));
         const pages = Math.max(1, Math.ceil(visible.length / pageSize));
         page = Math.max(1, Math.min(page, pages));
         const start = (page - 1) * pageSize;
-        rows.replaceChildren(...visible.slice(start, start + pageSize).map(s => el('tr', {}, el('td', { text: s.name }),
+        rows.replaceChildren(...visible.slice(start, start + pageSize).map(s => el('tr', {}, el('td', {}, el('strong', { text: s.name }), s.isSelf && el('span', { class: 'canvas-badge', text: 'You' })),
+          el('td', { text: s.roles.join(', ') }), el('td', { text: s.states.join(', ') }),
           el('td', {}, el('span', { text: current.sources.filter(source => s.sourceIds.includes(source.id)).map(source => source.code || source.name).join(', ') })),
           el('td', { class: 'canvas-hide-small canvas-identity', text: `#${s.canvasUserId} / ${s.identity}` }),
-          el('td', {}, el('span', { class: s.status === 'CWL account matched' ? 'canvas-matched' : 'canvas-sub', text: s.status === 'CWL account matched' ? 'Matched' : 'Awaiting CWL login', title: s.status })))));
-        if (!visible.length) rows.append(el('tr', {}, el('td', { colspan: '4', class: 'canvas-sub', text: q ? 'No matching students.' : 'No active students in the linked Canvas courses.' })));
-        count.textContent = visible.length ? `${start + 1}–${Math.min(start + pageSize, visible.length)} of ${visible.length} students` : '0 students';
+          el('td', {}, el('span', { class: s.status === 'CWL account matched' ? 'canvas-matched' : 'canvas-sub', text: s.status === 'CWL account matched' ? 'Matched' : s.status === 'Login ID unavailable' ? 'Unavailable' : 'Awaiting CWL login', title: s.status })))));
+        if (!visible.length) rows.append(el('tr', {}, el('td', { colspan: '6', class: 'canvas-sub', text: q || roleFilter.value ? 'No matching people.' : 'No active or invited members in the linked Canvas courses.' })));
+        count.textContent = visible.length ? `${start + 1}–${Math.min(start + pageSize, visible.length)} of ${visible.length} people` : '0 people';
         pageLabel.textContent = `${page} / ${pages}`;
         previous.disabled = page === 1;
         next.disabled = page === pages;
       };
       search.addEventListener('input', () => { page = 1; draw(); });
-      panel.replaceChildren(el('section', { class: 'canvas-panel' }, el('div', { class: 'canvas-panel-head' }, el('div', {}, el('h2', { text: `Course students · ${current.students.length}` }),
-        el('p', { text: 'Current enrollment from your linked Canvas courses.' })), search),
-        el('div', { class: 'canvas-table-scroll' }, el('table', { class: 'canvas-table canvas-student-table' }, tableHead(['Student', 'Source course', 'Canvas ID / PUID suffix', 'CWL identity']), rows)),
+      roleFilter.addEventListener('change', () => { page = 1; draw(); });
+      panel.replaceChildren(el('section', { class: 'canvas-panel' }, el('div', { class: 'canvas-panel-head' }, el('div', {}, el('h2', { text: `Course people · ${people.length}` }),
+        el('p', { text: 'Students, instructors, TAs and other Canvas members, including you.' })), el('div', { class: 'canvas-actions' }, roleFilter, search)),
+        el('div', { class: 'canvas-table-scroll' }, el('table', { class: 'canvas-table canvas-student-table' }, tableHead(['Person', 'Canvas role', 'Enrollment', 'Source course', 'Canvas ID / PUID suffix', 'CWL identity']), rows)),
         el('div', { class: 'canvas-panel-footer canvas-roster-footer' }, count, pagination)),
-        el('p', { class: 'canvas-inline-note', text: 'Names are display labels, not identity keys.' }));
+        el('p', { class: 'canvas-inline-note', text: current.people ? 'Canvas membership is shown here; displaying a role does not grant FinanceBot permissions.' : 'This snapshot contains students only. Sync to load all Canvas roles.' }));
       draw();
     }
     async function renderMaterials(): Promise<void> {
@@ -343,8 +354,8 @@ export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Pr
       if (!root.isConnected) return;
       tabButtons.forEach(b => {
         const key = b.dataset.tab as Tab; b.setAttribute('aria-selected', String(key === tab)); b.tabIndex = key === tab ? 0 : -1;
-        b.replaceChildren(key === 'courses' ? 'Course links' : key === 'students' ? 'Students' : 'Materials');
-        if (key !== 'materials') b.append(el('span', { class: 'canvas-count', text: String(key === 'courses' ? link?.sources.length ?? 0 : link?.students.length ?? 0) }));
+        b.replaceChildren(key === 'courses' ? 'Course links' : key === 'people' ? 'People' : 'Materials');
+        if (key !== 'materials') b.append(el('span', { class: 'canvas-count', text: String(key === 'courses' ? link?.sources.length ?? 0 : (link ? peopleOf(link).length : 0)) }));
       });
       panel.setAttribute('aria-labelledby', `canvas-tab-${tab}`);
       syncTime.textContent = link?.syncedAt ? `Synced ${new Date(link.syncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not synchronized';
@@ -354,7 +365,7 @@ export async function renderCanvas(outlet: HTMLElement, params: RouteParams): Pr
       if (!courseId) panel.replaceChildren(empty('Choose your FinanceBot course', 'Select an existing course above, or create a new draft to connect to Canvas.'));
       else if (!link) panel.replaceChildren(empty('Link this course to Canvas', 'Choose one or more Canvas courses or sections for this FinanceBot course.', editButton('Choose Canvas courses')));
       else if (tab === 'courses') renderLinks(link);
-      else if (tab === 'students') renderStudents(link);
+      else if (tab === 'people') renderPeople(link);
       else void renderMaterials();
       updateControls();
     }

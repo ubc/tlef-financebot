@@ -3209,7 +3209,12 @@ export const reproduceAdminQuestion = (id: string, input: { versionId?: string; 
 // Canvas connection and many-to-one course linking.
 export interface CanvasSource { id: string; name: string; code: string; }
 export interface CanvasConnection { configured: boolean; connected: boolean; domain: string; canvasUserId?: string; }
+export interface CanvasPerson {
+  canvasUserId: string; name: string; sourceIds: string[]; identity: string; status: string;
+  roles: string[]; states: string[]; isSelf: boolean;
+}
 export interface CanvasLink {
+  people?: CanvasPerson[];
   revision: string; sources: CanvasSource[]; syncedAt?: string; validUntil?: string; syncError?: string; autoEnroll: boolean;
   students: Array<{ canvasUserId: string; name: string; sourceIds: string[]; identity: string; status: string }>;
 }

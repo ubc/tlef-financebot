@@ -13,12 +13,15 @@ course. Existing FinanceBot courses can be linked. New courses remain drafts.
   origin + CWL PUID. Browser responses never expose tokens.
 - Course choices come from active Canvas teacher enrollments. Course routes also
   require FinanceBot instructor access; Canvas affiliation grants no platform role.
-- Atomic course roster snapshots union active students across linked course IDs.
+- Atomic course roster snapshots union active students, teachers and TAs across linked course IDs.
   Same PUID + Canvas user deduplicates; conflicting identities or missing PUIDs
   reject the snapshot. Names, email, Canvas numeric IDs and student numbers never
   substitute for the authenticated CWL PUID.
-- CWL login/session deserialization projects Canvas student roles from fresh
-  snapshots for published, nonarchived courses inside their access dates. These
+- CWL login/session deserialization projects course Student/Instructor/TA roles
+  from fresh login-id-v1 snapshots. Student access requires publication and term
+  start. Teaching access permits draft preparation; all access excludes archived
+  or expired courses. Only active enrollments for the source course count; custom
+  and section-limited teaching roles are excluded. No platform role is granted. These
   roles are not written into manual courseRoles; unlink/drop cannot erase manual
   access or student learning history. Sync is every five minutes, freshness bound
   thirty minutes. A failure retains the last roster and records a visible error;
@@ -30,9 +33,9 @@ course. Existing FinanceBot courses can be linked. New courses remain drafts.
 ## Deployment
 Configure CANVAS_DOMAIN, CANVAS_CLIENT_ID, CANVAS_CLIENT_SECRET,
 CANVAS_REDIRECT_URI, CANVAS_TOKEN_KEY. Callback is `/api/canvas/callback`.
-Production requires HTTPS. Register the six read-only scopes in
+Production requires HTTPS. Register the seven read-only scopes in
 `server/src/components/canvas/index.ts`. Canvas must allow the connecting teacher
-to read SIS identity data (`integration_id`). Verify with UBC that it is the same
+to read SIS identity data (`login_id`). This deployment uses it as the same
 PUID released to this SAML service; local fixture success does not establish that
 production permission or identifier contract. Students missing identifiers must
 be resolved upstream; do not match names.
@@ -68,3 +71,33 @@ The generated standalone report is `audit-results/canvas-integration/presentatio
 subfolder; parent test artifacts contain private browser storage state.
 Staging/production deployment and the real UBC identity/permission contract remain
 unverified. Local services and dedicated test courses are left running for review.
+
+## Login ID and role update — 2026-09-29
+
+Identity is now exact login_id = SAML ubcEduCwlPuid, confirmed by Stephen for this
+deployment. integration_id is never a fallback. Old snapshots must resync before
+use. autoEnroll controls all derived course roles; manual assignments remain.
+Historical local evidence earlier in this document predates this update: its fixtures used
+integration_id and must be migrated to matching login_id before rerunning.
+Add `url:GET|/api/v1/courses/:course_id/enrollments` to the Developer Key and
+reconnect existing accounts to consent to the expanded read-only scopes. Course
+users requests include enrollments; when Canvas omits that metadata, the toolkit
+paginated enrollment endpoint supplies explicit user/course/type/state records.
+A failed or incomplete fallback aborts the snapshot.
+
+### Verification for this update
+
+- 47 focused tests passed: Canvas component/service/routes, users and capabilities.
+  Includes real HTTP course guards for projected Teacher/TA/Student roles,
+  role changes, manual-role preservation, identity conflicts, no platform grants,
+  and missing/denied enrollment metadata.
+- Server/client typecheck and lint of changed TypeScript files passed.
+  Whole-repository lint still reports existing prototype/script errors.
+- Read-only real local Canvas check: 13 Login IDs, 12 StudentEnrollment and one
+  TeacherEnrollment. The existing OAuth token omitted included enrollment data
+  and returned 401 for the dedicated endpoint. A temporary token scoped to the
+  users and enrollments reads returned complete metadata from both endpoints.
+  The temporary token was revoked and its credential files deleted afterward.
+- This validates real API compatibility, not a new end-to-end CWL enrollment run.
+  Staging and production have not been tested with this update; enable the extra
+  scope, deploy, reconnect, synchronize and verify each role using test accounts.

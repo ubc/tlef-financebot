@@ -135,6 +135,7 @@ const ROUTES: Route[] = [
 // (Tasks B-G) are now wired — no placeholder routes remain.
 const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/canvas', render: renderCanvas },
+  { path: '/instructor/canvas/:id', render: renderCanvas },
   { path: '/instructor/course/:id/canvas', render: renderCanvas },
   { path: '/instructor/help', render: renderTutorialHelp },
   { path: '/admin/operations', render: renderAdminOperations },
@@ -593,7 +594,7 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
         ? 'Platform administration'
         : path === '/instructor/courses/new'
           ? 'Create course project'
-          : anonymousInstructorPreview ? 'Instructor preview' : 'Course projects';
+          : path.startsWith('/instructor/canvas') ? 'Canvas connection' : anonymousInstructorPreview ? 'Instructor preview' : 'Course projects';
       return;
     }
     courseContext.hidden = false;

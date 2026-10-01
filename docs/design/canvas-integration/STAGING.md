@@ -13,6 +13,7 @@
 ```
 url:GET|/api/v1/courses
 url:GET|/api/v1/courses/:course_id/users
+url:GET|/api/v1/courses/:course_id/enrollments
 url:GET|/api/v1/courses/:course_id/sections
 url:GET|/api/v1/courses/:course_id/files
 url:GET|/api/v1/courses/:course_id/files/:id
@@ -44,7 +45,7 @@ normally and Canvas connection reports that configuration is required.
    connecting instructor enrolled as an active Teacher in both. No live classes.
 2. Twenty authorized test identities: ten active students in each section, one
    section per student. Include two distinct identities with the same display name.
-3. Confirm the teacher's scoped API response exposes each student's `integration_id`
+3. Confirm the teacher's scoped API response exposes each student's `login_id`
    and verify that this value equals the PUID released to FinanceBot's staging CWL
    SAML service. Neither a Canvas numeric ID, name, student number nor arbitrary
    locally invented PUID establishes this mapping.

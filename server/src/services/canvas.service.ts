@@ -2,6 +2,8 @@ import type { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { projectCanvasEnrollment } from './canvas-enrollment.service';
+import type { CourseRole } from '../types/domain';
 import type { LmsRosterUser } from '@ubc/ubc-genai-toolkit-lms-integration';
 import { canvas, canvasApi, canvasEnabled, tokenStore } from '../components/canvas';
 import { getDb } from '../components/mongodb';
@@ -16,10 +18,16 @@ export class CanvasError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 interface Source { id: string; name: string; code: string; }
-interface Member { puid: string; canvasUserId: string; name: string; sourceIds: string[]; }
+interface Member { puid: string; canvasUserId: string; name: string; sourceIds: string[];
+  grants: Array<{ sourceId: string; role: CourseRole }>;
+}
+interface CanvasPerson {
+  canvasUserId: string; name: string; puid?: string; sourceIds: string[];
+  roles: string[]; states: string[];
+}
 interface CanvasLink {
   _id: ObjectId; domain: string; connectionPuid: string; sources: Source[];
-  revision: string; members: Member[]; syncedAt?: Date; validUntil?: Date;
+  identityVersion?: 'login-id-v1'; revision: string; people?: CanvasPerson[]; members: Member[]; syncedAt?: Date; validUntil?: Date;
   syncError?: string; autoEnroll: boolean;
 }
 export const canvasLinks = () => getDb().collection<CanvasLink>('canvasLinks');
@@ -38,40 +46,97 @@ export async function validateCanvasSources(puid: string, ids: string[]): Promis
   return selected as Source[];
 }
 
+/** Use the base enrollment type, never a display name, to determine access. */
+function activeRoles(user: LmsRosterUser, sourceId: string): CourseRole[] {
+  const raw = user.raw as { enrollments?: Array<{ course_id?: unknown; type?: string; role?: string;
+    enrollment_state?: string; limit_privileges_to_course_section?: boolean }> };
+  if (!Array.isArray(raw?.enrollments)) throw new CanvasError('Canvas did not release enrollment roles. The previous roster was retained.');
+  const mapped: Record<string, CourseRole> = { StudentEnrollment: 'student', TeacherEnrollment: 'instructor', TaEnrollment: 'ta' };
+  return [...new Set(raw.enrollments.flatMap(e => {
+    if (String(e.course_id) !== sourceId || e.enrollment_state !== 'active') return [];
+    const role = Object.hasOwn(mapped, e.type ?? '') ? mapped[e.type ?? ''] : undefined;
+    // FinanceBot teaching permissions span the whole merged course. Do not widen
+    // section-limited or custom teaching roles whose permissions we cannot mirror.
+    if (!role || (role !== 'student' && (e.limit_privileges_to_course_section || (e.role && e.role !== e.type)))) return [];
+    return [role];
+  }))];
+}
+
 /** Exact, opaque PUIDs. Names/emails/student numbers never grant access. */
 export function mergeCanvasRosters(sources: Array<{ id: string; users: LmsRosterUser[] }>): Member[] {
   const members = new Map<string, Member>();
   const canvasIds = new Map<string, string>();
   for (const source of sources) for (const user of source.users) {
-    const puid = user.integrationId?.trim();
-    if (!puid) throw new CanvasError('Canvas did not release a PUID for every student. Check SIS-data permissions; the previous roster was retained.');
+    const roles = activeRoles(user, source.id);
+    if (!roles.length) continue;
+    const puid = user.loginId?.trim();
+    if (!puid) throw new CanvasError('Canvas did not release a Login ID for every supported member. Check SIS-data permissions; the previous roster was retained.');
     const existing = members.get(puid);
     if ((existing && existing.canvasUserId !== user.id) || (canvasIds.has(user.id) && canvasIds.get(user.id) !== puid)) {
       throw new CanvasError('Canvas contains conflicting identity records. Resolve them before synchronizing; the previous roster was retained.');
     }
     canvasIds.set(user.id, puid);
-    if (existing) { if (!existing.sourceIds.includes(source.id)) existing.sourceIds.push(source.id); }
-    else members.set(puid, { puid, canvasUserId: user.id, name: user.name, sourceIds: [source.id] });
+    if (existing) {
+      if (!existing.sourceIds.includes(source.id)) existing.sourceIds.push(source.id);
+      for (const role of roles) if (!existing.grants.some(g => g.sourceId === source.id && g.role === role)) existing.grants.push({ sourceId: source.id, role });
+    } else members.set(puid, { puid, canvasUserId: user.id, name: user.name, sourceIds: [source.id], grants: roles.map(role => ({ sourceId: source.id, role })) });
   }
-  if (members.size > 5000) throw new CanvasError('The linked roster exceeds the 5,000-student limit.');
+  if (members.size > 5000) throw new CanvasError('The linked roster exceeds the 5,000-member limit.');
   return [...members.values()];
 }
-async function readRoster(puid: string, sources: Source[]): Promise<Member[]> {
+/** Display membership is separate from authorization, including restricted and observer roles. */
+export function mergeCanvasPeople(sources: Array<{ id: string; users: LmsRosterUser[] }>): CanvasPerson[] {
+  const people = new Map<string, CanvasPerson>();
+  const labels: Record<string, string> = { TeacherEnrollment: 'Instructor', TaEnrollment: 'TA', StudentEnrollment: 'Student', ObserverEnrollment: 'Observer', DesignerEnrollment: 'Designer' };
+  for (const source of sources) for (const user of source.users) {
+    const enrollments = (user.raw as { enrollments?: Array<{ course_id?: unknown; type?: string; role?: string; enrollment_state?: string }> }).enrollments ?? [];
+    const current = enrollments.filter(e => String(e.course_id) === source.id && ['active', 'invited'].includes(e.enrollment_state ?? ''));
+    if (!current.length) continue;
+    const person = people.get(user.id) ?? { canvasUserId: user.id, name: user.name, puid: user.loginId?.trim(), sourceIds: [], roles: [], states: [] };
+    if (!person.sourceIds.includes(source.id)) person.sourceIds.push(source.id);
+    for (const e of current) {
+      const label = e.role && e.role !== e.type ? e.role : labels[e.type ?? ''] ?? 'Other';
+      if (!person.roles.includes(label)) person.roles.push(label);
+      if (!person.states.includes(e.enrollment_state!)) person.states.push(e.enrollment_state!);
+    }
+    people.set(user.id, person);
+  }
+  if (people.size > 5000) throw new CanvasError('The linked roster exceeds the 5,000-member limit.');
+  return [...people.values()];
+}
+async function readRoster(puid: string, sources: Source[]): Promise<{ members: Member[]; people: CanvasPerson[] }> {
   const api = await canvasApi(puid);
   const rosters = [];
   for (const source of sources) {
-    const users = await canvas.getCourseUsers(api, source.id, { enrollmentTypes: ['student'], enrollmentStates: ['active'] });
+    let users = await canvas.getCourseUsers(api, source.id, { enrollmentTypes: ['student', 'teacher', 'ta', 'observer', 'designer'], enrollmentStates: ['active', 'invited'], include: ['enrollments'] });
+    if (users.some(user => !Array.isArray((user.raw as { enrollments?: unknown })?.enrollments))) {
+      // Some Canvas deployments omit include[]=enrollments from course users.
+      // Use the authoritative enrollment endpoint rather than guessing from names.
+      type Enrollment = { user_id: number; course_id: number; type: string; enrollment_state: string };
+      let enrollments: Enrollment[];
+      try {
+        enrollments = await api.getAll<Enrollment>(`/courses/${encodeURIComponent(source.id)}/enrollments`, {
+          state: ['active', 'invited'], type: ['StudentEnrollment', 'TeacherEnrollment', 'TaEnrollment', 'ObserverEnrollment', 'DesignerEnrollment'],
+        });
+      } catch {
+        throw new CanvasError('Canvas did not release enrollment roles. Enable the GET /api/v1/courses/:course_id/enrollments Developer Key scope and reconnect. The previous roster was retained.');
+      }
+      if (enrollments.some(e => !e.user_id || !e.course_id || !e.type || !e.enrollment_state)) {
+        throw new CanvasError('Canvas returned incomplete enrollment roles. The previous roster was retained.');
+      }
+      users = users.map(user => ({ ...user, raw: { ...(user.raw as object), enrollments: enrollments.filter(e => String(e.user_id) === user.id && String(e.course_id) === source.id) } }));
+    }
     rosters.push({ id: source.id, users });
   }
-  return mergeCanvasRosters(rosters);
+  return { members: mergeCanvasRosters(rosters), people: mergeCanvasPeople(rosters) };
 }
 export async function saveCanvasLink(courseId: ObjectId, puid: string, ids: string[], revision: string | null, autoEnroll: boolean): Promise<void> {
   const course = await coursesCol().findOne({ _id: courseId });
   if (!course || course.lifecycle === 'archived') throw new CanvasError('Select a non-archived FinanceBot course.');
   const sources = await validateCanvasSources(puid, ids);
-  const members = await readRoster(puid, sources);
+  const { members, people } = await readRoster(puid, sources);
   const now = new Date();
-  const value = { domain: env.canvasDomain, connectionPuid: puid, sources, members, revision: randomUUID(), syncedAt: now,
+  const value = { identityVersion: 'login-id-v1' as const, domain: env.canvasDomain, connectionPuid: puid, sources, members, people, revision: randomUUID(), syncedAt: now,
     validUntil: new Date(now.getTime() + FRESHNESS_MS), autoEnroll, syncError: '' };
   try {
     if (revision === null) await canvasLinks().insertOne({ _id: courseId, ...value });
@@ -89,15 +154,15 @@ export async function syncCanvasLink(courseId: ObjectId): Promise<void> {
   if (!link) throw new CanvasError('No Canvas courses linked.', 404);
   try {
     const stored = await usersCol().findOne({ puid: link.connectionPuid });
-    const manager = stored && !stored.deactivatedAt ? (await projectCourseInstructorShares([stored]))[0] : null;
+    const manager = stored && !stored.deactivatedAt ? await projectCanvasEnrollment((await projectCourseInstructorShares([stored]))[0]) : null;
     if (!manager || (!manager.isAdmin && !manager.courseRoles.some(r => r.role === 'instructor' && r.courseId.equals(courseId)))) {
       await canvasLinks().updateOne({ _id: courseId, revision: link.revision }, { $unset: { validUntil: '' } });
       throw new CanvasError('The connected instructor no longer manages this FinanceBot course. Relink with an authorized instructor.');
     }
     await validateCanvasSources(link.connectionPuid, link.sources.map(s => s.id));
-    const members = await readRoster(link.connectionPuid, link.sources);
+    const { members, people } = await readRoster(link.connectionPuid, link.sources);
     const now = new Date();
-    await canvasLinks().updateOne({ _id: courseId, revision: link.revision }, { $set: { members, syncedAt: now,
+    await canvasLinks().updateOne({ _id: courseId, revision: link.revision }, { $set: { identityVersion: 'login-id-v1', members, people, syncedAt: now,
       validUntil: new Date(now.getTime() + FRESHNESS_MS), syncError: '', revision: randomUUID() } });
   } catch (error) {
     const message = error instanceof CanvasError ? error.message : 'Canvas could not be read. Reconnect or check Canvas permissions, then retry. The previous roster was retained.';
@@ -107,14 +172,18 @@ export async function syncCanvasLink(courseId: ObjectId): Promise<void> {
 }
 
 export { projectCanvasEnrollment } from './canvas-enrollment.service';
-export async function canvasLinkStatus(courseId: ObjectId) {
+export async function canvasLinkStatus(courseId: ObjectId, viewerPuid?: string) {
   const link = await canvasLinks().findOne({ _id: courseId, domain: env.canvasDomain });
   if (!link) return null;
-  const users = await usersCol().find({ puid: { $in: link.members.map(m => m.puid) } }, { projection: { puid: 1, deactivatedAt: 1 } }).toArray();
+  const users = await usersCol().find({ puid: { $in: [...link.members.map(m => m.puid), ...(link.people ?? []).flatMap(p => p.puid ? [p.puid] : [])] } }, { projection: { puid: 1, deactivatedAt: 1 } }).toArray();
   const known = new Set(users.filter(u => !u.deactivatedAt).map(u => u.puid));
-  return { revision: link.revision, sources: link.sources, syncedAt: link.syncedAt, validUntil: link.validUntil,
+  const people = link.people?.map(p => ({ canvasUserId: p.canvasUserId, name: p.name, sourceIds: p.sourceIds,
+    roles: p.roles, states: p.states, isSelf: Boolean(viewerPuid && p.puid === viewerPuid),
+    identity: p.puid ? `…${p.puid.slice(-4)}` : 'Unavailable',
+    status: !p.puid ? 'Login ID unavailable' : known.has(p.puid) ? 'CWL account matched' : 'Awaiting first CWL login' }));
+  return { people, revision: link.revision, sources: link.sources, syncedAt: link.syncedAt, validUntil: link.validUntil,
     syncError: link.syncError, autoEnroll: link.autoEnroll,
-    students: link.members.map(m => ({ canvasUserId: m.canvasUserId, name: m.name, sourceIds: m.sourceIds,
+    students: link.members.filter(m => m.grants?.some(g => g.role === 'student')).map(m => ({ canvasUserId: m.canvasUserId, name: m.name, sourceIds: m.sourceIds,
       identity: `…${m.puid.slice(-4)}`, status: known.has(m.puid) ? 'CWL account matched' : 'Awaiting first CWL login' })) };
 }
 export async function unlinkCanvas(courseId: ObjectId, revision: string): Promise<void> {

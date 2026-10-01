@@ -32,7 +32,7 @@ canvasRouter.get('/canvas/status', teacher, async (req, res) => {
 });
 canvasRouter.post('/canvas/connect', teacher, async (req, res) => {
   if (!canvasEnabled()) throw new CanvasError('Canvas has not been configured on this server.', 503);
-  const returnTo = typeof req.body.returnTo === 'string' && /^\/#\/instructor\/(?:canvas|course\/[a-f0-9]{24}\/canvas)$/.test(req.body.returnTo)
+  const returnTo = typeof req.body.returnTo === 'string' && /^\/#\/instructor\/(?:canvas(?:\/[a-f0-9]{24})?|course\/[a-f0-9]{24}\/canvas)$/.test(req.body.returnTo)
     ? req.body.returnTo : '/#/instructor/canvas';
   const state = randomBytes(32).toString('hex');
   req.session.financeCanvasOAuth = { state, puid: req.user!.puid, expires: Date.now() + 10 * 60000, returnTo };
@@ -59,7 +59,7 @@ canvasRouter.post('/canvas/disconnect', teacher, async (req, res) => { await dis
 canvasRouter.get('/canvas/courses', teacher, async (req, res) => { res.json(await listCanvasCourses(req.user!.puid)); });
 const params = z.object({ courseId: z.string().regex(/^[a-f\d]{24}$/i) });
 canvasRouter.use('/courses/:courseId/canvas', validate({ params }), ensureCourseInstructor());
-canvasRouter.get('/courses/:courseId/canvas', async (req, res) => { res.json(await canvasLinkStatus(new ObjectId(String(req.params.courseId)))); });
+canvasRouter.get('/courses/:courseId/canvas', async (req, res) => { res.json(await canvasLinkStatus(new ObjectId(String(req.params.courseId)), req.user!.puid)); });
 canvasRouter.put('/courses/:courseId/canvas', validate({ body: z.object({ sourceIds: z.array(z.string().regex(/^\d+$/)).min(1).max(20), revision: z.string().nullable(), autoEnroll: z.boolean() }) }), async (req, res) => {
   await saveCanvasLink(new ObjectId(String(req.params.courseId)), req.user!.puid, req.body.sourceIds, req.body.revision, req.body.autoEnroll); res.sendStatus(204);
 });

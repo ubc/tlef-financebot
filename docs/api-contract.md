@@ -931,11 +931,42 @@ OAuth uses the read-only UBC LMS toolkit scopes; tokens are never returned.
 
 One Canvas course can be linked to one FinanceBot course; one FinanceBot course
 can combine up to 20 Canvas courses. Entire Canvas course rosters include their
-native sections. Only active student enrollments participate. The roster is
-unioned by exact PUID and consistent Canvas user ID; missing/conflicting PUIDs
+native sections. Active StudentEnrollment, TeacherEnrollment and TaEnrollment
+map to course student, instructor and ta roles. Observer, Designer, unknown,
+custom teaching roles and section-limited teaching enrollments grant nothing.
+Enrollment course_id must match the source course; invited/inactive/completed
+memberships grant nothing. The roster is unioned by exact Canvas login_id
+(matched to authenticated CWL ubcEduCwlPuid) and consistent Canvas user ID;
+missing/conflicting Login IDs
 abort the refresh. Source changes use revision CAS; collisions return 409.
 Snapshots refresh every five minutes and grant access for at most thirty minutes
-without a successful refresh. CWL session projection grants only published,
-nonarchived courses within term dates and never persists Canvas grants into
-manual User.courseRoles. Importing the same Canvas file version is idempotent;
+without a successful refresh. identityVersion=login-id-v1 is required: old
+integration_id snapshots grant nothing until successfully refreshed. autoEnroll
+controls all Canvas-derived roles. CWL session projection excludes archived and
+expired courses. Students additionally require publication and term start;
+teaching roles can prepare draft/future courses. No platformInstructor or Admin
+permission is inferred. Canvas grants never persist into manual User.courseRoles.
+Every session reload recomputes grants, preserving independently assigned roles.
+The existing students response contains only members with a student grant. Importing the same Canvas file version is idempotent;
 changed versions create separate materials with `canvasSource` provenance.
+
+Canvas role synchronization also requires the read-only Developer Key scope
+`url:GET|/api/v1/courses/:course_id/enrollments`. Existing connections must reconnect
+after the administrator enables it. This endpoint is the fallback if course users
+omit enrollment metadata; unreadable/incomplete data aborts the snapshot.
+
+### Canvas People workspace (2026-10-01)
+
+`GET /api/courses/:courseId/canvas` adds optional `people` containing Canvas user
+ID, name, source IDs, Canvas role labels, enrollment states, masked identity,
+match status and `isSelf` derived from the authenticated viewer. Full Login IDs
+are not returned. `students` remains for compatibility. Older snapshots omit
+`people`; the UI requests a sync rather than implying all roles were loaded.
+Snapshots read active and invited students, teachers, TAs, observers and designers.
+Display members deduplicate by Canvas ID; restricted/custom roles and identities
+without Login IDs can be displayed without granting FinanceBot permissions.
+Only the existing active, exact-identity authorization rules produce grants.
+
+The global instructor workspace is `#/instructor/canvas`, with a selected course
+at `#/instructor/canvas/:id`. Legacy course Canvas URLs redirect there. All API
+reads and writes retain course-scoped Instructor guards. Course cards are unchanged.

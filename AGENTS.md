@@ -18,6 +18,10 @@ commonly need:
 
 ## Current state
 
+- Canvas uses exact Login ID/PUID matching and versioned course-role snapshots.
+  The global Canvas workspace shows all active/invited role types in People,
+  with self markers, role filters and pagination. Display never grants access.
+
 - MongoDB (`server/src/components/mongodb`) is implemented and connected at
   startup; `GET /api/health` reports its status. It is the reference example of
   a built-up component. A small "notes" example (service + route + client page)

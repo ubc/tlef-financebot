@@ -9,6 +9,7 @@ export const canvasConfig = () => ({ canvasDomain: env.canvasDomain, clientId: e
 export const CANVAS_SCOPES = [
   'url:GET|/api/v1/courses',
   'url:GET|/api/v1/courses/:course_id/users',
+  'url:GET|/api/v1/courses/:course_id/enrollments',
   'url:GET|/api/v1/courses/:course_id/sections',
   'url:GET|/api/v1/courses/:course_id/files',
   'url:GET|/api/v1/courses/:course_id/files/:id',

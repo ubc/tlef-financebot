@@ -160,3 +160,9 @@ Mongo revision CAS merges Yjs updates across processes. Explicit commits validat
 content, create immutable Pending Review versions, and journal the commit id on
 the version so interrupted head/draft updates can recover without duplicate
 versions. Normal question editing requires version pins and tag snapshots.
+
+Canvas services use exact login_id/PUID identity and fresh versioned snapshots.
+Active Student/Instructor/TA grants are session-only and never grant platform
+access. Display-only People includes active/invited and restricted/custom roles.
+People never feeds authorization; API identities are masked and isSelf is
+derived from the authenticated requester. Older snapshots require a refresh.

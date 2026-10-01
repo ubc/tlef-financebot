@@ -34,6 +34,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   {
     label: '',
     items: [{ label: 'My Courses', path: '/instructor/courses', glyph: '▦' },
+      { label: 'Canvas connection', path: '/instructor/canvas', glyph: '↗' },
       { label: 'Help & Tutorials', path: '/instructor/help', glyph: '?' }],
   },
   {
@@ -62,7 +63,6 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Exam Templates', path: '/instructor/course/:id/exam-templates', glyph: '▤' },
       { label: 'Teaching Assistants', path: '/instructor/course/:id/tas', glyph: '♙' },
       { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙' },
-      { label: 'Canvas connection', path: '/instructor/course/:id/canvas', glyph: '↗' },
       { label: 'Co-instructors', path: '/instructor/course/:id/co-instructors', glyph: '+' },
     ],
   },
@@ -98,5 +98,6 @@ export function resolveHref(item: InstructorNavItem, courseId: string | null): s
 /** Whether `item` is the active nav entry for the current hash `path`. */
 export function isNavItemActive(item: InstructorNavItem, path: string): boolean {
   if (item.disabled || !item.path) return false;
+  if (item.path === '/instructor/canvas') return path === item.path || path.startsWith(`${item.path}/`);
   return matchRoute(item.path, path) !== null;
 }

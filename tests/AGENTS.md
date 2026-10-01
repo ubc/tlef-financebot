@@ -209,3 +209,8 @@ email or provider generation occurs. `question-collaboration.service/routes` uni
 tests cover durable CAS, replay, interrupted-save recovery, schema retention,
 state races and revoked/transient SSE behavior. `playwright.course-sharing.config.ts`
 uses intercepted APIs for dialog/page sharing. `playwright.question-edit-concurrency.config.ts` covers legacy editor conflicts and draft-schema export.
+
+`playwright.canvas-workspace.config.ts` tests the production Canvas renderer and
+full Instructor shell with intercepted APIs: all-role People, self marker, search,
+role filter, pagination, legacy redirects, global course switching, mobile dark
+layout and desktop axe scans. It does not mutate real Canvas/staging data.

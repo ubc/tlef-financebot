@@ -222,3 +222,8 @@ Students / Materials tabs. Course selection remains multi-select in a native dia
 The roster searches before paginating (20 rows by default; 10/20/50 options), resets
 to page one on search/page-size changes, and exposes range and disabled edge controls.
 Canvas material import statuses derive from persisted source/version provenance.
+
+Canvas connection is a top-level Instructor nav item (`/instructor/canvas/:id`
+selects a FinanceBot course without activating the course shell). Legacy course
+URLs redirect. People includes Canvas role/state, a server-derived You marker,
+role filtering, search and pagination; display membership does not grant roles.
