@@ -1,3 +1,4 @@
+import { projectCoursePeopleAccess } from './course-people-access.service';
 import type { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -154,7 +155,7 @@ export async function syncCanvasLink(courseId: ObjectId): Promise<void> {
   if (!link) throw new CanvasError('No Canvas courses linked.', 404);
   try {
     const stored = await usersCol().findOne({ puid: link.connectionPuid });
-    const manager = stored && !stored.deactivatedAt ? await projectCanvasEnrollment((await projectCourseInstructorShares([stored]))[0]) : null;
+    const manager = stored && !stored.deactivatedAt ? await projectCoursePeopleAccess(await projectCanvasEnrollment((await projectCourseInstructorShares([stored]))[0])) : null;
     if (!manager || (!manager.isAdmin && !manager.courseRoles.some(r => r.role === 'instructor' && r.courseId.equals(courseId)))) {
       await canvasLinks().updateOne({ _id: courseId, revision: link.revision }, { $unset: { validUntil: '' } });
       throw new CanvasError('The connected instructor no longer manages this FinanceBot course. Relink with an authorized instructor.');

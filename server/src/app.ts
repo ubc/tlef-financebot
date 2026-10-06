@@ -1,5 +1,9 @@
+import { coursePeopleRouter } from './routes/course-people.routes';
+
 import { studentLearningRouter } from './routes/student-learning.routes';
 import { canvasRouter } from './routes/canvas.routes';
+import { peopleImportRouter } from './routes/people-import.routes';
+import { examBuilderRouter } from './routes/exam-builder.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
@@ -21,6 +25,7 @@ import { questionsRouter } from './routes/questions.routes';
 import { courseSharingRouter } from './routes/course-sharing.routes';
 import { questionCollaborationRouter } from './routes/question-collaboration.routes';
 import { enrollmentRouter } from './routes/enrollment.routes';
+import { registrationCodesRouter } from './routes/registration-codes.routes';
 import { practiceRouter } from './routes/practice.routes';
 import { reviewBookRouter } from './routes/review-book.routes';
 import { flagsRouter } from './routes/flags.routes';
@@ -87,8 +92,11 @@ export function createApp(): Express {
   app.use('/api', questionsRouter); // Question bank browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08).
   app.use('/api', courseSharingRouter);
   app.use('/api', questionCollaborationRouter);
-  app.use('/api', enrollmentRouter); // Enrollment by code + roster cross-check (ST-E02/E03).
+  app.use('/api', enrollmentRouter); // Authenticated supplemental enrollment.
+  app.use('/api', registrationCodesRouter);
   app.use('/api', canvasRouter); // Canvas OAuth, linked courses, roster sync and file import.
+  app.use('/api', peopleImportRouter);
+  app.use('/api', coursePeopleRouter); // Manual Canvas CSV course-role imports, independent of OAuth.
   app.use('/api', materialsRouter); // Material upload + async RAG ingestion (IN-S04/S05).
   app.use('/api', generationRouter); // Three-agent question generation pipeline + pre-seeding (§9.1, IN-Q10).
   app.use('/api', generationBlueprintsRouter); // Reusable generation blueprints + exact run provenance (P2-I2).
@@ -99,6 +107,7 @@ export function createApp(): Express {
   app.use('/api', adminDiagnosticsRouter);
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
+  app.use('/api', examBuilderRouter);
   app.use('/api', examsRouter); // Exam templates and Exam Prep attempts/results (Phase 3 WS-10).
   app.use('/api', tasRouter); // TA invitations, permissions, review/suggestion/triage workflows (Phase 3 WS-12).
   app.use('/api', analyticsRouter); // Class/engagement/individual analytics (Phase 3 WS-11).

@@ -1,0 +1,2158 @@
+{
+  "schemaVersion": "synthetic-finance-v1",
+  "expectationOrigin": "fixture-authored",
+  "labels": null,
+  "limitations": [
+    "All teaching text and expectations are authored synthetic fixtures. No uploaded course material, teacher judgment, or measured model outcome is represented.",
+    "Concept, task, and support annotations are deterministic test inputs; they do not prove free-text entailment, retrieval quality, mathematical verification, or automated-judge reliability.",
+    "The thin-LO inventory defines this fixture only. It is not an oracle for the absolute number or difficulty of questions a real course can support."
+  ],
+  "cases": [
+    {
+      "caseId": "supported-capm",
+      "category": "source-scope",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [],
+          "rationale": "The allowed original passage explicitly supplies the formula, units, and all necessary concepts."
+        }
+      ]
+    },
+    {
+      "caseId": "excluded-material",
+      "category": "source-scope",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        },
+        {
+          "sourceId": "source-npv",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "npv-rule",
+              "page": 1,
+              "text": "For independent projects with the stated discount rate, NPV is the present value of future cash flows minus the initial investment. Accept a project when NPV is positive.",
+              "supportedConceptIds": [
+                "npv-rule"
+              ],
+              "notation": []
+            }
+          ],
+          "contentHash": "48788f9f4630c371b2cbef35a70053bfb9b237638c7815c634febea2063eed45"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using the NPV rule, should an independent project with NPV = 20 be accepted?",
+            "options": [
+              {
+                "key": "A",
+                "text": "Yes, accept the project.",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "Reject every positive NPV project.",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "Treat NPV as beta.",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "NPV cannot be used for a project decision.",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "Positive NPV implies acceptance under the stated independent-project rule."
+          },
+          "dependencyConceptIds": [
+            "npv-rule"
+          ],
+          "evidenceIds": [
+            "npv-rule"
+          ],
+          "notation": [],
+          "fingerprint": {
+            "conceptIds": [
+              "npv-rule"
+            ],
+            "cognitiveTask": "apply-npv-rule",
+            "solutionPath": [
+              "read-sign-of-npv",
+              "choose-project-decision"
+            ],
+            "targetMisconception": "reverse-npv-acceptance-rule",
+            "familyId": "npv-decision"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "unsupported",
+          "notation": "not-applicable",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [
+            "npv-rule"
+          ],
+          "rationale": "The NPV statement is supported elsewhere in the frozen course snapshot, but source-npv is excluded from this request."
+        }
+      ]
+    },
+    {
+      "caseId": "real-citation-without-support",
+      "category": "source-scope",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-risk"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "unsupported",
+          "notation": "consistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return"
+          ],
+          "rationale": "capm-risk is a real allowed passage but does not supply the pricing formula or define its return inputs. The candidate cannot self-certify support by citing a valid ID."
+        }
+      ]
+    },
+    {
+      "caseId": "equivalent-notation-mismatch",
+      "category": "notation",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when r = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = r + beta_i * (E(R_m) - r) = 0.04 + 1.00 * 0.06 = 0.10."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "r",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "inconsistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [],
+          "rationale": "The arithmetic is equivalent, but the candidate replaces the confirmed source symbol R_f with r. That is a notation mismatch, not an invented numerical error."
+        }
+      ]
+    },
+    {
+      "caseId": "same-task-new-numbers",
+      "category": "novelty",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [
+        {
+          "questionId": "bank-direct",
+          "version": "v1",
+          "state": "approved",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "For another asset, use CAPM with R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 0.70. What is E(R_i)?",
+            "options": [
+              {
+                "key": "A",
+                "text": "8.2%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 0.70 * (0.10 - 0.04) = 0.082, or 8.2% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "variant",
+          "relatedQuestionIds": [
+            "bank-direct"
+          ],
+          "missingConceptIds": [],
+          "rationale": "Only the asset wording and beta value changed. The concept, required inference, and solution path match the current bank task."
+        }
+      ]
+    },
+    {
+      "caseId": "intentional-numerical-variant",
+      "category": "novelty",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [
+        {
+          "questionId": "bank-direct",
+          "version": "v1",
+          "state": "approved",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 0,
+        "intentionalVariantSlots": 1,
+        "teacherInstruction": "Create one deliberate numerical variant of the existing CAPM exercise."
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "For another asset, use CAPM with R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 0.70. What is E(R_i)?",
+            "options": [
+              {
+                "key": "A",
+                "text": "8.2%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 0.70 * (0.10 - 0.04) = 0.082, or 8.2% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "variant",
+          "relatedQuestionIds": [
+            "bank-direct"
+          ],
+          "missingConceptIds": [],
+          "rationale": "Only the asset wording and beta value changed. The concept, required inference, and solution path match the current bank task. The request deliberately asks for a variant; it remains a variant rather than new independent coverage."
+        }
+      ]
+    },
+    {
+      "caseId": "similar-words-new-inference",
+      "category": "novelty",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [
+        {
+          "questionId": "bank-direct",
+          "version": "v1",
+          "state": "approved",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "medium",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate beta_i when R_f = 4.0%, E(R_m) = 10.0%, and E(R_i) = 11.8%.",
+            "options": [
+              {
+                "key": "A",
+                "text": "1.30",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "0.078",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "1.97",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "0.60",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "beta_i = (0.118 - 0.04) / (0.10 - 0.04) = 1.30."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "infer-beta",
+            "solutionPath": [
+              "subtract-risk-free-return",
+              "calculate-market-premium",
+              "divide-excess-return-by-premium"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-inverse"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [],
+          "rationale": "The stem still says Using CAPM and reuses source symbols, but the required inference solves for beta rather than substituting beta to price expected return. Similar wording alone does not establish duplication."
+        }
+      ]
+    },
+    {
+      "caseId": "thin-lo-shortfall",
+      "category": "thin-lo",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [
+        {
+          "questionId": "bank-direct",
+          "version": "v1",
+          "state": "approved",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "batchSnapshot": [],
+      "request": {
+        "type": "mcq",
+        "difficulty": "hard",
+        "independentSlots": 3,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values.",
+        "Report the two unmet independent slots; the authored inventory is not an absolute claim about course capacity or Hard difficulty."
+      ],
+      "candidates": [
+        {
+          "candidateId": "interpret",
+          "content": {
+            "type": "mcq",
+            "stem": "An asset has beta_i = 1.00. How does its systematic market sensitivity compare with the market?",
+            "options": [
+              {
+                "key": "A",
+                "text": "The sensitivity is the same.",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "It has no systematic exposure.",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "Its total volatility is exactly zero.",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "Beta cannot describe systematic sensitivity.",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "The source explicitly defines beta_i = 1.00 as the same systematic sensitivity as the market."
+          },
+          "dependencyConceptIds": [
+            "beta",
+            "systematic-risk-only"
+          ],
+          "evidenceIds": [
+            "capm-risk"
+          ],
+          "notation": [
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "beta",
+              "systematic-risk-only"
+            ],
+            "cognitiveTask": "interpret-beta-one",
+            "solutionPath": [
+              "read-beta-definition",
+              "compare-with-market"
+            ],
+            "targetMisconception": "confuse-sensitivity-with-total-volatility",
+            "familyId": "beta-interpretation"
+          }
+        },
+        {
+          "candidateId": "variant-a",
+          "content": {
+            "type": "mcq",
+            "stem": "For another asset, use CAPM with R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 0.70. What is E(R_i)?",
+            "options": [
+              {
+                "key": "A",
+                "text": "8.2%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 0.70 * (0.10 - 0.04) = 0.082, or 8.2% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        },
+        {
+          "candidateId": "variant-b",
+          "content": {
+            "type": "mcq",
+            "stem": "Use CAPM with R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.50. Find E(R_i).",
+            "options": [
+              {
+                "key": "A",
+                "text": "13.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.50 * 0.06 = 0.13."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "interpret",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [],
+          "rationale": "One unrepresented task in this authored inventory interprets beta = 1.00."
+        },
+        {
+          "candidateId": "variant-a",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "variant",
+          "relatedQuestionIds": [
+            "bank-direct"
+          ],
+          "missingConceptIds": [],
+          "rationale": "This is another direct-substitution task in the existing family."
+        },
+        {
+          "candidateId": "variant-b",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "variant",
+          "relatedQuestionIds": [
+            "bank-direct"
+          ],
+          "missingConceptIds": [],
+          "rationale": "Another numerical draw does not create an independent learning task."
+        }
+      ],
+      "supplyExpectation": {
+        "basis": "authored-task-inventory",
+        "independentTaskIds": [
+          "interpret-beta-one"
+        ],
+        "independentCandidates": 1,
+        "variantCandidates": 2,
+        "unmetIndependentSlots": 2
+      }
+    },
+    {
+      "caseId": "intentional-false-statement",
+      "category": "false-statement",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [],
+      "request": {
+        "type": "true-false",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "true-false",
+            "stem": "In CAPM, total volatility should replace beta_i when calculating expected return.",
+            "options": [
+              {
+                "key": "T",
+                "text": "True",
+                "role": "distractor"
+              },
+              {
+                "key": "F",
+                "text": "False",
+                "role": "correct"
+              }
+            ],
+            "correctExplanation": "False. CAPM compensates systematic market risk measured by beta_i, not total volatility, which includes diversifiable risk."
+          },
+          "dependencyConceptIds": [
+            "beta",
+            "systematic-risk-only",
+            "total-volatility"
+          ],
+          "evidenceIds": [
+            "capm-risk"
+          ],
+          "notation": [
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "beta",
+              "systematic-risk-only",
+              "total-volatility"
+            ],
+            "cognitiveTask": "correct-volatility-misconception",
+            "solutionPath": [
+              "identify-risk-measure",
+              "reject-volatility-substitution"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-risk-concept"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "independent",
+          "relatedQuestionIds": [],
+          "missingConceptIds": [],
+          "rationale": "The tested statement is intentionally false. The correct False answer and correction are supported by capm-risk; the false stem is not automatically an unsupported intended solution."
+        }
+      ]
+    },
+    {
+      "caseId": "queued-exact-duplicate",
+      "category": "novelty",
+      "courseScopeId": "synthetic-finance-course",
+      "loId": "synthetic-capm-lo",
+      "loVersion": "v1",
+      "objectiveText": "Apply CAPM and distinguish beta from total volatility using the supplied notation.",
+      "materials": [
+        {
+          "sourceId": "source-capm",
+          "parserVersion": "synthetic-text-v1",
+          "passages": [
+            {
+              "passageId": "capm-formula",
+              "page": 1,
+              "text": "Use E(R_i) = R_f + beta_i * (E(R_m) - R_f). Returns in this formula are annual decimals. The market risk premium is E(R_m) - R_f. The formula can be rearranged to find an unknown beta_i.",
+              "supportedConceptIds": [
+                "capm-formula",
+                "risk-free-rate",
+                "market-return",
+                "beta",
+                "expected-return",
+                "market-risk-premium"
+              ],
+              "notation": [
+                {
+                  "conceptId": "risk-free-rate",
+                  "symbol": "R_f",
+                  "definition": "Annual risk-free return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "market-return",
+                  "symbol": "E(R_m)",
+                  "definition": "Expected annual market return, expressed as a decimal."
+                },
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                },
+                {
+                  "conceptId": "expected-return",
+                  "symbol": "E(R_i)",
+                  "definition": "Expected annual return of asset i."
+                }
+              ]
+            },
+            {
+              "passageId": "capm-risk",
+              "page": 2,
+              "text": "CAPM compensates systematic market risk, measured by beta_i. Total volatility includes diversifiable risk and must not replace beta_i in the formula. A beta_i of one denotes the same systematic sensitivity as the market.",
+              "supportedConceptIds": [
+                "beta",
+                "systematic-risk-only",
+                "total-volatility"
+              ],
+              "notation": [
+                {
+                  "conceptId": "beta",
+                  "symbol": "beta_i",
+                  "definition": "Sensitivity to systematic market risk."
+                }
+              ]
+            }
+          ],
+          "contentHash": "92920ad7e0449c9a5c84a30638ca46127d2471ebcf3a25c1c963c7c60db229d2"
+        }
+      ],
+      "allowedMaterialIds": [
+        "source-capm"
+      ],
+      "prerequisites": [],
+      "allowedPrerequisiteIds": [],
+      "bankSnapshot": [],
+      "batchSnapshot": [
+        {
+          "questionId": "queue-direct",
+          "version": "v1",
+          "state": "draft",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "request": {
+        "type": "mcq",
+        "difficulty": "easy",
+        "independentSlots": 1,
+        "intentionalVariantSlots": 0
+      },
+      "rubricVersion": "synthetic-grounding-v1",
+      "expectationOrigin": "fixture-authored",
+      "labels": null,
+      "expectedChecks": [
+        "Use original allowed passages, not general finance knowledge.",
+        "Treat pedagogical task identity separately from wording and numerical values."
+      ],
+      "candidates": [
+        {
+          "candidateId": "candidate-1",
+          "content": {
+            "type": "mcq",
+            "stem": "Using CAPM, calculate E(R_i) when R_f = 4.0%, E(R_m) = 10.0%, and beta_i = 1.00.",
+            "options": [
+              {
+                "key": "A",
+                "text": "10.0%",
+                "role": "correct"
+              },
+              {
+                "key": "B",
+                "text": "4.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "C",
+                "text": "6.0%",
+                "role": "distractor"
+              },
+              {
+                "key": "D",
+                "text": "14.0%",
+                "role": "distractor"
+              }
+            ],
+            "correctExplanation": "E(R_i) = 0.04 + 1.00 * (0.10 - 0.04) = 0.10, or 10.0% per year."
+          },
+          "dependencyConceptIds": [
+            "capm-formula",
+            "risk-free-rate",
+            "market-return",
+            "beta"
+          ],
+          "evidenceIds": [
+            "capm-formula"
+          ],
+          "notation": [
+            {
+              "conceptId": "risk-free-rate",
+              "symbol": "R_f",
+              "definition": "Annual risk-free return, expressed as a decimal."
+            },
+            {
+              "conceptId": "market-return",
+              "symbol": "E(R_m)",
+              "definition": "Expected annual market return, expressed as a decimal."
+            },
+            {
+              "conceptId": "beta",
+              "symbol": "beta_i",
+              "definition": "Sensitivity to systematic market risk."
+            },
+            {
+              "conceptId": "expected-return",
+              "symbol": "E(R_i)",
+              "definition": "Expected annual return of asset i."
+            }
+          ],
+          "fingerprint": {
+            "conceptIds": [
+              "capm-formula",
+              "beta"
+            ],
+            "cognitiveTask": "apply-capm",
+            "solutionPath": [
+              "identify-market-premium",
+              "multiply-by-beta",
+              "add-risk-free-return"
+            ],
+            "targetMisconception": "replace-beta-with-total-volatility",
+            "familyId": "capm-direct"
+          }
+        }
+      ],
+      "expectations": [
+        {
+          "candidateId": "candidate-1",
+          "sourceScope": "supported",
+          "notation": "consistent",
+          "novelty": "exact-duplicate",
+          "relatedQuestionIds": [
+            "queue-direct"
+          ],
+          "missingConceptIds": [],
+          "rationale": "The candidate repeats the exact queued content and authored learning task. Queue memory matters even before a question is approved."
+        }
+      ]
+    }
+  ]
+}

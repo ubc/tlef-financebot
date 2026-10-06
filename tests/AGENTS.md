@@ -11,6 +11,30 @@ The testing setup. Three layers, mirroring the structure used in
 
 ## Commands
 
+One-time enrollment: `registration-codes.service.test.ts` and
+`registration-codes.routes.test.ts` cover claim/recovery, idempotency, course
+gates and authorization. `course-admin-workbench.spec.ts` covers the code UI
+and TA email/CWL form with intercepted fixtures. Run
+`npx playwright test --config playwright.enrollment-live.config.ts` for real
+local SAML/Express/Mongo acceptance: Gradebook grants, concurrent same-code
+redemption, receipt identity, revocation, legacy-code rejection and TA/CWL
+activation. It creates and removes a synthetic course and its grants; no model
+calls occur. Larger-list checks use 53 records over six pages, status filtering,
+unused-code invalidation and retained membership after used-receipt deletion.
+Live screenshots are written under
+`artifacts/one-time-enrollment-2026-10-06/`.
+
+Manual Canvas CSV imports: `people-import.test.ts` covers parser/HTTP boundaries,
+owner/Admin authorization, snapshot CAS/revocation, publication/date gates,
+membership readers and auditing. Build first, then run
+`npx playwright test --config playwright.people-import.config.ts` for isolated
+production UI upload/confirmation/removal, stale/all-rejected handling and
+desktop/mobile dark axe scans. Run
+`npx playwright test tests/e2e/people-import-live.spec.ts` for real local CWL,
+MongoDB, student analytics and TA permission acceptance. The live suite uses
+only faculty/student/staff/ta personas and a temporary course, and removes its
+course, imported grants, permission overrides and course-scoped audit fixtures.
+
 ```bash
 npm test                    # unit + integration (fast, no services needed)
 npm run test:unit:watch     # …in watch mode
@@ -92,6 +116,16 @@ Notes:
   reload-resumes the same answer state, and then checks results, Review Book,
   ExamAttempt, and exam AttemptRecord persistence. It cleans every course
   fixture and Student role in `afterAll`.
+- `exam-builder-live.spec.ts` is opt-in because it calls the configured LLM.
+  With MongoDB, Qdrant, SAML, and a working model provider available, run
+  `EXAM_BUILDER_LIVE_E2E=true npx playwright test tests/e2e/exam-builder-live.spec.ts`.
+  It creates a synthetic course source and LO, checks the generation plan and
+  SSE stage updates, then verifies a private candidate can be added, approved,
+  and published. A real Student account joins the course, starts the formal
+  exam, saves and resumes an answer, submits without early feedback, and sees
+  the score and explanation after Instructor release. Step screenshots are
+  written to `audit-results/exam-builder/student-flow/`. The temporary course,
+  Student role, and vector collection are removed.
 
 ## Writing a11y tests (`tests/a11y/*.spec.ts`)
 
@@ -195,7 +229,9 @@ exercises the unified directory through the legacy `/admin/accounts` URL.
 
 `playwright.role-workspace.config.ts` runs isolated full-app role switching tests.
 The production shell consumes intercepted Admin/Instructor/TA/Student identities,
-course lists and Preview APIs. Checks cover permitted menus and return paths,
+course lists and Preview APIs. Checks cover both restricted and unrestricted
+Student views for Admin, Instructor and TA, including draft-course filtering and
+direct-link rejection in restricted mode, permitted menus and return paths,
 saved-role forgery, refresh persistence, course/session isolation, common cards,
 sidebar sizing/colors, black course actions, and mobile light/dark accessibility.
 No live grants, enrollment, or student activity are changed by these fixtures.
@@ -210,7 +246,40 @@ tests cover durable CAS, replay, interrupted-save recovery, schema retention,
 state races and revoked/transient SSE behavior. `playwright.course-sharing.config.ts`
 uses intercepted APIs for dialog/page sharing. `playwright.question-edit-concurrency.config.ts` covers legacy editor conflicts and draft-schema export.
 
+`playwright.exam-builder.config.ts` runs the compiled production Builder and
+Assessment pages with intercepted APIs on a static localhost:6118 server. It
+checks pinned selection, private generation/review/publication, resumable saved
+answers, withheld results and scoped desktop/mobile light/dark axe. Backend
+`exam-builder`, `exam-generation` and `assessment-attempts` suites cover guards,
+publication and answer CAS, private partial jobs, retry/cancel/recovery, deadline,
+grading and release isolation. Browser fixtures do not call model providers.
+
 `playwright.canvas-workspace.config.ts` tests the production Canvas renderer and
 full Instructor shell with intercepted APIs: all-role People, self marker, search,
 role filter, pagination, legacy redirects, global course switching, mobile dark
 layout and desktop axe scans. It does not mutate real Canvas/staging data.
+`quality-evaluation-*.test.ts` verifies the offline dataset, export adapter,
+blinded review integrity, fixed denominators, CLI files and nullable measurement
+reporting. `generation-evaluation.{service,routes}.test.ts` covers original-version
+export binding, unavailable historical slots, safe usage projection and course
+authorization. `playwright.quality-evaluation.config.ts` runs an isolated offline
+review HTML fixture with all external requests blocked; no application server or
+provider is required. Its browser cases cover JSON download/resume, conflicts,
+stale data, triage-only content, literal hostile strings and accessible responsive
+forms. The existing workbench suite verifies the terminal evaluation download link.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.

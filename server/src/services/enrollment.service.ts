@@ -1,5 +1,6 @@
 import type { ObjectId } from 'mongodb';
-import { coursesCol, rosterCol, usersCol } from '../components/mongodb/collections';
+import { coursesCol, rosterCol } from '../components/mongodb/collections';
+import { redeemRegistrationCode } from './registration-codes.service';
 import type { User } from '../types/domain';
 
 // -----------------------------------------------------------------------------
@@ -20,36 +21,14 @@ export class EnrollmentError extends Error {
 }
 
 /**
- * Enroll `user` into the course identified by `code`. Requires both a
- * matching, published course AND a roster entry for the caller's CWL identity
- * (uid or email, case-insensitively) — the registration code alone never
- * grants access (ST-E02). Idempotent: re-enrolling an already-enrolled
- * student throws rather than writing a duplicate courseRoles entry.
+ * Supplemental enrollment after CWL login. Gradebook imports remain separate;
+ * legacy shared course codes and roster allowlists no longer authorize joins.
  */
 export async function enrollByCode(
   user: User,
   code: string,
 ): Promise<{ courseId: ObjectId; name: string; courseCode: string }> {
-  const course = await coursesCol().findOne({ registrationCode: code.trim().toUpperCase() });
-  if (!course || !course.published) throw new EnrollmentError('not-recognized');
-
-  const identifiers = [user.uid, user.email].filter(Boolean).map((s) => s.toLowerCase());
-  const rosterHit = await rosterCol().findOne({ courseId: course._id, identifier: { $in: identifiers } });
-  if (!rosterHit) throw new EnrollmentError('not-on-roster');
-
-  const ends = rosterHit.extendedUntil ?? course.termEnd;
-  if (ends && ends < new Date()) throw new EnrollmentError('course-ended');
-
-  if (user.courseRoles.some((r) => r.role === 'student' && r.courseId.toString() === course._id.toString())) {
-    throw new EnrollmentError('already-enrolled');
-  }
-
-  await usersCol().updateOne(
-    { puid: user.puid },
-    { $addToSet: { courseRoles: { courseId: course._id, role: 'student' as const } } },
-  );
-
-  return { courseId: course._id, name: course.name, courseCode: course.courseCode };
+  return redeemRegistrationCode(user, code);
 }
 
 /**

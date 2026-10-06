@@ -1,3 +1,12 @@
+jest.mock('../../server/src/services/course-people-access.service', () => ({
+  projectCoursePeopleAccess: jest.fn(async (user: unknown) => user),
+  peopleMembershipFilter: jest.fn(async (_course: unknown, _roles: unknown, filter: unknown) => filter),
+  canUseStudentCode: jest.fn(async () => true),
+}));
+jest.mock('../../server/src/services/people-import.service', () => ({
+  importedTaInvites: jest.fn(async () => []),
+  importedCourseRoleUserFilter: jest.fn(async (courseId: unknown, roles: string[]) => ({ courseRoles: { $elemMatch: { courseId, role: roles.length === 1 ? roles[0] : { $in: roles } } } })),
+}));
 import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import {

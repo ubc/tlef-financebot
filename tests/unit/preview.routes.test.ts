@@ -5,6 +5,7 @@ import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/preview.service', () => ({
   getPreviewCourseIdentity: jest.fn(),
+  isPreviewCourseStudentVisible: jest.fn(),
   getPreviewHome: jest.fn(),
   getNextPreviewQuestion: jest.fn(),
   submitPreviewAttempt: jest.fn(),
@@ -29,6 +30,7 @@ import { hasCapability } from '../../server/src/services/capabilities.service';
 import {
   flagPreviewQuestion,
   getPreviewCourseIdentity,
+  isPreviewCourseStudentVisible,
   getPreviewHome,
   getNextPreviewQuestion,
   submitPreviewAttempt,
@@ -71,6 +73,7 @@ function makeApp(user?: User): Express {
 beforeEach(() => {
   jest.mocked(hasCapability).mockReset().mockResolvedValue(false);
   jest.mocked(getPreviewCourseIdentity).mockReset();
+  jest.mocked(isPreviewCourseStudentVisible).mockReset().mockResolvedValue(false);
   jest.mocked(getPreviewHome).mockReset();
   jest.mocked(getNextPreviewQuestion).mockReset();
   jest.mocked(submitPreviewAttempt).mockReset();
@@ -78,6 +81,28 @@ beforeEach(() => {
 });
 
 describe('Teaching-team student-preview routes', () => {
+  it.each(['instructor', 'ta'] as const)('hides an unpublished course throughout restricted %s preview', async role => {
+    const app = makeApp(userFixture(courseId, role));
+    const base = `/api/courses/${courseId.toHexString()}/preview`;
+    expect((await request(app).get(`${base}/identity?access=restricted`)).status).toBe(404);
+    expect((await request(app).get(`${base}/home?previewSessionId=${previewSessionId}&access=restricted`)).status).toBe(404);
+    expect((await request(app).post(`${base}/practice/next?access=restricted`).send({ previewSessionId, loId: loId.toHexString(), sessionServedIds: [] })).status).toBe(404);
+    expect(getPreviewCourseIdentity).not.toHaveBeenCalled();
+    expect(getPreviewHome).not.toHaveBeenCalled();
+    expect(getNextPreviewQuestion).not.toHaveBeenCalled();
+    jest.mocked(isPreviewCourseStudentVisible).mockResolvedValue(true);
+    jest.mocked(getPreviewCourseIdentity).mockResolvedValue({ name: 'Published', courseCode: 'FIN', term: '2026W' });
+    expect((await request(app).get(`${base}/identity?access=restricted`)).status).toBe(200);
+  });
+
+  it('allows unrestricted Preview for an unpublished course and protects restricted links from Students', async () => {
+    const base = `/api/courses/${courseId.toHexString()}/preview`;
+    jest.mocked(getPreviewCourseIdentity).mockResolvedValue({ name: 'Draft', courseCode: 'FIN', term: '2026W' });
+    expect((await request(makeApp(userFixture(courseId, 'instructor'))).get(`${base}/identity`)).status).toBe(200);
+    expect((await request(makeApp(userFixture(courseId, 'student'))).get(`${base}/identity?access=restricted`)).status).toBe(403);
+    expect(isPreviewCourseStudentVisible).not.toHaveBeenCalled();
+  });
+
   it('lets a current TA load safe Preview identity even when question review is disabled', async () => {
     const identity = { name: 'Finance', courseCode: 'COMM 298', section: '101', term: '2026W1' };
     jest.mocked(getPreviewCourseIdentity).mockResolvedValue(identity);

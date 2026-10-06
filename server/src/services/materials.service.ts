@@ -1,3 +1,4 @@
+import { withModelUsage } from './model-usage.service';
 import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -884,6 +885,6 @@ export function registerMaterialJobs(): void {
     }
     const run = await getContentRun(runObjectId);
     if (!run || run.kind !== 'material-ingest' || run.status !== 'queued') return;
-    await ingestMaterial(run.input.materialId.toHexString(), runId);
+    await withModelUsage({ operationId: run.operationId, runId, courseId: run.courseId.toHexString(), actor: { puid: run.requestedBy }, stage: 'material-analysis' }, () => ingestMaterial(run.input.materialId.toHexString(), runId));
   });
 }

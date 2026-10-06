@@ -1,3 +1,10 @@
+import { coursePeopleAccessCol } from '../../server/src/components/mongodb/collections';
+import { projectCoursePeopleAccess } from '../../server/src/services/course-people-access.service';
+jest.mock('../../server/src/services/course-people-access.service', () => ({
+  projectCoursePeopleAccess: jest.fn(async (user: unknown) => user),
+  peopleMembershipFilter: jest.fn(async (_course: unknown, _roles: unknown, filter: unknown) => filter),
+  canUseStudentCode: jest.fn(async () => true),
+}));
 import { ObjectId } from 'mongodb';
 import {
   auditCol,
@@ -19,6 +26,7 @@ import {
 import { activeSharedInstructorPuids, projectCourseInstructorShares, revokeSharedInstructorGrants } from '../../server/src/services/course-sharing.service';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  coursePeopleAccessCol: jest.fn(() => ({ findOne: jest.fn(async () => null), find: jest.fn(() => ({ toArray: async () => [] })), updateOne: jest.fn(async () => ({ matchedCount: 0 })) })),
   auditCol: jest.fn(),
   capabilitySettingsCol: jest.fn(),
   coursesCol: jest.fn(),
@@ -359,4 +367,15 @@ describe('PUID-backed Admin account management', () => {
       }),
     ]);
   });
+});
+
+
+test('global role filters discover People grants even when no manual User role exists', async () => {
+  const courseId = new ObjectId(); const stored = userDoc({ puid: 'NEW-TA', courseRoles: [] });
+  jest.mocked(coursePeopleAccessCol).mockReturnValue({ find: () => ({ toArray: async () => [{ puid: 'NEW-TA', role: 'ta', courseId }] }) } as never);
+  findUsers.mockReturnValue({ sort: () => ({ limit: () => ({ toArray: async () => [stored] }) }) });
+  jest.mocked(projectCoursePeopleAccess).mockResolvedValueOnce({ ...stored, courseRoles: [{ courseId, role: 'ta' }] });
+  const result = await listUsers({ role: 'ta' });
+  expect(result).toHaveLength(1); expect(result[0].courseRoles).toEqual([{ courseId, role: 'ta' }]);
+  expect(findUsers).toHaveBeenCalledWith({ $and: [{ $or: [{ courseRoles: { $elemMatch: { role: 'ta' } } }, { puid: { $in: ['NEW-TA'] } }] }] });
 });

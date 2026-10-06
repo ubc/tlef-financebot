@@ -20,6 +20,10 @@ jest.mock('../../server/src/services/generation.service', () => ({
     { label: 'Applied scenario', text: 'Write an applied scenario.' },
   ],
 }));
+jest.mock('../../server/src/services/generation-plan.service', () => ({
+  autoGenerationPlan: jest.fn(), enqueueGenerationPlan: jest.fn(), PLAN_MAX_CELLS: 120, PLAN_MAX_COUNT: 20,
+}));
+jest.mock('../../server/src/services/generation-blueprints.service', () => ({ enqueueBlueprintRun: jest.fn() }));
 
 import { generationRouter } from '../../server/src/routes/generation.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
@@ -28,6 +32,8 @@ import {
   preseedingProgress,
   regenerateQuestion,
 } from '../../server/src/services/generation.service';
+import { enqueueGenerationPlan } from '../../server/src/services/generation-plan.service';
+import { enqueueBlueprintRun } from '../../server/src/services/generation-blueprints.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
@@ -66,6 +72,53 @@ beforeEach(() => {
   jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
   jest.mocked(regenerateQuestion).mockReset();
+  jest.mocked(enqueueGenerationPlan).mockReset();
+  jest.mocked(enqueueGenerationPlan).mockResolvedValue({ runs: [] });
+  jest.mocked(enqueueBlueprintRun).mockReset();
+  jest.mocked(enqueueBlueprintRun).mockResolvedValue(new ObjectId());
+});
+
+describe('opt-in quality policy routes', () => {
+  it('passes an explicitly chosen policy through the single-run endpoint', async () => {
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
+      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
+    expect(res.status).toBe(202);
+    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
+  });
+
+  it('passes a one-run blueprint policy override without changing the saved recipe', async () => {
+    const blueprintId = new ObjectId();
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
+      .send({ blueprintId: blueprintId.toHexString(), qualityPolicy: 'baseline' });
+    expect(res.status).toBe(202);
+    expect(enqueueBlueprintRun).toHaveBeenCalledWith(courseId, blueprintId, instructor.puid, 'baseline');
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
+  });
+
+  it('passes batch policy without requiring a prompt or submission identifier', async () => {
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
+      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'grounded-memory-v1' });
+    expect(res.status).toBe(202);
+    expect(enqueueGenerationPlan).toHaveBeenCalledWith(courseId, expect.any(Array), instructor.puid, expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
+  });
+
+  it('rejects unknown policies before either enqueue path', async () => {
+    const single = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
+      .send({ loId: loId.toHexString(), qualityPolicy: 'auto-publish' });
+    const batch = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
+      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'auto-publish' });
+    expect(single.status).toBe(400);
+    expect(batch.status).toBe(400);
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
+    expect(enqueueGenerationPlan).not.toHaveBeenCalled();
+  });
+
+  it('reports the reviewer-required conflict without accepting a pilot run', async () => {
+    jest.mocked(enqueueGenerationRun).mockRejectedValue(new Error('generation-quality-reviewer-required'));
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
+      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
+    expect(res.status).toBe(409);
+  });
 });
 
 describe('Task 10 presets and regeneration', () => {

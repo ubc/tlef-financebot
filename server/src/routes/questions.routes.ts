@@ -384,7 +384,7 @@ export function toQuestionResponse(question: WithId<Question>): Record<string, u
 
 // --- Browse / review queue ----------------------------------------------------
 
-/** GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label= -> { total, questions }. Instructor-only. (IN-Q08) */
+/** GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label= -> { total, questions }. Requires question.review. (IN-Q08) */
 questionsRouter.get(
   '/courses/:courseId/questions',
   validate({ params: courseIdParams }),

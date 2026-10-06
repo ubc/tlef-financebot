@@ -1,0 +1,4 @@
+Login ID,Name,Role,Enrollment State,Limit Privileges To Course Section
+,Example Student,Student,active,false
+,Example Professor,Teacher,active,false
+,Example TA,TA,active,false

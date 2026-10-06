@@ -165,6 +165,10 @@ export function parseRosterFile(text: string, column?: string): RosterParseResul
 
   const headed = hasHeaderRow(rows);
   const headers = headed ? (rows[0] ?? []).map((cell) => cell.trim()) : [];
+  const canvasLoginHeader = (header: string): boolean => /^(sis\s+)?login[ _]id$/i.test(header.trim());
+  if ((!column && headers.some(canvasLoginHeader)) || (column && canvasLoginHeader(column))) {
+    throw Object.assign(new Error('Canvas Login IDs are CWL PUIDs. Use Import people from Canvas in Enrollment to grant course access; this roster requires CWL usernames or emails.'), { status: 400 });
+  }
   const dataRows = headed ? rows.slice(1) : rows;
   // 1-based, and one further line down when a header was consumed, so a reject
   // points at the line the instructor sees in their spreadsheet.

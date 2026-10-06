@@ -1,3 +1,4 @@
+import { openPeopleInvitation } from './course-people-invite.js';
 import { el } from './dom.js';
 import { confirmDialog } from './modal.js';
 import { loadingState } from './ui.js';
@@ -14,7 +15,6 @@ interface SharingPanel {
 }
 
 let instance = 0;
-let activeDialog: HTMLDialogElement | undefined;
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Course sharing could not be updated. Try again.';
 
 /** A restricted destination, never a bearer token or public access grant. */
@@ -198,25 +198,5 @@ export function createCourseSharingPanel(courseId: string): SharingPanel {
   return { element: root, refresh: load, busy: () => mutationPending, dispose: () => { disposed = true; generation++; } };
 }
 
-/** Open the same course-sharing controls from any Instructor course page. */
-export function openCourseSharing(courseId: string): void {
-  if (activeDialog?.open) { activeDialog.focus(); return; }
-  const previousFocus = document.activeElement;
-  const panel = createCourseSharingPanel(courseId);
-  const titleId = `course-sharing-title-${++instance}`;
-  const dialog = el('dialog', { class: 'app-dialog course-sharing-dialog', 'aria-labelledby': titleId });
-  const close = el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close course sharing', text: '×', onclick: () => { if (!panel.busy()) dialog.close(); } });
-  panel.element.addEventListener('course-sharing-busy', event => { close.disabled = Boolean((event as CustomEvent<boolean>).detail); });
-  dialog.append(el('header', { class: 'course-sharing-dialog__header' }, el('h2', { id: titleId, text: 'Share course' }), close), panel.element);
-  const routeChanged = (): void => dialog.close();
-  dialog.addEventListener('cancel', event => { if (panel.busy()) event.preventDefault(); });
-  dialog.addEventListener('close', () => {
-    panel.dispose(); window.removeEventListener('hashchange', routeChanged); dialog.remove();
-    if (activeDialog === dialog) activeDialog = undefined;
-    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-  }, { once: true });
-  window.addEventListener('hashchange', routeChanged);
-  activeDialog = dialog;
-  document.body.append(dialog); dialog.showModal(); close.focus();
-  void panel.refresh();
-}
+/** Share and People use the same role-aware invitation form. */
+export function openCourseSharing(courseId: string): void { void openPeopleInvitation(courseId, true); }

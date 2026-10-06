@@ -3,7 +3,8 @@ import request from 'supertest';
 import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
 
-jest.mock('../../server/src/components/mongodb/collections', () => ({ capabilitySettingsCol: jest.fn() }));
+jest.mock('../../server/src/components/mongodb/collections', () => ({
+  coursePeopleAccessCol: jest.fn(() => ({ findOne: jest.fn(async () => null), updateOne: jest.fn(async () => ({ matchedCount: 0 })) })), capabilitySettingsCol: jest.fn() }));
 import { capabilitySettingsCol } from '../../server/src/components/mongodb/collections';
 import { selfCapabilitiesRouter } from '../../server/src/routes/capabilities.routes';
 

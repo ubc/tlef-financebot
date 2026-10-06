@@ -6,7 +6,7 @@ import { errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { scoresPanel } from './analytics-scores.js';
 
-async function renderInner(outlet: HTMLElement, courseId: string, puid: string): Promise<void> {
+async function renderInner(outlet: HTMLElement, courseId: string, puid: string, workspace: 'instructor' | 'ta'): Promise<void> {
   const root = el('div', { class: 'view student-master-profile' }, loadingState('Loading student profile…')); mount(outlet, root);
   try {
     const profile = await getStudentAnalytics(courseId, puid);
@@ -17,7 +17,7 @@ async function renderInner(outlet: HTMLElement, courseId: string, puid: string):
     const content = el('div', { class: 'master-profile-content' });
     const tabs = el('nav', { class: 'analytics-workbench-tabs', 'aria-label': 'Student profile views' });
     let revision = 0;
-    root.replaceChildren(el('a', { class: 'breadcrumb-back', href: `#/instructor/course/${encodeURIComponent(courseId)}/analytics`, text: '← Back to Student Analytics' }),
+    root.replaceChildren(el('a', { class: 'breadcrumb-back', href: `#/${workspace}/course/${encodeURIComponent(courseId)}/analytics`, text: '← Back to Student Analytics' }),
       pageHeader(profile.student.displayName, `Student Master Profile · ${profile.student.uid}`),
       el('p', { class: 'muted', text: 'Latest course-wide mastery and complete recorded history. Independent of dashboard date and mode filters.' }),
       el('div', { class: 'analytics-metrics' }, ...[
@@ -77,6 +77,6 @@ async function renderInner(outlet: HTMLElement, courseId: string, puid: string):
     }
     tabs.append(...['Mastery', 'Answer history', 'Exam scores', 'Events & activity'].map(name => el('button', { type: 'button', onclick: () => show(name) }, name)));
     await show('Mastery');
-  } catch (e) { root.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void renderInner(outlet, courseId, puid))); }
+  } catch (e) { root.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void renderInner(outlet, courseId, puid, workspace))); }
 }
-export function renderStudentProfile(outlet: HTMLElement, params: RouteParams): void { void renderInner(outlet, params.id, params.puid); }
+export function renderStudentProfile(outlet: HTMLElement, params: RouteParams, workspace: 'instructor' | 'ta' = 'instructor'): void { void renderInner(outlet, params.id, params.puid, workspace); }

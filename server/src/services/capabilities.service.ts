@@ -1,5 +1,5 @@
 import type { ObjectId } from 'mongodb';
-import { capabilitySettingsCol } from '../components/mongodb/collections';
+import { capabilitySettingsCol, coursePeopleAccessCol } from '../components/mongodb/collections';
 import type {
   Capability,
   CapabilityRole,
@@ -31,6 +31,8 @@ const TA_DEFAULTS = new Set<Capability>([
   'question.suggest-edit',
   'question.mark-reviewed',
   'flag.triage',
+  'analytics.view',
+  'analytics.individual',
 ]);
 
 export const PLATFORM_DEFAULTS = Object.fromEntries(CAPABILITIES.map((capability) => [
@@ -72,6 +74,11 @@ export async function effectivePermission(
     return { value: false, source: 'default' };
   }
   const settings = await settingsFor(courseId);
+  if (role === 'ta' && puid) {
+    const control = await coursePeopleAccessCol().findOne({ courseId, puid, role: 'ta', status: 'active' });
+    const preset = control?.permissions?.[capability];
+    if (preset !== undefined) return { value: preset, source: 'user-override' };
+  }
   const userValue = puid === undefined
     ? undefined
     : settings.course?.userOverrides?.[puid]?.[capability];
@@ -120,6 +127,11 @@ export async function setCourseUserCapabilities(
     },
     { upsert: true },
   );
+  // Keep the People preset and the existing permission editor authoritative together.
+  await coursePeopleAccessCol().updateOne({ courseId, puid, role: 'ta', status: 'active' }, [{ $set: {
+    permissions: { $mergeObjects: ['$permissions', { $literal: sanitized }] },
+    updatedAt: new Date(), updatedByPuid: updatedBy, revision: { $add: ['$revision', 1] },
+  } }]);
 }
 
 export async function saveCapabilitySettings(

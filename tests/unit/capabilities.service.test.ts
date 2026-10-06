@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 import type { CapabilitySettings, User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  coursePeopleAccessCol: jest.fn(() => ({ findOne: jest.fn(async () => null), updateOne: jest.fn(async () => ({ matchedCount: 0 })) })),
   capabilitySettingsCol: jest.fn(),
 }));
 
@@ -67,6 +68,15 @@ describe('capability resolution (§4.2)', () => {
       expect(PLATFORM_DEFAULTS[capability].instructor).toBe(true);
       expect(PLATFORM_DEFAULTS[capability].student).toBe(false);
     }
+  });
+
+  it('lets course TAs inspect aggregate and individual analytics without final-decision rights', async () => {
+    const ta = user('ta');
+    await expect(hasCapability(ta, courseId, 'analytics.view')).resolves.toBe(true);
+    await expect(hasCapability(ta, courseId, 'analytics.individual')).resolves.toBe(true);
+    await expect(hasCapability(ta, courseId, 'question.approve')).resolves.toBe(false);
+    await expect(hasCapability(ta, courseId, 'flag.resolve')).resolves.toBe(false);
+    await expect(hasCapability(ta, new ObjectId(), 'analytics.individual')).resolves.toBe(false);
   });
 
   it('enforces the hard TA approve/resolve invariant despite every override', async () => {

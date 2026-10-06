@@ -1,3 +1,6 @@
+jest.mock('../../server/src/services/model-usage.service', () => ({ listModelCalls: jest.fn() }));
+jest.mock('../../server/src/services/generation-evaluation.service', () => ({ exportGenerationEvaluation: jest.fn() }));
+import { listModelCalls } from '../../server/src/services/model-usage.service';
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { EventEmitter } from 'node:events';
@@ -261,5 +264,27 @@ describe('content run route guards and snapshots', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(res.write).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('course-scoped model usage', () => {
+  it('guards usage and never reads another course run', async () => {
+    const url = `/api/courses/${courseId}/content-runs/${runId}/usage`;
+    expect((await request(makeApp()).get(url)).status).toBe(401);
+    expect((await request(makeApp(userFixture('student'))).get(url)).status).toBe(403);
+    jest.mocked(getCourseContentRun).mockResolvedValue(null);
+    expect((await request(makeApp(userFixture('instructor'))).get(url)).status).toBe(404);
+    expect(listModelCalls).not.toHaveBeenCalled();
+  });
+  it('returns persisted usage after completion, excluding actor and operation details', async () => {
+    jest.mocked(getCourseContentRun).mockResolvedValue({ ...runFixture(), status: 'completed' } as never);
+    jest.mocked(listModelCalls).mockResolvedValue({ summary: { inputTokens: 120, outputTokens: 30, totalTokens: 150, status: 'complete' }, total: 1, items: [{ _id: 'call', actor: { puid: 'private' }, operationId: 'request', trackingSessionId: 'session', stage: 'review', usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 } }] } as never);
+    const res = await request(makeApp(userFixture('instructor'))).get(`/api/courses/${courseId}/content-runs/${runId}/usage`);
+    expect(res.status).toBe(200);
+    expect(res.body.summary.totalTokens).toBe(150);
+    expect(res.body.calls[0].actor).toBeUndefined();
+    expect(res.body.calls[0].operationId).toBeUndefined();
+    expect(listModelCalls).toHaveBeenCalledWith({ courseId: String(courseId), runId: String(runId), limit: 100 });
   });
 });

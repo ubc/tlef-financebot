@@ -61,10 +61,9 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   {
     label: 'Course Settings',
     items: [
-      { label: 'Exam Templates', path: '/instructor/course/:id/exam-templates', glyph: '▤' },
-      { label: 'Teaching Assistants', path: '/instructor/course/:id/tas', glyph: '♙' },
+      { label: 'Exam Builder', path: '/instructor/course/:id/exam-builder', glyph: '▤' },
+      { label: 'People', path: '/instructor/course/:id/people', glyph: '♙' },
       { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙' },
-      { label: 'Co-instructors', path: '/instructor/course/:id/co-instructors', glyph: '+' },
     ],
   },
 ];

@@ -1,4 +1,5 @@
 import { registerCanvasJobs } from './services/canvas.service';
+import { registerExamBuilderJobs, reconcileExamBuilderRuns, reconcileExamReservations } from './services/exam-generation.service';
 import { registerStructureJobs } from './services/structure-generation.service';
 import { createApp } from './app';
 import { env, assertConfig } from './config/env';
@@ -74,6 +75,9 @@ async function main(): Promise<void> {
   // Phase 3 Exam Prep post-submit qualifier pass. Registration is explicit
   // here because exams.routes.ts imports the owning service before jobs start.
   registerExamMasteryJobs();
+  await reconcileExamBuilderRuns();
+  await reconcileExamReservations();
+  registerExamBuilderJobs();
 
   // Term-end TA access sweep. The operation is idempotent and removes only
   // course-scoped TA roles; re-invitation remains available to instructors.

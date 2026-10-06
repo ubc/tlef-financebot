@@ -1,9 +1,23 @@
 # AGENTS.md — server/src/routes
 
+`registration-codes.routes.ts` exposes course Instructor/Admin-only list,
+idempotent batch creation, unused-code revocation and soft record deletion.
+List queries are code-level paginated (10/25/50) with optional status filters;
+deleted records are omitted. Student redemption remains
+`POST /api/enrollments`; legacy shared-code regeneration returns 410.
+TA invitations accept `{ identifier }` (UBC email or existing CWL), retaining
+`{ email }` as a legacy request shape. See the supplemental enrollment API contract.
+
 HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
 `server/src/app.ts`.
 
 ## Present
+
+- `people-import.routes.ts` — Instructor-only CSV preview/current snapshot, and
+  owner/Admin-only confirmed multipart commit or revision-checked clear. It is
+  independent of Canvas OAuth, uses the course guards, reparses the original
+  file on commit, and returns 400 for malformed/oversized/all-rejected files and
+  409 for stale revisions.
 
 - `health.routes.ts` — `GET /api/health` returns `{ status, timestamp, services,
   genai }`, where `services` reports reachability (`mongodb`, `qdrant`) and
@@ -59,18 +73,18 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   their course for `ensureCourseStudent()`; results return 409 before submit.
 - `questions.routes.ts` — Question bank: browse/filter, prioritized review
   queue, single-question detail, editing, and publication-state transitions
-  (including a courses-spanning bulk transition). All routes are
-  **instructor-gated** the same way as `courses.routes.ts`, stashing
-  `res.locals.courseId` from the target question (or, for bulk transition,
-  from the single course the batch resolves to) before
-  `ensureCourseInstructor()` runs.
+  (including a courses-spanning bulk transition). Teaching-team reads use
+  `question.review`; changes use their respective capabilities and hard-deny
+  TA final approval. Child routes stash the target course in
+  `res.locals.courseId` before authorization.
 - `materials.routes.ts` — Material upload + async RAG ingestion (IN-S04/S05):
   `POST/GET /api/courses/:courseId/materials` (multipart `files[]` or JSON
   `{ url }`), `POST /api/materials/:materialId/retry`,
   `PUT /api/materials/:materialId/assignments`, and AI hierarchy suggestion +
-  reviewed apply with automatic per-LO material assignments. All routes are
-  **instructor-gated**; materialId-scoped routes stash `res.locals.courseId`
-  from the target material first, the same pattern as `questions.routes.ts`.
+  reviewed apply with automatic per-LO material assignments. List, workspace
+  detail and original-source GETs allow assigned TAs through
+  `ensureCourseTeachingMember()`; mutations and Trash remain Instructor-only.
+  MaterialId-scoped mutation routes stash `res.locals.courseId` from the target.
 - `content-runs.routes.ts` — Phase 2 P2-0 durable material/generation progress:
   recent course run history, one full snapshot, exact terminal generation
   retry, ending one active generation run (`POST .../:runId/end`) or all of a
@@ -78,8 +92,8 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   recent persisted state before live updates.
 - `generation-blueprints.routes.ts` — Instructor-gated saved generation recipe
   list/create/update/run endpoints.
-- `content-map.routes.ts` — Instructor-gated, course-scoped hierarchy/source/
-  question/run coverage snapshot.
+- `content-map.routes.ts` — Read-only, course-scoped hierarchy/source/question/
+  run coverage snapshot and knowledge graph for Instructors and assigned TAs.
 - `import.routes.ts` — Instructor-gated CSV/JSON/QTI preview + Draft commit,
   plus parameterized-script sandbox preview + revalidated Draft migration.
   Script/template mismatches return review data without inserting.
@@ -120,3 +134,30 @@ the "Protecting routes" section of `components/auth/AGENTS.md`.
 shared snapshots, updates, presence, SSE, commit and explicit comparison/rebase.
 Permanent access/lifecycle failures end streams; transient failures reconnect.
 See the detailed wire contracts in `docs/api-contract.md`.
+
+`exam-builder.routes.ts` exposes the private fixed-paper builder to course
+Instructor/Admin only. Student assessment routes use enrollment guards plus
+PUID ownership in the service. Never expose builder detail/candidates or publication
+answer keys through the student routes; pre-release state is an explicit allowlist.
+See the Exam Builder v2 section in `docs/api-contract.md`.
+
+
+Exam Builder title PUT and DELETE remain Instructor/Admin-only. Both require
+revision CAS; DELETE also checks student attempts and active generation in the
+service, and the catalog requires typed-title confirmation.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.

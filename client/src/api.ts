@@ -593,17 +593,24 @@ export interface PreviewCourseIdentity {
   term: string;
 }
 
-export function getPreviewCourseIdentity(courseId: string): Promise<PreviewCourseIdentity> {
-  return request<PreviewCourseIdentity>(`/api/courses/${encodeURIComponent(courseId)}/preview/identity`);
+/** Restricted Preview keeps all state isolated while applying course publication. */
+function previewAccessUrl(url: string, restricted = false): string {
+  if (!restricted) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}access=restricted`;
+}
+
+export function getPreviewCourseIdentity(courseId: string, restricted = false): Promise<PreviewCourseIdentity> {
+  return request<PreviewCourseIdentity>(previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/identity`, restricted));
 }
 
 /** Teaching-team hierarchy for one isolated anonymous-student preview. */
 export function getPreviewCourseHome(
   courseId: string,
   previewSessionId: string,
+  restricted = false,
 ): Promise<CourseHomeTheme[]> {
   return request<CourseHomeTheme[]>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/home?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/home?previewSessionId=${encodeURIComponent(previewSessionId)}`, restricted),
   );
 }
 
@@ -612,9 +619,10 @@ export function getNextPreviewQuestion(
   courseId: string,
   previewSessionId: string,
   input: { loId: string; sessionServedIds: string[] },
+  restricted = false,
 ): Promise<PracticeQuestion> {
   return request<PracticeQuestion>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/practice/next`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/practice/next`, restricted),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -632,6 +640,7 @@ export function submitPreviewAttempt(
   courseId: string,
   previewSessionId: string,
   input: SubmitAttemptInput,
+  restricted = false,
 ): Promise<AttemptResult> {
   const {
     questionVersionId,
@@ -642,7 +651,7 @@ export function submitPreviewAttempt(
     paramValues,
   } = input;
   return request<AttemptResult>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/attempts`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/attempts`, restricted),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -666,10 +675,11 @@ export function flagPreviewQuestion(
   questionId: string,
   reason?: string,
   sendToInstructorQueue = false,
+  restricted = false,
 ): Promise<{ flagged: true; testQueued: boolean }> {
   const normalizedReason = reason?.trim();
   return request<{ flagged: true; testQueued: boolean }>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/flag`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/flag`, restricted),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -686,10 +696,11 @@ export function getPreviewReviewBook(
   courseId: string,
   previewSessionId: string,
   sort: ReviewBookSort = 'theme',
+  restricted = false,
 ): Promise<ReviewBookGroup[]> {
   const query = new URLSearchParams({ previewSessionId, sort });
   return request<ReviewBookGroup[]>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/review-book?${query.toString()}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/review-book?${query.toString()}`, restricted),
   );
 }
 
@@ -697,9 +708,10 @@ export function bookmarkPreviewQuestion(
   courseId: string,
   previewSessionId: string,
   questionId: string,
+  restricted = false,
 ): Promise<{ bookmarked: boolean }> {
   return request<{ bookmarked: boolean }>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark`, restricted),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -712,9 +724,10 @@ export function unbookmarkPreviewQuestion(
   courseId: string,
   previewSessionId: string,
   questionId: string,
+  restricted = false,
 ): Promise<{ bookmarked: boolean }> {
   return request<{ bookmarked: boolean }>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/questions/${encodeURIComponent(questionId)}/bookmark?previewSessionId=${encodeURIComponent(previewSessionId)}`, restricted),
     { method: 'DELETE' },
   );
 }
@@ -723,9 +736,10 @@ export async function removePreviewReviewBookEntry(
   courseId: string,
   previewSessionId: string,
   entryId: string,
+  restricted = false,
 ): Promise<void> {
   await request<void>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/review-book/${encodeURIComponent(entryId)}?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/review-book/${encodeURIComponent(entryId)}?previewSessionId=${encodeURIComponent(previewSessionId)}`, restricted),
     { method: 'DELETE' },
   );
 }
@@ -735,9 +749,10 @@ export async function skipPreviewLo(
   previewSessionId: string,
   loId: string,
   attempted: boolean,
+  restricted = false,
 ): Promise<void> {
   await request<void>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/los/${encodeURIComponent(loId)}/skip`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/los/${encodeURIComponent(loId)}/skip`, restricted),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -749,9 +764,10 @@ export async function skipPreviewLo(
 export function getPreviewSessionSummary(
   courseId: string,
   previewSessionId: string,
+  restricted = false,
 ): Promise<SessionSummaryForStart> {
   return request<SessionSummaryForStart>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?previewSessionId=${encodeURIComponent(previewSessionId)}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?previewSessionId=${encodeURIComponent(previewSessionId)}`, restricted),
   );
 }
 
@@ -759,13 +775,14 @@ export function endPreviewSessionSummary(
   courseId: string,
   previewSessionId: string,
   since: Date,
+  restricted = false,
 ): Promise<SessionEndSummary> {
   const query = new URLSearchParams({
     previewSessionId,
     since: since.toISOString(),
   });
   return request<SessionEndSummary>(
-    `/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?${query.toString()}`,
+    previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/session-summary?${query.toString()}`, restricted),
   );
 }
 
@@ -1125,6 +1142,35 @@ export function regenerateRegistrationCode(courseId: string): Promise<{ registra
   return request<{ registrationCode: string }>(`/api/courses/${encodeURIComponent(courseId)}/registration-code`, {
     method: 'POST',
   });
+}
+
+export interface RegistrationCodeRow {
+  id: string;
+  code: string;
+  status: 'available' | 'claimed' | 'used' | 'revoked' | 'expired';
+  createdAt: string;
+  claimedAt: string | null;
+  usedAt: string | null;
+  recipient: { puid: string; cwl: string; displayName: string; email: string; lastLoginAt: string | null } | null;
+}
+export interface RegistrationCodePage {
+  codes: RegistrationCodeRow[]; total: number; page: number; pageSize: number; pageCount: number;
+}
+export function listRegistrationCodes(courseId: string, options: { page: number; pageSize: number; status?: RegistrationCodeRow['status'] } = { page: 1, pageSize: 25 }): Promise<RegistrationCodePage> {
+  const query = new URLSearchParams({ page: String(options.page), pageSize: String(options.pageSize) });
+  if (options.status) query.set('status', options.status);
+  return request(`/api/courses/${encodeURIComponent(courseId)}/registration-codes?${query}`);
+}
+export function createRegistrationCodes(courseId: string, count: number, requestId: string): Promise<{ ids: string[] }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/registration-codes`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count, requestId }),
+  });
+}
+export function revokeRegistrationCode(courseId: string, codeId: string): Promise<void> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/registration-codes/${encodeURIComponent(codeId)}`, { method: 'DELETE' });
+}
+export function deleteRegistrationCode(courseId: string, codeId: string): Promise<void> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/registration-codes/${encodeURIComponent(codeId)}/record`, { method: 'DELETE' });
 }
 
 /** Side-effect-free authoritative publish checklist. */
@@ -1488,6 +1534,43 @@ export function previewRosterFile(courseId: string, file: File, column?: string)
   });
 }
 
+export interface ImportedCoursePerson { puid: string; name: string; role: 'student' | 'instructor' | 'ta' }
+export interface PeopleImportChanges {
+  comparison: 'previous-csv-import';
+  added: Array<{ puid: string; name: string; roles: ImportedCoursePerson['role'][] }>;
+  removed: Array<{ puid: string; name: string; roles: ImportedCoursePerson['role'][] }>;
+  roleChanged: Array<{ puid: string; name: string; roles: ImportedCoursePerson['role'][]; previousRoles: ImportedCoursePerson['role'][] }>;
+  unchanged: number;
+}
+export interface PeopleImportPreview {
+  expectedRevision?: number; changes?: PeopleImportChanges;
+  columns: string[]; identityColumn: string; roleColumn: string | null;
+  members: ImportedCoursePerson[];
+  rejects: Array<{ line: number; value: string; reason: string }>;
+  totalRows: number; ignoredRows: number;
+  warnings: string[];
+}
+export interface PeopleImportSummary {
+  lastChanges?: PeopleImportChanges | null;
+  revision: number; members: ImportedCoursePerson[]; canManage: boolean;
+  importedAt: string | null; fileName: string | null;
+}
+export function getPeopleImport(courseId: string): Promise<PeopleImportSummary> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/people-import`);
+}
+export function previewPeopleImport(courseId: string, file: File): Promise<PeopleImportPreview> {
+  const form = new FormData(); form.append('file', file);
+  return request(`/api/courses/${encodeURIComponent(courseId)}/people-import/preview`, { method: 'POST', body: form });
+}
+export function commitPeopleImport(courseId: string, file: File, expectedRevision: number, confirmedTeachingAccess: boolean): Promise<PeopleImportSummary> {
+  const form = new FormData(); form.append('file', file);
+  form.append('expectedRevision', String(expectedRevision)); form.append('confirmedTeachingAccess', String(confirmedTeachingAccess));
+  return request(`/api/courses/${encodeURIComponent(courseId)}/people-import`, { method: 'PUT', body: form });
+}
+export function clearPeopleImport(courseId: string, expectedRevision: number): Promise<PeopleImportSummary> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/people-import`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedRevision }) });
+}
+
 // --- Instructor: materials (IN-S04/S05/S06) ----------------------------------
 //
 // Added in Task C (consumed by the Course Dashboard's pre-publish checklist —
@@ -1554,6 +1637,40 @@ export type MaterialKind =
 export type ContentRunKind = 'material-ingest' | 'question-generation' | 'structure-generation';
 export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 
+export type GenerationQualityPolicy = 'baseline' | 'grounded-memory-v1';
+export interface GenerationQualityAssessment {
+  policy: 'grounded-memory-v1';
+  item: number;
+  status: 'eligible' | 'withheld';
+  sourceSupport: 'supported' | 'unsupported' | 'uncertain';
+  notation: 'consistent' | 'inconsistent' | 'uncertain';
+  novelty: 'independent' | 'duplicate' | 'variant' | 'uncertain';
+  reasons: string[];
+  citations: Array<{ kind: 'premise' | 'solution' | 'correction'; claim: string; passageId: string; quote: string }>;
+  matchedEntryIds: string[];
+  comparedEntryIds?: string[];
+  evidencePacketId: string;
+  memoryDigest: string;
+  checkedAt: string;
+  candidate?: {
+    type: QuestionType; stem: string; options: QuestionOption[];
+    numericKind?: 'numeric' | 'conceptual'; paramSlots?: ParamSlotInput[]; derivedValues?: DerivedValueInput[];
+    contentHash: string; truncated: boolean;
+  };
+  coverage: { evidenceTruncated: boolean; memoryTruncated: boolean; shownEntries: number; totalEntries: number; missingVersions: number; consistency: 'best-effort' };
+}
+export interface GenerationQualityRunResult {
+  policy: 'grounded-memory-v1';
+  assessments: GenerationQualityAssessment[];
+  /** Coverage metadata used here; the API also returns frozen original passages. */
+  evidence?: {
+    id: string;
+    parsingProvenance: 'unrecorded';
+    coverage: { sourceChunks: number; selectedChunks: number; selectedCharacters: number; omittedPassages: number; truncated: boolean; searchScope: 'retrieved-chunks-and-immediate-neighbors' };
+    findings: Array<{ code: 'evidence-budget-truncated' | 'source-text-damage'; message: string; passageIds: string[] }>;
+  };
+}
+
 export interface ContentRunError {
   code: string;
   message: string;
@@ -1608,6 +1725,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
     type: GenerationQuestionType;
     difficulty?: GenerationDifficulty;
     prompt?: string;
+    qualityPolicy?: GenerationQualityPolicy;
     blueprintId?: string;
     retryOfRunId?: string;
     models: { embedding: string; generator: string; validator: string; reviewer: string };
@@ -1616,6 +1734,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
   result?: {
     createdQuestionIds: string[];
     failures: Array<{ item: number; stage: string; code: string; message: string }>;
+    quality?: GenerationQualityRunResult;
   };
 }
 
@@ -1690,6 +1809,69 @@ export function getContentRun(courseId: string, runId: string): Promise<ContentR
   );
 }
 
+/** Authenticated read-only download; the server supplies an attachment filename. */
+export function contentRunEvaluationExportUrl(courseId: string, runId: string): string {
+  return `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/evaluation-export`;
+}
+
+export interface ModelUsageTotals {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  reasoningTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteTokens: number | null;
+  observedCalls: number;
+  reportedCalls: number;
+  callsWithKnownTotal: number;
+  unknownCalls: number;
+  pendingCalls: number;
+}
+
+export interface ModelUsageSummary extends ModelUsageTotals {
+  status: 'complete' | 'partial' | 'pending' | 'unavailable';
+  scope: 'llm-calls';
+  coverageGaps: number;
+  untracked: boolean;
+  retryVisibility: 'disabled' | 'unknown';
+  stages: Array<ModelUsageTotals & { stage: string }>;
+  models: Array<ModelUsageTotals & { provider: string; model: string }>;
+}
+
+export interface ModelCallReceipt {
+  _id: string;
+  trackingSessionId: string;
+  courseId?: string;
+  actor?: { puid: string; uid?: string; displayName?: string };
+  runId?: string;
+  operationId?: string;
+  stage: string;
+  item?: number;
+  provider: string;
+  requestedModel: string;
+  actualModel: string | null;
+  responseId: string | null;
+  requestOptions: Record<string, string | number | boolean>;
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  outcome: 'pending' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
+  usage: {
+    inputTokens: number | null; outputTokens: number | null; totalTokens: number | null;
+    reasoningTokens: number | null; cachedInputTokens: number | null; cacheWriteTokens: number | null;
+    totalOrigin: 'provider' | 'derived-from-reported' | 'unknown';
+    countSource: 'provider-reported' | 'unavailable';
+  };
+  candidateAttempt?: number;
+  jsonAttempt?: number;
+  retryVisibility: 'disabled' | 'unknown';
+}
+
+export interface ModelUsageSnapshot { summary: ModelUsageSummary; calls: ModelCallReceipt[]; totalCalls?: number }
+export function getContentRunUsage(courseId: string, runId: string): Promise<ModelUsageSnapshot> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/usage`);
+}
+
 export function retryContentRun(courseId: string, runId: string): Promise<{ runId: string }> {
   return request<{ runId: string }>(
     `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/retry`,
@@ -1722,6 +1904,7 @@ export interface GenerationBlueprint {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
+  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
   models: { embedding: string; generator: string; validator: string; reviewer: string };
   createdBy: string;
@@ -1737,6 +1920,7 @@ export interface GenerationBlueprintInput {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
+  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
 }
 
@@ -2055,7 +2239,7 @@ export function getGenerationPlan(courseId: string): Promise<GenerationPlanRow[]
 }
 
 /** POST /api/courses/:courseId/generation-plan -> one run per cell. */
-export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string }): Promise<GenerationPlanResult> {
+export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string; qualityPolicy?: GenerationQualityPolicy }): Promise<GenerationPlanResult> {
   return request<GenerationPlanResult>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2090,6 +2274,7 @@ export interface GenerateQuestionsInput {
   type?: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
+  qualityPolicy?: GenerationQualityPolicy;
 }
 
 export interface GenerationPreset {
@@ -2414,7 +2599,7 @@ export function bankFiltersToQuery(filters: BankFilters): string {
 }
 
 /** GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=
- * -> { total, questions }. Instructor-only. (IN-Q08) */
+ * -> { total, questions }. Requires question.review in this course. (IN-Q08) */
 export function browseBank(
   courseId: string,
   filters: BankFilters = {},
@@ -2425,7 +2610,7 @@ export function browseBank(
 }
 
 /** GET /api/questions/:questionId -> full head + current version + agentDecision
- * + internalNotes + versions. Instructor-only. */
+ * + internalNotes + versions. Requires question.review in the question's course. */
 export function getQuestion(questionId: string): Promise<QuestionDetail> {
   return request<QuestionDetail>(`/api/questions/${encodeURIComponent(questionId)}`);
 }
@@ -2668,6 +2853,8 @@ export type Capability =
   | 'hierarchy.edit';
 
 export interface TaInvite {
+  cwl?: string;
+  source?: 'csv-import';
   _id: string;
   courseId: string;
   email: string;
@@ -2702,11 +2889,11 @@ export function listTas(courseId: string): Promise<TaInvite[]> {
   return request<TaInvite[]>(`/api/courses/${encodeURIComponent(courseId)}/tas`);
 }
 
-export function inviteTa(courseId: string, email: string): Promise<TaInvite> {
+export function inviteTa(courseId: string, identifier: string): Promise<TaInvite> {
   return request<TaInvite>(`/api/courses/${encodeURIComponent(courseId)}/tas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ identifier }),
   });
 }
 
@@ -3198,13 +3385,110 @@ function diagnosticQuery(filters: DiagnosticFilters): string {
   return query.toString();
 }
 export const listAdminOperations = (filters: DiagnosticFilters) => request<DiagnosticPage<OperationRecord>>(`/api/admin/operations?${diagnosticQuery(filters)}`);
-export const getAdminOperation = (id: string) => request<{ operation: OperationRecord; runs: DiagnosticRun[] }>(`/api/admin/operations/${encodeURIComponent(id)}`);
+export const getAdminOperation = (id: string) => request<{ operation: OperationRecord; runs: DiagnosticRun[]; modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }>(`/api/admin/operations/${encodeURIComponent(id)}`);
 export const listAdminRuns = (filters: DiagnosticFilters) => request<DiagnosticPage<DiagnosticRun>>(`/api/admin/diagnostic-runs?${diagnosticQuery(filters)}`);
-export const getAdminRun = (id: string) => request<{ run: DiagnosticRun } & DiagnosticIdentities>(`/api/admin/diagnostic-runs/${encodeURIComponent(id)}`);
+export const getAdminRun = (id: string) => request<{ run: DiagnosticRun; modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number } & DiagnosticIdentities>(`/api/admin/diagnostic-runs/${encodeURIComponent(id)}`);
+export interface ModelUsageFilters {
+  actor?: string; courseId?: string; operationId?: string; runId?: string;
+  from?: string; until?: string; page?: number; limit?: number;
+}
+export interface WorkflowEntry {
+  id: string;
+  kind: 'operation' | 'run';
+  createdAt: string;
+  endedAt?: string;
+  label: string;
+  outcome: string;
+  requestId?: string;
+  runId?: string;
+  method?: string;
+  route?: string;
+  actorPuid?: string;
+  courseId?: string;
+  durationMs?: number;
+  targets: Record<string, string>;
+  material?: { id: string; name: string };
+  materials?: Array<{ id: string; name: string }>;
+  relations: Array<{ kind: 'operation-run'; confidence: 'recorded'; requestId: string; runId: string; evidence: 'persisted-operation-id' | 'recorded-run-id' }>;
+}
+export interface WorkflowGroup {
+  id: string; actorPuid?: string; courseId?: string; startedAt: string; endedAt: string;
+  grouping: 'inferred-time-window'; entries: WorkflowEntry[];
+}
+export interface WorkflowPage extends DiagnosticPage<WorkflowGroup> {
+  truncated: boolean; windowMinutes: number; limitations: string[];
+}
+export const listAdminModelUsage = (filters: ModelUsageFilters) => request<DiagnosticPage<ModelCallReceipt> & { summary: ModelUsageSummary }>(`/api/admin/model-usage?${diagnosticQuery(filters)}`);
+export const listAdminWorkflows = (filters: ModelUsageFilters) => request<WorkflowPage>(`/api/admin/workflows?${diagnosticQuery(filters)}`);
 export const listAdminAuditHistory = (filters: DiagnosticFilters) => request<DiagnosticPage<AuditHistoryRecord>>(`/api/admin/audit-history?${diagnosticQuery(filters)}`);
 export const listAdminQuestions = (filters: DiagnosticFilters) => request<DiagnosticPage<AdminQuestionRow>>(`/api/admin/all-questions?${diagnosticQuery(filters)}`);
 export const getAdminQuestion = (id: string) => request<AdminQuestionDiagnostic>(`/api/admin/all-questions/${encodeURIComponent(id)}`);
 export const reproduceAdminQuestion = (id: string, input: { versionId?: string; seed?: number; attemptId?: string }) => request<QuestionReproduction>(`/api/admin/all-questions/${encodeURIComponent(id)}/reproduce?${new URLSearchParams(Object.entries(input).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`);
+
+// --- Explicit, isolated Exam Builder papers --------------------------------
+export interface BuilderSettings {
+  title: string; kind: 'midterm' | 'final'; purpose: 'formal' | 'practice';
+  durationMinutes: number; opensAt: string; closesAt: string; timeZone: string;
+  feedback: 'instructor' | 'after-close' | 'immediate'; shuffle: boolean;
+  accommodations: Array<{ puid: string; extraMinutes: number }>;
+}
+export interface BuilderItem {
+  id: string; source: 'bank' | 'generated' | 'variant'; questionId?: string; versionId?: string;
+  familyId: string; loIds: string[]; type: QuestionType; difficulty: Difficulty;
+  stem: string; options: Array<{ key: string; text: string; role: string; explanation?: string }>;
+  points: number; minutes: number; validated: boolean; approval?: { by: string; at: string };
+  assessment?: { decision: string; reasoning: string }; practiceExposure: boolean;
+}
+export interface BuilderExam {
+  _id: string; courseId: string; revision: number; settings: BuilderSettings; items: BuilderItem[];
+  activeRunIds?: string[]; publicationId?: string; publishedRevision?: number; updatedAt: string; startedAt?: string; displayTitle?: string; deletingAt?: string;
+}
+export interface BuilderRun {
+  progress?: { item: number; stage: 'retrieving' | 'generating' | 'validating' | 'reviewing' | 'saving'; preview?: { stem: string; options?: Array<{ key: string; text: string }> } };
+  _id: string; status: 'planned' | 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  interpretation: string; conflicts: string[]; prompt: string;
+  cells: Array<{ id: string; loId: string; secondaryLoIds?: string[]; type: QuestionType; difficulty: Difficulty }>;
+  completed: string[]; failures: Array<{ itemId: string; message: string }>;
+}
+export interface BuilderDetail {
+  exam: BuilderExam; candidates: Array<{ _id: string; item: BuilderItem }>;
+  runs: BuilderRun[];
+}
+export function examBuilderRequest<T>(courseId: string, path = '', method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
+  return request<T>(`/api/courses/${encodeURIComponent(courseId)}/exam-builder${path}`, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
+}
+export interface AssessmentSummary {
+  id: string; title: string; kind: string; purpose: string; durationMinutes: number; opensAt: string; closesAt: string;
+  timeZone: string; feedback: string; questionCount: number; attemptId?: string; submitted?: boolean;
+}
+export interface AssessmentState {
+  id: string; title: string; submitted: boolean; deadline: string; serverTime: string; answerRevision: number;
+  questions: Array<{ id: string; stem: string; type: QuestionType; points: number; options: Array<{ key: string; text: string }>; selectedKey: string | null }>;
+}
+export interface AssessmentResults {
+  released: boolean; title: string; message?: string; score?: number; maxScore?: number;
+  questions?: Array<{ id: string; stem: string; points: number; selectedKey: string | null; options: Array<{ key: string; text: string; explanation?: string; correct: boolean }> }>;
+}
+export function assessmentRequest<T>(courseId: string, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown): Promise<T> {
+  return request<T>(`/api/courses/${encodeURIComponent(courseId)}/${path}`, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
+}
+
+
+/** Private exam stream. Every reconnect replays a complete persisted snapshot. */
+export function subscribeExamBuilder(courseId: string, examId: string, handlers: {
+  onSnapshot: (detail: BuilderDetail) => void; onConnection: (connected: boolean) => void; onUnavailable?: () => void;
+}): () => void {
+  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/exam-builder/${encodeURIComponent(examId)}/events`);
+  source.addEventListener('snapshot', event => {
+    try {
+      const detail = JSON.parse((event as MessageEvent<string>).data) as BuilderDetail;
+      handlers.onSnapshot(detail); handlers.onConnection(true);
+    } catch { handlers.onConnection(false); }
+  });
+  source.addEventListener('error', () => handlers.onConnection(false));
+  source.addEventListener('unavailable', () => { source.close(); handlers.onConnection(false); handlers.onUnavailable?.(); });
+  return () => source.close();
+}
 
 // Canvas connection and many-to-one course linking.
 export interface CanvasSource { id: string; name: string; code: string; }

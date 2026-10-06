@@ -103,6 +103,17 @@ describe('autoGenerationPlan', () => {
 describe('enqueueGenerationPlan', () => {
   const courseId = new ObjectId();
 
+  it('copies the opt-in policy into every batch cell without changing requested supply', async () => {
+    jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
+    await enqueueGenerationPlan(courseId, [
+      { loId: new ObjectId(), difficulty: 'easy', kind: 'conceptual', count: 2 },
+      { loId: new ObjectId(), difficulty: 'medium', kind: 'calculation', count: 3 },
+    ], 'PUID-INSTR', { qualityPolicy: 'grounded-memory-v1' });
+    expect(enqueueGenerationRun).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(enqueueGenerationRun).mock.calls.map(([input]) => input.qualityPolicy)).toEqual(['grounded-memory-v1', 'grounded-memory-v1']);
+    expect(jest.mocked(enqueueGenerationRun).mock.calls.map(([input]) => input.count)).toEqual([2, 3]);
+  });
+
   it('enqueues one run per cell with its difficulty and kind, and reports per-cell failures without stopping', async () => {
     const loA = new ObjectId(); const loB = new ObjectId();
     const runA = new ObjectId();
@@ -165,6 +176,9 @@ describe('durable plan submission identity', () => {
     const first = await enqueueGenerationPlan(course, cells, 'teacher', submission);
     const retry = await enqueueGenerationPlan(course, cells, 'teacher', submission);
     expect(retry.runs[0].runId).toEqual(first.runs[0].runId);
+    await expect(enqueueGenerationPlan(course, cells, 'teacher', { ...submission, qualityPolicy: 'grounded-memory-v1' })).rejects.toThrow('generation-submission-conflict');
+    const explicitBaseline = await enqueueGenerationPlan(course, cells, 'teacher', { ...submission, qualityPolicy: 'baseline' });
+    expect(explicitBaseline.runs[0].runId).toEqual(first.runs[0].runId);
     await expect(enqueueGenerationPlan(course, [{ ...cells[0], count: 3 }], 'teacher', submission)).rejects.toThrow('generation-submission-conflict');
     const other = await enqueueGenerationPlan(course, cells, 'other-teacher', submission);
     expect(other.runs[0].runId).not.toEqual(first.runs[0].runId);

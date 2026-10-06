@@ -1,0 +1,114 @@
+- complementary:
+  - link "FinanceBot":
+    - /url: "#/preview/courses"
+    - generic: F
+    - generic: FinanceBot
+  - button "Collapse navigation" [expanded]:
+    - generic: ‹
+  - generic: PREVIEW MODE
+  - region "Current course":
+    - link "← Preview courses":
+      - /url: "#/preview/courses"
+    - generic: L
+    - strong: COMM 298 · Introduction to Finance
+    - generic: Winter Term 2, 2026/27
+  - paragraph: TOPIC · Capital Budgeting
+  - paragraph: CURRENT LO
+  - paragraph: Calculate and interpret NPV and IRR
+  - paragraph: In progress
+  - paragraph: 1 answered · 0 correct
+  - button "Skip this LO"
+  - link "End Session & Return":
+    - /url: "#/preview/course/6aa75b28c2fc411560c90382/summary?since=2026-10-01T18%3A01%3A18.391Z"
+  - generic: Anonymous Student
+- banner:
+  - generic: COMM 298 · Introduction to Finance
+  - generic: Anonymous Student Preview
+  - button "Notifications"
+  - button "Switch role, current role Student":
+    - generic: Student
+    - text: ⌄
+  - button "Toggle light or dark theme": ☾
+  - link "Log out":
+    - /url: /auth/logout
+- main:
+  - navigation "Breadcrumb":
+    - generic: Introduction to Finance
+    - generic: ›
+    - generic: Capital Budgeting
+    - generic: ›
+    - generic: "LO 1: Calculate and interpret NPV and IRR"
+  - heading "Calculate and interpret NPV and IRR" [level=1]
+  - link "Session Summary →":
+    - /url: "#/preview/course/6aa75b28c2fc411560c90382/summary?since=2026-10-01T18%3A01%3A18.391Z"
+  - generic: Q1
+  - generic: A project requires an initial outlay of 13000 at time 0 and generates a cash inflow of 300
+  - paragraph: "✕ You answered: Option C — retry the follow-up question above to see more"
+  - link "Practice this LO more":
+    - /url: "#/preview/course/6aa75b28c2fc411560c90382/practice/6aa75bfec2fc411560c90411"
+  - generic: anonymous-preview
+  - paragraph: Q1 — Multiple Choice
+  - paragraph: A project requires an initial outlay of $13000 at time 0 and generates a cash inflow of $3000 at the end of year 2. If the appropriate discount rate is 20%, what is the project's NPV as of time 0?
+  - button "A $2083.33" [disabled]:
+    - generic: A
+    - paragraph: $2083.33
+  - button "B $-8680" [disabled]:
+    - generic: B
+    - paragraph: $-8680
+  - button "C $-10500" [disabled]:
+    - generic: C
+    - paragraph: $-10500
+  - button "D $-10916.67" [disabled]:
+    - generic: D
+    - paragraph: $-10916.67
+  - paragraph: Not quite — see the explanation below.
+  - generic: C.
+  - paragraph:
+    - text: "This calculation discounts the future cash flow for only one period:"
+    - math:
+      - generic: NPV
+      - generic: one period
+      - generic: =
+      - generic: −
+      - generic: "13000"
+      - generic: +
+      - generic: "3000"
+      - generic: "1"
+      - generic: +
+      - generic: "20"
+      - generic: /
+      - generic: "100"
+      - generic: =
+      - generic: −
+      - generic: "10500"
+    - generic: NPV
+    - generic: one period
+    - text: =
+    - generic: −13000 +
+    - generic: 1 + 20/100
+    - generic: "3000"
+    - text: =
+    - generic: −10500
+    - text: Because the inflow arrives after more than one period, this understates the amount of discounting required.
+  - button "Bookmark"
+  - button "🏳 Flag this question"
+  - paragraph: Try a similar question
+  - generic: anonymous-preview
+  - paragraph: Q2 — Multiple Choice
+  - paragraph: A project requires an initial investment of $1100 and will generate a cash inflow of $4500 one year later. At an annual discount rate of 15%, what is the project's NPV?
+  - button "A $3400":
+    - generic: A
+    - paragraph: $3400
+  - button "B $4075":
+    - generic: B
+    - paragraph: $4075
+  - button "C $2813.04":
+    - generic: C
+    - paragraph: $2813.04
+  - button "D $2302.65":
+    - generic: D
+    - paragraph: $2302.65
+  - button "🏳 Flag this question"
+  - button "Submit" [disabled]
+  - paragraph: © FinanceBot · UBC Sauder.
+  - paragraph: All FinanceBot materials are the intellectual property of the instructor. Unauthorized personal or commercial use is prohibited.

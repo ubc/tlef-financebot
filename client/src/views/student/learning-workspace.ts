@@ -53,7 +53,7 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
         const confusing = el('input', { type: 'checkbox', ...(row.confusing ? { checked: true } : {}) });
         const status = el('div', { role: 'status' }); const pop = dialog('Personal tags', el('div', { class: 'stack' }, tags, el('label', {}, confusing, ' Still confusing'), status, button('Save tags', async () => { try { await api.metadata(row.questionId, { tags: tags.value.split(',').map(s => s.trim()).filter(Boolean), confusing: confusing.checked }); library = (await api.library()).questions; pop.close(); draw(); browse?.onMetadata?.(); } catch (error) { status.replaceChildren(errorState((error as Error).message)); } }, 'btn btn--instr-primary')));
       }) : false,
-      state.kind === 'browse' ? el('a', { class: 'btn btn--ghost btn--sm', href: `${experience.preview ? '#/preview' : '#'}${`/course/${courseId}/discussion`}?questionId=${current.questionId}` }, 'Ask the class') : false);
+      state.kind === 'browse' ? el('a', { class: 'btn btn--ghost btn--sm', href: `${experience.routes.course(courseId)}/discussion?questionId=${current.questionId}` }, 'Ask the class') : false);
   };
   let drawnQuestionId: string | undefined;
   const draw = () => {

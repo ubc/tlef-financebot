@@ -35,7 +35,7 @@ export function safeControls(value: unknown): Record<string, string | number | b
   if (!value || typeof value !== 'object') return {};
   const result: Record<string, string | number | boolean> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (!/^(courseId|questionId|versionId|materialId|runId|loId|themeId|attemptId|count|type|difficulty|kind|state|to|seed|version|page|limit|mode|strategy)$/.test(key)) continue;
+    if (!/^(courseId|questionId|versionId|materialId|runId|loId|themeId|attemptId|count|type|difficulty|kind|state|to|seed|version|page|limit|mode|strategy|qualityPolicy)$/.test(key)) continue;
     if (typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) result[key] = item;
     else if (typeof item === 'string' && /^[\w.-]{1,128}$/.test(item)) result[key] = item;
   }

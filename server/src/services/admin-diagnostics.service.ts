@@ -7,6 +7,8 @@ import type { ContentRun, OperationEvent } from '../types/domain';
 import { auditHealth, safeDiagnostic } from './operation-audit.service';
 import { resolveParamValues, substituteParams } from './params.service';
 import { isServable } from './numeric-gate.service';
+import { listModelCalls } from './model-usage.service';
+import type { ModelCallReceipt, ModelUsageFilters, ModelUsageSummary, ModelUsageTotals } from '../types/model-usage';
 
 export interface DiagnosticQuery {
   page: number; limit: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
@@ -20,6 +22,11 @@ function dates(query: DiagnosticQuery): Record<string, Date> | undefined {
 function literal(value: string): RegExp { return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); }
 const paging = (query: DiagnosticQuery) => ({ skip: (query.page - 1) * query.limit, limit: query.limit });
 function missing(): never { throw Object.assign(new Error('Record not found.'), { status: 404 }); }
+const modelUsageNotes = [
+  'Counts cover instrumented observed LLM calls. Earlier and unrecorded activity cannot be reconstructed.',
+  'Recorded subtotals exclude embeddings, parsing and infrastructure; they are not a monetary bill. Provider SDK retries may remain unobserved.',
+  'Recording faults reduce coverage while known. A process crash before any durable write can leave an unreconstructable gap; complete describes retained observation coverage.',
+];
 
 async function identities(courseIds: string[], puids: string[]) {
   const [courses, users] = await Promise.all([
@@ -51,7 +58,74 @@ export async function operationDetail(requestId: string) {
   const operation = await operationEventsCol().findOne({ requestId });
   if (!operation) return missing();
   const runs = await contentRunsCol().find({ operationId: requestId }, { projection: { kind: 1, status: 1, stage: 1, courseId: 1, createdAt: 1, error: 1 } }).limit(100).toArray();
-  return { operation, runs: diagnosticTree(runs) };
+  const calls = await listModelCalls({ operationId: requestId, page: 1, limit: 100 });
+  return { operation: diagnosticTree(operation), runs: diagnosticTree(runs),
+    modelUsage: modelUsageSummaryDto(calls.summary), modelCalls: calls.items.map(modelCallDto), modelCallsTotal: calls.total, modelUsageNotes };
+}
+
+const tokenFields = ['inputTokens', 'outputTokens', 'totalTokens', 'reasoningTokens', 'cachedInputTokens', 'cacheWriteTokens'] as const;
+const callCountFields = ['observedCalls', 'reportedCalls', 'callsWithKnownTotal', 'pendingCalls', 'unknownCalls'] as const;
+const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {};
+const nonnegativeInteger = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+function modelUsageTotalsDto(value: unknown): ModelUsageTotals {
+  const data = object(value);
+  return Object.fromEntries([
+    ...tokenFields.map(key => [key, nonnegativeInteger(data[key])]),
+    ...callCountFields.map(key => [key, nonnegativeInteger(data[key]) ?? 0]),
+  ]) as unknown as ModelUsageTotals;
+}
+
+/** Usage has a closed numeric DTO; generic credential redaction stays strict. */
+export function modelUsageSummaryDto(value: ModelUsageSummary): ModelUsageSummary {
+  const data = object(value);
+  const malformed = [...tokenFields, ...callCountFields].some(key => data[key] != null && nonnegativeInteger(data[key]) === null);
+  const status = ['complete', 'partial', 'pending', 'unavailable'].includes(String(data.status)) ? data.status as ModelUsageSummary['status'] : 'unavailable';
+  return {
+    ...modelUsageTotalsDto(data), status: malformed ? 'unavailable' : status, scope: 'llm-calls',
+    coverageGaps: nonnegativeInteger(data.coverageGaps) ?? 0, untracked: typeof data.untracked === 'boolean' ? data.untracked : true,
+    retryVisibility: data.retryVisibility === 'disabled' ? 'disabled' : 'unknown',
+    stages: Array.isArray(data.stages) ? data.stages.map(value => ({ ...modelUsageTotalsDto(value), stage: safeDiagnostic(object(value).stage) })) : [],
+    models: Array.isArray(data.models) ? data.models.map(value => ({ ...modelUsageTotalsDto(value), provider: safeDiagnostic(object(value).provider), model: safeDiagnostic(object(value).model) })) : [],
+  };
+}
+
+export function modelCallDto(receipt: ModelCallReceipt): ModelCallReceipt {
+  const usage = object(receipt.usage);
+  const requestOptions: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(receipt.requestOptions ?? {})) {
+    if (/^(maxTokens|max_completion_tokens|max_output_tokens|max_tokens)$/.test(key) && nonnegativeInteger(value) !== null) requestOptions[key] = value as number;
+    if (key === 'stream' && typeof value === 'boolean') requestOptions[key] = value;
+    if (key === 'temperature' && typeof value === 'number' && Number.isFinite(value)) requestOptions[key] = value;
+    if (/^(reasoningEffort|reasoning_effort)$/.test(key) && typeof value === 'string' && /^(none|minimal|low|medium|high|xhigh)$/.test(value)) requestOptions[key] = value;
+    if (key === 'responseFormat' && typeof value === 'string' && /^(json|text)$/.test(value)) requestOptions[key] = value;
+  }
+  return {
+    _id: receipt._id, trackingSessionId: receipt.trackingSessionId,
+    ...(receipt.operationId ? { operationId: receipt.operationId } : {}), ...(receipt.runId ? { runId: receipt.runId } : {}),
+    ...(receipt.courseId ? { courseId: receipt.courseId } : {}),
+    ...(receipt.actor ? { actor: { puid: safeDiagnostic(receipt.actor.puid), ...(receipt.actor.uid ? { uid: safeDiagnostic(receipt.actor.uid) } : {}), ...(receipt.actor.displayName ? { displayName: safeDiagnostic(receipt.actor.displayName) } : {}) } } : {}),
+    stage: safeDiagnostic(receipt.stage), ...(receipt.item != null ? { item: nonnegativeInteger(receipt.item) ?? undefined } : {}),
+    ...(receipt.candidateAttempt != null ? { candidateAttempt: nonnegativeInteger(receipt.candidateAttempt) ?? undefined } : {}),
+    ...(receipt.jsonAttempt != null ? { jsonAttempt: nonnegativeInteger(receipt.jsonAttempt) ?? undefined } : {}),
+    provider: safeDiagnostic(receipt.provider), requestedModel: safeDiagnostic(receipt.requestedModel), actualModel: receipt.actualModel ? safeDiagnostic(receipt.actualModel) : null,
+    responseId: receipt.responseId ? safeDiagnostic(receipt.responseId) : null, requestOptions,
+    startedAt: receipt.startedAt, ...(receipt.finishedAt ? { finishedAt: receipt.finishedAt } : {}),
+    ...(receipt.durationMs != null ? { durationMs: nonnegativeInteger(receipt.durationMs) ?? undefined } : {}),
+    outcome: receipt.outcome, retryVisibility: receipt.retryVisibility === 'disabled' ? 'disabled' : 'unknown',
+    usage: {
+      inputTokens: nonnegativeInteger(usage.inputTokens), outputTokens: nonnegativeInteger(usage.outputTokens), totalTokens: nonnegativeInteger(usage.totalTokens),
+      reasoningTokens: nonnegativeInteger(usage.reasoningTokens), cachedInputTokens: nonnegativeInteger(usage.cachedInputTokens), cacheWriteTokens: nonnegativeInteger(usage.cacheWriteTokens),
+      totalOrigin: usage.totalOrigin === 'provider' || usage.totalOrigin === 'derived-from-reported' ? usage.totalOrigin : 'unknown',
+      countSource: usage.countSource === 'provider-reported' ? 'provider-reported' : 'unavailable',
+    },
+  };
+}
+
+export async function listAdminModelUsage(query: ModelUsageFilters) {
+  const result = await listModelCalls(query);
+  return { ...result, items: result.items.map(modelCallDto), summary: modelUsageSummaryDto(result.summary), modelUsageNotes,
+    ...await identities(result.items.map(item => item.courseId ? String(item.courseId) : '').filter(Boolean), result.items.map(item => item.actor?.puid ?? '').filter(Boolean)) };
 }
 
 // Run snapshots have a fixed internal schema; still redact provider errors and
@@ -85,7 +159,9 @@ export async function listRuns(query: DiagnosticQuery) {
 export async function runDetail(id: ObjectId) {
   const run = await contentRunsCol().findOne({ _id: id });
   if (!run) return missing();
-  return { run: diagnosticTree(run), ...await identities([String(run.courseId)], [run.requestedBy]) };
+  const calls = await listModelCalls({ runId: String(id), page: 1, limit: 100 });
+  return { run: diagnosticTree(run), modelUsage: modelUsageSummaryDto(calls.summary), modelCalls: calls.items.map(modelCallDto), modelCallsTotal: calls.total, modelUsageNotes,
+    ...await identities([String(run.courseId)], [run.requestedBy]) };
 }
 
 export async function listAuditHistory(query: DiagnosticQuery) {

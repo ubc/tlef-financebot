@@ -16,7 +16,7 @@ const studentDefinitions = {
       {
         selector: '[data-tutorial="registration-code"]',
         title: 'Join with a registration code',
-        body: 'Paste the code from your instructor here. Your CWL or email must match the course roster; ask your instructor if enrollment is refused.',
+        body: 'Gradebook imports add most students automatically. If your course is missing, ask your instructor for an unused one-time code and enter it after signing in with CWL.',
       },
     ],
   },
@@ -316,8 +316,8 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       },
       {
         "selector": "[data-tutorial=\"course-settings-roster\"]",
-        "title": "Match enrollment to your roster",
-        "body": "Students need a matching CWL or email and registration code. Preview CSV imports before replacing the roster; student numbers cannot match CWL login."
+        "title": "Import your class, then add missing students",
+        "body": "Open People to upload the Canvas Gradebook, invite individual people, or generate one-time codes and check who used them. Students need a published course within its term dates."
       }
     ]
   },
@@ -396,18 +396,18 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
   {
     "id": "instructor-sharing",
     "role": "instructor",
-    "label": "Share with co-instructors",
-    "path": "co-instructors",
+    "label": "Invite students and the teaching team",
+    "path": "people",
     "steps": [
       {
-        "selector": "[data-tutorial=\"sharing-people\"]",
+        "selector": "[data-tutorial=\"people-list\"]",
         "title": "Share authoring access",
         "body": "Owners and Admins can add a CWL login name or UBC email. CWL must match an existing account; email can remain pending until the matching first sign-in."
       },
       {
-        "selector": "[data-tutorial=\"sharing-link\"]",
-        "title": "Copy a restricted link",
-        "body": "The course link works only for people who already have access. Sending the link never grants permission by itself."
+        "selector": "[data-tutorial=\"people-invite\"]",
+        "title": "Choose a role before inviting",
+        "body": "Invite one Student, TA or Instructor using UBC email or an existing CWL. Share provides the same form and a restricted course link. No email is sent."
       }
     ]
   },
@@ -473,16 +473,16 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
   {
     "id": "instructor-tas",
     "role": "instructor",
-    "label": "Teaching Assistants",
-    "path": "tas",
+    "label": "People and TA permissions",
+    "path": "people",
     "steps": [
       {
-        "selector": "[data-tutorial=\"ta-team\"]",
+        "selector": "[data-tutorial=\"people-list\"]",
         "title": "Invite the course team",
-        "body": "Invite the UBC email used for CWL. Pending access activates on matching sign-in and expires with the configured course term."
+        "body": "Invite a UBC email or existing CWL and choose the course role. Pending email access activates on the matching sign-in. Only the Owner/Admin can manage people."
       },
       {
-        "selector": "[data-tutorial=\"ta-boundaries\"]",
+        "selector": "[data-tutorial=\"people-invite\"]",
         "title": "Delegate with clear boundaries",
         "body": "Choose review, suggested-edit, analytics and flag-triage capabilities. Final question approval and flag resolution remain Instructor-only."
       }

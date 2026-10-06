@@ -61,6 +61,7 @@ import {
   flagPreviewQuestion,
   getPreviewSessionSummary,
   getPreviewCourseIdentity,
+  isPreviewCourseStudentVisible,
   getPreviewHome,
   getNextPreviewQuestion,
   listPreviewReviewBook,
@@ -261,6 +262,14 @@ beforeEach(() => {
 });
 
 describe('Instructor student preview service', () => {
+  it('uses published lifecycle for restricted preview and keeps draft/archived courses hidden', async () => {
+    await expect(isPreviewCourseStudentVisible(courseId)).resolves.toBe(false);
+    jest.mocked(coursesCol).mockReturnValue(collectionFake([{ ...course, lifecycle: 'published', published: true }]) as never);
+    await expect(isPreviewCourseStudentVisible(courseId)).resolves.toBe(true);
+    jest.mocked(coursesCol).mockReturnValue(collectionFake([{ ...course, lifecycle: 'archived', published: true }]) as never);
+    await expect(isPreviewCourseStudentVisible(courseId)).resolves.toBe(false);
+  });
+
   it('returns only course identity without hierarchy, private settings, or creating Preview state', async () => {
     jest.mocked(coursesCol).mockReturnValue(collectionFake([{ ...course, section: '101' }]) as never);
 

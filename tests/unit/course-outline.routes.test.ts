@@ -48,13 +48,14 @@ function makeApp(as?: User): Express {
 
 describe('GET /api/courses/:courseId/outline', () => {
   beforeEach(() => {
+    jest.mocked(getCourseOutline).mockClear();
     (getCourseOutline as jest.Mock).mockResolvedValue({
       course: { name: 'Corporate Finance', courseCode: 'COMM 298', section: '101', term: '2026W1' },
       themes: [{ _id: themeId, name: 'Time Value of Money', order: 0, los: [{ _id: loId, name: 'Discounting', order: 0 }] }],
     });
   });
 
-  it('serves a TA (question.review), who is 403d by the instructor-only course endpoint', async () => {
+  it('serves a TA teaching member', async () => {
     const res = await request(makeApp(user('ta'))).get(`/api/courses/${courseId.toString()}/outline`);
     expect(res.status).toBe(200);
     expect(res.body.themes[0].los[0].name).toBe('Discounting');
@@ -68,6 +69,12 @@ describe('GET /api/courses/:courseId/outline', () => {
   it('403s a student', async () => {
     const res = await request(makeApp(user('student'))).get(`/api/courses/${courseId.toString()}/outline`);
     expect(res.status).toBe(403);
+  });
+
+  it('403s a TA assigned only to another course', async () => {
+    const res = await request(makeApp(user('ta'))).get(`/api/courses/${new ObjectId().toString()}/outline`);
+    expect(res.status).toBe(403);
+    expect(getCourseOutline).not.toHaveBeenCalled();
   });
 
   it('401s an anonymous caller', async () => {

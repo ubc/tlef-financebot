@@ -1,4 +1,5 @@
 import type { StructureOptions, StructureDraft, StructureResult } from './structure';
+import type { GenerationQualityPolicy, GenerationQualityRunResult } from './generation-quality';
 import type { ObjectId } from 'mongodb';
 
 // -----------------------------------------------------------------------------
@@ -196,6 +197,7 @@ export interface TaInvite {
   invitedAt: Date;
   updatedAt: Date;
   activatedPuid?: string;
+  invitedPuid?: string;
 }
 
 export interface Course {
@@ -210,7 +212,7 @@ export interface Course {
   /** Internal expiring lease for retryable bulk outline application. Never exposed by course reads. */
   outlineApplyLease?: { token: string; expiresAt: Date };
   ownerPuid: string;
-  registrationCode: string; // unique; regenerable (IN-S03)
+  registrationCode: string; // legacy compatibility/isolated Preview only; never authorizes live enrollment
   termStart?: Date;
   termEnd?: Date; // reaching it auto-revokes student access (IN-S02)
   published: boolean; // sandbox until published (IN-L06)
@@ -586,6 +588,7 @@ export interface QuestionGenerationFailure {
 export interface QuestionGenerationResult {
   createdQuestionIds: ObjectId[];
   failures: QuestionGenerationFailure[];
+  quality?: GenerationQualityRunResult;
 }
 
 export interface QuestionGenerationRun extends ContentRunBase {
@@ -595,6 +598,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
   stage: QuestionGenerationStage;
   input: {
     loId: ObjectId;
+    qualityPolicy?: GenerationQualityPolicy;
     /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
      * question must integrate. Persisted so the async job and a retry carry
      * them; the created questions are tagged to all of them (IN-Q13). */
@@ -650,6 +654,7 @@ export interface GenerationBlueprint {
   loId: ObjectId;
   count: number;
   type: QuestionType;
+  qualityPolicy?: GenerationQualityPolicy;
   difficulty?: Difficulty;
   prompt?: string;
   materialIds?: ObjectId[];

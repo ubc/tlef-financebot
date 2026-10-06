@@ -32,6 +32,7 @@ import {
   type SelectResult,
 } from './serving.service';
 import { isThemeReleased } from './theme-release';
+import { courseLifecycle } from './courses.service';
 
 const PREVIEW_PUID = 'anonymous-preview';
 const MASTERY_WINDOW = 10;
@@ -41,6 +42,13 @@ export interface PreviewCourseIdentity {
   courseCode: string;
   section?: string;
   term: string;
+}
+
+/** The access-restricted view uses the same course-publication rule as live
+ * Student enrollment. Unrestricted Preview deliberately skips this check. */
+export async function isPreviewCourseStudentVisible(courseId: ObjectId): Promise<boolean> {
+  const course = await coursesCol().findOne({ _id: courseId }, { projection: { lifecycle: 1, published: 1, archivedAt: 1 } });
+  return Boolean(course && courseLifecycle(course) === 'published');
 }
 
 /** Minimal identity for a teaching-team member choosing Student Preview.

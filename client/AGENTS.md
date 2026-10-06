@@ -3,6 +3,29 @@
 The frontend. Deliberately framework-free and bundler-free: plain TypeScript
 authored as native ES modules, compiled by `tsc` and served statically.
 
+Course Structure provides confirmed Delete topic and per-LO Delete controls
+directly in the outline, including All objectives/search topic groups. They use
+the existing archive APIs: Topic removal cascades to active child LOs, while
+question/material/history records remain. Failed removal preserves the item and
+unsaved editor text; the current page prevents duplicate removal requests.
+
+Course Settings → Enrollment embeds `views/instructor/people-import.ts` for
+manual Canvas CSV upload, preview/rejects, role counts, explicit teaching access
+confirmation, snapshot replacement and removal. A template is served from
+`public/templates/canvas-people.csv`. Gradebook CSVs grant Student only. The
+legacy shared-code/Roster editor is retired from Enrollment; stored roles and
+historical roster extensions remain. `views/instructor/registration-codes.ts`
+provides optional batches of 1–50 one-time student codes with claimant identity,
+last CWL login, explicit status, copy and unused-code revocation. The compact
+table uses server pagination (10/25/50 rows), status filters and confirmed
+record deletion, which invalidates unused codes and preserves student access.
+Gradebook is
+the primary student path; supplemental codes need no roster allowlist. TA and
+co-instructor invitations share the UBC email/existing-CWL input contract.
+Imported TAs are
+labelled in Teaching Assistants; their permissions use the existing API and
+their access source is managed through Enrollment.
+
 ## How it works
 
 - Source lives in `client/src/*.ts` (and `client/src/views/*.ts`).
@@ -96,9 +119,12 @@ Admin, `platformInstructor`, or an existing course Instructor role. Admins get
 a unified `/admin/users` navigation entry; the server's `ensureAdmin()`
 remains the actual gate.
 
-The **Preview as Student** action switches into the real Student shell with
-Preview APIs. Admins, course Instructors and current course TAs can open this
-isolated experience. Only Instructor/Admin previews can additionally send TEST
+The role switcher offers **Student with access restrictions** and **Student
+without access restrictions** to Admins, course Instructors and current course
+TAs. Both switch into the real Student shell with isolated Preview APIs. The
+restricted course picker and Preview API show only published courses; the
+unrestricted mode can inspect unpublished courses. Both still enforce Theme
+release and Approved-question visibility. Only Instructor/Admin previews can additionally send TEST
 flags to the teaching queue; TA preview flags remain isolated.
 
 ## Re-skinning
@@ -129,6 +155,12 @@ rendering, with the view root supplied for stale-view cancellation. TA suggestio
 and mark-reviewed controls use `getMyCourseCapabilities` rather than assuming
 that every TA has the default capabilities. Instructor TA View still uses the
 real Instructor permission projection while keeping TA-only action surfaces.
+TA Student Analytics reuses the Instructor read models under TA routes; its
+sidebar entry follows `analytics.view`, while named profiles and exam scores
+require `analytics.individual`. The TA view does not link to Instructor-only
+routes for course settings or content mutations. TA course-content pages use
+course-scoped GET routes for Course Home, Materials, Structure, Coverage Map
+and Question Bank; the Bank still requires `question.review`.
 
 Admin accounts use a compact black sidebar in both appearance modes with an explicit Admin brand
 and platform navigation. `admin-console.css` supplies shared dense workspaces,
@@ -212,6 +244,18 @@ back into Review Queue. It retains failed updates and commit ids, compares exter
 versions before rebase, and exports the original draft schema. The application
 still compiles with tsc; esbuild only packages the third-party Yjs vendor module.
 
+Exam Builder v2 uses `views/instructor/exam-builder.ts` and the scoped
+`styles/exam-builder.css`. Course bank selection and private generation feed a
+revisioned paper with Questions / Review / Publish views. Settings require Save;
+paper operations use revision CAS. Student `views/student/assessments.ts` uses
+separate formal/practice assessment endpoints, server deadlines and controlled
+results. Legacy `exam-templates` / Exam Prep routes are retained.
+
+
+The Exam Builder catalog offers Rename and Delete with a typed-title deletion
+confirmation. A published paper's display title may change without unlocking its
+content; student assessment views use the current display name.
+
 `views/instructor/canvas.ts` adds account authorization, multi-select Canvas course
 links (new or existing FinanceBot courses), combined roster and explicit file
 import. My Courses retains its existing shared course cards. Connection/roster
@@ -227,6 +271,22 @@ Canvas connection is a top-level Instructor nav item (`/instructor/canvas/:id`
 selects a FinanceBot course without activating the course shell). Legacy course
 URLs redirect. People includes Canvas role/state, a server-derived You marker,
 role filtering, search and pagination; display membership does not grant roles.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.
 
 Instructor and TA course sidebars show only course navigation plus a compact
 Back to all courses link. Course identity remains in the topbar. Global links

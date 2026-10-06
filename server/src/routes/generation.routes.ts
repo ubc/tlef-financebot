@@ -58,6 +58,7 @@ generationRouter.get(
 // unbounded run (each question is 3 LLM calls). Default is a small batch.
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
+  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional(),
   loId: objectIdParam.optional(),
   /** Multi-LO generation: further objectives every question must integrate.
    * Bounded by MAX_SECONDARY_LOS; the service re-validates that each exists,
@@ -100,10 +101,11 @@ generationRouter.post(
     const courseId = new ObjectId(String(req.params.courseId));
     const body = req.body as z.infer<typeof generateBody>;
     const runId = body.blueprintId
-      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid)
+      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid, body.qualityPolicy)
       : await enqueueGenerationRun({
           courseId,
           loId: new ObjectId(body.loId!),
+          ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}),
           ...(body.secondaryLoIds?.length
             ? { secondaryLoIds: body.secondaryLoIds.map((id) => new ObjectId(id)) }
             : {}),
@@ -134,7 +136,7 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional(), qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -177,7 +179,7 @@ generationRouter.post(
           : { secondaryLoIds: undefined }),
       })),
       req.user!.puid,
-      body.submissionId ? { id: body.submissionId, prompt: body.prompt } : undefined,
+      body.submissionId || body.prompt || body.qualityPolicy ? { ...(body.submissionId ? { id: body.submissionId } : {}), prompt: body.prompt, ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}) } : undefined,
     );
     res.status(202).json({
       runs: result.runs.map((run) => ({
@@ -243,6 +245,7 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'generation-retrieval-failed': 503,
   'generation-no-grounding': 422,
   'generation-daily-limit': 429,
+  'generation-quality-reviewer-required': 409,
   'generation-blueprint-not-found': 404,
   // Multi-LO generation: every one is a request the instructor can correct.
   'generation-secondary-lo-limit': 400,

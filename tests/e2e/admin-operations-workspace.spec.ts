@@ -160,14 +160,16 @@ for (const theme of ['light', 'dark']) test(`operations density, inspector and a
   }
 });
 
-test('real Admin shell places the original Help once beneath My Courses and supports mobile navigation', async ({ page }) => {
+test('real Admin shell places the original Help once after course tools and supports mobile navigation', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fixture(page, '#/admin/operations', true);
   const nav = page.getByRole('navigation', { name: 'Admin', exact: true });
   await expect(nav.getByRole('link', { name: 'Help & Tutorials', exact: true })).toHaveCount(1);
   await expect(nav.getByRole('link', { name: 'Course tutorials', exact: true })).toHaveCount(0);
   const names = await nav.getByRole('link').allTextContents();
-  expect(names.at(-2)).toContain('My Courses'); expect(names.at(-1)).toContain('Help & Tutorials');
+  await expect(nav.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
+  expect(names.findIndex(name => name.includes('Help & Tutorials'))).toBeGreaterThan(names.findIndex(name => name.includes('My Courses')));
+  expect(names.at(-1)).toContain('Help & Tutorials');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'audit-results/admin-workspace-2026-09-20/admin-shell-desktop.png', fullPage: true });
   await nav.getByRole('link', { name: 'Help & Tutorials', exact: true }).click();
@@ -180,4 +182,92 @@ test('real Admin shell places the original Help once beneath My Courses and supp
   await expect(page.locator('.app-shell')).not.toHaveClass(/is-open/);
   await expect(page.locator('.ac-table')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+const tokenTotals = { inputTokens: 100, outputTokens: 40, totalTokens: 140, reasoningTokens: null, cachedInputTokens: null, cacheWriteTokens: null, observedCalls: 2, reportedCalls: 1, callsWithKnownTotal: 1, unknownCalls: 1, pendingCalls: 0 };
+const tokenSummary = { ...tokenTotals, status: 'partial', scope: 'llm-calls', coverageGaps: 0, untracked: false, retryVisibility: 'unknown', stages: [{ ...tokenTotals, stage: 'generator' }], models: [{ ...tokenTotals, provider: 'test', model: 'resolved-model' }] };
+const tokenCall = { _id: 'call-1', trackingSessionId: 'tracked-session', operationId: requestId, runId, courseId, actor: operation.actor, stage: 'generator', provider: 'test', requestedModel: 'requested-model', actualModel: 'resolved-model', responseId: null, requestOptions: {}, startedAt: operation.createdAt, finishedAt: operation.createdAt, durationMs: 500, outcome: 'failed', candidateAttempt: 2, jsonAttempt: 1, retryVisibility: 'unknown', usage: { inputTokens: 100, outputTokens: 40, totalTokens: 140, reasoningTokens: null, cachedInputTokens: null, cacheWriteTokens: null, totalOrigin: 'provider', countSource: 'provider-reported' } };
+
+test('Admin model usage filters by user/request/task and exposes recorded links without private text', async ({ page }) => {
+  await fixture(page, '#/admin/operations?actor=PUID-FACULTY');
+  const reads: URL[] = [];
+  await page.route('**/api/admin/model-usage?**', route => { reads.push(new URL(route.request().url())); return route.fulfill({ json: { items: [tokenCall], total: 2, page: 1, summary: tokenSummary, ...identities } }); });
+  await page.locator('.ac-main > .ac-tabs').getByRole('button', { name: 'Model usage', exact: true }).click();
+  await expect(page.locator('.ac-usage-overview')).toContainText('Partial usage · known subtotal');
+  await expect(page.locator('.ac-metric strong').nth(1)).toHaveText('100');
+  await expect(page.locator('.ac-metric strong').nth(2)).toHaveText('40');
+  expect(reads[0].searchParams.get('actor')).toBe('PUID-FACULTY');
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('Request ID', { exact: true }).fill(requestId);
+  await page.getByLabel('Task ID', { exact: true }).fill(runId);
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect.poll(() => reads.at(-1)?.searchParams.get('runId')).toBe(runId);
+  expect(reads.at(-1)?.searchParams.get('operationId')).toBe(requestId);
+  await page.getByRole('button', { name: 'generator · resolved-model', exact: true }).click();
+  const panel = page.locator('.ac-panel');
+  await expect(panel).toContainText('Candidate attempt2');
+  await expect(panel).toContainText('JSON attempt1');
+  await expect(panel.getByRole('link', { name: 'Open recorded request' })).toHaveAttribute('href', `#/admin/operations/requests/${requestId}`);
+  await expect(panel.getByRole('link', { name: 'Open recorded task' })).toHaveCount(0);
+  await expect(panel).toContainText(`Run ID${runId}`);
+  await expect(panel.locator('pre')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: '/tmp/financebot-admin-model-usage-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: '/tmp/financebot-admin-model-usage-mobile.png', fullPage: true });
+});
+
+test('Admin workflow timeline requires scope and distinguishes time grouping from recorded links', async ({ page }) => {
+  await fixture(page);
+  const group = { id: 'window-1', actorPuid: 'PUID-FACULTY', courseId, startedAt: operation.createdAt, endedAt: operation.createdAt, grouping: 'inferred-time-window', entries: [
+    { id: requestId, kind: 'operation', createdAt: operation.createdAt, label: 'POST upload material', outcome: 'accepted', requestId, targets: { courseId }, material: { id: 'material-id', name: 'Lecture 3.pdf' }, relations: [{ kind: 'operation-run', confidence: 'recorded', requestId, runId, evidence: 'persisted-operation-id' }] },
+    { id: runId, kind: 'run', createdAt: operation.createdAt, label: 'question-generation', outcome: 'partial', runId, targets: { courseId }, relations: [] },
+  ] };
+  await page.route('**/api/admin/workflows?**', route => route.fulfill({ json: { items: [group], total: 1, page: 1, windowMinutes: 30, truncated: false, limitations: ['Creation times define the requested range.'], ...identities } }));
+  await page.getByRole('button', { name: 'Workflow timeline', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Choose a user or course' })).toBeVisible();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('User PUID').fill('PUID-FACULTY');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await page.getByRole('button', { name: 'Activity window · 2 records', exact: true }).click();
+  const panel = page.locator('.ac-panel');
+  await expect(panel).toContainText('Inferred time window');
+  await expect(panel).toContainText('not a recording of clicks');
+  await expect(panel).toContainText(`Recorded request–task link: ${requestId} → ${runId}`);
+  await expect(panel).toContainText('Lecture 3.pdf');
+  await expect(panel.getByRole('link', { name: 'Inspect task' })).toHaveAttribute('href', `#/admin/operations/runs/${runId}`);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: '/tmp/financebot-admin-workflow-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: '/tmp/financebot-admin-workflow-mobile.png', fullPage: true });
+});
+
+test('Admin run usage refreshes late metadata while the existing inspector tab stays selected', async ({ page }) => {
+  await fixture(page, `#/admin/operations/runs/${runId}`);
+  let summary = { ...tokenSummary, status: 'pending', pendingCalls: 1, unknownCalls: 0 };
+  await page.route(`**/api/admin/diagnostic-runs/${runId}`, route => route.fulfill({ json: { run, ...identities, modelUsage: summary, modelCalls: [tokenCall], modelCallsTotal: 1 } }));
+  await page.locator('.ac-panel').getByRole('button', { name: 'Model usage', exact: true }).click();
+  await page.locator('.ac-panel').getByRole('button', { name: 'Refresh model usage', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Usage still arriving');
+  summary = { ...summary, status: 'complete', pendingCalls: 0, reportedCalls: 2, inputTokens: 150, outputTokens: 60, totalTokens: 210 };
+  await page.locator('.ac-panel').getByRole('button', { name: 'Refresh model usage', exact: true }).click();
+  await expect(page.locator('.ac-panel .mu-totals')).toContainText('Total tokens210');
+  await expect(page.locator('.ac-panel').getByRole('button', { name: 'Model usage', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('Admin empty historical usage remains unavailable rather than zero', async ({ page }) => {
+  await fixture(page);
+  const summary = { ...tokenSummary, status: 'unavailable', untracked: true, inputTokens: null, outputTokens: null, totalTokens: null, observedCalls: 0, reportedCalls: 0, unknownCalls: 0, pendingCalls: 0, callsWithKnownTotal: 0, stages: [], models: [] };
+  await page.route('**/api/admin/model-usage?**', route => route.fulfill({ json: { items: [], total: 0, page: 1, summary, ...identities } }));
+  await page.locator('.ac-main > .ac-tabs').getByRole('button', { name: 'Model usage', exact: true }).click();
+  await expect(page.locator('.ac-usage-overview')).toContainText('Usage unavailable');
+  await expect(page.locator('.ac-metric strong').nth(1)).toHaveText('Unknown');
+  await expect(page.locator('.ac-metric strong').nth(2)).toHaveText('Unknown');
+  await expect(page.locator('.ac-metric strong').nth(3)).toHaveText('Unknown');
+  await expect(page.locator('.ac-usage-overview')).toContainText('earlier or unrecorded activity cannot be reconstructed');
+  await expect(page.locator('.ac-usage-overview')).toContainText('This is not billing');
 });

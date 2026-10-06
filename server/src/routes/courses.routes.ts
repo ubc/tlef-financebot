@@ -2,15 +2,14 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { ObjectId } from 'mongodb';
 import multer from 'multer';
 import { z } from 'zod';
-import { ensureApiAuthenticated, ensureCapability, ensurePlatformInstructor } from '../components/auth';
-import { ensureCourseInstructor } from '../components/auth/course-guards';
+import { ensureApiAuthenticated, ensurePlatformInstructor } from '../components/auth';
+import { ensureCourseInstructor, ensureCourseTeachingMember } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   createCourse,
   getCourse,
   listInstructorCourses,
   updateCourse,
-  regenerateRegistrationCode,
   addTheme,
   updateTheme,
   archiveTheme,
@@ -223,13 +222,13 @@ coursesRouter.get(
 /** GET /api/courses/:courseId/outline -> safe course identity plus ordered
  * Theme/LO names. TA-accessible subset of `GET /api/courses/:courseId` — it
  * carries name/code/section/term for workspace context, but never registration
- * code, dates, lifecycle, autoPause or feedbackStrategy. `ensureCapability`
- * performs its own authentication check, so no `ensureApiAuthenticated()`
+ * code, dates, lifecycle, autoPause or feedbackStrategy. The teaching-member
+ * guard performs its own authentication check, so no `ensureApiAuthenticated()`
  * precedes it here. */
 coursesRouter.get(
   '/courses/:courseId/outline',
   validate({ params: courseIdParams }),
-  ensureCapability('question.review'),
+  ensureCourseTeachingMember(),
   async (req, res) => {
     res.json(await getCourseOutline(new ObjectId(String(req.params.courseId))));
   },
@@ -257,14 +256,13 @@ coursesRouter.patch(
   },
 );
 
-/** POST /api/courses/:courseId/registration-code -> { registrationCode } (regenerates). Instructor-only. */
+/** Legacy shared codes are retired; authenticated instructors use batches. */
 coursesRouter.post(
   '/courses/:courseId/registration-code',
   validate({ params: courseIdParams }),
   ensureCourseInstructor(),
-  async (req, res) => {
-    const registrationCode = await regenerateRegistrationCode(new ObjectId(String(req.params.courseId)));
-    res.json({ registrationCode });
+  async (_req, res) => {
+    res.status(410).json({ error: 'Shared registration codes are retired. Generate one-time codes in Course Settings → Enrollment.' });
   },
 );
 

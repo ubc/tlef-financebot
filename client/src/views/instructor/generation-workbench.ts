@@ -1,8 +1,8 @@
 import { attachTutorial } from '../../tutorials.js';
 import {
-  browseBank, enqueueGenerationPlan, getContentRun, getCourseTree, getPreseeding,
+  browseBank, contentRunEvaluationExportUrl, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
   getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
-  type BankQuestion, type ContentRunSummary, type CourseTreeLo, type GenerationPlanCell, type QuestionGenerationRun,
+  type BankQuestion, type ContentRunSummary, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type GenerationQualityPolicy, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
@@ -10,12 +10,72 @@ import { currentQuery } from '../../router.js';
 import { renderRichText } from '../../render.js';
 import { rowStemText } from '../../placeholders.js';
 import { errorState, loadingState } from '../../ui.js';
+import { renderModelUsage, renderModelCalls } from '../../model-usage-ui.js';
 
 type Tier = 'easy' | 'medium' | 'hard';
-type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[]; errors?: string[] };
+type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; qualityPolicy?: GenerationQualityPolicy; runIds?: string[]; errors?: string[] };
 const active = (run: ContentRunSummary) => run.status === 'running' || run.status === 'queued';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const stageName = (stage: string) => ({ queued: 'Waiting to start', retrieving: 'Finding source evidence', generating: 'Writing questions', validating: 'Checking answers', reviewing: 'Reviewing quality', persisting: 'Saving drafts', completed: 'Completed' })[stage] ?? stage.replace(/-/g, ' ');
+
+function generationIssue(text: string, code?: string): string {
+  const guidance: Record<string, string> = {
+    'generation-evidence-stale-retrieval': 'The source index is outdated. Reprocess the assigned material, then retry.',
+    'generation-evidence-ingest-incomplete': 'Source processing is incomplete. Reprocess the assigned material, then retry.',
+    'generation-evidence-chunks-missing': 'The source index is unavailable. Reprocess the assigned material, then retry.',
+    'generation-evidence-material-unavailable': 'An assigned material is unavailable or was removed. Review the sources, then retry.',
+    'generation-evidence-source-changed': 'The assigned material changed during generation. Review the sources, then retry.',
+    'generation-evidence-corpus-too-large': 'The assigned source set is too large for this pilot. Assign fewer materials to the objective, then retry.',
+    'generation-evidence-material-limit': 'The assigned source set is too large for this pilot. Assign fewer materials to the objective, then retry.',
+    'generation-evidence-no-primary': 'No usable primary source evidence is available. Review the material assigned to this objective, then retry.',
+    'generation-quality-reviewer-required': 'The pilot requires the reviewer to be enabled by an Admin. Ask an Admin to enable it, or choose baseline generation for a new batch.',
+  };
+  return guidance[code ?? ''] ?? Object.entries(guidance).find(([key]) => text.includes(key))?.[1] ?? text;
+}
+
+function candidateDiagnostic(candidate: GenerationQualityAssessment['candidate']): HTMLElement | false {
+  if (!candidate) return false;
+  const rich = (value: string) => { const node = el('div'); renderRichText(node, value); return node; };
+  return el('details', { class: 'gw-quality-candidate' }, el('summary', { text: 'Inspect candidate snapshot' }),
+    el('p', { class: 'gw-plan-note', text: 'Diagnostic candidate copy. This view is not a saved or approved question.' }),
+    candidate.truncated && el('p', { class: 'gw-run-error', text: 'Candidate snapshot is truncated. Do not treat it as a complete question.' }),
+    rich(candidate.stem), ...candidate.options.map(option => el('div', { class: 'gw-answer' },
+      el('span', { text: option.key }), el('div', {}, rich(option.text), option.role === 'correct' && el('small', { text: 'Proposed correct answer · candidate' }), option.explanation && rich(option.explanation)))));
+}
+
+function qualityFindings(run: QuestionGenerationRun): HTMLElement {
+  const pilot = run.input.qualityPolicy === 'grounded-memory-v1';
+  const section = el('section', { class: 'gw-quality', 'aria-label': 'Generation quality policy' },
+    el('p', { class: 'gw-quality-mode', text: pilot ? 'Sources and question memory pilot' : 'Baseline generation' }));
+  if (!pilot) return section;
+  const quality = run.result?.quality;
+  const assessments = quality?.assessments ?? [];
+  const withheld = assessments.filter(item => item.status === 'withheld');
+  const shortfall = Math.max(0, run.input.count - (run.result?.createdQuestionIds.length ?? 0));
+  if (!active(run) && shortfall) section.append(el('p', { class: 'gw-run-error', text: `${shortfall} of ${run.input.count} requested ${run.input.count === 1 ? 'question' : 'questions'} not saved.` }));
+  section.append(el('p', { class: 'gw-plan-note', text: assessments.length ? `${assessments.length} assessed · ${withheld.length} withheld. Model judgments require instructor review.` : active(run) ? 'Pilot assessments will appear as checks finish.' : 'No recorded pilot assessment is available. No quality conclusion can be inferred.' }));
+  if (assessments.length) section.append(el('div', { class: 'gw-quality-withheld' }, ...assessments.map(item => el('div', {},
+    el('strong', { text: `Question ${item.item + 1} · ${item.status === 'withheld' ? 'Withheld' : 'Eligible for saving'}` }),
+    item.status === 'withheld' && el('p', { text: item.reasons[0] ?? 'The pilot did not find sufficient support to save this candidate.' }),
+    el('details', {}, el('summary', { text: 'Check details' }),
+      el('p', { text: `Source support: ${item.sourceSupport}. Notation: ${item.notation}. Novelty: ${item.novelty}.` }),
+      ...item.reasons.slice(item.status === 'withheld' ? 1 : 0).map(reason => el('p', { text: reason }))),
+    candidateDiagnostic(item.candidate)))));
+  const latest = assessments[assessments.length - 1]?.coverage;
+  if (quality?.evidence || latest) {
+    const limited = quality?.evidence?.coverage.truncated || latest?.evidenceTruncated || latest?.memoryTruncated || !!latest?.missingVersions;
+    const coverage = el('details', { class: 'gw-quality-coverage' }, el('summary', { text: `Source and memory coverage${limited ? ' · limited' : ''}` }));
+    if (quality?.evidence) {
+      const source = quality.evidence;
+      coverage.append(el('p', { class: 'gw-plan-note', text: `Evidence uses ${source.coverage.selectedChunks} of ${source.coverage.sourceChunks} source chunks, selected from retrieved passages and immediate neighbors.` }));
+      if (source.coverage.truncated) coverage.append(el('p', { class: 'gw-plan-note', text: 'Selected source evidence was limited by the evidence budget.' }));
+      source.findings.forEach(finding => coverage.append(el('p', { class: 'gw-plan-note', text: finding.message })));
+    }
+    if (latest) coverage.append(el('p', { class: 'gw-plan-note', text: `Latest comparison: ${latest.shownEntries} of ${latest.totalEntries} question versions shown${latest.missingVersions ? `; ${latest.missingVersions} unavailable` : ''}. ${latest.memoryTruncated ? 'Question memory was limited. ' : ''}${latest.evidenceTruncated && !quality?.evidence?.coverage.truncated ? 'Selected source evidence was limited. ' : ''}Comparison is best effort.` }));
+    section.append(coverage);
+  }
+  return section;
+}
 
 /** Compact default authoring surface; the existing editor retains advanced tools. */
 export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: string): Promise<void> {
@@ -43,7 +103,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let submission: Submission | undefined;
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Submission | null;
-      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string') submission = stored;
+      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string' &&
+        (stored.qualityPolicy === undefined || stored.qualityPolicy === 'baseline' || stored.qualityPolicy === 'grounded-memory-v1')) submission = stored;
     } catch { /* Storage may be unavailable; in-session request identity is retained. */ }
     const persist = () => { try { if (submission) localStorage.setItem(storageKey, JSON.stringify(submission)); else localStorage.removeItem(storageKey); } catch { /* Request identity is also held in memory. */ } };
     if (submission?.runIds) {
@@ -57,6 +118,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let difficulty: Tier | 'balanced' = 'balanced';
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
     let questionType: 'mcq' | 'true-false' = 'mcq';
+    let qualityPolicy: GenerationQualityPolicy = submission?.qualityPolicy ?? 'baseline';
     let bank: BankQuestion[] = [];
     let selectedQuestion = '';
     let previewRunId = '';
@@ -69,6 +131,13 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let fetching = false;
     let refreshAgain = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const usage = new Map<string, ModelUsageSnapshot>();
+    const usageErrors = new Map<string, string>();
+    const usageLoaded = new Set<string>();
+    const usageWindow = new Map<string, number>();
+    let usageFetching = false;
+    let usageAgain = false;
+    let usageTimer: ReturnType<typeof setTimeout> | undefined;
     const watched = () => [...runs.values()].filter(run => run.kind === 'question-generation' && (submission?.runIds ? submission.runIds.includes(run._id) : true));
     const locked = () => busy || !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || active(runs.get(id)!))) || [...runs.values()].some(active);
     const link = (label: string, path: string, primary = false) => el('a', { class: primary ? 'btn btn--primary' : 'gw-link', href: path, text: label });
@@ -80,7 +149,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     function drawTabs(): void {
       mount(tabs, ...(['setup', 'live'] as const).map(value => el('button', { type: 'button', 'aria-pressed': mode === value, onclick: () => { mode = value; showMode(); } }, value === 'setup' ? 'Create a batch' : 'Generation activity')));
     }
-    function showMode(): void { setup.hidden = mode !== 'setup'; live.hidden = mode !== 'live'; drawTabs(); if (mode === 'live') { drawLive(); void refreshDrafts(); } }
+    function showMode(): void { setup.hidden = mode !== 'setup'; live.hidden = mode !== 'live'; drawTabs(); if (mode === 'live') { drawLive(); void refreshDrafts(); void refreshUsage(); } }
     mount(root, el('header', { class: 'gw-header' }, el('div', {}, el('h1', { text: 'Generate questions' }), el('p', { text: 'Create focused questions from your course materials.' })), tabs), notice, setup, live);
     if (!objectives.length || !objectives.some(lo => sourcesFor(lo).length)) {
       mount(setup, el('div', { class: 'gw-empty' }, el('div', { class: 'gw-empty-mark', 'aria-hidden': 'true', text: '＋' }),
@@ -121,10 +190,11 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('option', { value: 'auto', text: 'Match each objective' }), el('option', { value: 'conceptual', text: 'Conceptual understanding' }), el('option', { value: 'calculation', text: 'Calculation practice' }));
       const typeSelect = el('select', { id: 'gw-type', onchange: () => { questionType = typeSelect.value as typeof questionType; updateSetup(); } },
         el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
+      const pilot = el('input', { id: 'gw-quality-pilot', type: 'checkbox', 'data-gw-focus': 'quality-pilot', 'aria-describedby': 'gw-quality-help', checked: qualityPolicy === 'grounded-memory-v1', onchange: () => { qualityPolicy = pilot.checked ? 'grounded-memory-v1' : 'baseline'; updateSetup(); } });
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
         selectedQuestion = ''; previewRunId = ''; previewKey = ''; readerRevision++;
-        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
+        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim(), ...(qualityPolicy === 'grounded-memory-v1' ? { qualityPolicy } : {}) }; persist(); await submit();
       } });
       const selections = el('div', { class: 'gw-objective-tools' }, el('button', { type: 'button', onclick: () => { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); } }, 'Select coverage gaps'),
         el('button', { type: 'button', onclick: () => { selected.clear(); updateSetup(); } }, 'Clear'));
@@ -132,7 +202,9 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', {}, el('span', { class: 'gw-label', text: 'Questions per objective' }), el('div', { class: 'gw-stepper' }, minus, amount, plus)),
         el('div', {}, el('span', { class: 'gw-label', text: 'Difficulty' }), tiers),
         el('div', {}, el('label', { for: 'gw-type', class: 'gw-label', text: 'Question type' }), typeSelect),
-        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect));
+        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect),
+        el('div', { class: 'gw-quality-setting' }, el('label', { class: 'gw-quality-toggle' }, pilot, el('span', { text: 'Sources and question memory pilot' })),
+          el('p', { id: 'gw-quality-help', class: 'gw-plan-note', text: 'Checks source support, notation and similarity to existing questions before saving. May save fewer drafts and use extra model calls. Instructor review is required.' })));
       mount(setup, el('aside', { class: 'gw-objectives', 'aria-label': 'Learning objectives' }, el('div', { class: 'gw-pane-title', text: 'LEARNING OBJECTIVES' }), selections, objectivesList,
         el('div', { class: 'gw-pane-foot', text: 'Existing drafts count toward coverage. You can select an objective to create additional practice.' })),
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
@@ -147,7 +219,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         const focusKey = document.activeElement?.getAttribute('data-gw-focus');
         const isLocked = locked();
         amount.value = String(count); minus.disabled = isLocked || count === 1; plus.disabled = isLocked || count === 5;
-        settings.disabled = isLocked; prompt.disabled = isLocked;
+        settings.disabled = isLocked; prompt.disabled = isLocked; pilot.checked = qualityPolicy === 'grounded-memory-v1';
         selections.querySelectorAll('button').forEach(button => { button.disabled = isLocked; });
         setup.querySelectorAll<HTMLButtonElement>('.gw-suggestions button').forEach(button => { button.disabled = isLocked; });
         mount(tiers, ...(['balanced','easy','medium','hard'] as const).map(tier => el('button', { type: 'button', 'aria-pressed': tier === difficulty, 'data-gw-focus': `tier-${tier}`, disabled: isLocked, onclick: () => { difficulty = tier; updateSetup(); } }, tier[0].toUpperCase()+tier.slice(1))));
@@ -167,6 +239,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
           el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : 'True / false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
           el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
+          el('div', { class: 'gw-fact' }, 'Quality policy', el('strong', { text: qualityPolicy === 'grounded-memory-v1' ? 'Sources and question memory pilot' : 'Baseline' })),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
           el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),
           cells().length > 120 && el('p', { text: 'Choose fewer objectives for this batch.' }));
@@ -179,15 +252,15 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       busy = true; updateSetup(); say('Starting your batch…');
       const current = submission;
       try {
-        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt });
+        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt, ...(current.qualityPolicy ? { qualityPolicy: current.qualityPolicy } : {}) });
         current.runIds = result.runs.flatMap(row => row.runId ? [row.runId] : []);
-        current.errors = result.runs.flatMap(row => row.error ? [`${objectives.find(lo => lo._id === row.loId)?.name ?? 'Objective'}: ${row.error}`] : []);
+        current.errors = result.runs.flatMap(row => row.error ? [`${objectives.find(lo => lo._id === row.loId)?.name ?? 'Objective'}: ${generationIssue(row.error)}`] : []);
         persist();
         const snapshots = await Promise.allSettled(current.runIds.map(id => getContentRun(courseId,id)));
         snapshots.forEach(result => { if (result.status === 'fulfilled' && (runs.get(result.value._id)?.revision ?? -1) < result.value.revision) runs.set(result.value._id,result.value); });
         say(current.errors.length ? `${current.errors.length} parts could not start. See generation activity for details.` : 'Your batch has started. Saved questions will appear here as they arrive.');
       } catch (error) {
-        say(`We could not confirm the request. Recover this batch to check it safely without creating duplicates. ${message(error)}`);
+        say(`We could not confirm the request. Recover this batch to check it safely without creating duplicates. ${generationIssue(message(error))}`);
       } finally {
         busy = false;
         if (!disposed) { mode = 'live'; showMode(); updateSetup(); }
@@ -198,15 +271,25 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const opener = document.activeElement as HTMLElement | null;
       const body = el('div', { class: 'gw-timeline-body' });
       const dialog = el('dialog', { class: 'app-dialog gw-timeline', 'aria-labelledby': 'gw-timeline-title' });
-      const close = () => { dialog.close(); dialog.remove(); opener?.focus(); };
+      let poll: ReturnType<typeof setTimeout> | undefined;
+      let remainingPolls = 12;
+      const close = () => { if (poll) clearTimeout(poll); dialog.close(); dialog.remove(); opener?.focus(); };
       const refresh = async () => {
-        mount(body, loadingState('Loading saved steps…'));
+        if (!dialog.isConnected) return;
+        if (poll) clearTimeout(poll);
+        if (!body.children.length) mount(body, loadingState('Loading saved steps…'));
         try {
-          const snapshot = await getContentRun(courseId,run._id);
+          const [snapshot, recorded] = await Promise.all([getContentRun(courseId,run._id), getContentRunUsage(courseId,run._id).catch(() => undefined)]);
           if (!dialog.isConnected) return;
-          mount(body, el('ol', {}, ...snapshot.events.map(event => el('li', {},
+          mount(body, snapshot.kind === 'question-generation' && qualityFindings(snapshot),
+            snapshot.kind === 'question-generation' && !active(snapshot) && el('p', {}, el('a', { href: contentRunEvaluationExportUrl(courseId, snapshot._id), download: '', text: 'Download evaluation export' })),
+            el('ol', {}, ...snapshot.events.map(event => el('li', {},
             el('strong', { text: stageName(event.stage) }), el('time', { text: new Date(event.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
-            el('p', { text: event.message ?? `${event.status} · ${event.completedUnits} processed` })))));
+            el('p', { text: event.message ?? `${event.status} · ${event.completedUnits} processed` })))),
+            recorded?.summary ? renderModelUsage(recorded.summary) : el('p', { class: 'mu-note', text: 'Usage unavailable. Refresh to try again.' }),
+            recorded?.summary && renderModelCalls(recorded.calls),
+            recorded?.summary && (recorded.totalCalls ?? 0) > recorded.calls.length && el('p', { class: 'mu-note', text: `Showing ${recorded.calls.length} of ${recorded.totalCalls} recent calls. Totals cover all calls in this run.` }));
+          if (recorded?.summary && remainingPolls-- > 0 && (active(snapshot) || ['pending', 'partial'].includes(recorded.summary.status))) poll = setTimeout(() => { void refresh(); }, 5000);
         } catch (error) { if (dialog.isConnected) mount(body,errorState(message(error))); }
       };
       dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
@@ -248,8 +331,12 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         ...(submission?.errors ?? []).map(error => el('p', { class: 'gw-run-error', text: error })),
         ...items.map(run => el('div', { class: 'gw-run' }, el('strong', { text: run.kind === 'question-generation' ? objectives.find(lo => lo._id === run.input.loId)?.name ?? 'Learning objective' : '' }),
           el('span', { text: `${run.status === 'completed' ? 'Completed' : run.status === 'failed' ? 'Stopped / failed' : run.status === 'partial' ? 'Partially completed' : stageName(run.stage)} · ${run.completedUnits}/${run.totalUnits ?? '?'} processed` }),
-          run.error && el('small', { class: 'gw-run-error', text: run.error.message }),
+          run.error && el('small', { class: 'gw-run-error', text: generationIssue(run.error.message, run.error.code) }),
+          run.kind === 'question-generation' && qualityFindings(run),
+          usage.get(run._id)?.summary ? renderModelUsage(usage.get(run._id)!.summary, true) : el('p', { class: 'mu-note', text: usageErrors.get(run._id) ?? 'Loading model usage…' }),
+          usage.has(run._id) && usageErrors.has(run._id) && el('p', { class: 'mu-note', text: 'Usage could not refresh. Showing the last recorded snapshot.' }),
           el('button', { class: 'gw-step-link', type: 'button', 'data-gw-focus': `steps-${run._id}`, onclick: () => openTimeline(run), text: 'View steps' }))),
+        items.length > 0 && el('button', { type: 'button', class: 'gw-step-link', 'data-gw-focus': 'refresh-usage', onclick: () => refreshUsage(true), text: 'Refresh model usage' }),
         link('Manage runs & retries →', `${base}/preseeding?advanced=1`),
         !!submission?.runIds?.length && el('button', { type: 'button', class: 'gw-step-link', onclick: async () => {
           const refreshed = await Promise.allSettled(submission!.runIds!.map(id => getContentRun(courseId,id)));
@@ -367,11 +454,40 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       if (refreshTimer || disposed) return;
       refreshTimer = setTimeout(() => { refreshTimer = undefined; void refreshDrafts(); }, 700);
     }
+    async function refreshUsage(force = false): Promise<void> {
+      if (disposed || !root.isConnected || mode !== 'live') return;
+      if (usageFetching) { usageAgain = usageAgain || force; return; }
+      if (usageTimer) clearTimeout(usageTimer);
+      usageTimer = undefined;
+      usageFetching = true;
+      const targets = watched().filter(run => force || !usageLoaded.has(run._id) || active(run) ||
+        Date.now() < (usageWindow.get(run._id) ?? 0) && (!usage.has(run._id) || ['pending', 'partial'].includes(usage.get(run._id)!.summary.status)));
+      await Promise.all(targets.map(async run => {
+        if (!usageWindow.has(run._id)) usageWindow.set(run._id, Date.now() + 60000);
+        try {
+          const snapshot = await getContentRunUsage(courseId, run._id);
+          if (!snapshot.summary) throw new Error('Usage unavailable. Refresh to try again.');
+          if (!disposed) { usage.set(run._id, snapshot); usageErrors.delete(run._id); }
+        } catch {
+          if (!disposed) usageErrors.set(run._id, 'Usage unavailable. Refresh to try again.');
+        } finally { usageLoaded.add(run._id); }
+      }));
+      usageFetching = false;
+      if (disposed) return;
+      drawLive();
+      if (usageAgain) { usageAgain = false; void refreshUsage(true); return; }
+      if (watched().some(run => active(run) || Date.now() < (usageWindow.get(run._id) ?? 0) &&
+        (!usage.has(run._id) || ['pending', 'partial'].includes(usage.get(run._id)!.summary.status)))) {
+        usageTimer = setTimeout(() => { void refreshUsage(); }, 5000);
+      }
+    }
     function applyRun(run: ContentRunSummary): void {
       if (disposed || run.kind !== 'question-generation' || run.courseId !== courseId) return;
       const previous = runs.get(run._id);
       if (previous && previous.revision >= run.revision) return;
       runs.set(run._id,run); updateSetup(); if (mode === 'live') drawLive();
+      if (!active(run)) usageWindow.set(run._id, Date.now() + 60000);
+      if (!previous || active(previous) && !active(run)) void refreshUsage(true);
       if (!previous || run.completedUnits !== previous.completedUnits || !active(run)) scheduleRefresh();
     }
     if (objectives.some(lo => sourcesFor(lo).length)) buildSetup();
@@ -381,7 +497,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     const unsubscribe = subscribeContentRuns(courseId, { onSnapshot: snapshot => { if (notice.textContent?.startsWith('Live connection')) say('Live connection restored.'); snapshot.forEach(applyRun); scheduleRefresh(); }, onRun: applyRun,
       onError: () => { if (!disposed) say('Live connection interrupted. Reconnecting automatically; saved drafts and generation are preserved.'); } });
     const observer = new MutationObserver(() => {
-      if (!root.isConnected) { disposed = true; stopTextReveal(); unsubscribe(); observer.disconnect(); if (refreshTimer) clearTimeout(refreshTimer); }
+      if (!root.isConnected) { disposed = true; stopTextReveal(); unsubscribe(); observer.disconnect(); if (refreshTimer) clearTimeout(refreshTimer); if (usageTimer) clearTimeout(usageTimer); }
     });
     observer.observe(outlet, { childList: true });
   } catch (error) {

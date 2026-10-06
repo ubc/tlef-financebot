@@ -3,24 +3,13 @@ import { auditCol, courseInstructorSharesCol, coursesCol, usersCol } from '../co
 import { NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
 import type { Course, User } from '../types/domain';
 import type { CourseSharingSummary } from '../types/course-sharing';
+import { resolveTeachingIdentity } from './teaching-identity.service';
 
 type SharingActor = Pick<User, 'puid' | 'isAdmin' | 'courseRoles'>;
 const UBC_EMAIL = /^[^\s@]+@(?:[^\s@.]+\.)*ubc\.ca$/i;
 
 function fail(message: string, status: number): never {
   throw Object.assign(new Error(message), { status });
-}
-
-function normalizeEmail(raw: string): string {
-  const email = raw.trim().toLowerCase();
-  if (email.length > 254 || !UBC_EMAIL.test(email)) fail('course-sharing-invalid-email', 400);
-  return email;
-}
-
-function normalizeCwl(raw: string): string {
-  const cwl = raw.trim().toLowerCase();
-  if (!/^[a-z0-9._-]{2,64}$/i.test(cwl)) fail('course-sharing-invalid-identifier', 400);
-  return cwl;
 }
 
 async function courseForSharing(courseId: ObjectId, actor: SharingActor, manage = false): Promise<WithId<Course>> {
@@ -37,13 +26,6 @@ async function userByEmail(email: string): Promise<WithId<User> | undefined> {
   const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const matches = await usersCol().find({ email: { $regex: `^${escaped}$`, $options: 'i' } }).limit(2).toArray();
   if (matches.length > 1) fail('course-sharing-ambiguous-email', 409);
-  return matches[0];
-}
-
-async function userByCwl(cwl: string): Promise<WithId<User> | undefined> {
-  const escaped = cwl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const matches = await usersCol().find({ uid: { $regex: `^${escaped}$`, $options: 'i' } }).limit(2).toArray();
-  if (matches.length > 1) fail('course-sharing-ambiguous-cwl', 409);
   return matches[0];
 }
 
@@ -89,11 +71,7 @@ export async function listCourseInstructors(courseId: ObjectId, actor: SharingAc
 
 export async function inviteCourseInstructor(courseId: ObjectId, actor: SharingActor, rawIdentifier: string): Promise<CourseSharingSummary> {
   const course = await courseForSharing(courseId, actor, true);
-  const isEmail = rawIdentifier.includes('@');
-  const recipient = isEmail ? await userByEmail(normalizeEmail(rawIdentifier)) : await userByCwl(normalizeCwl(rawIdentifier));
-  if (!isEmail && !recipient) fail('course-sharing-cwl-not-found', 404);
-  const email = normalizeEmail(isEmail ? rawIdentifier : recipient?.email ?? '');
-  if (recipient?.deactivatedAt) fail('course-sharing-user-deactivated', 409);
+  const { email, user: recipient } = await resolveTeachingIdentity(rawIdentifier, (reason, status) => fail(`course-sharing-${reason}`, status));
   if (recipient?.puid === course.ownerPuid) return listCourseInstructors(courseId, actor);
   if (recipient?.courseRoles.some(role => role.role === 'instructor' && role.courseId.equals(courseId))) return listCourseInstructors(courseId, actor);
   const existing = await courseInstructorSharesCol().findOne({ courseId, email });

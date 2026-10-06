@@ -1,4 +1,5 @@
 import type { ObjectId, WithId } from 'mongodb';
+import type { GenerationQualityPolicy } from '../types/generation-quality';
 import {
   generationBlueprintsCol,
   losCol,
@@ -22,6 +23,7 @@ export interface GenerationBlueprintInput {
   loId: ObjectId;
   count: number;
   type: QuestionType;
+  qualityPolicy?: GenerationQualityPolicy;
   difficulty?: Difficulty;
   prompt?: string;
   materialIds?: ObjectId[];
@@ -74,6 +76,7 @@ export async function createGenerationBlueprint(
     loId: input.loId,
     count: input.count,
     type: input.type,
+    ...(input.qualityPolicy ? { qualityPolicy: input.qualityPolicy } : {}),
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.materialIds?.length ? { materialIds: input.materialIds } : {}),
@@ -103,6 +106,7 @@ export async function updateGenerationBlueprint(
     loId: patch.loId ?? current.loId,
     count: patch.count ?? current.count,
     type: patch.type ?? current.type,
+    qualityPolicy: patch.qualityPolicy ?? current.qualityPolicy,
     difficulty: patch.difficulty ?? current.difficulty,
     prompt: patch.prompt ?? current.prompt,
     materialIds: patch.materialIds ?? current.materialIds,
@@ -119,6 +123,7 @@ export async function updateGenerationBlueprint(
           loId: next.loId,
           count: next.count,
           type: next.type,
+          ...(next.qualityPolicy ? { qualityPolicy: next.qualityPolicy } : {}),
           ...(next.difficulty ? { difficulty: next.difficulty } : {}),
           ...(next.prompt !== undefined ? { prompt: next.prompt } : {}),
           ...(next.materialIds?.length ? { materialIds: next.materialIds } : {}),
@@ -147,6 +152,7 @@ export async function enqueueBlueprintRun(
   courseId: ObjectId,
   blueprintId: ObjectId,
   byPuid: string,
+  qualityPolicy?: GenerationQualityPolicy,
 ): Promise<ObjectId> {
   const blueprint = await generationBlueprintsCol().findOne({ _id: blueprintId, courseId });
   if (!blueprint) throw new Error('generation-blueprint-not-found');
@@ -155,6 +161,7 @@ export async function enqueueBlueprintRun(
     loId: blueprint.loId,
     count: blueprint.count,
     type: blueprint.type,
+    ...(qualityPolicy ?? blueprint.qualityPolicy ? { qualityPolicy: qualityPolicy ?? blueprint.qualityPolicy } : {}),
     ...(blueprint.difficulty ? { difficulty: blueprint.difficulty } : {}),
     ...(blueprint.prompt !== undefined ? { prompt: blueprint.prompt } : {}),
     byPuid,
@@ -181,8 +188,10 @@ export async function retryGenerationRun(
     ...(run.input.secondaryLoIds?.length ? { secondaryLoIds: run.input.secondaryLoIds } : {}),
     count: run.input.count,
     type: run.input.type,
+    ...(run.input.qualityPolicy ? { qualityPolicy: run.input.qualityPolicy } : {}),
     ...(run.input.kind ? { kind: run.input.kind } : {}),
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
+    ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,
     // Model ids only: enqueue persists ids, and the job recovers the admin's
@@ -194,6 +203,6 @@ export async function retryGenerationRun(
       ? { pinnedMaterialIds: run.grounding.allowedMaterialIds }
       : {}),
     // The frozen ids are not an instructor pin; only the recorded flag is.
-    ...(run.grounding?.pinned ? { groundingPinned: true } : {}),
+    groundingPinned: run.grounding?.pinned === true,
   });
 }

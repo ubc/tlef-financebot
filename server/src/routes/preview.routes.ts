@@ -7,6 +7,7 @@ import {
   flagPreviewQuestion,
   getNextPreviewQuestion,
   getPreviewCourseIdentity,
+  isPreviewCourseStudentVisible,
   getPreviewHome,
   getPreviewRedirectMaterialSource,
   getPreviewSessionStart,
@@ -72,6 +73,18 @@ function context(req: Request, id: string) {
     previewSessionId: id,
   };
 }
+
+// Every restricted Preview read and write, including direct links to sources,
+// must pass the publication gate before using the isolated Preview services.
+previewRouter.use('/courses/:courseId/preview', validate({ params: courseParams }), ensureCourseStudentPreview(), async (req, res, next) => {
+  const access = req.query.access;
+  if (access === undefined) return next();
+  if (access !== 'restricted') return res.status(400).json({ error: 'Invalid preview access mode.' });
+  if (!await isPreviewCourseStudentVisible(new ObjectId(String(req.params.courseId)))) {
+    return res.status(404).json({ error: 'Course is not available to students.' });
+  }
+  next();
+});
 
 previewRouter.get(
   '/courses/:courseId/preview/identity',

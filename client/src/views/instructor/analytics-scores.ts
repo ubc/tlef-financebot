@@ -1,6 +1,6 @@
 import { type AnalyticsExamScore } from '../../api.js';
 import { el } from '../../dom.js';
-export function scoresPanel(items: AnalyticsExamScore[], courseId: string, showNames = true): HTMLElement {
+export function scoresPanel(items: AnalyticsExamScore[], courseId: string, showNames = true, workspace: 'instructor' | 'ta' = 'instructor'): HTMLElement {
   const root = el('div', { class: 'analytics-score-panel' });
   if (!items.length) { root.append(el('h3', { text: 'No submitted exam scores' }), el('p', { text: 'Unstarted and in-progress sittings are excluded. Try a wider date range.' })); return root; }
   const templates = [...new Set(items.map(s => s.templateId))];
@@ -16,7 +16,7 @@ export function scoresPanel(items: AnalyticsExamScore[], courseId: string, showN
       el('div', { class: 'analytics-table-wrap' }, el('table', { class: 'analytics-table' },
         el('thead', {}, el('tr', {}, ...[...(showNames ? ['Student'] : []), 'Earned / possible', 'Score', 'Submitted'].map(text => el('th', { scope: 'col', text })))),
         el('tbody', {}, ...rows.map(s => el('tr', {},
-          ...(showNames ? [el('td', {}, el('a', { href: `#/instructor/course/${encodeURIComponent(courseId)}/student/${encodeURIComponent(s.puid)}`, text: s.displayName }))] : []),
+          ...(showNames ? [el('td', {}, el('a', { href: `#/${workspace}/course/${encodeURIComponent(courseId)}/student/${encodeURIComponent(s.puid)}`, text: s.displayName }))] : []),
           el('td', { text: `${s.score} / ${s.maxScore}` }), el('td', { text: `${Math.round(s.score / s.maxScore * 100)}%` }), el('td', { text: new Date(s.submittedAt).toLocaleString() })))))));
   }
   select.onchange = draw; root.append(el('label', {}, 'Exam template ', select), detail); draw(); return root;

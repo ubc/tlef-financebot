@@ -1,4 +1,7 @@
+import { projectCoursePeopleAccess } from './course-people-access.service';
 import { projectCanvasEnrollment } from './canvas-enrollment.service';
+import { projectImportedCoursePeople } from './people-import.service';
+import { resumeClaimedRegistrations } from './registration-codes.service';
 import {
   platformInstructorGrantsCol,
   usersCol,
@@ -73,18 +76,19 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
     },
     { upsert: true, returnDocument: 'after' },
   );
-  const user = await activatePendingTaInvites(result as unknown as User);
+  const user = await activatePendingTaInvites(await resumeClaimedRegistrations(result as unknown as User));
   await activateCourseInstructorInvitations(user);
-  return projectCanvasEnrollment((await projectCourseInstructorShares([user]))[0]);
+  return projectCoursePeopleAccess(await projectImportedCoursePeople(await projectCanvasEnrollment((await projectCourseInstructorShares([user]))[0])));
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
-  const user = await usersCol().findOne({ puid });
+  const persisted = await usersCol().findOne({ puid });
+  const user = persisted && !persisted.deactivatedAt ? await resumeClaimedRegistrations(persisted) : persisted;
   if (!user || user.deactivatedAt) return null;
 
   // The grant collection is the authorization source of truth. Recomputing
   // during Passport deserialization makes revoke effective on the next
   // request even if a login/revoke race left the denormalized User bit stale.
   const grant = await platformInstructorGrantsCol().findOne({ puid });
-  return projectCanvasEnrollment((await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0]);
+  return projectCoursePeopleAccess(await projectImportedCoursePeople(await projectCanvasEnrollment((await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0])));
 }

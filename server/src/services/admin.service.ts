@@ -1,3 +1,5 @@
+import { peopleMembershipFilter, projectCoursePeopleAccess } from './course-people-access.service';
+import { coursePeopleAccessCol } from '../components/mongodb/collections';
 import { ObjectId, type Filter, type WithId } from 'mongodb';
 import {
   auditCol,
@@ -246,10 +248,20 @@ export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promis
       ...(filters.role ? { role: filters.role } : {}),
     } };
     const sharedPuids = !filters.role || filters.role === 'instructor' ? await activeSharedInstructorPuids(filters.courseId) : [];
+    if (filters.role && !filters.courseId) {
+      const newGrants = await coursePeopleAccessCol().find({ role: filters.role, status: 'active', puid: { $exists: true } }).toArray();
+      sharedPuids.push(...newGrants.flatMap(grant => grant.puid ? [grant.puid] : []));
+    }
     if (sharedPuids.length) query.$and = [{ $or: [{ courseRoles }, { puid: { $in: sharedPuids } }] }];
     else query.courseRoles = courseRoles;
   }
-  return projectCourseInstructorShares(await usersCol().find(query).sort({ lastLoginAt: -1 }).limit(200).toArray(), { includeDeactivated: true });
+  const identitySearch: Filter<User> | undefined = filters.courseId && query.$or ? { $or: query.$or } : undefined;
+  if (identitySearch) delete query.$or;
+  const membership = filters.courseId ? await peopleMembershipFilter(filters.courseId, filters.role ? [filters.role] : ['student', 'ta', 'instructor'], query) : query;
+  const scoped = identitySearch ? { $and: [identitySearch, membership] } : membership;
+  const people = await projectCourseInstructorShares(await usersCol().find(scoped).sort({ lastLoginAt: -1 }).limit(200).toArray(), { includeDeactivated: true });
+  const projected = await Promise.all(people.map(projectCoursePeopleAccess));
+  return filters.role ? projected.filter(user => user.courseRoles.some(r => r.role === filters.role && (!filters.courseId || r.courseId.equals(filters.courseId)))) : projected;
 }
 
 async function auditUserMutation(
@@ -282,6 +294,10 @@ export async function assignRole(
     { _id: user._id },
     { $addToSet: { courseRoles: { courseId, role } } },
   );
+  await coursePeopleAccessCol().updateOne({ courseId, puid }, [{ $set: { role: { $literal: role },
+    status: { $cond: [{ $eq: ['$status', 'banned'] }, 'banned', 'active'] },
+    updatedAt: new Date(), updatedByPuid: actorPuid, revision: { $add: ['$revision', 1] },
+  } }]);
   await auditUserMutation(actorPuid, 'role.assign', user, { puid, role }, courseId);
 }
 
@@ -294,13 +310,13 @@ export async function removeRole(
 ): Promise<{ removed: boolean; warning?: 'orphans-course'; courseId?: string }> {
   const user = await usersCol().findOne({ puid });
   if (!user) throw new Error('admin-user-not-found');
-  const effectiveUser = role === 'instructor' ? (await projectCourseInstructorShares([user], { includeDeactivated: true }))[0] : user;
+  const effectiveUser = await projectCoursePeopleAccess((await projectCourseInstructorShares([user], { includeDeactivated: true }))[0]);
   const hasRole = effectiveUser.courseRoles.some((entry) => entry.courseId.equals(courseId) && entry.role === role);
   if (!hasRole) return { removed: false };
   if (role === 'instructor') {
     const sharedPuids = await activeSharedInstructorPuids(courseId);
     const directRoles = { courseRoles: { $elemMatch: { courseId, role: 'instructor' as const } } };
-    const instructorCount = await usersCol().countDocuments(sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles);
+    const instructorCount = await usersCol().countDocuments(await peopleMembershipFilter(courseId, ['instructor'], sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles));
     if (instructorCount <= 1 && !confirm) {
       return { removed: false, warning: 'orphans-course', courseId: courseId.toHexString() };
     }
@@ -310,6 +326,7 @@ export async function removeRole(
     { _id: user._id },
     { $pull: { courseRoles: { courseId, role } } },
   );
+  await coursePeopleAccessCol().updateOne({ courseId, puid, role }, { $set: { status: 'revoked', updatedAt: new Date(), updatedByPuid: actorPuid }, $inc: { revision: 1 } });
   await auditUserMutation(actorPuid, 'role.revoke', user, { puid, role }, courseId);
   return { removed: true };
 }

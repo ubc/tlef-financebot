@@ -14,9 +14,9 @@ const percent = (value: number | undefined): string => value === undefined ? 'In
 const button = (text: string, action: () => void): HTMLButtonElement => el('button', { class: 'btn btn--secondary btn--sm', type: 'button', text, onclick: action });
 const message = (error: unknown): string => error instanceof Error ? error.message : 'Unable to load this section.';
 
-export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void {
+export function renderAnalytics(outlet: HTMLElement, params: RouteParams, workspace: 'instructor' | 'ta' = 'instructor'): void {
   const courseId = params.id;
-  const base = `#/instructor/course/${encodeURIComponent(courseId)}`;
+  const base = `#/${workspace}/course/${encodeURIComponent(courseId)}`;
   const root = el('div', { class: 'view analytics-view' });
   mount(outlet, root);
   const route = location.hash;
@@ -73,7 +73,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
       el('aside', { class: 'analytics-inspector', 'aria-label': 'Topic detail' },
         el('span', { class: 'analytics-eyebrow', text: 'TOPIC DETAIL' }), el('h2', { text: 'Learning objectives' }), focus,
         el('p', { class: 'muted', text: 'Rates require 5 attempts. No activity means no evidence, not poor performance.' }),
-        el('div', { class: 'analytics-related-links' }, link('Open Coverage Map', 'content-map'), link('Review student flags', 'flags')))),
+        el('div', { class: 'analytics-related-links' }, ...(workspace === 'instructor' ? [link('Open Coverage Map', 'content-map')] : []), link('Review student flags', 'flags')))),
     section('Question answer patterns', 'analytics-question-patterns',
       el('p', { class: 'muted', text: 'Compare recorded versions within the selected activity scope. Each attempt counts once, including questions used across multiple objectives.' }),
       el('div', { class: 'analytics-controls' }, questionSearch, el('label', {}, 'Learning objective', lo)), patternList, distribution),
@@ -115,7 +115,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
     try {
       const result = await getAnalyticsExamScores(courseId, { from: filter.from, to: filter.to });
       if (!alive() || request !== scoreRevision) return;
-      scoreBody.replaceChildren(scoresPanel(result.items, courseId));
+      scoreBody.replaceChildren(scoresPanel(result.items, courseId, true, workspace));
       if (result.excludedUnscored) scoreBody.append(el('p', { text: `${result.excludedUnscored} submitted records have no valid score and are excluded.` }));
     } catch (e) { if (alive() && request === scoreRevision) scoreBody.replaceChildren(errorState(message(e), () => void loadScores())); }
   }
@@ -151,7 +151,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
         el('div', {},
           el('h3', { text: 'No active objectives yet' }),
           el('p', { text: 'Add learning objectives to the course structure to start tracking topic performance.' })),
-        el('a', { class: 'btn btn--instr-primary btn--sm', href: `${base}/content-map`, text: 'Open Coverage Map' })),
+        ...(workspace === 'instructor' ? [el('a', { class: 'btn btn--instr-primary btn--sm', href: `${base}/content-map`, text: 'Open Coverage Map' })] : [])),
     );
     const previous = lo.value;
     lo.replaceChildren(el('option', { value: '', text: 'All learning objectives' }), ...allLos.map((item) => el('option', { value: item.loId, text: `${item.themeName} / ${item.name}` })));
@@ -169,13 +169,13 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
         ...(!result.insufficient ? result.options.map((option) => el('div', { class: 'analytics-outcome' },
           el('p', { text: `${option.key}. ${option.text} · ${option.role.replace(/-/g, ' ')} · ${option.count} (${Math.round((option.pct ?? 0) * 100)}%)` }),
           el('div', { class: 'analytics-bar', 'aria-hidden': 'true' }, el('span', { style: `width:${Math.round((option.pct ?? 0) * 100)}%` })))) : []),
-        link(`Review question (recorded version ${result.version})`, `bank/${encodeURIComponent(item.questionId)}?analyticsVersionId=${encodeURIComponent(item.versionId)}`),
+        ...(workspace === 'instructor' ? [link(`Review question (recorded version ${result.version})`, `bank/${encodeURIComponent(item.questionId)}?analyticsVersionId=${encodeURIComponent(item.versionId)}`)] : []),
       );
       const evidence = [...distribution.children];
       const questionDetail = el('div', { class: 'analytics-recorded-question' }, ...evidence.slice(0, 3));
       const reviewLink = evidence[evidence.length - 1];
       if (reviewLink?.tagName === 'A') questionDetail.append(reviewLink);
-      distribution.replaceChildren(questionDetail, el('div', { class: 'analytics-answer-selection' }, el('h3', { text: 'Answer selection' }), ...evidence.slice(3, -1)));
+      distribution.replaceChildren(questionDetail, el('div', { class: 'analytics-answer-selection' }, el('h3', { text: 'Answer selection' }), ...evidence.slice(3, reviewLink?.tagName === 'A' ? -1 : undefined)));
     } catch (error) { if (alive() && id === distributionRevision) distribution.replaceChildren(errorState(message(error), () => void showDistribution(item, snapshot))); }
   }
   function drawPatterns(snapshot: AnalyticsFilter): void {
@@ -186,7 +186,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
         el('thead', {}, el('tr', {}, ...['Question / recorded version', 'Accuracy', 'Attempts'].map(text => el('th', { scope: 'col', text })))),
         el('tbody', {}, ...items.map(item => el('tr', { class: item.versionId === selectedVersion ? 'analytics-selected-row' : '' },
           el('td', {}, el('strong', { text: item.stem }), el('p', { text: `${item.objectiveCount > 1 ? `Across ${item.objectiveCount} learning objectives` : item.loName} · Version ${item.version ?? 'unknown'} · ${item.isCurrent ? 'Current' : 'Historical'}` }),
-            item.available ? button(`View version ${item.version ?? ''} answers`, () => { selectedVersion = item.versionId; drawPatterns(snapshot); }) : link('Review available questions', 'bank')),
+            item.available ? button(`View version ${item.version ?? ''} answers`, () => { selectedVersion = item.versionId; drawPatterns(snapshot); }) : workspace === 'instructor' ? link('Review available questions', 'bank') : el('span', { text: 'Question version unavailable' })),
           el('td', { text: percent(item.failureRate) }), el('td', { text: String(item.attempts) })))))));
     if (!items.length) { ++distributionRevision; distribution.replaceChildren(); patternList.append(el('p', { text: query ? 'No matching questions. Try another search or select a learning objective.' : 'No question attempts in this scope. Try a wider date range.' })); return; }
     const selected = items.find(item => item.versionId === selectedVersion && item.available) ?? items.find(item => item.available);
@@ -242,7 +242,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams): void 
     await loadPatterns();
     if (!alive() || id !== revision) return;
     status.textContent = `${failed ? 'Some sections unavailable. Last refresh' : 'Last updated'} ${new Date().toLocaleTimeString()}. Use Refresh for new activity.`;
-    void maybeStartTutorial('instructor-analytics', { root });
+    if (workspace === 'instructor') void maybeStartTutorial('instructor-analytics', { root });
   }
   async function loadFollow(): Promise<void> {
     const id = ++followRevision;

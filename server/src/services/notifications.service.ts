@@ -1,3 +1,5 @@
+import { peopleMembershipFilter } from './course-people-access.service';
+import { importedCourseRoleUserFilter } from './people-import.service';
 import type { ObjectId, WithId } from 'mongodb';
 import {
   notificationsCol,
@@ -62,10 +64,10 @@ export async function notify(input: NotifyInput): Promise<void> {
  * student, regardless of what else is passed in. */
 async function courseStaffPuids(courseId: ObjectId): Promise<string[]> {
   const sharedPuids = await activeSharedInstructorPuids(courseId);
-  const directRoles = { courseRoles: { $elemMatch: { courseId, role: { $in: ['instructor', 'ta'] as const } } } };
+  const directRoles = await importedCourseRoleUserFilter(courseId, ['instructor', 'ta']);
   const staff = await usersCol()
     .find(
-      sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles,
+      await peopleMembershipFilter(courseId, ['instructor', 'ta'], sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles),
       { projection: { puid: 1 } },
     )
     .toArray();
@@ -155,9 +157,9 @@ export async function runDailySummary(): Promise<void> {
     if (total === 0) continue;
 
     const sharedPuids = await activeSharedInstructorPuids(course._id);
-    const directRoles = { courseRoles: { $elemMatch: { courseId: course._id, role: 'instructor' as const } } };
+    const directRoles = await importedCourseRoleUserFilter(course._id, ['instructor']);
     const instructors = await usersCol()
-      .find(sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles, { projection: { puid: 1 } })
+      .find(await peopleMembershipFilter(course._id, ['instructor'], sharedPuids.length ? { $or: [directRoles, { puid: { $in: sharedPuids }, deactivatedAt: { $exists: false } }] } : directRoles), { projection: { puid: 1 } })
       .toArray();
     const body =
       `${newFlags} new flag${newFlags === 1 ? '' : 's'} and ${pendingReviewChanges} ` +

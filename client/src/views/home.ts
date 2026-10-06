@@ -120,8 +120,8 @@ function myCoursesSection(
       'div',
       { class: 'join-box', 'data-tutorial': 'registration-code' },
       el('p', { class: 'eyebrow', text: 'Join a course' }),
-      el('h2', { class: 'section-title', text: 'Have a registration code?' }),
-      el('p', { class: 'muted', text: 'Enter the code your instructor shared. The course will appear in your dashboard immediately.' }),
+      el('h2', { class: 'section-title', text: 'Have a one-time registration code?' }),
+      el('p', { class: 'muted', text: 'Gradebook imports add most students automatically. If your course is missing, enter an unused code from your instructor. Each code can enroll one CWL account.' }),
       el(
         'form',
         {

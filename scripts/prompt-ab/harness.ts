@@ -13,8 +13,8 @@
  * Discipline the runner enforces, learned the hard way (experiment 16's
  * postmortem): every record — full question, roles, reviewer reasoning — is
  * appended to the results JSONL BEFORE any aggregation, so nothing is ever
- * lost to a cleanup step. Real token usage is captured per call via
- * completeJson's onUsage hook.
+ * lost to a cleanup step. Observed model invocations and nullable provider
+ * usage are captured independently of question acceptance or failure.
  *
  * Run an experiment: npx tsx scripts/prompt-ab/experiments/<name>.ts
  * (from the repo root; .env supplies the provider credentials).
@@ -35,6 +35,8 @@ import {
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
 import { completeJson } from '../../server/src/components/genai/llm';
+import { withModelCallContext, withModelCallObserver, type ModelCallEvent } from '../../server/src/components/genai/llm/model-call';
+import { aggregateHarnessUsage, createHarnessUsageTracker, formatRecordedTokens, type HarnessUsageSummary } from './usage-summary';
 import type { ReasoningEffort } from '../../server/src/types/domain';
 
 /** The generator's JSON shape, as the production verifier types it. */
@@ -58,8 +60,9 @@ export interface Arm {
   transformPrompt?: (prompt: string) => string;
   /** Runs BEFORE generation and may call the LLM (a planning pass, e.g.
    * move-first two-pass). Its `appendix` is appended to the built generator
-   * prompt; its `planned` value is recorded on the run record. `track` must
-   * be passed to any completeJson call it makes so usage stays attributed. */
+   * prompt; its `planned` value is recorded on the run record. Component LLM
+   * calls inherit the experiment observer automatically. The legacy `track`
+   * callback remains accepted but does not double-count observed calls. */
   prePass?: (ctx: {
     lo: string;
     difficulty?: string;
@@ -100,8 +103,6 @@ export interface Experiment {
   defaults?: { model?: string };
 }
 
-interface Usage { promptTokens: number; completionTokens: number; calls: number }
-
 /** Per-question record appended to the JSONL. Kept flat and stringify-safe. */
 export interface RunRecord {
   arm: string;
@@ -127,7 +128,9 @@ export interface RunRecord {
   difficultyComplaint?: boolean;
   retryFired?: boolean;
   retry?: Omit<RunRecord, 'arm' | 'fixture' | 'target' | 'i' | 'retryFired' | 'retry'>;
-  usage?: Usage;
+  usage?: HarnessUsageSummary;
+  modelCalls?: ModelCallEvent[];
+  pipelineElapsedMs?: number;
   error?: string;
 }
 
@@ -171,16 +174,17 @@ async function judgeOnce(args: {
   arm: Arm;
   model: string;
   assignedMove?: string;
-  track: (u: { promptTokens?: number; completionTokens?: number }) => void;
+  item: number;
+  candidateAttempt: number;
 }): Promise<Omit<RunRecord, 'arm' | 'fixture' | 'target' | 'i'>> {
-  const { lo, chunks, generated, arm, model, assignedMove, track } = args;
+  const { lo, chunks, generated, arm, model, assignedMove, item, candidateAttempt } = args;
   const verification = verifyGeneratedNumerics(generated);
   const validator = await completeJson<{ roleAssessment: string; moveAssessment?: string }>(
     VALIDATOR_PROMPT({
       loName: lo, question: generated, chunks,
       ...(assignedMove ? { assignedMove } : {}),
     }),
-    { model, ...arm.validator, onUsage: track },
+    { model, ...arm.validator, usageContext: { stage: 'validator', item, candidateAttempt } },
   );
   const reviewer = await completeJson<{ decision: string; reasoning: string }>(
     REVIEWER_PROMPT({
@@ -192,7 +196,7 @@ async function judgeOnce(args: {
       roleAssessment: validator.roleAssessment,
       ...(validator.moveAssessment ? { moveAssessment: validator.moveAssessment } : {}),
     }),
-    { model, reasoningEffort: 'high', ...arm.reviewer, onUsage: track },
+    { model, reasoningEffort: 'high', ...arm.reviewer, usageContext: { stage: 'reviewer', item, candidateAttempt } },
   );
   const { helpers, derived } = helperStepCount(generated);
   return {
@@ -221,7 +225,13 @@ export async function runExperiment(spec: Experiment): Promise<string> {
     `${spec.name}-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`,
   );
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, JSON.stringify({ meta: spec.name, hypothesis: spec.hypothesis, mode: spec.mode, n: spec.n, startedAt: new Date().toISOString() }) + '\n');
+  fs.writeFileSync(outPath, JSON.stringify({ meta: spec.name, hypothesis: spec.hypothesis, mode: spec.mode, n: spec.n,
+    usageMeasurementVersion: 1, usageScope: 'observed-llm-sdk-invocations',
+    usageExclusions: ['unobserved SDK retries', 'embeddings', 'parsing', 'infrastructure'],
+    teacherLabels: 'not collected',
+    settings: { defaults: spec.defaults, cells: spec.cells, arms: spec.arms.map(arm => ({ label: arm.label,
+      generator: arm.generator, validator: arm.validator, reviewer: arm.reviewer, prePass: !!arm.prePass })) },
+    startedAt: new Date().toISOString() }) + '\n');
   const model = spec.defaults?.model ?? DEFAULT_MODEL;
   const records: RunRecord[] = [];
 
@@ -230,14 +240,15 @@ export async function runExperiment(spec: Experiment): Promise<string> {
     if (!fixture) throw new Error(`unknown fixture: ${cell.fixture}`);
     for (let i = 1; i <= spec.n; i += 1) {
       for (const arm of spec.arms) {
-        const usage: Usage = { promptTokens: 0, completionTokens: 0, calls: 0 };
-        const track = (u: { promptTokens?: number; completionTokens?: number }) => {
-          usage.promptTokens += u.promptTokens ?? 0;
-          usage.completionTokens += u.completionTokens ?? 0;
-          usage.calls += 1;
-        };
+        const tracker = createHarnessUsageTracker();
+        const startedAt = Date.now();
+        // Historical prePass implementations pass this to onUsage. Calls are
+        // now observed at the component boundary, including failed/no-usage
+        // requests, so this compatibility callback must not add a second bill.
+        const track = (): void => {};
         const base: RunRecord = { arm: arm.label, fixture: cell.fixture, target: cell.difficulty, i };
         const tag = `${arm.label}/${cell.fixture}/${cell.difficulty ?? 'any'}/#${i}`;
+        await withModelCallObserver(tracker.observe, async () => {
         try {
           const chunks = arm.chunks ?? fixture.chunks;
           const assignedMove = arm.assignedMoveFor?.(i);
@@ -248,16 +259,16 @@ export async function runExperiment(spec: Experiment): Promise<string> {
           if (arm.transformPrompt) genPrompt = arm.transformPrompt(genPrompt);
           let planned: unknown;
           if (arm.prePass) {
-            const pre = await arm.prePass({
+            const pre = await withModelCallContext({ stage: 'prepass', item: i, candidateAttempt: 0 }, undefined, () => arm.prePass!({
               lo: fixture.lo, difficulty: cell.difficulty, chunks, i, model, track,
-            });
+            }));
             genPrompt = `${genPrompt}\n\n${pre.appendix}`;
             planned = pre.planned;
           }
           const generated = await completeJson<Generated>(genPrompt, {
-            model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
+            model, reasoningEffort: 'high', ...arm.generator, usageContext: { stage: 'generator', item: i, candidateAttempt: 0 },
           });
-          const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, assignedMove, track });
+          const first = await judgeOnce({ lo: fixture.lo, chunks, generated, arm, model, assignedMove, item: i, candidateAttempt: 0 });
           let record: RunRecord = { ...base, ...(planned !== undefined ? { planned } : {}), ...first };
 
           if (spec.mode === 'retry-on-reject' && String(first.decision).toLowerCase() === 'reject') {
@@ -266,13 +277,15 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             // prompt), judge the replacement the same way, keep both records.
             const retryPrompt = `${genPrompt}\n\n${REVIEWER_REJECT_FEEDBACK(String(first.reasoning ?? ''), generated)}`;
             const regenerated = await completeJson<Generated>(retryPrompt, {
-              model, reasoningEffort: 'high', ...arm.generator, onUsage: track,
+              model, reasoningEffort: 'high', ...arm.generator, usageContext: { stage: 'generator', item: i, candidateAttempt: 1 },
             });
-            const second = await judgeOnce({ lo: fixture.lo, chunks, generated: regenerated, arm, model, assignedMove, track });
+            const second = await judgeOnce({ lo: fixture.lo, chunks, generated: regenerated, arm, model, assignedMove, item: i, candidateAttempt: 1 });
             record = { ...record, retryFired: true, retry: second };
           }
 
-          record.usage = usage;
+          record.usage = tracker.summarize();
+          record.modelCalls = tracker.snapshot();
+          record.pipelineElapsedMs = Math.max(0, Date.now() - startedAt);
           records.push(record);
           fs.appendFileSync(outPath, JSON.stringify(record) + '\n');
           const retryNote = record.retryFired ? ` -> retry: ${record.retry?.decision}` : '';
@@ -280,11 +293,13 @@ export async function runExperiment(spec: Experiment): Promise<string> {
             `verify=${record.verificationFailure ? 'FAIL' : 'ok'} reviewer=${record.decision}` +
             `${record.difficultyComplaint ? ' [difficulty complaint]' : ''}${retryNote}`);
         } catch (err) {
-          const record = { ...base, error: String(err), usage };
+          const record: RunRecord = { ...base, error: String(err), usage: tracker.summarize(), modelCalls: tracker.snapshot(),
+            pipelineElapsedMs: Math.max(0, Date.now() - startedAt) };
           records.push(record);
           fs.appendFileSync(outPath, JSON.stringify(record) + '\n');
           console.log(`${tag}: ERROR ${String(err)}`);
         }
+        });
       }
     }
   }
@@ -297,8 +312,8 @@ export async function runExperiment(spec: Experiment): Promise<string> {
 /** Markdown tally, shaped for pasting into docs/prompt-engineering-tests.md. */
 function printTally(spec: Experiment, records: RunRecord[]): void {
   console.log(`\n## Tally — ${spec.name}\n`);
-  console.log('| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | retries fired -> converted | tokens in/out |');
-  console.log('|---|---|---|---|---|---|---|---|');
+  console.log('| arm | numeric/conceptual | label==target | proofs | pass/flag/reject | difficulty complaints | retries fired -> converted | recorded tokens in/out/total | usage status; reported/observed calls; unknown |');
+  console.log('|---|---|---|---|---|---|---|---|---|');
   for (const arm of spec.arms) {
     const rows = records.filter((r) => r.arm === arm.label && !r.error);
     const routing = `${rows.filter((r) => r.numericKind === 'numeric').length}/${rows.filter((r) => r.numericKind === 'conceptual').length}`;
@@ -308,10 +323,14 @@ function printTally(spec: Experiment, records: RunRecord[]): void {
     const complaints = rows.filter((r) => r.difficultyComplaint).length;
     const retries = rows.filter((r) => r.retryFired);
     const converted = retries.filter((r) => String(r.retry?.decision).toLowerCase() !== 'reject' && !r.retry?.difficultyComplaint).length;
-    const inTok = rows.reduce((sum, r) => sum + (r.usage?.promptTokens ?? 0), 0);
-    const outTok = rows.reduce((sum, r) => sum + (r.usage?.completionTokens ?? 0), 0);
-    console.log(`| ${arm.label} | ${routing} | ${labelMatch} | ${proofs} | ${dec('pass')}/${dec('flag')}/${dec('reject')} | ${complaints} | ${retries.length} -> ${converted} | ${inTok}/${outTok} |`);
+    const usage = aggregateHarnessUsage(records.filter(record => record.arm === arm.label));
+    console.log(`| ${arm.label} | ${routing} | ${labelMatch} | ${proofs} | ${dec('pass')}/${dec('flag')}/${dec('reject')} | ${complaints} | ${retries.length} -> ${converted} | ` +
+      `${formatRecordedTokens(usage.inputTokens)}/${formatRecordedTokens(usage.outputTokens)}/${formatRecordedTokens(usage.totalTokens)} | ` +
+      `${usage.status}; ${usage.reportedCalls}/${usage.observedCalls}; ${usage.unknownCalls} |`);
   }
+  console.log('\nRecorded usage includes failed and rejected candidates. Partial totals are subtotals; missing counts are not zero. ' +
+    'Observed SDK invocations do not establish physical retry counts or billed cost. Embeddings/parsing/infrastructure are excluded. ' +
+    'Model review decisions are not teacher acceptance or independent-question supply.');
   const errors = records.filter((r) => r.error).length;
   if (errors > 0) console.log(`\nERRORS: ${errors} record(s) — read the JSONL.`);
 }

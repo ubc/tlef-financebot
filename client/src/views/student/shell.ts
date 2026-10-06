@@ -16,6 +16,8 @@ export const STUDENT_NAV: StudentNavItem[] = [
   { label: 'Help & Tutorials', glyph: '?', path: () => '/help' },
   { label: 'Course Home', glyph: 'H', path: (id) => `/course/${id}` },
   { label: 'Review Book', glyph: 'R', path: (id) => `/course/${id}/review-book` },
+  { label: 'Assessments', glyph: 'A', path: (id) => `/course/${id}/assessments` },
+
   { label: 'Discussion', glyph: 'D', path: (id) => `/course/${id}/discussion` },
   { label: 'Exam Prep', glyph: 'E', path: (id) => `/course/${id}/exams`, examOnly: true },
 ];

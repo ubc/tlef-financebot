@@ -1,3 +1,4 @@
+import { ensureCourseOwner } from '../components/auth/course-guards';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
@@ -30,7 +31,8 @@ const taParams = z.object({ courseId: objectIdParam, puid: z.string().trim().min
 const questionParams = z.object({ questionId: objectIdParam });
 const suggestionParams = z.object({ questionId: objectIdParam, suggestionId: objectIdParam });
 const flagParams = z.object({ flagId: objectIdParam });
-const inviteBody = z.object({ email: z.string().trim().email() });
+const inviteBody = z.object({ identifier: z.string().trim().min(2).max(254) }).strict()
+  .or(z.object({ email: z.string().trim().email().max(254) }).strict());
 const capabilityShape = Object.fromEntries(
   CAPABILITIES.map((capability) => [capability, z.boolean().optional()]),
 ) as Record<Capability, z.ZodOptional<z.ZodBoolean>>;
@@ -100,10 +102,11 @@ tasRouter.post(
   '/courses/:courseId/tas',
   validate({ params: courseParams }),
   ensureCapability('course.manage-tas'),
+  ensureCourseOwner(),
   validate({ body: inviteBody }),
   async (req, res) => {
-    const { email } = req.body as z.infer<typeof inviteBody>;
-    res.status(201).json(await addTa(new ObjectId(String(req.params.courseId)), email));
+    const body = req.body as z.infer<typeof inviteBody>;
+    res.status(201).json(await addTa(new ObjectId(String(req.params.courseId)), 'identifier' in body ? body.identifier : body.email));
   },
 );
 
@@ -111,6 +114,7 @@ tasRouter.put(
   '/courses/:courseId/tas/:puid/permissions',
   validate({ params: taParams }),
   ensureCapability('course.manage-tas'),
+  ensureCourseOwner(),
   validate({ body: permissionsBody }),
   async (req, res) => {
     const { permissions } = req.body as z.infer<typeof permissionsBody>;
@@ -128,6 +132,7 @@ tasRouter.post(
   '/courses/:courseId/tas/:puid/reinvite',
   validate({ params: taParams }),
   ensureCapability('course.manage-tas'),
+  ensureCourseOwner(),
   async (req, res) => res.json(await reinviteTa(
     new ObjectId(String(req.params.courseId)),
     String(req.params.puid),

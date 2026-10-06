@@ -108,6 +108,15 @@ function materialRun(overrides: Partial<WithId<ContentRun>> = {}): WithId<Conten
 }
 
 describe('content run creation', () => {
+  it('persists the selected quality policy while leaving legacy requests baseline by omission', async () => {
+    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+      models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+    const baseline = await createQuestionGenerationRun(input);
+    const pilot = await createQuestionGenerationRun({ ...input, qualityPolicy: 'grounded-memory-v1' });
+    expect(baseline.input).not.toHaveProperty('qualityPolicy');
+    expect(pilot.input.qualityPolicy).toBe('grounded-memory-v1');
+    expect(await getContentRun(pilot._id)).toMatchObject({ input: { qualityPolicy: 'grounded-memory-v1' } });
+  });
   it('creates distinct durable ids for identical material requests', async () => {
     const input = {
       courseId: new ObjectId(),

@@ -26,6 +26,8 @@ only. All four are read in `config/env.ts`.
 | --- | --- |
 | `llm: LLMModule` | The configured module. `sendMessage`, `sendConversation`, `createConversation`, `getAvailableModels`, ... |
 | `pingLlm(): Promise<boolean>` | Best-effort reachability probe (lists models). Never throws. Provided for a live health probe, but **not wired into `/api/health` today** — that endpoint reports the configured LLM/embeddings provider + model (fast, no network call) rather than probing the provider. Call `pingLlm()` there if you want a live check. |
+| `withModelCallObserver(observer, work)` | AsyncLocalStorage-scoped observations for send/stream calls. Nested scopes replace their parent observer. The observer-only public sub-entry is `./model-call`; importing it does not instantiate a provider client. |
+| `ModelCallEvent`, `ModelUsage` | Typed, metadata-only observation and nullable provider usage. Exported from `index.ts` for type-only imports. |
 
 ## Init pattern (real, installed API)
 
@@ -124,3 +126,35 @@ unchanged. Only the provider's visible content channel is forwarded. Background
 question generation decodes bounded stems, options, proposed answer roles and
 option explanations into unverified run previews;
 never forward raw response JSON or private reasoning into product progress UI.
+
+## Model usage observation
+
+`withModelCallObserver` records one `started`/`finished` event pair per observed
+SDK invocation, with a UUID shared by the pair. Its tested boundary covers direct
+facade calls and each `completeJson` attempt. Conversation helper coverage is not
+claimed by these tests. Provider transport outcome is
+separate from downstream JSON or question rejection. `usageContext` supplies
+stage/item/candidate attempt metadata; JSON attempts are numbered from zero.
+An optional `onAttempt` listener can coexist with the scoped recorder. Listener
+exceptions cannot discard a response or initiate another model request.
+
+The source-controlled `openai-usage-adapter.ts` retains toolkit 0.3.0 Chat
+request/model behavior for OpenAI and the compatible UBC Sandbox. It adds
+`stream_options.include_usage` and captures the terminal usage frame, including
+an empty `choices` array. It does not switch Chat to Responses or add JSON mode
+to the toolkit's streaming request. See the
+[official streaming example](https://developers.openai.com/cookbook/examples/how_to_stream_completions).
+An interrupted stream may never deliver its usage frame; missing counts remain
+unknown. SDK default retries are unchanged, so `retryVisibility` is `unknown`
+and observed calls are not claimed to be physical attempts or billed requests.
+
+Raw OpenAI cache/reasoning counts are subsets of input/output. Anthropic's
+native cache read/write counts are disjoint input categories. The installed
+toolkit loses those native Anthropic fields, so its input/total are conservatively
+unknown while reported output remains available. Ollama totals are derived from
+reported eval counts. Only nonnegative safe integer counts are accepted.
+Embeddings and model-list health checks are outside this observation boundary.
+
+Tests must inject a synthetic adapter client or mock the environment and toolkit
+together. A local `.env` must never replace a mocked facade with a real native
+transport. No usage test requires a paid endpoint or provider credentials.

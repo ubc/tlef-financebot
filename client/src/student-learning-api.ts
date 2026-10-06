@@ -23,7 +23,8 @@ export interface PostInput { title: string; text: string; category: DiscussionCa
 export interface PostChange { revision: number; action: 'reply' | 'close' | 'reopen' | 'delete' | 'restore' | 'pin' | 'resolve' | 'endorse' | 'vote' | 'follow'; text?: string; kind?: 'student' | 'instructor' | 'followup'; anonymous?: boolean; replyId?: string; value?: boolean }
 export function learningApi(courseId: string, preview = false) {
   const prefix = `/api/courses/${encodeURIComponent(courseId)}/${preview ? 'preview/' : ''}`;
-  const query = preview ? `?previewSessionId=${encodeURIComponent(getAnonymousPreviewSession(courseId))}` : '';
+  const restricted = preview && window.location.hash.startsWith('#/preview/restricted/');
+  const query = preview ? `?previewSessionId=${encodeURIComponent(getAnonymousPreviewSession(courseId))}${restricted ? '&access=restricted' : ''}` : '';
   const get = <T>(path: string) => apiRequest<T>(`${prefix}${path}${query}`);
   const send = <T>(path: string, method: string, body: unknown) => apiRequest<T>(`${prefix}${path}${query}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return {

@@ -3,6 +3,12 @@ import { env } from '../../../config/env';
 import { modelRequestOptions, type ModelRequestOptions } from './model-capabilities';
 import { createGenaiLogger } from '../logger';
 import { escapeInvalidJsonBackslashes, restoreLatexEscapes } from './latex-escapes';
+import { observeLLMModule, withModelCallContext, type ModelCallObserver, type ModelUsageContext } from './model-call';
+import { installOpenAIUsageAdapter } from './openai-usage-adapter';
+
+export { withModelCallObserver } from './model-call';
+export type { ModelCallEvent, ModelCallObserver, ModelUsageContext } from './model-call';
+export type { ModelUsage } from './provider-usage';
 
 // Chat / text generation via ubc-genai-toolkit-llm. A single, process-wide
 // module is constructed from `env`; the provider (ollama | openai | anthropic |
@@ -24,7 +30,10 @@ function buildConfig(): LLMConfig {
 }
 
 /** The configured LLM module. Use `sendMessage` / `createConversation`. */
-export const llm = new LLMModule(buildConfig());
+const config = buildConfig();
+const moduleInstance = new LLMModule(config);
+installOpenAIUsageAdapter(moduleInstance, config);
+export const llm = observeLLMModule(moduleInstance, config);
 
 export interface CompleteJsonOptions extends ModelRequestOptions {
   systemPrompt?: string;
@@ -39,6 +48,9 @@ export interface CompleteJsonOptions extends ModelRequestOptions {
    * from character counts. Absent usage (provider-dependent) is not
    * reported. */
   onUsage?: (usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number }) => void;
+  /** Optional local listener, independent of the current scoped recorder. */
+  onAttempt?: ModelCallObserver;
+  usageContext?: Omit<ModelUsageContext, 'jsonAttempt'>;
 }
 
 /**
@@ -97,25 +109,32 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
     ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, jsonAttempt: number) => {
     await options.beforeRequest?.();
-    if (!options.onText) return llm.sendMessage(text, sendOptions);
-    let content = '';
-    options.onText('');
-    return llm.streamConversation([{ role: 'user', content: text }], chunk => {
-      content += chunk;
-      options.onText?.(content);
-    }, sendOptions);
+    return withModelCallContext({ ...options.usageContext, jsonAttempt }, options.onAttempt, async () => {
+      if (!options.onText) return llm.sendMessage(text, sendOptions);
+      let content = '';
+      options.onText('');
+      return llm.streamConversation([{ role: 'user', content: text }], chunk => {
+        content += chunk;
+        options.onText?.(content);
+      }, sendOptions);
+    });
   };
-  const first = await send(prompt);
-  if (first.usage) options.onUsage?.(first.usage);
+  const reportUsage = async (usage: typeof first.usage) => {
+    // A legacy callback is telemetry too; it must not cause a paid JSON retry.
+    if (usage) try { await options.onUsage?.(usage); } catch { /* Keep the paid response. */ }
+  };
+  const first = await send(prompt, 0);
+  await reportUsage(first.usage);
   try {
     return extractJson<T>(first.content);
   } catch {
     const retry = await send(
       `${prompt}\n\nYour previous reply was not valid JSON. Respond with ONLY the JSON value — no prose, no explanation, no code fences.`,
+      1,
     );
-    if (retry.usage) options.onUsage?.(retry.usage);
+    await reportUsage(retry.usage);
     return extractJson<T>(retry.content);
   }
 }

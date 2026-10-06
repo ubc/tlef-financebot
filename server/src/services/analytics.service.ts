@@ -1,3 +1,4 @@
+import { importedCourseRoleUserFilter } from './people-import.service';
 import type { ObjectId } from 'mongodb';
 import {
   attemptsCol,
@@ -238,7 +239,7 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
 export async function lowEngagement(courseId: ObjectId, inactiveDays: number, now = new Date()): Promise<Array<{
   puid: string; uid: string; displayName: string; email: string; lastAttemptAt?: Date; inactiveDays: number;
 }>> {
-  const students = await usersCol().find({ courseRoles: { $elemMatch: { courseId, role: 'student' } } }).toArray();
+  const students = await usersCol().find(await importedCourseRoleUserFilter(courseId, ['student'])).toArray();
   const puids = students.map((student) => student.puid);
   const recent = puids.length
     ? await attemptsCol().aggregate<{ _id: string; lastAttemptAt: Date }>([
@@ -269,7 +270,7 @@ export async function searchStudents(courseId: ObjectId, query: string): Promise
   const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = escaped ? new RegExp(escaped, 'i') : /.*/;
   const users = await usersCol().find({
-    courseRoles: { $elemMatch: { courseId, role: 'student' } },
+    $and: [await importedCourseRoleUserFilter(courseId, ['student'])],
     $or: [{ uid: match }, { displayName: match }, { email: match }],
   }).sort({ displayName: 1 }).limit(50).toArray();
   const puids = users.map(u => u.puid);
@@ -286,7 +287,7 @@ export async function searchStudents(courseId: ObjectId, query: string): Promise
 export async function studentProfile(courseId: ObjectId, puid: string): Promise<Record<string, unknown>> {
   const user = await usersCol().findOne({
     puid,
-    courseRoles: { $elemMatch: { courseId, role: 'student' } },
+    ...await importedCourseRoleUserFilter(courseId, ['student']),
   });
   if (!user) throw new Error('student-not-found');
   const [history, mastery, reviewBook, flags] = await Promise.all([
@@ -341,7 +342,7 @@ export async function examScores(courseId: ObjectId, filter: { from?: Date; to?:
     ...(filter.puid ? { puid: filter.puid } : {}),
   }).sort({ submittedAt: -1 }).toArray();
   const valid = sittings.filter(s => typeof s.score === 'number' && Number.isFinite(s.score) && s.maxScore > 0 && Number.isFinite(s.maxScore));
-  const users = valid.length ? await usersCol().find({ puid: { $in: [...new Set(valid.map(s => s.puid))] }, courseRoles: { $elemMatch: { courseId, role: 'student' } } }).toArray() : [];
+  const users = valid.length ? await usersCol().find({ puid: { $in: [...new Set(valid.map(s => s.puid))] }, ...await importedCourseRoleUserFilter(courseId, ['student']) }).toArray() : [];
   const names = new Map(users.map(u => [u.puid, u]));
   return { items: valid.map(s => ({
     id: s._id.toHexString(), puid: s.puid, displayName: names.get(s.puid)?.displayName ?? 'Former student',

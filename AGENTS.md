@@ -18,9 +18,65 @@ commonly need:
 
 ## Current state
 
-- Canvas uses exact Login ID/PUID matching and versioned course-role snapshots.
-  The global Canvas workspace shows all active/invited role types in People,
-  with self markers, role filters and pagination. Display never grants access.
+- Enrollment uses Canvas Gradebook/people CSV imports as its primary path.
+  Optional batches of 1–50 one-time student codes replace the live shared code;
+  Instructor/Admin receipts show status, claimant identity and last CWL login.
+  Compact tables support server pagination/status filters and record deletion
+  that invalidates unused codes while retaining claimed receipts and access.
+  Atomic claims reserve a code to one PUID, and session reload recovers unfinished
+  enrollment writes. The old Roster editor is retired without deleting existing
+  roles or historical roster extensions. TA and co-instructor invitations accept
+  UBC email or an existing CWL username through a shared identity resolver.
+  See `docs/design/supplemental-enrollment/IMPLEMENTATION.md`.
+
+- Terminal public generation runs expose an Instructor/Admin-only evaluation
+  download with exact initial versions, withheld diagnostics, explicit missing
+  slots, source evidence, and recorded usage. Offline tools under
+  `scripts/prompt-ab/evaluation` create blinded review files, validate teacher
+  imports, and report quality/supply/time/usage with explicit denominators.
+  Historical exports remain retrospective; synthetic demos and missing labels
+  cannot establish a measured quality improvement. No model calls occur in
+  export, review preparation, or reporting.
+
+- Public question generation offers an opt-in `grounded-memory-v1` pilot.
+  It validates original-source packets, adds current Bank/Queue and batch
+  context, and records structured source/notation/novelty assessments with
+  withheld-output shortfalls. Source snapshots and bounded diagnostic candidates
+  remain in guarded run records; token receipts remain metadata-only. Baseline
+  is the default. Rechecks are best effort, model judgments require teacher
+  calibration, and concurrent uniqueness is not guaranteed. See the quality
+  pilot API contract and generation-quality implementation status.
+
+- LLM usage receipts now correlate synchronous requests and authoring workers
+  with actors, courses, runs, stages, and JSON/content attempts. Instructor run
+  views and Admin Operations expose nullable input/output totals, completeness,
+  and per-call diagnostics. Admin workflow timelines distinguish recorded ID
+  links from inferred temporal groups and show existing material metadata.
+  Provider usage, legacy gaps, hidden SDK retries, and excluded embedding costs
+  remain explicit; see the LLM usage API contract and generation-quality design.
+
+- Manual Canvas CSV people imports are available in Course Settings → Enrollment.
+  Gradebook `SIS Login ID` and group roster `login_id` identify exact CWL PUIDs;
+  files without a role column grant Student only. Owner/Admin-confirmed Teacher/
+  Instructor/Professor and TA rows grant course roles, never platform privileges.
+  Revisioned `coursePeopleImports` snapshots project roles on first CWL login and
+  every session reload, respect publication/term/archive/deactivation gates, and
+  can be replaced or cleared without changing manual/OAuth grants. Imported TAs
+  participate in the existing permission editor; analytics and staff notification
+  readers include persisted users with imported roles. Raw files and grades are
+  not stored. See the Manual Canvas people import API contract.
+
+- Canvas identity/role synchronization uses exact Canvas `login_id` = CWL PUID.
+  Versioned active-enrollment snapshots project course Student/Instructor/TA roles
+  at session reload without granting platform privileges or persisting manual
+  roles. Students require publication; teaching roles may prepare draft courses.
+  Custom/section-limited teaching roles remain excluded. Old snapshots need refresh.
+
+- Canvas integration uses UBC LMS toolkit 1.4.0: instructor OAuth, many-to-one
+  course links (new/existing courses), merged PUID-backed roster snapshots,
+  session-projected student auto-enrollment and idempotent file import through
+  the existing material pipeline. My Courses retains shared course cards. Local
+  20-student Canvas/SAML acceptance evidence is documented in scripts/canvas.
 
 - MongoDB (`server/src/components/mongodb`) is implemented and connected at
   startup; `GET /api/health` reports its status. It is the reference example of
@@ -132,6 +188,13 @@ commonly need:
   Active objectives with no attempts remain visible; rates below five attempts
   stay unavailable. Version-specific distributions prevent option-key collisions,
   and named check-in lists require `analytics.individual` just like profiles.
+  Course TAs now get a Student Analytics tab with aggregate and individual
+  course-scoped read access by default; Instructor/Admin overrides can remove
+  either permission. TA approval and final flag resolution remain hard-denied.
+  The TA workspace also provides read-only Course Home, Materials, Course
+  Structure, Coverage Map, and Question Bank views. Course-scoped teaching-team
+  guards protect source and coverage reads; editing and publication stay with
+  Instructor routes.
 - Phase 3 Admin essentials are implemented: the searchable directory manages
   course roles and retained-record account deactivation, protects against
   orphaning courses, exposes platform/course capability matrices, and persists
@@ -233,6 +296,9 @@ integrations in `components/`.
 
 ## Conventions
 
+- Write repository documentation, plans, code comments, and other authored project
+  files in English so all colleagues can collaborate (confirmed 2026-10-03).
+  Preserve source material and user-provided content in their original language.
 - TypeScript everywhere, `strict` mode. Shared compiler options live in
   `tsconfig.base.json`; `client/` and `server/` each extend it.
 - Backend is CommonJS. Requires Node.js 18+ and uses the built-in global `fetch`.
@@ -246,10 +312,11 @@ integrations in `components/`.
 - Every new variable a component needs must be added to `.env.example` with a
   comment.
 
-## Current ownership
+## Current project ownership
 
-Stephen is the sole maintainer. Earlier two-developer coordination is historical;
-Stephen’s instructions govern current tasks.
+Stephen is the sole developer responsible for this project (confirmed 2026-09-28).
+The historical two-developer ownership and pause-and-sync workflow below no longer
+requires developer selection or Saurav coordination for new work.
 
 ## Historical two-developer convention (FinanceBot build)
 
@@ -365,10 +432,27 @@ See `tests/AGENTS.md` for the full testing guide (unit/integration, e2e, a11y).
   Playwright suites on push. The tests exist (`tests/`); automating them in CI —
   including standing up MongoDB + the IdP for e2e — is the next step.
 
-## Canvas integration
+## Exam Builder v2 addition
 
-Optional UBC LMS toolkit OAuth connects multiple Canvas courses to one new or
-existing FinanceBot course. Fresh PUID roster snapshots project CWL student
-access without registration codes; files import through material ingestion.
-Compact tabs preserve existing course cards and paginate students (10/20/50).
-See docs/design/canvas-integration/IMPLEMENTATION.md for identity requirements.
+A separate fixed-paper Midterm/Final builder now supports pinned bank questions,
+private course-LO generation, verified parameter/context variants, review and
+immutable publication. Students use Assessments for timed resumable sittings and
+controlled results. Legacy Exam Prep remains available. New records are isolated
+from practice analytics and public question generation; see
+`docs/design/exam-builder-v2/IMPLEMENTATION.md` and `docs/api-contract.md`.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.

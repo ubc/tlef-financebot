@@ -1,0 +1,37 @@
+const {chromium,expect}=require('@playwright/test');const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
+const out=path.resolve('audit-results/canvas-integration'),base='http://localhost:6118';const {courseId:id,existingCourseId:existing}=JSON.parse(fs.readFileSync(path.join(out,'course.json')));const fixtures=JSON.parse(fs.readFileSync(path.join(out,'fixtures.json')));const evidence=JSON.parse(fs.readFileSync(path.join(out,'evidence.json')));const checks=[];
+function ruby(code){execFileSync('docker',['exec','canvas-web','bundle','exec','rails','runner',code],{stdio:'pipe'});}
+function result(name){checks.push({name,passed:true});console.log('PASS',name);fs.writeFileSync(path.join(out,'boundaries.json'),JSON.stringify(checks,null,2));}
+async function api(p,url,method='GET',body){return p.evaluate(async({url,method,body})=>{let r=await fetch(url,{method,headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:r.status,body:r.status===204?null:await r.json()};},{url,method,body})}
+async function snap(p,name,title,detail){if(name==='16-missing-puid')await p.getByText(/Canvas did not release a PUID/).evaluate(e=>e.scrollIntoView({block:'center'}));else if(name==='15-drop'||name==='18-restored')await p.getByRole('heading',{name:/Combined roster/}).evaluate(e=>e.scrollIntoView({block:'start'}));await p.screenshot({path:path.join(out,name+'.png'),fullPage:true,animations:'disabled'});evidence.push({name,title,detail,screenshot:name+'.png',at:new Date().toISOString()});fs.writeFileSync(path.join(out,'evidence.json'),JSON.stringify(evidence,null,2));}
+(async()=>{const b=await chromium.launch();const c=await b.newContext({storageState:path.join(out,'instructor-auth.json'),viewport:{width:1440,height:1050}});const p=await c.newPage();let membershipChanged=false,identityChanged=false;try{
+await p.goto(`${base}/#/instructor/course/${id}/canvas`);await p.getByRole('heading',{name:'Combined roster · 20 students'}).waitFor();
+let link=(await api(p,`/api/courses/${id}/canvas`)).body;
+expect((await api(p,`/api/courses/${id}/canvas`,'PUT',{sourceIds:['999999999'],revision:link.revision,autoEnroll:true})).status).toBe(403);result('Not a teacher in requested Canvas course → 403');
+expect((await api(p,`/api/courses/${id}/canvas`,'PUT',{sourceIds:link.sources.map(s=>s.id),revision:'stale-revision',autoEnroll:true})).status).toBe(409);result('Stale link revision → 409');
+expect((await api(p,`/api/courses/${id}/canvas/import`,'POST',{sourceId:String(fixtures.courses[2].id),fileId:'1'})).status).toBe(403);result('File from unlinked Canvas course → 403');
+expect((await c.request.post(`${base}/api/canvas/connect`,{data:{}})).status()).toBe(403);result('Missing Origin / CSRF attempt → 403');
+const oauth=await c.request.get(`${base}/api/canvas/callback?state=not-valid&code=not-valid`);expect(oauth.status()).toBe(400);result('Invalid OAuth state → 400');
+const overlap=fixtures.students[10],a=fixtures.courses[0].id,d=fixtures.courses[1].id;
+ruby(`Enrollment.where(user_id: ${overlap}, course_id: ${a}, type: 'StudentEnrollment').update_all(workflow_state: 'inactive')`);membershipChanged=true;
+expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(204);link=(await api(p,`/api/courses/${id}/canvas`)).body;
+expect(link.students).toHaveLength(20);expect(link.students.find(s=>s.canvasUserId===String(overlap)).sourceIds).toEqual([String(d)]);result('Drop section 101, retain active 102 membership');
+ruby(`Enrollment.where(user_id: ${overlap}, course_id: ${d}, type: 'StudentEnrollment').update_all(workflow_state: 'inactive')`);
+expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(204);link=(await api(p,`/api/courses/${id}/canvas`)).body;expect(link.students).toHaveLength(19);expect(link.students.some(s=>s.canvasUserId===String(overlap))).toBe(false);result('Drop all linked sections → removed from Canvas eligibility');
+await p.reload();await p.getByRole('heading',{name:'Combined roster · 19 students'}).waitFor();await snap(p,'15-drop','退选同步：只在所有来源班退选后移除','跨班学生退出101后仍保留102资格；两个班都退出后合并花名册由20变19。');
+ruby(`Enrollment.where(user_id: ${overlap}, course_id: [${a},${d}], type: 'StudentEnrollment').update_all(workflow_state: 'active')`);membershipChanged=false;
+expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(204);
+const last=fixtures.students[19];ruby(`Pseudonym.where(user_id: ${last}).update_all(integration_id: nil)`);identityChanged=true;
+expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(502);link=(await api(p,`/api/courses/${id}/canvas`)).body;expect(link.students).toHaveLength(20);expect(link.syncError).toContain('PUID');result('Missing PUID rejects entire refresh and retains last complete roster');
+await p.reload();await p.getByText(/Canvas did not release a PUID/).waitFor();await snap(p,'16-missing-puid','缺失 PUID：显示错误并保留完整花名册','真实修改本地 Canvas 的 integration_id 后，同步明确失败；没有用姓名匹配，也没有错误清空学生。');
+ruby(`Pseudonym.where(user_id: ${last}).update_all(integration_id: 'FB-CANVAS-0020')`);identityChanged=false;expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(204);
+const sc=await b.newContext({storageState:path.join(out,'student-auth.json')});const sp=await sc.newPage();await sp.goto(base);
+expect((await api(sp,'/api/canvas/connect','POST',{})).status).toBe(403);expect((await api(sp,`/api/courses/${id}/canvas`)).status).toBe(403);result('Student cannot connect teacher OAuth or read teaching roster');
+await p.reload();await p.getByRole('button',{name:'Disconnect',exact:true}).click();await p.getByRole('dialog').getByRole('button',{name:'Disconnect',exact:true}).click();await p.getByRole('button',{name:'Connect Canvas',exact:true}).waitFor();
+const me=await api(sp,'/api/auth/me');expect(me.body.user.courseRoles.some(r=>r.courseId===id)).toBe(false);result('Disconnect immediately suspends Canvas-only access');
+await snap(p,'17-disconnected','断开连接立即暂停 Canvas 自动访问','学生下一次认证读取不再获得该课程角色；原有材料保留。');
+await p.getByRole('button',{name:'Connect Canvas',exact:true}).click();await p.locator('input.Button--primary').waitFor();await p.locator('input.Button--primary').click();await p.waitForURL(`${base}/**`);await p.getByRole('heading',{name:'Canvas is connected'}).waitFor();
+expect((await api(p,`/api/courses/${id}/canvas/sync`,'POST',{})).status).toBe(204);expect((await api(p,`/api/courses/${existing}/canvas/sync`,'POST',{})).status).toBe(204);
+const restored=await api(sp,'/api/auth/me');expect(restored.body.user.courseRoles.some(r=>r.courseId===id)).toBe(true);result('Reconnect + sync restores access');await sc.close();
+await p.reload();await p.getByRole('heading',{name:'Combined roster · 20 students'}).waitFor();await snap(p,'18-restored','测试结束：恢复连接和20人完整花名册','用于检查的两个 FinanceBot 课程、Canvas 文件和测试班均保留。');await c.storageState({path:path.join(out,'instructor-auth.json')});
+}catch(e){console.error('FAIL',e.message);await p.screenshot({path:path.join(out,'failure-boundaries.png'),fullPage:true});process.exitCode=1;}finally{if(membershipChanged)ruby(`Enrollment.where(user_id: ${fixtures.students[10]}, course_id: [${fixtures.courses[0].id},${fixtures.courses[1].id}], type: 'StudentEnrollment').update_all(workflow_state: 'active')`);if(identityChanged)ruby(`Pseudonym.where(user_id: ${fixtures.students[19]}).update_all(integration_id: 'FB-CANVAS-0020')`);await b.close()}})();

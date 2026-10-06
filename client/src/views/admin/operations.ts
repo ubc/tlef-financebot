@@ -1,16 +1,19 @@
 import { el, mount } from '../../dom.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { loadingState, errorState } from '../../ui.js';
-import { listAdminOperations, getAdminOperation, listAdminRuns, getAdminRun, listAdminAuditHistory,
-  type DiagnosticFilters, type DiagnosticRun, type DiagnosticPage, type OperationRecord, type AuditHistoryRecord, type DiagnosticIdentities } from '../../api.js';
+import { listAdminOperations, getAdminOperation, listAdminRuns, getAdminRun, listAdminAuditHistory, listAdminModelUsage, listAdminWorkflows,
+  type DiagnosticFilters, type DiagnosticRun, type DiagnosticPage, type OperationRecord, type AuditHistoryRecord, type DiagnosticIdentities,
+  type ModelUsageSummary, type ModelCallReceipt, type WorkflowGroup, type WorkflowPage } from '../../api.js';
 import { field, details, outcomeBadge, dateLabel, diagnosticLink, courseLabel, userLabel } from './diagnostic-ui.js';
 import { attachTutorial } from '../../tutorials.js';
+import { renderModelUsage, renderModelCalls, renderModelCall } from '../../model-usage-ui.js';
+import { tokenCount, usageCoverageLabel, usageCoverageNote } from '../../model-usage-format.js';
 
-type ActivityTab = 'requests' | 'runs' | 'history';
+type ActivityTab = 'requests' | 'runs' | 'history' | 'usage' | 'workflows';
 type Selection = { kind: 'requests' | 'runs'; id: string };
-type ActivityRow = { id: string; kind: ActivityTab; outcome: string; title: string; subtitle: string; actor: string; course: string; at: string; duration: string; history?: AuditHistoryRecord };
-const tabLabels: Record<ActivityTab, string> = { requests: 'User operations', runs: 'Background tasks', history: 'Change history' };
-const isTab = (value: string | null): value is ActivityTab => value === 'requests' || value === 'runs' || value === 'history';
+type ActivityRow = { id: string; kind: ActivityTab; outcome: string; title: string; subtitle: string; actor: string; course: string; at: string; duration: string; history?: AuditHistoryRecord; call?: ModelCallReceipt; workflow?: WorkflowGroup };
+const tabLabels: Record<ActivityTab, string> = { requests: 'User operations', runs: 'Background tasks', history: 'Change history', usage: 'Model usage', workflows: 'Workflow timeline' };
+const isTab = (value: string | null): value is ActivityTab => value !== null && Object.prototype.hasOwnProperty.call(tabLabels, value);
 const shortDate = (value: string): string => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const duration = (ms: number): string => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 function download(name: string, content: string, type: string): void {
@@ -45,6 +48,12 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   let selected: Selection | undefined = initialSelection;
   let rows: ActivityRow[] = [];
   let monitoring: DiagnosticPage<OperationRecord>['monitoring'];
+  let usageSummary: ModelUsageSummary | undefined;
+  let usageOperation = query.get('operationId') || '';
+  let usageRun = query.get('runId') || '';
+  let usagePoll: ReturnType<typeof setTimeout> | undefined;
+  let usagePollUntil = 0;
+  let workflowLimitations: string[] = [];
   let origin: HTMLElement | undefined;
   const root = el('div', { class: 'view view--admin admin-console diagnostic-view' });
   const search = el('input', { class: 'input', type: 'search', 'aria-label': 'Search activity', maxlength: 100, value: query.get('q') || '', placeholder: 'Search user, action, error or request ID…' });
@@ -58,6 +67,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   const metrics = el('div', { class: 'ac-metrics', 'aria-label': 'Activity summary' });
   const tabs = el('nav', { class: 'ac-tabs', 'aria-label': 'Activity type' });
   const chips = el('div', { class: 'ac-chips' });
+  const usageOverview = el('div', { class: 'ac-usage-overview', hidden: true });
   const tableRegion = el('div', { class: 'ac-table-scroll', 'aria-label': 'Activity results', tabindex: 0 });
   const footer = el('div', { class: 'ac-footer' });
   const announcement = el('span', { class: 'ac-page-note', role: 'status' });
@@ -79,7 +89,9 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     if (course) params.set('courseId', course);
     if (from) params.set('from', from);
     if (until) params.set('until', until);
-    if (status.value && tab !== 'history') params.set(tab === 'runs' ? 'status' : 'outcome', status.value);
+    if (tab === 'usage' && usageOperation) params.set('operationId', usageOperation);
+    if (tab === 'usage' && usageRun) params.set('runId', usageRun);
+    if (status.value && (tab === 'requests' || tab === 'runs')) params.set(tab === 'runs' ? 'status' : 'outcome', status.value);
     if (tab === 'requests') params.set('activity', activity.value);
     if (page > 1) params.set('page', String(page));
     return params;
@@ -98,6 +110,18 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     if (origin?.isConnected) origin.focus();
   }
   function renderMetrics(loaded: boolean): void {
+    if (tab === 'usage') {
+      mount(metrics, ...[['Matching calls', loaded ? total.toLocaleString() : '—'], ['Input tokens', tokenCount(usageSummary?.inputTokens)], ['Output tokens', tokenCount(usageSummary?.outputTokens)], ['Total tokens', tokenCount(usageSummary?.totalTokens)]].map(([label, value]) => el('div', { class: 'ac-metric ac-usage-metric' },
+        el('span', { text: label }), el('strong', { text: value }), el('small', { text: label === 'Matching calls' ? 'Across matching pages' : usageSummary?.status === 'complete' ? 'Recorded LLM consumption' : 'Known subtotal when available' }))));
+      return;
+    }
+    if (tab === 'workflows') {
+      const entries = rows.flatMap(row => row.workflow?.entries ?? []);
+      const values = [total, entries.filter(entry => entry.kind === 'operation').length, entries.filter(entry => entry.kind === 'run').length,
+        new Set(entries.flatMap(entry => entry.relations.map(relation => `${relation.requestId}:${relation.runId}`))).size];
+      mount(metrics, ...['Matching windows', 'Requests', 'Background tasks', 'Recorded links'].map((label, index) => el('div', { class: 'ac-metric' }, el('span', { text: label }), el('strong', { text: loaded ? String(values[index]) : '—' }), el('small', { text: index ? 'On this page' : 'Within retained scan limits' }))));
+      return;
+    }
     const counts = [total, rows.filter(row => ['failed', 'partial', 'interrupted'].includes(row.outcome)).length,
       rows.filter(row => ['accepted', 'running', 'queued'].includes(row.outcome)).length,
       rows.filter(row => ['succeeded', 'completed'].includes(row.outcome)).length];
@@ -110,7 +134,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const values = tab === 'runs' ? ['failed', 'partial', 'queued', 'running', 'completed'] : ['failed', 'partial', 'interrupted', 'accepted', 'succeeded'];
     mount(status, el('option', { value: '', text: 'All outcomes' }), ...values.map(value => el('option', { value, text: value[0].toUpperCase() + value.slice(1) })));
     status.value = values.includes(selectedStatus) ? selectedStatus : '';
-    status.hidden = tab === 'history'; activity.hidden = tab !== 'requests';
+    status.hidden = tab !== 'requests' && tab !== 'runs'; activity.hidden = tab !== 'requests'; search.hidden = tab === 'usage' || tab === 'workflows';
     search.placeholder = tab === 'runs' ? 'Search creator PUID, task, source or error…' : tab === 'history' ? 'Search actor PUID, action or target type…' : 'Search user, action, error or request ID…';
     mount(tabs, ...Object.entries(tabLabels).map(([key, label]) => el('button', { type: 'button', 'aria-current': tab === key ? 'page' : undefined, text: label, onclick: () => {
       if (tab === key) return;
@@ -118,8 +142,8 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     } })));
   }
   function renderChips(): void {
-    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`].filter(Boolean);
-    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = ''; return load(1); } }));
+    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`, tab === 'usage' && usageOperation && `Request: ${usageOperation}`, tab === 'usage' && usageRun && `Task: ${usageRun}`].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = usageOperation = usageRun = ''; return load(1); } }));
   }
   function filtersDialog(): void {
     const localValue = (value: string): string => { const date = new Date(value); return value && !Number.isNaN(date.getTime()) ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; };
@@ -127,11 +151,13 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const courseInput = el('input', { class: 'input', value: course, pattern: '[a-fA-F0-9]{24}', title: 'A 24-character course ID', placeholder: 'Any course' });
     const fromInput = el('input', { class: 'input', type: 'datetime-local', value: localValue(from) });
     const untilInput = el('input', { class: 'input', type: 'datetime-local', value: localValue(until) });
+    const operationInput = el('input', { class: 'input', value: usageOperation, maxlength: 128, placeholder: 'Any request' });
+    const runInput = el('input', { class: 'input', value: usageRun, maxlength: 128, placeholder: 'Any background task' });
     const dialog = el('dialog', { class: 'ac-filter-dialog', 'aria-labelledby': 'ac-filter-title' });
     const validate = (): void => untilInput.setCustomValidity(fromInput.value && untilInput.value && fromInput.value > untilInput.value ? 'End time must be after start time.' : '');
     fromInput.addEventListener('input', validate); untilInput.addEventListener('input', validate);
-    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; dialog.close(); return load(1); } },
-      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput)),
+    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; if (tab === 'usage') { usageOperation = operationInput.value.trim(); usageRun = runInput.value.trim(); } dialog.close(); return load(1); } },
+      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput), tab === 'usage' && field('Request ID', operationInput), tab === 'usage' && field('Task ID', runInput)),
       el('div', { class: 'ac-actions' }, el('button', { type: 'button', class: 'btn btn--secondary', text: 'Cancel', onclick: () => dialog.close() }), el('button', { class: 'btn btn--primary', type: 'submit', text: 'Apply filters' }))));
     dialog.addEventListener('close', () => dialog.remove()); root.append(dialog); dialog.showModal();
   }
@@ -152,11 +178,14 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const headers = [['Outcome', ''], ['Action / resource', ''], ['User', 'ac-hide-xs'], ['Course', 'ac-hide-md ac-hide-panel'], ['Time', 'ac-hide-sm'], ['Duration', 'ac-hide-md ac-hide-panel'], ['', '']];
     const table = el('table', { class: 'ac-table ac-operation-table' }, el('thead', {}, el('tr', {}, ...headers.map(([text, className]) => el('th', { scope: 'col', class: className, text })))));
     table.append(el('tbody', {}, ...rows.map(row => {
-      const href = row.kind === 'history' ? undefined : `#/admin/operations/${row.kind}/${encodeURIComponent(row.id)}?${filterParams()}`;
+      const href = row.kind === 'requests' || row.kind === 'runs' ? `#/admin/operations/${row.kind}/${encodeURIComponent(row.id)}?${filterParams()}` : undefined;
       const open = (event: Event): void => {
         if (event instanceof MouseEvent && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
         event.preventDefault(); origin = event.currentTarget as HTMLElement;
-        if (row.history) inspectHistory(row.history); else void inspect({ kind: row.kind as Selection['kind'], id: row.id });
+        if (row.history) inspectHistory(row.history);
+        else if (row.call) inspectCall(row.call);
+        else if (row.workflow) inspectWorkflow(row.workflow);
+        else void inspect({ kind: row.kind as Selection['kind'], id: row.id });
       };
       const link = href ? el('a', { href, class: 'ac-cell-primary', title: row.title, text: row.title, onclick: open }) : el('button', { class: 'btn ac-cell-primary', title: row.title, text: row.title, onclick: open });
       return el('tr', { class: selected?.id === row.id ? 'is-selected' : '', 'data-record': row.id },
@@ -173,15 +202,34 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
         el('button', { class: 'btn btn--secondary', text: 'Previous', disabled: page <= 1, onclick: () => load(page - 1) }),
         el('button', { class: 'btn btn--secondary', text: 'Next', disabled: page * 25 >= total, onclick: () => load(page + 1) })));
   }
-  async function load(nextPage = page): Promise<void> {
+  async function load(nextPage = page, automatic = false): Promise<void> {
+    if (usagePoll) clearTimeout(usagePoll);
+    usagePoll = undefined;
+    if (!automatic) { usageSummary = undefined; usagePollUntil = Date.now() + 60000; }
     const own = ++revision; page = nextPage; rows = []; exportButton.disabled = true; renderMetrics(false); renderChips(); syncURL();
+    usageOverview.hidden = true;
     mount(tableRegion, loadingState('Loading activity…')); mount(footer); announcement.textContent = '';
+    if (tab === 'workflows' && !actor && !course) {
+      total = 0; renderMetrics(true);
+      mount(tableRegion, el('div', { class: 'ac-empty' }, el('h2', { text: 'Choose a user or course' }), el('p', { text: 'Open Filters to view a scoped workflow timeline. Time windows group recorded activity; they do not record browser clicks.' })));
+      return;
+    }
     const filters: DiagnosticFilters = { page, limit: 25, q: search.value.trim(), actor, courseId: course, from, until,
       ...(tab === 'runs' ? { status: status.value } : tab === 'requests' ? { outcome: status.value, activity: activity.value as 'all' | 'actions' } : {}) };
     try {
-      let data: DiagnosticPage<OperationRecord> | DiagnosticPage<DiagnosticRun> | DiagnosticPage<AuditHistoryRecord>;
+      let data: DiagnosticPage<OperationRecord> | DiagnosticPage<DiagnosticRun> | DiagnosticPage<AuditHistoryRecord> | DiagnosticPage<ModelCallReceipt> | WorkflowPage;
       let nextRows: ActivityRow[];
-      if (tab === 'runs') {
+      if (tab === 'usage') {
+        const result = await listAdminModelUsage({ page, limit: 25, actor, courseId: course, from, until, operationId: usageOperation, runId: usageRun }); data = result;
+        if (own !== revision || !root.isConnected) return;
+        usageSummary = result.summary;
+        nextRows = result.items.map(call => ({ id: call._id, kind: 'usage', outcome: call.outcome, title: `${call.stage} · ${call.actualModel ?? call.requestedModel}`, subtitle: `Input ${tokenCount(call.usage.inputTokens)} · Output ${tokenCount(call.usage.outputTokens)} · Total ${tokenCount(call.usage.totalTokens)}`, actor: call.actor?.displayName || call.actor?.uid || call.actor?.puid || 'Identity unavailable', course: courseLabel(call.courseId, result), at: call.startedAt, duration: call.durationMs === undefined ? '—' : duration(call.durationMs), call }));
+      } else if (tab === 'workflows') {
+        const result = await listAdminWorkflows({ page, limit: 25, actor, courseId: course, from, until }); data = result;
+        if (own !== revision || !root.isConnected) return;
+        workflowLimitations = result.limitations;
+        nextRows = result.items.map(workflow => ({ id: workflow.id, kind: 'workflows', outcome: 'grouped', title: `Activity window · ${workflow.entries.length} records`, subtitle: `Inferred ${result.windowMinutes}-minute grouping${result.truncated ? ' · bounded results' : ''}`, actor: userLabel(workflow.actorPuid, result), course: courseLabel(workflow.courseId, result), at: workflow.startedAt, duration: duration(Math.max(0, new Date(workflow.endedAt).getTime() - new Date(workflow.startedAt).getTime())), workflow }));
+      } else if (tab === 'runs') {
         const result = await listAdminRuns(filters); data = result;
         nextRows = result.items.map(run => ({ id: run._id, kind: 'runs', outcome: run.status, title: run.kind.replace(/-/g, ' '), subtitle: run.error?.message || `${run.stage} · ${run.completedUnits}/${run.totalUnits ?? '?'} completed`, actor: userLabel(run.requestedBy, result), course: courseLabel(run.courseId, result), at: run.createdAt, duration: run.startedAt && run.completedAt ? duration(new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) : '—' }));
       } else if (tab === 'history') {
@@ -196,7 +244,14 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
       if (data.monitoring) monitoring = data.monitoring;
       if (page > 1 && !rows.length) { await load(Math.max(1, Math.ceil(total / 25))); return; }
       renderMetrics(true); renderTable(); exportButton.disabled = rows.length === 0;
-      announcement.textContent = monitoring?.failedWrites ? `${monitoring.failedWrites} audit writes were lost on this server. Open Audit health for details.` : tab === 'history' ? 'Selected historical changes · records do not establish outcomes for other actions.' : 'Newest first · page metrics summarize the visible records · select a row to inspect evidence.';
+      if (tab === 'usage' && usageSummary) {
+        usageOverview.hidden = false;
+        mount(usageOverview, el('strong', { text: usageCoverageLabel(usageSummary) }), el('p', { text: usageCoverageNote(usageSummary) }),
+          usageSummary.retryVisibility === 'unknown' && el('p', { text: 'Provider retry visibility is unknown; these are observed calls.' }));
+        if (usageSummary.pendingCalls || usageSummary.status === 'partial' && Date.now() < usagePollUntil) usagePoll = setTimeout(() => { if (root.isConnected && tab === 'usage') void load(page, true); }, 5000);
+      }
+      announcement.textContent = monitoring?.failedWrites ? `${monitoring.failedWrites} audit writes were lost on this server. Open Audit health for details.` : tab === 'history' ? 'Selected historical changes · records do not establish outcomes for other actions.' : tab === 'usage' ? 'Newest first · totals cover matching recorded calls across pages, subject to reported coverage gaps.' : tab === 'workflows' ? 'Newest first · select a group to inspect recorded operations and inferred relationships.' : 'Newest first · page metrics summarize the visible records · select a row to inspect evidence.';
+      if (tab === 'workflows') announcement.textContent = 'Activity is grouped by time. Recorded request/task IDs establish direct links; timing alone does not establish causation.';
     } catch (error) { if (own === revision && root.isConnected) { mount(tableRegion, errorState((error as Error).message, () => { void load(); })); announcement.textContent = 'Activity could not be loaded.'; } }
   }
   function openPanel(title: string): void {
@@ -217,10 +272,51 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   function evidenceFooter(snapshot: unknown, filename: string): void {
     mount(panelFooter, el('button', { class: 'btn btn--secondary', text: 'Download evidence', onclick: () => download(`${filename}.json`, JSON.stringify(snapshot, null, 2), 'application/json') }), el('span', { class: 'ac-note', text: 'Read-only inspection' }));
   }
+  function usageSection(initial: { modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }, reload: () => Promise<typeof initial>, contentRunIds: readonly string[] = []): HTMLElement {
+    const widget = el('section', { class: 'ac-model-usage' });
+    const body = el('div');
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    const deadline = Date.now() + 60000;
+    let refreshing = false;
+    const draw = (data: typeof initial): void => {
+      mount(body, data.modelUsage ? renderModelUsage(data.modelUsage) : el('p', { class: 'mu-note', text: 'Usage unavailable for this operation.' }),
+        renderModelCalls(data.modelCalls ?? [], true, contentRunIds),
+        (data.modelCallsTotal ?? 0) > (data.modelCalls?.length ?? 0) && el('p', { class: 'mu-note', text: `Showing ${data.modelCalls?.length ?? 0} of ${data.modelCallsTotal} recent calls. Totals cover all scoped calls.` }));
+      if (data.modelUsage && (data.modelUsage.pendingCalls || data.modelUsage.status === 'partial' && Date.now() < deadline)) poll = setTimeout(() => { if (widget.isConnected) void refresh(); }, 5000);
+    };
+    const refresh = async (): Promise<void> => {
+      if (refreshing || !widget.isConnected) return;
+      refreshing = true;
+      if (poll) clearTimeout(poll);
+      try { const next = await reload(); if (widget.isConnected) draw(next); }
+      catch { if (widget.isConnected) body.append(el('p', { class: 'mu-note', text: 'Usage could not refresh. Try again when your connection returns.' })); }
+      finally { refreshing = false; }
+    };
+    widget.append(body, el('button', { class: 'btn btn--secondary', text: 'Refresh model usage', onclick: refresh }));
+    draw(initial);
+    return widget;
+  }
   function inspectHistory(item: AuditHistoryRecord): void {
     detailRevision++; selected = undefined; syncURL(); openPanel('Change details');
     mount(panelBody, outcomeBadge('recorded'), el('h3', { text: item.action }), properties([['Recorded', dateLabel(item.createdAt)], ['Actor PUID', item.actorPuid], ['Target type', item.targetType], ['Target ID', item.targetId]]), details('Recorded change', item.detail), el('p', { class: 'ac-note', text: 'This historical record describes a selected change. It does not establish the outcome of unrecorded activity.' }));
     evidenceFooter(item, `change-${item._id}`);
+  }
+  function inspectCall(call: ModelCallReceipt): void {
+    detailRevision++; selected = undefined; syncURL(); openPanel('Model call details');
+    mount(panelBody, renderModelCall(call, true), el('p', { class: 'ac-note', text: 'Metadata-only receipt. Prompts and model responses are not included.' }));
+    evidenceFooter(call, `model-call-${call._id}`);
+  }
+  function inspectWorkflow(workflow: WorkflowGroup): void {
+    detailRevision++; selected = undefined; syncURL(); openPanel('Workflow timeline');
+    mount(panelBody, el('p', { class: 'ac-callout', text: 'Inferred time window. Adjacent requests may describe separate work; this timeline is not a recording of clicks or a proven sequence of causes.' }),
+      properties([['User PUID', workflow.actorPuid || 'Identity unavailable'], ['Started', dateLabel(workflow.startedAt)], ['Ended', dateLabel(workflow.endedAt)]]),
+      el('ol', { class: 'ac-timeline' }, ...workflow.entries.map(entry => el('li', {}, el('strong', { text: entry.label }), outcomeBadge(entry.outcome), el('small', { text: dateLabel(entry.createdAt) }),
+        entry.material && el('p', { text: `Material: ${entry.material.name}` }),
+        !entry.material && !!entry.materials?.length && el('p', { text: `Materials: ${entry.materials!.map(material => material.name).join(', ')}` }),
+        el('div', { class: 'ac-actions' }, entry.requestId && diagnosticLink('Inspect request', `#/admin/operations/requests/${encodeURIComponent(entry.requestId)}`), entry.runId && diagnosticLink('Inspect task', `#/admin/operations/runs/${encodeURIComponent(entry.runId)}`)),
+        ...entry.relations.map(relation => el('p', { class: 'ac-note', text: `Recorded request–task link: ${relation.requestId} → ${relation.runId}` }))))),
+      ...workflowLimitations.map(text => el('p', { class: 'ac-note', text })));
+    evidenceFooter(workflow, `workflow-${workflow.id}`);
   }
   async function inspect(selection: Selection): Promise<void> {
     const own = ++detailRevision; selected = selection; syncURL(); openPanel(selection.kind === 'runs' ? 'Background task details' : 'Operation details');
@@ -232,11 +328,11 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
       } else {
         const data = await getAdminOperation(selection.id);
         if (own !== detailRevision || !root.isConnected) return;
-        showRequest(data.operation, data.runs); evidenceFooter(data, `request-${selection.id}`);
+        showRequest(data.operation, data.runs, data); evidenceFooter(data, `request-${selection.id}`);
       }
     } catch (error) { if (own === detailRevision && root.isConnected) mount(panelBody, errorState((error as Error).message, () => { void inspect(selection); })); }
   }
-  function showRequest(operation: OperationRecord, runs: DiagnosticRun[]): void {
+  function showRequest(operation: OperationRecord, runs: DiagnosticRun[], usageData: { modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }): void {
     evidenceTabs([
       ['Overview', () => el('div', {}, outcomeBadge(operation.outcome), el('h3', { text: `${operation.method} ${operation.route}` }),
         operation.response.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: 'Operation failed' }), el('p', { text: String(operation.response.error) })) : false,
@@ -249,15 +345,17 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
           operation.actor ? diagnosticLink('All user activity', `#/admin/operations?actor=${encodeURIComponent(operation.actor.puid)}`) : false),
         el('h3', { text: 'Associated background work' }), ...runs.map(run => el('a', { class: 'ac-linked', href: `#/admin/operations/runs/${run._id}`, onclick: (event: MouseEvent) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) { event.preventDefault(); void inspect({ kind: 'runs', id: run._id }); } } }, el('span', {}, run.kind.replace(/-/g, ' '), el('small', { text: run.stage })), outcomeBadge(run.status))), !runs.length && el('p', { class: 'ac-note', text: 'No linked background task recorded.' }))],
       ['Input & response', () => el('div', {}, details('Targets', operation.targets), details('Recorded input controls', operation.input), details('Outcome and validation details', operation.response), el('p', { class: 'ac-note', text: 'Passwords, tokens, request bodies, uploaded documents and student answers are not copied into request logs. Linked tasks and question versions retain content evidence.' }))],
+      ['Model usage', () => usageSection(usageData, () => getAdminOperation(operation.requestId), runs.map(run => run._id))],
     ]);
   }
-  function showRun(run: DiagnosticRun, identities: DiagnosticIdentities): void {
+  function showRun(run: DiagnosticRun, identities: DiagnosticIdentities & { modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }): void {
     evidenceTabs([
       ['Overview', () => el('div', {}, outcomeBadge(run.status), el('h3', { text: run.kind.replace(/-/g, ' ') }), run.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: `Failed at ${run.error.atStage}` }), el('p', { text: run.error.message }), el('small', { text: run.error.code })) : false,
         properties([['Created by', userLabel(run.requestedBy, identities)], ['Course', courseLabel(run.courseId, identities)], ['Started', dateLabel(run.createdAt)], ['Stage', run.stage], ['Completed', `${run.completedUnits}/${run.totalUnits ?? '?'} units`], ['Task ID', run._id]]), runLinks(run, filterParams().toString(), id => { void inspect({ kind: 'requests', id }); }), details('Warnings', run.warnings), el('p', { class: 'ac-note', text: 'Retained evidence. Viewing this task does not retry it. A new AI execution may produce different results.' }))],
       ['Timeline', () => el('div', {}, el('h3', { text: 'Progress timeline' }), el('ol', { class: 'ac-timeline' }, ...(run.events ?? []).map(event => el('li', {}, el('strong', { text: `${event.stage} · ${event.status}` }), el('p', { text: event.message || `${event.completedUnits}/${event.totalUnits ?? '?'} completed` }), el('small', { text: dateLabel(event.at) })))), !run.events?.length && el('p', { class: 'ac-note', text: 'No retained stage events.' }))],
       ['Evidence', () => el('div', {}, details('Recorded inputs and models', run.input), details('Complete diagnostic snapshot', run))],
       ['Results', () => el('div', {}, el('h3', { text: 'Created questions' }), run.kind === 'question-generation' && run.result ? el('div', { class: 'stack' }, ...run.result.createdQuestionIds.map(id => diagnosticLink(`Inspect ${id}`, `#/admin/questions/${id}`)), !run.result.createdQuestionIds.length && el('p', { text: 'No questions created.' }), details('Item failures', run.result.failures)) : el('p', { class: 'ac-note', text: 'No question-generation result retained.' }), run.kind !== 'question-generation' ? details('Task result', run.kind === 'structure-generation' ? run.structureResult : run.result) : false)],
+      ['Model usage', () => usageSection(identities, () => getAdminRun(run._id), [run._id])],
     ]);
   }
   search.addEventListener('input', () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { if (root.isConnected) void load(1); }, 250); });
@@ -269,9 +367,11 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   mount(root, el('header', { class: 'ac-header' }, el('div', {}, el('h1', { text: 'Operations & Issues' }), el('p', { text: 'Trace user activity, inspect failures and follow background work.' })),
     el('div', { class: 'ac-actions' }, el('button', { class: 'btn btn--secondary', text: 'Audit health', onclick: healthDialog }), exportButton)), metrics,
     el('div', { class: 'ac-workspace' }, el('section', { class: 'ac-main', 'aria-label': 'Activity workspace' }, tabs,
-      el('form', { class: 'ac-toolbar', role: 'search', onsubmit: (event: Event) => { event.preventDefault(); window.clearTimeout(searchTimer); return load(1); } }, search, status, activity, el('button', { class: 'btn btn--secondary', type: 'button', text: 'Filters', onclick: filtersDialog }), el('button', { class: 'btn btn--ghost', type: 'submit', text: 'Refresh' })), chips, tableRegion, footer)), announcement, panel);
+      el('form', { class: 'ac-toolbar', role: 'search', onsubmit: (event: Event) => { event.preventDefault(); window.clearTimeout(searchTimer); return load(1); } }, search, status, activity, el('button', { class: 'btn btn--secondary', type: 'button', text: 'Filters', onclick: filtersDialog }), el('button', { class: 'btn btn--ghost', type: 'submit', text: 'Refresh' })), chips, usageOverview, tableRegion, footer)), announcement, panel);
   mount(outlet, root);
   await Promise.all([load(page), initialSelection ? inspect(initialSelection) : Promise.resolve()]);
+  const observer = new MutationObserver(() => { if (!root.isConnected) { if (usagePoll) clearTimeout(usagePoll); window.clearTimeout(searchTimer); observer.disconnect(); } });
+  observer.observe(outlet, { childList: true });
   attachTutorial(root, 'admin-operations', {
     'admin-operations-filters': '.ac-toolbar',
     'admin-operations-results': '.ac-workspace',

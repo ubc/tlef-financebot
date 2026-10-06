@@ -407,7 +407,7 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
     const checklist = await publishChecklist(courseId);
 
     expect(checklist[2]).toEqual({ item: 'At least one Learning Objective', ok: false });
-    expect(checklist[4]).toEqual({ item: 'Every LO has ≥3 Approved questions', ok: false });
+    expect(checklist.find(item => item.item.startsWith('Every LO has'))).toEqual({ item: 'Every LO has ≥3 Approved questions', ok: false });
     expect(questionsCountDocuments).not.toHaveBeenCalled();
   });
 
@@ -430,11 +430,11 @@ describe('publishChecklist + setPublished (IN-L06)', () => {
 
     const checklist = await publishChecklist(courseId);
 
-    expect(checklist).toHaveLength(6);
-    const approvedItem = checklist[4];
+    expect(checklist).toHaveLength(5);
+    const approvedItem = checklist.find(item => item.item.startsWith('Every LO has'))!;
     expect(approvedItem.ok).toBe(false);
     expect(approvedItem.item).toContain('IRR basics');
-    expect(checklist.slice(0, 4).every((c: { ok: boolean }) => c.ok)).toBe(true);
+    expect(checklist.slice(0, 3).every((c: { ok: boolean }) => c.ok)).toBe(true);
 
     // IN-L06: a thin-LO warning never blocks publishing.
     coursesUpdateOne.mockResolvedValue({ acknowledged: true });

@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 import { createHash } from 'node:crypto';
 import { losCol, questionsCol, questionVersionsCol, themesCol, generationSubmissionsCol } from '../components/mongodb/collections';
 import type { Difficulty, LoKind, QuestionKind, QuestionType } from '../types/domain';
+import type { GenerationQualityPolicy } from '../types/generation-quality';
 import { effectiveLoKind } from './courses.service';
 import { enqueueGenerationRun } from './generation.service';
 
@@ -126,11 +127,11 @@ export interface PlanResult {
 /** Enqueue one generation run per cell. A cell that cannot be enqueued (no
  * ready material, daily limit) reports its error and does not stop the rest:
  * the instructor sees exactly which LOs did not start. */
-export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[], byPuid: string, submission?: { id: string; prompt?: string }): Promise<PlanResult> {
+export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[], byPuid: string, submission?: { id?: string; prompt?: string; qualityPolicy?: GenerationQualityPolicy }): Promise<PlanResult> {
   let submissionKey: string | undefined;
-  if (submission) {
+  if (submission?.id) {
     submissionKey = createHash('sha256').update(`${courseId}:${byPuid}:${submission.id}`).digest('hex');
-    const fingerprint = JSON.stringify({ cells, prompt: submission.prompt ?? '' });
+    const fingerprint = JSON.stringify({ cells, prompt: submission.prompt ?? '', ...(submission.qualityPolicy && submission.qualityPolicy !== 'baseline' ? { qualityPolicy: submission.qualityPolicy } : {}) });
     try {
       await generationSubmissionsCol().insertOne({ _id: submissionKey, courseId, requestedBy: byPuid, fingerprint, createdAt: new Date() });
     } catch (error) {
@@ -153,6 +154,7 @@ export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[
         courseId, loId: cell.loId, ...secondary, count: cell.count, type: cell.type ?? 'mcq',
         ...(submissionKey ? { runId: new ObjectId(createHash('sha256').update(`${submissionKey}:${index}`).digest('hex').slice(0, 24)) } : {}),
         ...(submission?.prompt ? { prompt: submission.prompt } : {}),
+        ...(submission?.qualityPolicy ? { qualityPolicy: submission.qualityPolicy } : {}),
         difficulty: cell.difficulty, kind: cell.kind, byPuid,
       });
       runs.push({ ...base, runId });

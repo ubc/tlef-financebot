@@ -1,0 +1,12 @@
+{
+  "name": "CAPM lecture notes.txt",
+  "learningObjective": "Distinguish total risk from systematic risk when estimating required returns",
+  "chunks": [
+    "Notation: E[R_i] is the expected return of stock i; r_f is the risk-free rate. Beta, written beta_i, measures systematic risk. Total volatility is not beta.",
+    "The capital asset pricing model used in this course is E[R_i] = r_f + beta_i * (E[R_m] - r_f). The market risk premium is E[R_m] - r_f. Use decimal returns consistently.",
+    "For r_f = 0.04, beta_i = 1.30, and a market risk premium of 0.06, the required expected return is 0.118. Total volatility of 0.40 does not change this CAPM calculation.",
+    "Diversification reduces firm-specific risk. In this model, the expected return compensates systematic risk rather than the total standard deviation of returns."
+  ],
+  "outsideSelectedNotes": "The Black-Scholes model prices European options using the normal cumulative distribution function.",
+  "damagedFormula": "The copied formula is E[R_i] = r_f + �. Consult the original slide before using it."
+}

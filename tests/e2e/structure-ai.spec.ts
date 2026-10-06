@@ -89,7 +89,7 @@ test('inline AI outline streams, recovers, edits, inspects evidence and applies 
   await page.screenshot({ path: '/tmp/structure-ai-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Add selected to course' }).click();
   await expect(page.getByRole('button', { name: 'AI draft', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Existing objective/ })).toBeVisible();
+  await expect(page.locator('.outline-lo-row').filter({ hasText: 'Existing objective' })).toBeVisible();
 });
 
 test('empty-course app shell opens the composer, reports failures and keeps a running draft across navigation', async ({ page }) => {

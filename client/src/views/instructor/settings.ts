@@ -1,34 +1,26 @@
 import { teachingSettingsPanel } from './teaching-settings.js';
 import { attachTutorial } from '../../tutorials.js';
 // Course Settings (I4) — term dates, feedback strategy, auto-pause,
-// registration code, and roster (Task 15, Task C). See
+// supplemental one-time codes and Gradebook enrollment. See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-id `148:3721`) and `.superpowers/sdd/task-15/i4-settings.png`.
 //
 // Phase 3 WS-10 adds the formerly out-of-scope Exam Templates editor as a
 // separate Course Settings route. This page keeps the existing course metadata,
-// feedback strategy, auto-pause, registration code, and roster responsibilities.
+// feedback strategy, auto-pause and enrollment responsibilities.
 import {
   ApiError,
   archiveCourse,
   getAuthState,
   getCourseTree,
-  getRoster,
-  previewRosterFile,
-  putRoster,
   permanentlyDeleteCourse,
-  regenerateRegistrationCode,
   restoreCourse,
   updateCourse,
   type AutoPauseConfig,
   type InstructorCourse,
-  type RosterParseResult,
-  type RosterReject,
-  type RosterRejectReason,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { runButtonAction } from '../../action-state.js';
-import { helpTip, pageHeader, sectionTitleWithHelp, uploadZone } from '../../instructor-ui.js';
+import { helpTip, pageHeader, sectionTitleWithHelp } from '../../instructor-ui.js';
 import { confirmDialog, textPromptDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
@@ -73,21 +65,6 @@ const HELP = {
     + 'Strategy A’s targeted retry, any other wrong answer gets Strategy B’s full '
     + 'explanations. Exam mode defers all feedback to the end-of-exam summary, so no retry is '
     + 'offered there.',
-  registrationCode:
-    'The 8-character code students enter to join this course. It never grants access on its own — '
-    + 'the student must also appear on the roster and the course must be published. Regenerating '
-    + 'takes effect immediately and invalidates the old code; students already enrolled keep their '
-    + 'access.',
-  roster:
-    'Who is allowed to join this course. A student needs both the registration code and a roster '
-    + 'entry, so this list is what actually controls access. Upload a CSV — the identifier column '
-    + 'is detected for you and anything unusable is listed before you save — or paste identifiers '
-    + 'directly. Saving replaces the whole roster.',
-  studentIdentifiers:
-    'CWL usernames or email addresses — NOT student numbers. Students sign in with CWL, which '
-    + 'tells FinanceBot their CWL username and email and nothing else, so a student number has '
-    + 'nothing to match against and that student could never join. Entries that cannot match are '
-    + 'skipped when you save, and listed so you can fix them.',
 } as const;
 
 const FEEDBACK_STRATEGIES: Array<{
@@ -99,68 +76,6 @@ const FEEDBACK_STRATEGIES: Array<{
   { value: 'strategy-a', title: 'Strategy A only', subtitle: "Always show only chosen option's explanation + 1 retry" },
   { value: 'strategy-b', title: 'Strategy B only', subtitle: 'Always show all explanations immediately' },
 ];
-
-const REJECT_REASON_LABEL: Record<RosterRejectReason, string> = {
-  'student-number': 'Looks like a student number',
-  'malformed-email': 'Not a valid email address',
-  'invalid-characters': 'Not a valid CWL username or email',
-  duplicate: 'Duplicate of an earlier row',
-};
-
-// Shown once, above the per-row list, when student numbers are the problem.
-// Naming the constraint matters more than naming the rows: the instructor's
-// next move is to re-export with a CWL/email column, and nothing in the UI
-// previously told them that was the requirement.
-const STUDENT_NUMBER_EXPLANATION =
-  'Students sign in with CWL, and a CWL login tells FinanceBot the person’s CWL username and '
-  + 'email — never their student number. A roster of student numbers therefore matches nobody. '
-  + 'Re-export the file with a CWL username or email column and upload it again.';
-
-/** The rejected rows, capped so a 250-row paste of the wrong column does not
- *  bury the summary that explains it. */
-function rejectList(rejects: RosterReject[]): HTMLElement {
-  const shown = rejects.slice(0, 10);
-  return el(
-    'div',
-    { class: 'roster-rejects' },
-    rejects.some((reject) => reject.reason === 'student-number')
-      ? el('p', { class: 'roster-rejects__explanation', text: STUDENT_NUMBER_EXPLANATION })
-      : false,
-    el(
-      'ul',
-      { class: 'roster-rejects__list' },
-      ...shown.map((reject) =>
-        el(
-          'li',
-          { class: 'roster-rejects__row' },
-          el('span', { class: 'roster-rejects__line', text: `Row ${reject.line}` }),
-          el('span', { class: 'roster-rejects__value mono', text: reject.value }),
-          el('span', { class: 'roster-rejects__reason', text: REJECT_REASON_LABEL[reject.reason] }),
-        ),
-      ),
-    ),
-    rejects.length > shown.length
-      ? el('p', {
-          class: 'roster-rejects__more',
-          text: `…and ${rejects.length - shown.length} more.`,
-        })
-      : false,
-  );
-}
-
-/** A save/import outcome line followed by the rows that were dropped. */
-function rejectSummary(lead: string, rejects: RosterReject[]): HTMLElement {
-  return el(
-    'div',
-    { class: 'roster-import' },
-    el('p', {
-      class: 'roster-import__summary roster-import__summary--warn',
-      role: 'status',
-      text: `${lead} ${rejects.length} entr${rejects.length === 1 ? 'y was' : 'ies were'} skipped:`,
-    }),
-    rejectList(rejects),
-  );
-}
 
 /** yyyy-mm-dd for an `<input type="date">` from an ISO date string, or ''. */
 function toDateInputValue(iso: string | undefined): string {
@@ -174,16 +89,13 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   mount(outlet, root);
 
   let course: InstructorCourse;
-  let roster: Array<{ identifier: string; extendedUntil?: string }>;
   let canPermanentlyDelete: boolean;
   try {
-    const [tree, rosterList, auth] = await Promise.all([
+    const [tree, auth] = await Promise.all([
       getCourseTree(courseId),
-      getRoster(courseId),
       getAuthState(),
     ]);
     course = tree.course;
-    roster = rosterList;
     canPermanentlyDelete = Boolean(auth.user && (auth.user.isAdmin || auth.user.puid === course.ownerPuid));
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -193,7 +105,6 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
 
   let selectedStrategy = course.feedbackStrategy;
   let autoPause: AutoPauseConfig = { ...course.autoPause };
-  let registrationCode = course.registrationCode;
   const nameInput = el('input', { class: 'input', type: 'text', id: 'settings-course-name', value: course.name }) as HTMLInputElement;
   const codeInput = el('input', { class: 'input', type: 'text', id: 'settings-course-code', value: course.courseCode }) as HTMLInputElement;
   const sectionInput = el('input', { class: 'input', type: 'text', id: 'settings-section', value: course.section ?? '' }) as HTMLInputElement;
@@ -207,36 +118,6 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
   const settingsErrorSlot = el('div', {});
   const settingsStatusSlot = el('div', { 'aria-live': 'polite' });
   const strategyGroup = el('div', { class: 'strategy-group' });
-  const codeValueEl = el('span', { class: 'registration-code__value mono', text: registrationCode ?? '— not generated —' });
-  const codeErrorSlot = el('div', {});
-  const rosterTextarea = el('textarea', {
-    class: 'input input--area roster-textarea',
-    id: 'settings-roster',
-    rows: '8',
-    text: roster.map((r) => r.identifier).join('\n'),
-  }) as HTMLTextAreaElement;
-  const rosterErrorSlot = el('div', {});
-  const rosterImportSlot = el('div', { 'aria-live': 'polite' });
-  const rosterListEl = el('div', { class: 'roster-list' });
-  // The last parsed file is kept so switching the identifier column re-parses
-  // it server-side instead of asking the instructor to pick the file again.
-  let lastPreview: RosterParseResult | null = null;
-  let lastFile: File | null = null;
-  const saveRosterButton = el(
-    'button',
-    { class: 'btn btn--ghost', type: 'button' },
-    'Save Roster',
-  ) as HTMLButtonElement;
-
-  rosterTextarea.addEventListener('input', () => {
-    // Once the instructor edits the preview by hand, the textarea becomes the
-    // source of truth again and an earlier all-rejected file must not keep the
-    // save control disabled.
-    lastPreview = null;
-    lastFile = null;
-    saveRosterButton.disabled = false;
-    rosterImportSlot.replaceChildren();
-  });
   const deletionErrorSlot = el('div', {});
 
   function renderStrategyGroup(): void {
@@ -265,28 +146,6 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     );
   }
   renderStrategyGroup();
-
-  function renderRosterList(): void {
-    rosterListEl.replaceChildren(
-      roster.length
-        ? el(
-            'div',
-            { class: 'roster-list__rows' },
-            ...roster.map((r) =>
-              el(
-                'div',
-                { class: 'roster-list__row' },
-                el('span', { class: 'roster-list__identifier mono', text: r.identifier }),
-                r.extendedUntil
-                  ? el('span', { class: 'roster-list__extended', text: `Extended until ${r.extendedUntil.slice(0, 10)}` })
-                  : false,
-              ),
-            ),
-          )
-        : el('p', { class: 'roster-list__empty', text: 'No students on the roster yet.' }),
-    );
-  }
-  renderRosterList();
 
   const saveSettings = async (): Promise<void> => {
     settingsErrorSlot.replaceChildren();
@@ -341,128 +200,6 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     }
   };
 
-  const regenerateCode = async (): Promise<void> => {
-    codeErrorSlot.replaceChildren();
-    if (!await confirmDialog({ title: 'Generate a new registration code?', message: 'The previous code will stop working for new enrollments. Existing students remain enrolled.', confirmLabel: 'Regenerate' })) return;
-    try {
-      const result = await regenerateRegistrationCode(courseId);
-      registrationCode = result.registrationCode;
-      codeValueEl.textContent = registrationCode;
-    } catch (error) {
-      codeErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
-    }
-  };
-
-  const saveRoster = async (): Promise<void> => {
-    rosterErrorSlot.replaceChildren();
-    if (lastPreview && lastPreview.identifiers.length === 0) {
-      rosterErrorSlot.replaceChildren(
-        errorState('This import has no usable CWL usernames or emails, so the existing roster was not replaced.'),
-      );
-      return;
-    }
-    const identifiers = rosterTextarea.value
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    try {
-      const { count, rejected } = await putRoster(courseId, identifiers);
-      const refreshed = await getRoster(courseId);
-      roster = refreshed;
-      rosterTextarea.value = roster.map((r) => r.identifier).join('\n');
-      renderRosterList();
-      lastPreview = null;
-      lastFile = null;
-      saveRosterButton.disabled = false;
-      // Saving used to be silent about entries it could not use, which is how
-      // a roster of student numbers looked like a success and then failed
-      // every enrolment. Say so, every time.
-      rosterImportSlot.replaceChildren(
-        rejected.length
-          ? rejectSummary(`Saved ${count} student${count === 1 ? '' : 's'}.`, rejected)
-          : el('p', {
-              class: 'preseeding-queued-message',
-              role: 'status',
-              text: `Saved ${count} student${count === 1 ? '' : 's'}.`,
-            }),
-      );
-    } catch (error) {
-      rosterErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
-    }
-  };
-
-  /** Loads a parsed file into the textarea and reports what was dropped. */
-  function applyPreview(result: RosterParseResult): void {
-    lastPreview = result;
-    rosterTextarea.value = result.identifiers.join('\n');
-    renderRosterImport();
-  }
-
-  const uploadRoster = async (file: File, column?: string): Promise<void> => {
-    rosterErrorSlot.replaceChildren();
-    rosterImportSlot.replaceChildren(loadingState(`Reading ${file.name}…`));
-    try {
-      lastFile = file;
-      applyPreview(await previewRosterFile(courseId, file, column));
-    } catch (error) {
-      lastFile = null;
-      rosterImportSlot.replaceChildren();
-      rosterErrorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
-    }
-  };
-
-  /** The import panel: which column was read, what was rejected, and a way to
-   *  correct the column without re-exporting the file. */
-  function renderRosterImport(): void {
-    if (!lastPreview) {
-      saveRosterButton.disabled = false;
-      rosterImportSlot.replaceChildren();
-      return;
-    }
-    const { columns, selectedColumn, identifiers, rejects } = lastPreview;
-    saveRosterButton.disabled = identifiers.length === 0;
-
-    const columnPicker = columns.length > 1
-      ? (() => {
-          const select = el('select', { class: 'input', id: 'settings-roster-column' }) as HTMLSelectElement;
-          for (const column of columns) {
-            const option = el('option', { value: column, text: column }) as HTMLOptionElement;
-            option.selected = column === selectedColumn;
-            select.append(option);
-          }
-          select.addEventListener('change', () => {
-            if (lastFile) void uploadRoster(lastFile, select.value);
-          });
-          return el(
-            'div',
-            { class: 'form-field' },
-            fieldLabel('Identifier column', 'settings-roster-column'),
-            select,
-          );
-        })()
-      : false;
-
-    rosterImportSlot.replaceChildren(
-      el(
-        'div',
-        { class: 'roster-import' },
-        el('p', {
-          // Success-green on "0 of 4 rows ready" reads as a green light for a
-          // file that will enrol nobody. Tone follows the outcome.
-          class: `roster-import__summary${rejects.length ? ' roster-import__summary--warn' : ''}`,
-          role: 'status',
-          text: `${identifiers.length} of ${lastPreview.totalRows} row${lastPreview.totalRows === 1 ? '' : 's'} ready`
-            + `${selectedColumn ? ` from column “${selectedColumn}”` : ''}.`
-            + (identifiers.length
-              ? ' Review below, then Save Roster.'
-              : ' Nothing will be saved; choose a CWL/email column or edit the list.'),
-        }),
-        columnPicker,
-        rejects.length ? rejectList(rejects) : false,
-      ),
-    );
-  }
-
   const permanentlyDelete = async (): Promise<void> => {
     deletionErrorSlot.replaceChildren();
     const requiredPhrase = `DELETE ${[course.courseCode.trim(), course.section?.trim()]
@@ -507,11 +244,6 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Minimum attempts before auto-pause applies', minAttemptsInput.id, HELP.minAttempts), minAttemptsInput),
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag percentage threshold', flagPercentInput.id, HELP.flagPercent), flagPercentInput),
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag count threshold', flagCountInput.id, HELP.flagCount), flagCountInput))),
-    'Enrollment': el('div', {}, sectionTitleWithHelp('Registration Code', HELP.registrationCode),
-      el('div', { class: 'registration-code' }, codeValueEl, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => regenerateCode(), text: 'Regenerate' })), codeErrorSlot,
-      sectionTitleWithHelp('Roster', HELP.roster), el('p', { class: 'admin-fine', text: 'Upload a CSV or paste one identifier per line. Saving replaces the full roster.' }),
-      uploadZone('Drop a roster CSV here or browse', files => { if (files[0]) void uploadRoster(files[0]); }), rosterImportSlot,
-      fieldLabelWithHelp('Student identifiers', rosterTextarea.id, HELP.studentIdentifiers), rosterTextarea, rosterErrorSlot, saveRosterButton, rosterListEl),
     'Course lifecycle': el('div', {}, el('h3', { text: 'Archive course' }), el('p', { class: 'admin-fine', text: 'Keep course records while closing student access. You can restore the course as a draft later.' }),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => changeArchiveState(), text: course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course' }),
       el('section', { class: 'settings-danger-zone stack', 'aria-labelledby': 'settings-danger-zone-title' },
@@ -528,16 +260,16 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     activeSection = name;
     nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.textContent === name)));
     content.replaceChildren(el('div', { class: 'admin-subhead' }, el('h2', { text: name }), el('small', { text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''}` })), sections[name]);
-    footer.hidden = name === 'Enrollment' || name === 'Course lifecycle' || name === 'Teaching mode';
+    footer.hidden = name === 'Course lifecycle' || name === 'Teaching mode';
     settingsStatusSlot.replaceChildren(); settingsErrorSlot.replaceChildren();
   }
   Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));
-  body.replaceChildren(pageHeader('Course Settings', 'Make one change at a time. Keep the rest of your course in view.'),
-    el('a', { class: 'btn btn--secondary', href: `#/instructor/canvas/${courseId}`, text: 'Link Canvas courses & sections' }),
+  body.replaceChildren(el('div', { class: 'admin-heading' },
+    pageHeader('Course Settings', 'Make one change at a time. Keep the rest of your course in view.'),
+    el('div', { class: 'heading-actions' }, el('a', { id: 'settings-people-link', class: 'btn btn--secondary', href: `#/instructor/course/${courseId}/people`, text: 'Manage people' }), el('a', { class: 'btn btn--secondary', href: `#/instructor/canvas/${courseId}`, text: 'Link Canvas courses & sections' }))),
     el('div', { class: 'admin-settings-grid' }, nav, el('section', { class: 'admin-panel' }, content, settingsErrorSlot, settingsStatusSlot, footer)));
   selectSection(activeSection);
-  saveRosterButton.addEventListener('click', () => void runButtonAction(saveRosterButton, saveRoster));
-  attachTutorial(root, 'instructor-course-settings', {"course-settings-dates": "#settings-section-0", "course-settings-roster": "#settings-section-3"});
+  attachTutorial(root, 'instructor-course-settings', {"course-settings-dates": "#settings-section-0", "course-settings-roster": "#settings-people-link"});
 }
 
 export function renderSettings(outlet: HTMLElement, params: RouteParams): void {

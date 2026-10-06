@@ -1,3 +1,8 @@
+import type { CoursePeopleAccess } from '../../types/course-people';
+import type { ModelCallReceipt, ModelUsageSession } from '../../types/model-usage';
+import type { BuilderExam, ExamPublication, ExamCandidate, ExamBuildRun, AssessmentAttempt } from '../../types/exam-builder';
+import type { CoursePeopleImport } from '../../types/people-import';
+import type { CourseRegistrationCodeBatch } from '../../types/registration-code';
 import type { OperationEvent } from '../../types/domain';
 import type { CourseInstructorShare } from '../../types/course-sharing';
 import type { QuestionDraft, QuestionPresence } from '../../types/collaboration';
@@ -54,8 +59,14 @@ export const tutorialProgressCol = (): Collection<TutorialProgress> =>
 export const operationEventsCol = (): Collection<OperationEvent> => getDb().collection<OperationEvent>('operationEvents');
 export const courseInstructorSharesCol = (): Collection<CourseInstructorShare> =>
   getDb().collection<CourseInstructorShare>('courseInstructorShares');
+export const coursePeopleImportsCol = (): Collection<CoursePeopleImport> =>
+  getDb().collection<CoursePeopleImport>('coursePeopleImports');
 export const questionDraftsCol = (): Collection<QuestionDraft> => getDb().collection<QuestionDraft>('questionDrafts');
 export const questionPresenceCol = (): Collection<QuestionPresence> => getDb().collection<QuestionPresence>('questionPresence');
+
+export const modelCallReceiptsCol = (): Collection<ModelCallReceipt> => getDb().collection<ModelCallReceipt>('modelCallReceipts');
+export const modelUsageSessionsCol = (): Collection<ModelUsageSession> => getDb().collection<ModelUsageSession>('modelUsageSessions');
+export const registrationCodeBatchesCol = (): Collection<CourseRegistrationCodeBatch> => getDb().collection<CourseRegistrationCodeBatch>('courseRegistrationCodeBatches');
 
 export interface IndexSpec {
   collection: string;
@@ -65,6 +76,17 @@ export interface IndexSpec {
 
 /** Exported for tests; applied by ensureIndexes(). */
 export const INDEX_SPECS: IndexSpec[] = [
+  { collection: 'courseRegistrationCodeBatches', keys: { 'codes.code': 1 }, options: { unique: true } },
+  { collection: 'courseRegistrationCodeBatches', keys: { courseId: 1, requestId: 1 }, options: { unique: true } },
+  { collection: 'courseRegistrationCodeBatches', keys: { 'codes.claimedByPuid': 1, 'codes.status': 1 } },
+  { collection: 'courseRegistrationCodeBatches', keys: { courseId: 1, createdAt: -1 } },
+  { collection: 'modelCallReceipts', keys: { courseId: 1, runId: 1, startedAt: -1 } },
+  { collection: 'modelCallReceipts', keys: { operationId: 1, startedAt: -1 } },
+  { collection: 'modelCallReceipts', keys: { 'actor.puid': 1, startedAt: -1 } },
+  { collection: 'modelUsageSessions', keys: { courseId: 1, runId: 1 } },
+  { collection: 'modelUsageSessions', keys: { operationId: 1 } },
+  { collection: 'modelUsageSessions', keys: { 'actor.puid': 1, startedAt: -1 } },
+  { collection: 'coursePeopleImports', keys: { 'members.puid': 1 } },
   { collection: 'questionDrafts', keys: { questionId: 1 }, options: { unique: true } },
   { collection: 'questionPresence', keys: { questionId: 1, clientId: 1, puid: 1 }, options: { unique: true } },
   { collection: 'questionPresence', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
@@ -160,6 +182,29 @@ export interface GenerationSubmission {
 }
 export const generationSubmissionsCol = (): Collection<GenerationSubmission> =>
   getDb().collection<GenerationSubmission>('generationSubmissions');
+
+export const builderExamsCol = (): Collection<BuilderExam> => getDb().collection<BuilderExam>('builderExams');
+export const examPublicationsCol = (): Collection<ExamPublication> => getDb().collection<ExamPublication>('examPublications');
+export const examCandidatesCol = (): Collection<ExamCandidate> => getDb().collection<ExamCandidate>('examCandidates');
+export const examBuildRunsCol = (): Collection<ExamBuildRun> => getDb().collection<ExamBuildRun>('examBuildRuns');
+export const assessmentAttemptsCol = (): Collection<AssessmentAttempt> => getDb().collection<AssessmentAttempt>('assessmentAttempts');
+
+INDEX_SPECS.push(
+  { collection: 'builderExams', keys: { courseId: 1, updatedAt: -1 } },
+  { collection: 'examPublications', keys: { examId: 1, revision: 1 }, options: { unique: true } },
+  { collection: 'examCandidates', keys: { examId: 1, 'item.id': 1 }, options: { unique: true } },
+  { collection: 'examBuildRuns', keys: { examId: 1, requestId: 1 }, options: { unique: true } },
+  { collection: 'examBuildRuns', keys: { courseId: 1, status: 1 } },
+  { collection: 'assessmentAttempts', keys: { examId: 1, puid: 1 }, options: { unique: true } },
+  { collection: 'assessmentAttempts', keys: { courseId: 1, publicationId: 1 } },
+);
+
+export const coursePeopleAccessCol = (): Collection<CoursePeopleAccess> => getDb().collection<CoursePeopleAccess>('coursePeopleAccess');
+INDEX_SPECS.push(
+  { collection: 'coursePeopleAccess', keys: { courseId: 1, subject: 1 }, options: { unique: true } },
+  { collection: 'coursePeopleAccess', keys: { puid: 1 } },
+  { collection: 'coursePeopleAccess', keys: { email: 1, status: 1 } },
+);
 
 // Student learning v2: Preview records are structurally separate and expire.
 import type { LearningSettings, LearningSession, ReviewMetadata, DiscussionPost } from '../../types/student-learning';

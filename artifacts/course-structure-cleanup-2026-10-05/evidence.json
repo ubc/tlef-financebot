@@ -1,0 +1,20 @@
+{
+  "syntheticOnly": true,
+  "modelCalls": 0,
+  "checks": [
+    {
+      "name": "One LO removed; sibling survives reload",
+      "pass": true
+    },
+    {
+      "name": "Topic and child LO removed; other topic survives",
+      "pass": true
+    },
+    {
+      "name": "Related question and material records retained",
+      "pass": true
+    }
+  ],
+  "checkedAt": "2026-10-05T20:56:14.062Z",
+  "fixtureRemoved": true
+}

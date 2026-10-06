@@ -5,11 +5,16 @@
 // reply, and throw when even the retry is not JSON. temperature defaults to 0.
 const sendMessage = jest.fn();
 const streamConversation = jest.fn();
+// Never allow a local .env provider/key to activate a real native transport.
+jest.mock('../../server/src/config/env', () => ({ env: {
+  llmProvider: 'ollama', llmDefaultModel: 'ministral-3:latest',
+  llmEndpoint: 'http://synthetic.invalid', llmApiKey: '', genaiDebug: false,
+} }));
 jest.mock('ubc-genai-toolkit-llm', () => ({
   LLMModule: jest.fn().mockImplementation(() => ({ sendMessage, streamConversation, getAvailableModels: jest.fn() })),
 }));
 
-import { completeJson } from '../../server/src/components/genai/llm';
+import { completeJson, llm, withModelCallObserver, type ModelCallEvent } from '../../server/src/components/genai/llm';
 import { modelRequestOptions } from '../../server/src/components/genai/llm/model-capabilities';
 
 beforeEach(() => {
@@ -211,4 +216,55 @@ it('checks cancellation again before an automatic JSON retry', async () => {
   await expect(completeJson('prompt', { beforeRequest })).rejects.toThrow('content-run-conflict');
   expect(sendMessage).toHaveBeenCalledTimes(1);
   expect(beforeRequest).toHaveBeenCalledTimes(2);
+});
+
+it('records every JSON attempt separately while preserving transport success', async () => {
+  const events: ModelCallEvent[] = [];
+  sendMessage.mockResolvedValueOnce({ content: 'invalid JSON', model: 'synthetic', usage: { promptTokens: 10, completionTokens: 2 } })
+    .mockResolvedValueOnce({ content: '{"ok":true}', model: 'synthetic', usage: { promptTokens: 15, completionTokens: 3 } });
+  await withModelCallObserver(event => { events.push(event); }, () => completeJson('Synthetic', { usageContext: { stage: 'generator', item: 1, candidateAttempt: 0 } }));
+  expect(events).toHaveLength(4);
+  expect(events[0]).toMatchObject({ type: 'started', usageContext: { stage: 'generator', item: 1, candidateAttempt: 0, jsonAttempt: 0 } });
+  expect(events[2]).toMatchObject({ type: 'started', usageContext: { jsonAttempt: 1 } });
+  expect(events[0].callId).not.toBe(events[2].callId);
+  expect(events[1]).toMatchObject({ outcome: 'succeeded', usage: { totalTokens: 12 } });
+  expect(events[3]).toMatchObject({ outcome: 'succeeded', usage: { totalTokens: 18 } });
+});
+
+it('records direct facade calls as well as completeJson calls', async () => {
+  const events: ModelCallEvent[] = [];
+  sendMessage.mockResolvedValue({ content: 'Synthetic', model: 'synthetic', usage: { promptTokens: 2, completionTokens: 1 } });
+  await withModelCallObserver(event => { events.push(event); }, () => llm.sendMessage('Synthetic RAG request'));
+  expect(events).toHaveLength(2);
+  expect(events[1]).toMatchObject({ type: 'finished', usage: { totalTokens: 3 } });
+});
+
+it('does not record a provider attempt cancelled by its checkpoint', async () => {
+  const observer = jest.fn(); const beforeRequest = jest.fn().mockRejectedValue(new Error('content-run-conflict'));
+  await expect(withModelCallObserver(observer, () => completeJson('Synthetic', { beforeRequest }))).rejects.toThrow('content-run-conflict');
+  expect(observer).not.toHaveBeenCalled(); expect(sendMessage).not.toHaveBeenCalled();
+});
+
+it('records a provider failure without an automatic JSON correction call', async () => {
+  const events: ModelCallEvent[] = [];
+  sendMessage.mockRejectedValue(new Error('Synthetic provider failure'));
+  await expect(withModelCallObserver(event => { events.push(event); }, () => completeJson('Synthetic'))).rejects.toThrow('Synthetic provider failure');
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(events[1]).toMatchObject({ outcome: 'failed', usage: { totalTokens: null, countSource: 'unavailable' } });
+});
+
+it('isolates both local attempt listeners and legacy usage listeners from paid work', async () => {
+  const usage = { promptTokens: 2, completionTokens: 1 };
+  sendMessage.mockResolvedValue({ content: '{"ok":true}', usage });
+  await expect(completeJson('Synthetic', { onAttempt: async () => { throw new Error('Synthetic recording failure'); },
+    onUsage: () => { throw new Error('Synthetic legacy recording failure'); } })).resolves.toEqual({ ok: true });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+});
+
+it('still reports both attempts to the compatible usage hook', async () => {
+  const onUsage = jest.fn();
+  sendMessage.mockResolvedValueOnce({ content: 'invalid', usage: { promptTokens: 2, completionTokens: 1 } })
+    .mockResolvedValueOnce({ content: '{}', usage: { promptTokens: 3, completionTokens: 2 } });
+  await completeJson('Synthetic', { onUsage });
+  expect(onUsage.mock.calls).toEqual([[{ promptTokens: 2, completionTokens: 1 }], [{ promptTokens: 3, completionTokens: 2 }]]);
 });

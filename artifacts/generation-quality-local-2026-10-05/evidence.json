@@ -1,0 +1,1333 @@
+{
+  "startedAt": "2026-10-05T20:26:54.909Z",
+  "syntheticDataOnly": true,
+  "mocks": false,
+  "steps": [
+    {
+      "method": "GET",
+      "url": "/api/auth/me",
+      "status": 200,
+      "at": "2026-10-05T20:26:56.766Z"
+    },
+    {
+      "method": "POST",
+      "url": "/api/courses",
+      "status": 201,
+      "at": "2026-10-05T20:26:56.784Z"
+    },
+    {
+      "method": "POST",
+      "url": "/api/courses/6ac408101ac7325a81186a53/themes",
+      "status": 201,
+      "at": "2026-10-05T20:26:56.799Z"
+    },
+    {
+      "method": "POST",
+      "url": "/api/themes/6ac408101ac7325a81186a55/los",
+      "status": 201,
+      "at": "2026-10-05T20:26:56.814Z"
+    },
+    {
+      "method": "POST",
+      "url": "/api/courses/6ac408101ac7325a81186a53/generate",
+      "status": 202,
+      "at": "2026-10-05T20:27:00.095Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/courses/6ac408101ac7325a81186a53/content-runs/6ac408141ac7325a81186a66",
+      "status": 200,
+      "at": "2026-10-05T20:27:00.308Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/courses/6ac408101ac7325a81186a53/content-runs/6ac408141ac7325a81186a66",
+      "status": 200,
+      "at": "2026-10-05T20:27:04.326Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/courses/6ac408101ac7325a81186a53/content-runs/6ac408141ac7325a81186a66/usage",
+      "status": 200,
+      "at": "2026-10-05T20:27:04.347Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/courses/6ac408101ac7325a81186a53/content-runs/6ac408141ac7325a81186a66/evaluation-export",
+      "status": 200,
+      "at": "2026-10-05T20:27:04.383Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/admin/workflows?courseId=6ac408101ac7325a81186a53",
+      "status": 200,
+      "at": "2026-10-05T20:27:08.186Z"
+    },
+    {
+      "method": "GET",
+      "url": "/api/admin/model-usage?courseId=6ac408101ac7325a81186a53",
+      "status": 200,
+      "at": "2026-10-05T20:27:08.202Z"
+    }
+  ],
+  "runs": [
+    {
+      "name": "04-baseline",
+      "runId": "6ac408141ac7325a81186a66",
+      "seconds": 4,
+      "snapshot": {
+        "_id": "6ac408141ac7325a81186a66",
+        "operationId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+        "courseId": "6ac408101ac7325a81186a53",
+        "kind": "question-generation",
+        "requestedBy": "PUID-ADMIN-0001",
+        "status": "failed",
+        "stage": "persisting",
+        "completedUnits": 1,
+        "totalUnits": 1,
+        "revision": 9,
+        "events": [
+          {
+            "revision": 0,
+            "at": "2026-10-05T20:27:00.079Z",
+            "type": "status",
+            "status": "queued",
+            "stage": "queued",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Queued"
+          },
+          {
+            "revision": 1,
+            "at": "2026-10-05T20:27:00.101Z",
+            "type": "status",
+            "status": "running",
+            "stage": "retrieving",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Retrieving assigned course material (generator gpt-5.6-luna @default, reviewer gpt-5.6-luna @default)"
+          },
+          {
+            "revision": 2,
+            "at": "2026-10-05T20:27:00.104Z",
+            "type": "progress",
+            "status": "running",
+            "stage": "retrieving",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Pinned 1 assigned material"
+          },
+          {
+            "revision": 3,
+            "at": "2026-10-05T20:27:00.465Z",
+            "type": "stage",
+            "status": "running",
+            "stage": "generating",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Retrieved 1 grounded chunks"
+          },
+          {
+            "revision": 5,
+            "at": "2026-10-05T20:27:03.659Z",
+            "type": "progress",
+            "status": "running",
+            "stage": "generating",
+            "completedUnits": 1,
+            "totalUnits": 1,
+            "message": "Candidate 1 failed during generation"
+          },
+          {
+            "revision": 6,
+            "at": "2026-10-05T20:27:03.664Z",
+            "type": "stage",
+            "status": "running",
+            "stage": "validating",
+            "completedUnits": 1,
+            "totalUnits": 1,
+            "message": "Validating 0 candidates"
+          },
+          {
+            "revision": 7,
+            "at": "2026-10-05T20:27:03.668Z",
+            "type": "stage",
+            "status": "running",
+            "stage": "reviewing",
+            "completedUnits": 1,
+            "totalUnits": 1,
+            "message": "Reviewing 0 candidates"
+          },
+          {
+            "revision": 8,
+            "at": "2026-10-05T20:27:03.672Z",
+            "type": "stage",
+            "status": "running",
+            "stage": "persisting",
+            "completedUnits": 1,
+            "totalUnits": 1,
+            "message": "Saving 0 Draft questions"
+          },
+          {
+            "revision": 9,
+            "at": "2026-10-05T20:27:03.680Z",
+            "type": "status",
+            "status": "failed",
+            "stage": "persisting",
+            "completedUnits": 1,
+            "totalUnits": 1,
+            "message": "No Draft questions could be created from this run."
+          }
+        ],
+        "warnings": [],
+        "input": {
+          "loId": "6ac408101ac7325a81186a57",
+          "count": 1,
+          "type": "mcq",
+          "difficulty": "easy",
+          "kind": "conceptual",
+          "prompt": "Create a concise concept question about CAPM systematic risk. Do not use numerical parameters.",
+          "models": {
+            "embedding": "fast-bge-small-en-v1.5",
+            "generator": "gpt-5.6-luna",
+            "validator": "gpt-5.6-luna",
+            "reviewer": "gpt-5.6-luna"
+          }
+        },
+        "grounding": {
+          "allowedMaterialIds": [
+            "6ac4081055e43daa1734dbe5"
+          ],
+          "retrievedChunkCount": 1,
+          "pinned": false
+        },
+        "result": {
+          "createdQuestionIds": [],
+          "failures": [
+            {
+              "item": 0,
+              "stage": "generating",
+              "code": "generation-item-failed",
+              "message": "429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/."
+            }
+          ]
+        },
+        "createdAt": "2026-10-05T20:27:00.079Z",
+        "updatedAt": "2026-10-05T20:27:03.680Z",
+        "startedAt": "2026-10-05T20:27:00.101Z",
+        "preview": {
+          "item": 0,
+          "attempt": 1,
+          "stem": ""
+        },
+        "completedAt": "2026-10-05T20:27:03.680Z",
+        "error": {
+          "code": "generation-no-questions-created",
+          "message": "No Draft questions could be created from this run.",
+          "atStage": "persisting",
+          "retryable": true
+        }
+      },
+      "usage": {
+        "summary": {
+          "inputTokens": null,
+          "outputTokens": null,
+          "totalTokens": null,
+          "reasoningTokens": null,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": null,
+          "observedCalls": 1,
+          "reportedCalls": 0,
+          "callsWithKnownTotal": 0,
+          "pendingCalls": 0,
+          "unknownCalls": 1,
+          "status": "unavailable",
+          "scope": "llm-calls",
+          "coverageGaps": 0,
+          "untracked": false,
+          "retryVisibility": "unknown",
+          "stages": [
+            {
+              "stage": "generation",
+              "inputTokens": null,
+              "outputTokens": null,
+              "totalTokens": null,
+              "reasoningTokens": null,
+              "cachedInputTokens": null,
+              "cacheWriteTokens": null,
+              "observedCalls": 1,
+              "reportedCalls": 0,
+              "callsWithKnownTotal": 0,
+              "pendingCalls": 0,
+              "unknownCalls": 1
+            }
+          ],
+          "models": [
+            {
+              "provider": "openai",
+              "model": "gpt-5.6-luna",
+              "inputTokens": null,
+              "outputTokens": null,
+              "totalTokens": null,
+              "reasoningTokens": null,
+              "cachedInputTokens": null,
+              "cacheWriteTokens": null,
+              "observedCalls": 1,
+              "reportedCalls": 0,
+              "callsWithKnownTotal": 0,
+              "pendingCalls": 0,
+              "unknownCalls": 1
+            }
+          ]
+        },
+        "calls": [
+          {
+            "_id": "f2cb2143-076c-4238-9c94-7047b44e076c",
+            "actualModel": null,
+            "candidateAttempt": 1,
+            "courseId": "6ac408101ac7325a81186a53",
+            "item": 0,
+            "jsonAttempt": 0,
+            "outcome": "failed",
+            "provider": "openai",
+            "requestOptions": {
+              "temperature": 0.7,
+              "reasoning_effort": "none",
+              "stream": true,
+              "responseFormat": "json"
+            },
+            "requestedModel": "gpt-5.6-luna",
+            "responseId": null,
+            "retryVisibility": "unknown",
+            "runId": "6ac408141ac7325a81186a66",
+            "stage": "generation",
+            "startedAt": "2026-10-05T20:27:00.481Z",
+            "usage": {
+              "inputTokens": null,
+              "outputTokens": null,
+              "totalTokens": null,
+              "reasoningTokens": null,
+              "cachedInputTokens": null,
+              "cacheWriteTokens": null,
+              "totalOrigin": "unknown",
+              "countSource": "unavailable"
+            },
+            "durationMs": 3171,
+            "finishedAt": "2026-10-05T20:27:03.652Z"
+          }
+        ],
+        "totalCalls": 1
+      },
+      "exported": {
+        "schemaVersion": "generation-evaluation-export-v1",
+        "exportedAt": "2026-10-05T20:27:04.380Z",
+        "run": {
+          "id": "6ac408141ac7325a81186a66",
+          "courseId": "6ac408101ac7325a81186a53",
+          "loId": "6ac408101ac7325a81186a57",
+          "policy": "baseline",
+          "requestedSlots": 1,
+          "type": "mcq",
+          "difficulty": "easy",
+          "kind": "conceptual",
+          "prompt": "Create a concise concept question about CAPM systematic risk. Do not use numerical parameters.",
+          "grounding": {
+            "allowedMaterialIds": [
+              "6ac4081055e43daa1734dbe5"
+            ],
+            "retrievedChunkCount": 1,
+            "pinned": false
+          },
+          "status": "failed",
+          "models": {
+            "embedding": "fast-bge-small-en-v1.5",
+            "generator": "gpt-5.6-luna",
+            "validator": "gpt-5.6-luna",
+            "reviewer": "gpt-5.6-luna"
+          },
+          "createdAt": "2026-10-05T20:27:00.079Z",
+          "startedAt": "2026-10-05T20:27:00.101Z",
+          "finishedAt": "2026-10-05T20:27:03.680Z"
+        },
+        "slots": [
+          {
+            "item": 0,
+            "outcome": "failed",
+            "failureCodes": [
+              "generation-item-failed"
+            ]
+          }
+        ],
+        "usage": {
+          "summary": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "totalTokens": null,
+            "reasoningTokens": null,
+            "cachedInputTokens": null,
+            "cacheWriteTokens": null,
+            "observedCalls": 1,
+            "reportedCalls": 0,
+            "callsWithKnownTotal": 0,
+            "pendingCalls": 0,
+            "unknownCalls": 1,
+            "status": "unavailable",
+            "scope": "llm-calls",
+            "coverageGaps": 0,
+            "untracked": false,
+            "retryVisibility": "unknown",
+            "stages": [
+              {
+                "inputTokens": null,
+                "outputTokens": null,
+                "totalTokens": null,
+                "reasoningTokens": null,
+                "cachedInputTokens": null,
+                "cacheWriteTokens": null,
+                "observedCalls": 1,
+                "reportedCalls": 0,
+                "callsWithKnownTotal": 0,
+                "pendingCalls": 0,
+                "unknownCalls": 1,
+                "stage": "generation"
+              }
+            ],
+            "models": [
+              {
+                "inputTokens": null,
+                "outputTokens": null,
+                "totalTokens": null,
+                "reasoningTokens": null,
+                "cachedInputTokens": null,
+                "cacheWriteTokens": null,
+                "observedCalls": 1,
+                "reportedCalls": 0,
+                "callsWithKnownTotal": 0,
+                "pendingCalls": 0,
+                "unknownCalls": 1,
+                "provider": "openai",
+                "model": "gpt-5.6-luna"
+              }
+            ]
+          },
+          "calls": [
+            {
+              "id": "f2cb2143-076c-4238-9c94-7047b44e076c",
+              "stage": "generation",
+              "item": 0,
+              "candidateAttempt": 1,
+              "jsonAttempt": 0,
+              "provider": "openai",
+              "requestedModel": "gpt-5.6-luna",
+              "actualModel": null,
+              "requestOptions": {
+                "temperature": 0.7,
+                "reasoning_effort": "none",
+                "stream": true,
+                "responseFormat": "json"
+              },
+              "outcome": "failed",
+              "usage": {
+                "inputTokens": null,
+                "outputTokens": null,
+                "totalTokens": null,
+                "reasoningTokens": null,
+                "cachedInputTokens": null,
+                "cacheWriteTokens": null,
+                "totalOrigin": "unknown",
+                "countSource": "unavailable"
+              },
+              "retryVisibility": "unknown",
+              "startedAt": "2026-10-05T20:27:00.481Z",
+              "finishedAt": "2026-10-05T20:27:03.652Z",
+              "durationMs": 3171
+            }
+          ],
+          "totalCalls": 1,
+          "callsTruncated": false
+        },
+        "limitations": [
+          "This is a retrospective observation export. It does not establish paired arms, source/bank isolation, frozen pre-run model options, or causal quality improvement.",
+          "Historical objective text and the complete starting Bank/Queue were not frozen in these run records. Current objective or question versions are never substituted.",
+          "Only retained final candidates are available. Earlier generator, numerical-repair and reject-replacement outputs may be absent even when their usage is recorded.",
+          "Usage covers observed LLM calls only, excluding embeddings, parsing and infrastructure. Unknown counters remain unknown; SDK-internal retries may be unobserved.",
+          "No teacher labels, acceptance decisions, or review time are inferred from publication state or model judgments.",
+          "No frozen source evidence packet is retained for this run. Copied question sourceRefs, when present, are partial original excerpts, not reconstructed source eligibility/version or complete retrieval context.",
+          "Recorded usage is incomplete or unavailable. Its subtotal cannot support a complete cost comparison."
+        ]
+      }
+    },
+    {
+      "name": "Source integrity challenge",
+      "runId": "6ac408721ac7325a81186a79",
+      "snapshot": {
+        "_id": "6ac408721ac7325a81186a79",
+        "operationId": "1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+        "courseId": "6ac408101ac7325a81186a53",
+        "kind": "question-generation",
+        "requestedBy": "PUID-ADMIN-0001",
+        "status": "failed",
+        "stage": "retrieving",
+        "completedUnits": 0,
+        "totalUnits": 1,
+        "revision": 3,
+        "events": [
+          {
+            "revision": 0,
+            "at": "2026-10-05T20:28:34.174Z",
+            "type": "status",
+            "status": "queued",
+            "stage": "queued",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Queued"
+          },
+          {
+            "revision": 1,
+            "at": "2026-10-05T20:28:34.185Z",
+            "type": "status",
+            "status": "running",
+            "stage": "retrieving",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Retrieving assigned course material (generator gpt-5.6-luna @default, reviewer gpt-5.6-luna @default)"
+          },
+          {
+            "revision": 2,
+            "at": "2026-10-05T20:28:34.187Z",
+            "type": "progress",
+            "status": "running",
+            "stage": "retrieving",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "Pinned 1 assigned material"
+          },
+          {
+            "revision": 3,
+            "at": "2026-10-05T20:28:34.346Z",
+            "type": "status",
+            "status": "failed",
+            "stage": "retrieving",
+            "completedUnits": 0,
+            "totalUnits": 1,
+            "message": "generation-evidence-stale-retrieval"
+          }
+        ],
+        "warnings": [],
+        "input": {
+          "loId": "6ac408101ac7325a81186a57",
+          "qualityPolicy": "grounded-memory-v1",
+          "count": 1,
+          "type": "mcq",
+          "difficulty": "easy",
+          "kind": "conceptual",
+          "prompt": "Stay within lecture scope.",
+          "models": {
+            "embedding": "fast-bge-small-en-v1.5",
+            "generator": "gpt-5.6-luna",
+            "validator": "gpt-5.6-luna",
+            "reviewer": "gpt-5.6-luna"
+          }
+        },
+        "grounding": {
+          "allowedMaterialIds": [
+            "6ac4081055e43daa1734dbe5"
+          ],
+          "retrievedChunkCount": 0,
+          "pinned": false
+        },
+        "result": {
+          "createdQuestionIds": [],
+          "failures": [],
+          "quality": {
+            "policy": "grounded-memory-v1",
+            "assessments": []
+          }
+        },
+        "createdAt": "2026-10-05T20:28:34.174Z",
+        "updatedAt": "2026-10-05T20:28:34.346Z",
+        "startedAt": "2026-10-05T20:28:34.185Z",
+        "completedAt": "2026-10-05T20:28:34.346Z",
+        "error": {
+          "code": "generation-evidence-stale-retrieval",
+          "message": "generation-evidence-stale-retrieval",
+          "atStage": "retrieving",
+          "retryable": true
+        }
+      },
+      "usage": {
+        "summary": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "totalTokens": 0,
+          "reasoningTokens": null,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": null,
+          "observedCalls": 0,
+          "reportedCalls": 0,
+          "callsWithKnownTotal": 0,
+          "pendingCalls": 0,
+          "unknownCalls": 0,
+          "status": "complete",
+          "scope": "llm-calls",
+          "coverageGaps": 0,
+          "untracked": false,
+          "retryVisibility": "unknown",
+          "stages": [],
+          "models": []
+        },
+        "calls": [],
+        "totalCalls": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "Provider acceptance",
+      "status": "blocked",
+      "detail": "Provider rejected the live baseline. Further paid generation was not started."
+    },
+    {
+      "name": "Unauthenticated usage endpoint denied",
+      "status": "pass",
+      "http": 401
+    },
+    {
+      "name": "Stale vector text rejected before paid generation",
+      "status": "pass",
+      "error": {
+        "code": "generation-evidence-stale-retrieval",
+        "message": "generation-evidence-stale-retrieval",
+        "atStage": "retrieving",
+        "retryable": true
+      },
+      "observedCalls": 0
+    },
+    {
+      "name": "TA desktop reader accepts wheel input and reaches final content",
+      "status": "pass",
+      "before": {
+        "scrollTop": 0,
+        "scrollHeight": 1459,
+        "clientHeight": 645
+      },
+      "afterWheel": 814,
+      "endMarkerVisible": true,
+      "endPosition": {
+        "top": 599.625,
+        "bottom": 615.5625,
+        "readerTop": 285.484375,
+        "readerBottom": 930.40625,
+        "text": "SCROLL CHECK END: final answer explanation is reachable.",
+        "visible": true
+      },
+      "detail": "Wheel moved the bounded reader; then scrollIntoView verified the final answer paragraph. Scrolling to the absolute bottom moves past the answer to notes."
+    },
+    {
+      "name": "TA selected question after refresh",
+      "status": "observed-limitation",
+      "detail": "Refresh selects the first row again; selected question does not persist."
+    },
+    {
+      "name": "Real Instructor reads course usage; Admin ledger is denied",
+      "status": "pass",
+      "instructorHTTP": 200,
+      "adminHTTP": 403
+    },
+    {
+      "name": "Exact duplicate from real local Bank is withheld without model judgment",
+      "status": "pass",
+      "loadedEntries": 2,
+      "matchedEntryIds": [
+        "q:6ac4081155e43daa1734dbe7:6ac4081155e43daa1734dbe8"
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "name": "01-source",
+      "caption": "Original synthetic Finance source in the actual Materials workspace",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/materials",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      }
+    },
+    {
+      "name": "07-admin-usage",
+      "caption": "Actual model calls filtered to the synthetic local course",
+      "url": "http://localhost:6118/#/admin/operations?tab=usage&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      }
+    },
+    {
+      "name": "08-admin-workflow",
+      "caption": "Recorded API actions and background tasks for this course",
+      "url": "http://localhost:6118/#/admin/operations?tab=workflows&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1512,
+        "height": 982
+      }
+    },
+    {
+      "name": "02-generation-baseline",
+      "caption": "Real Generate questions form: pilot is off by default",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/preseeding",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      },
+      "actorRole": "Instructor"
+    },
+    {
+      "name": "03-generation-pilot",
+      "caption": "Real Generate questions form: pilot enabled by the author",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/preseeding",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      },
+      "actorRole": "Instructor"
+    },
+    {
+      "name": "04-baseline-checks",
+      "caption": "Live provider failure and unavailable token usage",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/preseeding",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      },
+      "actorRole": "Instructor"
+    },
+    {
+      "name": "05-source-integrity",
+      "caption": "Original-source gate rejects intentionally stale retrieval before a model call",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/preseeding",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "06-ta-scroll-top",
+      "caption": "Real TA Review Queue: long manual fixture before scrolling",
+      "url": "http://localhost:6118/#/ta/course/6ac408101ac7325a81186a53/review",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "07-ta-scroll-bottom",
+      "caption": "Final answer explanation is visible after scrolling; fixed action footer remains available",
+      "url": "http://localhost:6118/#/ta/course/6ac408101ac7325a81186a53/review",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "08-ta-mobile",
+      "caption": "Real narrow TA view: final explanation reachable by page scrolling",
+      "url": "http://localhost:6118/#/ta/course/6ac408101ac7325a81186a53/review",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "name": "09-admin-usage",
+      "caption": "Model usage for the failed real provider invocation",
+      "url": "http://localhost:6118/#/admin/operations?tab=usage&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "10-admin-call-detail",
+      "caption": "Per-call diagnostics in Admin Operations",
+      "url": "http://localhost:6118/#/admin/operations?tab=usage&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "11-admin-workflow",
+      "caption": "Actual recorded course actions and runs; temporal grouping is labelled",
+      "url": "http://localhost:6118/#/admin/operations?tab=workflows&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "12-admin-workflow-detail",
+      "caption": "Actual timeline event details",
+      "url": "http://localhost:6118/#/admin/operations?tab=workflows&courseId=6ac408101ac7325a81186a53",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    },
+    {
+      "name": "13-ta-laptop",
+      "caption": "Real TA queue at 1280 px: final answer remains reachable",
+      "url": "http://localhost:6118/#/ta/course/6ac408101ac7325a81186a53/review",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      }
+    },
+    {
+      "name": "14-instructor-activity",
+      "caption": "Actual Instructor run activity: source rejection and provider failure remain explicit",
+      "url": "http://localhost:6118/#/instructor/course/6ac408101ac7325a81186a53/preseeding",
+      "viewport": {
+        "width": 1680,
+        "height": 1050
+      }
+    }
+  ],
+  "actor": "PUID-ADMIN-0001",
+  "courseId": "6ac408101ac7325a81186a53",
+  "courseCode": "QLT32016766",
+  "loId": "6ac408101ac7325a81186a57",
+  "sourceText": "Synthetic Finance teaching note. CAPM uses E[R_i] = r_f + beta_i (E[R_m] - r_f). Preserve the notation beta_i, r_f, and E[R_m] - r_f. beta_i measures exposure to systematic market risk; total annual return volatility is not beta_i. Diversification removes firm-specific risk, but not systematic risk. Two securities with equal beta_i have equal CAPM required returns, even if their total volatility differs. A larger beta_i implies a larger required return when the market risk premium is positive. Lecture scope excludes option pricing, Black-Scholes, alpha regressions, Sharpe ratios, and multifactor models.",
+  "sourceSetup": "Synthetic material/chunk inserted in MongoDB and embedded into Qdrant using production components. Upload and parsing were not tested.",
+  "seedQuestionId": "6ac4081155e43daa1734dbe7",
+  "workflow": {
+    "items": [
+      {
+        "id": "workflow:operation:d128d601-aa8d-4700-9631-6097bc628306",
+        "courseId": "6ac408101ac7325a81186a53",
+        "startedAt": "2026-10-05T20:27:05.651Z",
+        "endedAt": "2026-10-05T20:27:05.652Z",
+        "grouping": "inferred-time-window",
+        "entries": [
+          {
+            "id": "operation:d128d601-aa8d-4700-9631-6097bc628306",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:27:05.651Z",
+            "endedAt": "2026-10-05T20:27:05.652Z",
+            "label": "Observed GET request",
+            "outcome": "failed",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "d128d601-aa8d-4700-9631-6097bc628306",
+            "method": "GET",
+            "route": "/courses/:courseId/content-runs/:runId/usage",
+            "durationMs": 1,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53",
+              "runId": "6ac408141ac7325a81186a66"
+            },
+            "relations": [
+              {
+                "kind": "operation-run",
+                "confidence": "recorded",
+                "requestId": "d128d601-aa8d-4700-9631-6097bc628306",
+                "runId": "6ac408141ac7325a81186a66",
+                "evidence": "recorded-run-id"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "workflow:operation:02c38b4f-94c8-4b17-9ef5-86ff219c0f48",
+        "actorPuid": "PUID-ADMIN-0001",
+        "courseId": "6ac408101ac7325a81186a53",
+        "startedAt": "2026-10-05T20:26:56.785Z",
+        "endedAt": "2026-10-05T20:28:38.982Z",
+        "grouping": "inferred-time-window",
+        "entries": [
+          {
+            "id": "operation:02c38b4f-94c8-4b17-9ef5-86ff219c0f48",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:26:56.785Z",
+            "endedAt": "2026-10-05T20:26:56.799Z",
+            "label": "Observed POST request",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "02c38b4f-94c8-4b17-9ef5-86ff219c0f48",
+            "method": "POST",
+            "route": "/courses/:courseId/themes",
+            "durationMs": 14,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:b1c6a049-91bf-40aa-a31d-3e3ea3b8c394",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:26:56.801Z",
+            "endedAt": "2026-10-05T20:26:56.813Z",
+            "label": "Observed POST request",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "b1c6a049-91bf-40aa-a31d-3e3ea3b8c394",
+            "method": "POST",
+            "route": "/themes/:themeId/los",
+            "durationMs": 12,
+            "targets": {
+              "themeId": "6ac408101ac7325a81186a55",
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:27:00.048Z",
+            "endedAt": "2026-10-05T20:27:00.095Z",
+            "label": "Request question generation",
+            "outcome": "accepted",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+            "method": "POST",
+            "route": "/courses/:courseId/generate",
+            "durationMs": 47,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": [
+              {
+                "kind": "operation-run",
+                "confidence": "recorded",
+                "requestId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+                "runId": "6ac408141ac7325a81186a66",
+                "evidence": "persisted-operation-id"
+              }
+            ]
+          },
+          {
+            "id": "run:6ac408141ac7325a81186a66",
+            "kind": "run",
+            "createdAt": "2026-10-05T20:27:00.079Z",
+            "endedAt": "2026-10-05T20:27:03.680Z",
+            "label": "Question generation",
+            "outcome": "failed",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "runId": "6ac408141ac7325a81186a66",
+            "requestId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53",
+              "runId": "6ac408141ac7325a81186a66"
+            },
+            "relations": [
+              {
+                "kind": "operation-run",
+                "confidence": "recorded",
+                "requestId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+                "runId": "6ac408141ac7325a81186a66",
+                "evidence": "persisted-operation-id"
+              }
+            ]
+          },
+          {
+            "id": "operation:46424fe0-687e-4586-b496-75e9c2fc704e",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:32.070Z",
+            "endedAt": "2026-10-05T20:28:32.083Z",
+            "label": "Read the question bank",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "46424fe0-687e-4586-b496-75e9c2fc704e",
+            "method": "GET",
+            "route": "/courses/:courseId/questions",
+            "durationMs": 13,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:21a1b78d-299b-416d-ac6b-94e655e2a180",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:32.755Z",
+            "endedAt": "2026-10-05T20:28:32.770Z",
+            "label": "Read the question bank",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "21a1b78d-299b-416d-ac6b-94e655e2a180",
+            "method": "GET",
+            "route": "/courses/:courseId/questions",
+            "durationMs": 15,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:34.164Z",
+            "endedAt": "2026-10-05T20:28:34.180Z",
+            "label": "Request question generation",
+            "outcome": "accepted",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+            "method": "POST",
+            "route": "/courses/:courseId/generate",
+            "durationMs": 16,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": [
+              {
+                "kind": "operation-run",
+                "confidence": "recorded",
+                "requestId": "1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+                "runId": "6ac408721ac7325a81186a79",
+                "evidence": "persisted-operation-id"
+              }
+            ]
+          },
+          {
+            "id": "run:6ac408721ac7325a81186a79",
+            "kind": "run",
+            "createdAt": "2026-10-05T20:28:34.174Z",
+            "endedAt": "2026-10-05T20:28:34.346Z",
+            "label": "Question generation",
+            "outcome": "failed",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "runId": "6ac408721ac7325a81186a79",
+            "requestId": "1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53",
+              "runId": "6ac408721ac7325a81186a79"
+            },
+            "relations": [
+              {
+                "kind": "operation-run",
+                "confidence": "recorded",
+                "requestId": "1d1adc65-86a1-4e59-bddb-2d26c8ec0aff",
+                "runId": "6ac408721ac7325a81186a79",
+                "evidence": "persisted-operation-id"
+              }
+            ]
+          },
+          {
+            "id": "operation:6bec90fd-a1ed-4b41-bd59-a9d79df794df",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:34.891Z",
+            "endedAt": "2026-10-05T20:28:34.907Z",
+            "label": "Read the question bank",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "6bec90fd-a1ed-4b41-bd59-a9d79df794df",
+            "method": "GET",
+            "route": "/courses/:courseId/questions",
+            "durationMs": 16,
+            "targets": {
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:6c1bfdf8-cf25-4734-b69d-9604ce7f827b",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:37.692Z",
+            "endedAt": "2026-10-05T20:28:37.706Z",
+            "label": "Read a question",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "6c1bfdf8-cf25-4734-b69d-9604ce7f827b",
+            "method": "GET",
+            "route": "/questions/:questionId",
+            "durationMs": 14,
+            "targets": {
+              "questionId": "6ac4081155e43daa1734dbe7",
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:99b685ba-55f0-4c4a-9708-d497f86b907b",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:37.693Z",
+            "endedAt": "2026-10-05T20:28:37.706Z",
+            "label": "Read a question",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "99b685ba-55f0-4c4a-9708-d497f86b907b",
+            "method": "GET",
+            "route": "/questions/:questionId",
+            "durationMs": 13,
+            "targets": {
+              "questionId": "6ac40875c0684bc8eab7d4fa",
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:a105377b-63a1-4cbe-8430-c6211370ad38",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:37.705Z",
+            "endedAt": "2026-10-05T20:28:37.715Z",
+            "label": "Read a question",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "a105377b-63a1-4cbe-8430-c6211370ad38",
+            "method": "GET",
+            "route": "/questions/:questionId",
+            "durationMs": 10,
+            "targets": {
+              "questionId": "6ac4081155e43daa1734dbe7",
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          },
+          {
+            "id": "operation:eddca796-e523-436b-ab06-d6f8ed2d7587",
+            "kind": "operation",
+            "createdAt": "2026-10-05T20:28:38.969Z",
+            "endedAt": "2026-10-05T20:28:38.982Z",
+            "label": "Read a question",
+            "outcome": "succeeded",
+            "actorPuid": "PUID-ADMIN-0001",
+            "courseId": "6ac408101ac7325a81186a53",
+            "requestId": "eddca796-e523-436b-ab06-d6f8ed2d7587",
+            "method": "GET",
+            "route": "/questions/:questionId",
+            "durationMs": 13,
+            "targets": {
+              "questionId": "6ac40875c0684bc8eab7d4fa",
+              "courseId": "6ac408101ac7325a81186a53"
+            },
+            "relations": []
+          }
+        ]
+      }
+    ],
+    "total": 2,
+    "page": 1,
+    "courses": [
+      {
+        "_id": "6ac408101ac7325a81186a53",
+        "name": "Generation Quality · Local Acceptance · Synthetic",
+        "courseCode": "QLT32016766"
+      }
+    ],
+    "users": [
+      {
+        "_id": "6aa8503599a0958bef3f7cc7",
+        "puid": "PUID-ADMIN-0001",
+        "displayName": "Platform Admin",
+        "uid": "admin"
+      }
+    ],
+    "windowMinutes": 30,
+    "truncated": false,
+    "limitations": [
+      "Groups infer a sequence from the same recorded user/course and gaps of at most 30 minutes; they do not prove clicks or causation.",
+      "Only persisted request and run records are shown. Missing audit events and earlier unrecorded activity cannot be reconstructed.",
+      "Run outcomes are current persisted snapshots; date filters select their creation time, not their completion time.",
+      "An accepted HTTP request records enqueueing, not successful background completion.",
+      "The timeline scans at most 1000 requests and 500 runs. A truncated total counts only groups in that scan."
+    ]
+  },
+  "adminUsage": {
+    "items": [
+      {
+        "_id": "f2cb2143-076c-4238-9c94-7047b44e076c",
+        "trackingSessionId": "2c037167-331a-43d9-835a-40ce69beccea",
+        "operationId": "b9993b9a-bc7f-4284-a4e4-9a653f45ec53",
+        "runId": "6ac408141ac7325a81186a66",
+        "courseId": "6ac408101ac7325a81186a53",
+        "actor": {
+          "puid": "PUID-ADMIN-0001"
+        },
+        "stage": "generation",
+        "item": 0,
+        "candidateAttempt": 1,
+        "jsonAttempt": 0,
+        "provider": "openai",
+        "requestedModel": "gpt-5.6-luna",
+        "actualModel": null,
+        "responseId": null,
+        "requestOptions": {
+          "temperature": 0.7,
+          "reasoning_effort": "none",
+          "stream": true,
+          "responseFormat": "json"
+        },
+        "startedAt": "2026-10-05T20:27:00.481Z",
+        "finishedAt": "2026-10-05T20:27:03.652Z",
+        "durationMs": 3171,
+        "outcome": "failed",
+        "retryVisibility": "unknown",
+        "usage": {
+          "inputTokens": null,
+          "outputTokens": null,
+          "totalTokens": null,
+          "reasoningTokens": null,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": null,
+          "totalOrigin": "unknown",
+          "countSource": "unavailable"
+        }
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "summary": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "reasoningTokens": null,
+      "cachedInputTokens": null,
+      "cacheWriteTokens": null,
+      "observedCalls": 1,
+      "reportedCalls": 0,
+      "callsWithKnownTotal": 0,
+      "pendingCalls": 0,
+      "unknownCalls": 1,
+      "status": "unavailable",
+      "scope": "llm-calls",
+      "coverageGaps": 0,
+      "untracked": false,
+      "retryVisibility": "unknown",
+      "stages": [
+        {
+          "inputTokens": null,
+          "outputTokens": null,
+          "totalTokens": null,
+          "reasoningTokens": null,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": null,
+          "observedCalls": 1,
+          "reportedCalls": 0,
+          "callsWithKnownTotal": 0,
+          "pendingCalls": 0,
+          "unknownCalls": 1,
+          "stage": "generation"
+        }
+      ],
+      "models": [
+        {
+          "inputTokens": null,
+          "outputTokens": null,
+          "totalTokens": null,
+          "reasoningTokens": null,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": null,
+          "observedCalls": 1,
+          "reportedCalls": 0,
+          "callsWithKnownTotal": 0,
+          "pendingCalls": 0,
+          "unknownCalls": 1,
+          "provider": "openai",
+          "model": "gpt-5.6-luna"
+        }
+      ]
+    },
+    "modelUsageNotes": [
+      "Counts cover instrumented observed LLM calls. Earlier and unrecorded activity cannot be reconstructed.",
+      "Recorded subtotals exclude embeddings, parsing and infrastructure; they are not a monetary bill. Provider SDK retries may remain unobserved.",
+      "Recording faults reduce coverage while known. A process crash before any durable write can leave an unreconstructable gap; complete describes retained observation coverage."
+    ],
+    "courses": [
+      {
+        "_id": "6ac408101ac7325a81186a53",
+        "name": "Generation Quality · Local Acceptance · Synthetic",
+        "courseCode": "QLT32016766"
+      }
+    ],
+    "users": [
+      {
+        "_id": "6aa8503599a0958bef3f7cc7",
+        "puid": "PUID-ADMIN-0001",
+        "displayName": "Platform Admin",
+        "uid": "admin"
+      }
+    ]
+  },
+  "finishedAt": "2026-10-05T20:28:46.476Z",
+  "fixtureRetained": true,
+  "sourceIndexRestored": true,
+  "scrollQuestionId": "6ac40875c0684bc8eab7d4fa",
+  "memoryCheck": {
+    "method": "Direct production-service invocation, real local Mongo Bank; no mocked responses, no generation request",
+    "loadedEntries": 2,
+    "assessment": {
+      "policy": "grounded-memory-v1",
+      "item": 0,
+      "status": "withheld",
+      "sourceSupport": "uncertain",
+      "notation": "uncertain",
+      "novelty": "duplicate",
+      "reasons": [
+        "Exact normalized question content already exists in the loaded Bank/Queue or batch memory. Source and notation checks were not run."
+      ],
+      "citations": [],
+      "matchedEntryIds": [
+        "q:6ac4081155e43daa1734dbe7:6ac4081155e43daa1734dbe8"
+      ],
+      "comparedEntryIds": [
+        "q:6ac4081155e43daa1734dbe7:6ac4081155e43daa1734dbe8",
+        "q:6ac40875c0684bc8eab7d4fa:6ac40875c0684bc8eab7d4fb"
+      ],
+      "evidencePacketId": "93cfb35c59069189a1a97fa50ba3f7ed7c2ee6aab88717ad840b6ffebb5d2691",
+      "memoryDigest": "cc609516a279b42cc4a7da1054e0469b7f43ea38c1609e69fd7232bf5fdc72b5",
+      "checkedAt": "2026-10-05T20:31:51.790Z",
+      "coverage": {
+        "evidenceTruncated": false,
+        "memoryTruncated": true,
+        "shownEntries": 2,
+        "totalEntries": 2,
+        "missingVersions": 0,
+        "consistency": "best-effort"
+      },
+      "candidate": {
+        "type": "mcq",
+        "stem": "Existing bank question: Which measure determines systematic risk in CAPM?",
+        "options": [
+          {
+            "key": "A",
+            "text": "beta_i",
+            "role": "correct",
+            "explanation": "CAPM prices exposure to systematic market risk through beta_i."
+          },
+          {
+            "key": "B",
+            "text": "Total annual return volatility",
+            "role": "common-misconception",
+            "explanation": "Total volatility includes firm-specific risk and is not beta_i."
+          },
+          {
+            "key": "C",
+            "text": "The security price alone",
+            "role": "clearly-wrong",
+            "explanation": "A price is not a measure of exposure to market risk."
+          },
+          {
+            "key": "D",
+            "text": "Firm-specific risk alone",
+            "role": "partially-correct",
+            "explanation": "Firm-specific risk can be diversified away; it does not determine systematic exposure."
+          }
+        ],
+        "numericKind": "conceptual",
+        "contentHash": "40d2cabc4143899ac53cf424badcd33b5f22f48ee07f00440fd49e0d5b7dcc9c",
+        "truncated": false
+      }
+    },
+    "checkpoints": 1
+  }
+}

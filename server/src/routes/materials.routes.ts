@@ -8,7 +8,7 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import multer from 'multer';
 import { ensureApiAuthenticated } from '../components/auth';
-import { ensureCourseInstructor } from '../components/auth/course-guards';
+import { ensureCourseInstructor, ensureCourseTeachingMember } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   createMaterials,
@@ -203,11 +203,11 @@ materialsRouter.post(
   },
 );
 
-/** GET /api/courses/:courseId/materials -> [Material]. Instructor-only. */
+/** GET /api/courses/:courseId/materials -> [Material]. Teaching-team read. */
 materialsRouter.get(
   '/courses/:courseId/materials',
   validate({ params: courseIdParams }),
-  ensureCourseInstructor(),
+  ensureCourseTeachingMember(),
   async (req, res) => {
     res.json((await listMaterials(new ObjectId(String(req.params.courseId)))).map(publicMaterial));
   },
@@ -217,7 +217,7 @@ materialsRouter.get(
 materialsRouter.get(
   '/courses/:courseId/materials/:materialId/workspace',
   validate({ params: courseMaterialParams }),
-  ensureCourseInstructor(),
+  ensureCourseTeachingMember(),
   async (req, res) => {
     const detail = await getMaterialWorkspaceDetail(
       new ObjectId(String(req.params.courseId)),
@@ -232,7 +232,7 @@ materialsRouter.get(
 materialsRouter.get(
   '/courses/:courseId/materials/:materialId/source',
   validate({ params: courseMaterialParams }),
-  ensureCourseInstructor(),
+  ensureCourseTeachingMember(),
   async (req, res, next) => {
     const { material } = await getMaterialWorkspaceDetail(
       new ObjectId(String(req.params.courseId)),

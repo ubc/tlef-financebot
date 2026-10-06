@@ -1,6 +1,27 @@
 # AGENTS.md — server/src/services
 
+Supplemental enrollment lives in `registration-codes.service.ts`: one atomic
+Mongo batch insert per request UUID, one claimant per code through a conditional
+array update, and durable claimed-state recovery on session reload. Used codes
+never regrant access. `enrollment.service.ts` delegates live joins to this path;
+the legacy shared course code is retained only for isolated Student Preview.
+Code lists use Mongo aggregation for code-level pages and status filters;
+record deletion atomically invalidates unused codes and retains terminal claim
+receipts with deletion actor/time. Pending claims cannot be deleted.
+`teaching-identity.service.ts` resolves UBC email/existing CWL inputs for TA and
+co-instructor invitations without guessing email from CWL. Read
+`docs/design/supplemental-enrollment/IMPLEMENTATION.md` before changing these paths.
+
 Business logic. Services sit between routes and components:
+
+`people-import-parser.ts` parses manual Canvas CSV rosters with explicit Login ID
+and optional role/state/restriction columns. `people-import.service.ts` owns
+owner/Admin-only revisioned snapshot replacement/clear and audited changes.
+Passport projects these roles from persisted Users on every request; imports do
+not create placeholder accounts or persist roles in User. Student publication,
+term, archive and deactivation gates also apply to membership read models.
+Analytics, notifications and TA management use the same imported membership
+filter; imported TA permissions remain in the existing capability settings.
 
 ```
 routes  ->  services  ->  components
@@ -161,8 +182,77 @@ content, create immutable Pending Review versions, and journal the commit id on
 the version so interrupted head/draft updates can recover without duplicate
 versions. Normal question editing requires version pins and tag snapshots.
 
-Canvas services use exact login_id/PUID identity and fresh versioned snapshots.
-Active Student/Instructor/TA grants are session-only and never grant platform
-access. Display-only People includes active/invited and restricted/custom roles.
-People never feeds authorization; API identities are masked and isSelf is
-derived from the authenticated requester. Older snapshots require a refresh.
+### Exam Builder v2
+
+`exam-builder.service` owns course-scoped revisioned papers and immutable publication.
+`exam-generation.service` owns private durable plans, Agenda jobs, cancellation,
+missing-only retries and startup reservation recovery. `QuestionVariantService`
+freezes verified parameter draws; `generatePrivateAssessmentQuestion` reuses the
+existing generation pipeline without bank writes. `assessment-attempts.service`
+uses separate attempts with server deadlines, answer CAS and explicit feedback
+release; it never updates practice analytics/mastery/Review Book.
+
+
+Exam catalog names use revision-checked `displayTitle` metadata so a published
+paper remains immutable and locked. Permanent exam deletion requires no student
+start or active generation, marks the head before cleanup, and removes the head
+last; interrupted cleanup is retryable.
+
+`canvas.service.ts` owns many-to-one Canvas course links, complete roster snapshots,
+periodic refresh and explicit document import through existing material runs.
+`canvas-enrollment.service.ts` projects fresh, versioned Canvas eligibility into
+course Student/Instructor/TA session roles by exact Canvas login_id = CWL PUID,
+without changing manual or platform roles. Students need published courses within
+term dates; teaching roles may prepare drafts before term start. Archived/expired
+courses grant nothing. Never use names, email, integration_id or student numbers
+as fallback identity. Missing Login IDs/enrollment metadata abort refresh.
+Only active matching-course enrollments participate; custom or section-limited
+teaching roles are excluded because FinanceBot cannot mirror their restrictions.
+
+Canvas snapshots also keep separate display-only `people` for all active/invited
+Canvas role types, including restricted teachers, observers and designers. These
+records never feed role projection. API responses mask identity and compute isSelf
+from the request's authenticated PUID. Missing older display snapshots require sync.
+
+
+`model-usage.service.ts` owns the metadata-only model-call receipt ledger and
+tracking manifests. HTTP observers resolve authenticated identity at call time;
+Agenda owners establish independent run scopes. Late completions update existing
+receipts only. Unknown usage is nullable; accounting errors never retry a model.
+`admin-workflow.service.ts` joins bounded operation/content-run records and
+material names, distinguishing recorded links from inferred time groupings.
+
+`generation-evidence.service.ts` resolves vector locators to original indexed
+source passages, adds immediate neighbors, hashes scoped source content, and
+rechecks material eligibility/currentness. `generation-memory.service.ts` reads
+pinned current Bank/Queue versions with bounded context and same-batch entries;
+exact fingerprints and lexical retrieval are aids, not semantic novelty proofs.
+`generation-quality.service.ts` adds an opt-in structured source/notation/task
+assessment, validates reference locations, and records bounded diagnostic output.
+The public tracked pipeline preserves `grounded-memory-v1` on runs/recipes/retry,
+withholds failed checks as visible shortfalls, and keeps existing numerical and
+approval gates. Baseline and private/transient generation retain their policies.
+Context rechecks do not provide a concurrent commit fence or teacher calibration.
+
+`generation-evaluation.service.ts` exports terminal public generation observations
+for offline review. It binds initial version-1 questions through course-owned
+heads and exact run/item provenance, uses recorded withheld snapshots, and keeps
+missing originals explicit. Safe usage rows and independent authoritative totals
+exclude actor/request/session identity. It never reconstructs historical source,
+LO, or starting-bank snapshots from current records or calls a model.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.

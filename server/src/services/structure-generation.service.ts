@@ -1,3 +1,4 @@
+import { withModelUsage } from './model-usage.service';
 import { createHash } from 'node:crypto';
 import { ObjectId, type WithId } from 'mongodb';
 import { z } from 'zod';
@@ -307,6 +308,7 @@ export async function generateStructure(courseId: ObjectId, options: StructureOp
 export async function runStructureGeneration(runId: ObjectId): Promise<void> {
   const run = await getContentRun(runId);
   if (!run || run.kind !== 'structure-generation' || run.status !== 'queued') return;
+  return withModelUsage({ operationId: run.operationId, runId: runId.toHexString(), courseId: run.courseId.toHexString(), actor: { puid: run.requestedBy }, stage: 'structure-analysis' }, async () => {
   try {
     await updateContentRun(runId, { status: 'running', message: 'Preparing source analysis' });
     const result = await generateStructure(run.courseId, run.input, runId);
@@ -318,6 +320,7 @@ export async function runStructureGeneration(runId: ObjectId): Promise<void> {
       message: 'The outline could not be completed. Your saved course structure has not changed. Review the source selection and try again.',
       atStage: current?.stage ?? 'queued', retryable: true });
   }
+  });
 }
 
 export function registerStructureJobs(): void {

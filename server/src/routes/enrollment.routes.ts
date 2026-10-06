@@ -4,13 +4,11 @@ import { ensureApiAuthenticated } from '../components/auth';
 import { validate } from '../middleware/validate';
 import { enrollByCode, listEnrollments, EnrollmentError } from '../services/enrollment.service';
 
-// Enrollment endpoints (ST-E02 code + roster cross-check, ST-E03 enrollment
-// list), exactly as specified in docs/api-contract.md. Any authenticated user
-// may attempt to enroll — the roster check inside enrollByCode is the real
-// access gate, not route-level auth.
+// Authenticated CWL users redeem a supplemental one-time code. Atomic code
+// claims and course publication/date checks live in the enrollment service.
 export const enrollmentRouter = Router();
 
-const enrollBody = z.object({ code: z.string().min(1) });
+const enrollBody = z.object({ code: z.string().trim().min(1).max(32) });
 
 /** POST /api/enrollments { code } -> 201 { courseId, name, courseCode }. */
 enrollmentRouter.post(

@@ -60,6 +60,22 @@ beforeEach(() => {
 });
 
 describe('saved generation blueprints', () => {
+  it('persists, inherits, and explicitly overrides the pilot policy in a saved recipe', async () => {
+    const courseId = new ObjectId();
+    const blueprint = await createGenerationBlueprint(courseId, 'PUID-INSTR', {
+      name: 'Grounded pilot', loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
+    });
+    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
+    blueprintFindOne.mockResolvedValue(blueprint);
+    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR');
+    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
+    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR', 'baseline');
+    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'baseline' }));
+    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
+    blueprintFindOneAndUpdate.mockResolvedValue({ ...blueprint, qualityPolicy: 'baseline' });
+    await updateGenerationBlueprint(courseId, blueprint._id, { qualityPolicy: 'baseline' });
+    expect(blueprintFindOneAndUpdate).toHaveBeenCalledWith({ _id: blueprint._id, courseId }, expect.objectContaining({ $set: expect.objectContaining({ qualityPolicy: 'baseline' }) }), expect.any(Object));
+  });
   it('pins the complete recipe, selected materials, and configured models', async () => {
     const courseId = new ObjectId();
     const loId = new ObjectId();
@@ -209,6 +225,34 @@ describe('saved generation blueprints', () => {
 });
 
 describe('exact generation retry', () => {
+  it.each([false, true])('preserves the original instructor pin (%s) and explicit Hard construction on retry', async pinned => {
+    const courseId = new ObjectId();
+    const runId = new ObjectId();
+    const materials = [new ObjectId()];
+    jest.mocked(getCourseContentRun).mockResolvedValue({
+      _id: runId, courseId, kind: 'question-generation', status: 'partial',
+      input: { loId: new ObjectId(), count: 1, type: 'mcq', difficulty: 'hard', hardnessMove: 'regime-change', qualityPolicy: 'grounded-memory-v1',
+        models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
+      grounding: { allowedMaterialIds: materials, retrievedChunkCount: 2, pinned },
+    } as never);
+    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
+    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({
+      qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, groundingPinned: pinned, pinnedMaterialIds: materials,
+      difficulty: 'hard', hardnessMove: 'regime-change',
+    }));
+  });
+
+  it('retries the policy frozen in the terminal run rather than inheriting current recipe defaults', async () => {
+    const courseId = new ObjectId();
+    const runId = new ObjectId();
+    jest.mocked(getCourseContentRun).mockResolvedValue({
+      _id: runId, courseId, kind: 'question-generation', status: 'partial',
+      input: { loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
+        models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
+    } as never);
+    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
+    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, count: 2 }));
+  });
   it('copies the original input, model snapshot, and grounding material ids', async () => {
     const courseId = new ObjectId();
     const runId = new ObjectId();
@@ -260,6 +304,7 @@ describe('exact generation retry', () => {
       blueprintId,
       retryOfRunId: runId,
       pinnedMaterialIds: materialIds,
+      groundingPinned: false,
     });
   });
 

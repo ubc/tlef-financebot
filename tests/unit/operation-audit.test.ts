@@ -1,9 +1,10 @@
+import { observeModelCall, withModelCallContext } from '../../server/src/components/genai/llm/model-call';
 import express from 'express';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type { OperationEvent } from '../../server/src/types/domain';
-jest.mock('../../server/src/components/mongodb/collections', () => ({ operationEventsCol: jest.fn() }));
-import { operationEventsCol } from '../../server/src/components/mongodb/collections';
+jest.mock('../../server/src/components/mongodb/collections', () => ({ operationEventsCol: jest.fn(), modelCallReceiptsCol: jest.fn(), modelUsageSessionsCol: jest.fn() }));
+import { modelCallReceiptsCol, modelUsageSessionsCol, operationEventsCol } from '../../server/src/components/mongodb/collections';
 import { operationAudit } from '../../server/src/middleware/operation-audit';
 import { operationContext } from '../../server/src/services/operation-context';
 import { safeControls, safeDiagnostic, auditHealth, recordOperation } from '../../server/src/services/operation-audit.service';
@@ -73,4 +74,40 @@ it('redacts common credentials and URL credentials without collecting arbitrary 
 it('does not double-record the transport when a browser report is interrupted', async () => {
   await expect(request(app()).post('/api/diagnostics/client-error').send({ kind: 'runtime' })).rejects.toThrow();
   expect(records).toHaveLength(0);
+});
+
+
+it('joins real observation events to the authenticated API operation without recording content', async () => {
+  const receipts = new Map<string, Record<string, unknown>>();
+  const sessions = new Map<string, Record<string, unknown>>();
+  function collection(rows: Map<string, Record<string, unknown>>) {
+    return {
+      updateOne: jest.fn(async (filter: { _id: string }, update: { $setOnInsert?: Record<string, unknown>; $set?: Record<string, unknown>; $addToSet?: Record<string, string> }, options?: { upsert?: boolean }) => {
+        const previous = rows.get(filter._id);
+        if (!previous && !options?.upsert) return { matchedCount: 0 };
+        const row = previous ?? { _id: filter._id, ...update.$setOnInsert };
+        Object.assign(row, update.$set);
+        for (const [key, value] of Object.entries(update.$addToSet ?? {})) row[key] = [...new Set([...(row[key] as string[] ?? []), value])];
+        rows.set(filter._id, row);
+        return { matchedCount: previous ? 1 : 0 };
+      }),
+      findOne: jest.fn(async (filter: { _id: string }) => rows.get(filter._id)),
+    };
+  }
+  jest.mocked(modelCallReceiptsCol).mockReturnValue(collection(receipts) as never);
+  jest.mocked(modelUsageSessionsCol).mockReturnValue(collection(sessions) as never);
+  const api = express();
+  api.use(operationAudit);
+  api.use((req, _res, next) => { req.user = { puid: 'teacher', uid: 'cwl', displayName: 'Teacher' } as Express.User; next(); });
+  api.post('/api/courses/:courseId/model-fixture', async (_req, res) => {
+    const work = async () => ({ content: 'private answer', model: 'fixture', usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } });
+    await withModelCallContext({ stage: 'review', item: 1 }, undefined, () => observeModelCall({ provider: 'ollama', defaultModel: 'fixture' }, {}, work));
+    res.json({ ok: true });
+  });
+  const response = await request(api).post('/api/courses/123456789012345678901234/model-fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  expect(response.status).toBe(200);
+  expect([...receipts.values()][0]).toMatchObject({ operationId: response.headers['x-request-id'], actor: { puid: 'teacher' }, stage: 'review', item: 1, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } });
+  expect([...sessions.values()][0].closedCleanly).toBe(true);
+  expect(JSON.stringify([...receipts.values()])).not.toContain('private answer');
 });

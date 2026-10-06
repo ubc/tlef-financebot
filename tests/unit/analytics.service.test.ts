@@ -1,3 +1,7 @@
+jest.mock('../../server/src/services/people-import.service', () => ({
+  importedTaInvites: jest.fn(async () => []),
+  importedCourseRoleUserFilter: jest.fn(async (courseId: unknown, roles: string[]) => ({ courseRoles: { $elemMatch: { courseId, role: roles.length === 1 ? roles[0] : { $in: roles } } } })),
+}));
 import { ObjectId } from 'mongodb';
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({

@@ -12,6 +12,8 @@ import {
   subscribeToCourseContentRuns,
 } from '../services/content-runs.service';
 import { retryGenerationRun } from '../services/generation-blueprints.service';
+import { listModelCalls } from '../services/model-usage.service';
+import { exportGenerationEvaluation } from '../services/generation-evaluation.service';
 import type { ContentRun } from '../types/domain';
 
 export const contentRunsRouter = Router();
@@ -24,6 +26,24 @@ const listQuery = z.object({
   status: z.enum(['queued', 'running', 'completed', 'partial', 'failed']).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+/** Usage is independently persisted; cancellation cannot discard a late receipt. */
+contentRunsRouter.get('/courses/:courseId/content-runs/:runId/usage',
+  validate({ params: runParams }), ensureCourseInstructor(), async (req, res) => {
+    const courseId = String(req.params.courseId);
+    const runId = String(req.params.runId);
+    if (!await getCourseContentRun(new ObjectId(courseId), new ObjectId(runId))) {
+      res.status(404).json({ error: 'content-run-not-found' });
+      return;
+    }
+    const usage = await listModelCalls({ courseId, runId, limit: 100 });
+    // Actor identities and operation correlation belong to Admin diagnostics.
+    const calls = usage.items.map(({ actor: _actor, operationId: _operation, trackingSessionId: _session, ...call }) => {
+      void _actor; void _operation; void _session;
+      return call;
+    });
+    res.json({ summary: usage.summary, calls, totalCalls: usage.total });
+  });
 
 type ContentRunSummary = Omit<WithId<ContentRun>, 'events'> & { progressMessage?: string };
 
@@ -185,3 +205,13 @@ contentRunsRouter.get(
     res.json(run);
   },
 );
+
+/** Read-only retained authoring evidence; never starts generation or labels quality. */
+contentRunsRouter.get('/courses/:courseId/content-runs/:runId/evaluation-export',
+  validate({ params: runParams }), ensureCourseInstructor(), async (req, res) => {
+    const runId = String(req.params.runId);
+    const exported = await exportGenerationEvaluation(new ObjectId(String(req.params.courseId)), new ObjectId(runId));
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `attachment; filename="generation-evaluation-${runId}.json"`);
+    res.json(exported);
+  });

@@ -1,3 +1,5 @@
+import { coursePeopleAccessCol } from '../components/mongodb/collections';
+
 import { learningSettingsCol, learningSessionsCol, previewLearningSessionsCol, reviewMetadataCol, previewReviewMetadataCol, discussionPostsCol, previewDiscussionPostsCol } from '../components/mongodb/collections';
 import { getDb } from '../components/mongodb';
 import { lstat, rm } from 'node:fs/promises';
@@ -5,12 +7,16 @@ import path from 'node:path';
 import type { ObjectId } from 'mongodb';
 import { cancelJobsByDataIds } from '../components/jobs';
 import {
+  modelCallReceiptsCol, modelUsageSessionsCol,
+  builderExamsCol, examPublicationsCol, examCandidatesCol, examBuildRunsCol, assessmentAttemptsCol,
   attemptsCol,
   auditCol,
   capabilitySettingsCol,
   contentRunsCol,
   coursesCol,
   courseInstructorSharesCol,
+  coursePeopleImportsCol,
+  registrationCodeBatchesCol,
   questionDraftsCol,
   questionPresenceCol,
   examAttemptsCol,
@@ -168,7 +174,7 @@ export async function permanentlyDeleteCourse(
 
   const hasActiveWork = runs.some((run) => run.status === 'queued' || run.status === 'running')
     || examAttempts.some((attempt) => attempt.masteryPassQueuedAt && !attempt.masteryPassCompletedAt);
-  if (hasActiveWork) throw new Error('course-delete-active-work');
+  if (hasActiveWork || await builderExamsCol().countDocuments({ courseId, 'activeRunIds.0': { $exists: true } })) throw new Error('course-delete-active-work');
 
   // Validate every filesystem target before mutating any resource. A corrupt
   // or malicious path must never turn this course-scoped operation into a
@@ -202,6 +208,10 @@ export async function permanentlyDeleteCourse(
     auditTargets.push({ targetType: 'flag', targetId: { $in: flagIds } });
   }
 
+  // Remove manifests before receipts: late completions update existing records only.
+  const usageSessionsDeletion = await modelUsageSessionsCol().deleteMany({ courseId });
+  const usageReceiptsDeletion = await modelCallReceiptsCol().deleteMany({ courseId });
+
   await Promise.all([learningSettingsCol().deleteMany({ courseId }), learningSessionsCol().deleteMany({ courseId }), previewLearningSessionsCol().deleteMany({ courseId }), reviewMetadataCol().deleteMany({ courseId }), previewReviewMetadataCol().deleteMany({ courseId }), discussionPostsCol().deleteMany({ courseId }), previewDiscussionPostsCol().deleteMany({ courseId })]);
   const deletions = await Promise.all([
     themesCol().deleteMany({ courseId }),
@@ -231,7 +241,15 @@ export async function permanentlyDeleteCourse(
     courseInstructorSharesCol().deleteMany({ courseId }),
     questionDraftsCol().deleteMany({ courseId }),
     questionPresenceCol().deleteMany({ courseId }),
+    builderExamsCol().deleteMany({ courseId }),
+    examPublicationsCol().deleteMany({ courseId }),
+    examCandidatesCol().deleteMany({ courseId }),
+    examBuildRunsCol().deleteMany({ courseId }),
+    assessmentAttemptsCol().deleteMany({ courseId }),
   ]);
+  const peopleAccessDeletion = await coursePeopleAccessCol().deleteMany({ courseId });
+  const importedPeopleDeletion = await coursePeopleImportsCol().deleteMany({ courseId });
+  const registrationCodesDeletion = await registrationCodeBatchesCol().deleteMany({ courseId });
 
   await usersCol().updateMany(
     { courseRoles: { $elemMatch: { courseId } } },
@@ -249,6 +267,7 @@ export async function permanentlyDeleteCourse(
     'generationBlueprints', 'generationSubmissions', 'capabilitySettings', 'taInvites',
     'courseInstructorShares',
     'questionDrafts', 'questionPresence',
+    'builderExams', 'examPublications', 'examCandidates', 'examBuildRuns', 'assessmentAttempts',
   ];
   return {
     deleted: true,
@@ -257,6 +276,6 @@ export async function permanentlyDeleteCourse(
     missingFiles,
     deletedVectorCollection,
     cancelledJobs,
-    deletedDocuments: Object.fromEntries(names.map((name, index) => [name, deletions[index].deletedCount])),
+    deletedDocuments: { coursePeopleAccess: peopleAccessDeletion.deletedCount, modelUsageSessions: usageSessionsDeletion.deletedCount, modelCallReceipts: usageReceiptsDeletion.deletedCount, ...Object.fromEntries(names.map((name, index) => [name, deletions[index].deletedCount])), coursePeopleImports: importedPeopleDeletion.deletedCount, courseRegistrationCodeBatches: registrationCodesDeletion.deletedCount },
   };
 }

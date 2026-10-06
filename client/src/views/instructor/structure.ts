@@ -174,9 +174,11 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   let addingTheme = false;
   let addingLoForTheme: string | null = null;
   let treeErrorMessage: string | null = null;
+  let removing = false;
 
   const layout = el('div', { class: 'structure-layout' });
-  body.replaceChildren(pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.'), layout);
+  const actionNotice = el('div', { class: 'structure-action-notice', role: 'status' });
+  body.replaceChildren(pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.'), actionNotice, layout);
   const assistant = createStructureAssistant(courseId, materials, refresh, async () => {
     assistant.dispose();
     await renderStructureInner(outlet, courseId);
@@ -204,6 +206,64 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     editorDialog?.remove();
     editorDialog = null;
     editorSelection = null;
+  }
+
+  /** Remove from the active outline through the existing archive endpoints.
+   * Related questions, material links and student history keep their records. */
+  async function removeStructureItem(selection: Selection): Promise<void> {
+    if (removing) return;
+    const topic = selection.type === 'theme' ? findTheme(selection.id) : findLo(selection.id)?.theme;
+    const lo = selection.type === 'lo' ? findLo(selection.id)?.lo : undefined;
+    if (!topic || (selection.type === 'lo' && !lo)) return;
+    const name = lo?.name ?? topic.name;
+    const objectiveCount = topic.los?.length ?? 0;
+    removing = true;
+    try {
+      const confirmed = await confirmDialog({
+        title: lo ? 'Delete this learning objective?' : 'Delete this topic?',
+        message: lo
+          ? `Remove "${name}" from the course structure. Other learning objectives stay in place. Related questions, materials and student history are retained.`
+          : `Remove "${name}" and its ${objectiveCount} learning ${objectiveCount === 1 ? 'objective' : 'objectives'} from the course structure. Related questions, materials and student history are retained.`,
+        confirmLabel: lo ? 'Delete learning objective' : 'Delete topic',
+        tone: 'danger',
+      });
+      if (!confirmed || !root.isConnected) return;
+      actionNotice.replaceChildren();
+      if (lo) {
+        await archiveLo(lo._id);
+        topic.los = (topic.los ?? []).filter(item => item._id !== lo._id);
+        if (openLo === lo._id) openLo = '';
+      } else {
+        await archiveTheme(topic._id);
+        themes.splice(themes.indexOf(topic), 1);
+        if (activeTopic === topic._id) activeTopic = '';
+        if (addingLoForTheme === topic._id) addingLoForTheme = null;
+      }
+      if (!root.isConnected) return;
+      if (editorSelection?.id === selection.id || (!lo && editorSelection?.type === 'lo' && !findLo(editorSelection.id))) closeEditor();
+      refresh();
+      actionNotice.textContent = `"${name}" removed from the course structure.`;
+      (root.querySelector('.outline-topic.is-active, .structure-view-tabs button') as HTMLButtonElement | null)?.focus();
+    } catch (error) {
+      if (root.isConnected) {
+        const target = editorDialog?.open ? editorDialog.querySelector('.structure-editor-errors') : null;
+        (target ?? actionNotice).replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      }
+    } finally {
+      removing = false;
+      root.querySelectorAll<HTMLButtonElement>('[data-structure-delete]').forEach(button => { button.disabled = false; });
+      editorDialog?.querySelectorAll<HTMLButtonElement>('[data-structure-delete]').forEach(button => { button.disabled = false; });
+    }
+  }
+
+  function deleteButton(selection: Selection): HTMLButtonElement {
+    const name = selection.type === 'theme' ? findTheme(selection.id)?.name : findLo(selection.id)?.lo.name;
+    return el('button', {
+      type: 'button', class: 'btn btn--ghost btn--sm outline-delete', disabled: removing,
+      'data-structure-delete': selection.id,
+      'aria-label': `Delete ${selection.type === 'theme' ? 'topic' : 'learning objective'}: ${name}`,
+      onclick: () => removeStructureItem(selection),
+    }, selection.type === 'theme' ? 'Delete topic' : 'Delete') as HTMLButtonElement;
   }
 
   function renderEditorDialog(): void {
@@ -323,25 +383,31 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         button('+ Add Topic', () => { addingTheme = true; refresh(); }, true)));
       return shell;
     }
+    const topicActions = !showAll ? el('div', { class: 'outline-topic-actions' },
+      button('Topic settings', () => openEditor({ type: 'theme', id: current._id })),
+      deleteButton({ type: 'theme', id: current._id })) : undefined;
     const results = el('div', { class: 'outline-objectives' });
     function drawResults(): void {
+      if (topicActions) topicActions.hidden = Boolean(search);
       results.replaceChildren();
       const matchingThemes = themes.filter(t => showAll || search || t._id === activeTopic);
       for (const t of matchingThemes) {
         const los = (t.los ?? []).filter(lo => !search || `${t.name} ${lo.name}`.toLowerCase().includes(search.toLowerCase()));
         if (!los.length) continue;
         const section = el('section', { class: 'outline-group' });
-        if (showAll || search) section.append(el('h3', { text: t.name }));
+        if (showAll || search) section.append(el('div', { class: 'outline-group-heading' },
+          el('h3', { text: t.name }), deleteButton({ type: 'theme', id: t._id })));
         section.append(el('div', { class: 'outline-columns' }, el('span', { text: 'LEARNING OBJECTIVE' }), el('span', { text: 'MATERIALS · APPROVED' })));
         for (const lo of los) {
           const assigned = materials.filter(m => m.assignments.some(a => a.themeId === t._id && a.loId === lo._id));
           const approved = preseeding.find(p => p.loId === lo._id)?.approved ?? 0;
           const row = el('div', { class: 'outline-lo' });
-          row.append(el('button', { type: 'button', class: 'outline-lo-row', 'aria-expanded': openLo === lo._id,
+          row.append(el('div', { class: 'outline-lo-summary' }, el('button', { type: 'button', class: 'outline-lo-row', 'aria-expanded': openLo === lo._id,
             onclick: () => { openLo = openLo === lo._id ? '' : lo._id; drawResults(); } },
             el('span', { class: 'outline-number', text: `${themes.indexOf(t) + 1}.${(t.los ?? []).indexOf(lo) + 1}` }),
             el('span', { class: 'outline-lo-name', text: lo.name }),
-            el('small', { text: `${assigned.length} materials · ${approved} approved` }), el('span', { 'aria-hidden': 'true', text: openLo === lo._id ? '−' : '+' })));
+            el('small', { text: `${assigned.length} materials · ${approved} approved` }), el('span', { 'aria-hidden': 'true', text: openLo === lo._id ? '−' : '+' })),
+            deleteButton({ type: 'lo', id: lo._id })));
           if (openLo === lo._id) {
             const name = el('textarea', { class: 'input', 'aria-label': 'Learning objective', text: lo.name }) as HTMLTextAreaElement;
             const errors = el('div');
@@ -371,8 +437,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     content.append(el('header', { class: 'outline-content-heading' },
       el('small', { text: showAll ? 'COURSE OUTLINE' : `TOPIC ${themes.indexOf(current) + 1}` }),
       el('div', {}, el('h2', { text: showAll ? 'The complete learning journey' : current.name }),
-        button('Topic settings', () => openEditor({ type: 'theme', id: current._id }))),
-      el('p', { text: 'What should students be able to do after this topic?' }), themeAvailabilityPill(current.availableFrom)),
+        topicActions ?? false),
+      el('p', { text: 'What should students be able to do after this topic?' }), !showAll && themeAvailabilityPill(current.availableFrom)),
       el('div', { class: 'outline-tools' }, input, button('+ Add objectives', () => { addingLoForTheme = current._id; refresh(); })));
     if (addingLoForTheme) {
       const target = findTheme(addingLoForTheme);
@@ -395,7 +461,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           }, true), button('Cancel', () => { addingLoForTheme = null; refresh(); })));
       }
     }
-    content.append(results, el('footer', { class: 'outline-content-footer', text: 'Click an objective to edit it. Materials & settings includes question kind and archive controls.' }));
+    content.append(results, el('footer', { class: 'outline-content-footer', text: 'Click an objective to edit it, or Delete to remove it. Materials & settings includes question kind and source links.' }));
     drawResults();
     return shell;
   }
@@ -408,7 +474,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       type: 'date',
       value: theme.availableFrom ? theme.availableFrom.slice(0, 10) : '',
     }) as HTMLInputElement;
-    const errorSlot = el('div', {});
+    const errorSlot = el('div', { class: 'structure-editor-errors' });
     const release = themeAvailability(theme.availableFrom);
 
     const applyTheme = async (patch: { name?: string; availableFrom?: string | null }): Promise<void> => {
@@ -456,24 +522,6 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       await applyTheme({ availableFrom: null });
     };
 
-    const archive = async (): Promise<void> => {
-      if (!await confirmDialog({
-        title: 'Archive this Topic?',
-        message: `"${theme.name}" and all of its Learning Objectives will be removed from the active course structure.`,
-        confirmLabel: 'Archive Topic',
-        tone: 'danger',
-      })) return;
-      try {
-        await archiveTheme(theme._id);
-        themes.splice(themes.indexOf(theme), 1);
-        if (activeTopic === theme._id) activeTopic = '';
-        closeEditor();
-        refresh();
-      } catch (error) {
-        errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
-      }
-    };
-
     return el(
       'div',
       { class: 'structure-detail' },
@@ -493,7 +541,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           },
           'Rename',
         ),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => archive() }, 'Archive'),
+        deleteButton({ type: 'theme', id: theme._id }),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Name'), nameInput),
       el(
@@ -615,7 +663,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       ['mixed', 'Mixed — both kinds'],
     ] as const) kindSelect.append(el('option', { value, text: label }));
     kindSelect.value = lo.kind ?? 'mixed';
-    const errorSlot = el('div', {});
+    const errorSlot = el('div', { class: 'structure-editor-errors' });
     const approved = preseeding.find((p) => p.loId === lo._id)?.approved ?? 0;
 
     const save = async (): Promise<void> => {
@@ -630,23 +678,6 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         lo.revision = updated.revision;
         lo.name = updated.name;
         lo.kind = updated.kind;
-        closeEditor();
-        refresh();
-      } catch (error) {
-        errorSlot.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
-      }
-    };
-
-    const archive = async (): Promise<void> => {
-      if (!await confirmDialog({
-        title: 'Archive this Learning Objective?',
-        message: `"${lo.name}" will be removed from the active course structure.`,
-        confirmLabel: 'Archive LO',
-        tone: 'danger',
-      })) return;
-      try {
-        await archiveLo(lo._id);
-        theme.los = (theme.los ?? []).filter((l) => l._id !== lo._id);
         closeEditor();
         refresh();
       } catch (error) {
@@ -674,7 +705,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           },
           'Rename',
         ),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => archive() }, 'Archive'),
+        deleteButton({ type: 'lo', id: lo._id }),
         // Merge/Split render inactive — out of scope (wireframe N4).
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled', title: 'Coming soon' }, 'Merge LOs…'),
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: 'disabled', title: 'Coming soon' }, 'Split LO…'),

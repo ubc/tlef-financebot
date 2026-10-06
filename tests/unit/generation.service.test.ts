@@ -30,6 +30,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   materialsCol: jest.fn(),
   questionsCol: jest.fn(),
   contentRunsCol: jest.fn(),
+  examBuildRunsCol: jest.fn(() => ({ find: jest.fn(() => ({ toArray: async () => [] })) })),
   themesCol: jest.fn(),
   platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
 }));
@@ -44,6 +45,7 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
 import { ObjectId } from 'mongodb';
 import {
   enqueueGenerationRun,
+  generatePrivateAssessmentQuestion,
   GENERATOR_PROMPT,
   HARDNESS_MOVE_DECLARATION,
   HARDNESS_MOVE_MENU,
@@ -1683,5 +1685,44 @@ describe('deterministic plan run identity', () => {
     jest.mocked(createQuestionGenerationRun).mockRejectedValue(Object.assign(new Error('duplicate'), { code: 11000 }));
     await expect(enqueueGenerationRun({ courseId, loId, count: 2, byPuid: 'PUID-INSTR', runId })).resolves.toEqual(runId);
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('private assessment adapter', () => {
+  it('runs the existing agents but never inserts a public bank question', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'valid roles' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'grounded' });
+    const checkpoint = jest.fn(async () => undefined);
+    const result = await generatePrivateAssessmentQuestion({ courseId, loId, type: 'mcq', difficulty: 'medium', checkpoint });
+    expect(result.stem).toBe('What is the IRR?');
+    expect(result.sourceRefs).toHaveLength(1);
+    expect(completeJson).toHaveBeenCalledTimes(3);
+    expect(createQuestion).not.toHaveBeenCalled();
+    expect(createQuestionGenerationRun).not.toHaveBeenCalled();
+    expect(checkpoint).toHaveBeenCalled();
+  });
+});
+
+describe('assessment numerical admission before review', () => {
+  test('retries a conceptual item needing proof, with explicit feedback, before running validator/reviewer', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce({ ...generatorOutput(), stem: 'What is the acceleration for a mass of 2.5 kg?', numericKind: 'conceptual' })
+      .mockResolvedValueOnce(generatorOutput())
+      .mockResolvedValueOnce({ roleAssessment: 'valid' })
+      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'grounded' });
+    const onStage = jest.fn(async (_stage: string) => undefined);
+    await generatePrivateAssessmentQuestion({ courseId, loId, type: 'mcq', difficulty: 'medium', checkpoint: async () => undefined, onStage });
+    expect(jest.mocked(completeJson).mock.calls[1][0]).toContain('has no valid proof');
+    expect(jest.mocked(completeJson).mock.calls[0][0]).toContain('sin, cos, tan');
+    expect(onStage.mock.calls.map(call => call[0])).toEqual(['retrieving', 'generating', 'validating', 'reviewing']);
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
+  test('stops after bounded retries and never sends an unverified item to reviewer or bank', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...generatorOutput(), stem: 'A 2.5 kg mass accelerates at 4.0 m/s squared.', numericKind: 'conceptual' });
+    await expect(generatePrivateAssessmentQuestion({ courseId, loId, type: 'mcq', difficulty: 'medium', checkpoint: async () => undefined })).rejects.toThrow('has no valid proof');
+    expect(completeJson).toHaveBeenCalledTimes(3); expect(createQuestion).not.toHaveBeenCalled();
   });
 });

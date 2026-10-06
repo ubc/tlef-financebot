@@ -1,3 +1,7 @@
+jest.mock('../../server/src/services/people-import.service', () => ({
+  importedTaInvites: jest.fn(async () => []),
+  importedCourseRoleUserFilter: jest.fn(async (courseId: unknown, roles: string[]) => ({ courseRoles: { $elemMatch: { courseId, role: roles.length === 1 ? roles[0] : { $in: roles } } } })),
+}));
 import { ObjectId } from 'mongodb';
 import type { Flag, Question, TaInvite, User } from '../../server/src/types/domain';
 
@@ -6,6 +10,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   questionsCol: jest.fn(),
   taInvitesCol: jest.fn(),
   usersCol: jest.fn(),
+  coursesCol: jest.fn(),
 }));
 jest.mock('../../server/src/services/capabilities.service', () => ({
   setCourseUserCapabilities: jest.fn(),
@@ -19,6 +24,7 @@ import {
   questionsCol,
   taInvitesCol,
   usersCol,
+  coursesCol,
 } from '../../server/src/components/mongodb/collections';
 import { setCourseUserCapabilities } from '../../server/src/services/capabilities.service';
 import { editQuestion } from '../../server/src/services/questions.service';
@@ -45,9 +51,59 @@ function taUser(): User {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(coursesCol).mockReturnValue({ findOne: jest.fn(async () => ({ _id: courseId })) } as never);
+  jest.mocked(usersCol).mockReturnValue({ find: jest.fn(() => ({ limit: () => ({ toArray: async () => [] }) })) } as never);
 });
 
 describe('TA invitation activation (IN-T01/02)', () => {
+  it('resolves an existing CWL to its canonical email and grants only the TA course role', async () => {
+    const user = taUser();
+    const id = new ObjectId();
+    const invite = { _id: id, courseId, email: user.email, invitedPuid: user.puid, status: 'pending', invitedAt: new Date(), updatedAt: new Date() };
+    const userUpdate = jest.fn(async () => ({ matchedCount: 1 }));
+    const lookup = jest.fn(() => ({ limit: () => ({ toArray: async () => [{ ...user, _id: new ObjectId() }] }) }));
+    jest.mocked(usersCol).mockReturnValue({ find: lookup, updateOne: userUpdate, findOne: jest.fn(async () => user) } as never);
+    jest.mocked(taInvitesCol).mockReturnValue({
+      findOne: jest.fn(async filter => filter._id ? { ...invite, status: 'active', activatedPuid: user.puid } : null),
+      insertOne: jest.fn(async () => ({ insertedId: id })),
+      find: jest.fn(() => ({ toArray: async () => [invite] })),
+      updateOne: jest.fn(async () => ({ modifiedCount: 1 })),
+    } as never);
+    const added = await addTa(courseId, 'TA');
+    expect(lookup).toHaveBeenCalledWith({ uid: { $regex: '^ta$', $options: 'i' } });
+    expect(added).toMatchObject({ email: user.email, status: 'active', activatedPuid: user.puid });
+    expect(userUpdate).toHaveBeenCalledWith({ puid: user.puid, deactivatedAt: { $exists: false } }, { $addToSet: { courseRoles: { courseId, role: 'ta' } } });
+  });
+
+  it('rejects unknown CWL rather than inventing an email address', async () => {
+    await expect(addTa(courseId, 'not-signed-in')).rejects.toThrow('ta-cwl-not-found');
+  });
+
+  it('keeps an unknown UBC email pending without creating a user or granting a role', async () => {
+    const insertOne = jest.fn(async () => ({ insertedId: new ObjectId() }));
+    jest.mocked(taInvitesCol).mockReturnValue({ findOne: jest.fn(async () => null), insertOne } as never);
+    const invite = await addTa(courseId, ' New.TA@UBC.CA ');
+    expect(invite).toMatchObject({ email: 'new.ta@ubc.ca', status: 'pending' });
+    expect(invite.invitedPuid).toBeUndefined();
+    expect(insertOne).toHaveBeenCalledTimes(1);
+    expect(setCourseUserCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('does not activate an ambiguous email or block CWL sign-in', async () => {
+    const user = taUser();
+    const updateOne = jest.fn();
+    jest.mocked(taInvitesCol).mockReturnValue({
+      find: jest.fn(() => ({ toArray: async () => [{ _id: new ObjectId(), courseId, email: user.email, status: 'pending' }] })),
+      updateOne,
+    } as never);
+    jest.mocked(usersCol).mockReturnValue({
+      find: jest.fn(() => ({ limit: () => ({ toArray: async () => [user, { ...user, puid: 'OTHER' }] }) })),
+      updateOne,
+    } as never);
+    expect(await activatePendingTaInvites(user)).toBe(user);
+    expect(updateOne).not.toHaveBeenCalled();
+  });
+
   it('validates UBC email and catches an active duplicate inline', async () => {
     jest.mocked(taInvitesCol).mockReturnValue({
       findOne: jest.fn(async () => ({
@@ -71,18 +127,19 @@ describe('TA invitation activation (IN-T01/02)', () => {
     const userUpdate = jest.fn();
     jest.mocked(taInvitesCol).mockReturnValue({
       find: jest.fn(() => ({ toArray: async () => [invite] })),
-      updateOne: jest.fn(async () => ({ matchedCount: 1 })),
+      updateOne: jest.fn(async () => ({ matchedCount: 1, modifiedCount: 1 })),
     } as never);
     jest.mocked(usersCol).mockReturnValue({
       updateOne: userUpdate,
       findOne: jest.fn(async () => activeUser),
+      find: jest.fn(() => ({ limit: () => ({ toArray: async () => [user] }) })),
     } as never);
 
     const result = await activatePendingTaInvites(user);
 
     expect(result.courseRoles).toEqual([{ courseId, role: 'ta' }]);
     expect(userUpdate).toHaveBeenCalledWith(
-      { puid: user.puid },
+      { puid: user.puid, deactivatedAt: { $exists: false } },
       { $addToSet: { courseRoles: { courseId, role: 'ta' } } },
     );
     expect(setCourseUserCapabilities).toHaveBeenCalledWith(

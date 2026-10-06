@@ -14,15 +14,16 @@ import { workspaceCourses } from './workspace-courses.js';
 /** Role previews use the live pages, but never record tutorial completion on the
  * signed-in account. Keep their help self-contained and link only to pages the
  * preview actually exposes. */
-export async function renderWorkspacePreviewHelp(outlet: HTMLElement, role: 'student' | 'ta', courseId?: string): Promise<void> {
+export async function renderWorkspacePreviewHelp(outlet: HTMLElement, role: 'student' | 'ta', courseId?: string, restricted = false): Promise<void> {
   const root = el('section', { class: 'admin-workbench tutorial-help' }, loadingState('Loading tutorials…'));
   outlet.append(root);
   try {
-    const courses = await workspaceCourses(getSession());
+    const courses = await workspaceCourses(getSession(), role === 'student' && restricted);
     if (!root.isConnected) return;
     const preferred = courseId ?? currentQuery().get('courseId');
     const course = courses.find(item => item._id === preferred) ?? courses[0];
-    const base = course ? `#/${role === 'ta' ? 'ta' : 'preview'}/course/${encodeURIComponent(course._id)}` : undefined;
+    const previewBase = role === 'student' && restricted ? 'preview/restricted' : 'preview';
+    const base = course ? `#/${role === 'ta' ? 'ta' : previewBase}/course/${encodeURIComponent(course._id)}` : undefined;
     const guideIds = role === 'student'
       ? ['student-course-home', 'student-topics', 'student-practice', 'student-feedback', 'student-review-book', 'student-session-summary']
       : ['ta-courses', 'ta-review', 'ta-question-review', 'ta-flags'];
@@ -60,12 +61,12 @@ export async function renderWorkspacePreviewHelp(outlet: HTMLElement, role: 'stu
         el('small', { class: 'admin-eyebrow', text: `${role} view` }),
         el('h3', { text: course ? `${course.courseCode} · ${course.name}` : 'Choose a course to get started' }),
         el('p', { text: role === 'student' ? 'Explore the learning workflow using isolated preview progress.' : 'Review questions and flags in the selected course.' })),
-        course ? el('a', { class: 'btn btn--ghost btn--sm', href: role === 'ta' ? '#/ta/courses' : '#/preview/courses', text: 'Change course' }) : false),
+        course ? el('a', { class: 'btn btn--ghost btn--sm', href: role === 'ta' ? '#/ta/courses' : `#/${previewBase}/courses`, text: 'Change course' }) : false),
       definitions.length ? grid : el('div', { class: 'admin-panel admin-empty' }, el('h3', { text: 'No course guides yet' }),
-        el('a', { class: 'btn btn--ghost', href: role === 'ta' ? '#/ta/courses' : '#/preview/courses', text: 'Choose a course' })));
+        el('a', { class: 'btn btn--ghost', href: role === 'ta' ? '#/ta/courses' : `#/${previewBase}/courses`, text: 'Choose a course' })));
   } catch (error) {
     if (root.isConnected) root.replaceChildren(errorState((error as Error).message, () => {
-      root.remove(); void renderWorkspacePreviewHelp(outlet, role, courseId);
+      root.remove(); void renderWorkspacePreviewHelp(outlet, role, courseId, restricted);
     }));
   }
 }

@@ -1,5 +1,7 @@
 import { renderDiscussion } from './views/student/discussion.js';
 import { renderCanvas } from './views/instructor/canvas.js';
+import { renderExamBuilder } from './views/instructor/exam-builder.js';
+import { renderAssessments, renderAssessmentAttempt } from './views/student/assessments.js';
 import { createRoleSwitcher, selectedWorkspaceRole, rememberWorkspaceRole } from './role-workspace.js';
 import { renderWorkspaceCourses } from './views/workspace-courses.js';
 import { installClientDiagnostics } from './diagnostics.js';
@@ -23,6 +25,7 @@ import {
   listActiveExams,
   getCourseOutline,
   getCourseTree,
+  getMyCourseCapabilities,
   setUnauthorizedHandler,
   type InstructorCourse,
 } from './api.js';
@@ -68,17 +71,18 @@ import { renderSettings } from './views/instructor/settings.js';
 import { renderExamTemplates } from './views/instructor/exam-templates.js';
 import { renderBank } from './views/instructor/bank.js';
 import { renderQuestionDetail } from './views/instructor/question-detail.js';
-import { renderCoInstructors } from './views/instructor/co-instructors.js';
+import { renderPeople } from './views/instructor/people.js';
 import { openCourseSharing } from './course-sharing.js';
 import { renderCollaborativeEditor } from './views/instructor/collaborative-editor.js';
 import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderReviewQueue } from './views/instructor/review-queue.js';
 import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
-import { renderTas } from './views/instructor/tas.js';
 import { renderTaReviewQueue } from './views/ta/review-queue.js';
 import { renderTaFlagTriage } from './views/ta/flag-triage.js';
 import { renderTaQuestionDetail } from './views/ta/question-detail.js';
+import { renderTaAnalytics, renderTaStudentProfile } from './views/ta/analytics.js';
+import { renderTaCourseHome, renderTaMaterials, renderTaStructure, renderTaCoverage, renderTaBank } from './views/ta/course-content.js';
 import { renderAnalytics } from './views/instructor/analytics.js';
 import { renderStudentProfile } from './views/instructor/student-profile.js';
 import {
@@ -108,6 +112,8 @@ installClientDiagnostics();
 // isn't shadowed by a hypothetical broader pattern (none currently overlap,
 // but keeping specific-first is the convention as this list grows).
 const ROUTES: Route[] = [
+  { path: '/course/:id/assessments', render: renderAssessments },
+  { path: '/course/:id/assessment/:attemptId', render: renderAssessmentAttempt },
   { path: '/', render: renderHome },
   { path: '/settings', render: renderStudentSettings },
   { path: '/help', render: renderTutorialHelp },
@@ -156,8 +162,11 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/content-map', render: renderContentMap },
   { path: '/instructor/course/:id/settings', render: renderSettings },
   { path: '/instructor/course/:id/discussion', render: renderDiscussion },
-  { path: '/instructor/course/:id/co-instructors', render: renderCoInstructors },
+  { path: '/instructor/course/:id/co-instructors', render: renderPeople },
+  { path: '/instructor/course/:id/people', render: renderPeople },
   { path: '/instructor/course/:id/bank/:questionId/collaborate', render: renderCollaborativeEditor },
+  { path: '/instructor/course/:id/exam-builder/:examId', render: renderExamBuilder },
+  { path: '/instructor/course/:id/exam-builder', render: renderExamBuilder },
   { path: '/instructor/course/:id/exam-templates', render: renderExamTemplates },
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
@@ -166,14 +175,21 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/flags', render: renderFlagQueue },
   { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
-  { path: '/instructor/course/:id/tas', render: renderTas },
+  { path: '/instructor/course/:id/tas', render: renderPeople },
   { path: '/instructor/course/:id/student/:puid', render: renderStudentProfile },
   { path: '/instructor/course/:id/analytics', render: renderAnalytics },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
 
 const TA_ROUTES: Route[] = [
+  { path: '/ta/course/:id/overview', render: renderTaCourseHome },
+  { path: '/ta/course/:id/materials', render: renderTaMaterials },
+  { path: '/ta/course/:id/structure', render: renderTaStructure },
+  { path: '/ta/course/:id/coverage', render: renderTaCoverage },
+  { path: '/ta/course/:id/bank', render: renderTaBank },
   { path: '/ta/course/:id/help', render: renderTutorialHelp },
+  { path: '/ta/course/:id/student/:puid', render: renderTaStudentProfile },
+  { path: '/ta/course/:id/analytics', render: renderTaAnalytics },
   { path: '/ta/course/:id/question/:questionId', render: renderTaQuestionDetail },
   { path: '/ta/course/:id/review', render: renderTaReviewQueue },
   { path: '/ta/course/:id/flags', render: renderTaFlagTriage },
@@ -267,12 +283,35 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '2' }),
     el('span', { class: 'nav__text', text: 'Flag Triage' }),
   ) as HTMLAnchorElement;
+  const analyticsLink = el('a', { class: 'nav__link', title: 'Student Analytics', hidden: true },
+    el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '↗' }),
+    el('span', { class: 'nav__text', text: 'Student Analytics' }),
+  ) as HTMLAnchorElement;
+  const contentLinks = ([
+    ['overview', 'Course Home', '⌂'],
+    ['materials', 'Materials', 'M'],
+    ['structure', 'Course Structure', 'S'],
+    ['coverage', 'Coverage Map', '◫'],
+    ['bank', 'Question Bank', 'Q'],
+  ] as const).map(([section, label, glyph]) => ({
+    section,
+    link: el('a', { class: 'nav__link', title: label },
+      el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: glyph }),
+      el('span', { class: 'nav__text', text: label }),
+    ) as HTMLAnchorElement,
+  }));
+  const bankLink = contentLinks.find(item => item.section === 'bank')!.link;
   const workflowSection = el('div', { class: 'nav__section' },
     el('p', { class: 'nav__group', text: 'Course workflow' }),
     reviewLink,
     flagsLink,
+    analyticsLink,
   );
-  nav.append(el('div', { class: 'nav__section' }, coursesLink), workflowSection);
+  const contentSection = el('div', { class: 'nav__section' },
+    el('p', { class: 'nav__group', text: 'Course content' }),
+    ...contentLinks.map(item => item.link),
+  );
+  nav.append(el('div', { class: 'nav__section' }, coursesLink), contentSection, workflowSection);
   const helpLink = el('a', { class: 'nav__link', href: '#', title: 'Help & Tutorials' }, el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '?' }), el('span', { class: 'nav__text', text: 'Help & Tutorials' }));
   nav.append(helpLink);
   const courseContext = el('section', { class: 'course-context course-context--back-only', 'aria-label': 'Course navigation' },
@@ -321,6 +360,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
   mount(root, shell);
   const courseIndex = new Map<string, ReturnType<typeof getCourseOutline>>();
   let contextVersion = 0;
+  let permissionVersion = 0;
   function updateCourseContext(courseId: string): void {
     const version = ++contextVersion;
     topbarTitle.textContent = 'TA workspace';
@@ -353,6 +393,7 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
       coursesLink.hidden = !!courseId;
       helpLink.hidden = !!courseId;
       workflowSection.hidden = !courseId;
+      contentSection.hidden = !courseId;
       helpLink.href = courseId ? `#/ta/course/${encodeURIComponent(courseId)}/help` : '#/ta/help';
       helpLink.classList.toggle('nav__link--active', path === '/ta/help' || path.endsWith('/help'));
       if (helpLink.classList.contains('nav__link--active')) helpLink.setAttribute('aria-current', 'page');
@@ -363,22 +404,50 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
       shell.classList.remove('is-open');
       if (!courseId) {
         ++contextVersion;
+        ++permissionVersion;
+        analyticsLink.hidden = true;
+        bankLink.hidden = true;
         topbarTitle.textContent = 'My courses';
         document.title = `My Courses · ${APP.name}`;
         return;
       }
       updateCourseContext(courseId);
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
+      for (const item of contentLinks) {
+        item.link.href = `#/ta/course/${encodeURIComponent(courseId)}/${item.section}`;
+        const active = path.endsWith(`/${item.section}`);
+        item.link.classList.toggle('nav__link--active', active);
+        if (active) item.link.setAttribute('aria-current', 'page');
+        else item.link.removeAttribute('aria-current');
+      }
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
+      analyticsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/analytics`;
+      analyticsLink.hidden = true;
+      bankLink.hidden = true;
+      const currentPermissionVersion = ++permissionVersion;
+      void getMyCourseCapabilities(courseId).then(permissions => {
+        if (currentPermissionVersion === permissionVersion) {
+          analyticsLink.hidden = !permissions['analytics.view'];
+          bankLink.hidden = !permissions['question.review'];
+        }
+      }).catch(() => {
+        if (currentPermissionVersion === permissionVersion) {
+          analyticsLink.hidden = true;
+          bankLink.hidden = true;
+        }
+      });
       reviewLink.classList.toggle(
         'nav__link--active',
         path.endsWith('/review') || path.includes('/question/'),
       );
       flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
+      analyticsLink.classList.toggle('nav__link--active', path.endsWith('/analytics') || path.includes('/student/'));
       if (reviewLink.classList.contains('nav__link--active')) reviewLink.setAttribute('aria-current', 'page');
       else reviewLink.removeAttribute('aria-current');
       if (flagsLink.classList.contains('nav__link--active')) flagsLink.setAttribute('aria-current', 'page');
       else flagsLink.removeAttribute('aria-current');
+      if (analyticsLink.classList.contains('nav__link--active')) analyticsLink.setAttribute('aria-current', 'page');
+      else analyticsLink.removeAttribute('aria-current');
       shell.classList.remove('is-open');
       document.title = viewAs ? `TA View · ${APP.name}` : `Teaching Assistant · ${APP.name}`;
     },
@@ -653,6 +722,7 @@ interface StudentShellConfig {
   loadCourseContext(courseId: string): Promise<{ name: string; courseCode: string; term: string }>;
   preview?: {
     courseId?: string;
+    restricted?: boolean;
   };
 }
 
@@ -671,22 +741,23 @@ const LIVE_STUDENT_SHELL: StudentShellConfig = {
 };
 
 function previewCourseIdFromPath(path: string): string | undefined {
-  const match = /^\/preview\/course\/([^/]+)/.exec(path);
+  const match = /^\/preview\/(?:restricted\/)?course\/([^/]+)/.exec(path);
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
 function isPreviewPracticePath(path: string): boolean {
-  return /^\/preview\/course\/[^/]+\/practice(-theme)?\//.test(path);
+  return /^\/preview\/(?:restricted\/)?course\/[^/]+\/practice(-theme)?\//.test(path);
 }
 
-function previewNavItems(courseId?: string): StudentNavItem[] {
-  const routes = previewNavRoutes();
+function previewNavItems(courseId?: string, restricted = false): StudentNavItem[] {
+  const routes = previewNavRoutes(restricted);
+  const base = `/preview/${restricted ? 'restricted/' : ''}`;
   return [
-    { label: 'My Courses', glyph: 'C', path: () => '/preview/courses' },
-    { label: 'Help & Tutorials', glyph: '?', path: () => '/preview/help' },
+    { label: 'My Courses', glyph: 'C', path: () => `${base}courses` },
+    { label: 'Help & Tutorials', glyph: '?', path: () => `${base}help` },
     { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId ?? '').replace(/^#/, '') },
     { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId ?? '').replace(/^#/, '') },
-    { label: 'Discussion', glyph: 'D', path: () => `/preview/course/${courseId ?? ''}/discussion` },
+    { label: 'Discussion', glyph: 'D', path: () => `${base}course/${courseId ?? ''}/discussion` },
     { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
   ];
 }
@@ -822,10 +893,10 @@ function buildStudentShell(
       'div',
       { class: 'topbar__right' },
       config.preview
-        ? el('span', { class: 'preview-mode-label', text: 'Anonymous Student Preview' })
+        ? el('span', { class: 'preview-mode-label', text: config.preview.restricted ? 'Student Preview · access restrictions on' : 'Anonymous Student Preview' })
         : false,
       config.preview ? createAnonymousNotificationBell() : createNotificationBell('student'),
-      createRoleSwitcher(session, 'student'),
+      createRoleSwitcher(session, config.preview?.restricted ? 'student-restricted' : 'student'),
       createThemeToggle(),
       el('a', { class: 'btn btn--ghost btn--sm', href: '/auth/logout' }, 'Log out'),
     ),
@@ -967,17 +1038,19 @@ function buildPreviewStudentShell(
   root: HTMLElement,
   session: Session,
   courseId?: string,
+  restricted = false,
 ): RouterHandle {
   const previewSessionId = getAnonymousPreviewSession(courseId ?? 'course-picker');
-  const experience = createPreviewStudentExperience(previewSessionId, { sendToInstructorQueue: Boolean(session.user?.isAdmin || session.user?.courseRoles.some(entry => entry.courseId === courseId && entry.role === 'instructor')) });
+  const experience = createPreviewStudentExperience(previewSessionId, { restricted, sendToInstructorQueue: Boolean(session.user?.isAdmin || session.user?.courseRoles.some(entry => entry.courseId === courseId && entry.role === 'instructor')) });
+  const base = `/preview/${restricted ? 'restricted/' : ''}`;
   return buildStudentShell(root, session, {
     routes: [
-      { path: '/preview/courses', render: outlet => renderWorkspaceCourses(outlet, 'student') },
-      { path: '/preview/help', render: outlet => renderWorkspacePreviewHelp(outlet, 'student') },
-      ...buildPreviewStudentRoutes(experience),
+      { path: `${base}courses`, render: outlet => renderWorkspaceCourses(outlet, 'student', restricted) },
+      { path: `${base}help`, render: outlet => renderWorkspacePreviewHelp(outlet, 'student', undefined, restricted) },
+      ...buildPreviewStudentRoutes(experience, restricted),
     ],
-    fallback: courseId ? `/preview/course/${encodeURIComponent(courseId)}` : '/preview/courses',
-    navItems: previewNavItems(courseId),
+    fallback: courseId ? `${base}course/${encodeURIComponent(courseId)}` : `${base}courses`,
+    navItems: previewNavItems(courseId, restricted),
     courseIdFromPath: previewCourseIdFromPath,
     practicePath: isPreviewPracticePath,
     loadCourseContext: async (currentCourseId) => {
@@ -988,11 +1061,12 @@ function buildPreviewStudentShell(
     },
     preview: {
       courseId,
+      restricted,
     },
   });
 }
 
-type ShellMode = 'landing' | 'admin' | 'instructor' | 'ta' | 'ta-view' | 'student' | 'preview';
+type ShellMode = 'landing' | 'admin' | 'instructor' | 'ta' | 'ta-view' | 'student' | 'preview' | 'preview-restricted';
 let activeRouter: RouterHandle | undefined;
 let activeMode: ShellMode | undefined;
 let activeSession: Session | undefined;
@@ -1007,6 +1081,7 @@ let bootstrapGeneration = 0;
  */
 function shellMode(session: Session, path: string): ShellMode {
   if (!session.authenticated) return 'landing';
+  if ((isInstructor(session) || isTa(session)) && path.startsWith('/preview/restricted/')) return 'preview-restricted';
   if ((isInstructor(session) || isTa(session)) && path.startsWith('/preview/')) return 'preview';
   const preferred = selectedWorkspaceRole(session);
   const taCourseId = taCourseIdFromPath(path);
@@ -1017,6 +1092,7 @@ function shellMode(session: Session, path: string): ShellMode {
   if (path.startsWith('/admin/') && session.user?.isAdmin) return 'admin';
   if (path.startsWith('/instructor/') && isInstructor(session)) return session.user?.isAdmin && preferred !== 'instructor' ? 'admin' : 'instructor';
   if (preferred === 'student' && (isInstructor(session) || isTa(session))) return 'preview';
+  if (preferred === 'student-restricted' && (isInstructor(session) || isTa(session))) return 'preview-restricted';
   if (preferred === 'ta') return isInstructor(session) ? 'ta-view' : 'ta';
   if (preferred === 'admin' && session.user?.isAdmin) return 'admin';
   if (isInstructor(session)) return 'instructor';
@@ -1046,14 +1122,14 @@ async function bootstrap(): Promise<void> {
 
   activeMode = shellMode(session, hashPath());
   setAdminAppearance(activeMode === 'admin');
-  if (activeMode !== 'landing') rememberWorkspaceRole(session, activeMode === 'preview' ? 'student' : activeMode === 'ta-view' ? 'ta' : activeMode);
+  if (activeMode !== 'landing') rememberWorkspaceRole(session, activeMode === 'preview' ? 'student' : activeMode === 'preview-restricted' ? 'student-restricted' : activeMode === 'ta-view' ? 'ta' : activeMode);
   if (activeMode === 'landing') {
     document.title = APP.name;
     renderLanding(root);
     return;
   }
-  if (activeMode === 'preview') {
-    activeRouter = buildPreviewStudentShell(root, session, previewCourseIdFromPath(hashPath()));
+  if (activeMode === 'preview' || activeMode === 'preview-restricted') {
+    activeRouter = buildPreviewStudentShell(root, session, previewCourseIdFromPath(hashPath()), activeMode === 'preview-restricted');
     return;
   }
   if (activeMode === 'ta-view') {
@@ -1091,8 +1167,8 @@ window.addEventListener('hashchange', (event) => {
     return;
   }
   const nextMode = shellMode(activeSession, hashPath());
-  if (nextMode === activeMode && !(nextMode === 'preview' && (previewCourseIdFromPath(hashPath()) ?? '') !== document.querySelector<HTMLElement>('.app-shell')?.dataset.previewCourse)) return;
-  if (activeMode === 'preview' && nextMode !== 'preview') endAnonymousPreview();
+  if (nextMode === activeMode && !((nextMode === 'preview' || nextMode === 'preview-restricted') && (previewCourseIdFromPath(hashPath()) ?? '') !== document.querySelector<HTMLElement>('.app-shell')?.dataset.previewCourse)) return;
+  if ((activeMode === 'preview' || activeMode === 'preview-restricted') && nextMode !== activeMode) endAnonymousPreview();
   activeRouter?.stop();
   activeRouter = undefined;
   void bootstrap();

@@ -68,7 +68,7 @@ test('mobile dark people list scrolls within table and keeps filters usable', as
 test('production shell shows global Canvas navigation and hides course workspace while switching courses', async ({ page }) => {
   await fixture(page);
   await page.goto(`/#/instructor/canvas/${COURSE}`);
-  await expect(page.locator('.app-shell')).toBeVisible();
+  await expect(page.locator('.app-shell--unified')).toBeVisible();
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Canvas connection' })).toBeVisible();
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Course Dashboard' })).toBeHidden();
   await page.getByRole('tab', { name: /People/ }).click();

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FinanceBot · Enrollment changes</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#202a24;background:#f3f5f3;line-height:1.6}
+    body{margin:0} main{max-width:1160px;margin:auto;padding:36px 24px 60px}
+    h1{font-size:clamp(28px,4vw,42px);line-height:1.15;margin:12px 0} h2{font-size:24px;margin:0 0 12px}
+    .tag{color:#245b3a;font-size:13px;font-weight:700;letter-spacing:.08em}
+    .intro{max-width:800px;color:#526258}section{background:white;border:1px solid #dce3dd;border-radius:16px;padding:24px;margin-top:24px}
+    li{margin:8px 0}figure{margin:20px 0 0}img{display:block;width:100%;height:auto;border:1px solid #dce3dd;border-radius:10px}
+    figcaption{font-size:14px;color:#526258;margin-top:10px}a{color:#245b3a}
+    .pair{display:grid;grid-template-columns:1.7fr 1fr;gap:24px}.mobile{max-width:390px;margin:auto}
+    @media(max-width:760px){main{padding:24px 16px}.pair{display:block}section{padding:18px}.mobile{margin-top:24px}}
+  </style>
+</head>
+<body><main>
+  <span class="tag">FINANCEBOT · LOCAL ACCEPTANCE · 2026-10-06</span>
+  <h1>Gradebook first. One-time codes for additional students.</h1>
+  <p class="intro">Course Settings → Enrollment now combines Canvas Gradebook imports and optional one-time registration codes. The legacy shared-code/Roster editor has been retired. Existing student access is preserved.</p>
+  <section>
+    <h2>Compact code management</h2>
+    <p>The redesigned table uses smaller type and tighter rows. Identity and timestamps are grouped into columns, with short status badges and expandable help. Use status filters and 10, 25 or 50 rows per page. Pagination is performed by the server and includes all batches.</p>
+    <figure><a href="enrollment-dense-panel.png"><img src="enrollment-dense-panel.png" alt="Compact live code table with ten rows, status filter, delete actions and pagination across 53 codes"></a><figcaption>Real local SAML/Express/Mongo acceptance with 53 synthetic records across six pages of ten. These are temporary test codes.</figcaption></figure>
+    <p>Delete hides an obsolete record. An unused deleted code cannot enroll anyone; deleting a used record preserves the student's access. Pending enrollment cannot be deleted. Historical claims remain stored for debugging.</p>
+  </section>
+  <section>
+    <h2>What instructors can do</h2>
+    <ol>
+      <li>Import the class through a Canvas Gradebook CSV.</li>
+      <li>Generate 1–50 supplemental codes and give one unused code to each additional student.</li>
+      <li>Refresh the list to see the claimant's name, CWL, email, claim time and last CWL sign-in.</li>
+      <li>Revoke an unused code. This does not remove existing student access.</li>
+      <li>Filter code status, move between pages, and delete obsolete records.</li>
+    </ol>
+    <p>Students sign in with CWL and enter the code in My Courses. Codes require a published course within its term dates. The last login timestamp is not an online-status indicator.</p>
+  </section>
+  <section>
+    <h2>Verified against real local services</h2>
+    <p>The following screenshot uses real SAML login, Express endpoints and MongoDB with a temporary synthetic course. Two accounts competed for one code: exactly one succeeded. The other account joined using a second code. Both receipts show their actual local test identity; a third code was revoked.</p>
+    <figure><a href="enrollment-live-receipts.png"><img src="enrollment-live-receipts.png" alt="Real local enrollment receipts showing two used codes with claimant identities and one revoked code"></a><figcaption>Real local acceptance. The temporary test course and grants were removed afterward.</figcaption></figure>
+    <ul>
+      <li>A Gradebook-enrolled student did not consume an unused code.</li>
+      <li>Replaying a batch request did not create extra codes.</li>
+      <li>Used, revoked and legacy shared codes could not register another account.</li>
+      <li>Students could not read Instructor-only code receipts.</li>
+      <li>Six pages contained 53 distinct records; status filters returned the correct receipts.</li>
+      <li>Deleting an unused code invalidated it. Deleting a used receipt preserved enrollment and prevented reuse.</li>
+      <li>Enrolled students appeared in the enrollment and analytics membership views.</li>
+      <li>TA CWL activation worked; inviting the same account by email reported a duplicate. TA approval and final flag resolution remained denied.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>TA email/CWL and responsive layout</h2>
+    <p>Teaching Assistants accepts UBC email or an existing CWL, matching Co-instructors. Existing accounts activate immediately. An unknown UBC email waits for a matching first sign-in; an unknown CWL is rejected. No invitation email is sent.</p>
+    <div class="pair">
+      <figure><a href="ta-cwl-invitation.png"><img src="ta-cwl-invitation.png" alt="TA invitation form accepting UBC email or CWL"></a><figcaption>Intercepted UI fixture: invitation input and guidance.</figcaption></figure>
+      <figure class="mobile"><a href="enrollment-mobile.png"><img src="enrollment-mobile.png" alt="One-time registration codes on a narrow dark-mode screen"></a><figcaption>Intercepted UI fixture: mobile dark-mode code management.</figcaption></figure>
+    </div>
+  </section>
+  <p class="intro">Implementation notes: <a href="../../docs/design/supplemental-enrollment/IMPLEMENTATION.md">supplemental enrollment</a>. This report documents local changes and tests; it does not indicate a production deployment.</p>
+</main></body>
+</html>

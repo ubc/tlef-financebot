@@ -387,3 +387,25 @@ or `res.locals.courseId`, then applies platform, course-role, and per-user
 settings. It returns the same 401/generic 403 shapes as the course guards. The
 TA hard-deny for question approval and flag resolution lives in the capability
 service, so configuration cannot bypass it.
+TA defaults include `analytics.view` and `analytics.individual` for assigned
+courses. Platform, course and per-user settings may revoke either read
+permission independently; analytics routes enforce each capability server-side.
+Read-only outline, materials and coverage routes use
+`ensureCourseTeachingMember()` for an assigned Instructor or TA (or Admin).
+This guard does not grant any authoring, approval or publication action.
+
+
+## Course People consolidation (2026-10-06)
+
+People consolidates Enrollment, Teaching Assistants and Co-instructors using
+course-scoped merged identities, search and server pagination. People and Share
+share Student/TA/Instructor invitations. Owner/Admin controls role changes,
+course bans and one-time-code mutations. Revisioned `coursePeopleAccess` decisions
+apply last at session reload and override all grant sources; CSV/Canvas cannot
+restore bans or superseded roles. Pending canonical-email binding preserves
+cancellation tombstones and never grants platform privileges. Gradebook preview
+and persisted `lastChanges` identify newly added people by exact PUID and show
+names before/after commit with paginated lists. See
+`docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
+`playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
+above describe historical entry points; the current Instructor entry is People.

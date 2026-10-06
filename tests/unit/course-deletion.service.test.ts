@@ -8,7 +8,9 @@ jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest
 jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExists: jest.fn() }));
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   learningSettingsCol: jest.fn(), learningSessionsCol: jest.fn(), previewLearningSessionsCol: jest.fn(), reviewMetadataCol: jest.fn(), previewReviewMetadataCol: jest.fn(), discussionPostsCol: jest.fn(), previewDiscussionPostsCol: jest.fn(),
-  attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(),
+  coursePeopleAccessCol: jest.fn(), modelCallReceiptsCol: jest.fn(), modelUsageSessionsCol: jest.fn(), registrationCodeBatchesCol: jest.fn(),
+  builderExamsCol: jest.fn(), examPublicationsCol: jest.fn(), examCandidatesCol: jest.fn(), examBuildRunsCol: jest.fn(), assessmentAttemptsCol: jest.fn(),
+  attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(), coursePeopleImportsCol: jest.fn(),
   contentRunsCol: jest.fn(), coursesCol: jest.fn(), examAttemptsCol: jest.fn(),
   examTemplatesCol: jest.fn(), flagsCol: jest.fn(), generationBlueprintsCol: jest.fn(), generationSubmissionsCol: jest.fn(),
   losCol: jest.fn(), masteryCol: jest.fn(), materialChunksCol: jest.fn(),
@@ -33,22 +35,27 @@ type FakeCollection = {
   deleteMany: jest.Mock;
   deleteOne: jest.Mock;
   updateMany: jest.Mock;
+  countDocuments: jest.Mock;
 };
 
 const accessorNames = [
   'learningSettingsCol', 'learningSessionsCol', 'previewLearningSessionsCol', 'reviewMetadataCol', 'previewReviewMetadataCol', 'discussionPostsCol', 'previewDiscussionPostsCol',
-  'attemptsCol', 'auditCol', 'capabilitySettingsCol', 'contentRunsCol', 'coursesCol',
+  'coursePeopleAccessCol',
+  'modelCallReceiptsCol', 'modelUsageSessionsCol', 'registrationCodeBatchesCol',
+  'attemptsCol', 'auditCol', 'capabilitySettingsCol', 'contentRunsCol', 'coursesCol', 'coursePeopleImportsCol',
   'examAttemptsCol', 'examTemplatesCol', 'flagsCol', 'generationBlueprintsCol', 'generationSubmissionsCol', 'losCol',
   'masteryCol', 'materialChunksCol', 'materialsCol', 'notificationsCol', 'previewAttemptsCol',
   'previewStudentSessionsCol', 'questionVersionsCol', 'questionsCol', 'reviewBookCol',
   'rosterCol', 'sessionSummariesCol', 'taInvitesCol', 'themesCol', 'usersCol', 'courseInstructorSharesCol',
   'questionDraftsCol', 'questionPresenceCol',
+  'builderExamsCol', 'examPublicationsCol', 'examCandidatesCol', 'examBuildRunsCol', 'assessmentAttemptsCol',
 ] as const;
 
 function fakeCollection(rows: unknown[] = []): FakeCollection {
   return {
     find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue(rows) })),
     findOne: jest.fn(),
+    countDocuments: jest.fn().mockResolvedValue(0),
     deleteMany: jest.fn().mockResolvedValue({ deletedCount: rows.length || 1 }),
     deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     updateMany: jest.fn().mockResolvedValue({ modifiedCount: 1 }),

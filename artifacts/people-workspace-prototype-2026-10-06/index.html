@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinanceBot · People prototype</title>
+<link rel="stylesheet" href="../../client/public/styles/main.css">
+<link rel="stylesheet" href="../../client/public/styles/app-shell.css">
+<link rel="stylesheet" href="people.css">
+</head>
+<body>
+<div class="app-shell app-shell--unified app-shell--instructor" id="shell">
+<aside class="sidebar sidebar--instructor" aria-label="Course navigation">
+  <div class="sidebar__brand-row"><a class="brand" href="#people"><span class="brand__mark">F</span><span class="brand__name">FinanceBot</span></a><button class="sidebar__collapse" id="collapse" aria-label="Collapse sidebar">‹</button></div>
+  <span class="instructor-pill">INSTRUCTOR</span>
+  <section class="course-context" aria-label="Current course"><a class="course-context__back" href="#people">← All courses</a><div class="course-context__project"><span class="course-context__mark">P</span><span class="course-context__body"><strong class="course-context__name">PHYS 100 · Introduction to Physics2</strong><span class="course-context__meta">Winter Term 1, 2026/27 · Section 222</span></span></div></section>
+  <nav class="nav" id="sidebar-nav"></nav><div class="sidebar__foot">John Faculty</div>
+</aside>
+<div class="main">
+  <header class="topbar"><button class="icon-btn topbar__menu" id="mobile-menu" aria-label="Toggle navigation">☰</button><span class="topbar__title">PHYS 100 · Introduction to Physics2</span><div class="topbar__right"><button class="icon-btn" id="notifications" aria-label="Notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8a6 6 0 0 0-12 0c0 7-2 7-2 9h16c0-2-2-2-2-9M10 21h4"/></svg></button><button class="btn btn--instr-primary" id="share">Share</button><select id="viewer" class="input" aria-label="Prototype viewing role"><option value="owner">Course owner</option><option value="instructor">Instructor · view only</option></select><button class="icon-btn" id="theme" aria-label="Toggle dark mode">☾</button><button class="btn btn--ghost" id="reset">Reset demo</button></div></header>
+  <main class="outlet" id="view-root">
+    <div class="people-workspace">
+      <div class="prototype-note"><span>Interactive prototype</span><span>Synthetic people · changes stay in this page</span></div>
+      <div class="people-heading"><div><h1>People</h1><p>Manage your class and teaching team in one place.</p></div><div class="heading-actions"><button class="btn btn--secondary" id="import-open">Import Gradebook</button><button class="btn btn--instr-primary" id="invite-open">Invite person</button></div></div>
+      <div class="course-line"><span>PHYS 100 · Section 222 · Winter Term 1, 2026/27</span><span class="badge-soft">Owner: John Faculty</span></div>
+      <section class="people-panel" aria-label="Course people management">
+        <div class="people-tabs" role="tablist" aria-label="People sections"><button role="tab" id="tab-people" data-tab="people" aria-selected="true" aria-controls="people-content">People <span id="people-count"></span></button><button role="tab" id="tab-invitations" data-tab="invitations" aria-selected="false" aria-controls="people-content">Invitations <span id="invite-count"></span></button><button role="tab" id="tab-codes" data-tab="codes" aria-selected="false" aria-controls="people-content">Registration codes <span id="code-count"></span></button></div>
+        <div class="panel-summary" id="summary"></div>
+        <div class="people-toolbar" id="directory-toolbar"><div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><label class="sr-only" for="search">Search people</label><input id="search" class="input" type="search" placeholder="Search name, email, CWL or Login ID"></div><label class="sr-only" for="role-filter">Filter role</label><select class="input" id="role-filter"><option value="">All roles</option><option>Student</option><option>TA</option><option>Instructor</option><option>Owner</option></select><label class="sr-only" for="status-filter">Filter status</label><select class="input" id="status-filter"><option value="">All statuses</option><option>Active</option><option>Pending</option><option>Banned</option></select></div>
+        <div id="code-toolbar" class="people-toolbar" hidden><form id="generate-form"><label for="code-count-input">Number of codes</label><input id="code-count-input" class="input" type="number" min="1" max="50" value="5"><button class="btn btn--instr-primary" type="submit">Generate codes</button></form><label class="sr-only" for="code-filter">Filter code status</label><select id="code-filter" class="input"><option value="">All statuses</option><option>Unused</option><option>Used</option><option>Revoked</option></select></div>
+        <div id="feedback" class="inline-feedback" role="status" aria-live="polite"></div>
+        <div id="people-content" role="tabpanel" aria-labelledby="tab-people" tabindex="0"><div class="table-wrap" id="table-wrap"></div></div>
+        <div class="people-pagination"><span id="range" aria-live="polite"></span><div><label class="sr-only" for="page-size">Rows per page</label><select id="page-size" class="input"><option value="10" selected>10 / page</option><option value="25">25 / page</option><option value="50">50 / page</option></select><button id="previous" class="btn btn--secondary" aria-label="Previous page">Previous</button><button id="next" class="btn btn--secondary" aria-label="Next page">Next</button></div></div>
+      </section>
+      <div class="people-footnote"><span id="authority-note">Course owner can invite people, change roles and ban course access.</span><button class="text-link" id="policy-open">Access rules</button></div>
+    </div>
+  </main>
+</div><div class="backdrop" id="backdrop"></div>
+</div>
+<dialog id="dialog" class="people-dialog" aria-labelledby="dialog-title"><form method="dialog"><button class="dialog-close" aria-label="Close dialog">×</button></form><div id="dialog-body"></div></dialog>
+<dialog id="inspector" class="people-inspector" aria-labelledby="inspector-title"><form method="dialog"><button class="dialog-close" aria-label="Close profile">×</button></form><div id="inspector-body"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="people.js"></script>
+</body></html>

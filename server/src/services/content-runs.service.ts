@@ -190,6 +190,7 @@ export async function createQuestionGenerationRun(input: {
   courseId: ObjectId;
   requestedBy: string;
   loId: ObjectId;
+  qualityPolicy?: QuestionGenerationRun['input']['qualityPolicy'];
   secondaryLoIds?: ObjectId[];
   count: number;
   type: QuestionType;
@@ -218,6 +219,7 @@ export async function createQuestionGenerationRun(input: {
     warnings: [],
     input: {
       loId: input.loId,
+      ...(input.qualityPolicy ? { qualityPolicy: input.qualityPolicy } : {}),
       ...(input.secondaryLoIds && input.secondaryLoIds.length > 0
         ? { secondaryLoIds: input.secondaryLoIds }
         : {}),

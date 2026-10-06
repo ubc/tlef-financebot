@@ -4,6 +4,10 @@ import {
   parseRosterFile,
 } from '../../server/src/services/roster-import.service';
 
+test('Canvas Login IDs cannot silently enter the username/email code-based roster', () => {
+  expect(() => parseRosterFile('Student,SIS Login ID\nAlex,ABC12PUID001')).toThrow(/Import people from Canvas/);
+});
+
 // Roster import parsing + identifier validation (2026-08-06).
 //
 // The behaviour under test exists because a roster entry is matched at

@@ -10,6 +10,8 @@
  */
 module.exports = {
   testEnvironment: 'node',
+  // Unit tests may use loopback HTTP (supertest), never real provider endpoints.
+  setupFilesAfterEnv: ['<rootDir>/tests/unit/setup/network-guard.ts'],
   // Serial: keeps supertest listeners and shared module state deterministic.
   maxWorkers: 1,
   roots: ['<rootDir>/tests/unit'],

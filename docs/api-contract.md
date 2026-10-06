@@ -33,8 +33,10 @@ grant attaches to the same PUID-backed User on first SAML login.
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`
-  Errors: 404 code not recognized; 403 `not-on-roster`; 410 `course-ended`;
-  409 `already-enrolled` (informational, no duplicate created). (ST-E02)
+  Redeems an instructor-issued one-time code after CWL login, without a roster
+  allowlist. Errors: 404 unknown/legacy code; 403 inactive account; 410 revoked,
+  archived or ended course; 409 already enrolled, used code or unopened course.
+  Invalid attempts do not consume an available code. See supplemental codes below.
 - `GET /api/enrollments` → `[{ courseId, name, courseCode, term, active }]`
 
 ## Courses (instructor)
@@ -86,7 +88,8 @@ grant attaches to the same PUID-backed User on first SAML login.
   Retrying after a partial write or lost response therefore fills only missing
   names instead of duplicating the already-created outline. Input is limited to
   1–50 Topics and 1–100 non-empty LOs per Topic; invalid outlines return 400.
-- `POST /api/courses/:courseId/registration-code` → `{ registrationCode }` (regenerates)
+- `POST /api/courses/:courseId/registration-code` → 410 (retired shared-code action).
+  Use `POST .../registration-codes` for one-time supplemental enrollment.
 - `POST /api/courses/:courseId/publish` / `POST .../unpublish` → `{ published, checklist: [{ item, ok }] }`
 - `POST /api/courses/:courseId/archive` → archived Course;
   `POST .../restore` → restored unpublished Draft. Archived courses remain
@@ -109,7 +112,8 @@ grant attaches to the same PUID-backed User on first SAML login.
   `/[private/]tmp/tlef-*/uploads/<uuid>.<supported-extension>` shape.
   Already-missing legacy files increment `missingFiles` without blocking
   deletion, while an existing file outside those narrow rules still fails closed.
-- Roster: `PUT /api/courses/:courseId/roster { identifiers: string[] }` →
+- Legacy roster (removed from Enrollment UI; does not authorize new joins):
+  `PUT /api/courses/:courseId/roster { identifiers: string[] }` →
   `{ count, rejected: [{ line, value, reason }] }`;
   `GET .../roster` → `[{ identifier, extendedUntil? }]`
   - An identifier is a **CWL username or email**, never a student number: a
@@ -194,6 +198,14 @@ and lifecycle/action endpoints keep their existing contracts.
 - `POST /api/themes/:themeId/archive` → Theme
 - `POST /api/themes/:themeId/los { name }` → 201 LearningObjective
 - `PATCH /api/los/:loId { expectedRevision, name?, order?, kind? }`, `POST /api/los/:loId/archive`
+
+Course Structure exposes **Delete topic** beside the selected topic and in each
+topic group in All objectives/search results, plus **Delete** beside each LO.
+These confirmed actions use the existing archive endpoints to remove items from
+the active outline. Topic removal also archives its active child LOs. Related
+question, material-assignment and student-history records are retained; these
+actions do not perform permanent record deletion. Cancel sends no mutation;
+failed requests retain the displayed item and any unsaved editor text for retry.
 
 ## Materials (instructor)
 - `POST /api/courses/:courseId/materials` (multipart, field `files[]`; or JSON `{ url }`) → 201 `[Material]` (successfully queued entries have status `processing` + a unique `activeRunId`; an immediate run-storage/enqueue failure is returned as status `failed` so no row remains stuck)
@@ -504,10 +516,17 @@ All preview routes require the signed-in user to be an Instructor or current
 TA for the target course (or Admin). A TA role removed by expiry or revocation
 loses access on the next request, using the same current-course role checks as
 the TA workspace. Students, nonmembers and staff in another course cannot use
-these routes. They do not grant persistent roles or require student enrollment and
-intentionally ignore `Course.published`, so an unpublished course can be
-tested before release. Theme archival/progressive release and the
-Approved-question gate still match the real student experience. Entering
+these routes. They do not grant persistent roles or require student enrollment.
+The role switcher offers **Student with access restrictions** and **Student
+without access restrictions** to Admins, course Instructors and current TAs.
+The unrestricted mode retains the original preview behavior: unpublished
+courses remain available. The restricted course picker includes only published
+courses. Every Preview API request in restricted mode sends
+`access=restricted`; after teaching-team authorization, the server returns 404
+for a draft or archived course, including direct course links, source reads and
+state-changing requests. Omitting `access` retains unrestricted behavior.
+Both modes still honor Theme archival/progressive release and the
+Approved-question gate. Entering
 Preview creates a fresh browser-scoped UUID and swaps the entire client into
 the real Student shell; refresh keeps that walkthrough, while Exit Preview
 clears it.
@@ -574,12 +593,17 @@ collection (attempts, mastery, Review Book, session summaries) untouched.
 
 ## Teaching assistants
 
-Instructor-managed membership uses UBC email invitations. A matching SAML
+Instructor-managed membership accepts UBC email or an existing CWL username,
+using the same identity resolver as co-instructor invitations. Existing accounts
+activate immediately; unknown emails wait for the matching CWL sign-in. CWL
+identifiers must already exist; no email is guessed or sent. A matching SAML
 login activates the pending invitation and adds a course-scoped `ta` role.
 Permissions are evaluated immediately through the capability model; the hard
 TA deny for `question.approve` and `flag.resolve` cannot be overridden.
 
-- `GET /api/courses/:courseId/tas` / `POST .../tas { email }` — list or invite.
+- `GET /api/courses/:courseId/tas` / `POST .../tas { identifier }` — list or invite
+  using UBC email or CWL. Legacy `{ email }` requests remain accepted. Lists
+  include `cwl` when recorded for an activated invite.
 - `PUT /api/courses/:courseId/tas/:puid/permissions { permissions }` — replace
   the TA's course overrides; `POST .../:puid/reinvite` restores an expired TA.
 - `GET /api/courses/:courseId/ta/review-queue` — review data plus teaching-team
@@ -908,6 +932,109 @@ browser-crash/offline-disk recovery or simultaneous binary-file editing. Course,
 Theme, LO and material forms use revision conflicts rather than text merging;
 explicit roster/lifecycle actions retain their existing action contracts.
 
+## Exam Builder v2 (fixed midterm/final papers)
+
+All routes below are under `/api/courses/:courseId`. Legacy `/exams` template
+and practice-sitting contracts remain unchanged. Builder access requires course
+Instructor/Admin. TAs and Students cannot read drafts, candidates, runs or keys.
+
+| Method | Path | Body / result |
+| --- | --- | --- |
+| GET / POST | `/exam-builder` | List / create with `{title}` |
+| GET | `/exam-builder/:examId` | `{exam,candidates,runs}`; Instructor only |
+| PUT | `/exam-builder/:examId/title` | `{revision,title}`; mutable display title, including published exams |
+| DELETE | `/exam-builder/:examId` | `{revision}`; typed confirmation is in the client; delete only without student attempts/active generation |
+| PUT | `/exam-builder/:examId/settings` | `{revision,settings}` |
+| POST | `/exam-builder/:examId/bank-items` | `{revision,questions:[{questionId,versionId}]}` |
+| POST | `/exam-builder/:examId/candidate-items` | `{revision,candidateId}` |
+| PUT | `/exam-builder/:examId/items` | `{revision,items:[{id,points,minutes}]}`; order/remove only |
+| POST | `/exam-builder/:examId/approve` | `{revision,itemId}` |
+| POST | `/exam-builder/:examId/publish` | `{revision}`; immutable snapshot + pointer CAS |
+| POST | `/exam-builder/:examId/revise` | `{revision}`; refused after a student starts |
+| POST | `/exam-builder/:examId/duplicate` | Independent draft, cleared schedule/accommodations |
+| POST | `/exam-builder/:examId/release-results` | Release after closing time |
+| POST | `/exam-builder/:examId/plans` | `{revision,requestId,loIds,types,count,difficulty,prompt,parent?}` |
+| POST | `/exam-builder/:examId/runs/:runId/confirm` | `{revision}`; reserves exam and enqueues |
+| POST | `/exam-builder/:examId/runs/:runId/cancel` | Stop at next provider/write checkpoint |
+| POST | `/exam-builder/:examId/runs/:runId/retry` | `{requestId}`; new plan for missing candidates only |
+
+`requestId` is a UUID; all resource IDs are Mongo ObjectIds. `parent` is
+`{questionId,versionId,mode:'parameters'|'context'}`. All source objectives must
+remain active in this course. Selection cannot submit question content or keys.
+Only MCQ and True/False are currently supported. Counts: up to 20 per batch,
+100 candidates and 100 paper items. Optional prompt interpretation calls the
+planner; generation requires explicit confirmation. Plans never expand the
+selected objectives/types. Conflicts block confirmation.
+
+Settings: title, kind (`midterm|final`), purpose (`formal|practice`), durationMinutes,
+opensAt/closesAt (UTC ISO instants), timeZone (IANA label), feedback
+(`instructor|after-close|immediate`), shuffle, accommodations (`{puid,extraMinutes}[]`).
+Immediate feedback is practice-only. Client settings require explicit Save.
+Optimistic revisions return 409 for stale writes. Publish requires checked,
+approved frozen items and no active generation. A started exam cannot be
+republished; duplicate it instead. Old publications remain immutable.
+
+Student routes require course enrollment and a published course:
+
+| Method | Path | Semantics |
+| --- | --- | --- |
+| GET | `/assessments` | Published schedules and own attempt summaries |
+| POST | `/assessments/:examId/start` | Start/resume one attempt per exam and authenticated PUID |
+| GET | `/assessment-attempts/:attemptId` | Allowlisted stems/options/answers/deadline/serverTime; no keys |
+| PUT | `/assessment-attempts/:attemptId/answer` | `{itemId,selectedKey,answerRevision}`; deadline + CAS |
+| POST | `/assessment-attempts/:attemptId/submit` | Idempotent grading against pinned publication |
+| GET | `/assessment-attempts/:attemptId/results` | Withheld message or released score/questions/explanations |
+
+Server deadline is min(exam closing time, start + duration + extra time).
+Expired attempts are finalized when accessed; late answers are always refused.
+Submission/answer races use answerRevision. Results remain withheld until the
+configured release condition. Attempts, grades and candidates are separate from
+practice AttemptRecords, mastery, Review Book, contentRuns and student analytics.
+
+Persistence: `builderExams`, `examPublications`, `examCandidates`, `examBuildRuns`,
+`assessmentAttempts`; index definitions live in `collections.ts`. Generation uses
+Agenda with an isolated durable run record and a private adapter over the existing
+retriever/generator/validator/reviewer. Progress and bounded partial-question previews use private exam SSE, separate from public content-run SSE. Startup marks interrupted runs retryable and releases orphan reservations.
+Course deletion covers all five collections and refuses active generation.
+
+
+### Exam Builder live generation (September 27, 2026)
+
+`GET /api/courses/:courseId/exam-builder/:examId/events` is Instructor/Admin-only
+SSE. `snapshot` events contain the same `{exam,candidates,runs}` payload as detail.
+Subscribe-before-read and serialized reads cover changes during initial loading.
+Reconnect sends current saved and terminal state; a 20-second reconciliation also
+covers external workers. Disconnect removes the listener and heartbeat.
+`run.progress` stores one-based item number, stage (retrieving/generating/validating/
+reviewing/saving), and a bounded visible stem/options preview. Preview writes are
+coalesced at 250ms, serialized and drained before advancing stages. They never
+carry model reasoning. Client patches progress and candidates without replacing
+form inputs; leaving the view closes the EventSource. The former four-second
+browser polling is removed.
+
+Assessment generation uses at most three structural/numerical attempts with
+specific verifier feedback and the final serving gate before validation/review.
+The formula language remains unchanged: trigonometric functions are unsupported;
+physics prompts must use faithful components/ratios and supported algebra, or fail.
+No incorrect numerical item is accepted to satisfy the requested count.
+
+
+### Exam catalog rename and deletion (September 27, 2026)
+
+`PUT /exam-builder/:examId/title` changes `displayTitle` with revision CAS. It
+also advances `publishedRevision` for a locked paper so a published exam does not
+become editable by renaming. The student list, sitting and results read the
+current display title; historical publication content and answer keys stay pinned.
+A later publication snapshots the effective title.
+
+`DELETE /exam-builder/:examId` requires a matching revision, no student start or
+assessment attempts, and no queued/running generation. The service first marks
+the exam `deletingAt` with CAS against student start and generation reservation.
+It cancels matching queued Agenda jobs, removes private candidates/runs and
+publications, and deletes the exam record last. An interrupted cleanup can be
+retried from the catalog. Student listing/start ignore a deleting exam. The
+Instructor catalog asks for the exact title before sending the deletion request.
+
 ## Canvas integration (2026-09-28)
 
 All endpoints require a CWL session. `/canvas/*` connection/course listing requires
@@ -970,6 +1097,326 @@ Only the existing active, exact-identity authorization rules produce grants.
 The global instructor workspace is `#/instructor/canvas`, with a selected course
 at `#/instructor/canvas/:id`. Legacy course Canvas URLs redirect there. All API
 reads and writes retain course-scoped Instructor guards. Course cards are unchanged.
+
+## Manual Canvas people import (2026-10-02)
+
+Course Settings → Enrollment → Import people from Canvas accepts UTF-8 CSVs
+without OAuth configuration. Canvas Grades → Export → Export Entire Gradebook
+includes `SIS Login ID`; People → Groups → Import → Download Course Roster CSV
+includes `login_id`. Both native exports contain students, not a complete
+Instructor/TA roster. A downloadable `/templates/canvas-people.csv` template
+supports manually declared teaching roles using the Login ID visible in Canvas
+People. Do not infer roles from names or export course-content packages as rosters.
+
+Verified against the logged-in UBC staging CREATE course on 2026-10-02: its
+Gradebook file parses as one Student, zero rejected rows, and one ignored Points
+Possible row. The real file was parsed locally only, not committed as a grant.
+Primary references: [Gradebook export](https://community.instructure.com/en/kb/articles/660866-how-do-i-export-grades-in-the-gradebook),
+[group roster CSV](https://community.instructure.com/en/kb/articles/660875-how-do-i-import-groups-in-a-group-set),
+[Course Analytics reports](https://community.instructure.com/en/kb/articles/660639-how-do-i-view-and-download-reports-in-course-analytics).
+
+| Method | Path | Result / input |
+| --- | --- | --- |
+| GET | `/api/courses/:courseId/people-import` | `{ revision, members, canManage, importedAt, fileName }`; absent import has revision 0 and empty members |
+| POST | `/api/courses/:courseId/people-import/preview` | Multipart `file`; `{ columns, identityColumn, roleColumn, members, rejects, totalRows, ignoredRows, warnings }`; parse only |
+| PUT | `/api/courses/:courseId/people-import` | Multipart original `file`, `expectedRevision`, `confirmedTeachingAccess` (`"true"`/`"false"`); reparses the file, then atomically replaces this import source |
+| DELETE | `/api/courses/:courseId/people-import` | JSON `{ expectedRevision }`; clears imported roles while retaining the revision tombstone |
+
+All routes require authentication and course Instructor/Admin access. Only the
+course owner or Admin may commit/clear, including Student-only imports. File size
+is limited to 2 MiB and 10,000 rows. PUT refuses all-rejected input; DELETE is the
+explicit way to clear. Missing files, invalid CSV, missing identity headers and
+unconfirmed teaching grants return 400; foreign-course/non-owner writes return
+403; concurrent/stale revisions return 409. Upload never grants platform
+Instructor or Admin.
+
+Identity headers: `SIS Login ID`, `Login ID`, `login_id`, `PUID`, `CWL PUID`.
+Values preserve case and match exactly `User.puid` (UBC Canvas login_id = CWL
+PUID). Numeric PUID values remain valid when explicitly declared in a Login ID/
+PUID column; shape alone does not distinguish a student number from a PUID. Never use Canvas `ID`, `SIS User ID`, names, student numbers, emails or CWL
+usernames as fallback identities. Display names and grades are not authentication
+or role evidence. Only display name, exact PUID and role are saved; the raw file,
+score columns, student numbers and Canvas IDs are discarded.
+
+Role headers include `Role`, `enrollment_role`, `enrollment_type`, `type`.
+Supported values are Student/StudentEnrollment, Teacher/TeacherEnrollment,
+Instructor/Professor, TA/TaEnrollment/Teaching Assistant. An absent role column
+means Student; a present but blank/unknown role is rejected. Repeated identical
+PUID+role rows are rejected, while one identity may carry multiple supported
+roles. When enrollment state is supplied, only `active` is eligible. Restricted
+teaching rows (`limit_privileges_to_course_section` true, or an unknown/blank
+restriction value) cannot grant whole-course teaching roles. Without status
+metadata the owner is manually declaring current membership; before Gradebook
+export, disable Show Inactive Enrollments and Show Concluded Enrollments.
+
+`coursePeopleImports` is the authoritative source for these course grants, with
+one snapshot per course and CAS revisions. First CWL login creates the normal
+User, then matches the pending exact PUID; existing sessions project on every
+request. Grants are not copied into User.courseRoles. Students require a
+published course, reached termStart, non-expired termEnd and an unarchived course.
+Teaching preparation works in drafts/future terms; term end, archive and account
+deactivation close imported access. Replacement/clear withdraw only grants from
+this source; manual grants and Canvas OAuth snapshots remain authoritative for
+their own access. Import and clear append course-scoped audit events.
+
+Persisted imported Students participate in analytics search/profile/check-in
+read models; imported teaching staff receive course notifications. Imported TAs
+appear in the existing TA list with `source: "csv-import"`, pending until CWL
+login, then active (or expired if blocked/ended). Their PUID-based permission
+editor uses existing course capability overrides and TA hard denials. Re-invite
+is not offered for CSV-derived expiry; update the import/course dates instead.
+Permanent course deletion also removes its people import snapshot.
+
+## LLM usage and operation-derived workflows (2026-10-03)
+
+`GET /api/courses/:courseId/content-runs/:runId/usage` requires the course
+Instructor/Admin guard and verifies the run belongs to that course. It returns
+`{ summary, calls, totalCalls }`, with at most 100 recent calls. Instructor call
+rows omit actor identity, operation correlation, and internal tracking-session
+IDs. A foreign or missing run returns the same 404.
+
+Admin-only endpoints:
+
+- `GET /api/admin/model-usage`: filters `actor` (PUID), `courseId`, `runId`,
+  `operationId`, ISO `from`/`until`, `page`, and `limit` (maximum 100). Returns
+  paginated call receipts, a summary independent of the displayed page, and
+  safe user/course display identities.
+- `GET /api/admin/operations/:requestId` and
+  `GET /api/admin/diagnostic-runs/:id` additionally return `modelUsage`,
+  `modelCalls`, and `modelCallsTotal` for the request or content run.
+- `GET /api/admin/workflows`: requires an `actor` or `courseId`; accepts dates
+  and pagination. Returns a bounded timeline derived from recorded operations
+  and content runs. Explicit request/run IDs establish recorded associations;
+  30-minute adjacency groups are labeled inferred. Upload names come from
+  existing material metadata. API acceptance does not imply job completion,
+  and this view does not establish unrecorded browser clicks or user intent.
+
+Token fields are nullable nonnegative integers: `inputTokens`, `outputTokens`,
+`totalTokens`, `reasoningTokens`, `cachedInputTokens`, and `cacheWriteTokens`.
+Real zero is retained; unavailable provider data is never estimated as zero.
+Detailed counters use provider-specific semantics and are not added twice.
+Summaries distinguish `complete`, `partial`, `pending`, and `unavailable`, and
+include observed/reported/pending/unknown calls, coverage gaps, stage/model
+breakdowns, and physical retry visibility. Partial totals are known subtotals.
+`complete` describes recorded observed-call usage, not a complete provider bill
+or proof that historical/uninstrumented activity was captured.
+
+The ledger records synchronous API LLM calls and scoped generation, material
+analysis, course-structure, and private-assessment workers. It links actual
+model responses and internal JSON/content attempts without retaining prompts,
+response bodies, document contents, credentials, or hidden reasoning text.
+OpenAI-compatible streams request their final usage frame; interruption may
+leave usage unavailable. Other provider paths retain only reliably exposed
+counts. SDK-internal retries remain explicitly unknown. Embeddings, parsing,
+infrastructure, monetary pricing, and legacy usage backfills are outside these
+LLM totals.
+
+`modelCallReceipts` uses an immutable call UUID; `modelUsageSessions` tracks
+expected call IDs and coverage closure. Late responses can update existing
+receipts after cancellation, but finalization cannot upsert deleted records.
+Telemetry errors do not repeat paid work or turn a successful question into a
+failed generation. Missing coverage remains visible. Permanent course deletion
+removes the course's usage manifests and receipts. Browser refreshes re-read
+persistence rather than adding SSE token deltas; usage reads are excluded from
+successful operation-audit noise.
+
+## Source-grounding and question-memory generation pilot (2026-10-03)
+
+Public generation requests accept optional
+`qualityPolicy: "baseline" | "grounded-memory-v1"`. Absence means baseline.
+This field is accepted by `POST /api/courses/:courseId/generate`, at the top
+level of `POST /api/courses/:courseId/generation-plan`, and by generation
+recipe creation/update. A `/generate` request using a recipe may explicitly
+override its policy for that run. A normal recipe run inherits the saved
+policy. Run retry preserves the policy, explicit material-pin intent (including
+false), and instructor-selected Hard move. Reusing a batch submission ID with
+a different non-baseline policy returns the existing 409 submission conflict;
+omitted and explicit baseline are equivalent for submission identity.
+
+The Instructor/Admin guards are unchanged. The pilot requires the Reviewer
+feature to be enabled; enqueue returns 409
+`generation-quality-reviewer-required` otherwise. A later disable causes the
+queued pilot to fail explicitly before generation. The opt-in policy is stored
+in `QuestionGenerationRun.input.qualityPolicy`. Legacy runs, transient
+regeneration, and private assessment generation retain their existing behavior.
+
+Pilot runs additionally persist `result.quality`:
+
+- `policy`: `grounded-memory-v1`.
+- `evidence`: a bounded frozen packet containing original passages with stable
+  IDs/offsets, material hashes/revisions/ingest identity, scope labels, source
+  coverage, and parsing diagnostics. Qdrant text locates a matching original
+  chunk; it is not independently trusted as evidence.
+- `assessments`: one per completed source/novelty check, identified by `item`.
+  Each contains `status` (`eligible` or `withheld`), `sourceSupport`, `notation`,
+  `novelty`, bounded reasons, validated quote/citation locations, compared and
+  matched question-version identities, evidence/memory snapshot identities,
+  timestamp, and coverage limits. A bounded `candidate` diagnostic copy with
+  a content hash and `truncated` flag preserves withheld authoring output.
+
+`eligible` describes the model's assessment within the supplied context. It is
+not a proof of source entailment, global task uniqueness, numerical validity,
+or teacher acceptance. The server validates citation IDs, exact quote locations,
+and memory-reference membership independently. False distractors and false
+T/F statements are allowed when their intended corrections are supported.
+
+Candidates assessed unsupported, inconsistent, duplicate, variant, uncertain,
+or stale at the final context recheck are withheld from Draft insertion and
+recorded in the existing per-item `failures`. A partial run reports created
+Drafts separately from those shortfalls; an all-withheld run creates no Drafts.
+Operational failures before a completed assessment can have a failure without
+an assessment. Existing numerical proofs, normal reviewer decisions, Instructor
+approval, and student serving gates continue to apply.
+
+The check uses one additional structured model judgment per candidate unless
+an exact loaded-memory duplicate is detected first; the existing JSON repair
+may add one attempt. Its tokens appear in the existing ledger under
+`quality-review`. Authoring source/candidate evidence stays in the guarded run
+record and is not copied into the metadata-only usage ledger.
+
+Source and question-memory rechecks are best effort. They do not serialize
+commits with concurrent generation or instructor edits. The initial memory
+read is limited to 200 active overlapping-LO heads; the judge receives a bounded
+ranked selection, normally 12 entries. Source context covers retrieved original
+chunks and immediate neighbors within the recorded budget. Coverage fields
+describe truncation and missing versions; they never imply exhaustive search.
+See the generation-quality implementation status for exact budgets and the
+teacher-evaluation protocol.
+## Generation evaluation export (2026-10-03)
+
+`GET /api/courses/:courseId/content-runs/:runId/evaluation-export` is a
+course-Instructor/Admin read, using the existing course guard. It returns a
+`generation-evaluation-export-v1` JSON attachment named
+`generation-evaluation-<runId>.json` with `Cache-Control: no-store`. TA/Student
+access is not granted. No model calls or course-content mutations occur; the
+ordinary request audit may record the download.
+
+The response includes recorded run inputs and model IDs; one exact item-indexed
+slot for every requested question; original version-1 content bound through a
+course-owned question head and matching generated run/item provenance; recorded
+withheld candidate assessments; copied source excerpts and frozen evidence when
+retained; historical numerical verification; and safe usage rows plus an
+independent usage summary. Slot outcomes are `saved`, `withheld`, `failed`, or
+`unavailable`. Missing or ambiguous original records do not become invented
+failures, and current edited versions/preview text are never substituted.
+
+Usage rows omit actor, request/session correlation and provider-response IDs.
+The export includes no credentials or raw provider response bodies. Authoring
+question/source content is intentionally included. The response is retrospective:
+it cannot reconstruct the historical objective text, complete starting Bank/Queue,
+effective pre-run settings, or experiment isolation. Teacher labels and review
+time are never inferred from automatic review or publication status.
+
+Bounds: 100 requested slots, 1,000 exported call rows, and 100 copied source
+references / 30,000 copied source characters per saved slot. Candidate and
+evidence bounds follow the generation quality contracts. Truncation, late pending
+usage, and missing context are explicit. The usage summary retains the usage
+service's independent accounting scope and coverage limits; it is not a sum of
+only the downloaded call page. Terminal-state changes during export return 409.
+
+Errors: 404 for absent/foreign-course runs; 409 for non-generation or active runs,
+changed run snapshots, or unsupported slot/version bounds. The same-origin link
+appears in terminal **Generation steps** dialogs. Offline review and report
+formats are documented in `scripts/prompt-ab/evaluation/README.md`; those local
+tools neither invoke providers nor write to application records.
+
+## One-time supplemental student codes (2026-10-06)
+
+Canvas Gradebook/people CSV imports are the primary enrollment path. Course
+Instructor/Admin-only endpoints manage supplemental codes:
+
+- `GET /api/courses/:courseId/registration-codes?page=1&pageSize=25&status=used`
+  → `{ codes, total, page, pageSize, pageCount }`. `status` is optional;
+  `page` is a positive integer up to 1,000,000 and `pageSize` is 10, 25 or 50
+  (default 25). Mongo queries only the requested code page; there is no
+  former 100-batch cutoff. Deleted rows are excluded, including from counts.
+  Results sort newest batch first with stable batch/code ID tie-breakers;
+  out-of-range pages clamp to the last page after deletion. Empty lists have
+  page/pageCount 1. Each row is `{ id, code, status, createdAt, claimedAt,
+  usedAt, recipient }`. Status is `available | claimed | used | revoked |
+  expired`. `recipient` is null or `{ puid, cwl, displayName, email,
+  lastLoginAt }`; timestamps are ISO strings or null. Last login comes from
+  the persisted SAML profile and does not indicate online presence.
+- `POST /api/courses/:courseId/registration-codes` with strict JSON
+  `{ count: 1..50 integer, requestId: UUID }` → 201 `{ ids: UUID[] }`.
+  One atomic batch is inserted. A course/request UUID retry returns the same
+  IDs; a different count for the same UUID returns 409. Draft courses may
+  prepare codes; archived/ended courses cannot create them.
+- `DELETE /api/courses/:courseId/registration-codes/:codeId` → 204.
+  Conditionally revokes an unused code in that course; unavailable, claimed,
+  used or wrong-course code IDs return 409. It does not remove Student access.
+- `DELETE /api/courses/:courseId/registration-codes/:codeId/record` → 204.
+  Removes a record from instructor lists through soft deletion with actor/time.
+  Unused codes are atomically revoked as part of deletion, competing with
+  redemption on the same status predicate. Used/revoked codes retain historical
+  receipts and never become redeemable again. Existing Student access remains.
+  Pending claims, already-deleted and wrong-course records return 409.
+
+All four use course Instructor authorization (including Admin override),
+return 401 when signed out and 403 for Student/TA callers. A missing course
+returns 404 and malformed IDs/bodies return 400. Codes are 12-character
+cryptographically generated values with a global unique multikey index.
+
+Authenticated `POST /api/enrollments { code }` now redeems these codes without
+the former roster allowlist. It requires an active account and a published,
+non-archived course within its term dates. A conditional Mongo update reserves
+the code to exactly one CWL PUID; the Student role is persisted before the code
+is marked used. Interrupted claimed-state writes can resume for the same
+account on retry or authenticated session reload. Used codes never regrant a
+later-removed role. Already-enrolled students receive 409 without consuming an
+unused code. Competing claimants and used codes return 409, unknown/legacy
+shared codes return 404, revoked/ended-course codes return 410, unopened
+courses return 409, and deactivated accounts return 403. Course state is checked
+before claim; this protocol is not a multi-document lifecycle transaction.
+
+Legacy `POST /api/courses/:courseId/registration-code` returns 410. The shared
+field remains for isolated Preview only. Course Settings no longer exposes
+the old Roster editor; existing roles and historical roster extensions remain.
+Permanent course deletion cascades to `courseRegistrationCodeBatches`.
+
+TA invitation input is now strict `{ identifier: string }`, accepting a UBC
+email or existing CWL username through the same resolver as co-instructors.
+Strict `{ email: string }` remains supported for older clients. Known accounts
+activate immediately; unknown email invitations wait for matching first CWL
+login. Unknown CWL returns 404; ambiguous/deactivated identities return 409;
+invalid identifiers or non-UBC email return 400. No email is sent. Activation
+checks canonical persisted email ownership, optional invited PUID, course
+archive/term gates and a still-pending invitation. TA capability configuration
+and hard denials for approval/final flag resolution are unchanged.
+
+### Unified course People (2026-10-06)
+
+- `GET /api/courses/:courseId/people`: Instructor/Admin course read. Query
+  `page` (1..1,000,000), `pageSize` (10/25/50), `search` (<=200 characters),
+  `role` (student/ta/instructor), `status` (active/pending/banned/expired/
+  deactivated), `tab` (people/invitations). Returns course identity, `canManage`,
+  bounded `people`, totals/counts and clamped page metadata. Directory rows
+  include exact PUID/CWL, email, display name, effective role, owner/protection
+  flags, source labels, status, timestamps, permissions and revision.
+- `POST /api/courses/:courseId/people`: Owner/Admin only; body `{identifier,
+  role, permissions?}`. UBC email can precede first login; CWL requires an
+  existing, unique active identity. Permissions accept only the six safe TA
+  preset capabilities. Returns `{id,status,revision}`. Existing people use the
+  role editor; reinvitation never silently unbans an identity.
+- `PATCH /api/courses/:courseId/people/:id`: Owner/Admin only; body
+  `{expectedRevision, action: role|ban|unban|cancel, role?, permissions?, reason?}`.
+  IDs are encoded exact `puid:<PUID>` or `email:<normalized UBC email>` subjects.
+  Protected Owner/Admin identities reject changes. Cancellation is for pending
+  email invitations. Stale revisions return 409. Course bans preserve all
+  learning records and remain effective across CSV/Canvas refreshes.
+- Existing one-time code mutation endpoints now require Owner/Admin. Reads
+  remain course Instructor/Admin. Legacy TA mutation endpoints also require
+  Owner/Admin; TA review/analytics endpoints retain capability guards.
+- `POST /api/courses/:courseId/people-import/preview` additionally returns
+  `expectedRevision` and `changes: {comparison:'previous-csv-import', added,
+  removed, roleChanged, unchanged}`. Person groups contain `{puid,name,roles}`;
+  changed groups also include `previousRoles`. Exact PUID comparisons ignore
+  row ordering and name-only corrections. Preview rejects retain original CSV
+  line numbers. Import/GET summaries include nullable `lastChanges`, persisted
+  on revisioned commit. Comparison is against the previous CSV, not all access
+  sources; role overrides/bans are retained.
+
+Implementation details: `docs/design/course-people/IMPLEMENTATION.md`.
 
 ## Student learning v2 and course Discussion
 

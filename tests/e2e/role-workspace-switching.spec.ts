@@ -6,18 +6,21 @@ import type { AuthUser } from '../../client/src/api';
 const COURSE = '507f1f77bcf86cd799439011';
 const OTHER_COURSE = '507f1f77bcf86cd799439012';
 type Role = 'admin' | 'instructor' | 'ta' | 'student';
-const LABELS = { admin: 'Admin', instructor: 'Instructor', ta: 'TA', student: 'Student' };
+type ViewRole = Role | 'student-restricted';
+const LABELS: Record<ViewRole, string> = { admin: 'Admin', instructor: 'Instructor', ta: 'TA', student: 'Student without access restrictions', 'student-restricted': 'Student with access restrictions' };
 const COURSES = [
   { _id: COURSE, name: 'Finance Foundations', courseCode: 'FIN 101', section: '001', term: '2026W1', lifecycle: 'published', published: true },
   { _id: OTHER_COURSE, name: 'Advanced Finance', courseCode: 'FIN 201', section: '002', term: '2026W1', lifecycle: 'published', published: true },
 ];
+const DRAFT_COURSE = { _id: '507f1f77bcf86cd799439013', name: 'Sandbox Finance', courseCode: 'FIN 301', section: '003', term: '2026W1', lifecycle: 'draft', published: false };
 
-async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dark'; path?: string; forgedRole?: Role } = {}) {
+async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dark'; path?: string; forgedRole?: Role; analyticsView?: boolean; analyticsIndividual?: boolean; includeDraft?: boolean } = {}) {
+  const availableCourses = options.includeDraft ? [...COURSES, DRAFT_COURSE] : COURSES;
   const user: AuthUser = {
     puid: `ROLE-FIXTURE-${role}`, uid: role, displayName: `${LABELS[role]} User`,
     isAdmin: role === 'admin', platformInstructor: role === 'instructor',
     affiliations: [role === 'admin' ? 'staff' : role === 'instructor' ? 'faculty' : 'student'],
-    courseRoles: role === 'admin' ? [] : COURSES.map(course => ({ courseId: course._id, role })),
+    courseRoles: role === 'admin' ? [] : availableCourses.map(course => ({ courseId: course._id, role })),
   };
   const writes: string[] = [];
   const unhandled: string[] = [];
@@ -40,17 +43,44 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (path === '/api/tutorials') return route.fulfill({ json: TUTORIAL_DEFINITIONS.map(definition => ({ id: definition.id, role: definition.role, version: 1, status: 'dismissed' })) });
     if (path === '/api/notifications') return route.fulfill({ json: [] });
     if (path === '/api/admin/directory' || path === '/api/admin/users') return route.fulfill({ json: [] });
-    if (path === '/api/admin/courses' || path === '/api/courses') return route.fulfill({ json: COURSES });
-    if (path === '/api/enrollments') return route.fulfill({ json: COURSES.map(course => ({ courseId: course._id, name: course.name, courseCode: course.courseCode, term: course.term, active: true })) });
-    const course = COURSES.find(entry => path === `/api/courses/${entry._id}` || path.startsWith(`/api/courses/${entry._id}/`));
+    if (path === '/api/admin/courses' || path === '/api/courses') return route.fulfill({ json: availableCourses });
+    if (path === '/api/enrollments') return route.fulfill({ json: availableCourses.map(course => ({ courseId: course._id, name: course.name, courseCode: course.courseCode, term: course.term, active: true })) });
+    const course = availableCourses.find(entry => path === `/api/courses/${entry._id}` || path.startsWith(`/api/courses/${entry._id}/`));
     if (course && path === `/api/courses/${course._id}`) return route.fulfill({ json: { ...course, themes: [] } });
-    if (course && path.endsWith('/preview/identity')) return route.fulfill({ json: { name: course.name, courseCode: course.courseCode, term: course.term, section: course.section } });
-    if (course && path.endsWith('/outline')) return route.fulfill({ json: { course, themes: [] } });
-    if (course && path.endsWith('/learning/library')) return route.fulfill({ json: { settings: { mode: 'topic-practice', order: 'instructor', notes: [] }, questions: [], themes: [] } });
+    if (course && path.endsWith('/preview/identity')) return route.fulfill(url.searchParams.get('access') === 'restricted' && course.lifecycle !== 'published'
+      ? { status: 404, json: { error: 'Course is not available to students.' } }
+      : { json: { name: course.name, courseCode: course.courseCode, term: course.term, section: course.section } });
+    if (course && path.includes('/preview/') && url.searchParams.get('access') === 'restricted' && course.lifecycle !== 'published') return route.fulfill({ status: 404, json: { error: 'Course is not available to students.' } });
+    if (course && path.endsWith('/outline')) return route.fulfill({ json: { course, themes: [{ _id: 'topic-1', name: 'Time Value of Money', order: 0,
+      los: [{ _id: 'lo-1', name: 'Discounting cash flows', order: 0 }] }] } });
+    if (course && path.endsWith('/content-map')) return route.fulfill({ json: { themes: [{ themeId: 'topic-1', name: 'Time Value of Money', order: 0,
+      los: [{ loId: 'lo-1', name: 'Discounting cash flows', order: 0,
+        materials: [{ materialId: 'material-1', name: 'Lecture notes', kind: 'lecture-notes' }], questionCounts: { draft: 1, approved: 0, archived: 0 }, gaps: ['no-approved-questions'] }] }], unassignedMaterials: [] } });
+    if (course && path.endsWith('/materials')) return route.fulfill({ json: [{ _id: 'material-1', name: 'Lecture notes', format: 'url', kind: 'lecture-notes', status: 'ready', assignments: [] }] });
+    if (course && path.endsWith('/materials/material-1/workspace')) return route.fulfill({ json: { material: { _id: 'material-1', name: 'Lecture notes', format: 'url', status: 'ready' },
+      chunks: [{ index: 0, text: 'Present value depends on the discount rate.', characterCount: 43 }] } });
+    if (course && path.endsWith('/questions')) return route.fulfill({ json: { total: 1, questions: [{ id: 'question-1', state: 'draft',
+      current: { stem: 'What is present value?', difficulty: 'easy' } }] } });
+    if (course && path.endsWith('/learning/library')) return route.fulfill({ json: { settings: { mode: 'topic-practice', order: 'instructor' }, questions: [] } });
+    if (course && path.endsWith('/discussion')) return route.fulfill({ json: { staff: false, moderator: false, posts: [], themes: [], los: [] } });
     if (course && path.endsWith('/home')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/session-summary')) return route.fulfill({ json: { welcome: false, deferred: null } });
-    if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: { 'question.review': true, 'question.suggestEdit': true } });
-    if (course && path.endsWith('/questions')) return route.fulfill({ json: { questions: [], total: 0 } });
+    if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: {
+      'question.review': true, 'question.suggest-edit': true,
+      'analytics.view': options.analyticsView ?? true,
+      'analytics.individual': options.analyticsIndividual ?? true,
+    } });
+    if (course && path.endsWith('/analytics/failure-rates')) return route.fulfill({ json: [] });
+    if (course && path.endsWith('/analytics/question-patterns')) return route.fulfill({ json: { items: [], total: 0, limit: 20 } });
+    if (course && path.endsWith('/analytics/engagement')) return route.fulfill({ json: {
+      totals: { questionsAttempted: 0, sessionsPerStudent: 0, avgSessionMinutes: 0, loCoverageRate: 0, reviewBookActivityRate: 0 }, weeks: [],
+    } });
+    if (course && path.endsWith('/analytics/low-engagement')) return route.fulfill({ json: [{ puid: 'learner', uid: 'learner', displayName: 'Alex Learner', inactiveDays: 8 }] });
+    if (course && path.endsWith('/students')) return route.fulfill({ json: [] });
+    if (course && path.endsWith('/students/learner/analytics')) return route.fulfill({ json: {
+      student: { puid: 'learner', uid: 'learner', displayName: 'Alex Learner' }, objectives: [], mastery: [], history: [], reviewBook: [], flags: [],
+      engagement: { attempts: 0, sessions: 0, topicPracticeAttempts: 0, examPrepAttempts: 0 },
+    } });
     if (course && path.endsWith('/ta/review-queue')) return route.fulfill({ json: [] });
     unhandled.push(path);
     return route.fulfill({ status: 404, json: { error: `Unconfigured role fixture: ${path}` } });
@@ -69,16 +99,71 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
   };
 }
 
-const roleButton = (page: Page, role: Role) => page.getByRole('button', { name: `Switch role, current role ${LABELS[role]}`, exact: true });
+const roleButton = (page: Page, role: ViewRole) => page.getByRole('button', { name: `Switch role, current role ${LABELS[role]}`, exact: true });
 
-async function openRoles(page: Page, current: Role) {
+test('TA Student Analytics stays in the TA workspace and opens course-scoped student profiles', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/analytics` });
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Student Analytics' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
+  await expect(page.getByRole('link', { name: /Alex Learner/ })).toHaveAttribute('href', `#/ta/course/${COURSE}/student/learner`);
+  await page.getByRole('link', { name: /Alex Learner/ }).click();
+  await expect(page.getByRole('heading', { name: 'Alex Learner' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '← Back to Student Analytics' })).toHaveAttribute('href', `#/ta/course/${COURSE}/analytics`);
+  expect(state.requests.filter(url => url.pathname.includes('/students/learner/analytics')).every(url => url.pathname.startsWith(`/api/courses/${COURSE}/`))).toBe(true);
+  state.assertClean();
+});
+
+test('TA analytics permissions hide the tab and block named student reads', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/analytics`, analyticsView: false, analyticsIndividual: false });
+  await expect(page.getByText('This course has not granted you access to these student analytics.')).toBeVisible();
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Student Analytics' })).toHaveCount(0);
+  expect(state.requests.some(url => url.pathname.includes('/analytics/failure-rates') || url.pathname.includes('/students'))).toBe(false);
+  state.assertClean();
+});
+
+test('TA aggregate access does not fetch named students when individual access is disabled', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/analytics`, analyticsIndividual: false });
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Student Analytics' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
+  await page.getByRole('button', { name: 'Students', exact: true }).click();
+  await expect(page.getByText('Individual profiles are unavailable with your course permissions.')).toBeVisible();
+  expect(state.requests.some(url => url.pathname.includes('/low-engagement') || url.pathname.endsWith('/students') || url.pathname.includes('/students/learner/analytics'))).toBe(false);
+  state.assertClean();
+});
+
+test('TA explores course content without Instructor controls or writes', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/overview` });
+  await expect(page.getByRole('heading', { name: 'Course Home' })).toBeVisible();
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+  await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
+  await expect(sidebar.locator('.course-context__project')).toHaveCount(0);
+  await expect(sidebar.getByRole('link', { name: 'Back to all courses' })).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Materials' }).click();
+  await expect(page.getByRole('heading', { name: 'Materials' })).toBeVisible();
+  await page.getByRole('button', { name: 'Lecture notes' }).click();
+  await expect(page.getByText('Present value depends on the discount rate.')).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Course Structure' }).click();
+  await expect(page.getByText('Discounting cash flows')).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Coverage Map' }).click();
+  await expect(page.getByText('no approved questions')).toBeVisible();
+  await sidebar.getByRole('link', { name: 'Question Bank' }).click();
+  await expect(page.getByText('What is present value?')).toBeVisible();
+  await expect(page.getByRole('button', { name: /approve|publish|delete/i })).toHaveCount(0);
+  expect(state.requests.filter(url => ['/materials', '/content-map', '/questions'].some(suffix => url.pathname.endsWith(suffix)))
+    .every(url => url.pathname.startsWith(`/api/courses/${COURSE}/`))).toBe(true);
+  state.assertClean();
+});
+
+async function openRoles(page: Page, current: ViewRole) {
   await roleButton(page, current).click();
   const menu = page.getByRole('navigation', { name: 'Switch role', exact: true });
   await expect(menu).toBeVisible();
   return menu;
 }
 
-async function switchRole(page: Page, current: Role, next: Role, back = false) {
+async function switchRole(page: Page, current: ViewRole, next: ViewRole, back = false) {
   const menu = await openRoles(page, current);
   await menu.getByRole('link', { name: `${back ? 'Back to' : 'Switch to'} ${LABELS[next]}`, exact: true }).click();
   await expect(roleButton(page, next)).toBeVisible();
@@ -94,6 +179,34 @@ async function sidebarGeometry(page: Page, color: string) {
   await expect(page.locator('.sidebar')).toHaveCSS('width', '60px');
   await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
 }
+
+for (const role of ['admin', 'instructor', 'ta'] as const) test(`${role} can compare restricted and unrestricted Student previews`, async ({ page }) => {
+  const state = await fixture(page, role, { includeDraft: true });
+  const menu = await openRoles(page, role);
+  await expect(menu.getByRole('link', { name: 'Switch to Student with access restrictions' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'Switch to Student without access restrictions' })).toBeVisible();
+  await menu.getByRole('link', { name: 'Switch to Student with access restrictions' }).click();
+  await expect(roleButton(page, 'student-restricted')).toBeVisible();
+  await expect(page).toHaveURL(/#\/preview\/restricted\/courses/);
+  await expect(page.locator('.course-card')).toHaveCount(2);
+  await expect(page.getByText(DRAFT_COURSE.name)).toHaveCount(0);
+  await page.locator('.course-card').first().click();
+  const discussionLink = page.locator('.sidebar').getByRole('link', { name: 'Discussion', exact: true });
+  await expect(discussionLink).toHaveAttribute('href', `#/preview/restricted/course/${COURSE}/discussion`);
+  await discussionLink.click();
+  await expect(page.getByRole('button', { name: 'New post', exact: true }).first()).toBeVisible();
+  expect(state.requests.some(url => url.pathname.endsWith('/preview/discussion') && url.searchParams.get('access') === 'restricted')).toBe(true);
+  expect(state.requests.some(url => url.pathname.endsWith('/preview/learning/library') && url.searchParams.get('access') === 'restricted')).toBe(true);
+  await page.goto(`/#/preview/restricted/course/${DRAFT_COURSE._id}`);
+  await expect(page.getByText('Course is not available to students.').first()).toBeVisible();
+  expect(state.requests.some(url => url.pathname.endsWith(`/preview/identity`) && url.searchParams.get('access') === 'restricted')).toBe(true);
+  await switchRole(page, 'student-restricted', 'student');
+  await expect(page.getByRole('heading', { name: DRAFT_COURSE.name })).toBeVisible();
+  await page.locator('.sidebar').getByRole('link', { name: 'My Courses' }).click();
+  await expect(page.locator('.course-card')).toHaveCount(3);
+  await expect(page.getByText(DRAFT_COURSE.name)).toBeVisible();
+  state.assertClean();
+});
 
 test('Admin cycles every workspace and returns; sidebar dimensions match and course actions stay black', async ({ page }) => {
   const state = await fixture(page, 'admin');
@@ -232,7 +345,7 @@ for (const role of ['admin', 'instructor', 'ta'] as const) test(`${role} TA revi
 test('Instructor offers TA and isolated Student workspaces with a return to Instructor', async ({ page }) => {
   const state = await fixture(page, 'instructor');
   const menu = await openRoles(page, 'instructor');
-  await expect(menu.getByRole('link')).toHaveCount(3);
+  await expect(menu.getByRole('link')).toHaveCount(4);
   await expect(menu.getByRole('link', { name: /Admin/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(roleButton(page, 'instructor')).toBeFocused();
@@ -260,9 +373,9 @@ test('TA can preview assigned courses as Student and return without higher-role 
   const footer = (await page.locator('.sidebar__foot').boundingBox())!;
   expect(footer.y).toBeGreaterThan(sidebar.y + sidebar.height - 80);
   const menu = await openRoles(page, 'ta');
-  await expect(menu.getByRole('link')).toHaveCount(2);
+  await expect(menu.getByRole('link')).toHaveCount(3);
   await expect(menu.getByRole('link', { name: /Admin|Instructor/ })).toHaveCount(0);
-  await menu.getByRole('link', { name: 'Switch to Student', exact: true }).click();
+  await menu.getByRole('link', { name: 'Switch to Student without access restrictions', exact: true }).click();
   await expect(roleButton(page, 'student')).toBeVisible();
   await expect(page.locator('.course-card')).toHaveCount(2);
   await page.locator('.course-card').filter({ hasText: 'Finance Foundations' }).click();
@@ -302,17 +415,19 @@ test('Student Preview switches course identity and isolated session, and refresh
 test('real Student shares course cards but cannot gain higher workspaces through saved preferences or query parameters', async ({ page }) => {
   const state = await fixture(page, 'student', { forgedRole: 'admin', path: '/admin/users?workspace=admin' });
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
-  await expect(roleButton(page, 'student')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Switch role, current role Student', exact: true })).toBeVisible();
   await expect(page.locator('.course-card')).toHaveCount(2);
   await expect(page.getByRole('link', { name: 'Open FIN 101 Finance Foundations', exact: true })).toBeVisible();
   await expect(page.getByRole('progressbar', { name: 'Learning objectives covered' })).toHaveCount(2);
   await expect(page.getByRole('button', { name: '+ Create course', exact: true })).toHaveCount(0);
-  const menu = await openRoles(page, 'student');
+  await page.getByRole('button', { name: 'Switch role, current role Student', exact: true }).click();
+  const menu = page.getByRole('navigation', { name: 'Switch role', exact: true });
+  await expect(menu).toBeVisible();
   await expect(menu.getByRole('link')).toHaveCount(1);
   await expect(menu.getByRole('link', { name: 'Switch to Student', exact: true })).toBeVisible();
   for (const path of ['/instructor/courses?workspace=instructor', '/ta/courses?workspace=ta', '/preview/courses?workspace=student']) {
     await page.goto(`/#${path}`);
-    await expect(roleButton(page, 'student')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Switch role, current role Student', exact: true })).toBeVisible();
     await expect(page.locator('.course-card')).toHaveCount(2);
   }
   expect(state.requests.some(url => url.pathname.startsWith('/api/admin/') || url.pathname === '/api/courses' || url.pathname.includes('/preview/'))).toBe(false);
@@ -336,7 +451,7 @@ test('unsaved changes block role navigation before preference updates or Preview
   await guard();
   const requestCount = state.requests.length;
   const menu = await openRoles(page, 'instructor');
-  await menu.getByRole('link', { name: 'Switch to Student', exact: true }).click();
+  await menu.getByRole('link', { name: 'Switch to Student without access restrictions', exact: true }).click();
   await expect(page.locator('#view-root > .view')).toHaveAttribute('data-leave-decisions', '1');
   await expect(page).toHaveURL(/#\/instructor\/courses$/);
   await expect(roleButton(page, 'instructor')).toBeVisible();
@@ -366,9 +481,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.setViewportSize({ width: 390, height: 844 });
     const state = await fixture(page, 'admin', { theme });
     const menu = await openRoles(page, 'admin');
-    await expect(menu.getByRole('link', { name: 'Switch to Student', exact: true })).toBeVisible();
+    await expect(menu.getByRole('link', { name: 'Switch to Student without access restrictions', exact: true })).toBeVisible();
     expect((await new AxeBuilder({ page }).include('.topbar').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
-    await menu.getByRole('link', { name: 'Switch to Student', exact: true }).click();
+    await menu.getByRole('link', { name: 'Switch to Student without access restrictions', exact: true }).click();
     await expect(roleButton(page, 'student')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Exit (?:Preview|TA View)$/, includeHidden: true })).toHaveCount(0);
     await expect(page.locator('.course-card')).toHaveCount(2);
@@ -390,9 +505,9 @@ for (const theme of ['light', 'dark'] as const) {
 }
 
 for (const role of ['instructor', 'ta'] as const) test(`${role} course navigation returns to global tools through the compact back link`, async ({ page }) => {
-  const state = await fixture(page, role, { path: role === 'ta' ? `/ta/course/${COURSE}/review` : `/instructor/course/${COURSE}/bank` });
+  const state = await fixture(page, role, { path: `/${role}/course/${COURSE}/analytics` });
   const sidebar = page.locator('.sidebar');
-  await expect(sidebar.getByRole('link', { name: role === 'ta' ? 'Review Queue' : 'Question Bank', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
   await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
   await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
   if (role === 'instructor') await expect(sidebar.getByRole('link', { name: 'Canvas connection' })).toBeHidden();

@@ -4,7 +4,11 @@ const ORIGINAL_ENV = process.env;
 
 function loadEnv(overrides: Record<string, string>) {
   jest.resetModules();
-  process.env = { ...ORIGINAL_ENV, ...overrides };
+  process.env = { ...ORIGINAL_ENV,
+    // Do not inherit the developer's optional local Canvas HTTP connection in
+    // production safety tests; each test opts in with its own Canvas values.
+    CANVAS_DOMAIN: '', CANVAS_CLIENT_ID: '', CANVAS_CLIENT_SECRET: '', CANVAS_REDIRECT_URI: '', CANVAS_TOKEN_KEY: '',
+    ...overrides };
   return require('../../server/src/config/env') as typeof import('../../server/src/config/env');
 }
 

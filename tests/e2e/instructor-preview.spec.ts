@@ -160,6 +160,28 @@ test.describe('Instructor student preview', () => {
     ]);
   });
 
+  test('restricted Student view hides a sandbox course until publication', async ({ page }) => {
+    const id = courseId.toHexString();
+    await page.goto(`/#/instructor/course/${id}`);
+    await page.getByRole('button', { name: 'Switch role, current role Instructor' }).click();
+    await page.getByRole('link', { name: 'Switch to Student with access restrictions' }).click();
+    await expect(page).toHaveURL(/#\/preview\/restricted\/courses/);
+    await expect(page.getByText(COURSE_NAME)).toHaveCount(0);
+    expect((await page.request.get(`/api/courses/${id}/preview/identity?access=restricted`)).status()).toBe(404);
+    expect((await page.request.get(`/api/courses/${id}/preview/identity`)).status()).toBe(200);
+
+    expect((await page.request.post(`/api/courses/${id}/publish`)).status()).toBe(200);
+    await page.reload();
+    await expect(page.getByText(COURSE_NAME)).toBeVisible();
+    await page.getByRole('link', { name: `Open PREVIEW-E2E ${COURSE_NAME}` }).click();
+    await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
+    expect((await page.request.get(`/api/courses/${id}/preview/identity?access=restricted`)).status()).toBe(200);
+
+    expect((await page.request.post(`/api/courses/${id}/unpublish`)).status()).toBe(200);
+    await page.reload();
+    await expect(page.getByText('Course is not available to students.').first()).toBeVisible();
+  });
+
   test('uses the full student shell while keeping every preview action isolated', async ({ page }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -183,7 +205,7 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByRole('link', { name: 'Review Book', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Exam Prep', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: /^Exit (?:Preview|TA View)$/, includeHidden: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Switch role, current role Student', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Switch role, current role Student without access restrictions', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
     await expect(page.getByText(THEME_NAME)).toBeVisible();
 
@@ -265,6 +287,7 @@ test.describe('Instructor student preview', () => {
     const previewSession = await previewStudentSessionsCol().findOne({
       courseId,
       instructorPuid,
+      previewSessionId: JSON.parse(storedPreviewBeforeReload ?? '{}').previewSessionId,
     });
     expect(previewSession?.flags).toHaveLength(1);
     expect(previewSession?.reviewBookEntries).toHaveLength(1);
@@ -287,7 +310,7 @@ test.describe('Instructor student preview', () => {
     expect(liveFlags[0]?.source).toBe('instructor-preview-test');
     expect(liveFlags[0]?.reason).toBe('Anonymous preview isolation check');
 
-    await page.getByRole('button', { name: 'Switch role, current role Student', exact: true }).click();
+    await page.getByRole('button', { name: 'Switch role, current role Student without access restrictions', exact: true }).click();
     await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
     await expect(page.locator('.sidebar--instructor')).toBeVisible();
     await expect(page.locator('.sidebar--student')).toHaveCount(0);
@@ -337,7 +360,7 @@ test.describe('Instructor student preview', () => {
     await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}/flags`);
     await expect(instructorPage.getByText('TEST · Instructor Preview')).toBeVisible();
     await expect(instructorPage.locator('.flag-row__reason').filter({ hasText: 'Cross-tab test flag' })).toBeVisible();
-    await instructorPage.getByRole('button', { name: 'Edit', exact: true }).click();
+    await instructorPage.getByRole('button', { name: 'Review & edit', exact: true }).click();
     await expect(instructorPage.getByRole('heading', { name: 'Instructor Preview Test Flag' })).toBeVisible();
     await expect(instructorPage.getByText(/changes the real Question Bank/)).toBeVisible();
 

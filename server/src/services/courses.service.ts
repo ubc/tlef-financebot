@@ -607,7 +607,6 @@ export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item
     { item: 'Term dates set', ok: Boolean(course.termStart && course.termEnd) },
     { item: 'At least one Theme', ok: themes.length > 0 },
     { item: 'At least one Learning Objective', ok: los.length > 0 },
-    { item: 'Registration code generated', ok: Boolean(course.registrationCode) },
     {
       item: `Every LO has ≥3 Approved questions${thinLos.length ? ` (thin: ${thinLos.join(', ')})` : ''}`,
       ok: los.length > 0 && thinLos.length === 0,

@@ -1,3 +1,8 @@
+jest.mock('../../server/src/services/course-people-access.service', () => ({
+  projectCoursePeopleAccess: jest.fn(async (user: unknown) => user),
+  peopleMembershipFilter: jest.fn(async (_course: unknown, _roles: unknown, filter: unknown) => filter),
+  canUseStudentCode: jest.fn(async () => true),
+}));
 import {
   findUserByPuid,
   isPlatformAdminPuid,
@@ -10,6 +15,12 @@ import {
 } from '../../server/src/components/mongodb/collections';
 import { projectCourseInstructorShares } from '../../server/src/services/course-sharing.service';
 import { ObjectId } from 'mongodb';
+import { projectImportedCoursePeople } from '../../server/src/services/people-import.service';
+jest.mock('../../server/src/services/registration-codes.service', () => ({ resumeClaimedRegistrations: jest.fn(async (user: unknown) => user) }));
+
+jest.mock('../../server/src/services/people-import.service', () => ({
+  projectImportedCoursePeople: jest.fn(async (user: unknown) => user),
+}));
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   platformInstructorGrantsCol: jest.fn(),
@@ -71,6 +82,7 @@ describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
     expect(update.$set.lastLoginAt).toBeInstanceOf(Date);
     expect(update.$setOnInsert).toMatchObject({ courseRoles: [] });
     expect(options).toMatchObject({ upsert: true, returnDocument: 'after' });
+    expect(projectImportedCoursePeople).toHaveBeenCalledWith(expect.objectContaining({ puid: 'PUID-STUDENT-0001' }));
   });
 
   it('grants isAdmin from the allowlist', async () => {
@@ -163,6 +175,15 @@ describe('findUserByPuid platform authorization refresh', () => {
     await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ platformInstructor: false, courseRoles: [{ courseId, role: 'instructor' }] });
     // Revocation changes only the sharing source; the same User/session refreshes.
     await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ platformInstructor: false, courseRoles: [] });
+  });
+
+  it('projects imported course roles on each session reload', async () => {
+    const courseId = new ObjectId();
+    findUser.mockResolvedValue(storedUser);
+    jest.mocked(projectImportedCoursePeople).mockResolvedValueOnce({ ...storedUser, platformInstructor: false, courseRoles: [{ courseId, role: 'ta' }] });
+    await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ courseRoles: [{ courseId, role: 'ta' }], platformInstructor: false });
+    await expect(findUserByPuid(storedUser.puid)).resolves.toMatchObject({ courseRoles: [], platformInstructor: false });
+    expect(projectImportedCoursePeople).toHaveBeenCalledTimes(2);
   });
 
   it('treats the grant collection as truth after a revoke, even if the User bit is stale', async () => {

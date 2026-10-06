@@ -115,9 +115,9 @@ export const LIVE_STUDENT_EXPERIENCE: StudentExperience = {
     `/api/courses/${encodeURIComponent(courseId)}/los/${encodeURIComponent(loId)}/materials/${encodeURIComponent(materialId)}/source`,
 };
 
-export function previewStudentRoutes(): StudentRoutes {
+export function previewStudentRoutes(restricted = false): StudentRoutes {
   const base = (courseId: string): string =>
-    `/preview/course/${encodeURIComponent(courseId)}`;
+    `/preview/${restricted ? 'restricted/' : ''}course/${encodeURIComponent(courseId)}`;
   return {
     courses: (courseId) => `#${base(courseId ?? '')}/courses`,
     course: (courseId) => `#${base(courseId)}`,
@@ -135,15 +135,16 @@ export function previewStudentRoutes(): StudentRoutes {
 
 export function createPreviewStudentExperience(
   previewSessionId: string,
-  options: { sendToInstructorQueue?: boolean } = {},
+  options: { sendToInstructorQueue?: boolean; restricted?: boolean } = {},
 ): StudentExperience {
-  const routes = previewStudentRoutes();
+  const restricted = options.restricted ?? false;
+  const routes = previewStudentRoutes(restricted);
   return {
     preview: true,
     routes,
     listEnrollments: async (courseId) => {
       if (!courseId) return [];
-      const course = await getPreviewCourseIdentity(courseId);
+      const course = await getPreviewCourseIdentity(courseId, restricted);
       return [{
         courseId,
         name: course.name,
@@ -160,11 +161,11 @@ export function createPreviewStudentExperience(
       }
       return { courseId, name: course.name, courseCode: course.courseCode };
     },
-    getHome: (courseId) => getPreviewCourseHome(courseId, previewSessionId),
+    getHome: (courseId) => getPreviewCourseHome(courseId, previewSessionId, restricted),
     getNextQuestion: (courseId, input) =>
-      getNextPreviewQuestion(courseId, previewSessionId, input),
+      getNextPreviewQuestion(courseId, previewSessionId, input, restricted),
     submit: (courseId, input) =>
-      submitPreviewAttempt(courseId, previewSessionId, input),
+      submitPreviewAttempt(courseId, previewSessionId, input, restricted),
     // Instructor previews can TEST-queue flags; TA previews remain isolated.
     // Preview exists to exercise the real flag loop end to
     // end, and the alternative — a flag written only to
@@ -180,6 +181,7 @@ export function createPreviewStudentExperience(
         questionId,
         reason,
         options.sendToInstructorQueue ?? true,
+        restricted,
       );
       if (result.testQueued) {
         broadcastNotificationsChanged();
@@ -188,20 +190,20 @@ export function createPreviewStudentExperience(
       return result;
     },
     skip: (courseId, loId, attempted) =>
-      skipPreviewLo(courseId, previewSessionId, loId, attempted),
+      skipPreviewLo(courseId, previewSessionId, loId, attempted, restricted),
     getSessionStart: (courseId) =>
-      getPreviewSessionSummary(courseId, previewSessionId),
+      getPreviewSessionSummary(courseId, previewSessionId, restricted),
     endSession: (courseId, since) =>
-      endPreviewSessionSummary(courseId, previewSessionId, since),
+      endPreviewSessionSummary(courseId, previewSessionId, since, restricted),
     getReviewBook: (courseId, sort) =>
-      getPreviewReviewBook(courseId, previewSessionId, sort),
+      getPreviewReviewBook(courseId, previewSessionId, sort, restricted),
     bookmark: (courseId, questionId) =>
-      bookmarkPreviewQuestion(courseId, previewSessionId, questionId),
+      bookmarkPreviewQuestion(courseId, previewSessionId, questionId, restricted),
     unbookmark: (courseId, questionId) =>
-      unbookmarkPreviewQuestion(courseId, previewSessionId, questionId),
+      unbookmarkPreviewQuestion(courseId, previewSessionId, questionId, restricted),
     removeReviewEntry: (courseId, entryId) =>
-      removePreviewReviewBookEntry(courseId, previewSessionId, entryId),
+      removePreviewReviewBookEntry(courseId, previewSessionId, entryId, restricted),
     materialHref: (courseId, loId, materialId) =>
-      `/api/courses/${encodeURIComponent(courseId)}/preview/los/${encodeURIComponent(loId)}/materials/${encodeURIComponent(materialId)}/source`,
+      `/api/courses/${encodeURIComponent(courseId)}/preview/los/${encodeURIComponent(loId)}/materials/${encodeURIComponent(materialId)}/source${restricted ? '?access=restricted' : ''}`,
   };
 }

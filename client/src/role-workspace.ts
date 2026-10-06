@@ -2,16 +2,16 @@ import type { Session } from './auth.js';
 import { el } from './dom.js';
 import { currentQuery } from './router.js';
 
-export type WorkspaceRole = 'admin' | 'instructor' | 'ta' | 'student';
-export const ROLE_LABELS: Record<WorkspaceRole, string> = { admin: 'Admin', instructor: 'Instructor', ta: 'TA', student: 'Student' };
+export type WorkspaceRole = 'admin' | 'instructor' | 'ta' | 'student' | 'student-restricted';
+export const ROLE_LABELS: Record<WorkspaceRole, string> = { admin: 'Admin', instructor: 'Instructor', ta: 'TA', student: 'Student', 'student-restricted': 'Student with access restrictions' };
 const memory = new Map<string, WorkspaceRole>();
 
 export function availableWorkspaceRoles(session: Session): WorkspaceRole[] {
   const user = session.user;
   if (!user) return [];
-  if (user.isAdmin) return ['admin', 'instructor', 'ta', 'student'];
-  if (user.platformInstructor || user.courseRoles.some(entry => entry.role === 'instructor')) return ['instructor', 'ta', 'student'];
-  if (user.courseRoles.some(entry => entry.role === 'ta')) return ['ta', 'student'];
+  if (user.isAdmin) return ['admin', 'instructor', 'ta', 'student-restricted', 'student'];
+  if (user.platformInstructor || user.courseRoles.some(entry => entry.role === 'instructor')) return ['instructor', 'ta', 'student-restricted', 'student'];
+  if (user.courseRoles.some(entry => entry.role === 'ta')) return ['ta', 'student-restricted', 'student'];
   return ['student'];
 }
 
@@ -35,7 +35,7 @@ export function rememberWorkspaceRole(session: Session, role: WorkspaceRole): vo
 }
 
 export function workspaceCourseId(): string | undefined {
-  const match = /^#\/(?:instructor\/|preview\/|ta\/)?course\/([^/?]+)/.exec(location.hash);
+  const match = /^#\/(?:instructor\/|preview\/(?:restricted\/)?|ta\/)?course\/([^/?]+)/.exec(location.hash);
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
@@ -51,6 +51,7 @@ export function workspaceHref(session: Session, role: WorkspaceRole, courseId = 
   const path = role === 'admin' ? '/admin/users'
     : role === 'instructor' ? teaches ? `/instructor/course/${encodeURIComponent(courseId!)}` : '/instructor/courses'
       : role === 'ta' ? teachingTeam ? `/ta/course/${encodeURIComponent(courseId!)}/review` : '/ta/courses'
+        : role === 'student-restricted' ? '/preview/restricted/courses'
         : availableWorkspaceRoles(session).length > 1
           ? teachingTeam ? `/preview/course/${encodeURIComponent(courseId!)}` : '/preview/courses'
           : '/';
@@ -60,20 +61,22 @@ export function workspaceHref(session: Session, role: WorkspaceRole, courseId = 
 export function createRoleSwitcher(session: Session, current: WorkspaceRole): HTMLElement {
   const roles = availableWorkspaceRoles(session);
   const primary = roles[0];
+  const label = (role: WorkspaceRole) => role === 'student' && roles.length > 1 ? 'Student without access restrictions' : ROLE_LABELS[role];
   const details = el('details', { class: 'role-switcher' });
-  const trigger = el('summary', { class: 'role-switcher__trigger', role: 'button', 'aria-expanded': 'false', 'aria-controls': 'workspace-role-options', 'aria-label': `Switch role, current role ${ROLE_LABELS[current]}` },
-    el('span', { class: 'role-switcher__label', text: ROLE_LABELS[current] }));
+  const trigger = el('summary', { class: 'role-switcher__trigger', role: 'button', 'aria-expanded': 'false', 'aria-controls': 'workspace-role-options', 'aria-label': `Switch role, current role ${label(current)}` },
+    el('span', { class: 'role-switcher__label', text: ROLE_LABELS[current] }),
+    current === 'student' && roles.length > 1 ? el('span', { class: 'role-switcher__access', text: 'No access restrictions' }) : false);
   const menu = el('nav', { class: 'role-switcher__menu', id: 'workspace-role-options', 'aria-label': 'Switch role' },
     el('span', { class: 'role-switcher__hint', text: 'Workspace' }),
     ...roles.map(role => el('a', {
       class: 'role-switcher__option', href: workspaceHref(session, role),
       'aria-current': role === current ? 'page' : undefined,
-      'aria-label': role === primary && current !== primary ? `Back to ${ROLE_LABELS[role]}` : `Switch to ${ROLE_LABELS[role]}`,
+      'aria-label': role === primary && current !== primary ? `Back to ${label(role)}` : `Switch to ${label(role)}`,
       onclick: (event: Event) => {
         if (role === current) event.preventDefault();
         details.open = false;
       },
-    }, el('span', { text: role === primary && current !== primary ? `Back to ${ROLE_LABELS[role]}` : ROLE_LABELS[role] }),
+    }, el('span', { text: role === primary && current !== primary ? `Back to ${label(role)}` : label(role) }),
     role === current ? el('span', { 'aria-hidden': 'true', text: '✓' }) : false)),
   );
   // Resolve course context at opening time; the shell survives in-course navigation.

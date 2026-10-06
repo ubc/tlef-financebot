@@ -78,6 +78,7 @@ function userFixture(courseRoles: User['courseRoles']): User {
 }
 
 const instructor = userFixture([{ courseId, role: 'instructor' }]);
+const ta = userFixture([{ courseId, role: 'ta' }]);
 const student = userFixture([{ courseId, role: 'student' }]);
 
 function makeApp(user?: User): Express {
@@ -117,6 +118,29 @@ beforeEach(() => {
   jest.mocked(applySuggestedHierarchy).mockReset();
   jest.mocked(resolveClassification).mockReset();
   jest.mocked(suggestHierarchy).mockReset();
+});
+
+describe('TA read-only material access', () => {
+  it('lists and inspects materials in the assigned course', async () => {
+    const material = { _id: materialId, courseId, name: 'Course notes', format: 'url', status: 'ready', assignments: [], uploadedAt: new Date(), sourceUrl: 'https://example.com/notes' };
+    jest.mocked(listMaterials).mockResolvedValue([material] as never);
+    jest.mocked(getMaterialWorkspaceDetail).mockResolvedValue({ material, chunks: [{ index: 0, text: 'A lesson', characterCount: 8 }] } as never);
+    const list = await request(makeApp(ta)).get(`/api/courses/${courseId}/materials`);
+    const detail = await request(makeApp(ta)).get(`/api/courses/${courseId}/materials/${materialId}/workspace`);
+    const source = await request(makeApp(ta)).get(`/api/courses/${courseId}/materials/${materialId}/source`);
+    expect(list.status).toBe(200);
+    expect(detail.status).toBe(200);
+    expect(detail.body.chunks[0].text).toBe('A lesson');
+    expect(source.status).toBe(302);
+    expect(source.headers.location).toBe('https://example.com/notes');
+  });
+
+  it('denies another course and keeps material mutations instructor-only', async () => {
+    expect((await request(makeApp(ta)).get(`/api/courses/${otherCourseId}/materials`)).status).toBe(403);
+    expect((await request(makeApp(student)).get(`/api/courses/${courseId}/materials`)).status).toBe(403);
+    expect((await request(makeApp(ta)).post(`/api/courses/${courseId}/materials`).send({ url: 'https://example.com/notes' })).status).toBe(403);
+    expect(createUrlMaterial).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/courses/:courseId/materials — instructor guard', () => {

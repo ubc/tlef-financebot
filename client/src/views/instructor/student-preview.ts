@@ -13,35 +13,36 @@ import { renderSessionSummaryWithExperience } from '../student/session-summary.j
  * difference is the `/preview` namespace and the injected isolated data
  * adapter; no alternate topic-card HTML or Preview-only layout exists.
  */
-export function previewStudentRoutes(experience: StudentExperience): Route[] {
+export function previewStudentRoutes(experience: StudentExperience, restricted = false): Route[] {
+  const base = `/preview/${restricted ? 'restricted/' : ''}course/:id`;
   return [
-    { path: '/preview/course/:id/discussion', render: (outlet, params) => renderDiscussion(outlet, params, true) },
+    { path: `${base}/discussion`, render: (outlet, params) => renderDiscussion(outlet, params, true) },
     {
-      path: '/preview/course/:id/practice-theme/:themeId',
+      path: `${base}/practice-theme/:themeId`,
       render: (outlet, params) => renderPracticeWithExperience(outlet, params, experience),
     },
     {
-      path: '/preview/course/:id/practice/:loId',
+      path: `${base}/practice/:loId`,
       render: (outlet, params) => renderPracticeWithExperience(outlet, params, experience),
     },
     {
-      path: '/preview/course/:id/review-book',
+      path: `${base}/review-book`,
       render: (outlet, params) => renderReviewBookWithExperience(outlet, params, experience),
     },
     {
-      path: '/preview/course/:id/summary',
+      path: `${base}/summary`,
       render: (outlet, params) => renderSessionSummaryWithExperience(outlet, params, experience),
     },
     {
-      path: '/preview/course/:id/theme/:themeId',
+      path: `${base}/theme/:themeId`,
       render: (outlet, params) => renderLoListWithExperience(outlet, params, experience),
     },
     {
-      path: '/preview/course/:id/courses',
+      path: `${base}/courses`,
       render: (outlet, params) => renderStudentCourses(outlet, experience, params.id),
     },
     {
-      path: '/preview/course/:id',
+      path: base,
       render: (outlet, params) => renderCourseHomeWithExperience(outlet, params, experience),
     },
   ];

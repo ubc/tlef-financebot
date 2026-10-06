@@ -1,3 +1,4 @@
+import { coursesCol } from '../mongodb/collections';
 import type { RequestHandler } from 'express';
 import { ObjectId } from 'mongodb';
 import type { CourseRole } from '../../types/domain';
@@ -47,11 +48,26 @@ function ensureCourseRole(...roles: CourseRole[]): RequestHandler {
 export const ensureCourseInstructor = (): RequestHandler => ensureCourseRole('instructor');
 export const ensureCourseStudent = (): RequestHandler => ensureCourseRole('student');
 export const ensureCourseTa = (): RequestHandler => ensureCourseRole('ta');
+/** Read-only teaching content shared with the current course's Instructor and TA. */
+export const ensureCourseTeachingMember = (): RequestHandler => ensureCourseRole('instructor', 'ta');
 
 /** Only for isolated anonymous Student Preview; this never grants access to
  * live Student records or Instructor tools. TA expiry/revocation removes the
  * course role, which Passport reloads on every authenticated request. */
 export const ensureCourseStudentPreview = (): RequestHandler => ensureCourseRole('instructor', 'ta');
+
+/** People/access mutations are owned by the course Owner or a platform Admin. */
+export function ensureCourseOwner(): RequestHandler {
+  return async (req, res, next) => {
+    if (!req.isAuthenticated() || !req.user) { res.status(401).json({ error: 'Authentication required.' }); return; }
+    if (req.user.isAdmin) { next(); return; }
+    const id = requestCourseId(req, res);
+    if (!id || !ObjectId.isValid(id)) { res.status(403).json(NO_COURSE_ACCESS_BODY); return; }
+    const course = await coursesCol().findOne({ _id: new ObjectId(id) }, { projection: { ownerPuid: 1 } });
+    if (!course || course.ownerPuid !== req.user.puid) { res.status(403).json({ error: 'Only the course owner or an Admin can manage people.' }); return; }
+    next();
+  };
+}
 
 /** Course Discussion is shared by enrolled students and the teaching team. */
 export const ensureCourseDiscussionMember = (): RequestHandler => ensureCourseRole('student', 'instructor', 'ta');

@@ -16,20 +16,21 @@ import type {
 } from '../types/domain';
 import { setCourseUserCapabilities } from './capabilities.service';
 import { editQuestion } from './questions.service';
-
-const UBC_EMAIL = /^[^\s@]+@(?:[^\s@.]+\.)*ubc\.ca$/i;
-
-function normalizeEmail(email: string): string {
-  const normalized = email.trim().toLowerCase();
-  if (!UBC_EMAIL.test(normalized)) throw new Error('ta-invalid-ubc-email');
-  return normalized;
-}
+import { importedCourseRoleUserFilter, importedTaInvites } from './people-import.service';
+import { resolveTeachingIdentity } from './teaching-identity.service';
 
 export async function addTa(
   courseId: ObjectId,
-  email: string,
+  identifier: string,
 ): Promise<WithId<TaInvite>> {
-  const normalized = normalizeEmail(email);
+  const { email: normalized, user: recipient } = await resolveTeachingIdentity(identifier, (reason, status) => {
+    throw Object.assign(new Error(reason === 'invalid-email' ? 'ta-invalid-ubc-email' : `ta-${reason}`), { status });
+  });
+  const course = await coursesCol().findOne({ _id: courseId });
+  if (!course) throw Object.assign(new Error('course-not-found'), { status: 404 });
+  if (course.lifecycle === 'archived' || course.archivedAt || (course.termEnd && course.termEnd <= new Date())) {
+    throw Object.assign(new Error('Restore the course and update its term before inviting a TA.'), { status: 409 });
+  }
   const existing = await taInvitesCol().findOne({ courseId, email: normalized });
   if (existing && existing.status !== 'expired') throw new Error('ta-invite-duplicate');
   const now = new Date();
@@ -37,12 +38,16 @@ export async function addTa(
     const updated = await taInvitesCol().findOneAndUpdate(
       { _id: existing._id },
       {
-        $set: { status: 'pending', invitedAt: now, updatedAt: now },
-        $unset: { activatedPuid: '' },
+        $set: { status: 'pending', invitedAt: now, updatedAt: now, ...(recipient ? { invitedPuid: recipient.puid } : {}) },
+        $unset: { activatedPuid: '', ...(!recipient ? { invitedPuid: '' } : {}) },
       },
       { returnDocument: 'after' },
     );
     if (!updated) throw new Error('ta-invite-save-failed');
+    if (recipient) {
+      await activatePendingTaInvites(recipient);
+      return (await taInvitesCol().findOne({ _id: updated._id })) ?? updated;
+    }
     return updated;
   }
   const doc: TaInvite = {
@@ -51,42 +56,73 @@ export async function addTa(
     status: 'pending',
     invitedAt: now,
     updatedAt: now,
+    ...(recipient ? { invitedPuid: recipient.puid } : {}),
   };
   const { insertedId } = await taInvitesCol().insertOne(doc);
+  if (recipient) {
+    await activatePendingTaInvites(recipient);
+    return (await taInvitesCol().findOne({ _id: insertedId })) ?? { _id: insertedId, ...doc };
+  }
   return { _id: insertedId, ...doc };
 }
 
 export async function listTas(courseId: ObjectId): Promise<Array<WithId<TaInvite> & {
-  displayName?: string;
+  displayName?: string; cwl?: string; source?: 'csv-import';
 }>> {
   const invites = await taInvitesCol().find({ courseId }).sort({ invitedAt: -1 }).toArray();
   const puids = invites.flatMap((invite) => invite.activatedPuid ? [invite.activatedPuid] : []);
   const users = puids.length ? await usersCol().find({ puid: { $in: puids } }).toArray() : [];
   const nameByPuid = new Map(users.map((user) => [user.puid, user.displayName]));
-  return invites.map((invite) => ({
+  const cwlByPuid = new Map(users.map((user) => [user.puid, user.uid]));
+  const imported = await importedTaInvites(courseId);
+  return [...invites.map((invite) => ({
     ...invite,
+    ...(invite.activatedPuid ? { cwl: cwlByPuid.get(invite.activatedPuid) } : {}),
     ...(invite.activatedPuid && nameByPuid.get(invite.activatedPuid)
       ? { displayName: nameByPuid.get(invite.activatedPuid) }
       : {}),
-  }));
+  })), ...imported.filter(member => !invites.some(invite => invite.status === 'active'
+    && (invite.activatedPuid === member.activatedPuid || (member.email && invite.email === member.email))))];
 }
 
 /** Activate every pending invitation matching the canonical SAML email. */
 export async function activatePendingTaInvites(user: User): Promise<User> {
   const email = (user.email ?? '').trim().toLowerCase();
-  if (!email) return user;
+  if (!email || user.deactivatedAt) return user;
   const invites = await taInvitesCol().find({ email, status: 'pending' }).toArray();
   if (invites.length === 0) return user;
+  // Match the unique persisted SAML identity, as co-instructor activation does.
+  // Ambiguous email ownership must not grant a role or block CWL sign-in.
+  try {
+    const identity = await resolveTeachingIdentity(email, (reason, status) => { throw Object.assign(new Error(reason), { status }); });
+    if (identity.user?.puid !== user.puid) return user;
+  } catch (error) {
+    if (error instanceof Error && 'status' in error) return user;
+    throw error;
+  }
   const now = new Date();
   for (const invite of invites) {
-    await usersCol().updateOne(
-      { puid: user.puid },
-      { $addToSet: { courseRoles: { courseId: invite.courseId, role: 'ta' } } },
-    );
-    await taInvitesCol().updateOne(
+    if (invite.invitedPuid && invite.invitedPuid !== user.puid) continue;
+    const course = await coursesCol().findOne({ _id: invite.courseId });
+    if (!course || course.lifecycle === 'archived' || course.archivedAt || (course.termEnd && course.termEnd <= now) || user.deactivatedAt) continue;
+    // Claim the still-pending invite before granting its role. An expiry that
+    // already changed its status must not activate through a stale read.
+    const claimed = await taInvitesCol().updateOne(
       { _id: invite._id, status: 'pending' },
       { $set: { status: 'active', activatedPuid: user.puid, updatedAt: now } },
     );
+    if (!claimed.modifiedCount) continue;
+    try {
+      await usersCol().updateOne(
+        { puid: user.puid, deactivatedAt: { $exists: false } },
+        { $addToSet: { courseRoles: { courseId: invite.courseId, role: 'ta' } } },
+      );
+    } catch (error) {
+      await taInvitesCol().updateOne({ _id: invite._id, status: 'active', activatedPuid: user.puid, updatedAt: now }, {
+        $set: { status: 'pending' }, $unset: { activatedPuid: '' },
+      });
+      throw error;
+    }
     if (invite.permissions) {
       await setCourseUserCapabilities(invite.courseId, user.puid, invite.permissions, user.puid);
     }
@@ -102,7 +138,7 @@ export async function setTaPermissions(
 ): Promise<void> {
   const user = await usersCol().findOne({
     puid,
-    courseRoles: { $elemMatch: { courseId, role: 'ta' } },
+    ...await importedCourseRoleUserFilter(courseId, ['ta']),
   });
   if (!user) throw new Error('ta-not-active');
   await setCourseUserCapabilities(courseId, puid, permissions, actorPuid);

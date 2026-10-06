@@ -1,3 +1,5 @@
+import { createModelUsageTracker } from '../services/model-usage.service';
+import { withModelCallObserver } from '../components/genai/llm/model-call';
 import { randomUUID } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { operationContext } from '../services/operation-context';
@@ -8,6 +10,12 @@ import type { OperationEvent } from '../types/domain';
 export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
+  const usage = createModelUsageTracker(() => ({
+    operationId: requestId,
+    courseId: String(res.locals.courseId ?? req.params.courseId ?? req.body?.courseId ?? ''),
+    ...(req.user ? { actor: { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } } : {}),
+    stage: 'api-completion',
+  }));
   res.setHeader('X-Request-ID', requestId);
   let response: Record<string, unknown> = {};
   const json = res.json;
@@ -16,6 +24,12 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     if (body && typeof body === 'object' && !Array.isArray(body)) {
       const data = body as Record<string, unknown>;
       response = { ...safeControls(data) };
+      for (const [field, rows, key] of [['runIds', data.runs, 'runId'], ['materialIds', data.materials, '_id']] as const) {
+        if (Array.isArray(rows)) response[field] = rows.slice(0, 100).flatMap(row => {
+          const id = row && typeof row === 'object' ? String((row as Record<string, unknown>)[key] ?? '') : '';
+          return /^[a-f\d]{24}$/i.test(id) ? [id] : [];
+        });
+      }
       if (typeof data.error === 'string') response.error = safeDiagnostic(data.error);
       if (typeof data.verificationError === 'string') response.error = safeDiagnostic(data.verificationError);
       if (typeof data.verificationError === 'string') response.hasIssues = true;
@@ -43,6 +57,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   function finish(aborted: boolean): void {
     if (recorded) return;
     recorded = true;
+    void usage.close();
     const failed = aborted || res.statusCode >= 400 || Boolean(response.error);
     const rawPath = req.originalUrl.split('?')[0];
     // Authenticated browser reports own their request ID. A client navigating
@@ -52,6 +67,8 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     // Closing an established SSE connection on navigation is normal, not a
     // failed user action. Failed handshakes are still recorded below.
     if (res.statusCode < 400 && String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
+    // Usage refreshes are diagnostics reads, not new user workflow steps.
+    if (!failed && req.method === 'GET' && (/\/content-runs\/[a-f\d]{24}\/usage$/i.test(rawPath) || /^\/api\/admin\/(model-usage|workflows)/.test(rawPath))) return;
     // Successful infrastructure polls are intentionally excluded. Failures stay.
     if (!failed && req.method === 'GET' && rawPath === '/api/notifications') return;
     if (!failed && (/^\/api\/(health|auth\/me|diagnostics\/client-error)$/.test(rawPath) || /\/events$/.test(rawPath))) return;
@@ -76,5 +93,5 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   }
   res.once('finish', () => finish(false));
   res.once('close', () => { if (!res.writableFinished) finish(true); });
-  operationContext.run(requestId, next);
+  withModelCallObserver(usage.observer, () => operationContext.run(requestId, next));
 };
