@@ -25,6 +25,7 @@ export default tseslint.config(
       'coverage-reports/**',
       'playwright-report*/**',
       'test-results/**',
+      'artifacts/**', // Archived prototypes, screenshots and local acceptance reports.
       '.claude/worktrees/**',
     ],
   },
@@ -59,6 +60,33 @@ export default tseslint.config(
         localStorage: 'readonly',
         innerWidth: 'readonly',
         getComputedStyle: 'readonly',
+      },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  // Standalone HTML prototypes execute in the browser, like the compiled client.
+  {
+    files: ['docs/design/assessment-workspace/*.js', 'docs/design/canvas-integration/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly', window: 'readonly', localStorage: 'readonly',
+        sessionStorage: 'readonly', navigator: 'readonly', console: 'readonly',
+        setTimeout: 'readonly', clearTimeout: 'readonly',
+        requestAnimationFrame: 'readonly', cancelAnimationFrame: 'readonly',
+        URL: 'readonly', Blob: 'readonly', Event: 'readonly', CustomEvent: 'readonly',
+      },
+    },
+  },
+  // Local acceptance scripts use Node with callbacks evaluated by Playwright.
+  {
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...nodeGlobals, document: 'readonly', window: 'readonly',
+        localStorage: 'readonly', sessionStorage: 'readonly',
+        innerWidth: 'readonly', getComputedStyle: 'readonly',
+        setTimeout: 'readonly', clearTimeout: 'readonly',
       },
     },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
