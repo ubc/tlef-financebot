@@ -42,12 +42,15 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (path === '/api/admin/directory' || path === '/api/admin/users') return route.fulfill({ json: [] });
     if (path === '/api/admin/courses' || path === '/api/courses') return route.fulfill({ json: COURSES });
     if (path === '/api/enrollments') return route.fulfill({ json: COURSES.map(course => ({ courseId: course._id, name: course.name, courseCode: course.courseCode, term: course.term, active: true })) });
-    const course = COURSES.find(entry => path.startsWith(`/api/courses/${entry._id}/`));
+    const course = COURSES.find(entry => path === `/api/courses/${entry._id}` || path.startsWith(`/api/courses/${entry._id}/`));
+    if (course && path === `/api/courses/${course._id}`) return route.fulfill({ json: { ...course, themes: [] } });
     if (course && path.endsWith('/preview/identity')) return route.fulfill({ json: { name: course.name, courseCode: course.courseCode, term: course.term, section: course.section } });
     if (course && path.endsWith('/outline')) return route.fulfill({ json: { course, themes: [] } });
+    if (course && path.endsWith('/learning/library')) return route.fulfill({ json: { settings: { mode: 'topic-practice', order: 'instructor', notes: [] }, questions: [], themes: [] } });
     if (course && path.endsWith('/home')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/session-summary')) return route.fulfill({ json: { welcome: false, deferred: null } });
     if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: { 'question.review': true, 'question.suggestEdit': true } });
+    if (course && path.endsWith('/questions')) return route.fulfill({ json: { questions: [], total: 0 } });
     if (course && path.endsWith('/ta/review-queue')) return route.fulfill({ json: [] });
     unhandled.push(path);
     return route.fulfill({ status: 404, json: { error: `Unconfigured role fixture: ${path}` } });
@@ -133,7 +136,9 @@ test('Admin role views keep usable TA and Student help without writing tutorial 
   await expect(page.locator('.help-lesson[data-tutorial-id^="student-"]')).toHaveCount(0);
   await page.getByRole('link', { name: 'Open page' }).first().click();
   await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
-  await expect(taHelp).toHaveAttribute('href', `#/ta/course/${COURSE}/help`);
+  await expect(taHelp).toBeHidden();
+  await page.locator('.sidebar').getByRole('link', { name: 'Back to all courses' }).click();
+  await expect(taHelp).toBeVisible();
   await switchRole(page, 'ta', 'student');
   const studentHelp = page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials' });
   await expect(studentHelp).toBeVisible();
@@ -383,3 +388,25 @@ for (const theme of ['light', 'dark'] as const) {
     state.assertClean();
   });
 }
+
+for (const role of ['instructor', 'ta'] as const) test(`${role} course navigation returns to global tools through the compact back link`, async ({ page }) => {
+  const state = await fixture(page, role, { path: role === 'ta' ? `/ta/course/${COURSE}/review` : `/instructor/course/${COURSE}/bank` });
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar.getByRole('link', { name: role === 'ta' ? 'Review Queue' : 'Question Bank', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+  await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
+  if (role === 'instructor') await expect(sidebar.getByRole('link', { name: 'Canvas connection' })).toBeHidden();
+  await expect(sidebar.locator('.course-context__project')).toHaveCount(0);
+  const back = sidebar.getByRole('link', { name: 'Back to all courses' });
+  await expect(back).toBeVisible();
+  await page.screenshot({ path: `audit-results/role-workspaces/${role}-compact-course-navigation.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Collapse navigation', exact: true }).click();
+  await expect(back).toBeVisible();
+  await back.click();
+  await expect(page).toHaveURL(new RegExp(`#/${role}/courses$`));
+  await expect(page.locator('.course-card')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
+  await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
+  state.assertClean();
+});

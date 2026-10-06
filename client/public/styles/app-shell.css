@@ -238,3 +238,15 @@
 @media (max-width: 440px) {
   .app-shell--unified .topbar__title { font-size: 10px; }
 }
+
+/* Course workspaces use one return link instead of a duplicate project card. */
+.app-shell--unified .course-context--back-only { padding: 0; border: 0; background: none; }
+.app-shell--unified .course-context--back-only .course-context__back {
+  display: flex; align-items: center; gap: 9px; margin: 0; padding: 9px 10px;
+  border-radius: 7px; font-size: 11px;
+}
+.course-context__back-icon { font-size: 16px; }
+@media (min-width: 761px) {
+  .app-shell--unified.is-collapsed .course-context--back-only .course-context__back { display: flex; justify-content: center; padding: 9px 0; }
+  .app-shell--unified.is-collapsed .course-context__back-label { display: none; }
+}

@@ -248,8 +248,6 @@ function createSidebarCollapse(
  * capability denials configured for their course role. */
 function buildTaShell(root: HTMLElement, session: Session, viewAs = false): RouterHandle {
   // The same shell can navigate actual TA courses and Instructor TA views.
-  // Admins also reach all-course choices through the shared My Courses page.
-  const courseIds = [...new Set(session.user?.courseRoles.filter(entry => entry.role === 'ta' || (viewAs && entry.role === 'instructor')).map(entry => entry.courseId) ?? [])];
   const initialCourseId = taCourseIdFromPath(hashPath());
   const preferenceKey = 'financebot:ta-sidebar-collapsed';
   const startsCollapsed = window.localStorage.getItem(preferenceKey) === 'true';
@@ -269,16 +267,6 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '2' }),
     el('span', { class: 'nav__text', text: 'Flag Triage' }),
   ) as HTMLAnchorElement;
-  const picker = el('select', {
-    class: 'input ta-course-picker',
-    'aria-label': 'TA course',
-    onchange: () => {
-      window.location.hash = `/ta/course/${encodeURIComponent(picker.value)}/review`;
-    },
-  }, ...courseIds.map((courseId, index) => el('option', {
-    value: courseId,
-    text: `Course project ${index + 1}`,
-  }))) as HTMLSelectElement;
   const workflowSection = el('div', { class: 'nav__section' },
     el('p', { class: 'nav__group', text: 'Course workflow' }),
     reviewLink,
@@ -287,16 +275,11 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
   nav.append(el('div', { class: 'nav__section' }, coursesLink), workflowSection);
   const helpLink = el('a', { class: 'nav__link', href: '#', title: 'Help & Tutorials' }, el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '?' }), el('span', { class: 'nav__text', text: 'Help & Tutorials' }));
   nav.append(helpLink);
-  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
-  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
-  const courseContext = el('section', { class: 'course-context', 'aria-label': 'Current course' },
-    el('div', { class: 'course-context__project' },
-      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'TA' }),
-      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+  const courseContext = el('section', { class: 'course-context course-context--back-only', 'aria-label': 'Course navigation' },
+    el('a', { class: 'course-context__back', href: '#/ta/courses', title: 'Back to all courses', 'aria-label': 'Back to all courses' },
+      el('span', { class: 'course-context__back-icon', 'aria-hidden': 'true', text: '←' }),
+      el('span', { class: 'course-context__back-label', text: 'All courses' }),
     ),
-    courseIds.length > 1
-      ? el('div', { class: 'course-context__picker' }, picker)
-      : false,
   );
   const collapseButton = createSidebarCollapse(shell, preferenceKey, startsCollapsed);
   const aside = el('aside', { class: 'sidebar sidebar--instructor sidebar--ta' },
@@ -340,8 +323,6 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
   let contextVersion = 0;
   function updateCourseContext(courseId: string): void {
     const version = ++contextVersion;
-    courseContextName.textContent = 'Course project';
-    courseContextMeta.textContent = 'Loading course…';
     topbarTitle.textContent = 'TA workspace';
     let request = courseIndex.get(courseId);
     if (!request) {
@@ -350,24 +331,11 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     }
     void request.then(({ course }) => {
       if (version !== contextVersion) return;
-      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
-      courseContextMeta.textContent = [course.term, course.section ? `Section ${course.section}` : '']
-        .filter(Boolean)
-        .join(' · ');
       topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
-      const option = Array.from(picker.options).find((candidate) => candidate.value === courseId);
-      if (option) option.textContent = `${course.courseCode} · ${course.name}`;
     }).catch(() => {
       if (version !== contextVersion) return;
       courseIndex.delete(courseId);
-      courseContextMeta.textContent = 'Teaching assistant workspace';
     });
-  }
-  for (const courseId of courseIds) {
-    void getCourseOutline(courseId).then(({ course }) => {
-      const option = Array.from(picker.options).find((candidate) => candidate.value === courseId);
-      if (option) option.textContent = `${course.courseCode} · ${course.name}`;
-    }).catch(() => undefined);
   }
   return startRouter({
     routes: [
@@ -382,6 +350,8 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     onNavigate: (path) => {
       const courseId = taCourseIdFromPath(path);
       courseContext.hidden = !courseId;
+      coursesLink.hidden = !!courseId;
+      helpLink.hidden = !!courseId;
       workflowSection.hidden = !courseId;
       helpLink.href = courseId ? `#/ta/course/${encodeURIComponent(courseId)}/help` : '#/ta/help';
       helpLink.classList.toggle('nav__link--active', path === '/ta/help' || path.endsWith('/help'));
@@ -398,7 +368,6 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
         return;
       }
       updateCourseContext(courseId);
-      picker.value = courseId;
       reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
       reviewLink.classList.toggle(
@@ -504,17 +473,12 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
   }
 
   const user = session.user;
-  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
-  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
-  const courseContext = el(
-    'section',
-    { class: 'course-context', hidden: 'hidden', 'aria-label': 'Current course' },
-    el('a', { class: 'course-context__back', href: '#/instructor/courses' }, '← All courses'),
-    el(
-      'div',
-      { class: 'course-context__project' },
-      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'P' }),
-      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+  const courseContext = el('section', {
+    class: 'course-context course-context--back-only', hidden: 'hidden', 'aria-label': 'Course navigation',
+  },
+    el('a', { class: 'course-context__back', href: '#/instructor/courses', title: 'Back to all courses', 'aria-label': 'Back to all courses' },
+      el('span', { class: 'course-context__back-icon', 'aria-hidden': 'true', text: '←' }),
+      el('span', { class: 'course-context__back-label', text: 'All courses' }),
     ),
   );
   const collapseButton = createSidebarCollapse(shell, sidebarPreferenceKey, startsCollapsed);
@@ -601,8 +565,6 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
       return;
     }
     courseContext.hidden = false;
-    courseContextName.textContent = 'Course project';
-    courseContextMeta.textContent = 'Loading course…';
     topbarTitle.textContent = 'Course project';
     let courseRequest = courseIndex.get(courseId);
     if (!courseRequest) {
@@ -611,15 +573,10 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
     }
     void courseRequest.then((course) => {
       if (version !== courseContextVersion) return;
-      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
-      courseContextMeta.textContent = [course.term, course.section ? `Section ${course.section}` : '']
-        .filter(Boolean)
-        .join(' · ');
       topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
     }).catch(() => {
       if (version !== courseContextVersion) return;
       courseIndex.delete(courseId);
-      courseContextMeta.textContent = 'Instructor workspace';
     });
   }
 
@@ -633,7 +590,7 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
       for (const { item, link, courseScoped } of anchors) {
         const resolvedHref = resolveHref(item, courseId);
         const href = item.path === '/instructor/help' && courseId ? `${resolvedHref}?courseId=${encodeURIComponent(courseId)}` : resolvedHref;
-        link.hidden = courseScoped && !courseId;
+        link.hidden = courseScoped ? !courseId : !!courseId;
         link.setAttribute('href', href ?? '#');
         const active = isNavItemActive(item, isAdmin && path === '/admin/accounts' ? '/admin/users' : path);
         link.classList.toggle('nav__link--active', active);
@@ -649,7 +606,7 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
         else link.removeAttribute('aria-current');
       }
       for (const section of sections) {
-        section.element.hidden = section.courseScoped && !courseId;
+        section.element.hidden = section.courseScoped ? !courseId : !!courseId;
       }
       document.title = `${isAdmin ? 'Admin' : anonymousInstructorPreview ? 'Instructor Preview' : 'Instructor'} · ${APP.name}`;
     },

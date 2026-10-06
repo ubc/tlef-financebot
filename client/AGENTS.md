@@ -227,3 +227,9 @@ Canvas connection is a top-level Instructor nav item (`/instructor/canvas/:id`
 selects a FinanceBot course without activating the course shell). Legacy course
 URLs redirect. People includes Canvas role/state, a server-derived You marker,
 role filtering, search and pagination; display membership does not grant roles.
+
+Instructor and TA course sidebars show only course navigation plus a compact
+Back to all courses link. Course identity remains in the topbar. Global links
+(My Courses, Canvas connection, Help, and Admin tools) appear outside a course;
+returning to the course list restores them. The return arrow remains accessible
+in the collapsed desktop rail. Student navigation is unchanged.
