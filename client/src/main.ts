@@ -1,3 +1,4 @@
+import { renderDiscussion } from './views/student/discussion.js';
 import { renderCanvas } from './views/instructor/canvas.js';
 import { createRoleSwitcher, selectedWorkspaceRole, rememberWorkspaceRole } from './role-workspace.js';
 import { renderWorkspaceCourses } from './views/workspace-courses.js';
@@ -121,6 +122,7 @@ const ROUTES: Route[] = [
   { path: '/course/:id/practice-theme/:themeId', render: renderPractice },
   { path: '/course/:id/practice/:loId', render: renderPractice },
   { path: '/course/:id/review-book', render: renderReviewBook },
+  { path: '/course/:id/discussion', render: renderDiscussion },
   { path: '/course/:id/summary', render: renderSessionSummary },
   { path: '/course/:id/exams', render: renderExamSelect },
   { path: '/course/:id/exam-attempt/:attemptId/results', render: renderExamResults },
@@ -153,6 +155,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/materials', render: renderMaterials },
   { path: '/instructor/course/:id/content-map', render: renderContentMap },
   { path: '/instructor/course/:id/settings', render: renderSettings },
+  { path: '/instructor/course/:id/discussion', render: renderDiscussion },
   { path: '/instructor/course/:id/co-instructors', render: renderCoInstructors },
   { path: '/instructor/course/:id/bank/:questionId/collaborate', render: renderCollaborativeEditor },
   { path: '/instructor/course/:id/exam-templates', render: renderExamTemplates },
@@ -726,6 +729,7 @@ function previewNavItems(courseId?: string): StudentNavItem[] {
     { label: 'Help & Tutorials', glyph: '?', path: () => '/preview/help' },
     { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId ?? '').replace(/^#/, '') },
     { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId ?? '').replace(/^#/, '') },
+    { label: 'Discussion', glyph: 'D', path: () => `/preview/course/${courseId ?? ''}/discussion` },
     { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
   ];
 }
@@ -926,6 +930,12 @@ function buildStudentShell(
   // stale or empty panel until the *next* navigation.
   const syncPracticeContext = (): void => {
     const actions = practiceMode ? getPracticeActions() : null;
+    nav.hidden = Boolean(actions);
+    if (practiceMode && !actions) {
+      const home = anchors.find(({ item }) => item.label === 'Course Home');
+      home?.link.classList.add('nav__link--active');
+      home?.link.setAttribute('aria-current', 'page');
+    }
     mount(
       practiceContextSlot,
       actions

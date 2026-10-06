@@ -52,3 +52,6 @@ export const ensureCourseTa = (): RequestHandler => ensureCourseRole('ta');
  * live Student records or Instructor tools. TA expiry/revocation removes the
  * course role, which Passport reloads on every authenticated request. */
 export const ensureCourseStudentPreview = (): RequestHandler => ensureCourseRole('instructor', 'ta');
+
+/** Course Discussion is shared by enrolled students and the teaching team. */
+export const ensureCourseDiscussionMember = (): RequestHandler => ensureCourseRole('student', 'instructor', 'ta');

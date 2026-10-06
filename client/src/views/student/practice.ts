@@ -1,3 +1,5 @@
+import { learningApi } from '../../student-learning-api.js';
+import { renderLinearLesson } from './learning-workspace.js';
 // Single-question practice view (ST-P04/P06 + retry-in-place): resolves the
 // LO/theme to practice from the route, then runs a serve → submit → next
 // loop with a scrollable transcript above the live question. Handles both
@@ -271,6 +273,16 @@ export async function renderPracticeWithExperience(
 ): Promise<void> {
   clearPracticeActions();
 
+  if (currentQuery().get('mode') !== 'review-book') {
+    try {
+      const library = await learningApi(params.id, experience.preview).library();
+      if (library.settings.mode === 'linear') {
+        const themeId = params.themeId ?? library.questions.find(q => q.loId === params.loId)?.themeId;
+        if (!themeId) { outlet.append(emptyState('No released questions are available for this objective.')); return; }
+        return renderLinearLesson(outlet, params.id, themeId, experience);
+      }
+    } catch (error) { outlet.append(errorState((error as Error).message)); return; }
+  }
   const courseId = params.id;
   const isThemeMode = params.themeId !== undefined;
   const mode: PracticeMode = currentQuery().get('mode') === 'review-book' ? 'review-book' : 'topic-practice';

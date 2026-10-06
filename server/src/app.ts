@@ -1,3 +1,4 @@
+import { studentLearningRouter } from './routes/student-learning.routes';
 import { canvasRouter } from './routes/canvas.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
@@ -102,6 +103,7 @@ export function createApp(): Express {
   app.use('/api', tasRouter); // TA invitations, permissions, review/suggestion/triage workflows (Phase 3 WS-12).
   app.use('/api', analyticsRouter); // Class/engagement/individual analytics (Phase 3 WS-11).
   app.use(authRouter); // /auth/* (login, callback, logout) + public /api/auth/me
+  app.use('/api', studentLearningRouter);
   app.use('/api', practiceRouter); // Attempts + adaptive feedback + Review Book auto-collection (ST-P04, ST-R01).
   app.use('/api', reviewBookRouter); // Review Book browsing/bookmarking + session summaries (ST-R02..R07, ST-P10/P11).
   app.use('/api', flagsRouter); // Student flagging + instructor flag-resolution queue + configurable auto-pause (ST-P09, §4.3, §6.2).

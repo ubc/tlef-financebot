@@ -1,3 +1,4 @@
+import { teachingSettingsPanel } from './teaching-settings.js';
 import { attachTutorial } from '../../tutorials.js';
 // Course Settings (I4) — term dates, feedback strategy, auto-pause,
 // registration code, and roster (Task 15, Task C). See
@@ -518,6 +519,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         el('p', { class: 'admin-fine', text: 'Permanently delete this course and every record, uploaded file, and knowledge vector that belongs to it. This cannot be reversed.' }), deletionErrorSlot,
         canPermanentlyDelete ? el('button', { class: 'btn btn--danger', type: 'button', onclick: () => permanentlyDelete(), text: 'Delete course permanently' }) : el('p', { text: 'Only the course owner or an administrator can permanently delete this course.' }))),
   };
+  sections['Teaching mode'] = teachingSettingsPanel(courseId);
   const nav = el('nav', { class: 'admin-local-nav', 'aria-label': 'Settings sections' });
   const content = el('div', { class: 'admin-pane' });
   const save = el('button', { class: 'btn btn--instr-primary', type: 'button', text: 'Save changes', onclick: () => saveSettings() });
@@ -526,7 +528,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     activeSection = name;
     nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.textContent === name)));
     content.replaceChildren(el('div', { class: 'admin-subhead' }, el('h2', { text: name }), el('small', { text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''}` })), sections[name]);
-    footer.hidden = name === 'Enrollment' || name === 'Course lifecycle';
+    footer.hidden = name === 'Enrollment' || name === 'Course lifecycle' || name === 'Teaching mode';
     settingsStatusSlot.replaceChildren(); settingsErrorSlot.replaceChildren();
   }
   Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));

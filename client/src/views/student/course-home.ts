@@ -1,3 +1,4 @@
+import { learningApi, type LearningLibrary } from '../../student-learning-api.js';
 // Student course home / "Topic List" (ST-P01/P02, Figma wireframe screen 2):
 // a pageHeader (course name + code · term · overall LO coverage) followed by
 // a "Topic Practice" list of progressRows — one per Topic (the domain model
@@ -57,7 +58,7 @@ function sessionBanner(
     return el(
       'div',
       { class: 'banner banner--welcome' },
-      el('p', { class: 'banner__text', text: "Welcome! Pick a topic below to start practicing — there's no rush." }),
+      el('p', { class: 'banner__text', text: "Welcome! Choose a topic below to begin — there's no rush." }),
       el('button', { class: 'icon-btn banner__dismiss', type: 'button', 'aria-label': 'Dismiss', onclick: onDismiss }, '✕'),
     );
   }
@@ -92,17 +93,20 @@ function topicRow(
   group: CourseHomeTheme,
   index: number,
   experience: StudentExperience,
+  library?: LearningLibrary,
 ): HTMLElement {
   const { covered, total } = coverage(group);
   const status = topicStatus(group);
   const href = experience.routes.practiceTheme(courseId, group.theme._id);
+  const questions = library?.questions.filter(q => q.themeId === group.theme._id) ?? [];
+  const linear = library?.settings.mode === 'linear';
   return progressRow(
     index,
     group.theme.name,
-    `${covered}/${total} LOs covered`,
+    linear ? `${questions.filter(q => q.answered).length}/${questions.length} questions answered` : `${covered}/${total} LOs covered`,
     masteryBadge(status),
     {
-      text: status === 'not-attempted' ? 'Start →' : 'Practice again',
+      text: linear ? (questions.some(q => q.answered) ? 'Continue lesson →' : 'Start lesson →') : status === 'not-attempted' ? 'Start →' : 'Practice again',
       primary: true,
       onClick: () => {
         window.location.hash = href;
@@ -121,11 +125,12 @@ export async function renderCourseHomeWithExperience(
   outlet.append(root);
 
   try {
-    const [home, enrollments, summary, activeExams] = await Promise.all([
+    const [home, enrollments, summary, activeExams, library] = await Promise.all([
       experience.getHome(courseId),
       experience.listEnrollments(courseId),
       experience.getSessionStart(courseId),
       experience.preview ? Promise.resolve([]) : listActiveExams(courseId),
+      learningApi(courseId, experience.preview).library(),
     ]);
     const enrollment = enrollments.find((e) => e.courseId === courseId);
     const { covered, total } = overallCoverage(home);
@@ -147,11 +152,11 @@ export async function renderCourseHomeWithExperience(
         : el(
             'section',
             {},
-            el('h2', { class: 'section-title', text: 'Topic Practice' }),
+            el('h2', { class: 'section-title', text: library.settings.mode === 'linear' ? 'Course lessons' : 'Topic Practice' }),
             el(
               'div',
               { class: 'stack' },
-              ...home.map((group, i) => topicRow(courseId, group, i + 1, experience)),
+              ...home.map((group, i) => topicRow(courseId, group, i + 1, experience, library)),
             ),
           );
     body.setAttribute('data-tutorial', 'topic-list');
@@ -162,7 +167,7 @@ export async function renderCourseHomeWithExperience(
           el('p', { class: 'eyebrow', text: 'Course learning project' }),
           el('h1', { class: 'student-course-hero__title', text: enrollment?.name ?? 'Course' }),
           el('p', { class: 'student-course-hero__meta mono', text: subtitle }),
-          el('p', { class: 'student-course-hero__lead', text: 'Build mastery one topic at a time. Practice is low-stakes, resumable, and connected to your Review Book.' }),
+          el('p', { class: 'student-course-hero__lead', text: library.settings.mode === 'linear' ? 'Learn through your instructor’s questions, one at a time. Resume anytime and return to skipped questions.' : 'Build mastery one topic at a time. Practice is low-stakes, resumable, and connected to your Review Book.' }),
         ),
         el('div', { class: 'student-course-hero__progress' },
           el('strong', { text: `${total ? Math.round((covered / total) * 100) : 0}%` }),
@@ -177,7 +182,7 @@ export async function renderCourseHomeWithExperience(
           el('strong', { text: '1' }), el('span', { text: 'Choose a topic' }),
         ),
         el('span', { class: 'student-learning-flow__step' },
-          el('strong', { text: '2' }), el('span', { text: 'Practice and retry' }),
+          el('strong', { text: '2' }), el('span', { text: library.settings.mode === 'linear' ? 'Answer one by one' : 'Practice and retry' }),
         ),
         el('span', { class: 'student-learning-flow__step' },
           el('strong', { text: '3' }), el('span', { text: 'Review weak areas' }),

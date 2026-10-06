@@ -1,3 +1,4 @@
+import { renderDiscussion } from '../student/discussion.js';
 import type { Route } from '../../router.js';
 import { renderStudentCourses } from '../home.js';
 import { renderCourseHomeWithExperience } from '../student/course-home.js';
@@ -14,6 +15,7 @@ import { renderSessionSummaryWithExperience } from '../student/session-summary.j
  */
 export function previewStudentRoutes(experience: StudentExperience): Route[] {
   return [
+    { path: '/preview/course/:id/discussion', render: (outlet, params) => renderDiscussion(outlet, params, true) },
     {
       path: '/preview/course/:id/practice-theme/:themeId',
       render: (outlet, params) => renderPracticeWithExperience(outlet, params, experience),

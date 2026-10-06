@@ -46,6 +46,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Generate Questions', path: '/instructor/course/:id/preseeding', glyph: '3' },
       { label: 'Review Queue', path: '/instructor/course/:id/queue', glyph: '4' },
       { label: 'Question Bank', path: '/instructor/course/:id/bank', glyph: '5' },
+      { label: 'Discussion', path: '/instructor/course/:id/discussion', glyph: 'D' },
     ],
   },
   {

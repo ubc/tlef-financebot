@@ -970,3 +970,62 @@ Only the existing active, exact-identity authorization rules produce grants.
 The global instructor workspace is `#/instructor/canvas`, with a selected course
 at `#/instructor/canvas/:id`. Legacy course Canvas URLs redirect there. All API
 reads and writes retain course-scoped Instructor guards. Course cards are unchanged.
+
+## Student learning v2 and course Discussion
+
+The following endpoints are additive. Existing Topic Practice and Exam Prep
+contracts remain in place. Live learning is Student-only; every course endpoint
+validates the current course role. Discussion accepts Students, current TAs and
+Instructors. Its moderation actions are independently enforced in the service:
+only Instructors/Admins close/reopen, pin, delete and restore; teaching-team
+members can post official answers, endorse student answers and resolve posts.
+
+- `GET|PUT /courses/:courseId/learning-settings` (Instructor): `{ revision,
+  mode: 'topic-practice'|'linear', order: 'instructor'|'personalized',
+  questionOrder: questionId[], notes: [{ questionId, visibility:
+  'always'|'after-submit', text?, materialId?, pageStart?, pageEnd? }] }`.
+  PUT is revision guarded. Ready material references must belong to the course
+  and be assigned to an objective of the question.
+- `GET /courses/:courseId/learning/library` returns all currently servable,
+  Approved, released questions plus the caller's own bookmarks, private tags,
+  first lesson completion and review timestamps. No answers/option roles are
+  included. Personalization uses only the caller's graded LO evidence and
+  preserves teacher order inside each objective; without evidence teacher order
+  remains unchanged.
+- `POST /courses/:courseId/learning/sessions` accepts `{ kind:
+  'lesson'|'test'|'cards'|'browse', themeId?, questionIds?, random?, roundId? }`.
+  Lessons resume one durable topic sequence; reopening appends newly released questions once while keeping existing answers and versions. Review tests/cards use a caller
+  generated UUID roundId for retry-safe finite rounds. Parameters and versions
+  are pinned server-side; the client never supplies grading values.
+- `GET|PUT /courses/:courseId/learning/sessions/:id`: PUT `{ revision, action:
+  'draft'|'move'|'submit'|'reveal'|'rate', key?, cursor?, rating? }`. Drafts and
+  skips remain answerable. The first submitted answer is immutable. Graded
+  submissions reveal full explanations and do not enqueue forced retries.
+  `reveal` applies only to browse/cards. Self-ratings do not create attempts or
+  mastery evidence. Stale revisions return 409; ownership failures return 404.
+- `GET /courses/:courseId/learning/sessions/:id/material` serves only the
+  current question's visible configured notes material; after-submit visibility
+  cannot be bypassed by guessing a source id.
+- `PUT /courses/:courseId/learning/questions/:id/metadata` accepts explicit
+  `{ saved?, confusing?, tags? }`, including bookmarks before any attempt.
+- `GET|POST /courses/:courseId/discussion`: GET accepts `offset` (pages of 100 with `hasMore`); POST `{ title, text, category:
+  'general'|'concept'|'method'|'explanation'|'material'|'logistics'|'note',
+  audience: 'course'|'staff', anonymous, questionId?, themeId?, loId? }`.
+  Question linkage overrides caller-provided Topic/LO; without a question both
+  fields are optional. Staff-only posts are visible only to the author and
+  teaching team. Classmate projections never include anonymous identities.
+- `GET /courses/:courseId/discussion/questions[/:id]`: released question
+  picker or stem/options preview, always without correctness and explanations.
+- `PUT /courses/:courseId/discussion/:id`: `{ revision, action:
+  'reply'|'close'|'reopen'|'delete'|'restore'|'pin'|'resolve'|'endorse'|'vote'|
+  'follow', text?, kind: 'student'|'instructor'|'followup', anonymous?,
+  replyId?, value? }`. Closed posts remain readable and reject new replies.
+  Delete is soft; Instructor restore is available for 24 hours. Official answers
+  are named; student answers and follow-ups may be anonymous to classmates.
+
+Live learner identity always comes from the authenticated session. All learning
+and Discussion routes above also exist under `/courses/:courseId/preview/` with
+mandatory `?previewSessionId=<UUID>`, guarded by current course Instructor/TA
+access. They use separate expiring collections. Preview does not grant live
+Student or moderation access. No notifications are sent by these new endpoints.
+Permanent course deletion includes all new live and Preview records.

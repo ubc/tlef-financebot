@@ -1,3 +1,4 @@
+import { learningSettingsCol, learningSessionsCol, previewLearningSessionsCol, reviewMetadataCol, previewReviewMetadataCol, discussionPostsCol, previewDiscussionPostsCol } from '../components/mongodb/collections';
 import { getDb } from '../components/mongodb';
 import { lstat, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -201,6 +202,7 @@ export async function permanentlyDeleteCourse(
     auditTargets.push({ targetType: 'flag', targetId: { $in: flagIds } });
   }
 
+  await Promise.all([learningSettingsCol().deleteMany({ courseId }), learningSessionsCol().deleteMany({ courseId }), previewLearningSessionsCol().deleteMany({ courseId }), reviewMetadataCol().deleteMany({ courseId }), previewReviewMetadataCol().deleteMany({ courseId }), discussionPostsCol().deleteMany({ courseId }), previewDiscussionPostsCol().deleteMany({ courseId })]);
   const deletions = await Promise.all([
     themesCol().deleteMany({ courseId }),
     losCol().deleteMany({ courseId }),

@@ -160,3 +160,25 @@ export interface GenerationSubmission {
 }
 export const generationSubmissionsCol = (): Collection<GenerationSubmission> =>
   getDb().collection<GenerationSubmission>('generationSubmissions');
+
+// Student learning v2: Preview records are structurally separate and expire.
+import type { LearningSettings, LearningSession, ReviewMetadata, DiscussionPost } from '../../types/student-learning';
+export const learningSettingsCol = (): Collection<LearningSettings> => getDb().collection<LearningSettings>('learningSettings');
+export const learningSessionsCol = (): Collection<LearningSession> => getDb().collection<LearningSession>('learningSessions');
+export const previewLearningSessionsCol = (): Collection<LearningSession> => getDb().collection<LearningSession>('previewLearningSessions');
+export const reviewMetadataCol = (): Collection<ReviewMetadata> => getDb().collection<ReviewMetadata>('reviewMetadata');
+export const previewReviewMetadataCol = (): Collection<ReviewMetadata> => getDb().collection<ReviewMetadata>('previewReviewMetadata');
+export const discussionPostsCol = (): Collection<DiscussionPost> => getDb().collection<DiscussionPost>('discussionPosts');
+export const previewDiscussionPostsCol = (): Collection<DiscussionPost> => getDb().collection<DiscussionPost>('previewDiscussionPosts');
+INDEX_SPECS.push(
+  { collection: 'learningSettings', keys: { courseId: 1 }, options: { unique: true } },
+  { collection: 'learningSessions', keys: { courseId: 1, owner: 1, kind: 1, scope: 1 }, options: { unique: true } },
+  { collection: 'previewLearningSessions', keys: { courseId: 1, owner: 1, previewSessionId: 1, kind: 1, scope: 1 }, options: { unique: true } },
+  { collection: 'previewLearningSessions', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: 'reviewMetadata', keys: { courseId: 1, owner: 1, questionId: 1 }, options: { unique: true } },
+  { collection: 'previewReviewMetadata', keys: { courseId: 1, owner: 1, previewSessionId: 1, questionId: 1 }, options: { unique: true } },
+  { collection: 'previewReviewMetadata', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: 'discussionPosts', keys: { courseId: 1, pinned: -1, updatedAt: -1 } },
+  { collection: 'previewDiscussionPosts', keys: { courseId: 1, previewOwner: 1, previewSessionId: 1 } },
+  { collection: 'previewDiscussionPosts', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+);

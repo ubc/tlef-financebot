@@ -7,6 +7,7 @@ jest.mock('node:fs/promises', () => ({ lstat: jest.fn(), rm: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest.fn() }));
 jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExists: jest.fn() }));
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  learningSettingsCol: jest.fn(), learningSessionsCol: jest.fn(), previewLearningSessionsCol: jest.fn(), reviewMetadataCol: jest.fn(), previewReviewMetadataCol: jest.fn(), discussionPostsCol: jest.fn(), previewDiscussionPostsCol: jest.fn(),
   attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(),
   contentRunsCol: jest.fn(), coursesCol: jest.fn(), examAttemptsCol: jest.fn(),
   examTemplatesCol: jest.fn(), flagsCol: jest.fn(), generationBlueprintsCol: jest.fn(), generationSubmissionsCol: jest.fn(),
@@ -35,6 +36,7 @@ type FakeCollection = {
 };
 
 const accessorNames = [
+  'learningSettingsCol', 'learningSessionsCol', 'previewLearningSessionsCol', 'reviewMetadataCol', 'previewReviewMetadataCol', 'discussionPostsCol', 'previewDiscussionPostsCol',
   'attemptsCol', 'auditCol', 'capabilitySettingsCol', 'contentRunsCol', 'coursesCol',
   'examAttemptsCol', 'examTemplatesCol', 'flagsCol', 'generationBlueprintsCol', 'generationSubmissionsCol', 'losCol',
   'masteryCol', 'materialChunksCol', 'materialsCol', 'notificationsCol', 'previewAttemptsCol',
