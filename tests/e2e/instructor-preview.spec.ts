@@ -201,7 +201,9 @@ test.describe('Instructor student preview', () => {
     await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
     await expect(page.getByText('Anonymous Student', { exact: true })).toBeVisible();
     await expect(page.getByText('Anonymous Student Preview', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
+    await expect(page.locator('.sidebar').getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+    await expect(page.locator('.sidebar').getByRole('link', { name: 'Help & Tutorials', exact: true })).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Back to all courses', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Review Book', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Exam Prep', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: /^Exit (?:Preview|TA View)$/, includeHidden: true })).toHaveCount(0);

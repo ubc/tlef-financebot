@@ -64,6 +64,7 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (course && path.endsWith('/learning/library')) return route.fulfill({ json: { settings: { mode: 'topic-practice', order: 'instructor' }, questions: [] } });
     if (course && path.endsWith('/discussion')) return route.fulfill({ json: { staff: false, moderator: false, posts: [], themes: [], los: [] } });
     if (course && path.endsWith('/home')) return route.fulfill({ json: [] });
+    if (course && path.endsWith('/exams')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/session-summary')) return route.fulfill({ json: { welcome: false, deferred: null } });
     if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: {
       'question.review': true, 'question.suggest-edit': true,
@@ -202,7 +203,7 @@ for (const role of ['admin', 'instructor', 'ta'] as const) test(`${role} can com
   expect(state.requests.some(url => url.pathname.endsWith(`/preview/identity`) && url.searchParams.get('access') === 'restricted')).toBe(true);
   await switchRole(page, 'student-restricted', 'student');
   await expect(page.getByRole('heading', { name: DRAFT_COURSE.name })).toBeVisible();
-  await page.locator('.sidebar').getByRole('link', { name: 'My Courses' }).click();
+  await page.locator('.sidebar').getByRole('link', { name: 'Back to all courses' }).click();
   await expect(page.locator('.course-card')).toHaveCount(3);
   await expect(page.getByText(DRAFT_COURSE.name)).toBeVisible();
   state.assertClean();
@@ -383,7 +384,7 @@ test('TA can preview assigned courses as Student and return without higher-role 
   const studentMenu = await openRoles(page, 'student');
   await expect(studentMenu.getByRole('link', { name: 'Back to TA', exact: true })).toHaveAttribute('href', `#/ta/course/${COURSE}/review?workspace=ta`);
   await page.keyboard.press('Escape');
-  await page.locator('.sidebar').getByRole('link', { name: 'My Courses', exact: true }).click();
+  await page.locator('.sidebar').getByRole('link', { name: 'Back to all courses' }).click();
   await switchRole(page, 'student', 'ta', true);
   await expect(page).toHaveURL(/#\/ta\/courses/);
   state.assertClean();
@@ -396,7 +397,7 @@ test('Student Preview switches course identity and isolated session, and refresh
   await expect(page.getByRole('heading', { name: 'Finance Foundations', exact: true, level: 1 })).toBeVisible();
   const first = await page.evaluate(() => JSON.parse(sessionStorage.getItem('financebot-anonymous-preview')!));
   expect(first.courseId).toBe(COURSE);
-  await page.locator('.sidebar').getByRole('link', { name: 'My Courses', exact: true }).click();
+  await page.locator('.sidebar').getByRole('link', { name: 'Back to all courses' }).click();
   await page.locator('.course-card').filter({ hasText: 'Advanced Finance' }).click();
   await expect(page.getByRole('heading', { name: 'Advanced Finance', exact: true, level: 1 })).toBeVisible();
   const second = await page.evaluate(() => JSON.parse(sessionStorage.getItem('financebot-anonymous-preview')!));
@@ -504,24 +505,71 @@ for (const theme of ['light', 'dark'] as const) {
   });
 }
 
-for (const role of ['instructor', 'ta'] as const) test(`${role} course navigation returns to global tools through the compact back link`, async ({ page }) => {
-  const state = await fixture(page, role, { path: `/${role}/course/${COURSE}/analytics` });
+for (const view of [
+  { role: 'instructor', workspace: 'instructor', query: '' },
+  { role: 'ta', workspace: 'ta', query: '' },
+  { role: 'admin', workspace: 'instructor', query: '' },
+  { role: 'admin', workspace: 'instructor', query: '?workspace=instructor' },
+] as const) test(`${view.role} ${view.query || view.workspace} course navigation returns to global tools through the compact back link`, async ({ page }) => {
+  const state = await fixture(page, view.role, { path: `/${view.workspace}/course/${COURSE}/analytics${view.query}` });
   const sidebar = page.locator('.sidebar');
   await expect(page.getByRole('heading', { name: 'Student Analytics' })).toBeVisible();
   await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
   await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
-  if (role === 'instructor') await expect(sidebar.getByRole('link', { name: 'Canvas connection' })).toBeHidden();
+  if (view.workspace === 'instructor') await expect(sidebar.getByRole('link', { name: 'Canvas connection' })).toBeHidden();
+  if (view.role === 'admin' && !view.query) await expect(sidebar.getByRole('link', { name: 'User Directory' })).toBeHidden();
   await expect(sidebar.locator('.course-context__project')).toHaveCount(0);
   const back = sidebar.getByRole('link', { name: 'Back to all courses' });
   await expect(back).toBeVisible();
-  await page.screenshot({ path: `audit-results/role-workspaces/${role}-compact-course-navigation.png`, fullPage: true });
+  await page.screenshot({ path: `audit-results/role-workspaces/${view.role}-${view.query ? 'preview' : view.workspace}-compact-course-navigation.png`, fullPage: true });
   await page.getByRole('button', { name: 'Collapse navigation', exact: true }).click();
   await expect(back).toBeVisible();
   await back.click();
-  await expect(page).toHaveURL(new RegExp(`#/${role}/courses$`));
+  await expect(page).toHaveURL(new RegExp(`#/${view.workspace}/courses$`));
   await expect(page.locator('.course-card')).toHaveCount(2);
   await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
   await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
   await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
   state.assertClean();
 });
+
+for (const role of ['student', 'admin', 'instructor', 'ta'] as const) {
+  for (const restricted of role === 'student' ? [false] : [false, true]) {
+    test(`${role} ${restricted ? 'restricted' : 'unrestricted'} Student course navigation uses only course tabs and the compact back link`, async ({ page }) => {
+      const base = role === 'student' ? '/' : `/preview/${restricted ? 'restricted/' : ''}`;
+      const state = await fixture(page, role, { path: `${base}course/${COURSE}` });
+      const sidebar = page.locator('.sidebar');
+      await expect(page.getByRole('heading', { name: 'Finance Foundations', exact: true, level: 1 })).toBeVisible();
+      await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+      await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
+      if (role === 'student') await expect(sidebar.getByRole('link', { name: 'Settings', exact: true })).toBeHidden();
+      await expect(sidebar.locator('.course-context__project')).toHaveCount(0);
+      await expect(sidebar.getByRole('link', { name: 'Course Home' })).toHaveAttribute('href', `#${base}course/${COURSE}`);
+      await expect(sidebar.getByRole('link', { name: 'Review Book' })).toHaveAttribute('href', `#${base}course/${COURSE}/review-book`);
+      await expect(sidebar.getByRole('link', { name: 'Discussion' })).toHaveAttribute('href', `#${base}course/${COURSE}/discussion`);
+      const back = sidebar.getByRole('link', { name: 'Back to all courses' });
+      await expect(back).toBeVisible();
+      await page.getByRole('button', { name: 'Collapse navigation', exact: true }).click();
+      await expect(back).toBeVisible();
+      await back.click();
+      await expect(page.locator('.course-card')).toHaveCount(2);
+      await expect(sidebar.locator('.nav__section--course')).toBeHidden();
+      await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
+      await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeVisible();
+      await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeVisible();
+      await page.locator('.course-card').filter({ hasText: 'Advanced Finance' }).click();
+      await expect(page.getByRole('heading', { name: 'Advanced Finance', exact: true, level: 1 })).toBeVisible();
+      await expect(sidebar.getByRole('link', { name: 'Discussion' })).toHaveAttribute('href', `#${base}course/${OTHER_COURSE}/discussion`);
+      await page.reload();
+      await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+      await expect(back).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByRole('button', { name: 'Toggle navigation', exact: true }).click();
+      await expect(back).toBeVisible();
+      await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
+      await back.click();
+      await expect(page.locator('.course-card')).toHaveCount(2);
+      state.assertClean();
+    });
+  }
+}

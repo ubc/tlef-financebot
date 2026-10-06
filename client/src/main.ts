@@ -749,15 +749,15 @@ function isPreviewPracticePath(path: string): boolean {
   return /^\/preview\/(?:restricted\/)?course\/[^/]+\/practice(-theme)?\//.test(path);
 }
 
-function previewNavItems(courseId?: string, restricted = false): StudentNavItem[] {
+function previewNavItems(restricted = false): StudentNavItem[] {
   const routes = previewNavRoutes(restricted);
   const base = `/preview/${restricted ? 'restricted/' : ''}`;
   return [
     { label: 'My Courses', glyph: 'C', path: () => `${base}courses` },
     { label: 'Help & Tutorials', glyph: '?', path: () => `${base}help` },
-    { label: 'Course Home', glyph: 'H', path: () => routes.course(courseId ?? '').replace(/^#/, '') },
-    { label: 'Review Book', glyph: 'R', path: () => routes.reviewBook(courseId ?? '').replace(/^#/, '') },
-    { label: 'Discussion', glyph: 'D', path: () => `${base}course/${courseId ?? ''}/discussion` },
+    { label: 'Course Home', glyph: 'H', path: (id) => routes.course(id).replace(/^#/, '') },
+    { label: 'Review Book', glyph: 'R', path: (id) => routes.reviewBook(id).replace(/^#/, '') },
+    { label: 'Discussion', glyph: 'D', path: (id) => `${base}course/${encodeURIComponent(id)}/discussion` },
     { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
   ];
 }
@@ -828,20 +828,18 @@ function buildStudentShell(
   const practiceContextSlot = el('div', { class: 'practice-context-slot' });
 
   const user = session.user;
-  const courseContextName = el('strong', { class: 'course-context__name', text: 'Course project' });
-  const courseContextMeta = el('span', { class: 'course-context__meta', text: 'Loading course…' });
   const courseContext = el('section', {
-    class: 'course-context', hidden: 'hidden', 'aria-label': 'Current course',
+    class: 'course-context course-context--back-only', hidden: 'hidden', 'aria-label': 'Course navigation',
   },
     el('a', {
       class: 'course-context__back',
       href: config.preview
         ? (studentNavHref(config.navItems[0], config.preview.courseId) ?? '#')
         : '#/',
-    }, config.preview ? '← Preview courses' : '← All courses'),
-    el('div', { class: 'course-context__project' },
-      el('span', { class: 'course-context__mark', 'aria-hidden': 'true', text: 'L' }),
-      el('span', { class: 'course-context__body' }, courseContextName, courseContextMeta),
+      title: 'Back to all courses', 'aria-label': 'Back to all courses',
+    },
+      el('span', { class: 'course-context__back-icon', 'aria-hidden': 'true', text: '←' }),
+      el('span', { class: 'course-context__back-label', text: 'All courses' }),
     ),
   );
   const collapseButton = createSidebarCollapse(shell, preferenceKey, startsCollapsed);
@@ -922,16 +920,14 @@ function buildStudentShell(
 
   function updateCourseContext(courseId: string | undefined): void {
     const version = ++contextVersion;
+    overviewSection.hidden = Boolean(courseId);
+    courseSection.hidden = !courseId;
     if (!courseId) {
       courseContext.hidden = true;
-      courseSection.hidden = true;
       topbarTitle.textContent = config.preview ? 'Student preview' : 'My courses';
       return;
     }
     courseContext.hidden = false;
-    courseSection.hidden = false;
-    courseContextName.textContent = 'Course project';
-    courseContextMeta.textContent = 'Loading course…';
     topbarTitle.textContent = config.preview ? 'Student preview' : 'Course learning';
     let request = courseIndex.get(courseId);
     if (!request) {
@@ -940,13 +936,10 @@ function buildStudentShell(
     }
     void request.then((course) => {
       if (version !== contextVersion) return;
-      courseContextName.textContent = `${course.courseCode} · ${course.name}`;
-      courseContextMeta.textContent = course.term;
       topbarTitle.textContent = `${course.courseCode} · ${course.name}`;
     }).catch(() => {
       if (version !== contextVersion) return;
       courseIndex.delete(courseId);
-      courseContextMeta.textContent = 'Student learning workspace';
     });
   }
 
@@ -995,7 +988,7 @@ function buildStudentShell(
       for (const { item, link, courseScoped } of anchors) {
         const resolvedHref = studentNavHref(item, courseId);
         const href = (item.label === 'Help & Tutorials' || item.label === 'Settings') && courseId ? `${resolvedHref}?courseId=${encodeURIComponent(courseId)}` : resolvedHref;
-        link.hidden = courseScoped && !courseId;
+        link.hidden = courseScoped ? !courseId : Boolean(courseId);
         link.setAttribute('href', href ?? '#');
         const active = !practiceMode && isStudentNavActive(item, path, courseId);
         link.classList.toggle('nav__link--active', active);
@@ -1050,7 +1043,7 @@ function buildPreviewStudentShell(
       ...buildPreviewStudentRoutes(experience, restricted),
     ],
     fallback: courseId ? `${base}course/${encodeURIComponent(courseId)}` : `${base}courses`,
-    navItems: previewNavItems(courseId, restricted),
+    navItems: previewNavItems(restricted),
     courseIdFromPath: previewCourseIdFromPath,
     practicePath: isPreviewPracticePath,
     loadCourseContext: async (currentCourseId) => {

@@ -135,6 +135,12 @@ blue Student). `styles/app-shell.css` owns one compact shell layout and typograp
 for every role. Course cards use `course-card.ts` and `styles/course-cards.css`;
 Instructor, Student and Preview share markup, covers and actions.
 
+Inside a course, every role shell (including Admin Instructor/TA/Student views
+and both Student Preview modes) shows only that role's course navigation and a
+compact All courses back link. The course identity stays in the top bar.
+Global My Courses, Canvas, Help and account Settings entries return on leaving
+the course; the back link remains usable in the collapsed rail.
+
 ## Conventions
 
 - `client/tsconfig.json` sets `"types": []` so Node types never leak into browser
