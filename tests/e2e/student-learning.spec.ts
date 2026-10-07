@@ -54,7 +54,7 @@ async function setup(page: Page, staff = false) {
 }
 async function lesson(page: Page) {
   await page.evaluate(async ({course,theme}) => {
-    const {renderLinearLesson} = await import('/js/views/student/learning-workspace.js'); const {LIVE_STUDENT_EXPERIENCE} = await import('/js/views/student/experience.js'); await renderLinearLesson(document.getElementById('fixture')!,course,theme,LIVE_STUDENT_EXPERIENCE);
+    const {renderPracticeWithExperience} = await import('/js/views/student/practice.js'); const {LIVE_STUDENT_EXPERIENCE} = await import('/js/views/student/experience.js'); await renderPracticeWithExperience(document.getElementById('fixture')!,{id:course,themeId:theme},LIVE_STUDENT_EXPERIENCE);
   },{course,theme});
 }
 async function discussion(page: Page) { await page.evaluate(async course => { const {renderDiscussion} = await import('/js/views/student/discussion.js'); await renderDiscussion(document.getElementById('fixture')!,{id:course}); },course); }
@@ -70,8 +70,12 @@ test('lesson skip/return, fixed controls, board, submission and finite summary',
   await expect(page.getByText('You skipped this question. You can answer it now.')).toBeVisible();
   await page.getByRole('button',{name:'B Only gravity.',exact:true}).click(); await page.getByRole('button',{name:'Submit',exact:true}).click();
   await expect(page.getByText('Review the explanation, then continue to the next question.')).toBeVisible(); await expect(page.getByRole('button',{name:'Submit',exact:true})).toBeDisabled();
+  await page.screenshot({path:'test-results/linear-learning-incorrect.png',fullPage:true});
   await page.getByRole('button',{name:'Next question →',exact:true}).click(); await page.getByRole('button',{name:'Next question →',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Lesson summary'})).toBeVisible(); await page.getByRole('button',{name:'Return to unanswered questions'}).click();
+  await expect(page.getByRole('heading',{name:'Lesson summary'})).toBeVisible();
+  await expect(page.getByText('1 remaining',{exact:true})).toBeVisible();
+  await page.screenshot({path:'test-results/linear-learning-summary.png',fullPage:true});
+  await page.getByRole('button',{name:'Return to unanswered questions'}).click();
   await expect(page.getByText('Which forces act on a pulled crate?',{exact:true}).last()).toBeVisible();
   await page.getByRole('button',{name:'▦ Question board · 2'}).click(); await expect(page.getByRole('dialog',{name:'Question board'})).toBeVisible(); await page.getByRole('combobox',{name:'Question status'}).selectOption('skipped'); await expect(page.getByRole('dialog').getByRole('button',{name:'2 · skipped'})).toBeVisible();
 });
@@ -82,6 +86,32 @@ test('review browse controls remain fixed after reveal; self-test omits tags/cla
   await page.getByRole('button',{name:'Next question →',exact:true}).click(); await expect(page.getByText('Which forces act on a pulled crate?',{exact:true}).last()).toBeVisible();
   await page.getByRole('button',{name:'Personal tags'}).click(); await page.getByRole('textbox',{name:'Personal tags',exact:true}).fill('Keep forgetting'); await page.getByRole('button',{name:'Save tags'}).click();
   await page.getByRole('button',{name:'Random self-test'}).click(); await expect(page.getByRole('button',{name:'Personal tags'})).toHaveCount(0); await expect(page.getByRole('link',{name:'Ask the class'})).toHaveCount(0); await expect(page.getByRole('button',{name:'Submit',exact:true})).toBeVisible();
+});
+test('default lesson shows every topic question immediately and summaries keep relevant actions in the footer', async ({page}) => {
+  await setup(page); await lesson(page);
+  await expect(page.locator('.learning-list-item')).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'▦ Question board · 2'})).toBeVisible();
+  await page.getByRole('button',{name:'A Gravity downward and a normal force upward.',exact:true}).click();
+  await page.getByRole('button',{name:'Submit',exact:true}).click();
+  await page.getByRole('button',{name:'Next question →',exact:true}).click();
+  await page.getByRole('button',{name:'B Only gravity.',exact:true}).click();
+  await page.getByRole('button',{name:'Submit',exact:true}).click();
+  await page.getByRole('button',{name:'Next question →',exact:true}).click();
+  await expect(page.getByText('All answered',{exact:true})).toBeVisible();
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByRole('row')).toHaveCount(3);
+  await expect(page.getByRole('button',{name:'Submit',exact:true})).toHaveCount(0);
+  await expect(page.locator('.learning-footer').getByRole('link',{name:'Open Review Book'})).toBeVisible();
+  for (const [width,theme] of [[1440,'light'],[390,'dark']] as const) {
+    await page.setViewportSize({width,height:900});
+    await page.evaluate(theme => document.documentElement.setAttribute('data-theme',theme),theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect((await new AxeBuilder({page}).include('#fixture').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:`test-results/linear-summary-complete-${width}.png`,fullPage:true});
+  }
+  await page.getByRole('button',{name:'View question 2',exact:true}).click();
+  await expect(page.locator('.learning-stem')).toHaveText('Which forces act on a pulled crate?');
+  await expect(page.getByRole('button',{name:'Submit',exact:true})).toBeDisabled();
 });
 test('question-first composer previews choices, locks linkage, optional clearing and anonymous answers/followups', async ({page}) => {
   await setup(page); await discussion(page); await page.getByRole('button',{name:'New post',exact:true}).first().click();

@@ -28,6 +28,13 @@ their access source is managed through Enrollment.
 
 ## How it works
 
+Student Topic Start uses the shared three-panel question design in both teaching
+modes. `views/student/practice.ts` selects the engine: Linear uses durable learning
+sessions; `topic-practice-workspace.ts` retains the original practice/retry/mastery
+APIs with client-local visited questions and drafts. Both keep bookmark/report
+icons and Previous/Next/Submit in a fixed footer; tags/class questions stay in
+Review Book browse mode.
+
 - Source lives in `client/src/*.ts` (and `client/src/views/*.ts`).
 - `tsc -p client/tsconfig.json` compiles it to `client/public/js/**/*.js`.
 - The server (`server/src/app.ts`) serves `client/public/` as static files, so

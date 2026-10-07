@@ -13,6 +13,8 @@ export interface LearningSettings {
   courseId: ObjectId;
   revision: number;
   mode: 'topic-practice' | 'linear';
+  /** Version 2 makes the finite lesson the rollout default; legacy practice is opt-in. */
+  teachingModeVersion?: 2;
   order: 'instructor' | 'personalized';
   questionOrder: string[];
   notes: InstructorQuestionNote[];

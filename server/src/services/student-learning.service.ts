@@ -25,7 +25,11 @@ export async function assertLearningCourse(courseId: ObjectId, preview = false):
   if (!course || course.lifecycle === 'archived' || course.archivedAt || (!preview && (!course.published || (course.termEnd && course.termEnd < new Date())))) learningError('Course is not available.', 404);
 }
 export async function getLearningSettings(courseId: ObjectId): Promise<LearningSettings> {
-  return await learningSettingsCol().findOne({ courseId }) ?? { courseId, revision: 0, mode: 'topic-practice', order: 'instructor', questionOrder: [], notes: [], updatedAt: new Date(0) };
+  const stored = await learningSettingsCol().findOne({ courseId });
+  // Apply the rollout on reads so existing courses need no manual production
+  // migration. Retain notes/order/revision; a new explicit save can opt into legacy.
+  return stored ? { ...stored, mode: stored.teachingModeVersion === 2 ? stored.mode : 'linear' }
+    : { courseId, revision: 0, mode: 'linear', teachingModeVersion: 2, order: 'instructor', questionOrder: [], notes: [], updatedAt: new Date(0) };
 }
 export async function saveLearningSettings(courseId: ObjectId, input: Pick<LearningSettings, 'revision' | 'mode' | 'order' | 'questionOrder' | 'notes'>) {
   const course = await coursesCol().findOne({ _id: courseId });
@@ -43,7 +47,7 @@ export async function saveLearningSettings(courseId: ObjectId, input: Pick<Learn
     }
   }
   try {
-    const result = await learningSettingsCol().updateOne({ courseId, revision: input.revision }, { $set: { ...input, courseId, revision: input.revision + 1, updatedAt: new Date() } }, { upsert: input.revision === 0 });
+    const result = await learningSettingsCol().updateOne({ courseId, revision: input.revision }, { $set: { ...input, courseId, teachingModeVersion: 2, revision: input.revision + 1, updatedAt: new Date() } }, { upsert: input.revision === 0 });
     if (!result.matchedCount && !result.upsertedCount) learningError('Settings changed in another window. Reload before saving.', 409);
   } catch (error) { if ((error as { code?: number }).code === 11000) learningError('Settings changed in another window. Reload before saving.', 409); throw error; }
   return getLearningSettings(courseId);

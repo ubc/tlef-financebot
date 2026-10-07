@@ -12,7 +12,7 @@ export function teachingSettingsPanel(courseId: string) {
       const [bank, materials] = await Promise.all([browseBank(courseId), listMaterials(courseId)]);
       const questions = bank.questions.filter(q => q.state === 'approved');
       const order = [...settings.questionOrder.filter(id => questions.some(q => q.id === id)), ...questions.filter(q => !settings.questionOrder.includes(q.id)).map(q => q.id)];
-      const mode = select('Teaching mode', [['topic-practice', 'Topic Practice · existing feedback and retry'], ['linear', 'Linear learning · each question once']], settings.mode, () => {});
+      const mode = select('Teaching mode', [['linear', 'Linear learning · all questions, one by one (default)'], ['topic-practice', 'Topic Practice · legacy feedback and retry']], settings.mode, () => {});
       const sequence = select('Question sequence', [['instructor', 'Same instructor order for all students'], ['personalized', 'Prioritize learning objectives using student evidence']], settings.order, () => {});
       const status = el('div', { role: 'status', 'aria-live': 'polite' });
       const questionList = el('div', { class: 'teaching-sequence' });
@@ -44,7 +44,7 @@ export function teachingSettingsPanel(courseId: string) {
       };
       // The old editor must commit before changing the question selector.
       drawNote();
-      root.replaceChildren(el('label', { class: 'form-field' }, el('span', { text: 'Teaching mode' }), mode), el('p', { class: 'muted', text: 'Linear learning uses a finite set of released Approved questions. Students can return to skipped questions; incorrect answers do not force a retry.' }), el('label', { class: 'form-field' }, el('span', { text: 'Question order' }), sequence), el('h3', { text: 'Instructor sequence' }), questionList, el('h3', { text: 'Optional instructor notes' }), picker, notePanel, status, button('Save teaching settings', async () => {
+      root.replaceChildren(el('label', { class: 'form-field' }, el('span', { text: 'Teaching mode' }), mode), el('p', { class: 'muted', text: 'The default is Linear learning: students see all released Approved questions in each topic from the start. Students can return to skipped questions; incorrect answers do not force a retry.' }), el('label', { class: 'form-field' }, el('span', { text: 'Question order' }), sequence), el('h3', { text: 'Instructor sequence' }), questionList, el('h3', { text: 'Optional instructor notes' }), picker, notePanel, status, button('Save teaching settings', async () => {
         status.replaceChildren(); commitNote();
         try {
           const input: LearningSettings = { ...settings, mode: mode.value as LearningSettings['mode'], order: sequence.value as LearningSettings['order'], questionOrder: order };

@@ -1442,7 +1442,11 @@ members can post official answers, endorse student answers and resolve posts.
   mode: 'topic-practice'|'linear', order: 'instructor'|'personalized',
   questionOrder: questionId[], notes: [{ questionId, visibility:
   'always'|'after-submit', text?, materialId?, pageStart?, pageEnd? }] }`.
-  PUT is revision guarded. Ready material references must belong to the course
+  PUT is revision guarded and records server-managed `teachingModeVersion: 2`.
+  The effective default is `linear`, including historical settings without that
+  version marker; their notes, order and revision are preserved without a database
+  write. An explicit new Instructor save can select legacy `topic-practice`.
+  Both modes use the new student layout. Ready material references must belong to the course
   and be assigned to an objective of the question.
 - `GET /courses/:courseId/learning/library` returns all currently servable,
   Approved, released questions plus the caller's own bookmarks, private tags,

@@ -462,3 +462,14 @@ names before/after commit with paginated lists. See
 `docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
 `playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
 above describe historical entry points; the current Instructor entry is People.
+
+## Student learning rollout (2026-10-07)
+
+Student Topic Start and both isolated Student Preview modes use the new question
+workspace. Production defaults to finite Linear learning for new courses and
+historical settings without `teachingModeVersion: 2`; each topic lists all released,
+Approved, servable questions before the first answer. Read-time compatibility
+preserves question order, notes and student records without a database migration.
+An explicit revision-guarded Instructor save can opt back into legacy Topic
+Practice. Both end states share compact status tables and fixed footer actions;
+unanswered questions remain accessible, and layout never depends on teaching mode.

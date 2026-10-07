@@ -8,7 +8,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => {
 jest.mock('../../server/src/services/params.service', () => ({ drawCollisionFreeParams: jest.fn().mockResolvedValue({}), substituteParams: (s: string) => s }));
 jest.mock('../../server/src/services/attempts.service', () => ({ gradeAnswer: (options: Array<{ key: string; role: string }>, key: string) => { const selectedOption = options.find(o => o.key === key)!; return { correct: selectedOption.role === 'correct', selectedOption, fullReveal: options.map(o => ({ ...o, correct: o.role === 'correct' })) }; } }));
 import * as collections from '../../server/src/components/mongodb/collections';
-import { startLearningSession, changeLearningSession, getLearningSession, learningLibrary, orderLearningItems, saveLearningSettings } from '../../server/src/services/student-learning.service';
+import { startLearningSession, changeLearningSession, getLearningSession, learningLibrary, orderLearningItems, saveLearningSettings, getLearningSettings } from '../../server/src/services/student-learning.service';
 import { createDiscussion, changeDiscussion, listDiscussion, discussionQuestionPreview } from '../../server/src/services/discussion.service';
 import type { User } from '../../server/src/types/domain';
 
@@ -77,6 +77,31 @@ test('finite teacher order has no duplicates; personalized evidence keeps within
   const items = [{questionId:'a',loId:'x'},{questionId:'b',loId:'y'},{questionId:'c',loId:'x'}];
   expect(orderLearningItems(items,['c','a','b']).map(q => q.questionId)).toEqual(['c','a','b']);
   expect(orderLearningItems(items,['c','a','b'],new Map([['y',0.1],['x',0.8]])).map(q => q.questionId)).toEqual(['b','c','a']);
+});
+test('new courses default to the complete finite lesson without a settings write', async () => {
+  stores.learningSettingsCol.rows.length = 0;
+  expect((await getLearningSettings(courseId)).mode).toBe('linear');
+  const library = await learningLibrary({puid:'student'},courseId);
+  expect(library.settings.mode).toBe('linear'); expect(library.questions).toHaveLength(2);
+  const lesson = await startLearningSession({puid:'student'},courseId,{kind:'lesson',themeId:themeId.toString()});
+  expect(lesson.items.map(item => item.questionId)).toEqual(library.questions.map(q => q.questionId));
+  expect(stores.learningSettingsCol.updateOne).not.toHaveBeenCalled();
+});
+test('existing legacy settings adopt linear on rollout without losing notes, order, revision or attempts', async () => {
+  const stored = stores.learningSettingsCol.rows[0]; stored.mode = 'topic-practice';
+  stored.notes = [{questionId:q1.toString(),visibility:'after-submit',text:'Instructor explanation'}];
+  const settings = await getLearningSettings(courseId);
+  expect(settings).toMatchObject({mode:'linear',revision:1,questionOrder:[q2.toString(),q1.toString()],notes:stored.notes});
+  expect(stored.mode).toBe('topic-practice'); expect(stores.learningSettingsCol.updateOne).not.toHaveBeenCalled();
+  const lesson = await startLearningSession({puid:'student'},courseId,{kind:'lesson',themeId:themeId.toString()});
+  expect(lesson.items).toHaveLength(2); expect(stores.attemptsCol.rows).toHaveLength(0);
+});
+test('an instructor can explicitly opt back into legacy practice after rollout using revision CAS', async () => {
+  const settings = await getLearningSettings(courseId);
+  const saved = await saveLearningSettings(courseId,{...settings,mode:'topic-practice'});
+  expect(saved).toMatchObject({mode:'topic-practice',teachingModeVersion:2,revision:2});
+  await expect(startLearningSession({puid:'student'},courseId,{kind:'lesson'})).rejects.toMatchObject({status:409});
+  await expect(saveLearningSettings(courseId,{...settings,mode:'linear'})).rejects.toMatchObject({status:409});
 });
 test('skip, return and submit persists the first answer exactly once, with no retry and a distinct next question', async () => {
   const actor = { puid:'student' }; let session = await startLearningSession(actor,courseId,{kind:'lesson',themeId:themeId.toString()});

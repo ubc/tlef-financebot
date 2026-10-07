@@ -271,6 +271,13 @@ forms. The existing workbench suite verifies the terminal evaluation download li
 
 ## Course People consolidation (2026-10-06)
 
+`playwright.student-learning.config.ts` covers both student teaching engines using
+intercepted APIs and compiled production renderers. The Topic Practice suite starts
+from Course Home, verifies withheld feedback and pinned retries, returning to
+skipped drafts, finite rounds, load/submit recovery, duplicate prevention, mastery
+advancement and restricted Preview isolation. Light/dark desktop/mobile checks
+include accessibility and screenshots; no live student data is changed.
+
 `course-people-removal.spec.ts` runs under `playwright.course-admin.config.ts`
 against the compiled client with intercepted APIs. It verifies pending Canvas
 members, cancellation/focus, cross-page selection, protected identities, partial

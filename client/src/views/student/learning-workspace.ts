@@ -4,6 +4,7 @@ import { renderRichText } from '../../render.js';
 import { learningApi, type LearningView, type LibraryQuestion } from '../../student-learning-api.js';
 import type { StudentExperience } from './experience.js';
 import { currentQuery } from '../../router.js';
+import { renderLearningSummary, remainingQuestion } from './learning-summary.js';
 
 export function rich(text: string, className = '') { const node = el('div', { class: className }); renderRichText(node, text); return node; }
 export function button(text: string, action: () => unknown, className = 'btn btn--ghost btn--sm') { return el('button', { class: className, type: 'button', text, onclick: action }); }
@@ -59,20 +60,33 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
   const draw = () => {
     const scroll = root.querySelector('.learning-question-body')?.scrollTop ?? 0;
     const current = state.current; const answered = state.items.filter(i => (state.kind === 'cards' ? ['remembered', 'learning'] : ['correct', 'incorrect']).includes(i.status)).length;
+    root.classList.remove('is-summary');
+    if (!current && state.cursor >= state.items.length) {
+      const remaining = state.items.findIndex(item => remainingQuestion(item.status));
+      const previous = button('← Previous question', () => change({ action: 'move', cursor: state.items.length - 1 })); previous.disabled = !state.items.length;
+      const missed = state.items.filter(item => item.status === 'incorrect' || item.status === 'learning').map(item => item.questionId);
+      const leading = onExit ? button('Back to Review Book', onExit) : el('a', { class: 'btn btn--ghost btn--sm', href: experience.routes.course(courseId), text: 'Course Home' });
+      const primary = remaining >= 0 ? button('Return to unanswered questions', () => change({ action: 'move', cursor: remaining }), 'btn btn--instr-primary')
+        : (state.kind === 'test' || state.kind === 'cards') && missed.length ? button('Review these questions again', async () => {
+          if (busy) return; busy = true; errors.replaceChildren();
+          try { state = await api.start({ kind: state.kind, questionIds: missed, roundId: crypto.randomUUID() }); selected = undefined; history.replaceState(null, '', `${experience.routes.reviewBook(courseId)}?session=${state.id}`); }
+          catch (error) { errors.replaceChildren(errorState((error as Error).message)); }
+          finally { busy = false; draw(); }
+        }, 'btn btn--instr-primary') : el('a', { class: 'btn btn--instr-primary btn--sm', href: experience.routes.reviewBook(courseId), text: 'Open Review Book' });
+      renderLearningSummary(root, {
+        title: state.kind === 'lesson' ? 'Lesson summary' : 'Review summary',
+        context: state.items[0]?.themeName ?? 'Your questions', cards: state.kind === 'cards', errors,
+        questions: state.items.map((item, cursor) => ({ title: item.title, loName: item.loName, status: item.status, open: () => change({ action: 'move', cursor }) })),
+        footer: el('footer', { class: 'learning-footer' }, el('div', { class: 'learning-tools' }, leading), el('div', { class: 'learning-navigation' }, previous, primary)),
+      });
+      return;
+    }
     const list = browse ? el('div', { class: 'learning-list' }, ...browse.questions.map(q => el('button', { class: `learning-list-item${q.questionId === current?.questionId ? ' is-active' : ''}`, type: 'button', onclick: () => browse.onSelect(q.questionId) }, el('small', { text: `${q.themeName} · ${q.answered ? 'Answered' : 'Not answered'}` }), el('strong', { text: q.stem.slice(0, 90) })))) : el('div', { class: 'learning-list' }, ...state.items.map((item, i) => el('button', { type: 'button', class: `learning-list-item${i === state.cursor ? ' is-active' : ''}`, onclick: () => change({ action: 'move', cursor: i }) }, el('small', { text: `${String(i + 1).padStart(2, '0')} · ${item.status}` }), el('strong', { text: item.title.replace(/[#*_]/g, '').slice(0, 90) }), el('small', { text: item.loName }))));
     const rail = el('aside', { class: 'learning-rail' }, el('h2', { class: 'eyebrow', text: state.kind === 'lesson' ? 'Your lesson' : state.kind === 'test' ? 'Your self-test' : 'Review questions' }), list, el('div', { class: 'learning-board-entry' }, button(`▦ Question board · ${browse?.questions.length ?? state.items.length}`, board)));
     const pane = el('section', { class: 'learning-pane' });
     const body = el('div', { class: 'learning-question-body' });
     if (!current) {
-      const done = state.cursor >= state.items.length;
-      body.append(el('h1', { text: done ? state.kind === 'lesson' ? 'Lesson summary' : 'Review summary' : 'Question unavailable' }), el('p', { text: done ? `${answered}/${state.items.length} answered · ${state.items.filter(i => i.status === 'correct').length} correct · ${state.items.filter(i => i.status === 'skipped').length} skipped` : 'Your instructor changed the availability of this question.' }));
-      const skipped = state.items.findIndex(i => i.status === 'skipped' || i.status === 'unanswered');
-      if (skipped >= 0) body.append(button('Return to unanswered questions', () => change({ action: 'move', cursor: skipped }), 'btn btn--instr-primary'));
-      if (done && (state.kind === 'test' || state.kind === 'cards')) {
-        const missed = state.items.filter(i => i.status === 'incorrect' || i.status === 'learning').map(i => i.questionId);
-        if (missed.length) body.append(button('Review these questions again', async () => { state = await api.start({ kind: state.kind, questionIds: missed, roundId: crypto.randomUUID() }); selected = undefined; history.replaceState(null, '', `${experience.routes.reviewBook(courseId)}?session=${state.id}`); draw(); }, 'btn btn--instr-primary'));
-      }
-      if (onExit) body.append(button('Back to Review Book', onExit)); else body.append(el('a', { class: 'btn btn--ghost', href: experience.routes.course(courseId) }, 'Course Home'));
+      body.append(el('h1', { text: 'Question unavailable' }), el('p', { text: 'Your instructor changed the availability of this question.' }));
     } else {
       body.append(el('p', { class: 'eyebrow', text: `Question ${state.cursor + 1} of ${state.items.length} · ${current.difficulty}` }), rich(current.stem, 'learning-stem'));
       const options = el('div', { class: 'learning-options' });
@@ -99,7 +113,7 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
       nav.replaceChildren(previous, next, button('Test this question', browse.onTest, 'btn btn--instr-primary'));
     }
     pane.append(body, errors, el('footer', { class: 'learning-footer' }, footerTools(), nav));
-    const inspector = el('aside', { class: 'learning-inspector' }, el('p', { class: 'eyebrow', text: 'Progress' }), el('strong', { class: 'learning-progress', text: `${answered}/${state.items.length}` }), el('p', { class: 'muted', text: state.kind === 'cards' ? 'cards reviewed' : 'questions answered' }), el('hr'), el('strong', { text: current?.loName ?? 'Review complete' }), el('p', { class: 'muted', text: current?.themeName ?? '' }));
+    const inspector = el('aside', { class: 'learning-inspector' }, el('p', { class: 'eyebrow', text: 'Progress' }), el('strong', { class: 'learning-progress', text: `${answered}/${state.items.length}` }), el('p', { class: 'muted', text: state.kind === 'cards' ? 'cards reviewed' : 'questions answered' }), el('hr'), el('strong', { text: current?.loName ?? (answered < state.items.length ? 'Questions remaining' : state.kind === 'lesson' ? 'Lesson complete' : 'Review complete') }), el('p', { class: 'muted', text: current?.themeName ?? '' }));
     if (browse && current) { const row = library.find(q => q.questionId === current.questionId); if (row) inspector.append(el('hr'), el('strong', { text: 'Your review history' }), ...[['Added to Review Book', row.addedAt], ['Last reviewed', row.lastReviewedAt], ['Last incorrect answer', row.lastIncorrectAt]].map(([label, date]) => el('div', {}, el('p', { class: 'muted', text: label }), el('span', { text: date ? new Date(date).toLocaleString() : '—' }))), el('hr'), el('strong', { text: 'Personal tags' }), el('p', { text: row.tags.join(', ') || 'No tags yet' })); }
     if (current?.note) inspector.append(el('hr'), el('strong', { text: 'Instructor notes' }), ...(current.note.text ? [rich(current.note.text)] : []), ...(current.note.materialId ? [el('a', { href: api.materialHref(state.id, current.note.pageStart), target: '_blank', rel: 'noopener', text: `Open instructor notes ↗${current.note.pageStart ? ` · pp. ${current.note.pageStart}${current.note.pageEnd ? `–${current.note.pageEnd}` : ''}` : ''}` })] : []));
     root.replaceChildren(rail, pane, inspector);
