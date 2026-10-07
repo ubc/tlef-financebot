@@ -7,9 +7,9 @@ const lo = '660000000000000000000003';
 const ids = ['660000000000000000000004','660000000000000000000005'];
 const questions = ids.map((id,i) => ({questionId:id,versionId:id,loId:lo,loName:'Identify forces on an object',themeId:theme,themeName:'Forces and Vectors',stem:i ? 'Which forces act on a pulled crate?' : 'A book rests on a table. Which forces act on the book?',difficulty:'easy',saved:false,mistake:false,answered:false,confusing:false,tags:[]}));
 type MockSession = Omit<LearningView, 'current'> & { answers: Record<number, { key: string; correct: boolean }>; drafts: Record<number, string>; revealed?: boolean };
-async function setup(page: Page, staff = false) {
+async function setup(page: Page, staff = false, count = 2) {
   await page.route('**/learning-fixture', r => r.fulfill({contentType:'text/html',body:'<!doctype html><html lang="en"><head><title>FinanceBot learning</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/student-learning.css"><script src="/vendor/katex.min.js"></script><script src="/vendor/katex-auto-render.min.js"></script><script src="/vendor/marked.min.js"></script><script src="/vendor/purify.min.js"></script></head><body><main id="fixture" style="padding:20px"></main></body></html>'}));
-  const rows = structuredClone(questions); let session!: MockSession;
+  const rows = count === 2 ? structuredClone(questions) : Array.from({length:count}, (_,i) => ({...structuredClone(questions[0]), questionId:(200+i).toString(16).padStart(24,'0'), versionId:(200+i).toString(16).padStart(24,'0'), stem:`Question ${i+1}: A long force problem with \${{FORCE_RIGHT}} and ${'unbrokenparameter'.repeat(12)}. Which statement correctly identifies all the forces acting on this object?`})); let session!: MockSession;
   const posts: DiscussionPost[] = [];
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()), path = url.pathname; const input = route.request().method() === 'GET' ? {} : route.request().postDataJSON();
@@ -159,4 +159,58 @@ test('teacher configures linear mode, order and per-question notes without chang
   await page.getByRole('button',{name:'Save teaching settings'}).click();
   await expect(page.getByText('Teaching settings saved.')).toBeVisible();
   expect(saved?.mode).toBe('linear'); expect(saved?.order).toBe('personalized'); expect(saved?.notes).toEqual([{questionId:ids[0],visibility:'after-submit',text:'Read the force diagram.'}]);
+});
+
+
+test('dense Review Book and long question board stay within the viewport', async ({page}) => {
+  await setup(page,false,67);
+  await page.addStyleTag({content:'*,*::before,*::after{animation:none!important;transition:none!important}'});
+  await page.evaluate(async course => { const {renderReviewLibrary} = await import('/js/views/student/learning-workspace.js'); const {LIVE_STUDENT_EXPERIENCE} = await import('/js/views/student/experience.js'); await renderReviewLibrary(document.getElementById('fixture')!,course,LIVE_STUDENT_EXPERIENCE); },course);
+  for (const width of [1440,1024]) {
+    await page.setViewportSize({width,height:900});
+    const reader = await page.locator('.learning-workspace').boundingBox();
+    const footer = await page.locator('.learning-footer').boundingBox();
+    expect(reader!.height).toBeGreaterThan(550);
+    expect(reader!.y).toBeLessThan(width > 1100 ? 160 : 210);
+    expect(footer!.y + footer!.height).toBeLessThan(900);
+  }
+  await page.getByRole('button',{name:'▦ Question board · 67'}).click();
+  for (const [width,theme] of [[1440,'light'],[390,'dark']] as const) {
+    await page.setViewportSize({width,height:900}); await page.evaluate(theme => document.documentElement.setAttribute('data-theme',theme),theme);
+    const popup = page.getByRole('dialog',{name:'Question board'});
+    const rect = await popup.boundingBox(); expect(rect!.y).toBeGreaterThanOrEqual(0); expect(rect!.y+rect!.height).toBeLessThan(901);
+    expect(await popup.locator('.learning-board-tile').evaluateAll(nodes => nodes.every(n => n.scrollWidth <= n.clientWidth && n.getBoundingClientRect().height <= 114))).toBe(true);
+    expect(await popup.evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
+    expect((await new AxeBuilder({page}).include('.learning-board-dialog').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:`test-results/question-board-compact-${width}.png`});
+  }
+  await page.getByRole('dialog').getByRole('button',{name:/^67 ·/}).click();
+  await expect(page.locator('.learning-stem')).toContainText('Question 67:');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('slow draft saves keep options stable, serialize safely with submit and do not add spinners', async ({page}) => {
+  await setup(page); await lesson(page);
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  let drafts = 0;
+  await page.route('**/learning/sessions/*', async route => {
+    const input = route.request().postDataJSON();
+    if (input?.action === 'draft' && ++drafts === 1) await delayed;
+    await route.fallback();
+  });
+  await page.evaluate(() => { (document.querySelector('.learning-options') as HTMLElement).dataset.original = 'yes'; });
+  await page.getByRole('button',{name:'B Only gravity.',exact:true}).click();
+  await expect(page.getByRole('button',{name:'B Only gravity.',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.learning-option.is-action-busy')).toHaveCount(0);
+  await page.getByRole('button',{name:'A Gravity downward and a normal force upward.',exact:true}).click();
+  await expect(page.getByRole('button',{name:'A Gravity downward and a normal force upward.',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.learning-options')).toHaveAttribute('data-original','yes');
+  await page.getByRole('button',{name:'Submit',exact:true}).click(); release();
+  await expect(page.getByText('Correct. Continue when you are ready.')).toBeVisible();
+  // Navigation is guarded while pending, but never inserts a spinner into the question rail.
+  await page.route('**/learning/sessions/*', async route => { await new Promise(resolve => setTimeout(resolve,200)); await route.fallback(); });
+  await page.locator('.learning-list-item').nth(1).click();
+  await expect(page.locator('.learning-list-item.is-action-busy')).toHaveCount(0);
+  await expect(page.locator('.learning-stem')).toHaveText('Which forces act on a pulled crate?');
 });

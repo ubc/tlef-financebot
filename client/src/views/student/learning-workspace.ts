@@ -12,32 +12,45 @@ export function select(label: string, choices: Array<[string, string]>, value: s
   const node = el('select', { class: 'input', 'aria-label': label, onchange: () => action(node.value) }, ...choices.map(([id, text]) => el('option', { value: id, text }))); node.value = value; return node;
 }
 export function dialog(title: string, content: HTMLElement) {
-  const node = el('dialog', { class: 'learning-dialog', 'aria-label': title });
+  const node = el('dialog', { class: `learning-dialog${title === 'Question board' ? ' learning-board-dialog' : ''}`, 'aria-label': title });
   const close = button('✕', () => node.close()); close.setAttribute('aria-label', 'Close dialog');
   node.append(el('header', {}, el('h2', { text: title }), close), content);
   node.addEventListener('close', () => node.remove()); document.body.append(node); node.showModal(); return node;
+}
+export function questionTile(number: number, status: string, title: string, action: () => unknown) {
+  return el('button', { type: 'button', class: 'btn learning-board-tile', 'aria-label': `${number} · ${status} · ${title}`, onclick: action },
+    el('span', { class: 'learning-board-meta' }, el('strong', { text: String(number) }), el('span', { text: status })),
+    el('span', { class: 'learning-board-title', text: title }));
 }
 const icon = (kind: 'save' | 'report') => kind === 'save' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3v1"/></svg>';
 
 export async function renderLearningWorkspace(outlet: HTMLElement, courseId: string, experience: StudentExperience, initial: LearningView, onExit?: () => void, browse?: { questions: LibraryQuestion[]; onSelect: (id: string) => void; onTest: () => unknown; onMetadata?: () => unknown }): Promise<void> {
   const api = learningApi(courseId, experience.preview);
-  let state = initial; let busy = false; let library = (await api.library()).questions; let selected = state.current?.selectedKey;
+  let state = initial; let busy = false; let library = browse?.questions ?? (await api.library()).questions; let selected = state.current?.selectedKey;
+  let pending: Promise<void> = Promise.resolve(); let transitioning = false;
   const root = el('div', { class: 'learning-workspace' }); outlet.append(root);
   const errors = el('div', { role: 'status', 'aria-live': 'polite' });
   const apply = async (input: Parameters<typeof api.change>[1]) => {
-    if (busy) return; busy = true; errors.replaceChildren();
-    try { state = await api.change(state.id, { ...input, revision: state.revision }); selected = state.current?.selectedKey; draw(); }
-    catch (error) { errors.replaceChildren(errorState((error as Error).message)); if ((error as { status?: number }).status === 409) { state = await api.session(state.id); selected = state.current?.selectedKey; draw(); } }
+    busy = true; errors.replaceChildren();
+    try { state = await api.change(state.id, { ...input, revision: state.revision }); if (input.action !== 'draft') { selected = state.current?.selectedKey; draw(); } }
+    catch (error) { errors.replaceChildren(errorState((error as Error).message)); if ((error as { status?: number }).status === 409) { state = await api.session(state.id); if (input.action !== 'draft') { selected = state.current?.selectedKey; draw(); } } }
     finally { busy = false; }
   };
-  const change = (input: Omit<Parameters<typeof api.change>[1], 'revision'>) => apply({ ...input, revision: state.revision });
+  // Serialize draft writes before navigation/submission without replacing the reader.
+  const change = (input: Omit<Parameters<typeof api.change>[1], 'revision'>) => {
+    if (transitioning) return Promise.resolve();
+    const transition = input.action !== 'draft'; if (transition) transitioning = true;
+    const task = pending.then(() => apply({ ...input, revision: state.revision })).finally(() => { if (transition) transitioning = false; });
+    pending = task.catch(error => { errors.replaceChildren(errorState((error as Error).message)); });
+    return pending;
+  };
   const board = () => {
-    if (browse) { const popup = dialog('Question board', el('div', { class: 'learning-board-grid' }, ...browse.questions.map((q, i) => button(`${i + 1} · ${q.stem.slice(0, 60)}`, () => { popup.close(); browse.onSelect(q.questionId); })))); return; }
+    if (browse) { const popup = dialog('Question board', el('div', { class: 'learning-board-grid' }, ...browse.questions.map((q, i) => questionTile(i + 1, q.answered ? q.mistake ? 'Needs review' : 'Answered' : 'Not answered', q.stem, () => { popup.close(); browse.onSelect(q.questionId); })))); return; }
     const tiles = el('div', { class: 'learning-board-grid' }); let filter = 'all';
     const popup = dialog('Question board', el('div', { class: 'stack' }, select('Question status', [['all', 'All questions'], ['remaining', 'Remaining'], ['skipped', 'Skipped'], ['incorrect', 'Needs review']], filter, value => { filter = value; redraw(); }), tiles));
     const redraw = () => tiles.replaceChildren(...state.items.flatMap((item, i) => {
       if (filter === 'remaining' && !['unanswered', 'skipped'].includes(item.status) || filter !== 'all' && filter !== 'remaining' && item.status !== filter) return [];
-      return [button(`${i + 1} · ${item.status} · ${item.title.slice(0, 90)}`, async () => { popup.close(); await change({ action: 'move', cursor: i }); })];
+      return [questionTile(i + 1, item.status, item.title, async () => { popup.close(); await change({ action: 'move', cursor: i }); })];
     })); redraw();
   };
   const footerTools = () => {
@@ -59,6 +72,7 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
   let drawnQuestionId: string | undefined;
   const draw = () => {
     const scroll = root.querySelector('.learning-question-body')?.scrollTop ?? 0;
+    const listScroll = root.querySelector('.learning-list')?.scrollTop ?? 0;
     const current = state.current; const answered = state.items.filter(i => (state.kind === 'cards' ? ['remembered', 'learning'] : ['correct', 'incorrect']).includes(i.status)).length;
     root.classList.remove('is-summary');
     if (!current && state.cursor >= state.items.length) {
@@ -81,7 +95,7 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
       });
       return;
     }
-    const list = browse ? el('div', { class: 'learning-list' }, ...browse.questions.map(q => el('button', { class: `learning-list-item${q.questionId === current?.questionId ? ' is-active' : ''}`, type: 'button', onclick: () => browse.onSelect(q.questionId) }, el('small', { text: `${q.themeName} · ${q.answered ? 'Answered' : 'Not answered'}` }), el('strong', { text: q.stem.slice(0, 90) })))) : el('div', { class: 'learning-list' }, ...state.items.map((item, i) => el('button', { type: 'button', class: `learning-list-item${i === state.cursor ? ' is-active' : ''}`, onclick: () => change({ action: 'move', cursor: i }) }, el('small', { text: `${String(i + 1).padStart(2, '0')} · ${item.status}` }), el('strong', { text: item.title.replace(/[#*_]/g, '').slice(0, 90) }), el('small', { text: item.loName }))));
+    const list = browse ? el('div', { class: 'learning-list' }, ...browse.questions.map(q => el('button', { class: `learning-list-item${q.questionId === current?.questionId ? ' is-active' : ''}`, type: 'button', onclick: () => { browse.onSelect(q.questionId); } }, el('small', { text: `${q.themeName} · ${q.answered ? 'Answered' : 'Not answered'}` }), el('strong', { text: q.stem.slice(0, 90) })))) : el('div', { class: 'learning-list' }, ...state.items.map((item, i) => el('button', { type: 'button', class: `learning-list-item${i === state.cursor ? ' is-active' : ''}`, onclick: () => { void change({ action: 'move', cursor: i }); } }, el('small', { text: `${String(i + 1).padStart(2, '0')} · ${item.status}` }), el('strong', { text: item.title.replace(/[#*_]/g, '').slice(0, 90) }), el('small', { text: item.loName }))));
     const rail = el('aside', { class: 'learning-rail' }, el('h2', { class: 'eyebrow', text: state.kind === 'lesson' ? 'Your lesson' : state.kind === 'test' ? 'Your self-test' : 'Review questions' }), list, el('div', { class: 'learning-board-entry' }, button(`▦ Question board · ${browse?.questions.length ?? state.items.length}`, board)));
     const pane = el('section', { class: 'learning-pane' });
     const body = el('div', { class: 'learning-question-body' });
@@ -92,7 +106,13 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
       const options = el('div', { class: 'learning-options' });
       for (const option of current.options) {
         const reveal = current.revealed?.find(r => r.key === option.key);
-        const optionNode = el('button', { class: `learning-option${selected === option.key ? ' is-selected' : ''}${reveal?.correct ? ' is-correct' : ''}`, type: 'button', disabled: !!current.answer || state.kind === 'browse' || state.kind === 'cards', 'aria-pressed': String(selected === option.key), onclick: async () => { selected = option.key; await change({ action: 'draft', key: option.key }); } }, el('span', { class: 'mono', text: option.key }), rich(option.text), reveal ? rich(reveal.explanation, 'learning-explanation') : false);
+        const optionNode = el('button', { class: `learning-option${selected === option.key ? ' is-selected' : ''}${reveal?.correct ? ' is-correct' : ''}`, type: 'button', disabled: !!current.answer || state.kind === 'browse' || state.kind === 'cards', 'aria-pressed': String(selected === option.key), onclick: () => {
+          if (transitioning) return;
+          selected = option.key;
+          options.querySelectorAll('button').forEach(node => { const chosen = node === optionNode; node.classList.toggle('is-selected', chosen); node.setAttribute('aria-pressed', String(chosen)); });
+          const submit = root.querySelector<HTMLButtonElement>('.learning-navigation .btn--instr-primary'); if (submit) submit.disabled = false;
+          void change({ action: 'draft', key: option.key });
+        } }, el('span', { class: 'mono', text: option.key }), rich(option.text), reveal ? rich(reveal.explanation, 'learning-explanation') : false);
         options.append(optionNode);
       }
       body.append(options);
@@ -117,6 +137,7 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
     if (browse && current) { const row = library.find(q => q.questionId === current.questionId); if (row) inspector.append(el('hr'), el('strong', { text: 'Your review history' }), ...[['Added to Review Book', row.addedAt], ['Last reviewed', row.lastReviewedAt], ['Last incorrect answer', row.lastIncorrectAt]].map(([label, date]) => el('div', {}, el('p', { class: 'muted', text: label }), el('span', { text: date ? new Date(date).toLocaleString() : '—' }))), el('hr'), el('strong', { text: 'Personal tags' }), el('p', { text: row.tags.join(', ') || 'No tags yet' })); }
     if (current?.note) inspector.append(el('hr'), el('strong', { text: 'Instructor notes' }), ...(current.note.text ? [rich(current.note.text)] : []), ...(current.note.materialId ? [el('a', { href: api.materialHref(state.id, current.note.pageStart), target: '_blank', rel: 'noopener', text: `Open instructor notes ↗${current.note.pageStart ? ` · pp. ${current.note.pageStart}${current.note.pageEnd ? `–${current.note.pageEnd}` : ''}` : ''}` })] : []));
     root.replaceChildren(rail, pane, inspector);
+    list.scrollTop = listScroll;
     if (drawnQuestionId === current?.questionId) body.scrollTop = scroll;
     drawnQuestionId = current?.questionId;
   };
@@ -132,7 +153,7 @@ export async function renderReviewLibrary(outlet: HTMLElement, courseId: string,
   const api = learningApi(courseId, experience.preview); const root = el('div', { class: 'view review-library' }, loadingState('Loading Review Book…')); outlet.append(root);
   try {
     let library = (await api.library()).questions; let collection = 'all', topic = '', lo = '', tag = '', sort = 'order', search = ''; let activeId = currentQuery().get('questionId') ?? '';
-    const panel = el('div'); const count = el('small'); let drawToken = 0;
+    const panel = el('div', { class: 'review-reader' }); const count = el('small'); let drawToken = 0;
     const filtered = () => library.filter(q => (!topic || q.themeId === topic) && (!lo || q.loId === lo) && (!tag || q.tags.includes(tag)) && (!search || q.stem.toLowerCase().includes(search.toLowerCase())) && (collection === 'all' || collection === 'saved' && q.saved || collection === 'mistakes' && q.mistake || collection === 'confusing' && q.confusing || collection === 'unanswered' && !q.answered)).sort((a, b) => sort === 'added' ? (b.addedAt ?? '').localeCompare(a.addedAt ?? '') : sort === 'reviewed' ? (a.lastReviewedAt ?? '').localeCompare(b.lastReviewedAt ?? '') : sort === 'incorrect' ? (b.lastIncorrectAt ?? '').localeCompare(a.lastIncorrectAt ?? '') : 0);
     const startRound = async (kind: 'test' | 'cards', random = false) => {
       const qs = filtered(); if (!qs.length) return;
@@ -147,10 +168,13 @@ export async function renderReviewLibrary(outlet: HTMLElement, courseId: string,
     const loSelect = select('Learning objective', [['', 'All learning objectives'], ...[...new Map(library.map(q => [q.loId, q.loName])).entries()]], lo, value => { lo = value; void draw(); });
     const tagSelect = select('Personal tag', [['', 'All personal tags'], ...[...new Set(library.flatMap(q => q.tags))].map(t => [t, t] as [string, string])], tag, value => { tag = value; void draw(); });
     const sortSelect = select('Review order', [['order', 'Course question order'], ['added', 'Recently added'], ['reviewed', 'Least recently reviewed'], ['incorrect', 'Recent incorrect answers']], sort, value => { sort = value; void draw(); });
-    filters.append(searchInput, topicSelect, loSelect, tagSelect, sortSelect, button('Clear filters', () => { collection = 'all'; topic = lo = tag = sort = search = ''; topicSelect.value = loSelect.value = tagSelect.value = ''; sortSelect.value = 'order'; searchInput.value = ''; void draw(); }));
-    root.replaceChildren(el('header', { class: 'page-header' }, el('div', {}, el('h1', { text: 'Review Book' }), el('p', { class: 'muted', text: 'All released questions in one place. Browse, test yourself, or study with flashcards.' }))), el('div', { class: 'review-platform' }, el('div', {}, el('p', { class: 'eyebrow', text: 'Your review platform' }), el('h2', { text: 'Choose how you want to review' }), count), el('div', { class: 'row' }, button('Review one by one', () => { activeId = ''; void draw(); }), button('Sequential self-test', () => startRound('test')), button('Random self-test', () => startRound('test', true), 'btn btn--instr-primary'), button('Flashcards', () => startRound('cards')))), tabs, filters, panel);
+    filters.append(searchInput, topicSelect, loSelect, tagSelect, sortSelect, button('Clear filters', () => { collection = 'all'; topic = lo = tag = sort = search = ''; topicSelect.value = loSelect.value = tagSelect.value = ''; sortSelect.value = 'order'; searchInput.value = ''; tabs.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === 0))); void draw(); }));
+    tabs.querySelector('button')?.setAttribute('aria-pressed', 'true');
+    root.replaceChildren(el('header', { class: 'review-platform' },
+      el('div', { class: 'review-heading' }, el('h1', { text: 'Review Book' }), count),
+      el('div', { class: 'review-modes', 'aria-label': 'Review mode' }, button('Review one by one', () => { activeId = ''; void draw(); }), button('Sequential self-test', () => startRound('test')), button('Random self-test', () => startRound('test', true), 'btn btn--instr-primary'), button('Flashcards', () => startRound('cards')))), tabs, filters, panel);
     const draw = async () => {
-      const token = ++drawToken; library = (await api.library()).questions; if (token !== drawToken) return; tagSelect.replaceChildren(el('option', { value: '', text: 'All personal tags' }), ...[...new Set(library.flatMap(q => q.tags))].map(t => el('option', { value: t, text: t }))); tagSelect.value = tag; const qs = filtered(); count.textContent = `${qs.length} questions in the current selection`;
+      const token = ++drawToken; library = (await api.library()).questions; if (token !== drawToken) return; tagSelect.replaceChildren(el('option', { value: '', text: 'All personal tags' }), ...[...new Set(library.flatMap(q => q.tags))].map(t => el('option', { value: t, text: t }))); tagSelect.value = tag; const qs = filtered(); count.textContent = `${qs.length} questions`;
       if (!qs.length) { panel.replaceChildren(emptyState('No questions match this selection.')); return; }
       if (!qs.some(q => q.questionId === activeId)) activeId = qs[0].questionId;
       const state = await api.start({ kind: 'browse', questionIds: [activeId] }); if (token !== drawToken || !root.isConnected) return;

@@ -6,7 +6,7 @@ import { learningApi, type LearningLibrary } from '../../student-learning-api.js
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import { maybeStartStudentTutorial } from '../../tutorials.js';
 import type { StudentExperience } from './experience.js';
-import { button, dialog, rich } from './learning-workspace.js';
+import { button, dialog, questionTile, rich } from './learning-workspace.js';
 import { renderLearningSummary } from './learning-summary.js';
 
 interface QuestionEntry {
@@ -126,7 +126,7 @@ export async function renderTopicPracticeWorkspace(
     }, true);
     const board = () => {
       const popup = dialog('Question board', el('div', { class: 'learning-board-grid' }, ...entries.map((entry, index) =>
-        button(entry.kind === 'question' ? `${index + 1} · ${status(entry)} · ${entry.question.stem.slice(0, 65)}` : `Round ${entry.number} summary`, () => { popup.close(); visit(index); }))));
+        questionTile(index + 1, entry.kind === 'question' ? status(entry) : 'Summary', entry.kind === 'question' ? entry.question.stem : `Round ${entry.number} summary`, () => { popup.close(); visit(index); }))));
     };
     const report = (entry: QuestionEntry) => {
       const text = el('textarea', { class: 'input', rows: 4, maxlength: 500, 'aria-label': 'Describe the problem', placeholder: 'What is wrong with this question?' });
