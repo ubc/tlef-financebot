@@ -4,7 +4,7 @@ import { attachTutorial } from '../../tutorials.js';
 // (Task 15, Task B). See
 // docs/superpowers/plans/phase-1/Saurav/task-15-wireframe-reference.md
 // (node-ids `194:2` / `198:2`).
-import { ApiError, createCourse, listInstructorCourses, type InstructorCourse } from '../../api.js';
+import { ApiError, createCourse, listAdminCourses, listInstructorCourses, type AdminCourseOption, type InstructorCourse } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { courseCard } from '../../course-card.js';
 import { el, mount } from '../../dom.js';
@@ -62,10 +62,12 @@ function courseHref(courseId: string): string {
   return `#/instructor/course/${encodeURIComponent(courseId)}`;
 }
 
-function instructorCourseCard(course: InstructorCourse): HTMLElement {
+type TeachingCourse = Pick<InstructorCourse, '_id' | 'name' | 'courseCode' | 'section' | 'term' | 'lifecycle'> & { published?: boolean; owner?: AdminCourseOption['owner'] };
+
+function instructorCourseCard(course: TeachingCourse, showOwner = false): HTMLElement {
   const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
   const label = lifecycle === 'archived' ? 'Archived' : lifecycle === 'published' ? 'Published' : 'Sandbox';
-  return courseCard({
+  const card = courseCard({
     courseCode: course.courseCode,
     name: course.name,
     term: course.term,
@@ -76,22 +78,25 @@ function instructorCourseCard(course: InstructorCourse): HTMLElement {
       variant: lifecycle === 'published' ? 'approved' : lifecycle === 'archived' ? 'archived' : 'neutral',
     },
   });
+  if (showOwner) card.querySelector('.course-card__main')?.append(el('p', {
+    class: 'course-card__meta course-card__owner',
+    text: `Instructor: ${course.owner?.displayName ?? 'Unknown instructor'}${course.owner?.uid ? ` (${course.owner.uid})` : ''}`,
+  }));
+  return card;
 }
 
-/** My Courses (N1): the instructor's courses, or an empty state when they
- * hold no `instructor` courseRoles (see the Task A "known limitation" note —
- * an admin with no explicit courseRoles legitimately sees an empty list
- * here). */
+/** Admins browse all course projects; ordinary Instructors retain their scoped list. */
 export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
   const user = getSession().user;
   const canCreateCourse = Boolean(user?.isAdmin || user?.platformInstructor);
+  const admin = Boolean(user?.isAdmin);
   const body = el('div', {}, loadingState('Loading your courses…'));
   const root = el(
     'div',
     { class: 'view view--course-projects' },
     pageHeader(
-      'My Courses',
-      canCreateCourse
+      admin ? 'All Courses' : 'My Courses',
+      admin ? 'Browse every instructor’s courses. Search by course or instructor, or filter the list.' : canCreateCourse
         ? 'Each course is a project. Open one to continue building, reviewing, and previewing it.'
         : 'Select a course you have been assigned to manage.',
       canCreateCourse
@@ -107,21 +112,22 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
   mount(outlet, root);
 
   try {
-    const courses = await listInstructorCourses();
+    const courses: TeachingCourse[] = admin ? await listAdminCourses() : await listInstructorCourses();
     if (!courses.length) {
-      body.replaceChildren(emptyState('You have no courses yet — create one to get started.'));
+      body.replaceChildren(emptyState(admin ? 'No courses have been created yet.' : 'You have no courses yet — create one to get started.'));
       body.dataset.tutorial = 'instructor-projects';
       attachTutorial(root, 'instructor-welcome', {"instructor-project-actions": ".page-header"});
       return;
     }
     let query = '';
     let lifecycleFilter = 'all';
+    let ownerFilter = '';
     const resultCount = el('span', { class: 'course-projects__count' });
     const grid = el('div', { class: 'course-list' });
     const search = el('input', {
       class: 'input course-projects__search',
       type: 'search',
-      placeholder: 'Search courses…',
+      placeholder: admin ? 'Search courses or instructors…' : 'Search courses…',
       'aria-label': 'Search courses',
     }) as HTMLInputElement;
     const filter = el(
@@ -132,19 +138,25 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
       el('option', { value: 'draft', text: 'Sandbox' }),
       el('option', { value: 'archived', text: 'Archived' }),
     ) as HTMLSelectElement;
+    const owners = [...new Map(courses.map(course => [course.owner?.puid ?? '__unknown__', course.owner])).entries()]
+      .sort((a, b) => (a[1]?.displayName ?? '').localeCompare(b[1]?.displayName ?? ''));
+    const ownerSelect = el('select', { class: 'input course-projects__filter', 'aria-label': 'Filter courses by instructor' },
+      el('option', { value: '', text: 'All instructors' }),
+      ...owners.map(([id, owner]) => el('option', { value: id, text: owner ? `${owner.displayName}${owner.uid ? ` (${owner.uid})` : ''}` : 'Unknown instructor' })));
 
     function refreshProjects(): void {
       const normalizedQuery = query.trim().toLowerCase();
       const visible = courses.filter((course) => {
         const lifecycle = course.lifecycle ?? (course.published ? 'published' : 'draft');
         const matchesLifecycle = lifecycleFilter === 'all' || lifecycle === lifecycleFilter;
-        const haystack = `${course.courseCode} ${course.name} ${course.term} ${course.section ?? ''}`.toLowerCase();
-        return matchesLifecycle && (!normalizedQuery || haystack.includes(normalizedQuery));
+        const haystack = `${course.courseCode} ${course.name} ${course.term} ${course.section ?? ''} ${admin && course.owner ? `${course.owner.displayName} ${course.owner.uid} ${course.owner.email} ${course.owner.puid}` : ''}`.toLowerCase();
+        const matchesOwner = !ownerFilter || (course.owner?.puid ?? '__unknown__') === ownerFilter;
+        return matchesLifecycle && matchesOwner && (!normalizedQuery || haystack.includes(normalizedQuery));
       });
       resultCount.textContent = `${visible.length} project${visible.length === 1 ? '' : 's'}`;
       grid.replaceChildren(
         ...(visible.length
-          ? visible.map(instructorCourseCard)
+          ? visible.map(course => instructorCourseCard(course, admin))
           : [el('div', { class: 'course-projects__empty' }, emptyState('No course projects match this search.'))]),
       );
     }
@@ -157,11 +169,12 @@ export async function renderMyCourses(outlet: HTMLElement): Promise<void> {
       lifecycleFilter = filter.value;
       refreshProjects();
     });
+    ownerSelect.addEventListener('change', () => { ownerFilter = ownerSelect.value; refreshProjects(); });
     body.replaceChildren(
       el(
         'div',
         { class: 'course-projects__toolbar' },
-        el('div', { class: 'course-projects__controls' }, search, filter),
+        el('div', { class: `course-projects__controls${admin ? ' course-projects__controls--admin' : ''}` }, search, admin ? ownerSelect : false, filter),
         resultCount,
       ),
       grid,

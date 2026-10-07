@@ -8,11 +8,12 @@ const OTHER_COURSE = '507f1f77bcf86cd799439012';
 type Role = 'admin' | 'instructor' | 'ta' | 'student';
 type ViewRole = Role | 'student-restricted';
 const LABELS: Record<ViewRole, string> = { admin: 'Admin', instructor: 'Instructor', ta: 'TA', student: 'Student without access restrictions', 'student-restricted': 'Student with access restrictions' };
+const OWNERS = [{ puid:'TEACHER-1', displayName:'Alice Professor', uid:'alice', email:'alice@ubc.ca' }, { puid:'TEACHER-2', displayName:'Bob Professor', uid:'bob', email:'bob@ubc.ca' }];
 const COURSES = [
-  { _id: COURSE, name: 'Finance Foundations', courseCode: 'FIN 101', section: '001', term: '2026W1', lifecycle: 'published', published: true },
-  { _id: OTHER_COURSE, name: 'Advanced Finance', courseCode: 'FIN 201', section: '002', term: '2026W1', lifecycle: 'published', published: true },
+  { _id: COURSE, owner:OWNERS[0], name: 'Finance Foundations', courseCode: 'FIN 101', section: '001', term: '2026W1', lifecycle: 'published', published: true },
+  { _id: OTHER_COURSE, owner:OWNERS[1], name: 'Advanced Finance', courseCode: 'FIN 201', section: '002', term: '2026W1', lifecycle: 'published', published: true },
 ];
-const DRAFT_COURSE = { _id: '507f1f77bcf86cd799439013', name: 'Sandbox Finance', courseCode: 'FIN 301', section: '003', term: '2026W1', lifecycle: 'draft', published: false };
+const DRAFT_COURSE = { _id: '507f1f77bcf86cd799439013', name: 'Sandbox Finance', owner:OWNERS[1], courseCode: 'FIN 301', section: '003', term: '2026W1', lifecycle: 'draft', published: false };
 
 async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dark'; path?: string; forgedRole?: Role; analyticsView?: boolean; analyticsIndividual?: boolean; includeDraft?: boolean } = {}) {
   const availableCourses = options.includeDraft ? [...COURSES, DRAFT_COURSE] : COURSES;
@@ -43,7 +44,8 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (path === '/api/tutorials') return route.fulfill({ json: TUTORIAL_DEFINITIONS.map(definition => ({ id: definition.id, role: definition.role, version: 1, status: 'dismissed' })) });
     if (path === '/api/notifications') return route.fulfill({ json: [] });
     if (path === '/api/admin/directory' || path === '/api/admin/users') return route.fulfill({ json: [] });
-    if (path === '/api/admin/courses' || path === '/api/courses') return route.fulfill({ json: availableCourses });
+    if (path === '/api/admin/courses') return route.fulfill(role === 'admin' ? { json: availableCourses } : {status:403,json:{error:'Admin access required.'}});
+    if (path === '/api/courses') return route.fulfill({ json: role === 'admin' ? [] : availableCourses });
     if (path === '/api/enrollments') return route.fulfill({ json: availableCourses.map(course => ({ courseId: course._id, name: course.name, courseCode: course.courseCode, term: course.term, active: true })) });
     const course = availableCourses.find(entry => path === `/api/courses/${entry._id}` || path.startsWith(`/api/courses/${entry._id}/`));
     if (course && path === `/api/courses/${course._id}`) return route.fulfill({ json: { ...course, themes: [] } });
@@ -573,3 +575,41 @@ for (const role of ['student', 'admin', 'instructor', 'ta'] as const) {
     });
   }
 }
+
+
+test('Admin Instructor catalogue includes other teachers, combines owner/status/search and stays responsive', async ({page}) => {
+  const state = await fixture(page,'admin',{includeDraft:true});
+  await switchRole(page,'admin','instructor');
+  await expect(page.getByRole('heading',{name:'All Courses',exact:true})).toBeVisible();
+  await expect(page.locator('.course-card')).toHaveCount(3);
+  await expect(page.getByText('Instructor: Alice Professor (alice)',{exact:true})).toBeVisible();
+  await expect(page.getByText('Instructor: Bob Professor (bob)',{exact:true})).toHaveCount(2);
+  const owner = page.getByRole('combobox',{name:'Filter courses by instructor'});
+  const status = page.getByRole('combobox',{name:'Filter courses by status'});
+  const search = page.getByRole('searchbox',{name:'Search courses'});
+  await owner.selectOption('TEACHER-2'); await expect(page.locator('.course-card')).toHaveCount(2);
+  await status.selectOption('published'); await expect(page.locator('.course-card')).toHaveCount(1);
+  await search.fill('alice'); await expect(page.locator('.course-card')).toHaveCount(0);
+  await expect(page.getByText('No course projects match this search.')).toBeVisible();
+  await owner.selectOption(''); await search.fill('ALICE@UBC.CA'); await expect(page.locator('.course-card')).toHaveCount(1);
+  await search.fill('FIN 201'); await expect(page.locator('.course-card')).toHaveCount(1);
+  await search.fill(''); await status.selectOption('all'); await expect(page.locator('.course-card')).toHaveCount(3);
+  for (const [width,theme] of [[1440,'light'],[390,'dark']] as const) {
+    await page.setViewportSize({width,height:900}); await page.evaluate(theme => document.documentElement.setAttribute('data-theme',theme),theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect((await new AxeBuilder({page}).include('#view-root').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:`audit-results/role-workspaces/admin-instructor-catalogue-${width}.png`,fullPage:true});
+  }
+  await expect(page.locator('.course-card').filter({hasText:'Advanced Finance'})).toHaveAttribute('href', `#/instructor/course/${OTHER_COURSE}`);
+  state.assertClean();
+});
+
+test('ordinary Instructor catalogue never requests the Admin course list', async ({page}) => {
+  const state = await fixture(page,'instructor');
+  await expect(page.getByRole('heading',{name:'My Courses',exact:true})).toBeVisible();
+  await expect(page.locator('.course-card')).toHaveCount(2);
+  await expect(page.getByRole('combobox',{name:'Filter courses by instructor'})).toHaveCount(0);
+  await expect(page.locator('.course-card__owner')).toHaveCount(0);
+  expect(state.requests.some(url => url.pathname === '/api/admin/courses')).toBe(false);
+  state.assertClean();
+});

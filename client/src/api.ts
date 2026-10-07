@@ -139,6 +139,7 @@ export interface AdminCourseOption {
   section?: string;
   term: string;
   lifecycle: 'draft' | 'published' | 'archived';
+  owner?: { puid: string; displayName: string; uid: string; email: string } | null;
 }
 
 /** Admin-only course identities for role assignment, including archived courses. */

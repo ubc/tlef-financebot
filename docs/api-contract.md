@@ -700,11 +700,15 @@ operation writes an audit entry.
 - `GET /api/admin/directory?q=&role=&courseId=` — searchable user directory
   with course roles and deactivation state.
 - `GET /api/admin/courses` →
-  `[{ _id, name, courseCode, section?, term, lifecycle: 'draft' | 'published' | 'archived' }]`
-  — minimal all-course identities for Admin role assignment, including archived
+  `[{ _id, name, courseCode, section?, term, lifecycle: 'draft' | 'published' | 'archived', owner: { puid, displayName, uid, email } | null }]`
+  — minimal all-course identities for Admin role assignment and the Admin's
+  Instructor course catalogue, including archived
   courses; sorted by term descending, then course code, section and name. This
   does not change the Instructor-scoped `GET /api/courses` contract and never
-  returns registration codes or private course settings.
+  returns registration codes or private course settings. Owner identity is resolved
+  in one batched lookup, falls back to the recorded PUID when the User is missing,
+  and is null for legacy courses without an owner. Admin course cards show the
+  owner and support combined instructor/status filters and course/owner search.
 - `PUT|DELETE /api/admin/users/:puid/courses/:courseId/roles/:role` — assign or
   remove a Student, Instructor, or TA role. Removing a course's final Instructor
   first returns `409 { warning: 'orphans-course' }`; repeat the DELETE with

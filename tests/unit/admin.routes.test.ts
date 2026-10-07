@@ -101,6 +101,7 @@ describe('Admin user-account routes', () => {
     const courses = [{
       _id: '000000000000000000000001', name: 'Finance', courseCode: 'COMM 298',
       section: '101', term: '2026W1', lifecycle: 'archived' as const,
+      owner: { puid: 'OWNER-1', displayName: 'Finance Professor', uid: 'professor', email: 'professor@ubc.ca' },
     }];
     jest.mocked(listAdminCourses).mockResolvedValue(courses);
 

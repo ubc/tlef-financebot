@@ -136,19 +136,40 @@ describe('Phase 3 Admin essentials', () => {
     }));
     const cursor = cursorResult(courses);
     findCourses.mockReturnValue(cursor);
+    findUsers.mockReturnValue({ toArray: async () => [userDoc({ puid: 'PRIVATE-OWNER', uid: 'professor', email: 'professor@ubc.ca' })] });
 
     await expect(listAdminCourses()).resolves.toEqual(courses.map((course, index) => ({
       _id: course._id.toHexString(), name: course.name, courseCode: course.courseCode,
       ...(course.section !== undefined ? { section: course.section } : {}),
       term: course.term, lifecycle: ['published', 'archived', 'published', 'draft'][index],
+      owner: { puid: 'PRIVATE-OWNER', displayName: 'Finance Professor', uid: 'professor', email: 'professor@ubc.ca' },
     })));
     expect(findCourses).toHaveBeenCalledWith({}, {
       projection: {
         _id: 1, name: 1, courseCode: 1, section: 1, term: 1,
-        lifecycle: 1, published: 1, archivedAt: 1,
+        lifecycle: 1, published: 1, archivedAt: 1, ownerPuid: 1,
       },
     });
     expect(cursor.sort).toHaveBeenCalledWith({ term: -1, courseCode: 1, section: 1, name: 1, _id: 1 });
+    expect(findUsers).toHaveBeenCalledTimes(1);
+    expect(findUsers).toHaveBeenCalledWith({ puid: { $in: ['PRIVATE-OWNER'] } }, { projection: { _id: 0, puid: 1, displayName: 1, uid: 1, email: 1 } });
+  });
+
+  it('keeps owner fallback identities and ownerless legacy courses visible', async () => {
+    findCourses.mockReturnValue(cursorResult([
+      { _id: new ObjectId(), name: 'Missing user', ownerPuid: 'MISSING', courseCode: 'FIN 101', term: '2026W1', published: false },
+      { _id: new ObjectId(), name: 'No owner', courseCode: 'FIN 102', term: '2026W1', published: false },
+    ]));
+    findUsers.mockReturnValue({ toArray: async () => [] });
+    const rows = await listAdminCourses();
+    expect(rows[0].owner).toEqual({ puid: 'MISSING', displayName: 'MISSING', uid: '', email: '' });
+    expect(rows[1].owner).toBeNull();
+  });
+
+  it('does not query users when no courses exist', async () => {
+    findCourses.mockReturnValue(cursorResult([]));
+    await expect(listAdminCourses()).resolves.toEqual([]);
+    expect(findUsers).not.toHaveBeenCalled();
   });
 
   it('warns before orphaning a course and removes only after confirmation', async () => {

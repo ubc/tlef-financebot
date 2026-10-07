@@ -214,24 +214,37 @@ export interface AdminCourseOption {
   section?: string;
   term: string;
   lifecycle: CourseLifecycle;
+  owner: { puid: string; displayName: string; uid: string; email: string } | null;
 }
 
-/** Minimal all-course identities for Admin role assignment, including archived courses. */
+/** All-course identities and owners for the Admin catalogue and role assignment. */
 export async function listAdminCourses(): Promise<AdminCourseOption[]> {
   const courses = await coursesCol().find({}, {
     projection: {
       _id: 1, name: 1, courseCode: 1, section: 1, term: 1,
-      lifecycle: 1, published: 1, archivedAt: 1,
+      lifecycle: 1, published: 1, archivedAt: 1, ownerPuid: 1,
     },
   }).sort({ term: -1, courseCode: 1, section: 1, name: 1, _id: 1 }).toArray();
-  return courses.map((course) => ({
-    _id: course._id.toHexString(),
-    name: course.name,
-    courseCode: course.courseCode,
-    ...(course.section !== undefined ? { section: course.section } : {}),
-    term: course.term,
-    lifecycle: courseLifecycle(course),
-  }));
+  const ownerPuids = [...new Set(courses.map(course => course.ownerPuid).filter(Boolean))];
+  const owners = ownerPuids.length ? await usersCol().find({ puid: { $in: ownerPuids } }, {
+    projection: { _id: 0, puid: 1, displayName: 1, uid: 1, email: 1 },
+  }).toArray() : [];
+  const ownersByPuid = new Map(owners.map(owner => [owner.puid, owner]));
+  return courses.map((course) => {
+    const owner = ownersByPuid.get(course.ownerPuid);
+    return {
+      _id: course._id.toHexString(),
+      name: course.name,
+      courseCode: course.courseCode,
+      ...(course.section !== undefined ? { section: course.section } : {}),
+      term: course.term,
+      lifecycle: courseLifecycle(course),
+      owner: course.ownerPuid ? {
+        puid: course.ownerPuid, displayName: owner?.displayName || owner?.email || owner?.uid || course.ownerPuid,
+        uid: owner?.uid ?? '', email: owner?.email ?? '',
+      } : null,
+    };
+  });
 }
 
 export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promise<Array<WithId<User>>> {

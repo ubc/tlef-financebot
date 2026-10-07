@@ -7591,6 +7591,15 @@ button.quick-action--disabled { cursor: default; }
   max-width: 42rem;
 }
 
+.course-projects__controls--admin {
+  max-width: none;
+  flex-wrap: wrap;
+}
+
+.course-projects__controls--admin .course-projects__search { flex: 1; min-width: 12rem; }
+.course-projects__controls--admin .course-projects__filter { max-width: 18rem; min-width: 0; }
+.course-card__owner { overflow-wrap: anywhere; }
+
 .course-projects__search {
   min-width: 14rem;
 }
@@ -8152,6 +8161,9 @@ button.quick-action--disabled { cursor: default; }
     width: 100%;
     min-width: 0;
   }
+
+  .course-projects__controls--admin .course-projects__search,
+  .course-projects__controls--admin .course-projects__filter { min-width: 0; max-width: none; }
 
   .course-list {
     grid-template-columns: 1fr;
