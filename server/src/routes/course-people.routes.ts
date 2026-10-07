@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ensureApiAuthenticated } from '../components/auth';
 import { ensureCourseInstructor } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
-import { changeCoursePerson, inviteCoursePerson, listCoursePeople } from '../services/course-people.service';
+import { changeCoursePerson, inviteCoursePerson, listCoursePeople, removeCoursePeople } from '../services/course-people.service';
 
 export const coursePeopleRouter = Router();
 const params = z.object({ courseId: z.string().regex(/^[0-9a-f]{24}$/) });
@@ -22,7 +22,13 @@ coursePeopleRouter.post('/courses/:courseId/people', ensureApiAuthenticated(), v
   res.status(201).json(await inviteCoursePerson(new ObjectId(String(req.params.courseId)), req.user!, req.body.identifier, req.body.role, req.body.permissions));
 });
 coursePeopleRouter.patch('/courses/:courseId/people/:id', ensureApiAuthenticated(), validate({ params: params.extend({ id: z.string().min(3).max(300) }), body: z.object({
-  expectedRevision: z.number().int().nonnegative(), action: z.enum(['role', 'ban', 'unban', 'cancel']), role: role.optional(), permissions, reason: z.string().max(500).optional(),
+  expectedRevision: z.number().int().nonnegative(), action: z.enum(['role', 'ban', 'unban', 'cancel', 'remove']), role: role.optional(), permissions, reason: z.string().max(500).optional(),
 }).strict() }), ensureCourseInstructor(), async (req, res) => {
   res.json(await changeCoursePerson(new ObjectId(String(req.params.courseId)), req.user!, String(req.params.id), req.body.expectedRevision, req.body));
+});
+coursePeopleRouter.post('/courses/:courseId/people/remove', ensureApiAuthenticated(), validate({ params, body: z.object({
+  people: z.array(z.object({ id: z.string().min(3).max(300), expectedRevision: z.number().int().nonnegative() }).strict()).min(1).max(100)
+    .refine(people => new Set(people.map(person => person.id)).size === people.length, 'Duplicate people are not allowed.'),
+}).strict() }), ensureCourseInstructor(), async (req, res) => {
+  res.json(await removeCoursePeople(new ObjectId(String(req.params.courseId)), req.user!, req.body.people));
 });

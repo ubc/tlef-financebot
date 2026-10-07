@@ -1,9 +1,9 @@
 import express from 'express';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
-jest.mock('../../server/src/services/course-people.service', () => ({ listCoursePeople: jest.fn(async () => ({ people: [], total: 0 })), inviteCoursePerson: jest.fn(async () => ({ id: 'PERSON', status: 'active' })), changeCoursePerson: jest.fn(async () => ({ revision: 2 })) }));
+jest.mock('../../server/src/services/course-people.service', () => ({ listCoursePeople: jest.fn(async () => ({ people: [], total: 0 })), inviteCoursePerson: jest.fn(async () => ({ id: 'PERSON', status: 'active' })), changeCoursePerson: jest.fn(async () => ({ revision: 2 })), removeCoursePeople: jest.fn(async () => ({ removed: ['puid:PERSON'], failed: [] })) }));
 import { coursePeopleRouter } from '../../server/src/routes/course-people.routes';
-import { inviteCoursePerson, listCoursePeople, changeCoursePerson } from '../../server/src/services/course-people.service';
+import { inviteCoursePerson, listCoursePeople, changeCoursePerson, removeCoursePeople } from '../../server/src/services/course-people.service';
 
 const id = new ObjectId();
 const base = `/api/courses/${id}/people`;
@@ -15,7 +15,19 @@ function app(role?: string, target = id) {
   }); app.use('/api', coursePeopleRouter); return app;
 }
 test.each([undefined, 'student', 'ta'])('directory identities and mutations are denied to %s', async role => {
-  for (const r of [request(app(role)).get(base), request(app(role)).post(base).send({ identifier: 'person@ubc.ca', role: 'student' }), request(app(role)).patch(`${base}/puid:PERSON`).send({ action: 'ban', expectedRevision: 0 })]) await r.expect(role ? 403 : 401);
+  for (const r of [request(app(role)).get(base), request(app(role)).post(base).send({ identifier: 'person@ubc.ca', role: 'student' }), request(app(role)).patch(`${base}/puid:PERSON`).send({ action: 'ban', expectedRevision: 0 }), request(app(role)).post(`${base}/remove`).send({ people: [{ id: 'puid:PERSON', expectedRevision: 0 }] })]) await r.expect(role ? 403 : 401);
+});
+test('single and bulk removal require revisions and reject unbounded or forged payloads', async () => {
+  await request(app('instructor')).patch(`${base}/puid:PERSON`).send({ action: 'remove', expectedRevision: 3 }).expect(200);
+  expect(changeCoursePerson).toHaveBeenLastCalledWith(id, expect.anything(), 'puid:PERSON', 3, { action: 'remove', expectedRevision: 3 });
+  const people = [{ id: 'puid:PERSON', expectedRevision: 3 }];
+  await request(app('admin')).post(`${base}/remove`).send({ people }).expect(200, { removed: ['puid:PERSON'], failed: [] });
+  expect(removeCoursePeople).toHaveBeenLastCalledWith(id, expect.objectContaining({ isAdmin: true }), people);
+  for (const body of [{ people: [] }, { people: [...people, ...people] }, { people: [{ id: 'puid:PERSON' }] },
+    { people, actorPuid: 'OWNER' }, { people: Array.from({ length: 101 }, (_, n) => ({ id: `puid:${n}`, expectedRevision: 0 })) }]) {
+    await request(app('instructor')).post(`${base}/remove`).send(body).expect(400);
+  }
+  await request(app('instructor', new ObjectId())).post(`${base}/remove`).send({ people }).expect(403);
 });
 test('another course cannot inspect this directory', async () => { await request(app('instructor', new ObjectId())).get(base).expect(403); });
 test('page, search, role and status are bounded and forwarded', async () => {

@@ -30,3 +30,11 @@
 .people-workspace .directory-error:empty{display:none}
 .people-workspace .search-wrap .input{width:100%;padding-left:10px}
 .people-table .people-source{white-space:normal;max-width:220px}
+.people-bulk-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid var(--border);background:var(--bg);font-size:12px}
+.people-select-page{display:flex;align-items:center;gap:8px;cursor:pointer}
+.people-workspace :is(.people-select-person,.people-select-page input){width:16px;height:16px;flex:none;margin:0;accent-color:var(--people-green)}
+.people-selected-count{color:var(--muted);margin-right:auto}
+.people-table .row-actions{flex-wrap:wrap}
+@media(max-width:600px){.people-bulk-actions{padding:10px 14px;gap:8px}.people-selected-count{font-size:11px}}
+.people-confirmation .btn--danger { background: #a1283b; border-color: #a1283b; color: #fff; }
+.people-confirmation .btn--danger:hover { background: #842031; border-color: #842031; }

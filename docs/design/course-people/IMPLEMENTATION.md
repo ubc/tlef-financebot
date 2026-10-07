@@ -15,6 +15,15 @@ Course Settings retains course settings and links to People.
   Other course Instructors can read/search. Student/TA access to the directory
   is denied. Owner and platform Admin identities are protected from course
   mutations. Course Instructor grants never imply platform Instructor access.
+- Remove revokes course access and hides the person while retaining their account,
+  learning records and external Canvas enrollments. It also works for CSV/Canvas
+  identities awaiting first login and deactivated accounts. Explicit invitations
+  can restore removed access; CSV uploads, Canvas refreshes and code redemption
+  cannot undo the controlling revocation.
+- Row checkboxes and Select this page support up to 100 selected identities
+  across pagination. Protected rows are disabled. Search/filter/tab changes and
+  Refresh clear selection. Confirmation names the selected people; partial bulk
+  failures remain visible with per-person errors and successful removals retained.
 - The directory merges direct roles, the current CSV import, valid Canvas
   snapshots, legacy invitations and owner decisions. Search, role/status filters
   and stable 10/25/50-row pages are applied on the server before responding.

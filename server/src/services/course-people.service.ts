@@ -73,7 +73,7 @@ async function directory(courseId: ObjectId, actor: Actor) {
     row.revision = c.revision;
     row.permissions = { ...c.permissions, ...settings?.userOverrides?.[c.puid ?? ''] };
     row.banReason = c.banReason;
-    if (byPuid.get(c.puid ?? '')?.deactivatedAt) row.status = 'deactivated';
+    if (c.status !== 'revoked' && byPuid.get(c.puid ?? '')?.deactivatedAt) row.status = 'deactivated';
   }
   for (const row of rows.values()) if (!row.owner && ['active', 'pending'].includes(row.status) && !peopleRoleOpen(course, row.role)) {
     row.status = course.lifecycle === 'archived' || course.archivedAt || (course.termEnd && course.termEnd <= new Date()) ? 'expired' : 'pending';
@@ -132,20 +132,46 @@ export async function inviteCoursePerson(courseId: ObjectId, actor: Actor, ident
     permissions: role === 'ta' ? cleanPermissions(permissions) : {},
   }, 'course.people.invite');
 }
-export async function changeCoursePerson(courseId: ObjectId, actor: Actor, id: string, expectedRevision: number, change: { action: 'role' | 'ban' | 'unban' | 'cancel'; role?: CourseRole; permissions?: Partial<Record<Capability, boolean>>; reason?: string }) {
+type PersonChange = { action: 'role' | 'ban' | 'unban' | 'cancel' | 'remove'; role?: CourseRole; permissions?: Partial<Record<Capability, boolean>>; reason?: string };
+export async function changeCoursePerson(courseId: ObjectId, actor: Actor, id: string, expectedRevision: number, change: PersonChange) {
   await peopleCourse(courseId, actor, true);
   const row = (await directory(courseId, actor)).people.find(p => p.id === id);
+  return changePersonDecision(courseId, actor, row, id, expectedRevision, change);
+}
+async function changePersonDecision(courseId: ObjectId, actor: Actor, row: CoursePerson | undefined, id: string, expectedRevision: number, change: PersonChange) {
   if (!row) fail('Person not found in this course.', 404);
   if (row.protected) fail('Owner and platform Admin access cannot be changed here.', 403);
   if (row.revision !== expectedRevision) fail('Access changed. Refresh People and try again.', 409);
-  if (row.status === 'deactivated') fail('This account is deactivated. An Admin must restore it first.', 409);
+  if (row.status === 'deactivated' && change.action !== 'remove') fail('This account is deactivated. An Admin must restore it first.', 409);
+  if (change.action === 'remove' && row.status === 'revoked') fail('This person has already been removed. Refresh People.', 409);
   if (change.action === 'cancel' && (row.puid || !['pending', 'expired'].includes(row.status))) fail('Only pending email invitations can be cancelled.', 409);
   if (change.action === 'ban' && !row.puid) fail('Cancel this pending invitation instead.', 409);
   if (change.action === 'unban' && row.status !== 'banned') fail('This person is not banned.', 409);
   if (change.action === 'role' && (!change.role || row.status === 'banned' || row.status === 'revoked')) fail('Unban the person before changing their role.', 409);
-  const role = change.role ?? row.role;
+  const role = change.action === 'role' ? change.role! : row.role;
   return saveDecision(courseId, actor, id, expectedRevision, { ...(row.puid ? { puid: row.puid } : {}), ...(row.email ? { email: row.email.toLowerCase() } : {}), role,
-    status: change.action === 'ban' ? 'banned' : change.action === 'unban' ? 'active' : change.action === 'cancel' ? 'revoked' : row.puid ? 'active' : 'pending',
-    permissions: role === 'ta' ? cleanPermissions(change.permissions ?? row.permissions) : {}, banReason: change.action === 'ban' ? (change.reason ?? '').trim().slice(0, 500) : '',
+    status: change.action === 'ban' ? 'banned' : change.action === 'unban' ? 'active' : ['cancel', 'remove'].includes(change.action) ? 'revoked' : row.puid ? 'active' : 'pending',
+    permissions: role === 'ta' ? cleanPermissions(change.action === 'role' ? change.permissions ?? row.permissions : row.permissions) : {}, banReason: change.action === 'ban' ? (change.reason ?? '').trim().slice(0, 500) : '',
   }, `course.people.${change.action}`);
+}
+
+/** Independent revision checks retain successful removals when another row changed. */
+export async function removeCoursePeople(courseId: ObjectId, actor: Actor, people: Array<{ id: string; expectedRevision: number }>) {
+  await peopleCourse(courseId, actor, true);
+  if (!people.length || people.length > 100 || new Set(people.map(p => p.id)).size !== people.length) fail('Select between 1 and 100 distinct people.');
+  const rows = new Map((await directory(courseId, actor)).people.map(row => [row.id, row]));
+  const removed: string[] = [];
+  const failed: Array<{ id: string; status: number; message: string }> = [];
+  for (const person of people) {
+    try {
+      await changePersonDecision(courseId, actor, rows.get(person.id), person.id, person.expectedRevision, { action: 'remove' });
+      removed.push(person.id);
+    } catch (error) {
+      const status = error && typeof error === 'object' && 'status' in error ? Number(error.status) : 500;
+      // Unknown infrastructure errors must not be mistaken for a row-level denial.
+      if (status < 400 || status >= 500) throw error;
+      failed.push({ id: person.id, status, message: (error as Error).message });
+    }
+  }
+  return { removed, failed };
 }

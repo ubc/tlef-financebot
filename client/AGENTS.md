@@ -281,6 +281,11 @@ role filtering, search and pagination; display membership does not grant roles.
 
 ## Course People consolidation (2026-10-06)
 
+People supports confirmed single-person removal and checkbox selection across
+pages for batches of up to 100. Changing filters clears selection. Owner and
+platform Admin identities are protected. Removal retains learning records and
+uses revisioned access overrides so CSV/Canvas sync cannot restore access.
+
 People consolidates Enrollment, Teaching Assistants and Co-instructors using
 course-scoped merged identities, search and server pagination. People and Share
 share Student/TA/Instructor invitations. Owner/Admin controls role changes,

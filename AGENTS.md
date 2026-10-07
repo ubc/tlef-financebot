@@ -444,6 +444,12 @@ from practice analytics and public question generation; see
 
 ## Course People consolidation (2026-10-06)
 
+Course Owners/Admins can remove individuals or up to 100 selected people across
+pages. Removal hides the identity and persists a revisioned access revocation,
+retaining accounts, learning records and Canvas enrollments. CSV/Canvas refreshes
+cannot restore removed access; explicit reinvitation can. Protected identities
+are not selectable, and bulk results distinguish successful, stale and denied rows.
+
 People consolidates Enrollment, Teaching Assistants and Co-instructors using
 course-scoped merged identities, search and server pagination. People and Share
 share Student/TA/Instructor invitations. Owner/Admin controls role changes,

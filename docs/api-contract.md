@@ -1399,11 +1399,22 @@ and hard denials for approval/final flag resolution are unchanged.
   preset capabilities. Returns `{id,status,revision}`. Existing people use the
   role editor; reinvitation never silently unbans an identity.
 - `PATCH /api/courses/:courseId/people/:id`: Owner/Admin only; body
-  `{expectedRevision, action: role|ban|unban|cancel, role?, permissions?, reason?}`.
+  `{expectedRevision, action: role|ban|unban|cancel|remove, role?, permissions?, reason?}`.
   IDs are encoded exact `puid:<PUID>` or `email:<normalized UBC email>` subjects.
   Protected Owner/Admin identities reject changes. Cancellation is for pending
   email invitations. Stale revisions return 409. Course bans preserve all
   learning records and remain effective across CSV/Canvas refreshes.
+- `remove` revokes all FinanceBot access for this course and hides the person
+  from People, including imported/Canvas PUIDs awaiting first login. A revisioned
+  revocation decision prevents CSV/Canvas or older invitations from restoring
+  access. No account, learning record, or Canvas enrollment is deleted. Explicit
+  reinvitation restores course access; Owner/platform Admin identities stay protected.
+- `POST /api/courses/:courseId/people/remove`: Owner/Admin only; body
+  `{people:[{id,expectedRevision}]}` with 1–100 distinct subjects and no extra fields.
+  Returns `{removed:string[],failed:[{id,status,message}]}`. Each removal has its
+  own revision CAS and audit record. Protected, missing and stale rows are reported
+  independently; successful rows stay removed. Malformed input returns 400,
+  unauthorized management returns 403, and archived courses return 409 before writes.
 - Existing one-time code mutation endpoints now require Owner/Admin. Reads
   remain course Instructor/Admin. Legacy TA mutation endpoints also require
   Owner/Admin; TA review/analytics endpoints retain capability guards.

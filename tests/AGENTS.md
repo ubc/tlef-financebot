@@ -271,6 +271,12 @@ forms. The existing workbench suite verifies the terminal evaluation download li
 
 ## Course People consolidation (2026-10-06)
 
+`course-people-removal.spec.ts` runs under `playwright.course-admin.config.ts`
+against the compiled client with intercepted APIs. It verifies pending Canvas
+members, cancellation/focus, cross-page selection, protected identities, partial
+failures, retry, read-only roles and mobile light/dark accessibility. Build first;
+no live membership, Canvas enrollment or student history is changed.
+
 People consolidates Enrollment, Teaching Assistants and Co-instructors using
 course-scoped merged identities, search and server pagination. People and Share
 share Student/TA/Instructor invitations. Owner/Admin controls role changes,

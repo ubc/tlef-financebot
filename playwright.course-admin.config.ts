@@ -1,2 +1,2 @@
 import { defineConfig } from '@playwright/test';
-export default defineConfig({ testDir: 'tests/e2e', testMatch: ['course-admin-workbench.spec.ts'], workers: 1, use: { baseURL: 'http://localhost:6118' } });
+export default defineConfig({ testDir: 'tests/e2e', testMatch: ['course-admin-workbench.spec.ts', 'course-people-removal.spec.ts'], workers: 1, use: { baseURL: 'http://localhost:6118' } });

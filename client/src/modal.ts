@@ -6,6 +6,7 @@ export interface ConfirmDialogOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: 'default' | 'danger';
+  className?: string;
 }
 
 /**
@@ -17,7 +18,7 @@ export interface ConfirmDialogOptions {
 export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = el('dialog', {
-      class: `app-dialog${options.tone === 'danger' ? ' app-dialog--danger' : ''}`,
+      class: `app-dialog${options.tone === 'danger' ? ' app-dialog--danger' : ''}${options.className ? ` ${options.className}` : ''}`,
       'aria-labelledby': 'app-dialog-title',
       'aria-describedby': 'app-dialog-message',
     }) as HTMLDialogElement;
@@ -83,7 +84,7 @@ export interface TextPromptDialogOptions extends ConfirmDialogOptions {
 export function textPromptDialog(options: TextPromptDialogOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const dialog = el('dialog', {
-      class: `app-dialog${options.tone === 'danger' ? ' app-dialog--danger' : ''}`,
+      class: `app-dialog${options.tone === 'danger' ? ' app-dialog--danger' : ''}${options.className ? ` ${options.className}` : ''}`,
       'aria-labelledby': 'app-dialog-title',
       'aria-describedby': 'app-dialog-message',
     }) as HTMLDialogElement;
