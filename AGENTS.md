@@ -474,6 +474,15 @@ An explicit revision-guarded Instructor save can opt back into legacy Topic
 Practice. Both end states share compact status tables and fixed footer actions;
 unanswered questions remain accessible, and layout never depends on teaching mode.
 
+## Environment model defaults (2026-10-07)
+
+Platform model stages distinguish environment defaults from explicit Admin
+model overrides. Source-less historical settings inherit the startup environment
+on read; compatible reasoning parameters and other settings are preserved.
+Restarting after a .env update refreshes default stages and their catalogue
+without Custom registration. Explicit overrides and queued model IDs stay pinned.
+
+
 ## Topic-first Exam Builder (2026-10-13)
 
 Exam Builder now uses approved current bank questions grouped by Topic, with
@@ -485,6 +494,7 @@ without model calls; old formula proofs are checked in memory without rewriting
 approved bank versions. Unverifiable questions show reasons before selection.
 Historical private generation APIs, saved candidates and active-run cancellation
 remain compatible. See the Exam Builder implementation and API contract.
+
 
 ## Admin Student identity visibility (2026-10-13)
 

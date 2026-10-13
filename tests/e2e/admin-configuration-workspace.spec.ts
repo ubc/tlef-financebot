@@ -9,7 +9,7 @@ const profileClassic = { profile: 'classic', temperature: { min: 0, max: 2, defa
 const initialSettings = {
   models: { generator: { model: 'fixture-classic' }, validator: { model: 'fixture-reasoning' }, reviewer: { model: 'fixture-reasoning', reasoningEffort: 'medium' }, masteryEvaluator: { model: 'fixture-reasoning' }, utility: { model: 'fixture-classic' } },
   customModels: [], costControls: { maxGenerationsPerDay: 1000 }, featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true }, updatedBy: 'admin', updatedAt: '2026-09-20T12:00:00.000Z',
-  catalogue: { models: [{ id: 'fixture-classic', profile: 'classic', custom: false }, { id: 'fixture-reasoning', profile: 'reasoning-fixed', custom: false }], profiles: { classic: profileClassic, 'reasoning-fixed': { ...profileClassic, profile: 'reasoning-fixed', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'medium' }, 'reasoning-tunable': { ...profileClassic, profile: 'reasoning-tunable', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'none' } }, stepTemperatureDefaults: { generator: 0.7, validator: 0, reviewer: 0, masteryEvaluator: 0, utility: 0 } },
+  catalogue: { environmentModels: { generator: 'fixture-reasoning', validator: 'fixture-reasoning', reviewer: 'fixture-reasoning', masteryEvaluator: 'fixture-reasoning', utility: 'fixture-classic' }, models: [{ id: 'fixture-classic', profile: 'classic', custom: false }, { id: 'fixture-reasoning', profile: 'reasoning-fixed', custom: false }], profiles: { classic: profileClassic, 'reasoning-fixed': { ...profileClassic, profile: 'reasoning-fixed', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'medium' }, 'reasoning-tunable': { ...profileClassic, profile: 'reasoning-tunable', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'none' } }, stepTemperatureDefaults: { generator: 0.7, validator: 0, reviewer: 0, masteryEvaluator: 0, utility: 0 } },
 };
 async function fixture(page: Page, view: 'capabilities' | 'settings') {
   const writes: Array<{ path: string; body: Record<string, unknown> }> = [];
@@ -189,7 +189,7 @@ test('custom catalogue validates duplicates, edits active models and prevents de
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0].body.customModels).toEqual([{ id: 'local/finance', profile: 'classic' }]);
-  expect((writes[0].body.models as Record<string, unknown>).generator).toEqual({ model: 'local/finance' });
+  expect((writes[0].body.models as Record<string, unknown>).generator).toEqual({ model: 'local/finance', modelSource: 'override' });
 });
 
 for (const view of ['capabilities', 'settings'] as const) test(`${view}: compact responsive layouts and light/dark accessibility`, async ({ page }) => {
@@ -210,4 +210,25 @@ for (const view of ['capabilities', 'settings'] as const) test(`${view}: compact
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: `audit-results/admin-workspace-2026-09-20/configuration-${view}-inspector-390.png` });
+});
+
+test('model sources follow environment defaults and allow a same-ID explicit override', async ({ page }) => {
+  const { writes } = await fixture(page, 'settings');
+  await page.getByRole('button', { name: 'Edit Generator', exact: true }).click();
+  await page.getByLabel('Generator model', { exact: true }).selectOption('__environment__');
+  await page.getByLabel('Generator reasoning effort', { exact: true }).selectOption('high');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect((writes[0].body.models as Record<string, unknown>).generator).toEqual({ model: 'fixture-reasoning', modelSource: 'environment', reasoningEffort: 'high' });
+  await page.getByRole('button', { name: 'Edit Generator', exact: true }).click();
+  await expect(page.getByLabel('Generator model', { exact: true })).toHaveValue('__environment__');
+  await page.getByLabel('Generator model', { exact: true }).selectOption('fixture-reasoning');
+  await expect(page.getByLabel('Generator reasoning effort', { exact: true })).toHaveValue('high');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect((writes[1].body.models as Record<string, unknown>).generator).toEqual({ model: 'fixture-reasoning', modelSource: 'override', reasoningEffort: 'high' });
 });

@@ -1,5 +1,8 @@
 /** Provider counts are nullable. Missing or invalid counts must never render as zero. */
-export function tokenCount(value: number | null | undefined): string {
+export function tokenCount(value: number | null | undefined, compact = false): string {
+  if (compact && typeof value === 'number' && Number.isSafeInteger(value) && value >= 1000) {
+    return `${(value / 1000).toLocaleString('en', { maximumFractionDigits: 1 })}k`;
+  }
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
     ? value.toLocaleString()
     : 'Unknown';

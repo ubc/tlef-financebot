@@ -227,7 +227,7 @@ describe('Phase 3 Admin essentials', () => {
     await updatePlatformSettings(base, 'ADMIN');
 
     expect(replacePlatformSettings).toHaveBeenCalledWith(
-      { _id: 'platform' }, expect.objectContaining(base), { upsert: true },
+      { _id: 'platform' }, expect.objectContaining({ ...base, models: Object.fromEntries(Object.entries(base.models).map(([step, config]) => [step, { ...config, modelSource: 'override' }])) }), { upsert: true },
     );
     expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'platform-settings.update' }));
   });

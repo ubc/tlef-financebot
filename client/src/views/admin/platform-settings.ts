@@ -158,14 +158,15 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   function modelList(): ModelCatalogue['models'] {
     // Catalogue entries include saved custom models; use the draft list so removed
     // registrations cannot linger as seemingly available choices.
-    return [...settings.catalogue.models.filter(model => !model.custom), ...(draft.customModels ?? []).map(model => ({ ...model, custom: true }))];
+    const custom = (draft.customModels ?? []).map(model => ({ ...model, custom: true }));
+    return [...settings.catalogue.models.filter(model => !model.custom && !custom.some(entry => entry.id === model.id)), ...custom];
   }
   function profileOf(modelId: string): CapabilityProfile {
     return modelList().find(model => model.id === modelId)?.profile ?? 'classic';
   }
   function changes(): Array<{ label: string; before: string; after: string }> {
     const result: Array<{ label: string; before: string; after: string }> = [];
-    for (const step of PIPELINE_STEPS) for (const key of ['model', 'reasoningEffort', 'temperature'] as const) {
+    for (const step of PIPELINE_STEPS) for (const key of ['model', 'modelSource', 'reasoningEffort', 'temperature'] as const) {
       if (saved.models[step][key] !== draft.models[step][key]) result.push({ label: `${STEP_LABEL[step]} · ${key === 'reasoningEffort' ? 'reasoning effort' : key}`, before: String(saved.models[step][key] ?? 'Step default'), after: String(draft.models[step][key] ?? 'Step default') });
     }
     if (saved.costControls.maxGenerationsPerDay !== draft.costControls.maxGenerationsPerDay) result.push({ label: 'Daily question limit', before: String(saved.costControls.maxGenerationsPerDay), after: String(draft.costControls.maxGenerationsPerDay) });
@@ -219,7 +220,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
           const parameter = caps.reasoningEffort && (config.reasoningEffort ?? 'none') !== 'none' ? `Reasoning · ${config.reasoningEffort}` : caps.temperature ? `Temperature · ${config.temperature ?? settings.catalogue.stepTemperatureDefaults[step] ?? caps.temperature.default}${config.temperature === undefined ? ' default' : ''}` : 'Model defaults';
           return el('tr', { class: selected === step ? 'is-selected' : '' },
             el('td', {}, el('button', { class: 'ac-link', type: 'button', text: STEP_LABEL[step], onclick: () => openStage(step) }), el('small', { class: 'ac-cell-secondary', text: step === 'masteryEvaluator' ? 'Reserved · not yet wired' : step === 'reviewer' && !draft.featureFlags.reviewerAgent ? 'Disabled by quality controls' : profileOf(config.model) })),
-            el('td', { class: 'mono ac-config-model-id', text: config.model }), el('td', { class: 'ac-config-parameter', text: parameter }),
+            el('td', {}, el('span', { class: 'mono ac-config-model-id', text: config.model }), el('small', { class: 'ac-cell-secondary', text: config.modelSource === 'environment' ? 'Environment default' : 'Admin override' })), el('td', { class: 'ac-config-parameter', text: parameter }),
             el('td', {}, el('button', { class: 'btn btn--ghost', type: 'button', text: 'Edit', 'aria-label': `Edit ${STEP_LABEL[step]}`, onclick: () => openStage(step) })),
           );
         })),
@@ -236,8 +237,15 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     const caps = settings.catalogue.profiles[profileOf(config.model)];
     const select = el('select', { class: 'input', id: 'admin-stage-model', 'aria-label': `${STEP_LABEL[step]} model` }, ...modelList().map(model => el('option', { value: model.id, text: `${model.id}${model.custom ? ' (custom)' : ''}` })));
     if (![...select.options].some(option => option.value === config.model)) select.prepend(el('option', { value: config.model, text: `${config.model} (not in catalogue)` }));
-    select.value = config.model; select.disabled = pending;
-    select.onchange = () => { draft.models[step] = { model: select.value }; status.textContent = 'Model selected. Previous parameter overrides were cleared.'; render(); };
+    const environmentModel = settings.catalogue.environmentModels?.[step];
+    if (environmentModel) select.prepend(el('option', { value: '__environment__', text: `Environment default — ${environmentModel}` }));
+    select.value = config.modelSource === 'environment' && environmentModel ? '__environment__' : config.model; select.disabled = pending;
+    select.onchange = () => {
+      const model = select.value === '__environment__' ? environmentModel! : select.value;
+      draft.models[step] = { ...(model === config.model ? config : { model }), model, modelSource: select.value === '__environment__' ? 'environment' : 'override' };
+      status.textContent = select.value === '__environment__' ? 'This stage follows environment configuration after a server restart.' : 'Admin model override selected.';
+      render();
+    };
     const params = el('div', { class: 'ac-config-fields' });
     if (caps.reasoningEffort) {
       const effort = el('select', { class: 'input', id: 'admin-stage-effort', 'aria-label': `${STEP_LABEL[step]} reasoning effort` }, ...caps.reasoningEffort.map(value => el('option', { value, text: value === 'none' ? 'none — pipeline default' : value === caps.defaultEffort ? `${value} — model API default` : value })));
@@ -254,7 +262,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     } else if (caps.temperature) params.append(el('p', { class: 'ac-note', text: 'Temperature is unavailable while reasoning. Set effort to “none” to use it.' }));
     inspectorSlot.append(el('aside', { class: 'ac-panel', 'aria-label': `${STEP_LABEL[step]} configuration` },
       el('header', { class: 'ac-panel-header' }, el('div', {}, el('small', { text: 'Model pipeline' }), el('h2', { text: STEP_LABEL[step] })), el('button', { class: 'btn btn--ghost', type: 'button', text: 'Close', onclick: closeInspector })),
-      el('div', { class: 'ac-panel-body' }, el('p', { class: 'ac-note', text: STEP_HELP[step] }), field('Model', select, STEP_HELP[step]), el('div', { class: 'ac-config-profile' }, el('strong', { text: profileOf(config.model) }), el('p', { text: PROFILE_BLURB[profileOf(config.model)] ?? describeProfile(caps) })), params),
+      el('div', { class: 'ac-panel-body' }, el('p', { class: 'ac-note', text: STEP_HELP[step] }), field('Model', select, 'Environment default follows LLM_MODEL_* or LLM_DEFAULT_MODEL after a server restart. Selecting a specific model creates an Admin override.'), el('div', { class: 'ac-config-profile' }, el('strong', { text: profileOf(config.model) }), el('p', { text: PROFILE_BLURB[profileOf(config.model)] ?? describeProfile(caps) })), params),
       el('footer', { class: 'ac-panel-footer' }, el('span', { text: 'Changes remain a draft until saved.' }), el('button', { class: 'btn btn--secondary', type: 'button', text: 'Done', onclick: () => { render(); closeInspector(); } })),
     ));
   }

@@ -417,11 +417,11 @@ export function defaultPlatformSettings(): PlatformSettings {
   return {
     _id: 'platform',
     models: {
-      generator: { model: env.llmModelGenerator },
-      validator: { model: env.llmModelValidator },
-      reviewer: { model: env.llmModelReviewer },
-      masteryEvaluator: { model: env.llmModelMasteryEvaluator },
-      utility: { model: env.llmDefaultModel },
+      generator: { model: env.llmModelGenerator, modelSource: 'environment' },
+      validator: { model: env.llmModelValidator, modelSource: 'environment' },
+      reviewer: { model: env.llmModelReviewer, modelSource: 'environment' },
+      masteryEvaluator: { model: env.llmModelMasteryEvaluator, modelSource: 'environment' },
+      utility: { model: env.llmDefaultModel, modelSource: 'environment' },
     },
     customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
@@ -431,25 +431,29 @@ export function defaultPlatformSettings(): PlatformSettings {
   };
 }
 
-/**
- * Bring a stored document up to the current shape.
- *
- * Two migrations happen on READ rather than as a script, so a database written
- * by an older deploy keeps working and a rollback stays safe:
- *
- * 1. **A step used to be a bare model-id `string`.** Documents saved before
- *    per-step parameters existed hold `models.generator: 'gpt-5.4-nano'`.
- * 2. **`utility` did not exist.** Classification, import and RAG ran on
- *    `LLM_DEFAULT_MODEL` with no admin control, so that is what it inherits.
- */
+/** Resolve environment defaults without rewriting stored settings on reads. */
+function environmentStepConfig(
+  config: StepModelConfig,
+  model: string,
+  customModels: PlatformSettings['customModels'],
+): StepModelConfig {
+  const resolved: StepModelConfig = { ...config, model, modelSource: 'environment' };
+  const caps = capabilitiesForConfigured(model, customModels);
+  if (resolved.reasoningEffort !== undefined && !caps.reasoningEffort?.includes(resolved.reasoningEffort)) delete resolved.reasoningEffort;
+  if (resolved.temperature !== undefined && !temperatureAllowed(caps, resolved.reasoningEffort)) delete resolved.temperature;
+  return resolved;
+}
+
+/** Legacy settings have no source marker and now inherit the environment. */
 export function normalizePlatformSettings(stored: PlatformSettings): PlatformSettings {
   const fallback = defaultPlatformSettings();
   const models = {} as PlatformSettings['models'];
   for (const step of PIPELINE_STEPS) {
     const value = (stored.models as Record<string, StepModelConfig | string | undefined>)[step];
-    if (typeof value === 'string') models[step] = { model: value };
-    else if (value?.model) models[step] = value;
-    else models[step] = fallback.models[step];
+    const config = typeof value === 'string' ? { model: value } : value;
+    models[step] = config?.modelSource === 'override'
+      ? { ...config }
+      : environmentStepConfig(config ?? fallback.models[step], fallback.models[step].model, stored.customModels);
   }
   return {
     ...stored,
@@ -513,8 +517,17 @@ export async function updatePlatformSettings(
     if (!custom.id?.trim()) throw new Error('invalid-model-selector');
     if (!(custom.profile in CAPABILITY_PROFILES)) throw new Error(`unknown-capability-profile:${custom.profile}`);
   }
+  const defaults = defaultPlatformSettings().models;
+  const models = {} as PlatformSettings['models'];
   for (const step of PIPELINE_STEPS) {
-    assertStepConfigValid(step, patch.models[step], customModels);
+    const config = patch.models[step];
+    // Older clients explicitly selecting a model still create an override.
+    models[step] = config.modelSource === 'environment'
+      ? config.model !== defaults[step].model
+        ? environmentStepConfig(config, defaults[step].model, customModels)
+        : { ...config, model: defaults[step].model }
+      : { ...config, modelSource: 'override' };
+    assertStepConfigValid(step, models[step], customModels);
   }
   const current = await getPlatformSettings();
   if (current.featureFlags.reviewerAgent && !patch.featureFlags.reviewerAgent && !patch.confirmQualityImpact) {
@@ -522,7 +535,7 @@ export async function updatePlatformSettings(
   }
   const updated: PlatformSettings = {
     _id: 'platform',
-    models: patch.models,
+    models,
     customModels,
     costControls: patch.costControls,
     featureFlags: patch.featureFlags,

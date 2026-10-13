@@ -12,7 +12,9 @@
  * temperature + toolkit-managed `maxTokens` pair as older OpenAI models, which
  * is why `classic` is the fallback for anything that is not recognisably OpenAI.
  *
- * ⚠️ Every value below was MEASURED against the live API on 2026-08-14, and the
+ * The original GPT-5 profiles were measured against the live API on 2026-08-14;
+ * GPT-6 Luna uses its documented request contract and needs a deployment probe.
+ * The original
  * measurements corrected three separate guesses. The OpenAI docs were wrong
  * twice over (see REASONING_EFFORTS); `gpt-5.4-nano` — in production here for
  * months — turned out to reject `max_tokens`, which is why `rag.service` had
@@ -127,6 +129,8 @@ export const CAPABILITY_PROFILES: Readonly<Record<CapabilityProfile, ModelCapabi
 export const KNOWN_MODELS: Readonly<Record<string, CapabilityProfile>> = Object.freeze({
   'gpt-5.4-nano': 'reasoning-tunable',
   'gpt-5.6-luna': 'reasoning-fixed',
+  // Request shape based on the GPT-6 Luna API contract; gateway availability is deployment-specific.
+  'gpt-6-luna': 'reasoning-fixed',
 });
 
 /**
@@ -180,10 +184,10 @@ export function capabilitiesForConfigured(
 
 /**
  * Everything the admin console needs to render capability-driven controls, so
- * the client never hardcodes a model id or a parameter range. Shipped models
- * first, then custom ones.
+ * the client never hardcodes a model id or a parameter range. Environment IDs
+ * are added without custom registration or calls to the provider.
  */
-export function modelCatalogue(customModels?: readonly CustomModel[]): {
+export function modelCatalogue(customModels?: readonly CustomModel[], environmentModels: readonly string[] = []): {
   models: Array<CustomModel & { custom: boolean }>;
   profiles: Record<CapabilityProfile, ModelCapabilities>;
 } {
@@ -191,7 +195,11 @@ export function modelCatalogue(customModels?: readonly CustomModel[]): {
   const custom = (customModels ?? [])
     .filter((entry) => !Object.hasOwn(KNOWN_MODELS, entry.id.trim()))
     .map((entry) => ({ id: entry.id.trim(), profile: entry.profile, custom: true }));
-  return { models: [...shipped, ...custom], profiles: CAPABILITY_PROFILES };
+  const registered = new Set([...shipped, ...custom].map(entry => entry.id));
+  const environment = [...new Set(environmentModels.map(id => id.trim()).filter(Boolean))]
+    .filter(id => !registered.has(id))
+    .map(id => ({ id, profile: capabilitiesFor(id).profile, custom: false }));
+  return { models: [...shipped, ...custom, ...environment], profiles: CAPABILITY_PROFILES };
 }
 
 /**

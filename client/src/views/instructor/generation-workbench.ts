@@ -1,8 +1,8 @@
 import { attachTutorial } from '../../tutorials.js';
 import {
-  browseBank, contentRunEvaluationExportUrl, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
+  browseBank, contentRunEvaluationExportUrl, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
   getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
-  type BankQuestion, type ContentRunSummary, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type GenerationQualityPolicy, type QuestionGenerationRun, type ModelUsageSnapshot,
+  type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type GenerationQualityPolicy, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
@@ -17,6 +17,11 @@ type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: s
 const active = (run: ContentRunSummary) => run.status === 'running' || run.status === 'queued';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const stageName = (stage: string) => ({ queued: 'Waiting to start', retrieving: 'Finding source evidence', generating: 'Writing questions', validating: 'Checking answers', reviewing: 'Reviewing quality', persisting: 'Saving drafts', completed: 'Completed' })[stage] ?? stage.replace(/-/g, ' ');
+const callStageName = (stage: string) => ({ generation: 'Writing the question', 'generation-repair': 'Repairing the question', validation: 'Checking answer roles', 'validation-repair': 'Checking the repaired answer', review: 'Reviewing quality', 'review-repair': 'Reviewing the repaired question', 'quality-review': 'Checking source support, notation and similarity' })[stage] ?? stage.replace(/-/g, ' ');
+function elapsed(start?: string, end?: string): string {
+  const seconds = Math.max(0, Math.floor(((end ? Date.parse(end) : Date.now()) - Date.parse(start ?? '')) / 1000));
+  return Number.isFinite(seconds) ? seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s` : 'Unavailable';
+}
 
 function generationIssue(text: string, code?: string): string {
   const guidance: Record<string, string> = {
@@ -43,13 +48,13 @@ function candidateDiagnostic(candidate: GenerationQualityAssessment['candidate']
       el('span', { text: option.key }), el('div', {}, rich(option.text), option.role === 'correct' && el('small', { text: 'Proposed correct answer · candidate' }), option.explanation && rich(option.explanation)))));
 }
 
-function qualityFindings(run: QuestionGenerationRun): HTMLElement {
+function qualityFindings(run: QuestionGenerationRun, item?: number): HTMLElement {
   const pilot = run.input.qualityPolicy === 'grounded-memory-v1';
   const section = el('section', { class: 'gw-quality', 'aria-label': 'Generation quality policy' },
     el('p', { class: 'gw-quality-mode', text: pilot ? 'Sources and question memory pilot' : 'Baseline generation' }));
   if (!pilot) return section;
   const quality = run.result?.quality;
-  const assessments = quality?.assessments ?? [];
+  const assessments = (quality?.assessments ?? []).filter(assessment => item === undefined || assessment.item === item);
   const withheld = assessments.filter(item => item.status === 'withheld');
   const shortfall = Math.max(0, run.input.count - (run.result?.createdQuestionIds.length ?? 0));
   if (!active(run) && shortfall) section.append(el('p', { class: 'gw-run-error', text: `${shortfall} of ${run.input.count} requested ${run.input.count === 1 ? 'question' : 'questions'} not saved.` }));
@@ -138,6 +143,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let usageFetching = false;
     let usageAgain = false;
     let usageTimer: ReturnType<typeof setTimeout> | undefined;
+    const endingRuns = new Set<string>();
+    const runSnapshots = new Map<string, ContentRunSnapshot>();
     const watched = () => [...runs.values()].filter(run => run.kind === 'question-generation' && (submission?.runIds ? submission.runIds.includes(run._id) : true));
     const locked = () => busy || !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || active(runs.get(id)!))) || [...runs.values()].some(active);
     const link = (label: string, path: string, primary = false) => el('a', { class: primary ? 'btn btn--primary' : 'gw-link', href: path, text: label });
@@ -160,7 +167,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
 
     const draftList = el('div', { class: 'gw-drafts' });
     const reader = el('article', { class: 'gw-reader', 'aria-label': 'Generated question preview' });
-    const progress = el('aside', { class: 'gw-plan', 'aria-label': 'Generation progress' });
+    const progress = el('aside', { class: 'gw-plan gw-inspector', 'aria-label': 'Generation progress' });
     mount(live, el('nav', { class: 'gw-objectives', 'aria-label': 'Generated drafts' }, el('div', { class: 'gw-pane-title', text: 'GENERATED QUESTIONS' }), draftList,
       el('div', { class: 'gw-pane-foot' }, link('Open review queue →', `${base}/queue`))), reader, progress);
 
@@ -204,7 +211,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', {}, el('label', { for: 'gw-type', class: 'gw-label', text: 'Question type' }), typeSelect),
         el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect),
         el('div', { class: 'gw-quality-setting' }, el('label', { class: 'gw-quality-toggle' }, pilot, el('span', { text: 'Sources and question memory pilot' })),
-          el('p', { id: 'gw-quality-help', class: 'gw-plan-note', text: 'Checks source support, notation and similarity to existing questions before saving. May save fewer drafts and use extra model calls. Instructor review is required.' })));
+          el('p', { id: 'gw-quality-help', class: 'gw-plan-note', text: 'Before writing, uses source passages and existing questions to guide distinct learning tasks. Before saving, checks source support, notation and similarity again. May withhold similar or unsupported drafts and use extra model calls. Similarity checks are best effort; instructor review is required.' })));
       mount(setup, el('aside', { class: 'gw-objectives', 'aria-label': 'Learning objectives' }, el('div', { class: 'gw-pane-title', text: 'LEARNING OBJECTIVES' }), selections, objectivesList,
         el('div', { class: 'gw-pane-foot', text: 'Existing drafts count toward coverage. You can select an objective to create additional practice.' })),
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
@@ -302,54 +309,112 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         run.result?.createdQuestionIds.includes(question.id) === true ||
         (question.current.provenance?.kind === 'generated' && question.current.provenance.runId === run._id)));
     }
+    function selectedRun(): QuestionGenerationRun | undefined {
+      const question = bank.find(row => row.id === selectedQuestion);
+      return (question && sourceRun(question)) || watched().find((run): run is QuestionGenerationRun => run.kind === 'question-generation' && run._id === previewRunId);
+    }
+    async function endRuns(targets: ContentRunSummary[]): Promise<void> {
+      const ids = targets.filter(run => active(run) && !endingRuns.has(run._id)).map(run => run._id);
+      if (!ids.length || endingRuns.size) return;
+      if (!window.confirm(`End ${ids.length === 1 ? 'this task' : `these ${ids.length} tasks`}? Saved drafts will remain. A model call already in progress may finish, but no later generation steps will start.`)) return;
+      ids.forEach(id => endingRuns.add(id)); drawLive();
+      const results = await Promise.allSettled(ids.map(id => endContentRun(courseId, id)));
+      results.forEach((result, index) => { endingRuns.delete(ids[index]); if (result.status === 'fulfilled') applyRun(result.value); });
+      if (disposed) return;
+      const failed = results.filter(result => result.status === 'rejected').length;
+      say(failed ? `${failed} tasks could not be ended. Refresh the status and try again. Saved drafts are preserved.` : 'Generation ended. Saved drafts are preserved. Any model call already in progress may still finish.');
+      drawLive(); scheduleRefresh();
+    }
+    function drawInspector(items: ContentRunSummary[], completed: number, total: number): void {
+      const run = selectedRun();
+      const question = bank.find(row => row.id === selectedQuestion);
+      const item = question?.current.provenance?.kind === 'generated' ? question.current.provenance.item : run?.preview?.item;
+      const snapshot = run && runSnapshots.get(run._id);
+      const lastEvent = snapshot?.events?.filter(event => event.stage === run?.stage && !!event.message).slice(-1)[0];
+      const recorded = run && usage.get(run._id);
+      const pendingCalls = (recorded?.calls ?? []).filter(call => call.outcome === 'pending');
+      const recentCalls = [...(recorded?.calls ?? [])].sort((a,b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).slice(0, 3);
+      const details = el('div', { class: 'gw-inspector-body' },
+        run ? el('div', { class: 'gw-run', 'data-run-id': run._id },
+          el('h3', { text: 'SELECTED TASK' }),
+          el('strong', { text: objectives.find(lo => lo._id === run.input.loId)?.name ?? 'Learning objective' }),
+          el('span', { text: `${run.input.difficulty ?? 'Mixed difficulty'} · ${run.input.count} requested · ${run.result?.createdQuestionIds.length ?? 0} saved` }),
+          el('p', { class: 'gw-task-status', role: 'status', text: run.error?.code === 'generation-ended' ? 'Ended by instructor' : run.status === 'completed' ? 'Completed' : run.status === 'partial' ? 'Partially completed' : run.status === 'failed' ? 'Failed' : stageName(run.stage) }),
+          el('small', { text: `${run.status === 'queued' ? 'Waiting' : 'Elapsed'}: ${elapsed(run.startedAt ?? run.createdAt, run.completedAt)}` }),
+          active(run) && el('ol', { class: 'gw-stage-list', 'aria-label': 'Generation stages' }, ...['retrieving','generating','validating','reviewing','persisting'].map((stage,index,stages) =>
+            el('li', { 'aria-current': stage === run.stage ? 'step' : undefined, class: index < stages.indexOf(run.stage) ? 'is-done' : '' }, stageName(stage)))),
+          lastEvent && el('p', { class: 'gw-plan-note', text: lastEvent.message }),
+          active(run) && run.stage === 'queued' && el('p', { class: 'gw-plan-note', text: 'Waiting for an available worker. No question text is expected yet.' }),
+          active(run) && run.stage !== 'queued' && el('p', { class: 'gw-plan-note', text: 'Checks may run without new question text. Activity below comes from recorded model calls.' }),
+          run.error && el('small', { class: 'gw-run-error', text: run.error.code === 'generation-ended' ? 'Saved drafts remain available in Review Queue.' : generationIssue(run.error.message, run.error.code) }),
+          !!run.result?.checks?.length && el('section', { class: 'gw-check-results', 'aria-label': 'Returned check explanations' }, el('h3', { text: 'CHECK RESULTS' }),
+            ...run.result.checks.filter(check => !question || item === undefined || check.item === item).slice(-3).map(check => el('details', { open: true },
+              el('summary', { text: `Question ${check.item + 1} · ${check.check === 'answer-validation' ? 'Answer check' : 'Quality review'} · ${check.verdict}` }),
+              el('p', { text: check.explanation })))),
+          qualityFindings(run, item),
+          recorded?.summary ? renderModelUsage(recorded.summary, true) : el('p', { class: 'mu-note', text: usageErrors.get(run._id) ?? 'Loading model usage…' }),
+          recorded?.summary && el('p', { class: 'mu-note', text: 'Usage totals cover this task, which may contain several questions.' }),
+          usage.has(run._id) && usageErrors.has(run._id) && el('p', { class: 'mu-note', text: 'Usage could not refresh. Showing the last recorded snapshot.' }),
+          el('section', { class: 'gw-call-activity', 'aria-label': 'Recorded model activity' }, el('h3', { text: 'MODEL ACTIVITY' }),
+            ...recentCalls.map(call => el('div', {}, el('strong', { text: callStageName(call.stage) }),
+              el('small', { text: `${call.outcome === 'pending' ? active(run) ? 'In progress' : 'Awaiting final receipt' : call.outcome} · ${elapsed(call.startedAt, call.finishedAt)}${call.item !== undefined ? ` · question ${call.item + 1}` : ''}` }))),
+            !recentCalls.length && el('p', { class: 'mu-note', text: 'No model call receipts available yet.' }),
+            active(run) && pendingCalls.some(call => Date.now() - Date.parse(call.startedAt) >= 90000) && el('p', { class: 'gw-plan-note', text: 'The model is taking longer to respond. This is a pending request, not a confirmed failure. You can end the task below.' })),
+          el('button', { class: 'gw-step-link', type: 'button', 'data-gw-focus': `steps-${run._id}`, onclick: () => openTimeline(run), text: 'View steps' }))
+        : el('p', { class: 'gw-plan-note', text: 'Select a question or task on the left to inspect its activity and usage.' }),
+        submission && !submission.runIds && el('button', { type: 'button', class: 'btn btn--primary', disabled: busy, onclick: submit, text: 'Recover this batch' }),
+        ...(submission?.errors ?? []).map(error => el('p', { class: 'gw-run-error', text: error })),
+        link('Manage runs & retries →', `${base}/preseeding?advanced=1`),
+        submission?.runIds && !locked() && el('button', { type: 'button', class: 'btn btn--ghost', onclick: async () => {
+          submission = undefined; persist(); mode = 'setup';
+          try { const fresh = await getPreseeding(courseId); coverage.splice(0,coverage.length,...fresh); } catch { say('Could not refresh coverage. Check existing drafts before generating more.'); }
+          if (!disposed) { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); showMode(); }
+        }, text: 'Create another batch' }));
+      const scroll = progress.querySelector('.gw-inspector-body')?.scrollTop ?? 0;
+      const previousId = progress.dataset.runId; progress.dataset.runId = run?._id ?? '';
+      mount(progress, el('header', { class: 'gw-batch-progress' }, el('h3', { text: 'BATCH PROGRESS' }),
+        el('div', { class: 'gw-total' }, String(completed), el('small', { text: `/ ${total} saved` })),
+        el('progress', { max: Math.max(total,1), value: completed, 'aria-label': 'Questions saved' }),
+        el('small', { text: `${items.filter(active).length} active tasks` })), details,
+        el('footer', { class: 'gw-inspector-actions' },
+          run && el('button', { type: 'button', class: 'gw-step-link', 'data-gw-focus': 'refresh-usage', onclick: () => refreshUsage(true), text: 'Refresh status & usage' }),
+          run && active(run) && el('button', { type: 'button', class: 'btn btn--secondary', disabled: endingRuns.size > 0, 'data-gw-focus': `end-${run._id}`, onclick: () => endRuns([run]), text: endingRuns.has(run._id) ? 'Ending…' : 'End task' }),
+          items.some(active) && el('button', { type: 'button', class: 'gw-step-link', disabled: endingRuns.size > 0, 'data-gw-focus': 'end-batch', onclick: () => endRuns(items), text: 'End batch' })));
+      if (previousId === progress.dataset.runId) details.scrollTop = scroll;
+    }
     function drawLive(): void {
       if (disposed) return;
       const focusKey = document.activeElement?.getAttribute('data-gw-focus');
       const listScroll = draftList.scrollTop;
       const items = watched();
-      const streaming = items.filter((run): run is QuestionGenerationRun => run.kind === 'question-generation' && !!run.preview && active(run));
+      const streaming = items.filter((run): run is QuestionGenerationRun => run.kind === 'question-generation' && (active(run) || !bank.some(question => sourceRun(question)?._id === run._id)));
+      if (!selectedQuestion && !items.some(run => run._id === previewRunId)) previewRunId = streaming[0]?._id ?? '';
       const drafts = bank.filter(question => sourceRun(question));
-      mount(draftList, ...streaming.filter(run => !drafts.some(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === run._id && q.current.provenance.item === run.preview?.item)).map(run => el('button', { type: 'button', 'data-gw-focus': `preview-${run._id}`, 'aria-current': !selectedQuestion && previewRunId === run._id ? 'true' : 'false', onclick: () => { selectedQuestion = ''; previewRunId = run._id; readerRevision++; drawLive(); } },
-        el('span', { text: `${run.stage === 'generating' ? 'Writing now' : 'Checking draft'} · question ${(run.preview?.item ?? 0)+1}` }), el('strong', { text: run.preview?.stem || objectives.find(lo => lo._id === run.input.loId)?.name || 'Preparing question…' }), el('small', { text: 'Live draft · not yet checked' }))), ...drafts.map((q,index) => el('button', { type: 'button', 'data-gw-focus': `question-${q.id}`, 'aria-current': q.id === selectedQuestion ? 'true' : 'false', onclick: () => { void showQuestion(q); } },
+      mount(draftList, ...streaming.filter(run => !drafts.some(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === run._id && q.current.provenance.item === run.preview?.item)).map(run => el('button', { type: 'button', 'data-gw-focus': `preview-${run._id}`, 'aria-current': !selectedQuestion && previewRunId === run._id ? 'true' : 'false', onclick: () => { selectedQuestion = ''; previewRunId = run._id; readerRevision++; drawLive(); void refreshUsage(); } },
+        el('span', { text: `${active(run) ? stageName(run.stage) : run.error?.code === 'generation-ended' ? 'Ended' : run.status}${run.preview ? ` · question ${run.preview.item+1}` : ''}` }), el('strong', { text: run.preview?.stem || objectives.find(lo => lo._id === run.input.loId)?.name || 'Preparing question…' }), el('small', { text: active(run) ? run.preview ? 'Live draft · not yet checked' : 'Task awaiting question text' : 'Task finished · inspect details' }))), ...drafts.map((q,index) => el('button', { type: 'button', 'data-gw-focus': `question-${q.id}`, 'aria-current': q.id === selectedQuestion ? 'true' : 'false', onclick: () => { void showQuestion(q); } },
         el('span', { text: `${String(index+1).padStart(2,'0')} · ${q.current.difficulty}` }), el('strong', { text: rowStemText(q) }), el('small', { text: q.state === 'approved' ? 'Approved' : 'Saved · ready to review' }))),
         !drafts.length && !streaming.length && el('p', { class: 'gw-placeholder', text: items.some(active) ? 'Your first question will appear here once its checks are complete and it is saved.' : 'Saved questions from your recent generation will appear here.' }));
       if (!selectedQuestion) {
-        const preview = streaming.find(run => run._id === previewRunId) ?? streaming[0];
-        const saved = preview && drafts.find(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === preview._id && q.current.provenance.item === preview.preview?.item);
+        const preview = items.find((run): run is QuestionGenerationRun => run.kind === 'question-generation' && run._id === previewRunId) ?? streaming[0];
+        const saved = preview && (drafts.find(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === preview._id && q.current.provenance.item === preview.preview?.item)
+          ?? (!active(preview) ? drafts.find(q => sourceRun(q)?._id === preview._id) : undefined));
         if (saved) void showQuestion(saved);
-        else if (preview) { previewRunId = preview._id; drawPreview(preview); }
+        else if (preview) {
+          previewRunId = preview._id;
+          if (preview.preview && active(preview)) drawPreview(preview);
+          else {
+            stopTextReveal();
+            mount(reader, el('div', { class: 'gw-waiting' }, el('h2', { text: active(preview) ? stageName(preview.stage) : preview.error?.code === 'generation-ended' ? 'Generation ended' : 'Task finished' }),
+              el('p', { text: active(preview) ? 'Question text will appear when the model returns it. Follow this task’s recorded activity on the right.' : 'Saved drafts remain in Review Queue. Select another question or start a new batch.' }), link('Open review queue →', `${base}/queue`)));
+          }
+        }
         else if (drafts[0]) void showQuestion(drafts[0]);
       }
       if (!drafts.length && !selectedQuestion && !streaming.length) mount(reader, el('div', { class: 'gw-waiting' }, el('span', { class: items.some(active) ? 'gw-live-dot' : 'gw-empty-mark', 'aria-hidden': 'true', text: items.some(active) ? '' : '＋' }), el('h2', { text: items.some(active) ? 'Your questions are taking shape' : 'Ready for your next batch' }),
         el('p', { text: items.some(active) ? 'Follow the checks on the right. You can review completed questions while the rest of the batch runs.' : 'Choose learning objectives and a short teaching brief to begin.' }), link('Open review queue →', `${base}/queue`)));
       const completed = items.reduce((sum,run) => sum + (run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0),0);
       const total = submission ? submission.cells.reduce((sum,cell) => sum+cell.count,0) : items.reduce((sum,run) => sum+(run.totalUnits ?? (run.kind === 'question-generation' ? run.input.count : 0)),0);
-      mount(progress, el('h3', { text: 'GENERATION ACTIVITY' }), el('div', { class: 'gw-total' }, String(completed), el('small', { text: `/ ${total} saved` })),
-        el('progress', { max: Math.max(total,1), value: completed, 'aria-label': 'Questions saved' }),
-        el('p', { class: 'gw-plan-note', text: items.some(active) ? 'You can leave this page. Generation continues in the background.' : 'Drafts stay private until you approve and release them.' }),
-        submission && !submission.runIds && el('button', { type: 'button', class: 'btn btn--primary', disabled: busy, onclick: submit, text: 'Recover this batch' }),
-        ...(submission?.errors ?? []).map(error => el('p', { class: 'gw-run-error', text: error })),
-        ...items.map(run => el('div', { class: 'gw-run' }, el('strong', { text: run.kind === 'question-generation' ? objectives.find(lo => lo._id === run.input.loId)?.name ?? 'Learning objective' : '' }),
-          el('span', { text: `${run.status === 'completed' ? 'Completed' : run.status === 'failed' ? 'Stopped / failed' : run.status === 'partial' ? 'Partially completed' : stageName(run.stage)} · ${run.completedUnits}/${run.totalUnits ?? '?'} processed` }),
-          run.error && el('small', { class: 'gw-run-error', text: generationIssue(run.error.message, run.error.code) }),
-          run.kind === 'question-generation' && qualityFindings(run),
-          usage.get(run._id)?.summary ? renderModelUsage(usage.get(run._id)!.summary, true) : el('p', { class: 'mu-note', text: usageErrors.get(run._id) ?? 'Loading model usage…' }),
-          usage.has(run._id) && usageErrors.has(run._id) && el('p', { class: 'mu-note', text: 'Usage could not refresh. Showing the last recorded snapshot.' }),
-          el('button', { class: 'gw-step-link', type: 'button', 'data-gw-focus': `steps-${run._id}`, onclick: () => openTimeline(run), text: 'View steps' }))),
-        items.length > 0 && el('button', { type: 'button', class: 'gw-step-link', 'data-gw-focus': 'refresh-usage', onclick: () => refreshUsage(true), text: 'Refresh model usage' }),
-        link('Manage runs & retries →', `${base}/preseeding?advanced=1`),
-        !!submission?.runIds?.length && el('button', { type: 'button', class: 'gw-step-link', onclick: async () => {
-          const refreshed = await Promise.allSettled(submission!.runIds!.map(id => getContentRun(courseId,id)));
-          if (disposed) return;
-          refreshed.forEach(result => { if (result.status === 'fulfilled') applyRun(result.value); });
-          say(refreshed.some(result => result.status === 'rejected') ? 'Some task statuses could not refresh. Try again when your connection returns.' : 'Batch status refreshed.');
-          drawLive(); void refreshDrafts();
-        }, text: 'Refresh batch status' }),
-        submission?.runIds && !locked() && el('button', { type: 'button', class: 'btn btn--ghost', onclick: async () => {
-          submission = undefined; persist(); mode = 'setup';
-          try { const fresh = await getPreseeding(courseId); coverage.splice(0,coverage.length,...fresh); } catch { say('Could not refresh coverage. Check existing drafts before generating more.'); }
-          if (!disposed) { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); showMode(); }
-        }, text: 'Create another batch' }));
+      drawInspector(items, completed, total);
       draftList.scrollTop = listScroll;
       if (focusKey) live.querySelector<HTMLElement>(`[data-gw-focus="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
     }
@@ -425,7 +490,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       stopTextReveal();
       selectedQuestion = question.id;
       const revision = ++readerRevision;
-      drawLive();
+      drawLive(); void refreshUsage();
       const content = el('div', { class: 'gw-body' });
       const rich = (text: string, className: string) => { const node = el('div', { class: className }); renderRichText(node,text); return node; };
       mount(content, el('p', { class: 'gw-eyebrow', text: `${question.current.type === 'mcq' ? 'MULTIPLE CHOICE' : 'TRUE / FALSE'} · ${question.current.difficulty} · ${question.state}` }),
@@ -456,18 +521,19 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     }
     async function refreshUsage(force = false): Promise<void> {
       if (disposed || !root.isConnected || mode !== 'live') return;
-      if (usageFetching) { usageAgain = usageAgain || force; return; }
+      if (usageFetching) { usageAgain = true; return; }
       if (usageTimer) clearTimeout(usageTimer);
       usageTimer = undefined;
       usageFetching = true;
-      const targets = watched().filter(run => force || !usageLoaded.has(run._id) || active(run) ||
-        Date.now() < (usageWindow.get(run._id) ?? 0) && (!usage.has(run._id) || ['pending', 'partial'].includes(usage.get(run._id)!.summary.status)));
+      const inspected = selectedRun();
+      const targets = inspected && (force || !usageLoaded.has(inspected._id) || active(inspected) || Date.now() < (usageWindow.get(inspected._id) ?? 0)) ? [inspected] : [];
       await Promise.all(targets.map(async run => {
         if (!usageWindow.has(run._id)) usageWindow.set(run._id, Date.now() + 60000);
         try {
-          const snapshot = await getContentRunUsage(courseId, run._id);
-          if (!snapshot.summary) throw new Error('Usage unavailable. Refresh to try again.');
-          if (!disposed) { usage.set(run._id, snapshot); usageErrors.delete(run._id); }
+          const [recorded, task] = await Promise.allSettled([getContentRunUsage(courseId, run._id), getContentRun(courseId, run._id)]);
+          if (!disposed && task.status === 'fulfilled') { runSnapshots.set(run._id, task.value); applyRun(task.value); }
+          if (recorded.status === 'rejected' || !recorded.value.summary) throw new Error('Usage unavailable. Refresh to try again.');
+          if (!disposed) { usage.set(run._id, recorded.value); usageErrors.delete(run._id); }
         } catch {
           if (!disposed) usageErrors.set(run._id, 'Usage unavailable. Refresh to try again.');
         } finally { usageLoaded.add(run._id); }
@@ -476,8 +542,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       if (disposed) return;
       drawLive();
       if (usageAgain) { usageAgain = false; void refreshUsage(true); return; }
-      if (watched().some(run => active(run) || Date.now() < (usageWindow.get(run._id) ?? 0) &&
-        (!usage.has(run._id) || ['pending', 'partial'].includes(usage.get(run._id)!.summary.status)))) {
+      const current = selectedRun();
+      if (current && (active(current) || Date.now() < (usageWindow.get(current._id) ?? 0) && (!usage.has(current._id) || ['pending','partial'].includes(usage.get(current._id)!.summary.status)))) {
         usageTimer = setTimeout(() => { void refreshUsage(); }, 5000);
       }
     }

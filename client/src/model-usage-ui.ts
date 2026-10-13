@@ -5,13 +5,16 @@ import { tokenCount, usageCoverageLabel, usageCoverageNote } from './model-usage
 export function renderModelUsage(summary: ModelUsageSummary, compact = false): HTMLElement {
   const totals = el('dl', { class: 'mu-totals' },
     ...([['Input tokens', summary.inputTokens], ['Output tokens', summary.outputTokens], ['Total tokens', summary.totalTokens]] as const)
-      .map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: tokenCount(value) }))));
+      .map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: tokenCount(value, compact), title: tokenCount(value) }))));
   const root = el('section', { class: `model-usage${compact ? ' model-usage--compact' : ''}`, 'aria-label': 'Model token usage' },
     el('h3', { text: 'Model usage' }), el('p', { class: `mu-status mu-status--${summary.status}`, text: usageCoverageLabel(summary) }),
-    totals, el('p', { class: 'mu-note', text: usageCoverageNote(summary) }));
-  if (summary.untracked) root.append(el('p', { class: 'mu-note', text: 'This operation predates usage tracking or has no confirmed tracking coverage.' }));
-  if (summary.coverageGaps) root.append(el('p', { class: 'mu-note', text: `${summary.coverageGaps} recording gaps. These counts do not cover every attempted call.` }));
-  if (summary.retryVisibility === 'unknown') root.append(el('p', { class: 'mu-note', text: 'Provider retry visibility is unknown. Counts describe observed calls.' }));
+    totals);
+  const notes = compact ? el('details', { class: 'mu-coverage' }, el('summary', { text: 'Usage coverage' })) : root;
+  if (compact) root.append(notes);
+  notes.append(el('p', { class: 'mu-note', text: usageCoverageNote(summary) }));
+  if (summary.untracked) notes.append(el('p', { class: 'mu-note', text: 'This operation predates usage tracking or has no confirmed tracking coverage.' }));
+  if (summary.coverageGaps) notes.append(el('p', { class: 'mu-note', text: `${summary.coverageGaps} recording gaps. These counts do not cover every attempted call.` }));
+  if (summary.retryVisibility === 'unknown') notes.append(el('p', { class: 'mu-note', text: 'Provider retry visibility is unknown. Counts describe observed calls.' }));
   if (!compact) {
     const breakdown = el('dl', { class: 'mu-breakdown' });
     for (const stage of summary.stages ?? []) breakdown.append(el('dt', { text: stage.stage.replace(/-/g, ' ') }),

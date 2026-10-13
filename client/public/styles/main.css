@@ -10777,3 +10777,30 @@ body.has-setup-journey .outlet:focus { outline: none; }
 .admin-console .ac-usage-overview p { margin-top: 3px; }
 .admin-console .ac-usage-metric strong { font-size: 20px; overflow-wrap: anywhere; }
 .admin-console .ac-timeline .ac-note { overflow-wrap: anywhere; }
+
+/* Generation inspector follows the selected task; actions remain outside its scroll area. */
+.gw-live .gw-inspector { display:flex;flex-direction:column;min-height:0;max-height:none;overflow:hidden;padding:0; }
+.gw-batch-progress { padding:14px 14px 10px;border-bottom:1px solid var(--border);flex-shrink:0; }
+.gw-batch-progress h3 { margin-bottom:8px; }
+.gw-batch-progress .gw-total { font-size:26px;margin-bottom:4px; }
+.gw-batch-progress progress { margin:8px 0;height:4px; }
+.gw-batch-progress>small { font-size:10px;color:var(--muted); }
+.gw-inspector-body { flex:1;min-height:0;overflow:auto;padding:0 14px 12px;scrollbar-width:thin; }
+.gw-inspector-body .gw-run { border-top:0; }
+.gw-inspector-actions { flex-shrink:0;display:flex;flex-direction:column;gap:9px;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface); }
+.gw-stage-list { list-style:none;padding:0;margin:12px 0;font-size:10px;color:var(--muted); }
+.gw-stage-list li { padding:4px 0 4px 10px;border-left:2px solid var(--border); }
+.gw-stage-list li[aria-current=step] { border-left-color:var(--accent);color:var(--text);font-weight:600; }
+.gw-stage-list .is-done { color:var(--instr-green-fg); }
+.gw-task-status { font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px; }
+.gw-call-activity { border-top:1px solid var(--border);padding-top:12px;margin:12px 0; }
+.gw-call-activity h3,.gw-check-results h3 { margin-bottom:8px; }
+.gw-call-activity>div { margin:8px 0; }
+.gw-check-results { border-top:1px solid var(--border);margin-top:12px;padding-top:12px; }
+.gw-check-results details { margin:8px 0;font-size:10px; }
+.gw-check-results p { white-space:pre-wrap;font-size:11px;line-height:1.65;color:var(--muted); }
+.model-usage--compact .mu-totals { gap:5px; }
+.model-usage--compact .mu-totals dd { font-size:12px;font-weight:500;white-space:nowrap;overflow-wrap:normal; }
+.model-usage--compact .mu-totals dt { font-size:9px; }
+.model-usage--compact .mu-coverage summary { font-size:10px;cursor:pointer;color:var(--muted); }
+@media(max-width:850px) { .gw-live .gw-inspector { max-height:650px; } }

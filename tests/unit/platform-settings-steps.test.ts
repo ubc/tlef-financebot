@@ -1,3 +1,8 @@
+jest.mock('../../server/src/config/env', () => ({ env: {
+  llmDefaultModel: 'gpt-6-luna', llmModelGenerator: 'gpt-6-luna',
+  llmModelValidator: 'gpt-6-luna', llmModelReviewer: 'gpt-6-luna',
+  llmModelMasteryEvaluator: 'gpt-6-luna',
+} }));
 // Unit test — per-step model configuration: reading a legacy document, and
 // refusing a combination the provider would reject with a 400.
 //
@@ -21,6 +26,7 @@ import {
   updatePlatformSettings,
   utilityStepConfig,
 } from '../../server/src/services/admin.service';
+import { env } from '../../server/src/config/env';
 import type { PlatformSettings } from '../../server/src/types/domain';
 
 const NANO = 'gpt-5.4-nano';   // reasoning-tunable: default effort none, so a temperature is legal
@@ -58,8 +64,8 @@ describe('reading a document written by an older deploy', () => {
       featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
     } as unknown as PlatformSettings;
     const normalized = normalizePlatformSettings(legacy);
-    expect(normalized.models.generator).toEqual({ model: NANO });
-    expect(normalized.models.reviewer).toEqual({ model: LUNA });
+    expect(normalized.models.generator).toEqual({ model: 'gpt-6-luna', modelSource: 'environment' });
+    expect(normalized.models.reviewer).toEqual({ model: 'gpt-6-luna', modelSource: 'environment' });
   });
 
   it('invents the utility step, which no legacy document has', () => {
@@ -91,13 +97,13 @@ describe('reading a document written by an older deploy', () => {
   });
 
   it('leaves a current-shape document untouched', () => {
-    const current = { _id: 'platform', ...validPatch({ reviewer: { model: LUNA, reasoningEffort: 'high' } }) } as PlatformSettings;
-    expect(normalizePlatformSettings(current).models.reviewer).toEqual({ model: LUNA, reasoningEffort: 'high' });
+    const current = { _id: 'platform', ...validPatch({ reviewer: { model: LUNA, modelSource: 'override', reasoningEffort: 'high' } }) } as PlatformSettings;
+    expect(normalizePlatformSettings(current).models.reviewer).toEqual({ model: LUNA, modelSource: 'override', reasoningEffort: 'high' });
   });
 
   it('serves the utility step to classification/import callers', async () => {
-    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...validPatch({ utility: { model: LUNA } }) });
-    await expect(utilityStepConfig()).resolves.toEqual({ model: LUNA });
+    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...validPatch({ utility: { model: LUNA, modelSource: 'override' } }) });
+    await expect(utilityStepConfig()).resolves.toEqual({ model: LUNA, modelSource: 'override' });
   });
 });
 
@@ -172,4 +178,48 @@ it('falls back to env defaults when no document exists at all', async () => {
   const settings = await getPlatformSettings();
   expect(settings.models.utility.model).toBeTruthy();
   expect(settings.customModels).toEqual([]);
+});
+
+describe('environment model sources', () => {
+  it('updates legacy and environment IDs while preserving compatible parameters and other settings', () => {
+    const stored = { _id: 'platform', ...validPatch({
+      generator: { model: LUNA, reasoningEffort: 'xhigh' },
+      reviewer: { model: LUNA, modelSource: 'environment', reasoningEffort: 'high' },
+    }) } as PlatformSettings;
+    const resolved = normalizePlatformSettings(stored);
+    expect(resolved.models.generator).toEqual({ model: 'gpt-6-luna', modelSource: 'environment', reasoningEffort: 'xhigh' });
+    expect(resolved.models.reviewer).toEqual({ model: 'gpt-6-luna', modelSource: 'environment', reasoningEffort: 'high' });
+    expect(resolved.costControls).toEqual(stored.costControls);
+    expect(stored.models.generator.model).toBe(LUNA);
+    expect(replacePlatformSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not pin a stale browser ID when saving environment mode', async () => {
+    const resolved = await updatePlatformSettings(validPatch({ generator: {
+      model: LUNA, modelSource: 'environment', reasoningEffort: 'xhigh',
+    } }), 'ADMIN');
+    expect(resolved.models.generator).toEqual({ model: 'gpt-6-luna', modelSource: 'environment', reasoningEffort: 'xhigh' });
+    expect(normalizePlatformSettings(resolved).models.generator).toEqual(resolved.models.generator);
+  });
+
+  it('keeps explicit and older-client model selections as overrides after saving', async () => {
+    const resolved = await updatePlatformSettings(validPatch({ reviewer: {
+      model: LUNA, modelSource: 'override', reasoningEffort: 'high',
+    } }), 'ADMIN');
+    expect(normalizePlatformSettings(resolved).models.reviewer).toEqual({ model: LUNA, modelSource: 'override', reasoningEffort: 'high' });
+    expect(resolved.models.generator).toEqual({ model: NANO, modelSource: 'override' });
+  });
+});
+
+it('resolves a changed startup environment while keeping an explicit override', () => {
+  const changedEnvironment = jest.replaceProperty(env, 'llmModelGenerator', 'local/env-model');
+  const stored = { _id: 'platform', ...validPatch({
+    generator: { model: LUNA, modelSource: 'environment', reasoningEffort: 'high' },
+    reviewer: { model: LUNA, modelSource: 'override', reasoningEffort: 'high' },
+  }) } as PlatformSettings;
+  try {
+    const resolved = normalizePlatformSettings(stored);
+    expect(resolved.models.generator).toEqual({ model: 'local/env-model', modelSource: 'environment' });
+    expect(resolved.models.reviewer).toEqual(stored.models.reviewer);
+  } finally { changedEnvironment.restore(); }
 });

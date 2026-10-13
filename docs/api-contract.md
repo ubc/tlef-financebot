@@ -738,6 +738,16 @@ operation writes an audit entry.
   off requires `confirmQualityImpact: true`. New generated Drafts then skip the
   reviewer call and persist a flagged decision with the disabled-reviewer
   reason. Exceeding the daily requested-question limit returns 429.
+  Each step has `modelSource: environment | override`. Environment mode resolves
+  the model from `LLM_MODEL_*` (falling back to `LLM_DEFAULT_MODEL`; utility uses
+  the latter directly) after each server restart, preserving compatible parameters.
+  GET treats historical source-less records as environment defaults without a
+  database write. Explicit overrides remain pinned. PUT from older clients with
+  no source marker means an explicit override; environment-mode PUT resolves
+  stale submitted IDs against current server defaults. GET's catalogue includes
+  `environmentModels` by stage and automatically lists environment model IDs;
+  no Custom model registration or provider call is needed. Provider availability
+  still requires a real generation test. Existing queued model IDs remain pinned.
 
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`
@@ -802,6 +812,26 @@ status/history requests retain the existing limit behavior. Existing course
 Instructor authorization applies throughout.
 
 ### Streaming generation preview (additive, instructor-only)
+
+The default workbench exposes End task / End batch through the existing guarded
+end API. Ending preserves saved drafts and prevents later pipeline steps; an
+already-running provider request may finish and record its usage. End batch targets
+the displayed batch's active run IDs, not unrelated course runs. The inspector
+follows the selected question/task and shows task-scoped totals, actual model-call
+states and elapsed time. Active selected tasks are refreshed every five seconds
+alongside SSE; queued tasks are selectable before visible draft text arrives.
+Compact totals use `k` at 1,000 tokens, with exact values available in titles and
+the full usage view. Unknown counts remain unknown.
+
+Tracked question-generation `result` can also include bounded
+`checks: [{ item, check: 'answer-validation' | 'quality-review',
+verdict: 'checked' | 'pass' | 'flag' | 'reject', explanation, at }]`.
+These are returned answer-check/reviewer explanations, capped at 1,600 characters
+and the latest 60 records, persisted before saving so they appear during checks.
+They contain no provider reasoning trace. Historical runs may omit them.
+Pilot generation already supplies source evidence and existing-question memory
+before writing, then rechecks similarity before saving; this does not guarantee
+uniqueness or synchronize concurrent generators.
 
 Question-generation run summaries and full snapshots may include
 `preview: { item: number, attempt: number, stem: string }`. `item` is zero-based;

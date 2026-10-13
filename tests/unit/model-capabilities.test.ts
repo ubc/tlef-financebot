@@ -10,13 +10,14 @@ import {
   KNOWN_MODELS,
   REASONING_EFFORTS,
   capabilitiesFor,
+  modelCatalogue,
   temperatureAllowed,
 } from '../../server/src/components/genai/llm/model-capabilities';
 
-it('resolves the two shipped models to their profiles', () => {
+it('resolves the shipped models to their profiles', () => {
   expect(capabilitiesFor('gpt-5.4-nano').profile).toBe('reasoning-tunable');
   expect(capabilitiesFor('gpt-5.6-luna').profile).toBe('reasoning-fixed');
-  expect(Object.keys(KNOWN_MODELS).sort()).toEqual(['gpt-5.4-nano', 'gpt-5.6-luna']);
+  expect(Object.keys(KNOWN_MODELS).sort()).toEqual(['gpt-5.4-nano', 'gpt-5.6-luna', 'gpt-6-luna']);
 });
 
 it('falls back to classic for a non-OpenAI unknown model, so nothing regresses', () => {
@@ -120,4 +121,11 @@ describe('temperatureAllowed — the measured rule', () => {
   it('always allows a temperature on a model with no reasoning channel', () => {
     expect(temperatureAllowed(CAPABILITY_PROFILES.classic)).toBe(true);
   });
+});
+
+it('automatically includes environment IDs without custom registration or duplicate entries', () => {
+  const catalogue = modelCatalogue([], ['gpt-6-luna', 'local/env-model', 'local/env-model']);
+  expect(catalogue.models.filter(model => model.id === 'gpt-6-luna')).toHaveLength(1);
+  expect(catalogue.models.find(model => model.id === 'gpt-6-luna')?.profile).toBe('reasoning-fixed');
+  expect(catalogue.models.filter(model => model.id === 'local/env-model')).toEqual([{ id: 'local/env-model', profile: 'classic', custom: false }]);
 });

@@ -34,6 +34,11 @@ async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 're
       return r.fulfill({ json: { runs: result } });
     }
     if (path.endsWith('/content-runs')) return r.fulfill({ json: runs.filter(run => !url.searchParams.has('status') || run.status === url.searchParams.get('status')) });
+    if (path.endsWith('/end') && r.request().method() === 'POST') {
+      const run = runs.find(run => path.endsWith(`/${run._id}/end`))!;
+      Object.assign(run, { status:'failed', revision:Number(run.revision)+1, completedAt:new Date().toISOString(), error:{code:'generation-ended',message:'generation-ended',retryable:true} });
+      return r.fulfill({json:run});
+    }
     if (path.includes('/content-runs/')) return r.fulfill({ json: runs.find(run => path.endsWith('/'+run._id)) ?? {} });
     if (path.endsWith('/questions')) return r.fulfill({ json: { total: questions.length, questions } });
     if (path === '/api/questions/q') return r.fulfill({ json: { ...questions[0], currentVersionId: 'v', agentDecision: { decision: 'flag', reasoning: 'The answer needs a clearer assumption about equal magnitudes.' } } });
@@ -83,14 +88,16 @@ test('lost response and reload recover identical immutable request', async ({ pa
   const first = state.calls[0];
   state.fail(false); await state.open();
   await page.getByRole('button', { name: 'Recover this batch' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   expect(state.calls[1]).toEqual(first);
 });
 
 test('real run events reveal saved draft and assessment, failed units are not saved questions', async ({ page }) => {
   const state = await fixture(page);
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   state.questions.push({ id: 'q', state: 'draft', loIds: ['a'], themeIds: ['topic'], labels: [], current: { _id: 'v', type: 'mcq', difficulty: 'easy', stem: 'Which direction is the net force?', provenance: { kind: 'generated', runId: 'r0' }, options: [{ key: 'A', text: 'Toward the larger force.', role: 'correct' }] } });
   Object.assign(state.runs[0], { status: 'partial', stage: 'persisting', revision: 2, completedUnits: 2, totalUnits: 2, result: { createdQuestionIds: ['q'], failures: [{ item: 1 }] } });
   await page.evaluate(run => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(run), state.runs[0]);
@@ -151,7 +158,8 @@ test('new batch clears the previous draft and retains keyboard focus while choos
   await objective.focus(); await page.keyboard.press('Space'); await expect(objective).toBeFocused();
   await page.keyboard.press('Space');
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   state.questions.push({ id: 'q', state: 'draft', loIds: ['a'], themeIds: ['topic'], labels: [], current: { _id: 'v', type: 'mcq', difficulty: 'easy', stem: 'Previous batch question', provenance: { kind: 'generated', runId: 'r0' }, options: [] } });
   for (const run of state.runs) {
     Object.assign(run, { status: 'completed', revision: 2, completedUnits: 1, result: { createdQuestionIds: run._id === 'r0' ? ['q'] : [], failures: [] } });
@@ -167,7 +175,8 @@ test('new batch clears the previous draft and retains keyboard focus while choos
 test('live words arrive before any saved question and survive a reconnect snapshot', async ({ page }) => {
   const state = await fixture(page);
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   const run = state.runs[0];
   Object.assign(run, { status: 'running', stage: 'generating', revision: 2, preview: { item: 0, attempt: 1, stem: 'Two forces' } });
   await page.evaluate(r => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(r), run);
@@ -188,7 +197,8 @@ test('live words arrive before any saved question and survive a reconnect snapsh
 test('answers and explanations stream, reset on retry, and persist in the saved reader', async ({ page }) => {
   const state = await fixture(page);
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   const run = state.runs[0];
   const emit = async () => page.evaluate(r => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(r),run);
   Object.assign(run,{status:'running',stage:'generating',revision:2,preview:{item:0,attempt:1,stem:'Which force?',options:[{key:'A',text:'The larger',role:'',explanation:''}]}});
@@ -237,7 +247,8 @@ test('question type selection reaches the generation request', async ({ page }) 
  test('edited generated questions remain in history and retain their run review link', async ({ page }) => {
    const state = await fixture(page);
    await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-   await expect(page.locator('.gw-run')).toHaveCount(3);
+   await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
    state.questions.push({ id: 'q', state: 'draft', loIds: ['a'], themeIds: ['topic'], labels: [], current: { _id: 'v', version: 2, type: 'mcq', difficulty: 'easy', stem: 'Edited generated question', provenance: { kind: 'edited', parentVersionId: 'old-v' }, options: [{ key: 'A', text: 'Answer', role: 'correct' }] } });
    Object.assign(state.runs[0], { status: 'completed', stage: 'persisting', revision: 2, result: { createdQuestionIds: ['q'], failures: [] } });
    await page.evaluate(run => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(run), state.runs[0]);
@@ -311,7 +322,8 @@ test('quality pilot defaults off, reaches every plan run and freezes its recover
   await expect(pilot).toBeDisabled();
   await page.getByRole('button', { name: 'Generation activity', exact: true }).click();
   await page.getByRole('button', { name: 'Recover this batch' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(3);
+  await expect(page.locator('.gw-run')).toHaveCount(1);
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
   expect(state.calls[1]).toEqual(first);
   expect(state.runs.every(run => (run.input as { qualityPolicy: string }).qualityPolicy === 'grounded-memory-v1')).toBe(true);
 });
@@ -424,4 +436,91 @@ test('quality pilot exposes persisted evidence before assessments and does not i
   Object.assign(run, { status: 'failed', revision: 3 });
   await page.evaluate(value => (window as unknown as { emitRun: (run: unknown) => void }).emitRun(value), run);
   await expect(first).toContainText('No recorded pilot assessment is available. No quality conclusion can be inferred.');
+});
+
+test('selected task inspector isolates usage and shows real pending calls and returned check explanations', async ({page}) => {
+  const state = await fixture(page);
+  const usageRequests: string[] = [];
+  await page.route('**/api/courses/course/content-runs/*/usage', async route => {
+    const id = route.request().url().split('/').at(-2)!; usageRequests.push(id);
+    return route.fulfill({json:{summary:{...usageSummary,inputTokens:id === 'r1' ? 12102 : 23000,outputTokens:2022,totalTokens:id === 'r1' ? 14124 : 25022},calls:[{
+      _id:`call-${id}`,stage:'quality-review',requestedModel:'reviewer',outcome:'pending',item:0,startedAt:new Date(Date.now()-125000).toISOString(),usage:{inputTokens:null,outputTokens:null,totalTokens:null}
+    }]}});
+  });
+  await page.getByRole('button',{name:'Generate 3 questions →'}).click();
+  await expect(page.locator('.gw-inspector')).toHaveAttribute('data-run-id','r0');
+  await expect(page.locator('.gw-inspector .mu-totals')).toContainText('23k');
+  Object.assign(state.runs[1],{status:'running',stage:'reviewing',startedAt:new Date(Date.now()-135000).toISOString(),revision:2,preview:{item:0,attempt:1,stem:'Compare the forces on a book.'},result:{createdQuestionIds:[],failures:[],checks:[{item:0,check:'answer-validation',verdict:'checked',explanation:'The correct option balances the weight and normal force.',at:new Date().toISOString()}]}});
+  await page.evaluate(run => (window as unknown as {emitRun:(r:unknown)=>void}).emitRun(run),state.runs[1]);
+  await page.locator('[data-gw-focus="preview-r1"]').click();
+  await expect(page.locator('.gw-inspector')).toHaveAttribute('data-run-id','r1');
+  await expect(page.locator('.gw-inspector .mu-totals')).toContainText('12.1k');
+  await expect(page.locator('.gw-inspector .mu-totals')).not.toContainText('23k');
+  await expect(page.getByRole('region',{name:'Returned check explanations'})).toContainText('The correct option balances');
+  await expect(page.getByRole('region',{name:'Recorded model activity'})).toContainText('Checking source support, notation and similarity');
+  await expect(page.getByRole('region',{name:'Recorded model activity'})).toContainText('The model is taking longer');
+  expect(usageRequests.every(id => ['r0','r1'].includes(id))).toBe(true);
+  Object.assign(state.runs[0],{status:'running',stage:'validating',revision:2});
+  await page.evaluate(run => (window as unknown as {emitRun:(r:unknown)=>void}).emitRun(run),state.runs[0]);
+  await expect(page.locator('.gw-inspector')).toHaveAttribute('data-run-id','r1');
+  for (const [width,theme] of [[1440,'light'],[390,'dark']] as const) {
+    await page.setViewportSize({width,height:900}); await page.emulateMedia({reducedMotion:'reduce'});
+    await page.evaluate(theme => document.documentElement.dataset.theme=theme,theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    expect((await new AxeBuilder({page}).include('.generation-workbench').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:`/tmp/financebot-generation-selected-${width}.png`,fullPage:true});
+    if (width === 1440) {
+      await page.getByRole('region',{name:'Returned check explanations'}).evaluate(section => section.scrollIntoView({block:'start'}));
+      await page.screenshot({path:'/tmp/financebot-generation-check-details.png',fullPage:true});
+    }
+  }
+});
+
+test('task status recovers without SSE even when usage is unavailable', async ({page}) => {
+  const state = await fixture(page);
+  await page.route('**/content-runs/*/usage', route => route.fulfill({status:503,json:{error:'Usage temporarily unavailable'}}));
+  await page.getByRole('button',{name:'Generate 3 questions →'}).click();
+  await expect(page.locator('.gw-inspector')).toContainText('Usage unavailable');
+  Object.assign(state.runs[0], {status:'failed',revision:2,completedAt:new Date().toISOString(),error:{code:'generation-ended',message:'generation-ended',retryable:true}});
+  await page.getByRole('button',{name:'Refresh status & usage',exact:true}).click();
+  await expect(page.locator('.gw-task-status')).toHaveText('Ended by instructor');
+  await expect(page.getByRole('heading',{name:'Generation ended',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'End task',exact:true})).toHaveCount(0);
+});
+
+test('end task handles queued and running tasks, rejects duplicate clicks and unlocks the next batch', async ({page}) => {
+  const state=await fixture(page); page.on('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Generate 3 questions →'}).click();
+  let ends=0;
+  await page.route('**/content-runs/*/end', async route=>{ends++;await new Promise(resolve=>setTimeout(resolve,150));await route.fallback();});
+  await page.getByRole('button',{name:'End task',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Ending…'})).toBeDisabled();
+  await expect(page.locator('.gw-task-status')).toHaveText('Ended by instructor');
+  await expect(page.getByRole('heading',{name:'Generation ended',exact:true})).toBeVisible();
+  expect(ends).toBe(1); expect(state.runs.filter(run=>run.status==='queued')).toHaveLength(2);
+  Object.assign(state.runs[1],{status:'running',stage:'validating',revision:2});
+  await page.evaluate(run=>(window as unknown as {emitRun:(r:unknown)=>void}).emitRun(run),state.runs[1]);
+  await page.getByRole('button',{name:'End batch',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Create another batch',exact:true})).toBeVisible();
+  expect(ends).toBe(3); expect(state.runs.every(run=>run.status==='failed')).toBe(true);
+  await page.getByRole('button',{name:'Create another batch',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Generate 3 questions →',exact:true})).toBeEnabled();
+});
+
+test('failed end request keeps tasks active and a retry preserves already saved drafts', async ({page}) => {
+  const state=await fixture(page); page.on('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Generate 3 questions →'}).click();
+  state.questions.push({id:'q',state:'draft',loIds:['a'],themeIds:['topic'],labels:[],current:{_id:'v',type:'mcq',difficulty:'easy',stem:'A saved draft is retained.',provenance:{kind:'generated',runId:'r0',item:0},options:[]}});
+  Object.assign(state.runs[0],{status:'completed',stage:'persisting',revision:2,result:{createdQuestionIds:['q'],failures:[]}});
+  await page.evaluate(run=>(window as unknown as {emitRun:(r:unknown)=>void}).emitRun(run),state.runs[0]);
+  await expect(page.locator('.gw-stem')).toHaveText('A saved draft is retained.');
+  let fail=true;
+  await page.route('**/content-runs/*/end', route=> fail ? route.fulfill({status:503,json:{error:'Temporary failure'}}) : route.fallback());
+  await page.getByRole('button',{name:'End batch',exact:true}).click();
+  await expect(page.locator('.gw-notice')).toContainText('2 tasks could not be ended');
+  await expect(page.getByRole('button',{name:'End batch',exact:true})).toBeEnabled();
+  fail=false; await page.getByRole('button',{name:'End batch',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Create another batch',exact:true})).toBeVisible();
+  await expect(page.locator('.gw-stem')).toHaveText('A saved draft is retained.');
+  expect((state.runs[0].result as {createdQuestionIds:string[]}).createdQuestionIds).toEqual(['q']);
 });

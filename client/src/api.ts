@@ -202,6 +202,8 @@ export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface StepModelConfig {
   model: string;
+  /** Environment defaults follow server restarts; only explicit overrides pin an ID. */
+  modelSource?: 'environment' | 'override';
   temperature?: number;
   reasoningEffort?: ReasoningEffort;
 }
@@ -220,6 +222,7 @@ export interface ModelCapabilities {
 }
 
 export interface ModelCatalogue {
+  environmentModels?: Record<PipelineStep, string>;
   models: Array<{ id: string; profile: CapabilityProfile; custom: boolean }>;
   profiles: Record<CapabilityProfile, ModelCapabilities>;
   /**
@@ -1737,6 +1740,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
   result?: {
     createdQuestionIds: string[];
     failures: Array<{ item: number; stage: string; code: string; message: string }>;
+    checks?: Array<{ item: number; check: 'answer-validation' | 'quality-review'; verdict: 'checked' | 'pass' | 'flag' | 'reject'; explanation: string; at: string }>;
     quality?: GenerationQualityRunResult;
   };
 }

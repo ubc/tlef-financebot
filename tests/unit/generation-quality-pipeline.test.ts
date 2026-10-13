@@ -163,6 +163,10 @@ describe('grounded memory public generation pilot', () => {
     expect(buildGenerationEvidence).toHaveBeenCalledWith(expect.objectContaining({ policyVersion: 'grounded-memory-v1', courseId, loIds: [loId] }));
     expect(assessGenerationQuality).toHaveBeenCalledWith(expect.objectContaining({ item: 0, step: { model: 'reviewer-fixture' } }));
     expect(finalResult()).toMatchObject({ quality: { policy: 'grounded-memory-v1', evidence: { id: 'evidence-v1' }, assessments: [expect.objectContaining({ status: 'eligible' })] } });
+    expect(finalResult()).toMatchObject({ checks: [
+      expect.objectContaining({ item: 0, check: 'answer-validation', verdict: 'checked', explanation: 'Roles are valid.' }),
+      expect.objectContaining({ item: 0, check: 'quality-review', verdict: 'pass', explanation: 'Supported conceptual question.' }),
+    ] });
   });
 
   it.each([false, true])('preserves an explicit grounding pin flag (%s) when re-enqueueing frozen material IDs', async groundingPinned => {

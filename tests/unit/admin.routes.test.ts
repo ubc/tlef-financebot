@@ -3,6 +3,9 @@ import request from 'supertest';
 import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/admin.service', () => ({
+  getPlatformSettings: jest.fn(),
+  defaultPlatformSettings: jest.fn(),
+  updatePlatformSettings: jest.fn(),
   grantPlatformInstructor: jest.fn(),
   listAdminAccounts: jest.fn(),
   listAdminCourses: jest.fn(),
@@ -11,6 +14,9 @@ jest.mock('../../server/src/services/admin.service', () => ({
 
 import { adminRouter } from '../../server/src/routes/admin.routes';
 import {
+  getPlatformSettings,
+  defaultPlatformSettings,
+  updatePlatformSettings,
   grantPlatformInstructor,
   listAdminAccounts,
   listAdminCourses,
@@ -145,5 +151,41 @@ describe('Admin user-account routes', () => {
 
     expect(res.status).toBe(400);
     expect(grantPlatformInstructor).not.toHaveBeenCalled();
+  });
+});
+
+describe('Admin model source contract', () => {
+  const models = {
+    generator: { model: 'local/env-model', modelSource: 'environment' as const },
+    validator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
+    reviewer: { model: 'gpt-6-luna', modelSource: 'environment' as const },
+    masteryEvaluator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
+    utility: { model: 'gpt-6-luna', modelSource: 'environment' as const },
+  };
+  const settings = { _id: 'platform' as const, models, costControls: { maxGenerationsPerDay: 10 },
+    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+    updatedBy: 'admin', updatedAt: new Date() };
+
+  it('protects model settings from signed-out and non-Admin callers', async () => {
+    expect((await request(makeApp()).get('/api/admin/platform-settings')).status).toBe(401);
+    expect((await request(makeApp(userFixture(false))).get('/api/admin/platform-settings')).status).toBe(403);
+  });
+
+  it('returns environment defaults and automatically available model IDs', async () => {
+    jest.mocked(getPlatformSettings).mockResolvedValue(settings);
+    jest.mocked(defaultPlatformSettings).mockReturnValue(settings);
+    const response = await request(makeApp(userFixture(true))).get('/api/admin/platform-settings');
+    expect(response.status).toBe(200);
+    expect(response.body.catalogue.environmentModels.generator).toBe('local/env-model');
+    expect(response.body.catalogue.models).toContainEqual({ id: 'local/env-model', profile: 'classic', custom: false });
+  });
+
+  it('preserves source markers through validation and rejects unknown source values', async () => {
+    jest.mocked(updatePlatformSettings).mockResolvedValue(settings);
+    const app = makeApp(userFixture(true));
+    const response = await request(app).put('/api/admin/platform-settings').send(settings);
+    expect(response.status).toBe(200);
+    expect(updatePlatformSettings).toHaveBeenCalledWith(expect.objectContaining({ models }), 'ESI5CZY7J307');
+    expect((await request(app).put('/api/admin/platform-settings').send({ ...settings, models: { ...models, generator: { model: 'x', modelSource: 'invalid' } } })).status).toBe(400);
   });
 });

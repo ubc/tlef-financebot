@@ -833,7 +833,11 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
   const type: QuestionType = input.type ?? 'mcq';
   const models = input.models ?? configuredGenerationModels();
   const platformSettings = await getPlatformSettings();
-  const result: QuestionGenerationResult = { createdQuestionIds: [], failures: [] };
+  const result: QuestionGenerationResult = { createdQuestionIds: [], failures: [], checks: [] };
+  const recordCheck = (item: number, check: 'answer-validation' | 'quality-review', verdict: 'checked' | 'pass' | 'flag' | 'reject', explanation: unknown) => {
+    result.checks!.push({ item, check, verdict, explanation: typeof explanation === 'string' ? explanation.slice(0, 1600) : 'No explanation returned.', at: new Date() });
+    result.checks = result.checks!.slice(-60);
+  };
   const qualityEnabled = input.qualityPolicy === 'grounded-memory-v1';
   if (qualityEnabled) result.quality = { policy: 'grounded-memory-v1', assessments: [] };
   let stage: QuestionGenerationRun['stage'] = 'retrieving';
@@ -923,6 +927,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       // recorded as one failed candidate. The same check guards each stage.
       await assertContentRunActive(runId);
       try {
+        await updateContentRun(runId, { message: `Writing candidate ${item + 1} of ${count}${qualityEnabled ? ' with source evidence and existing-question memory' : ''}` });
         const qualityContext = evidence && initialMemory ? generationQualityInstruction(evidence,
           withBatchGenerationMemory(initialMemory, generated.map(previous => ({ id: `batch:${runId.toHexString()}:${previous.item}`, content: { ...previous.generated, type } }))),
           `${lo.name}\n${prompt ?? ''}`) : undefined;
@@ -963,6 +968,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of generated) {
       await assertContentRunActive(runId);
       try {
+        await updateContentRun(runId, { message: `Checking answer roles for candidate ${candidate.item + 1} of ${count}` });
         candidate.validation = await completeJson<ValidatorOutput>(
           VALIDATOR_PROMPT({
             loName: lo.name, question: candidate.generated, chunks, secondaryLoNames,
@@ -970,6 +976,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
           }),
           { ...models.validator, usageContext: { stage: 'validation', item: candidate.item }, beforeRequest: () => assertContentRunActive(runId) },
         );
+        recordCheck(candidate.item, 'answer-validation', 'checked', candidate.validation.roleAssessment);
         validated.push(candidate);
       } catch (error) {
         result.failures.push(generationFailure(candidate.item, 'validating', error, 'generation-validation-failed'));
@@ -995,6 +1002,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
     for (const candidate of validated) {
       await assertContentRunActive(runId);
       try {
+        await updateContentRun(runId, { message: `Reviewing quality and numerical verification for candidate ${candidate.item + 1} of ${count}` });
         // Verified here as well as at persistence below. The two calls answer
         // different questions — this one decides what to TELL the reviewer, the
         // later one decides what to STORE — and the function is pure, so the
@@ -1022,6 +1030,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
         // Persistence below recomputes numerics from candidate.generated, so
         // replacing the candidate here is the whole change.
         if (platformSettings.featureFlags.retryOnReject && normalizeDecision(candidate.review.decision) === 'reject') {
+          recordCheck(candidate.item, 'quality-review', 'reject', candidate.review.reasoning);
           await updateContentRun(runId, {
             status: 'running',
             stage,
@@ -1043,8 +1052,10 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
             candidate.generated = retried.generated;
             candidate.validation = retried.validation;
             candidate.review = retried.review;
+            recordCheck(candidate.item, 'answer-validation', 'checked', candidate.validation.roleAssessment);
           }
         }
+        recordCheck(candidate.item, 'quality-review', normalizeDecision(candidate.review.decision), candidate.review.reasoning);
         reviewed.push(candidate);
       } catch (error) {
         result.failures.push(generationFailure(candidate.item, 'reviewing', error, 'generation-review-failed'));
@@ -1081,6 +1092,7 @@ async function runTrackedGenerationPipeline(input: GenerationInput, runId: Objec
       try {
         let candidateSourceRefs = sourceRefs;
         if (evidence) {
+          await updateContentRun(runId, { message: `Checking source support, notation and task similarity for candidate ${candidate.item + 1} of ${count} before saving` });
           // Fresh snapshots narrow stale-context errors; this is not a lock
           // against other workers or instructor edits during the final insert.
           await assertGenerationEvidenceCurrent(evidence);

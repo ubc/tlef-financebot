@@ -162,6 +162,8 @@ export type PipelineStep = (typeof PIPELINE_STEPS)[number];
  */
 export interface StepModelConfig {
   model: string;
+  /** Environment defaults follow server restarts; only explicit overrides pin an ID. */
+  modelSource?: 'environment' | 'override';
   /** Only legal while the effective reasoning effort is `none`. */
   temperature?: number;
   /** Reasoning-capable models only. Omitted means "let the model decide". */
@@ -586,6 +588,8 @@ export interface QuestionGenerationFailure {
 }
 
 export interface QuestionGenerationResult {
+  /** Bounded user-facing check explanations, never provider reasoning traces. */
+  checks?: Array<{ item: number; check: 'answer-validation' | 'quality-review'; verdict: 'checked' | 'pass' | 'flag' | 'reject'; explanation: string; at: Date }>;
   createdQuestionIds: ObjectId[];
   failures: QuestionGenerationFailure[];
   quality?: GenerationQualityRunResult;

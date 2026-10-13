@@ -14,6 +14,7 @@ import {
   capabilityMatrix,
   deactivateUser,
   getPlatformSettings,
+  defaultPlatformSettings,
   listAdminAccounts,
   listAdminCourses,
   listUsers,
@@ -60,6 +61,7 @@ const assignmentsBody = z.object({
 // legal on one model and a 400 on another.
 const stepModelConfig = z.object({
   model: z.string().trim().min(1),
+  modelSource: z.enum(['environment', 'override']).optional(),
   temperature: z.number().optional(),
   reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
 });
@@ -214,10 +216,12 @@ adminRouter.get(
   // plus the risk of the client caching a stale copy of it.
   async (_req, res) => {
     const settings = await getPlatformSettings();
+    const environmentModels = Object.fromEntries(Object.entries(defaultPlatformSettings().models).map(([step, config]) => [step, config.model]));
     res.json({
       ...settings,
       catalogue: {
-        ...modelCatalogue(settings.customModels),
+        ...modelCatalogue(settings.customModels, Object.values(environmentModels)),
+        environmentModels,
         // What each step uses when the admin sets nothing, so the console can
         // SHOW the effective value rather than pre-fill a box — pre-filling
         // would persist a temperature that overrides the step's own default.

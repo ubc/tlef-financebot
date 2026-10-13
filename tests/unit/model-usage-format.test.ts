@@ -13,4 +13,13 @@ describe('model usage display', () => {
     expect(usageCoverageNote(summary)).toContain('1 pending · 1 unknown');
     expect(usageCoverageLabel({ ...summary, status: 'unavailable' })).toBe('Usage unavailable');
   });
+
+  it('abbreviates compact totals while retaining exact counts in detailed views', () => {
+    expect(tokenCount(999, true)).toBe('999');
+    expect(tokenCount(1000, true)).toBe('1k');
+    expect(tokenCount(12102, true)).toBe('12.1k');
+    expect(tokenCount(2022, true)).toBe('2k');
+    expect(tokenCount(null, true)).toBe('Unknown');
+    expect(tokenCount(12102)).toBe((12102).toLocaleString());
+  });
 });

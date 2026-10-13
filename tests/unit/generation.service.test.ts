@@ -750,9 +750,9 @@ describe('durable generation runs (P2-0)', () => {
     jest.mocked(platformSettingsCol).mockReturnValue({ findOne: jest.fn(async () => ({
       _id: 'platform',
       models: {
-        generator: { model: 'gen-model', reasoningEffort: 'xhigh' },
+        generator: { model: 'gen-model', modelSource: 'override', reasoningEffort: 'xhigh' },
         validator: { model: 'val-model' },
-        reviewer: { model: 'rev-model', reasoningEffort: 'xhigh' },
+        reviewer: { model: 'rev-model', modelSource: 'override', reasoningEffort: 'xhigh' },
         masteryEvaluator: { model: 'mastery-model' }, utility: { model: 'util-model' },
       },
       costControls: { maxGenerationsPerDay: 100 },
@@ -905,7 +905,7 @@ describe('durable generation runs (P2-0)', () => {
       .mock.calls.map((call) => call[1])
       .find((update) => update.status === 'partial');
     expect(terminal).toMatchObject({ status: 'partial', completedUnits: 2 });
-    expect(terminal?.result).toEqual({
+    expect(terminal?.result).toMatchObject({
       createdQuestionIds: [createdQuestionId],
       failures: [expect.objectContaining({ item: 1, stage: 'validating', code: 'generation-validation-failed' })],
     });
@@ -1017,7 +1017,7 @@ describe('durable generation runs (P2-0)', () => {
         code: 'generation-no-assigned-materials',
         atStage: 'retrieving',
       }),
-      { createdQuestionIds: [], failures: [] },
+      { createdQuestionIds: [], failures: [], checks: [] },
     );
     expect(completeJson).not.toHaveBeenCalled();
     expect(createQuestion).not.toHaveBeenCalled();
