@@ -16,6 +16,8 @@ const date = (value?: string): string => value ? new Date(value).toLocaleString(
 const badge = (text: string, tone = ''): HTMLElement => el('span', { class: `ac-badge ${tone ? `ac-badge--${tone}` : ''}`, text });
 
 type DirectoryPerson = AdminDirectoryUser & { platformInstructor: boolean; pending: boolean; grantedAt?: string };
+const hasStudentIdentity = (user: AdminDirectoryUser): boolean => (user.affiliations ?? []).some(value => value.trim().toLowerCase() === 'student');
+const defaultWorkspace = (user: DirectoryPerson): string => user.pending ? 'Pending first login' : user.deactivatedAt ? 'Banned' : user.isAdmin ? 'Admin' : user.platformInstructor || user.courseRoles.some(r => r.role === 'instructor') ? 'Instructor' : user.courseRoles.some(r => r.role === 'ta') ? 'TA' : 'Student';
 const personStatus = (user: DirectoryPerson): string => user.pending ? 'Pending first login' : user.deactivatedAt ? 'Banned' : 'Active';
 
 function mergePeople(directory: AdminDirectoryUser[], accounts: AdminAccount[], search = ''): DirectoryPerson[] {
@@ -68,7 +70,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return users.filter(user => (!accountFilter.value || (accountFilter.value === 'pending' ? user.pending
       : accountFilter.value === 'deactivated' ? Boolean(user.deactivatedAt) : !user.pending && !user.deactivatedAt))
       && (!roleFilter.value || (roleFilter.value === 'admin' ? user.isAdmin
-        : roleFilter.value === 'instructor' && user.platformInstructor || user.courseRoles.some(entry => entry.role === roleFilter.value))))
+        : roleFilter.value === 'instructor' && user.platformInstructor || roleFilter.value === 'student' && (hasStudentIdentity(user) || defaultWorkspace(user) === 'Student') || user.courseRoles.some(entry => entry.role === roleFilter.value))))
       .sort((a, b) => (a.displayName || a.puid).localeCompare(b.displayName || b.puid) * (ascending ? 1 : -1));
   }
   function renderMetrics(): void {
@@ -109,7 +111,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
               el('button', { type: 'button', class: 'ac-cell-link', 'data-person': user.puid, text: user.displayName || user.puid, onclick: () => inspect(user) }),
               el('small', { text: user.email || 'Email not released' }),
               el('small', { class: 'ac-person-login', title: user.puid }, 'Login ID (PUID): ', el('code', { text: user.puid }))))),
-          el('td', { class: 'ac-people-roles' }, user.isAdmin ? badge('Admin', 'info') : false, user.platformInstructor ? badge('Instructor', 'info') : false, ...roles.map(role => badge(role)), !roles.length && !user.isAdmin && !user.platformInstructor ? 'No roles' : false),
+          el('td', { class: 'ac-people-roles' }, user.isAdmin ? badge('Admin', 'info') : false, user.platformInstructor ? badge('Instructor', 'info') : false, hasStudentIdentity(user) ? el('span', { class: 'ac-badge', text: 'Student (CWL)', title: 'Student affiliation reported by CWL. Course access is shown separately.' }) : false, ...roles.map(role => badge(role)), !roles.length && !hasStudentIdentity(user) && defaultWorkspace(user) === 'Student' ? el('span', { class: 'ac-badge', text: 'Student workspace', title: 'Default Student workspace for this account. This is not a course membership or a CWL affiliation claim.' }) : false, !roles.length && !user.isAdmin && !user.platformInstructor && !hasStudentIdentity(user) && defaultWorkspace(user) !== 'Student' ? 'No roles' : false),
           el('td', { class: 'ac-people-courses', text: String(new Set(user.courseRoles.map(entry => entry.courseId)).size) }),
           el('td', {}, badge(personStatus(user), user.deactivatedAt ? 'danger' : user.pending ? 'warning' : 'success')),
           el('td', { class: 'ac-people-access' }, accessActions(user)));
@@ -283,7 +285,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
           try { await navigator.clipboard.writeText(user.puid); notice('Login ID copied.'); }
           catch { notice('Unable to copy. Select the Login ID above and copy it manually.'); }
         } }),
-        el('p', { class: 'ac-note', text: user.pending ? 'Provisioned PUID; awaiting first CWL sign-in.' : 'Identity received from CWL (ubcEduCwlPuid). Canvas identity matching must be verified separately.' }),
+        el('p', { class: 'ac-note', text: user.pending ? 'Provisioned PUID; awaiting first CWL sign-in.' : 'Identity received from CWL (ubcEduCwlPuid). Student (CWL) describes affiliation; Course Student describes course access from manual, People, Gradebook or Canvas grants. Student workspace indicates the default app workspace when CWL has not released student affiliation; it does not grant course access.' }),
         el('h3', { class: 'ac-people-section-title', text: 'Investigation' }),
         el('a', { class: 'ac-people-link', text: 'View activity →', href: `#/admin/operations?actor=${encodeURIComponent(user.puid)}` }),
         el('a', { class: 'ac-people-link', text: 'Created questions →', href: `#/admin/questions?actor=${encodeURIComponent(user.puid)}` }),
@@ -299,7 +301,9 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
         el('h3', { class: 'ac-people-section-title', text: `Assigned roles (${user.courseRoles.length})` }));
       content.append(...(user.courseRoles.length ? user.courseRoles.map(entry => el('div', { class: 'ac-people-course-role' },
         el('div', {}, badge(roleName(entry.role)), el('span', { class: 'mono', text: entry.courseId })),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'data-mutation': 'true', disabled: mutating || needsRefresh, text: 'Remove', 'aria-label': `Remove ${roleName(entry.role)} from ${entry.courseId}`, onclick: () => removeRole(user, entry) }))) : [el('p', { class: 'ac-note', text: 'No course roles assigned.' })]));
+        user.syncedCourseRoles?.some(role => role.courseId === entry.courseId && role.role === entry.role)
+          ? el('a', { class: 'ac-people-link', href: `#/instructor/course/${entry.courseId}/people`, text: 'Manage in People', title: 'This role comes from Gradebook or Canvas. Use course People to change or remove access.' })
+          : el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'data-mutation': 'true', disabled: mutating || needsRefresh, text: 'Remove', 'aria-label': `Remove ${roleName(entry.role)} from ${entry.courseId}`, onclick: () => removeRole(user, entry) }))) : [el('p', { class: 'ac-note', text: 'No course roles assigned.' })]));
       if (roleDraft.puid !== user.puid) roleDraft = { puid: user.puid, courseId: '', role: 'student' };
       const courseId = el('select', { class: 'input', required: 'required', 'aria-label': 'Course', disabled: mutating || needsRefresh || user.pending || Boolean(user.deactivatedAt) || !courses?.length },
         el('option', { value: '', text: coursesLoading ? 'Loading courses…' : 'Choose a course' }),
@@ -354,7 +358,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     }
   }
   function exportDirectory(): void {
-    const rows = [['Name', 'CWL', 'PUID', 'Email', 'Status', 'Platform Instructor', 'Course roles'], ...visibleUsers().map(user => [user.displayName, user.uid, user.puid, user.email, personStatus(user), user.platformInstructor ? 'Granted' : 'Not granted', user.courseRoles.map(entry => `${entry.courseId}: ${entry.role}`).join('; ')])];
+    const rows = [['Name', 'CWL', 'PUID', 'Email', 'Status', 'Platform Instructor', 'Default workspace', 'CWL affiliations', 'Course roles'], ...visibleUsers().map(user => [user.displayName, user.uid, user.puid, user.email, personStatus(user), user.platformInstructor ? 'Granted' : 'Not granted', defaultWorkspace(user), user.affiliations.join('; '), user.courseRoles.map(entry => `${entry.courseId}: ${entry.role}`).join('; ')])];
     const csv = rows.map(row => row.map(value => `"${(/^[=+@\-\t\r]/.test(value) ? `'${value}` : value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = el('a', { href: url, download: 'financebot-user-directory.csv' }); link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);

@@ -422,3 +422,86 @@ test('login identity remains distinct from username, preserves case and supports
   await expect(details.getByText('Provisioned PUID; awaiting first CWL sign-in.')).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+test('CWL Student identity is visible without course access, and Student filtering keeps both identity and enrollment', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  const student = state.users.find(u => u.puid === OPAQUE_PUID)!;
+  student.affiliations = ['student'];
+  const enrolled = state.users.find(u => u.puid === 'PUID-ALPHA')!;
+  enrolled.affiliations = ['faculty']; enrolled.courseRoles = [{ courseId: COURSE, role: 'student' }];
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const row = personRow(page, 'Case Member');
+  await expect(row.getByText('Student (CWL)', { exact: true })).toBeVisible();
+  await expect(row.getByText('No roles', { exact: true })).toHaveCount(0);
+  await expect(row.locator('.ac-people-courses')).toHaveText('0');
+  await expect(row.getByText('Course Student', { exact: true })).toHaveCount(0);
+  await page.getByLabel('User role', { exact: true }).selectOption('student');
+  await expect(page.locator('.ac-table tbody tr')).toHaveCount(3);
+  await expect(personRow(page, 'Alex Instructor').getByText('Course Student', { exact: true })).toBeVisible();
+  await row.getByRole('button', { name: 'Case Member', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Student (CWL) describes affiliation');
+  await page.getByRole('button', { name: 'Close user details', exact: true }).click();
+  await page.screenshot({ path: 'audit-results/admin-student-identity-2026-10-13/cwl-identity.png' });
+  await row.getByRole('button', { name: 'Case Member', exact: true }).click();
+  await page.getByRole('tab', { name: 'Course access', exact: true }).click();
+  await expect(page.getByText('No course roles assigned.', { exact: true })).toBeVisible();
+  const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const stream = await (await download).createReadStream();
+  const chunks: string[] = []; for await (const chunk of stream!) chunks.push(String(chunk));
+  const line = chunks.join('').split('\r\n').find(row => row.startsWith('"Case Member"'));
+  expect(line).toMatch(/"student",""$/);
+  expect(state.writes).toEqual([]);
+});
+
+test('projected Gradebook and Canvas Student roles appear in the row, inspector and exported directory', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  const rowData = state.users.find(u => u.puid === OPAQUE_PUID)!;
+  rowData.courseRoles = [{ courseId: COURSE, role: 'student' }, { courseId: OTHER_COURSE, role: 'student' }];
+  rowData.syncedCourseRoles = [...rowData.courseRoles];
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const row = personRow(page, 'Case Member');
+  await expect(row.getByText('Course Student', { exact: true })).toBeVisible();
+  await expect(row.locator('.ac-people-courses')).toHaveText('2');
+  await page.getByLabel('User role', { exact: true }).selectOption('student');
+  await row.getByRole('button', { name: 'Case Member', exact: true }).click();
+  await page.getByRole('tab', { name: 'Course access', exact: true }).click();
+  await expect(page.locator('.ac-people-course-role')).toHaveCount(2);
+  await expect(page.getByText('Assigned roles (2)', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Manage in People', exact: true })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: `Remove Student from ${COURSE}` })).toHaveCount(0);
+  await page.screenshot({ path: 'audit-results/admin-student-identity-2026-10-13/course-student-details.png' });
+  await page.getByRole('button', { name: 'Close user details', exact: true }).click();
+  await page.screenshot({ path: 'audit-results/admin-student-identity-2026-10-13/course-student.png' });
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const data = await download;
+  expect(data.suggestedFilename()).toBe('financebot-user-directory.csv');
+  const stream = await data.createReadStream();
+  const chunks: string[] = []; for await (const chunk of stream!) chunks.push(String(chunk));
+  const csv = chunks.join('');
+  expect(csv).toContain('"CWL affiliations"');
+  expect(csv).toContain(`${COURSE}: student; ${OTHER_COURSE}: student`);
+  await expect(page.getByText('Exported 2 loaded matching users.', { exact: true })).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+
+test('missing CWL student affiliation still shows the default Student workspace without granting a course', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  const member = state.users.find(u => u.puid === OPAQUE_PUID)!;
+  member.affiliations = [];
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const row = personRow(page, 'Case Member');
+  await expect(row.getByText('Student workspace', { exact: true })).toBeVisible();
+  await expect(row.getByText('Student (CWL)', { exact: true })).toHaveCount(0);
+  await expect(row.getByText('Course Student', { exact: true })).toHaveCount(0);
+  await expect(row.locator('.ac-people-courses')).toHaveText('0');
+  await page.getByLabel('User role', { exact: true }).selectOption('student');
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: 'Case Member', exact: true }).click();
+  await page.getByRole('tab', { name: 'Course access', exact: true }).click();
+  await expect(page.getByText('No course roles assigned.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close user details', exact: true }).click();
+  await page.screenshot({ path: 'audit-results/admin-student-identity-2026-10-13/default-workspace.png' });
+  expect(state.writes).toEqual([]); expect(member.courseRoles).toEqual([]);
+});

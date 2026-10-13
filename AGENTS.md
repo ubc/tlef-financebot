@@ -485,3 +485,17 @@ without model calls; old formula proofs are checked in memory without rewriting
 approved bank versions. Unverifiable questions show reasons before selection.
 Historical private generation APIs, saved candidates and active-run cancellation
 remain compatible. See the Exam Builder implementation and API contract.
+
+## Admin Student identity visibility (2026-10-13)
+
+User Directory shows CWL Student affiliation separately from course Student
+access. Its effective role read includes batch Gradebook/CSV and Canvas
+projections using the same exact-PUID and lifecycle rules as login, with People
+bans/removals/role changes applied last. Filter discovery includes synced grants;
+no derived roles are copied into persisted User records. Synced role rows link
+to course People for management instead of the manual-role removal endpoint.
+Student filtering and exports retain both identity and enrollment information.
+
+When CWL does not release student affiliation, an active account without Admin
+or teaching grants is labelled Student workspace, matching the existing shell.
+This display fallback never creates a Student course role or institutional claim.

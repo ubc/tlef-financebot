@@ -112,6 +112,8 @@ export interface AdminAccount {
 export type CourseRole = 'student' | 'instructor' | 'ta';
 
 export interface AdminDirectoryUser {
+  /** Read-only source hint: these roles are managed through course People. */
+  syncedCourseRoles?: Array<{ courseId: string; role: CourseRole }>;
   _id: string;
   puid: string;
   uid: string;

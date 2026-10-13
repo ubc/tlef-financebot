@@ -1,3 +1,5 @@
+jest.mock('../../server/src/services/people-import.service', () => ({ projectImportedCoursePeopleBatch: jest.fn(async (users: unknown[]) => users), importedRoleCandidatePuids: jest.fn(async () => []) }));
+jest.mock('../../server/src/services/canvas-enrollment.service', () => ({ projectCanvasEnrollmentBatch: jest.fn(async (users: unknown[]) => users), canvasRoleCandidatePuids: jest.fn(async () => []) }));
 import { coursePeopleAccessCol } from '../../server/src/components/mongodb/collections';
 import { projectCoursePeopleAccess } from '../../server/src/services/course-people-access.service';
 jest.mock('../../server/src/services/course-people-access.service', () => ({

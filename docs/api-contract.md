@@ -698,7 +698,20 @@ Every route below requires platform Admin, and every successful state-changing
 operation writes an audit entry.
 
 - `GET /api/admin/directory?q=&role=&courseId=` — searchable user directory
-  with course roles and deactivation state.
+  with effective course roles and deactivation state. Reads project manual/shared,
+  valid Gradebook/CSV and fresh Canvas roles, then apply People decisions last.
+  Role/course queries discover projected identities before the 200-row query
+  limit; `role` remains a course-membership filter. Derived roles are not copied
+  into User records. Optional `syncedCourseRoles: [{courseId,role}]` identifies
+  roles that must be managed through course People rather than the legacy manual
+  role-removal endpoint. The UI separately labels verified CWL `student`
+  affiliation as `Student (CWL)` without granting course access; its local Student
+  filter includes either this identity, a Student course role, or the default
+  Student workspace for an active account without teaching/Admin grants. The
+  `Student workspace` fallback describes the existing shell behavior when no
+  student affiliation is released; it grants no role and claims no university
+  affiliation. Export separates default workspace, CWL affiliations and effective
+  course roles.
 - `GET /api/admin/courses` →
   `[{ _id, name, courseCode, section?, term, lifecycle: 'draft' | 'published' | 'archived', owner: { puid, displayName, uid, email } | null }]`
   — minimal all-course identities for Admin role assignment and the Admin's

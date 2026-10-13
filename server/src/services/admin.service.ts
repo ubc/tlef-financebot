@@ -1,3 +1,5 @@
+import { projectImportedCoursePeopleBatch, importedRoleCandidatePuids } from './people-import.service';
+import { projectCanvasEnrollmentBatch, canvasRoleCandidatePuids } from './canvas-enrollment.service';
 import { peopleMembershipFilter, projectCoursePeopleAccess } from './course-people-access.service';
 import { coursePeopleAccessCol } from '../components/mongodb/collections';
 import { ObjectId, type Filter, type WithId } from 'mongodb';
@@ -247,7 +249,7 @@ export async function listAdminCourses(): Promise<AdminCourseOption[]> {
   });
 }
 
-export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promise<Array<WithId<User>>> {
+export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promise<Array<WithId<User> & { syncedCourseRoles?: User['courseRoles'] }>> {
   const query: Filter<User> = {};
   if (filters.q?.trim()) {
     const value = escapedRegex(filters.q.trim());
@@ -260,7 +262,11 @@ export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promis
       ...(filters.courseId ? { courseId: filters.courseId } : {}),
       ...(filters.role ? { role: filters.role } : {}),
     } };
-    const sharedPuids = !filters.role || filters.role === 'instructor' ? await activeSharedInstructorPuids(filters.courseId) : [];
+    const [shared, imported, canvas] = await Promise.all([
+      !filters.role || filters.role === 'instructor' ? activeSharedInstructorPuids(filters.courseId) : Promise.resolve([]),
+      importedRoleCandidatePuids(filters.courseId, filters.role), canvasRoleCandidatePuids(filters.courseId, filters.role),
+    ]);
+    const sharedPuids = [...new Set([...shared, ...imported, ...canvas])];
     if (filters.role && !filters.courseId) {
       const newGrants = await coursePeopleAccessCol().find({ role: filters.role, status: 'active', puid: { $exists: true } }).toArray();
       sharedPuids.push(...newGrants.flatMap(grant => grant.puid ? [grant.puid] : []));
@@ -273,8 +279,16 @@ export async function listUsers(filters: AdminUserDirectoryFilters = {}): Promis
   const membership = filters.courseId ? await peopleMembershipFilter(filters.courseId, filters.role ? [filters.role] : ['student', 'ta', 'instructor'], query) : query;
   const scoped = identitySearch ? { $and: [identitySearch, membership] } : membership;
   const people = await projectCourseInstructorShares(await usersCol().find(scoped).sort({ lastLoginAt: -1 }).limit(200).toArray(), { includeDeactivated: true });
-  const projected = await Promise.all(people.map(projectCoursePeopleAccess));
-  return filters.role ? projected.filter(user => user.courseRoles.some(r => r.role === filters.role && (!filters.courseId || r.courseId.equals(filters.courseId)))) : projected;
+  const dynamic = await projectImportedCoursePeopleBatch(await projectCanvasEnrollmentBatch(people));
+  // Owner decisions apply last, just as at login; imports must not restore bans or old roles.
+  const projected = (await Promise.all(dynamic.map(user => projectCoursePeopleAccess(user)))).map((user, index) => {
+    const syncedCourseRoles = user.courseRoles.filter(role =>
+      !people[index].courseRoles.some(r => r.courseId.equals(role.courseId) && r.role === role.role)
+      && dynamic[index].courseRoles.some(r => r.courseId.equals(role.courseId) && r.role === role.role));
+    // These grants are not removable through the legacy manual-role endpoint.
+    return syncedCourseRoles.length ? { ...user, syncedCourseRoles } : user;
+  });
+  return filters.role || filters.courseId ? projected.filter(user => user.courseRoles.some(r => (!filters.role || r.role === filters.role) && (!filters.courseId || r.courseId.equals(filters.courseId)))) : projected;
 }
 
 async function auditUserMutation(

@@ -1,9 +1,9 @@
 import { comparePeopleImports } from './people-import-diff';
-import type { PeopleImportChanges } from '../types/people-import';
+import type { CoursePeopleImport, PeopleImportChanges } from '../types/people-import';
 import { peopleMembershipFilter } from './course-people-access.service';
 import type { Filter, ObjectId, WithId } from 'mongodb';
 import { auditCol, capabilitySettingsCol, coursePeopleImportsCol, coursesCol, usersCol } from '../components/mongodb/collections';
-import type { CourseRole, TaInvite, User } from '../types/domain';
+import type { Course, CourseRole, TaInvite, User } from '../types/domain';
 import { parsePeopleImport, peopleImportError } from './people-import-parser';
 
 type Actor = Pick<User, 'puid' | 'isAdmin' | 'courseRoles'>;
@@ -73,23 +73,47 @@ export async function clearPeopleImport(courseId: ObjectId, actor: Actor, expect
   return getPeopleImport(courseId, actor);
 }
 
-/** Recomputed from persisted User each request; independent of Canvas OAuth. */
-export async function projectImportedCoursePeople(user: User): Promise<User> {
+function importedRoleOpen(course: Course, role: CourseRole, now: Date): boolean {
+  return !(course.lifecycle === 'archived' || course.archivedAt || (course.termEnd && course.termEnd < now))
+    && (role !== 'student' || Boolean(course.published && (!course.termStart || course.termStart <= now)));
+}
+function applyImportedRoles<T extends User>(user: T, snapshots: CoursePeopleImport[], courses: Array<WithId<Course>>, now: Date): T {
   if (user.deactivatedAt) return user;
-  const snapshots = await coursePeopleImportsCol().find({ 'members.puid': user.puid }).toArray();
-  if (!snapshots.length) return user;
-  const courses = await coursesCol().find({ _id: { $in: snapshots.map(s => s.courseId) } }).toArray();
-  const now = new Date();
   const courseRoles = [...user.courseRoles];
-  for (const course of courses) {
-    if (course.lifecycle === 'archived' || course.archivedAt || (course.termEnd && course.termEnd < now)) continue;
-    for (const member of snapshots.find(s => s.courseId.equals(course._id))?.members ?? []) {
-      if (member.puid !== user.puid || !['instructor', 'ta', 'student'].includes(member.role)) continue;
-      if (member.role === 'student' && (!course.published || (course.termStart && course.termStart > now))) continue;
+  for (const snapshot of snapshots) {
+    const course = courses.find(c => c._id.equals(snapshot.courseId));
+    if (!course) continue;
+    for (const member of snapshot.members) {
+      if (member.puid !== user.puid || !['instructor', 'ta', 'student'].includes(member.role) || !importedRoleOpen(course, member.role, now)) continue;
       if (!courseRoles.some(r => r.courseId.equals(course._id) && r.role === member.role)) courseRoles.push({ courseId: course._id, role: member.role });
     }
   }
   return { ...user, courseRoles };
+}
+/** Recomputed from persisted User each request; independent of Canvas OAuth. */
+export async function projectImportedCoursePeople(user: User): Promise<User> {
+  return (await projectImportedCoursePeopleBatch([user]))[0];
+}
+/** Directory projection shares login semantics, with one snapshot/course read per batch. */
+export async function projectImportedCoursePeopleBatch<T extends User>(users: T[]): Promise<T[]> {
+  const puids = users.filter(u => !u.deactivatedAt).map(u => u.puid);
+  if (!puids.length) return users;
+  const snapshots = await coursePeopleImportsCol().find({ 'members.puid': puids.length === 1 ? puids[0] : { $in: puids } }).toArray();
+  if (!snapshots.length) return users;
+  const courses = await coursesCol().find({ _id: { $in: snapshots.map(s => s.courseId) } }).toArray();
+  const now = new Date();
+  return users.map(user => applyImportedRoles(user, snapshots, courses, now));
+}
+/** Discover dynamic memberships before the Admin query applies its row limit. */
+export async function importedRoleCandidatePuids(courseId?: ObjectId, role?: CourseRole): Promise<string[]> {
+  const snapshots = await coursePeopleImportsCol().find({ ...(courseId ? { courseId } : {}), ...(role ? { 'members.role': role } : {}) }).toArray();
+  if (!snapshots.length) return [];
+  const courses = await coursesCol().find({ _id: { $in: snapshots.map(s => s.courseId) } }).toArray();
+  const now = new Date();
+  return [...new Set(snapshots.flatMap(snapshot => {
+    const course = courses.find(c => c._id.equals(snapshot.courseId));
+    return course ? snapshot.members.filter(m => (!role || m.role === role) && importedRoleOpen(course, m.role, now)).map(m => m.puid) : [];
+  }))];
 }
 
 /** Membership readers must include imported users without copying grants into User. */

@@ -256,3 +256,11 @@ names before/after commit with paginated lists. See
 `docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
 `playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
 above describe historical entry points; the current Instructor entry is People.
+
+
+Admin `listUsers` batches the existing Canvas and people-import role projections
+before applying People decisions. Single-user login and directory batches share
+pure projection reducers; all exact PUID, publication, term, archive, deactivation
+and Canvas snapshot checks remain in effect. Dynamic candidate PUIDs participate
+in role/course search before the directory row limit. `syncedCourseRoles` is
+read-only display metadata for the course People management links.

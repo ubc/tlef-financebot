@@ -320,3 +320,14 @@ previews exact server-selected versions before add, supports pooled totals or
 per-topic quotas, and can request formula-based number changes without AI.
 Existing candidates and active historical run progress/cancellation remain usable.
 See `docs/design/exam-builder-v2/IMPLEMENTATION.md` for numeric admission limits.
+
+
+Admin User Directory displays `Student (CWL)` for released student affiliation
+and `Course Student` for effective course membership. The Student UI filter
+matches either without granting access; CSV export separates affiliations and
+course roles. Synced Gradebook/Canvas roles use the course People management
+link; manual role rows retain their existing Remove operation.
+
+Active accounts with no Admin/teaching grants use a Student workspace fallback
+badge when no CWL student affiliation or course role is present, matching the
+existing shell. The badge, local filter and export never change authorization.
