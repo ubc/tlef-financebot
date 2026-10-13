@@ -102,15 +102,21 @@ export async function deleteBuilderExam(courseId: ObjectId, examId: ObjectId, re
   return { deleted: true };
 }
 
-export async function addBankItems(courseId: ObjectId, examId: ObjectId, revision: number, refs: Array<{ questionId: string; versionId: string }>, by: string) {
+export async function addBankItems(courseId: ObjectId, examId: ObjectId, revision: number, refs: Array<{ questionId: string; versionId: string; mode?: 'original' | 'parameters' }>, by: string) {
   const exam = await getBuilderExam(courseId, examId); assertEditable(exam, revision);
   const items = [...exam.items];
   for (const ref of refs) {
-    if (items.some(i => i.source === 'bank' && i.questionId === ref.questionId)) continue;
+    if (items.some(i => i.questionId === ref.questionId)) continue;
     const { question, version } = await new QuestionVariantService().source(courseId, ref.questionId, ref.versionId);
+    if (question.state !== 'approved' || !question.currentVersionId.equals(version._id)) examError('Select the current approved version from Question Bank. Reload the bank if it changed.');
     await validateExamLos(courseId, question.loIds.map(id => id.toHexString()));
+    if (ref.mode === 'parameters') {
+      const variant = await new QuestionVariantService().parameters(courseId, ref.questionId, ref.versionId, randomUUID());
+      items.push({ ...variant, approval: { by, at: new Date().toISOString() } });
+      continue;
+    }
     const frozen = await freezeExamQuestion(version, ref.questionId);
-    items.push({ ...frozen, id: randomUUID(), source: 'bank', ...ref, familyId: (question.templateFamilyId ?? question._id).toHexString(), loIds: question.loIds.map(id => id.toHexString()), points: 1, minutes: version.type === 'mcq' ? 3 : 1, practiceExposure: true,
+    items.push({ ...frozen, id: randomUUID(), source: 'bank', questionId: ref.questionId, versionId: ref.versionId, familyId: (question.templateFamilyId ?? question._id).toHexString(), loIds: question.loIds.map(id => id.toHexString()), points: 1, minutes: version.type === 'mcq' ? 3 : 1, practiceExposure: true,
       ...(question.state === 'approved' && question.currentVersionId.equals(version._id) ? { approval: { by, at: new Date().toISOString() } } : {}) });
   }
   if (items.length > 100) examError('An exam can contain at most 100 questions.', 400);
@@ -158,7 +164,7 @@ export async function publishBuilderExam(courseId: ObjectId, examId: ObjectId, r
   await validateExamLos(courseId, exam.items.flatMap(i => i.loIds));
   if (await examBuildRunsCol().countDocuments({ courseId, examId, status: { $in: ['queued', 'running'] } })) examError('Finish or cancel active generation before publishing.');
   if (await assessmentAttemptsCol().countDocuments({ courseId, examId })) examError('Students have already started this exam. Duplicate it to publish another paper.');
-  for (const item of exam.items.filter(i => i.source === 'bank')) {
+  for (const item of exam.items.filter(i => i.source === 'bank' || i.source === 'variant')) {
     const question = await questionsCol().findOne({ _id: new ObjectId(item.questionId!), courseId });
     const version = await questionVersionsCol().findOne({ _id: new ObjectId(item.versionId!), questionId: new ObjectId(item.questionId!) });
     if (!question || !version || question.state === 'archived' || question.state === 'paused') examError('A pinned bank question is no longer available.');

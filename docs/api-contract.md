@@ -949,7 +949,9 @@ Instructor/Admin. TAs and Students cannot read drafts, candidates, runs or keys.
 | PUT | `/exam-builder/:examId/title` | `{revision,title}`; mutable display title, including published exams |
 | DELETE | `/exam-builder/:examId` | `{revision}`; typed confirmation is in the client; delete only without student attempts/active generation |
 | PUT | `/exam-builder/:examId/settings` | `{revision,settings}` |
-| POST | `/exam-builder/:examId/bank-items` | `{revision,questions:[{questionId,versionId}]}` |
+| GET | `/exam-builder/bank` | Current approved bank versions, active topic/LO links, fixed samples, `contentReady` and `blockedReason` |
+| POST | `/exam-builder/:examId/sample-bank` | Read-only preview: `{revision,mode,topics:[{topicId,count}],count,type?,difficulty?}` |
+| POST | `/exam-builder/:examId/bank-items` | `{revision,questions:[{questionId,versionId,mode?:'original'\|'parameters'}]}`; current approved versions only |
 | POST | `/exam-builder/:examId/candidate-items` | `{revision,candidateId}` |
 | PUT | `/exam-builder/:examId/items` | `{revision,items:[{id,points,minutes}]}`; order/remove only |
 | POST | `/exam-builder/:examId/approve` | `{revision,itemId}` |
@@ -969,6 +971,31 @@ Only MCQ and True/False are currently supported. Counts: up to 20 per batch,
 100 candidates and 100 paper items. Optional prompt interpretation calls the
 planner; generation requires explicit confirmation. Plans never expand the
 selected objectives/types. Conflicts block confirmation.
+
+The Instructor builder now starts from the existing bank: Browse bank is grouped
+and filtered by Topic, with optional LO, type and difficulty filters. Sample by
+topic supports a total across selected topics or a quota per topic. `mode` is
+`total|per-topic`; `count` is 1–100, and each topic count is 1–100. Selected topics
+must be distinct and active in this course. Sampling excludes nonservable versions
+and every bank/variant question already on the paper, and uses matching to fill
+per-topic quotas without duplicating multi-topic questions. Insufficient distinct
+supply returns 400; stale/locked papers return 409. A preview writes no records
+and returns `{revision,questions:[{questionId,versionId,topicId,stem,type,difficulty,
+supportsNumbers}]}`. The server's exact version/sample is shown even if the browser
+catalog is stale. Add selection uses those same pins and the existing paper CAS;
+changed/unapproved bank heads are refused. Random selection is fixed when added,
+not repeated separately for each student.
+
+`bank-items` parameter mode uses the existing formulas and supported parameter
+ranges, freezes a distinct verified draw, and inherits the approved source's
+answer roles. It does not call a planner, LLM, or generation worker. Formula-backed
+versions missing a current proof are reverified in memory using the existing
+multi-seed evaluator; immutable public versions are never rewritten. Static
+numerical questions without verifiable formulas and old script proofs stay
+blocked with an actionable reason. Approval is content review, not an arithmetic
+proof. Existing generation APIs/history remain compatible, but the Instructor
+builder no longer offers new/context generation controls. Old saved candidates
+and in-flight progress/cancellation remain accessible.
 
 Settings: title, kind (`midterm|final`), purpose (`formal|practice`), durationMinutes,
 opensAt/closesAt (UTC ISO instants), timeZone (IANA label), feedback

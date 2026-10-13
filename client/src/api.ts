@@ -3455,6 +3455,14 @@ export interface BuilderDetail {
   exam: BuilderExam; candidates: Array<{ _id: string; item: BuilderItem }>;
   runs: BuilderRun[];
 }
+export interface ExamBankQuestion extends BankQuestion { blockedReason?: string }
+export interface ExamBankSample {
+  revision: number;
+  questions: Array<{ questionId: string; versionId: string; topicId: string; stem: string; type: QuestionType; difficulty: Difficulty; supportsNumbers: boolean }>;
+}
+export function getExamBank(courseId: string): Promise<{ total: number; questions: ExamBankQuestion[] }> {
+  return examBuilderRequest(courseId, '/bank');
+}
 export function examBuilderRequest<T>(courseId: string, path = '', method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
   return request<T>(`/api/courses/${encodeURIComponent(courseId)}/exam-builder${path}`, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
 }

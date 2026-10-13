@@ -13,3 +13,31 @@
 .exam-builder .eb-danger { background: #9f342b; border-color: #9f342b; color: #fff; }
 .exam-builder .eb-danger:hover { background: #81281f; }
 .exam-builder .eb-catalog-actions button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Topic-first bank selection reuses the builder's compact course surfaces. */
+.exam-builder .eb-bank-detail-filter { padding: 0 20px 14px; display: flex; gap: 12px; align-items: end; justify-content: space-between; color: var(--muted); font-size: 10px; flex-wrap: wrap; }
+.exam-builder .eb-bank-detail-filter label { display: grid; gap: 6px; max-width: 360px; }
+.exam-builder .eb-bank-detail-filter select { width: 100%; }
+.exam-builder .eb-topic-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 20px; background: var(--eb-soft); border-top: 1px solid var(--eb-line); }
+.exam-builder .eb-topic-head h3 { margin: 0; font-size: 12px; }
+.exam-builder .eb-topic-head > div { display: flex; gap: 6px; }
+.exam-builder .eb-bank-row { padding-top: 13px; padding-bottom: 13px; }
+.exam-builder .eb-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--eb-line); color: var(--muted); font-size: 10px; }
+.exam-builder .eb-pagination > div { display: flex; align-items: center; gap: 9px; }
+.exam-builder .eb-topic-mix { border: 1px solid var(--eb-line); border-radius: 6px; overflow: hidden; }
+.exam-builder .eb-mix-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; }
+.exam-builder .eb-mix-row + .eb-mix-row { border-top: 1px solid var(--eb-line); }
+.exam-builder .eb-mix-row > label:first-child { display: flex; gap: 9px; align-items: start; }
+.exam-builder .eb-mix-row input[type=checkbox] { margin-top: 3px; flex-shrink: 0; }
+.exam-builder .eb-mix-row small { display: block; margin-top: 4px; }
+.exam-builder .eb-mix-quota { display: grid; gap: 5px; font-size: 10px; flex-shrink: 0; }
+.exam-builder .eb-mix-quota input { width: 75px; }
+.exam-builder .eb-number-toggle { display: flex; align-items: start; gap: 8px; margin: 18px 0 7px; }
+.exam-builder .eb-sample-question { padding: 14px 0; border-top: 1px solid var(--eb-line); }
+.exam-builder .eb-lo-coverage { color: var(--muted); font-size: 10px; margin: 14px 0; }
+.exam-builder .eb-lo-coverage p { display: flex; justify-content: space-between; gap: 10px; }
+@media (max-width: 520px) {
+  .exam-builder .eb-source-tabs { flex-wrap: wrap; }
+  .exam-builder .eb-pagination { align-items: start; flex-direction: column; }
+  .exam-builder .eb-bank-detail-filter label { max-width: 100%; width: 100%; }
+}

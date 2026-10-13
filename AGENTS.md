@@ -473,3 +473,15 @@ preserves question order, notes and student records without a database migration
 An explicit revision-guarded Instructor save can opt back into legacy Topic
 Practice. Both end states share compact status tables and fixed footer actions;
 unanswered questions remain accessible, and layout never depends on teaching mode.
+
+## Topic-first Exam Builder (2026-10-13)
+
+Exam Builder now uses approved current bank questions grouped by Topic, with
+optional LO filters, pagination and read-only random selection previews. Sampling
+supports a pooled total or per-topic quotas without duplicate questions across
+overlapping topics, excluding questions already in the paper. Preview pins are
+rechecked at add under revision CAS. Numerical variants redraw existing formulas
+without model calls; old formula proofs are checked in memory without rewriting
+approved bank versions. Unverifiable questions show reasons before selection.
+Historical private generation APIs, saved candidates and active-run cancellation
+remain compatible. See the Exam Builder implementation and API contract.

@@ -6,6 +6,8 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/exam-builder.service', () => Object.fromEntries(['listBuilderExams','createBuilderExam','builderDetail','saveExamSettings','renameBuilderExam','deleteBuilderExam','addBankItems','addExamCandidate','arrangeExamItems','approveExamItem','publishBuilderExam','reviseBuilderExam','duplicateBuilderExam','releaseExamResults'].map(name => [name, jest.fn(async () => ({}))])));
 jest.mock('../../server/src/services/exam-generation.service', () => Object.fromEntries(['planExamGeneration','confirmExamGeneration','cancelExamGeneration','retryExamGeneration'].map(name => [name, jest.fn(async () => ({}))])));
 jest.mock('../../server/src/services/assessment-attempts.service', () => Object.fromEntries(['listAssessments','startAssessment','assessmentState','answerAssessment','submitAssessment','assessmentResults'].map(name => [name, jest.fn(async () => ({}))])));
+jest.mock('../../server/src/services/exam-bank.service', () => ({ examBankCatalog: jest.fn(async () => ({ questions: [] })), sampleExamBank: jest.fn(async () => ({ questions: [] })) }));
+import { examBankCatalog, sampleExamBank } from '../../server/src/services/exam-bank.service';
 import { examBuilderRouter } from '../../server/src/routes/exam-builder.routes';
 import { publishBuilderExam, addBankItems, renameBuilderExam, deleteBuilderExam } from '../../server/src/services/exam-builder.service';
 import { assessmentState } from '../../server/src/services/assessment-attempts.service';
@@ -89,5 +91,24 @@ describe('exam catalog mutations', () => {
     expect((await request(app('instructor')).delete(path).send({ revision: 4 })).status).toBe(200);
     expect(deleteBuilderExam).toHaveBeenCalledWith(courseId, examId, 4);
     expect((await request(app('instructor')).delete(path).send({})).status).toBe(400);
+  });
+});
+
+
+describe('topic bank sampling guards and input boundary', () => {
+  const body = { revision: 2, mode: 'total', topics: [{ topicId: new ObjectId().toHexString(), count: 1 }], count: 10 };
+  test.each([undefined, 'student', 'ta'] as const)('denies %s bank catalog and sampling', async role => {
+    expect((await request(app(role)).get(`/api/courses/${courseId}/exam-builder/bank`)).status).toBe(role ? 403 : 401);
+    expect((await request(app(role)).post(`${path}/sample-bank`).send(body)).status).toBe(role ? 403 : 401);
+    expect(sampleExamBank).not.toHaveBeenCalled();
+  });
+  test('accepts instructor catalog and validated topic counts, never forwarded approvals', async () => {
+    expect((await request(app('instructor')).get(`/api/courses/${courseId}/exam-builder/bank`)).status).toBe(200);
+    expect(examBankCatalog).toHaveBeenCalledWith(courseId);
+    expect((await request(app('instructor')).post(`${path}/sample-bank`).send({ ...body, approval: 'forged' })).status).toBe(200);
+    expect(sampleExamBank).toHaveBeenCalledWith(courseId, examId, 2, body);
+    expect((await request(app('instructor')).post(`${path}/sample-bank`).send({ ...body, count: 101 })).status).toBe(400);
+    expect((await request(app('instructor')).post(`${path}/sample-bank`).send({ ...body, topics: [] })).status).toBe(400);
+    expect((await request(app('instructor', new ObjectId())).post(`${path}/sample-bank`).send(body)).status).toBe(403);
   });
 });

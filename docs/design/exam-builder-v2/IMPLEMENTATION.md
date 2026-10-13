@@ -66,3 +66,67 @@ production browser catalog flow and mobile dark rename dialog axe passed; build,
 typecheck, lint and diff whitespace checks passed. Local MongoDB smoke confirmed
 published lock, student-facing renamed title, stale-revision rejection, scoped
 record cleanup and started-exam protection. Synthetic records were removed.
+
+
+## Topic-first bank sampling (2026-10-13)
+
+- Replaced the main private-generation UI with Browse bank and Sample by topic.
+  Existing FinanceBot typography, green accent, surfaces, controls, rich-text
+  rendering and Questions / Review / Publish steps are retained.
+- Topic groups, topic/type/difficulty filters, optional LO selection, 15-row
+  pagination and topic coverage replace the LO-by-LO primary workflow.
+- Read-only server previews sample approved current versions by a pooled total or
+  per-topic quotas, excluding existing paper questions and blocked versions.
+  Matching handles overlapping topic memberships without duplicate questions or
+  greedy allocation shortages. Insufficient supply never silently reduces counts.
+- Previews show the exact server-selected version and stem. Explicit Add commits
+  the pins under the paper revision guard and rechecks approval/currentness.
+- Optional numerical variants reuse the saved parameter ranges and formulas,
+  freeze all numbers/answers/explanations, and need no model calls. Eight bounded
+  draws seek different values; constant ranges report an actionable failure.
+- Older formula proofs are checked in memory with the existing multi-seed
+  evaluator. Missing formula definitions, stale script proofs, bad placeholders,
+  invalid draws and colliding options remain blocked. No approved bank content
+  or historical student/exam records are migrated or rewritten.
+- Historical candidates and active-run cancellation/SSE remain available;
+  private generation APIs are retained for compatibility. Published exams and
+  student assessment timing, grading and feedback contracts stay immutable.
+
+Validation uses real compiled UI with isolated HTTP fixtures and deterministic
+service/route tests. No live provider calls or production record changes are
+needed. See `tests/unit/exam-bank.service.test.ts` and
+`tests/e2e/exam-builder.spec.ts`.
+
+
+Topic sampling verification:
+- Full Jest regression: 157 suites / 2,102 tests passed. Two additional sampler
+  boundary tests were then added; the final sampler suite passed all 10 tests.
+- Compiled production browser suite: 10 tests passed, including pooled sampling,
+  per-topic quota controls, preview/resample/add/publication, version-conflict
+  recovery, 32-row pagination, disabled blocked rows, numerical-mode requests,
+  historical SSE, assessment save/reload/submit, and light/dark scoped axe scans.
+- Build, typecheck, lint and diff whitespace checks passed.
+- Screenshots: `audit-results/exam-builder/light.png`, `sampling-light.png`,
+  `sampling-dark.png`. APIs were intercepted for browser checks; numerical and
+  selection behavior was exercised through the real service functions with
+  isolated storage fixtures. No live Mongo course mutation or AI call occurred.
+
+
+## Manual selection and approval acceptance (2026-10-13)
+
+- Focused backend regression: 7 suites / 122 tests passed. The added service
+  sequence selects a specific approved bank question, samples the remaining
+  pool, adds a verified numerical variant, and publishes directly without a
+  separate approval operation. Published parameter values and computed correct
+  answers remain exactly those shown in the frozen paper.
+- Browser acceptance: all 12 cases passed, including single-question + Add,
+  checkbox bulk selection, manual selection plus random top-up, no repeated
+  approval before publication, and the retained approval requirement for old
+  unapproved generated candidates. Two initial cases timed out connecting to
+  the temporary local static server before app load; both passed on retry.
+- The no-reapproval screenshot is `audit-results/exam-builder/bank-no-reapproval.png`.
+- Build, scoped lint and diff whitespace checks passed. Only tests and this
+  record were added for this follow-up; production behavior did not need repair.
+- Backend storage and browser HTTP responses use isolated fixtures. These checks
+  do not prove deployed database state or production identity configuration;
+  no live course records or provider APIs were used.

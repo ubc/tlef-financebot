@@ -311,3 +311,12 @@ Back to all courses link. Course identity remains in the topbar. Global links
 (My Courses, Canvas connection, Help, and Admin tools) appear outside a course;
 returning to the course list restores them. The return arrow remains accessible
 in the collapsed desktop rail. Student navigation is unchanged.
+
+
+Exam Builder's primary source controls are now Browse bank and Sample by topic.
+Approved bank rows are grouped by Topic with optional LO filters and 15-row
+pagination; topic coverage is primary and LO coverage is expandable. Sampling
+previews exact server-selected versions before add, supports pooled totals or
+per-topic quotas, and can request formula-based number changes without AI.
+Existing candidates and active historical run progress/cancellation remain usable.
+See `docs/design/exam-builder-v2/IMPLEMENTATION.md` for numeric admission limits.
