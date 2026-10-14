@@ -31,10 +31,10 @@ export function validateSettings(settings: ExamSettings, publishing = false): vo
   if (new Set(settings.accommodations.map(a => a.puid)).size !== settings.accommodations.length) examError('Each student can have only one accommodation.', 400);
   if (publishing && (!settings.opensAt || !settings.closesAt || !Number.isFinite(Date.parse(settings.opensAt)) || !Number.isFinite(Date.parse(settings.closesAt)) || Date.parse(settings.closesAt) <= Date.parse(settings.opensAt))) examError('Choose a valid opening and closing time.', 400);
 }
-export async function createBuilderExam(courseId: ObjectId, title: string, by: string) {
+export async function createBuilderExam(courseId: ObjectId, title: string, by: string, purpose: ExamSettings['purpose'] = 'formal') {
   await requireExamCourse(courseId);
   const now = new Date();
-  const exam: BuilderExam = { courseId, revision: 0, settings: { title, kind: 'midterm', purpose: 'formal', durationMinutes: 60, opensAt: now.toISOString(), closesAt: '', timeZone: 'America/Vancouver', feedback: 'after-close', shuffle: false, accommodations: [] }, items: [], createdBy: by, createdAt: now, updatedAt: now };
+  const exam: BuilderExam = { courseId, revision: 0, settings: { title, kind: 'midterm', purpose, durationMinutes: 60, opensAt: now.toISOString(), closesAt: '', timeZone: 'America/Vancouver', feedback: purpose === 'practice' ? 'immediate' : 'after-close', shuffle: false, accommodations: [] }, items: [], createdBy: by, createdAt: now, updatedAt: now };
   const { insertedId } = await builderExamsCol().insertOne(exam);
   return { ...exam, _id: insertedId };
 }
@@ -186,7 +186,7 @@ export async function reviseBuilderExam(courseId: ObjectId, examId: ObjectId, re
 }
 export async function duplicateBuilderExam(courseId: ObjectId, examId: ObjectId, by: string) {
   const exam = await getBuilderExam(courseId, examId);
-  const copy = await createBuilderExam(courseId, `${examTitle(exam)} (copy)`, by);
+  const copy = await createBuilderExam(courseId, `${examTitle(exam)} (copy)`, by, exam.settings.purpose);
   return writeExam(copy, { settings: { ...exam.settings, title: `${examTitle(exam)} (copy)`, opensAt: '', closesAt: '', accommodations: [] }, items: exam.items.map(i => ({ ...i, id: randomUUID() })) });
 }
 export async function releaseExamResults(courseId: ObjectId, examId: ObjectId) {

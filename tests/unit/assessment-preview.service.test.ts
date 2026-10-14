@@ -144,6 +144,29 @@ test('unrestricted results require submission before simulating full release', a
   await answerPreviewAssessment(courseId, attemptId, context, question.id, 'B', 0); await submitPreviewAssessment(courseId, attemptId, context);
   expect(await previewAssessmentResults(courseId, attemptId, context)).toMatchObject({ released: true, score: 7, maxScore: 7, simulatedRelease: true, message: expect.stringContaining('Preview only'), questions: [{ options: [{ correct: false }, { correct: true, explanation: 'SECRET ANSWER RATIONALE' }] }] });
 });
+test('restricted practice immediate feedback reveals score, answers and explanations only after submission', async () => {
+  exam.settings.purpose = 'practice'; exam.settings.feedback = 'immediate'; publish();
+  const state = await start(restricted), attemptId = new ObjectId(state.id);
+  expect(JSON.stringify(state)).not.toMatch(/SECRET|explanation|correct|score/);
+  await expect(previewAssessmentResults(courseId, attemptId, restricted)).rejects.toMatchObject({ status: 409 });
+  await answerPreviewAssessment(courseId, attemptId, restricted, question.id, 'B', 0); await submitPreviewAssessment(courseId, attemptId, restricted);
+  const results = await previewAssessmentResults(courseId, attemptId, restricted);
+  expect(results).toMatchObject({ released: true, score: 7, maxScore: 7, questions: [{ selectedKey: 'B', options: [{ correct: false }, { correct: true, explanation: 'SECRET ANSWER RATIONALE' }] }] });
+  expect(results).not.toHaveProperty('simulatedRelease');
+  expect(Date.parse(publication!.settings.closesAt)).toBeGreaterThan(Date.now());
+  expect(publication!.releasedAt).toBeUndefined();
+});
+test.each(['instructor', 'after-close'] as const)('restricted practice keeps explicit %s feedback withheld after submission', async feedback => {
+  exam.settings.purpose = 'practice'; exam.settings.feedback = feedback; publish();
+  const state = await start(restricted), attemptId = new ObjectId(state.id); await submitPreviewAssessment(courseId, attemptId, restricted);
+  const results = await previewAssessmentResults(courseId, attemptId, restricted);
+  expect(results.released).toBe(false); expect(JSON.stringify(results)).not.toMatch(/SECRET|score|questions/);
+});
+test('restricted formal publications reject immediate policy before a Preview attempt starts', async () => {
+  publish(); publication!.settings.feedback = 'immediate';
+  await expect(start(restricted)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('practice') });
+  expect(receipts).toHaveLength(0);
+});
 test('restricted results follow manual release of the exact pinned publication', async () => {
   publish(); const state = await start(restricted), attemptId = new ObjectId(state.id); await submitPreviewAssessment(courseId, attemptId, restricted);
   const withheld = await previewAssessmentResults(courseId, attemptId, restricted);

@@ -13,12 +13,13 @@ const options = [{ key: 'A', text: 'True' }, { key: 'B', text: 'False' }];
 interface Receipt { path: string; method: string; query: URLSearchParams; body: Record<string, unknown> }
 interface FixtureAttempt { id: string; sourceId: string; selectedKey: string | null; answerRevision: number; submitted: boolean; deadline: number; windowId?: string; windowExpiresAt?: string; submissionReason?: string }
 
-async function fixture(page: Page, setup: { restricted?: boolean; dark?: boolean; role?: 'instructor' | 'ta' | 'student'; source?: 'published' | 'draft'; active?: boolean; empty?: boolean; seconds?: number; serverOffset?: number; startAtHome?: boolean } = {}) {
+async function fixture(page: Page, setup: { restricted?: boolean; dark?: boolean; role?: 'instructor' | 'ta' | 'student'; source?: 'published' | 'draft'; active?: boolean; empty?: boolean; seconds?: number; serverOffset?: number; startAtHome?: boolean; purpose?: 'practice' | 'formal'; feedback?: 'immediate' | 'after-close' | 'instructor' } = {}) {
   const receipts: Receipt[] = [], unhandled: string[] = [], errors: string[] = [];
   const attempts = new Map<string, FixtureAttempt>();
   const sessions = new Map<string, string>();
   const role = setup.role ?? 'instructor';
   const restricted = Boolean(setup.restricted);
+  const purpose = setup.purpose ?? 'formal', feedback = setup.feedback ?? 'after-close';
   const base = `/preview/${restricted ? 'restricted/' : ''}course/${courseId}`;
   const serverTime = () => Date.now() + (setup.serverOffset ?? 0);
   let failAnswer = false, failSubmit = false, failList = false;
@@ -32,7 +33,7 @@ async function fixture(page: Page, setup: { restricted?: boolean; dark?: boolean
   await page.addInitScript(({ dark }) => localStorage.setItem('tlef-theme', dark ? 'dark' : 'light'), { dark: Boolean(setup.dark) });
   const state = (attempt: FixtureAttempt) => ({ id: attempt.id, title, submitted: attempt.submitted, deadline: new Date(attempt.deadline).toISOString(), serverTime: new Date(serverTime()).toISOString(), answerRevision: attempt.answerRevision,
     windowExpiresAt: attempt.windowExpiresAt, submissionReason: attempt.submissionReason,
-    questions: [{ id: itemId, stem, type: 'true-false', points: 1, selectedKey: attempt.selectedKey, options }], preview: true, previewMode: restricted ? 'restricted' : 'unrestricted' });
+    questions: [{ id: itemId, stem, type: 'true-false', points: 1, selectedKey: attempt.selectedKey, options }], ...(role !== 'student' ? { preview: true, previewMode: restricted ? 'restricted' : 'unrestricted' } : {}) });
   const sessionKey = (receipt: Receipt): string => role === 'student' ? 'live-student' : `${receipt.query.get('access') ?? 'unrestricted'}:${receipt.method === 'GET' ? receipt.query.get('previewSessionId') : receipt.body.previewSessionId}`;
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()), path = url.pathname, method = route.request().method();
@@ -59,7 +60,7 @@ async function fixture(page: Page, setup: { restricted?: boolean; dark?: boolean
       if (setup.empty) return respond([]);
       const attemptId = sessions.get(`${previewCourse}:${sessionKey(receipt)}`);
       const attempt = attemptId ? attempts.get(attemptId) : undefined;
-      return respond([{ id: sourceId, title, source: setup.source ?? 'published', kind: 'midterm', purpose: 'formal', questionCount: 1, durationMinutes: 60, opensAt, closesAt, timeZone: 'America/Vancouver', feedback: 'after-close', canStart: !restricted || active, ...(attempt ? { attemptId, submitted: attempt.submitted } : {}) }]);
+      return respond([{ id: sourceId, title, source: setup.source ?? 'published', kind: 'midterm', purpose, questionCount: 1, durationMinutes: 60, opensAt, closesAt, timeZone: 'America/Vancouver', feedback, canStart: !restricted || active, ...(attempt ? { attemptId, submitted: attempt.submitted } : {}) }]);
     }
     if (path === `${apiBase}assessments/${sourceId}/start`) {
       const id = `507f1f77bcf86cd7994390${31 + attempts.size}`;
@@ -89,7 +90,9 @@ async function fixture(page: Page, setup: { restricted?: boolean; dark?: boolean
       }
       if (path.endsWith('/results')) {
         if (!attempt.submitted) return route.fulfill({ status: 409, json: { error: 'Submit first.' } });
-        return respond(restricted ? { title, released: false, message: 'Results will be released after the exam closes.' } : { title, released: true, simulatedRelease: true, message: 'Preview-only answer release. Students wait until the exam closes.', score: attempt.selectedKey === 'B' ? 1 : 0, maxScore: 1, questions: [{ id: itemId, stem, points: 1, selectedKey: attempt.selectedKey, options: options.map(o => ({ ...o, correct: o.key === 'B', explanation: o.key === 'B' ? explanation : 'Incorrect.' })) }] });
+        const simulated = role !== 'student' && !restricted;
+        const released = simulated || (purpose === 'practice' && feedback === 'immediate') || (feedback === 'after-close' && serverTime() >= Date.parse(closesAt));
+        return respond(!released ? { title, released: false, message: feedback === 'after-close' ? 'Results will be released after the exam closes.' : 'Your Instructor will release the results.' } : { title, released: true, ...(simulated ? { simulatedRelease: true, message: 'Preview-only answer release. Students wait until the exam closes.' } : {}), score: attempt.selectedKey === 'B' ? 1 : 0, maxScore: 1, questions: [{ id: itemId, stem, points: 1, selectedKey: attempt.selectedKey, options: options.map(o => ({ ...o, correct: o.key === 'B', explanation: o.key === 'B' ? explanation : 'Incorrect.' })) }] });
       }
       if (serverTime() >= attempt.deadline) attempt.submitted = true;
       return respond(state(attempt));
@@ -229,6 +232,51 @@ test('live Student assessments continue to use live APIs without preview session
   await expect(page.getByRole('radio', { name: 'Option B' })).toBeVisible();
   await expect(page.getByText(/Isolated student preview/)).toHaveCount(0);
   await page.getByRole('radio', { name: 'Option B' }).check(); await expect(page.getByText('Answer saved.', { exact: true })).toBeVisible();
+  context.assertClean();
+});
+
+for (const role of ['student', 'instructor'] as const) test(`${role === 'student' ? 'live Student' : 'restricted Student Preview'} practice releases the full paper immediately after confirmed submission`, async ({ page }) => {
+  const context = await fixture(page, { role, restricted: role === 'instructor', active: true, purpose: 'practice', feedback: 'immediate' });
+  await page.getByRole('button', { name: role === 'student' ? 'Start exam' : 'Start preview', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Option A' })).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveClass(/assessment-in-progress/);
+  await page.getByRole('radio', { name: 'Option A' }).check();
+  await expect(page.getByText('Answer saved.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Reload saved answers', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Option A' })).toBeChecked();
+  await expect(page.locator('.correct')).toHaveCount(0);
+  await expect(page.getByText(explanation)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /points$/ })).toHaveCount(0);
+  expect(context.receipts.filter(receipt => receipt.path.endsWith('/results'))).toHaveLength(0);
+
+  context.failSubmit();
+  await page.getByRole('button', { name: 'Submit exam', exact: true }).click();
+  await expect(page.getByText('Please retry submitting your exam.')).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveClass(/assessment-in-progress/);
+  await expect(page.getByText(explanation)).toHaveCount(0);
+  expect(context.receipts.filter(receipt => receipt.path.endsWith('/results'))).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Submit exam', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '0 / 1 points' })).toBeVisible();
+  await expect(page.locator('article.eb-review')).toHaveCount(1);
+  await expect(page.getByText('A · Your answer', { exact: true })).toBeVisible();
+  await expect(page.locator('.eb-option.correct')).toHaveCount(1);
+  await expect(page.getByText('B · Correct', { exact: true })).toBeVisible();
+  await expect(page.getByText(explanation)).toBeVisible();
+  await expect(page.locator('.assessment-release-note')).toHaveCount(0);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(page.locator('.app-shell')).not.toHaveClass(/assessment-in-progress/);
+  const submission = [...context.attempts.values()][0];
+  expect(submission.submitted).toBe(true);
+  expect(submission.selectedKey).toBe('A');
+  expect(context.receipts.filter(receipt => receipt.path.endsWith('/submit'))).toHaveLength(2);
+
+  await page.getByRole('link', { name: '← Back to assessments', exact: true }).click();
+  await page.getByRole('button', { name: 'View submission', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '0 / 1 points' })).toBeVisible();
+  await expect(page.getByText(explanation)).toBeVisible();
+  expect(context.receipts.filter(receipt => receipt.path.endsWith('/start'))).toHaveLength(1);
+  expect(context.attempts.size).toBe(1);
   context.assertClean();
 });
 

@@ -76,7 +76,7 @@ examBuilderRouter.get(`${detail}/events`, validate({ params: exam }), ensureCour
 });
 
 examBuilderRouter.get(base, validate({ params: course }), ensureCourseInstructor(), async (req, res) => { res.json(await builder.listBuilderExams(id(req.params.courseId))); });
-examBuilderRouter.post(base, validate({ params: course }), ensureCourseInstructor(), validate({ body: z.object({ title: z.string().trim().min(1).max(150) }) }), async (req, res) => { res.status(201).json(await builder.createBuilderExam(id(req.params.courseId), req.body.title, req.user!.puid)); });
+examBuilderRouter.post(base, validate({ params: course }), ensureCourseInstructor(), validate({ body: z.object({ title: z.string().trim().min(1).max(150), purpose: z.enum(['formal', 'practice']).optional() }) }), async (req, res) => { res.status(201).json(await builder.createBuilderExam(id(req.params.courseId), req.body.title, req.user!.puid, req.body.purpose)); });
 examBuilderRouter.get(`${base}/bank`, validate({ params: course }), ensureCourseInstructor(), async (req, res) => { res.json(await examBankCatalog(id(req.params.courseId))); });
 examBuilderRouter.get(detail, validate({ params: exam }), ensureCourseInstructor(), async (req, res) => { res.json(await builder.builderDetail(id(req.params.courseId), id(req.params.examId))); });
 examBuilderRouter.put(`${detail}/title`, validate({ params: exam }), ensureCourseInstructor(), validate({ body: revision.extend({ title: z.string().trim().min(1).max(150) }) }), async (req, res) => { res.json(await builder.renameBuilderExam(id(req.params.courseId), id(req.params.examId), req.body.revision, req.body.title)); });

@@ -987,7 +987,7 @@ Instructor/Admin. TAs and Students cannot read drafts, candidates, runs or keys.
 
 | Method | Path | Body / result |
 | --- | --- | --- |
-| GET / POST | `/exam-builder` | List / create with `{title}` |
+| GET / POST | `/exam-builder` | List / create with `{title,purpose?:'formal'\|'practice'}`; omitted purpose defaults to formal |
 | GET | `/exam-builder/:examId` | `{exam,candidates,runs}`; Instructor only |
 | PUT | `/exam-builder/:examId/title` | `{revision,title}`; mutable display title, including published exams |
 | DELETE | `/exam-builder/:examId` | `{revision}`; typed confirmation is in the client; delete only without student attempts/active generation |
@@ -1043,10 +1043,17 @@ and in-flight progress/cancellation remain accessible.
 Settings: title, kind (`midterm|final`), purpose (`formal|practice`), durationMinutes,
 opensAt/closesAt (UTC ISO instants), timeZone (IANA label), feedback
 (`instructor|after-close|immediate`), shuffle, accommodations (`{puid,extraMinutes}[]`).
-Immediate feedback is practice-only. New papers default to `after-close` feedback
-and creation-time `opensAt`; closing time still needs an Instructor choice.
-Existing explicit settings and published snapshots remain unchanged. Review &
-publish automatically validates and saves the draft settings before confirmation.
+Immediate feedback is practice-only. New formal papers default to `after-close`;
+new practice quizzes default to `immediate`, exposing score, correct answers and
+explanations only after submission. Both use creation-time `opensAt`; closing
+time still needs an Instructor choice. The Instructor chooses Practice quiz or
+Formal exam when creating a paper or configuring publication. An explicit switch
+to Practice quiz selects immediate feedback; delayed practice release remains
+selectable. Switching immediate practice feedback to Formal exam selects
+`after-close`. Existing explicit settings and published snapshots remain unchanged.
+Both purposes retain one timed, resumable attempt and separate assessment records.
+Review & publish automatically validates and saves the draft settings before
+confirmation.
 Failed/stale saves retain inputs and prevent publication; confirmation pins the
 returned revision. Unchanged local datetime fields retain their original seconds.
 Optimistic revisions return 409 for stale writes. Publish requires checked,

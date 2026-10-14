@@ -13,6 +13,30 @@ This implements the approved design in README.md. Work is additive to the legacy
 
 Formal and practice assessments remain isolated from legacy practice analytics, mastery and Review Book. An optional prompt invokes the planner when Preview generation plan is clicked. Question generation starts only after explicit plan confirmation. Existing templates remain available as Legacy Exam Prep.
 
+## Practice quiz feedback (2026-10-14)
+
+- Creation and publication expose readable Practice quiz / Formal exam choices.
+  New practice quizzes default to score, correct answers and explanations after
+  submission. Legacy title-only creation still defaults to a formal exam with
+  after-close feedback.
+- Switching an editable formal paper to Practice quiz selects immediate
+  feedback; the Instructor can then choose after-close or manual release.
+  Switching immediate practice feedback to Formal exam selects after-close.
+  Loaded explicit policies and immutable publications remain unchanged.
+- Live students and restricted Student Preview use the existing practice-only
+  release gate and require submission before results. The active sitting contains
+  no answer roles or explanations. Both purposes retain one timed, resumable
+  attempt and keep assessment records separate from Topic Practice and Review Book.
+
+Verification: 102 focused service/HTTP tests passed, with all 75 compiled
+Builder/assessment browser cases passing after a test locator correction. Build,
+typecheck, scoped lint and diff whitespace checks passed. Coverage includes
+practice creation, purpose transitions, explicit delayed policies, failed saves,
+live/restricted Preview submission and mobile accessibility. Browser APIs and
+backend storage use isolated fixtures; no live course records or providers were
+used. Publication review screenshot:
+`audit-results/exam-builder/practice-publication-review.png`.
+
 
 ## Verification
 

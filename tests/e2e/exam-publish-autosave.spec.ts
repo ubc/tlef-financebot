@@ -5,9 +5,11 @@ const courseId = '507f1f77bcf86cd799439011', examId = '507f1f77bcf86cd799439022'
 const base = `/api/courses/${courseId}/exam-builder/${examId}`;
 const settings = () => ({ title: 'Fall midterm', kind: 'midterm', purpose: 'formal', durationMinutes: 60, opensAt: '2026-10-13T19:00:00.000Z', closesAt: '2026-10-13T21:00:00.000Z', timeZone: 'America/Vancouver', feedback: 'instructor', shuffle: false, accommodations: [] as Array<{ puid: string; extraMinutes: number }> });
 
-async function fixture(page: Page, options: { blankOpening?: boolean; published?: boolean; dark?: boolean } = {}) {
+async function fixture(page: Page, options: { blankOpening?: boolean; published?: boolean; dark?: boolean; purpose?: 'formal' | 'practice'; feedback?: 'instructor' | 'after-close' | 'immediate' } = {}) {
   const exam = { _id: examId, courseId, revision: 4, settings: settings(), items: [{ id: '5eae1bc4-b4ab-4414-a0cf-10085511515a', source: 'bank', familyId: 'market-risk', loIds: [loId], type: 'true-false', difficulty: 'easy', stem: 'Diversification removes all market risk.', options: [{ key: 'A', text: 'True', role: 'common-misconception', explanation: 'Market risk remains.' }, { key: 'B', text: 'False', role: 'correct', explanation: 'Market risk remains.' }], points: 1, minutes: 1, validated: true, practiceExposure: true, approval: { by: 'teacher', at: '2026-10-12T00:00:00.000Z' } }], createdAt: '2026-10-12T00:00:00.000Z', updatedAt: '2026-10-12T00:00:00.000Z', createdBy: 'teacher', publishedRevision: options.published ? 4 : undefined, publicationId: options.published ? '507f1f77bcf86cd799439099' : undefined };
   if (options.blankOpening) exam.settings.opensAt = '';
+  if (options.purpose) exam.settings.purpose = options.purpose;
+  if (options.feedback) exam.settings.feedback = options.feedback;
   const state = { exam, failNextSave: false, holdSave: undefined as Promise<void> | undefined, holdPublish: undefined as Promise<void> | undefined, calls: [] as Array<{ path: string; body: { revision?: number; settings?: ReturnType<typeof settings> } }>, unhandled: [] as string[], errors: [] as string[] };
   page.on('pageerror', error => state.errors.push(error.message));
   await page.addInitScript(() => {
@@ -85,6 +87,97 @@ test('failed save retains edits, blocks publication and allows retry', async ({ 
   await expect(page.getByRole('dialog')).toBeVisible();
   expect(state.calls.filter(call => call.path.endsWith('/settings'))).toHaveLength(2);
   expect(state.calls.filter(call => call.path.endsWith('/publish'))).toHaveLength(0); clean(state);
+});
+
+test('changing assessment purpose defaults practice to immediate review and formal to after close', async ({ page }) => {
+  const state = await fixture(page);
+  const purpose = page.getByRole('combobox', { name: 'Assessment purpose', exact: true });
+  const feedback = page.getByLabel('Score and answer release');
+  await expect(purpose).toHaveValue('formal');
+  await expect(purpose.getByRole('option', { name: 'Formal exam', exact: true })).toHaveCount(1);
+  await expect(feedback.getByRole('option', { name: 'Immediately after submission' })).toHaveCount(0);
+  // Native change has not fired for these focused values when purpose changes.
+  await page.getByLabel('Exam title', { exact: true }).evaluate((node: HTMLInputElement) => node.value = 'Practice risk quiz');
+  await page.getByLabel('Duration (minutes)').evaluate((node: HTMLInputElement) => node.value = '35');
+  await purpose.selectOption({ label: 'Practice quiz' });
+  await expect(purpose).toBeFocused();
+  await expect(feedback).toHaveValue('immediate');
+  await expect(page.getByLabel('Exam title', { exact: true })).toHaveValue('Practice risk quiz');
+  await expect(page.getByLabel('Duration (minutes)')).toHaveValue('35');
+  await expect(page.locator('[data-feedback-note]')).toContainText('immediately after submitting');
+  await expect(page.locator('[data-feedback-note]')).toContainText('one timed, resumable attempt');
+  await purpose.selectOption({ label: 'Formal exam' });
+  await expect(feedback).toHaveValue('after-close');
+  await expect(feedback.getByRole('option', { name: 'Immediately after submission' })).toHaveCount(0);
+  await purpose.selectOption('practice');
+  await feedback.selectOption('instructor');
+  await purpose.selectOption('formal');
+  await expect(feedback).toHaveValue('instructor');
+  await purpose.selectOption('practice');
+  await expect(feedback).toHaveValue('immediate');
+  await page.getByRole('button', { name: '2 Review paper', exact: true }).click();
+  await page.getByRole('button', { name: '3 Publish', exact: true }).click();
+  await expect(purpose).toHaveValue('practice');
+  await expect(feedback).toHaveValue('immediate');
+  await expect(page.getByLabel('Exam title', { exact: true })).toHaveValue('Practice risk quiz');
+  expect(state.calls).toEqual([]); clean(state);
+});
+
+test('practice immediate settings survive failed save and publish with readable release details', async ({ page }) => {
+  const state = await fixture(page); state.failNextSave = true;
+  await page.getByLabel('Assessment purpose').selectOption('practice');
+  await page.getByLabel('Exam title', { exact: true }).fill('Practice with feedback');
+  await page.getByRole('button', { name: 'Review & publish' }).click();
+  await expect(page.getByRole('alert')).toContainText('Settings could not be saved');
+  await expect(page.getByLabel('Assessment purpose')).toHaveValue('practice');
+  await expect(page.getByLabel('Score and answer release')).toHaveValue('immediate');
+  expect(state.exam.settings).toMatchObject({ purpose: 'formal', feedback: 'instructor' });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Review & publish' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Practice quiz');
+  await expect(page.getByRole('dialog')).toContainText('Immediately after submission');
+  await expect(page.getByRole('dialog')).toContainText('correct answers and explanations immediately after submitting');
+  await page.screenshot({ path: 'audit-results/exam-builder/practice-publication-review.png', fullPage: true });
+  expect(state.exam.settings).toMatchObject({ title: 'Practice with feedback', purpose: 'practice', feedback: 'immediate' });
+  await page.getByRole('button', { name: 'Publish exam', exact: true }).click();
+  await expect(page.locator('.eb-content')).toContainText('Score and answer release: Immediately after submission.');
+  await expect(page.locator('.eb-content')).toContainText('Practice quiz');
+  expect(state.calls.filter(call => call.path.endsWith('/settings'))).toHaveLength(2);
+  expect(state.calls.find(call => call.path.endsWith('/publish'))?.body.revision).toBe(5); clean(state);
+});
+
+for (const initialFeedback of ['instructor', 'after-close'] as const) {
+  test(`loaded practice keeps ${initialFeedback} release through reload and permits delayed override`, async ({ page }) => {
+    const state = await fixture(page, { purpose: 'practice', feedback: initialFeedback });
+    const feedback = page.getByLabel('Score and answer release');
+    await expect(feedback).toHaveValue(initialFeedback);
+    await page.getByRole('button', { name: 'Reload', exact: true }).click();
+    await expect(feedback).toHaveValue(initialFeedback);
+    await page.getByRole('button', { name: '2 Review paper', exact: true }).click();
+    await page.getByRole('button', { name: '3 Publish', exact: true }).click();
+    await expect(feedback).toHaveValue(initialFeedback);
+    expect(state.calls).toEqual([]);
+    const selectedFeedback = initialFeedback === 'instructor' ? 'after-close' : 'instructor';
+    await feedback.selectOption(selectedFeedback);
+    await page.getByRole('button', { name: '2 Review paper', exact: true }).click();
+    await page.getByRole('button', { name: '3 Publish', exact: true }).click();
+    await expect(feedback).toHaveValue(selectedFeedback);
+    await expect(page.locator('[data-feedback-note]')).not.toContainText('immediately');
+    await page.getByRole('button', { name: 'Review & publish' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    expect(state.calls[0].body.settings).toMatchObject({ purpose: 'practice', feedback: selectedFeedback });
+    expect(state.calls).toHaveLength(1); clean(state);
+  });
+}
+
+test('purpose and focused settings are captured once at the publication boundary', async ({ page }) => {
+  const state = await fixture(page);
+  await page.getByLabel('Assessment purpose').evaluate((node: HTMLSelectElement) => node.value = 'practice');
+  await page.getByLabel('Exam title', { exact: true }).evaluate((node: HTMLInputElement) => node.value = 'Captured at review');
+  await page.getByRole('button', { name: 'Review & publish' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Immediately after submission');
+  expect(state.calls[0].body.settings).toMatchObject({ purpose: 'practice', feedback: 'immediate', title: 'Captured at review' });
+  expect(state.calls).toHaveLength(1); clean(state);
 });
 
 test('invalid availability, duration and accommodations remain editable before any save', async ({ page }) => {

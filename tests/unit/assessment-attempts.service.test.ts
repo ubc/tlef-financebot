@@ -57,6 +57,27 @@ test('formal immediate feedback cannot bypass release; scheduled and manual rele
   publication.settings.closesAt = new Date(Date.now() - 1000).toISOString(); expect(answersReleased(publication)).toBe(true);
   publication.settings.feedback = 'instructor'; publication.releasedAt = new Date(); expect(answersReleased(publication)).toBe(true);
 });
+test('practice immediate feedback returns score, answers and explanations only after submission', async () => {
+  publication.settings.purpose = 'practice'; publication.settings.feedback = 'immediate';
+  expect(JSON.stringify(await assessmentState(courseId, attemptId, 'learner'))).not.toMatch(/SECRET|explanation|correct|score/);
+  await expect(assessmentResults(courseId, attemptId, 'learner')).rejects.toMatchObject({ status: 409 });
+  await submitAssessment(courseId, attemptId, 'learner');
+  expect(await assessmentResults(courseId, attemptId, 'learner')).toMatchObject({ released: true, score: 7, maxScore: 7, questions: [{ selectedKey: 'B', options: [{ correct: false, explanation: 'Wrong explanation' }, { correct: true, explanation: 'SECRET ANSWER RATIONALE' }] }] });
+  expect(Date.parse(publication.settings.closesAt)).toBeGreaterThan(Date.now());
+  expect(publication.releasedAt).toBeUndefined();
+});
+test.each(['instructor', 'after-close'] as const)('practice may retain %s release and withhold submitted results', async feedback => {
+  publication.settings.purpose = 'practice'; publication.settings.feedback = feedback;
+  await submitAssessment(courseId, attemptId, 'learner');
+  const results = await assessmentResults(courseId, attemptId, 'learner');
+  expect(results.released).toBe(false);
+  expect(JSON.stringify(results)).not.toMatch(/SECRET|score|questions/);
+});
+test('formal immediate policy cannot expose submitted answers even in a stored publication', async () => {
+  publication.settings.feedback = 'immediate';
+  await submitAssessment(courseId, attemptId, 'learner');
+  expect(await assessmentResults(courseId, attemptId, 'learner')).toMatchObject({ released: false });
+});
 
 
 test('student sitting and withheld results use the renamed exam title', async () => {

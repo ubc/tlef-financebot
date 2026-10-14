@@ -12,6 +12,7 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
   const candidates: Array<{ _id: string; item: typeof item }> = [];
   const runs: Array<{ _id: string; status: string; interpretation: string; conflicts: string[]; cells: Array<{ id: string; loId: string; type: string; difficulty: string }>; completed: string[]; failures: unknown[] }> = [];
   const calls: string[] = [], unhandled: string[] = [], errors: string[] = [];
+  const creations: Array<{ title: string; purpose: 'formal' | 'practice' }> = [];
   let submitted = false, answer: string | null = null, answerRevision = 0, deleted = false, windowId = '';
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
@@ -49,6 +50,12 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
       if ((body.mode === 'per-topic' ? body.topics.reduce((n: number, t: { count: number }) => n + t.count, 0) : body.count) > 1) return route.fulfill({ status: 400, json: { error: 'Not enough distinct eligible questions for this topic mix.' } });
       return route.fulfill({ json: { revision: exam.revision, questions: [{ questionId, versionId, topicId: loId, stem: question.current.stem, type: item.type, difficulty: item.difficulty, supportsNumbers: false }] } });
     }
+    if (path === catalog && method === 'POST') {
+      creations.push(body);
+      settings.title = body.title; settings.purpose = body.purpose;
+      settings.feedback = body.purpose === 'practice' ? 'immediate' : 'after-close';
+      return route.fulfill({ json: exam });
+    }
     if (path === catalog) return route.fulfill({ json: deleted ? [] : [exam] });
     if (path === `${base}/title`) { exam.displayTitle = body.title; exam.revision++; if (exam.publishedRevision === exam.revision - 1) exam.publishedRevision = exam.revision; return route.fulfill({ json: exam }); }
     if (path === base && method === 'DELETE') { deleted = true; return route.fulfill({ json: { deleted: true } }); }
@@ -73,8 +80,33 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
   });
   await page.goto(role === 'instructor' ? `/#/instructor/course/${courseId}/exam-builder/${examId}` : `/#/course/${courseId}/assessment/${examId}`);
   await expect(page.getByRole('heading', { name: 'Fall midterm', exact: true }).first()).toBeVisible();
-  return { calls, exam, candidates, runs, get windowId() { return windowId; }, assertClean: () => { expect(unhandled).toEqual([]); expect(errors).toEqual([]); } };
+  return { calls, exam, candidates, runs, creations, get windowId() { return windowId; }, assertClean: () => { expect(unhandled).toEqual([]); expect(errors).toEqual([]); } };
 }
+
+for (const purpose of ['formal', 'practice'] as const) {
+  test(`Instructor chooses ${purpose} assessment purpose when creating a draft`, async ({ page }) => {
+    const state = await fixture(page);
+    await page.getByRole('link', { name: 'All exams' }).click();
+    await expect(page.getByLabel('Assessment purpose')).toHaveValue('formal');
+    await expect(page.getByLabel('Assessment purpose').getByRole('option', { name: 'Practice quiz', exact: true })).toHaveCount(1);
+    await expect(page.getByLabel('Assessment purpose').getByRole('option', { name: 'Formal exam', exact: true })).toHaveCount(1);
+    const title = purpose === 'practice' ? 'Risk practice quiz' : 'Formal risk midterm';
+    await page.getByLabel('Exam title', { exact: true }).fill(title);
+    await page.getByLabel('Assessment purpose').selectOption(purpose);
+    await page.setViewportSize({ width: 390, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect((await new AxeBuilder({ page }).include('.exam-builder').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+    await page.getByRole('button', { name: 'Create exam', exact: true }).click();
+    await expect(page.locator('.eb-title')).toHaveText(title);
+    expect(state.creations).toEqual([{ title, purpose }]);
+    await page.getByRole('button', { name: '3 Publish', exact: true }).click();
+    await expect(page.getByLabel('Assessment purpose')).toHaveValue(purpose);
+    await expect(page.getByLabel('Score and answer release')).toHaveValue(purpose === 'practice' ? 'immediate' : 'after-close');
+    await expect(page.locator('[data-feedback-note]')).toContainText(purpose === 'practice' ? 'immediately after submitting' : 'after the exam closes');
+    state.assertClean();
+  });
+}
+
 test('Instructor samples existing bank questions by topic, previews and publishes without generation', async ({ page }) => {
   const state = await fixture(page);
   await expect(page.getByRole('button', { name: 'Generate new', exact: true })).toHaveCount(0);

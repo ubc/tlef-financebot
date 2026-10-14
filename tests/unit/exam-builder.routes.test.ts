@@ -9,7 +9,7 @@ jest.mock('../../server/src/services/assessment-attempts.service', () => Object.
 jest.mock('../../server/src/services/exam-bank.service', () => ({ examBankCatalog: jest.fn(async () => ({ questions: [] })), sampleExamBank: jest.fn(async () => ({ questions: [] })) }));
 import { examBankCatalog, sampleExamBank } from '../../server/src/services/exam-bank.service';
 import { examBuilderRouter } from '../../server/src/routes/exam-builder.routes';
-import { publishBuilderExam, addBankItems, renameBuilderExam, deleteBuilderExam } from '../../server/src/services/exam-builder.service';
+import { publishBuilderExam, addBankItems, renameBuilderExam, deleteBuilderExam, createBuilderExam } from '../../server/src/services/exam-builder.service';
 import { assessmentState } from '../../server/src/services/assessment-attempts.service';
 const courseId = new ObjectId(), examId = new ObjectId(), attemptId = new ObjectId();
 function app(role?: 'student' | 'ta' | 'instructor', ownCourse = courseId) {
@@ -22,6 +22,22 @@ function app(role?: 'student' | 'ta' | 'instructor', ownCourse = courseId) {
 }
 const path = `/api/courses/${courseId}/exam-builder/${examId}`;
 describe('Exam Builder course boundaries', () => {
+  test.each([undefined, 'student', 'ta'] as const)('denies %s exam creation', async role => {
+    const response = await request(app(role)).post(`/api/courses/${courseId}/exam-builder`).send({ title: 'Practice quiz', purpose: 'practice' });
+    expect(response.status).toBe(role ? 403 : 401);
+    expect(createBuilderExam).not.toHaveBeenCalled();
+  });
+  test.each([undefined, 'formal', 'practice'] as const)('accepts the optional %s purpose when creating an exam', async purpose => {
+    const response = await request(app('instructor')).post(`/api/courses/${courseId}/exam-builder`).send({ title: 'New paper', ...(purpose ? { purpose } : {}), feedback: 'forged' });
+    expect(response.status).toBe(201);
+    expect(createBuilderExam).toHaveBeenCalledWith(courseId, 'New paper', 'actor', purpose);
+  });
+  test('invalid creation purposes and foreign-course Instructors are rejected', async () => {
+    const base = `/api/courses/${courseId}/exam-builder`;
+    expect((await request(app('instructor')).post(base).send({ title: 'New paper', purpose: 'quiz' })).status).toBe(400);
+    expect((await request(app('instructor', new ObjectId())).post(base).send({ title: 'Practice quiz', purpose: 'practice' })).status).toBe(403);
+    expect(createBuilderExam).not.toHaveBeenCalled();
+  });
   test.each([undefined, 'student', 'ta'] as const)('denies %s authoring and final decisions', async role => {
     for (const suffix of ['publish', 'approve', 'plans', 'release-results']) {
       const response = await request(app(role)).post(`${path}/${suffix}`).send({ revision: 0 });

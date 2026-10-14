@@ -69,7 +69,7 @@ async function fixture(page: Page, setup: { mode?: 'preview' | 'live'; dark?: bo
   page.on('pageerror', error => errors.push(error.message));
   page.on('dialog', dialog => dialog.accept());
   await page.addInitScript(dark => localStorage.setItem('tlef-theme', dark ? 'dark' : 'light'), Boolean(setup.dark));
-  await page.context().route('http://127.0.0.1:6118/api/**', async route => {
+  await page.context().route('**/api/**', async route => {
     const url = new URL(route.request().url()), path = url.pathname, method = route.request().method();
     const body = method === 'GET' ? {} : route.request().postDataJSON() ?? {};
     const receipt = { path, method, query: url.searchParams, body }; receipts.push(receipt);

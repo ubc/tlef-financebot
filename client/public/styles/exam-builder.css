@@ -13,6 +13,10 @@
 .exam-builder .eb-danger { background: #9f342b; border-color: #9f342b; color: #fff; }
 .exam-builder .eb-danger:hover { background: #81281f; }
 .exam-builder .eb-catalog-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.exam-builder .eb-create { flex-wrap: wrap; }
+.exam-builder .eb-create label { min-width: 180px; }
+.exam-builder .eb-create select { width: 100%; }
+.exam-builder #eb-create-purpose-help { margin-top: 10px; }
 
 /* Topic-first bank selection reuses the builder's compact course surfaces. */
 .exam-builder .eb-bank-detail-filter { padding: 0 20px 14px; display: flex; gap: 12px; align-items: end; justify-content: space-between; color: var(--muted); font-size: 10px; flex-wrap: wrap; }

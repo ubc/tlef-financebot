@@ -3,7 +3,7 @@ import type { BuilderExam, PaperQuestion } from '../../server/src/types/exam-bui
 jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest.fn(async () => 0) }));
 jest.mock('../../server/src/components/mongodb/collections', () => Object.fromEntries(['builderExamsCol','examCandidatesCol','examBuildRunsCol','examPublicationsCol','assessmentAttemptsCol','coursesCol','losCol','questionsCol','questionVersionsCol'].map(name => [name, jest.fn()])));
 import { builderExamsCol, examBuildRunsCol, examPublicationsCol, examCandidatesCol, assessmentAttemptsCol, coursesCol, losCol } from '../../server/src/components/mongodb/collections';
-import { assertEditable, examReadiness, publishBuilderExam, validateExamLos, validateSettings, renameBuilderExam, deleteBuilderExam, createBuilderExam, saveExamSettings } from '../../server/src/services/exam-builder.service';
+import { assertEditable, examReadiness, publishBuilderExam, validateExamLos, validateSettings, renameBuilderExam, deleteBuilderExam, createBuilderExam, saveExamSettings, duplicateBuilderExam } from '../../server/src/services/exam-builder.service';
 import { cancelJobsByDataIds } from '../../server/src/components/jobs';
 import { freezeExamQuestion } from '../../server/src/services/question-variant.service';
 const courseId = new ObjectId(), examId = new ObjectId(), loId = new ObjectId();
@@ -102,8 +102,28 @@ describe('publication setting defaults and saves', () => {
     const created = await createBuilderExam(courseId, 'New exam', 'teacher');
     expect(Date.parse(created.settings.opensAt)).toBeGreaterThanOrEqual(before);
     expect(created.settings.opensAt).toBe(created.createdAt.toISOString());
-    expect(created.settings).toMatchObject({ feedback: 'after-close', closesAt: '', timeZone: 'America/Vancouver' });
+    expect(created.settings).toMatchObject({ purpose: 'formal', feedback: 'after-close', closesAt: '', timeZone: 'America/Vancouver' });
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ settings: created.settings }));
+  });
+  test('a new practice quiz defaults to score and answer review immediately after submission', async () => {
+    const insert = jest.fn(async () => ({ insertedId: examId }));
+    jest.mocked(builderExamsCol).mockReturnValue({ insertOne: insert } as never);
+    const created = await createBuilderExam(courseId, 'Practice quiz', 'teacher', 'practice');
+    expect(created.settings).toMatchObject({ purpose: 'practice', feedback: 'immediate' });
+    expect(() => validateSettings(created.settings)).not.toThrow();
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ settings: created.settings }));
+  });
+  test.each(['instructor', 'after-close', 'immediate'] as const)('saving practice settings preserves an explicit %s release policy', async feedback => {
+    const settings = { ...exam.settings, purpose: 'practice' as const, feedback };
+    await saveExamSettings(courseId, examId, exam.revision, settings);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ revision: 2 }), expect.objectContaining({ $set: expect.objectContaining({ settings }) }), { returnDocument: 'after' });
+  });
+  test.each(['instructor', 'after-close', 'immediate'] as const)('duplicating a practice quiz preserves its explicit %s release policy', async feedback => {
+    exam.settings = { ...exam.settings, purpose: 'practice', feedback };
+    const copyId = new ObjectId();
+    jest.mocked(builderExamsCol).mockReturnValue({ findOne: jest.fn(async () => exam), insertOne: jest.fn(async () => ({ insertedId: copyId })), findOneAndUpdate: update } as never);
+    await duplicateBuilderExam(courseId, examId, 'teacher');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ _id: copyId, revision: 0 }), expect.objectContaining({ $set: expect.objectContaining({ settings: { ...exam.settings, title: 'Midterm (copy)', opensAt: '', closesAt: '', accommodations: [] } }) }), { returnDocument: 'after' });
   });
   test('saving a draft preserves the selected opening and release policy through CAS', async () => {
     const settings = { ...exam.settings, opensAt: '2027-01-15T16:00:00.000Z', feedback: 'instructor' as const };

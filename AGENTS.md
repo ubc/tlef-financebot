@@ -530,3 +530,10 @@ close notifications and deadlines. Window ownership/CAS and frozen grading apply
 equally to live and isolated Preview attempts. Sustained network loss ends the
 sitting after the grace period; visibility changes do not. Historical unbound
 attempts remain API-compatible until bound by the current client.
+
+Exam Builder distinguishes Practice quiz from Formal exam at creation and
+publication. New practice quizzes default to score, answers and explanations
+after submission; delayed release remains selectable. Formal exams retain
+after-close or Instructor release. Both purposes use the existing timed,
+single-attempt assessment flow and isolated records. Existing saved policies
+and immutable publications remain unchanged.
