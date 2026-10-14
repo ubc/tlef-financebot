@@ -130,3 +130,100 @@ Topic sampling verification:
 - Backend storage and browser HTTP responses use isolated fixtures. These checks
   do not prove deployed database state or production identity configuration;
   no live course records or provider APIs were used.
+
+
+## Automatic publication and isolated assessment rehearsal (2026-10-13)
+
+- Review & publish captures current fields, validates the availability window,
+  and saves through the existing revision CAS before final confirmation. Save
+  failure retains input; duplicate clicks are suppressed, unchanged timestamps
+  retain their seconds, and newer SSE revisions invalidate confirmation.
+- New papers use creation-time opening and after-close feedback. Closing time is
+  still selected explicitly. Existing explicit settings and immutable published
+  snapshots remain unchanged; blank legacy editable openings get a current-time
+  draft default. The separate manual Save settings prerequisite is removed.
+- Student Preview now has Assessments and uses the same list/sitting/results
+  renderer through an injected Preview API/routes adapter. Builder Student preview
+  saves pending draft settings and highlights the selected paper in the list.
+- Independent actor/course/session/mode/exam receipts freeze the source and carry
+  server deadlines, answer/submission CAS and 24-hour expiry. Preview never locks
+  the source paper or writes live attempts, analytics, mastery or Review Book.
+- Restricted Preview follows published availability and actual answer release.
+  Unrestricted Preview rehearses ready drafts and scheduled/closed publications,
+  with explicit simulated results after submission. Draft readiness still checks
+  approved/validated items, active course LOs and absence of active generation.
+- List, answer, submission and result-read errors recover without switching to
+  live APIs or duplicating submissions. Desktop/mobile light/dark layouts retain
+  existing FinanceBot controls and scoped accessibility checks.
+
+Verification: build, typecheck, lint and 160 Jest suites / 2,155 tests passed.
+The compiled browser acceptance passed 38 Builder/Preview cases plus 38 role
+workspace cases. Browser APIs use isolated fixtures; they do not establish live
+course readiness. Screenshot evidence is under
+`audit-results/assessment-preview-2026-10-13/`.
+
+`scripts/verify-assessment-preview.ts` provides synthetic local Mongo acceptance
+for concurrent starts, persisted reload, stale/foreign access, frozen-source
+grading, publication after rehearsal, restricted result withholding, server
+expiry, TTL indexes and absence of live learning writes. It refuses remote Mongo
+hosts and removes its course-scoped fixture records. No model calls occur.
+
+## Student assessment workspace redesign (2026-10-13)
+
+Live assessments and isolated Preview share a single-question workspace with a
+question navigator, confirmed answered counts, a compact timer and persistent
+footer actions. Long questions scroll independently of the timer and actions;
+mobile navigation starts collapsed. Preview information is available in a small
+disclosure. Session storage retains only the navigation cursor; answers and
+revisions still come from the server. Pending saves block navigation and
+submission, failed saves restore the confirmed answer, and failed deadline reads
+keep answering disabled while offering reload and submission recovery.
+
+Verification: build and lint passed, along with 13 new workspace browser cases
+and 38 Builder/Preview regression cases. Coverage includes save failures, resume,
+submission recovery, long-content scrolling, mobile navigation, light/dark mode
+and scoped accessibility scans. Browser HTTP fixtures are synthetic; these
+checks exercise the compiled UI without live student writes. The visual report
+is `artifacts/assessment-workspace-redesign-2026-10-13/index.html`.
+
+## Strict assessment window lifecycle (2026-10-13)
+
+The current Student and isolated Preview clients lock other navigation during
+Start and an active sitting. The sidebar, account actions and Back link are
+hidden, and route/click guards also reject browser Back and forged shortcuts.
+Confirmed submission restores the normal shell, including when the result read
+fails afterward. A failed submission keeps the sitting locked and retryable.
+Closing or reloading the browser document submits its server-saved answers;
+the rule is disclosed before Start and in the sitting header. Tab visibility
+changes do not count as closing.
+
+Each document binds one UUID-backed attempt lease. Heartbeats run every 20 seconds
+with a 120-second grace period; competing windows cannot take over, expired
+leases cannot revive, and Preview scope remains actor/course/session/mode-bound.
+The close beacon uses authenticated same-origin JSON with keepalive fallback.
+Since browser termination cannot guarantee delivery, a bounded Agenda sweep
+every 30 seconds finalizes lost leases and deadlines without a return visit.
+Sustained disconnection also ends a sitting after the grace period; answers
+pause while connection recovery is unconfirmed. Submission/answer/heartbeat
+CAS preserves frozen grading and controlled answer release. Historical attempts
+without a lease retain API compatibility until the current client binds them.
+
+The local-only `scripts/verify-assessment-window.ts` exercises close/answer and
+close/heartbeat races, missing-beacon expiry, deadline expiry, frozen grading,
+release policies and Preview isolation using synthetic records in a disposable
+database. It refuses other database names/remote hosts and cleans up its records.
+
+Verification: 161 Jest suites / 2,186 tests, 28 workspace/window browser cases and
+38 Builder/Preview regression cases passed. Build, typecheck, lint and diff
+checks passed. Native browser-close transport was checked against a temporary
+HTTP receiver because Playwright can cancel routed unload beacons; original
+URL path/query/body and window ownership were asserted. Actual reload and a
+deliberately dropped close beacon both finalized via the original owner without
+a new bind or Start. Physical Mongo acceptance passed all scoped close/answer,
+close/heartbeat, expiry, release and isolation checks in a disposable container,
+which was removed afterward. Screenshots and the local policy report are under
+`audit-results/assessment-lock-2026-10-13/` and
+`artifacts/assessment-window-policy-2026-10-13/index.html`.
+An additional browser check confirms tutorials cannot run in either legacy
+Exam Prep or the new fixed-paper assessment sitting. All non-exam shell controls,
+including appearance controls, remain hidden and blocked during a sitting.

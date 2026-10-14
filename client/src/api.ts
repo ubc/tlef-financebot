@@ -3475,17 +3475,44 @@ export function examBuilderRequest<T>(courseId: string, path = '', method: 'GET'
 export interface AssessmentSummary {
   id: string; title: string; kind: string; purpose: string; durationMinutes: number; opensAt: string; closesAt: string;
   timeZone: string; feedback: string; questionCount: number; attemptId?: string; submitted?: boolean;
+  previewMode?: 'restricted' | 'unrestricted'; source?: 'draft' | 'published'; canStart?: boolean; unavailableReason?: string;
 }
 export interface AssessmentState {
   id: string; title: string; submitted: boolean; deadline: string; serverTime: string; answerRevision: number;
+  windowExpiresAt?: string; submissionReason?: AssessmentSubmissionReason;
   questions: Array<{ id: string; stem: string; type: QuestionType; points: number; options: Array<{ key: string; text: string }>; selectedKey: string | null }>;
+}
+export type AssessmentSubmissionReason = 'submitted' | 'window-closed' | 'connection-lost' | 'deadline';
+export interface AssessmentWindowReceipt {
+  submitted: boolean; serverTime: string; windowExpiresAt?: string; submissionReason?: AssessmentSubmissionReason;
 }
 export interface AssessmentResults {
   released: boolean; title: string; message?: string; score?: number; maxScore?: number;
+  simulatedRelease?: boolean;
   questions?: Array<{ id: string; stem: string; points: number; selectedKey: string | null; options: Array<{ key: string; text: string; explanation?: string; correct: boolean }> }>;
 }
 export function assessmentRequest<T>(courseId: string, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown): Promise<T> {
   return request<T>(`/api/courses/${encodeURIComponent(courseId)}/${path}`, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
+}
+
+/** Preview reuses student rendering while every attempt stays in the isolated API. */
+export function previewAssessmentRequest<T>(courseId: string, previewSessionId: string, restricted: boolean, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: Record<string, unknown>): Promise<T> {
+  const query = method === 'GET' ? `?${new URLSearchParams({ previewSessionId }).toString()}` : '';
+  const url = previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/${path}${query}`, restricted);
+  return request<T>(url, { method, ...(method !== 'GET' ? { body: JSON.stringify({ ...body, previewSessionId }), headers: { 'Content-Type': 'application/json' } } : {}) });
+}
+
+function sendAssessmentClose(url: string, body: Record<string, unknown>): void {
+  const data = JSON.stringify(body);
+  try { if (navigator.sendBeacon(url, new Blob([data], { type: 'application/json' }))) return; }
+  catch { /* Browser policies can reject beacon; keepalive is the fallback. */ }
+  void fetch(url, { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: data }).catch(() => undefined);
+}
+export function closeAssessmentWindow(courseId: string, attemptId: string, windowId: string): void {
+  sendAssessmentClose(`/api/courses/${encodeURIComponent(courseId)}/assessment-attempts/${encodeURIComponent(attemptId)}/window/close`, { windowId });
+}
+export function closePreviewAssessmentWindow(courseId: string, previewSessionId: string, restricted: boolean, attemptId: string, windowId: string): void {
+  sendAssessmentClose(previewAccessUrl(`/api/courses/${encodeURIComponent(courseId)}/preview/assessment-attempts/${encodeURIComponent(attemptId)}/window/close`, restricted), { windowId, previewSessionId });
 }
 
 

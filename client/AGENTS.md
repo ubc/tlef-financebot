@@ -331,3 +331,22 @@ link; manual role rows retain their existing Remove operation.
 Active accounts with no Admin/teaching grants use a Student workspace fallback
 badge when no CWL student affiliation or course role is present, matching the
 existing shell. The badge, local filter and export never change authorization.
+
+Exam Builder publication captures and saves settings before final confirmation;
+there is no required manual Save step. Failed saves preserve inputs, fields stay
+locked during writes, and confirmation pins the returned revision. The Student
+preview button saves the draft before opening its highlighted assessment.
+`assessment-experience.ts` injects live or isolated Preview request/routes into
+the same Student assessment renderer. Both Preview modes now have an enabled
+Assessments navigation entry; timer, answer CAS, reload and result-read recovery
+remain in the shared renderer. Preview notices distinguish actual release from
+unrestricted simulated release. No Preview request uses a live attempt endpoint.
+
+Active Assessments lock pending Start and the sitting to one document window.
+`assessment-window.ts` guards router and shell navigation, hides unrelated
+controls with `.assessment-in-progress`, and restores them after confirmed submit.
+Closing/reloading submits saved answers via the adapter's pagehide beacon;
+visibility changes do not submit. A document UUID, 20-second heartbeats and the
+server's 120-second lease prevent reopening a closed or disconnected attempt.
+Preview beacons preserve their original session/mode; server expiry is the
+fallback when the browser cannot send close. Failed submit remains locked/retryable.

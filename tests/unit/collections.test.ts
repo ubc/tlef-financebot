@@ -19,6 +19,18 @@ describe('collection index specs (PRD §2 data model)', () => {
     expect(byCollection['masteryProfiles:{"puid":1,"courseId":1,"loId":1}'].options?.unique).toBe(true);
   });
 
+  it('isolates and expires assessment preview receipts by actor, course, session and access mode', () => {
+    expect(byCollection['previewAssessmentAttempts:{"courseId":1,"instructorPuid":1,"previewSessionId":1,"access":1,"examId":1}'].options?.unique).toBe(true);
+    expect(byCollection['previewAssessmentAttempts:{"expiresAt":1}'].options?.expireAfterSeconds).toBe(0);
+  });
+
+  it('indexes deadline and window expiry scans independently for live and Preview assessments', () => {
+    for (const collection of ['assessmentAttempts', 'previewAssessmentAttempts']) {
+      expect(byCollection[collection + ':{"submittedAt":1,"deadline":1}']).toBeDefined();
+      expect(byCollection[collection + ':{"submittedAt":1,"window.expiresAt":1}']).toBeDefined();
+    }
+  });
+
   it('enforces one saved generation blueprint name per course', () => {
     expect(byCollection['generationBlueprints:{"courseId":1,"name":1}'].options?.unique).toBe(true);
     expect(byCollection['generationBlueprints:{"courseId":1,"updatedAt":-1}']).toBeDefined();

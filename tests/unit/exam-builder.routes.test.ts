@@ -5,7 +5,7 @@ import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/exam-builder.service', () => Object.fromEntries(['listBuilderExams','createBuilderExam','builderDetail','saveExamSettings','renameBuilderExam','deleteBuilderExam','addBankItems','addExamCandidate','arrangeExamItems','approveExamItem','publishBuilderExam','reviseBuilderExam','duplicateBuilderExam','releaseExamResults'].map(name => [name, jest.fn(async () => ({}))])));
 jest.mock('../../server/src/services/exam-generation.service', () => Object.fromEntries(['planExamGeneration','confirmExamGeneration','cancelExamGeneration','retryExamGeneration'].map(name => [name, jest.fn(async () => ({}))])));
-jest.mock('../../server/src/services/assessment-attempts.service', () => Object.fromEntries(['listAssessments','startAssessment','assessmentState','answerAssessment','submitAssessment','assessmentResults'].map(name => [name, jest.fn(async () => ({}))])));
+jest.mock('../../server/src/services/assessment-attempts.service', () => Object.fromEntries(['listAssessments','startAssessment','assessmentState','answerAssessment','submitAssessment','assessmentResults','bindAssessmentWindow','heartbeatAssessmentWindow','closeAssessmentWindow'].map(name => [name, jest.fn(async () => ({}))])));
 jest.mock('../../server/src/services/exam-bank.service', () => ({ examBankCatalog: jest.fn(async () => ({ questions: [] })), sampleExamBank: jest.fn(async () => ({ questions: [] })) }));
 import { examBankCatalog, sampleExamBank } from '../../server/src/services/exam-bank.service';
 import { examBuilderRouter } from '../../server/src/routes/exam-builder.routes';
@@ -111,4 +111,16 @@ describe('topic bank sampling guards and input boundary', () => {
     expect((await request(app('instructor')).post(`${path}/sample-bank`).send({ ...body, topics: [] })).status).toBe(400);
     expect((await request(app('instructor', new ObjectId())).post(`${path}/sample-bank`).send(body)).status).toBe(403);
   });
+});
+
+const windowId = 'e7083c96-bd92-4a88-94cb-ff3e378af7d8';
+test.each(['window', 'window/heartbeat', 'window/close'])('Student assessment %s is course-gated and passes only authenticated owner', async suffix => {
+  const route = `/api/courses/${courseId}/assessment-attempts/${attemptId}/${suffix}`;
+  expect((await request(app()).post(route).send({ windowId })).status).toBe(401);
+  expect((await request(app('student', new ObjectId())).post(route).send({ windowId })).status).toBe(403);
+  expect((await request(app('student')).post(route).send({ windowId: 'invalid' })).status).toBe(400);
+  expect((await request(app('student')).post(route).send({ windowId, puid: 'forged' })).status).toBe(200);
+  const methods = await import('../../server/src/services/assessment-attempts.service');
+  const method = suffix === 'window' ? methods.bindAssessmentWindow : suffix.endsWith('heartbeat') ? methods.heartbeatAssessmentWindow : methods.closeAssessmentWindow;
+  expect(method).toHaveBeenCalledWith(courseId, attemptId, 'actor', windowId);
 });

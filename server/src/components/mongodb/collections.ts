@@ -227,3 +227,19 @@ INDEX_SPECS.push(
   { collection: 'previewDiscussionPosts', keys: { courseId: 1, previewOwner: 1, previewSessionId: 1 } },
   { collection: 'previewDiscussionPosts', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
 );
+
+// Assessment rehearsals never share a collection or first-start lock with students.
+import type { PreviewAssessmentAttempt } from '../../types/assessment-preview';
+export const previewAssessmentAttemptsCol = (): Collection<PreviewAssessmentAttempt> => getDb().collection<PreviewAssessmentAttempt>('previewAssessmentAttempts');
+INDEX_SPECS.push(
+  { collection: 'previewAssessmentAttempts', keys: { courseId: 1, instructorPuid: 1, previewSessionId: 1, access: 1, examId: 1 }, options: { unique: true } },
+  { collection: 'previewAssessmentAttempts', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+);
+
+// Deadline and disconnected-window sweeps are bounded by these covering indexes.
+INDEX_SPECS.push(
+  { collection: 'assessmentAttempts', keys: { submittedAt: 1, deadline: 1 } },
+  { collection: 'assessmentAttempts', keys: { submittedAt: 1, 'window.expiresAt': 1 } },
+  { collection: 'previewAssessmentAttempts', keys: { submittedAt: 1, deadline: 1 } },
+  { collection: 'previewAssessmentAttempts', keys: { submittedAt: 1, 'window.expiresAt': 1 } },
+);

@@ -67,6 +67,7 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (course && path.endsWith('/discussion')) return route.fulfill({ json: { staff: false, moderator: false, posts: [], themes: [], los: [] } });
     if (course && path.endsWith('/home')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/exams')) return route.fulfill({ json: [] });
+    if (course && path.endsWith('/assessments')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/session-summary')) return route.fulfill({ json: { welcome: false, deferred: null } });
     if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: {
       'question.review': true, 'question.suggest-edit': true,
@@ -164,6 +165,28 @@ async function openRoles(page: Page, current: ViewRole) {
   const menu = page.getByRole('navigation', { name: 'Switch role', exact: true });
   await expect(menu).toBeVisible();
   return menu;
+}
+
+for (const role of ['admin', 'instructor', 'ta'] as const) for (const restricted of [false, true]) {
+  test(`${role} has an enabled isolated Assessments entry in ${restricted ? 'restricted' : 'unrestricted'} Student Preview`, async ({ page }) => {
+    const base = `/preview/${restricted ? 'restricted/' : ''}course/${COURSE}`;
+    const state = await fixture(page, role, { path: `${base}/assessments` });
+    await expect(page.getByRole('heading', { name: 'Assessments', exact: true })).toBeVisible();
+    const entry = page.locator('.sidebar').getByRole('link', { name: 'Assessments', exact: true });
+    await expect(entry).toHaveAttribute('href', `#${base}/assessments`);
+    await expect(entry).toHaveAttribute('aria-current', 'page');
+    await expect(entry).not.toHaveClass(/nav__link--disabled/);
+    await expect(page.locator('.sidebar').getByRole('link', { name: 'Exam Prep', exact: true })).toHaveCount(0);
+    await page.locator('.sidebar').getByRole('link', { name: 'Course Home', exact: true }).click();
+    await expect(page.getByRole('heading', { name: COURSES[0].name, exact: true })).toBeVisible();
+    await page.locator('.sidebar').getByRole('link', { name: 'Assessments', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Assessments', exact: true })).toBeVisible();
+    const calls = state.requests.filter(url => url.pathname.endsWith('/assessments'));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every(url => url.pathname.endsWith('/preview/assessments') && /^[0-9a-f-]{36}$/.test(url.searchParams.get('previewSessionId') ?? '')
+      && (url.searchParams.get('access') === 'restricted') === restricted)).toBe(true);
+    state.assertClean();
+  });
 }
 
 async function switchRole(page: Page, current: ViewRole, next: ViewRole, back = false) {

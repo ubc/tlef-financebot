@@ -105,6 +105,12 @@ Phase 3 adds `capabilitySettingsCol()`. A unique `(scope, courseId)` index keeps
 one platform settings document and one override document per course; per-TA
 overrides live inside the course document and are resolved before role values.
 
+Assessment Preview uses `previewAssessmentAttemptsCol()` backed by a separate
+`previewAssessmentAttempts` collection. Its unique key includes course, actor,
+Preview session, access mode and exam. Frozen paper snapshots expire through
+`expiresAt` with a zero-second TTL index; services reject expired receipts before
+asynchronous TTL cleanup. It never shares a live Student attempt collection.
+
 ## Gotchas
 
 - Missing `authSource=admin` (or wrong credentials) yields an authentication

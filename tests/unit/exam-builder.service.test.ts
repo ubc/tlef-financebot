@@ -3,7 +3,7 @@ import type { BuilderExam, PaperQuestion } from '../../server/src/types/exam-bui
 jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest.fn(async () => 0) }));
 jest.mock('../../server/src/components/mongodb/collections', () => Object.fromEntries(['builderExamsCol','examCandidatesCol','examBuildRunsCol','examPublicationsCol','assessmentAttemptsCol','coursesCol','losCol','questionsCol','questionVersionsCol'].map(name => [name, jest.fn()])));
 import { builderExamsCol, examBuildRunsCol, examPublicationsCol, examCandidatesCol, assessmentAttemptsCol, coursesCol, losCol } from '../../server/src/components/mongodb/collections';
-import { assertEditable, examReadiness, publishBuilderExam, validateExamLos, validateSettings, renameBuilderExam, deleteBuilderExam } from '../../server/src/services/exam-builder.service';
+import { assertEditable, examReadiness, publishBuilderExam, validateExamLos, validateSettings, renameBuilderExam, deleteBuilderExam, createBuilderExam, saveExamSettings } from '../../server/src/services/exam-builder.service';
 import { cancelJobsByDataIds } from '../../server/src/components/jobs';
 import { freezeExamQuestion } from '../../server/src/services/question-variant.service';
 const courseId = new ObjectId(), examId = new ObjectId(), loId = new ObjectId();
@@ -90,5 +90,28 @@ describe('exam catalog rename and delete', () => {
   test('an interrupted cleanup can be safely retried without remarking the exam', async () => {
     exam.deletingAt = new Date(); await deleteBuilderExam(courseId, examId, 2);
     expect(update).not.toHaveBeenCalled(); expect(headDelete).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('publication setting defaults and saves', () => {
+  test('a new exam opens at its creation time and releases answers after close', async () => {
+    const insert = jest.fn(async () => ({ insertedId: examId }));
+    jest.mocked(builderExamsCol).mockReturnValue({ insertOne: insert } as never);
+    const before = Date.now();
+    const created = await createBuilderExam(courseId, 'New exam', 'teacher');
+    expect(Date.parse(created.settings.opensAt)).toBeGreaterThanOrEqual(before);
+    expect(created.settings.opensAt).toBe(created.createdAt.toISOString());
+    expect(created.settings).toMatchObject({ feedback: 'after-close', closesAt: '', timeZone: 'America/Vancouver' });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ settings: created.settings }));
+  });
+  test('saving a draft preserves the selected opening and release policy through CAS', async () => {
+    const settings = { ...exam.settings, opensAt: '2027-01-15T16:00:00.000Z', feedback: 'instructor' as const };
+    await saveExamSettings(courseId, examId, exam.revision, settings);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ revision: 2 }), expect.objectContaining({ $set: expect.objectContaining({ settings }) }), { returnDocument: 'after' });
+    await expect(saveExamSettings(courseId, examId, 1, settings)).rejects.toThrow('changed');
+  });
+  test('a malformed closing timestamp cannot pass publication validation', () => {
+    expect(() => validateSettings({ ...exam.settings, closesAt: 'not-a-date' }, true)).toThrow('opening and closing');
   });
 });

@@ -59,7 +59,7 @@ test('delayed trigger cannot survive navigation or account change', async ({ pag
 
 test('preview, TA view and timed sittings cannot show or persist a tour', async ({ page }) => {
   const writes = await fixture(page, 'instructor');
-  for (const href of ['/preview/course/test', '/ta/course/test/review', '/course/test/exam-attempt/attempt']) {
+  for (const href of ['/preview/course/test', '/ta/course/test/review', '/course/test/exam-attempt/attempt', '/course/test/assessment/attempt']) {
     await page.evaluate((hash) => { window.location.hash = hash; }, href);
     await start(page, 'instructor-analytics');
     await page.waitForTimeout(450);

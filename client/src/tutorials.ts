@@ -18,7 +18,7 @@ export function tutorialRole(): TutorialRole | undefined {
   const session = getSession();
   const user = session.user;
   const route = window.location.hash.slice(1).split('?')[0] || '/';
-  if (!session.authenticated || !user || route.startsWith('/preview/') || /\/exam-attempt\/[^/]+$/.test(route)) return undefined;
+  if (!session.authenticated || !user || route.startsWith('/preview/') || /\/(?:exam-attempt|assessment)\/[^/]+$/.test(route)) return undefined;
   if (route.startsWith('/admin/')) return user.isAdmin ? 'admin' : undefined;
   if (route.startsWith('/ta/')) {
     if (route === '/ta/courses' || route === '/ta/help') return user.courseRoles.some((item) => item.role === 'ta') ? 'ta' : undefined;

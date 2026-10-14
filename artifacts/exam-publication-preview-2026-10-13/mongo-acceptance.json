@@ -1,0 +1,12 @@
+{
+  "outcome": "passed",
+  "checks": [
+    "New exam defaults: opens now and answers after close",
+    "Concurrent draft starts converge; answer keys stay withheld",
+    "Reload preserves answers; stale writes and foreign preview scopes fail",
+    "Frozen preview survives source edits and grades its original paper",
+    "Draft rehearsal does not prevent publication; restricted results follow release policy",
+    "Server expiry submits the isolated attempt and refuses late answers",
+    "No live learning or assessment records; independent TTL receipts only"
+  ]
+}

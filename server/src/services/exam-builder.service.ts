@@ -29,12 +29,12 @@ export function validateSettings(settings: ExamSettings, publishing = false): vo
   if (settings.purpose === 'formal' && settings.feedback === 'immediate') examError('Immediate answer release is available only for practice exams.', 400);
   try { new Intl.DateTimeFormat('en-CA', { timeZone: settings.timeZone }); } catch { examError('Choose a valid timezone.', 400); }
   if (new Set(settings.accommodations.map(a => a.puid)).size !== settings.accommodations.length) examError('Each student can have only one accommodation.', 400);
-  if (publishing && (!settings.opensAt || !settings.closesAt || !Number.isFinite(Date.parse(settings.opensAt)) || Date.parse(settings.closesAt) <= Date.parse(settings.opensAt))) examError('Choose a valid opening and closing time.', 400);
+  if (publishing && (!settings.opensAt || !settings.closesAt || !Number.isFinite(Date.parse(settings.opensAt)) || !Number.isFinite(Date.parse(settings.closesAt)) || Date.parse(settings.closesAt) <= Date.parse(settings.opensAt))) examError('Choose a valid opening and closing time.', 400);
 }
 export async function createBuilderExam(courseId: ObjectId, title: string, by: string) {
   await requireExamCourse(courseId);
   const now = new Date();
-  const exam: BuilderExam = { courseId, revision: 0, settings: { title, kind: 'midterm', purpose: 'formal', durationMinutes: 60, opensAt: '', closesAt: '', timeZone: 'America/Vancouver', feedback: 'instructor', shuffle: false, accommodations: [] }, items: [], createdBy: by, createdAt: now, updatedAt: now };
+  const exam: BuilderExam = { courseId, revision: 0, settings: { title, kind: 'midterm', purpose: 'formal', durationMinutes: 60, opensAt: now.toISOString(), closesAt: '', timeZone: 'America/Vancouver', feedback: 'after-close', shuffle: false, accommodations: [] }, items: [], createdBy: by, createdAt: now, updatedAt: now };
   const { insertedId } = await builderExamsCol().insertOne(exam);
   return { ...exam, _id: insertedId };
 }

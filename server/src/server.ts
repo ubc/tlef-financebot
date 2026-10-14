@@ -14,6 +14,7 @@ import { registerNotificationJobs } from './services/notifications.service';
 import { reconcileContentRuns } from './services/content-runs.service';
 import { registerExamMasteryJobs } from './services/exam-mastery.service';
 import { registerTaJobs } from './services/tas.service';
+import { registerAssessmentWindowJobs } from './services/assessment-window-jobs.service';
 
 async function main(): Promise<void> {
   // Refuse to boot with insecure/incomplete production configuration. No-op in
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
   // course-scoped TA roles; re-invitation remains available to instructors.
   await registerTaJobs();
   await registerCanvasJobs();
+  await registerAssessmentWindowJobs();
 
   // Qdrant powers the (deletable) RAG example. It is not required for the app to
   // boot, so log a warning with guidance rather than failing fast.

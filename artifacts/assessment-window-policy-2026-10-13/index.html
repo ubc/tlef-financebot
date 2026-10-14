@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FinanceBot · Exam window rules</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f3f5fa;color:#19222e;font:14px/1.6 system-ui,-apple-system,sans-serif}header{padding:24px 5vw;background:#304ba5;color:white}header small{font-size:11px;letter-spacing:.1em}h1{font-size:28px;margin:7px 0;letter-spacing:-.7px}header p{margin:0;opacity:.85}main{max-width:1200px;margin:auto;padding:24px}section{padding:20px;background:white;border:1px solid #dbe2ec;border-radius:9px;margin-bottom:24px}h2{font-size:19px;margin:0 0 8px}p{color:#617086;font-size:13px}img{display:block;width:100%;height:auto;border:1px solid #dbe2ec;border-radius:6px}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;padding:10px;border-bottom:1px solid #e2e7f0}th{color:#617086;font-size:11px}a{color:#304ba5}.phone{max-width:390px;margin:auto}footer{color:#617086;font-size:12px}@media(max-width:600px){main{padding:12px}section{padding:14px}h1{font-size:24px}}
+  </style>
+</head>
+<body>
+  <header><small>FINANCEBOT · STUDENT ASSESSMENTS</small><h1>Stay in the exam until submission</h1><p>Actual application screenshots with synthetic local test data.</p></header>
+  <main>
+    <section>
+      <h2>Current behavior</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Outcome</th></tr></thead>
+        <tbody>
+          <tr><td>Start an exam</td><td>The app locks to the sitting. Course navigation and account actions are hidden.</td></tr>
+          <tr><td>Browser Back or a different app route</td><td>Blocked while the sitting is active.</td></tr>
+          <tr><td>Submit successfully or reach the deadline</td><td>The attempt becomes final and normal navigation returns.</td></tr>
+          <tr><td>Close or reload the browser document</td><td>Saved answers are submitted. The same attempt cannot reopen for answering.</td></tr>
+          <tr><td>Close notification is lost</td><td>A 120-second lease and recurring background sweep finalize saved answers.</td></tr>
+          <tr><td>Brief connection failure</td><td>Answering pauses until the server confirms the sitting. Prolonged loss ends it.</td></tr>
+        </tbody>
+      </table>
+      <p>The rule is disclosed before Start and in the sitting header. Preview follows the same window policy while retaining isolated records and its configured answer-release behavior.</p>
+    </section>
+    <section><h2>During the exam</h2><p>Only question navigation, answering, saved-answer reload, and submission remain available.</p><img src="desktop-preview-active.png" alt="An active exam with unrelated navigation hidden"></section>
+    <section><h2>After confirmed submission</h2><p>The course sidebar and account actions return. Scores and explanations follow the release policy; unrestricted Preview explicitly simulates release.</p><img src="desktop-preview-submitted-restored-shell.png" alt="Submitted Preview with normal navigation restored"></section>
+    <section><h2>Mobile exam</h2><p>The question list remains collapsible, with the timer and footer in view.</p><img class="phone" src="mobile-preview-active.png" alt="An active mobile Preview exam"></section>
+    <footer>October 13, 2026 · Implementation and local test evidence. Browser checks use intercepted synthetic APIs and native close transport; physical Mongo checks use a disposable local database. No model calls or real student records are involved.</footer>
+  </main>
+</body>
+</html>

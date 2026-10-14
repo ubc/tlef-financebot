@@ -9,7 +9,7 @@ jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExist
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   learningSettingsCol: jest.fn(), learningSessionsCol: jest.fn(), previewLearningSessionsCol: jest.fn(), reviewMetadataCol: jest.fn(), previewReviewMetadataCol: jest.fn(), discussionPostsCol: jest.fn(), previewDiscussionPostsCol: jest.fn(),
   coursePeopleAccessCol: jest.fn(), modelCallReceiptsCol: jest.fn(), modelUsageSessionsCol: jest.fn(), registrationCodeBatchesCol: jest.fn(),
-  builderExamsCol: jest.fn(), examPublicationsCol: jest.fn(), examCandidatesCol: jest.fn(), examBuildRunsCol: jest.fn(), assessmentAttemptsCol: jest.fn(),
+  builderExamsCol: jest.fn(), examPublicationsCol: jest.fn(), examCandidatesCol: jest.fn(), examBuildRunsCol: jest.fn(), assessmentAttemptsCol: jest.fn(), previewAssessmentAttemptsCol: jest.fn(),
   attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(), coursePeopleImportsCol: jest.fn(),
   contentRunsCol: jest.fn(), coursesCol: jest.fn(), examAttemptsCol: jest.fn(),
   examTemplatesCol: jest.fn(), flagsCol: jest.fn(), generationBlueprintsCol: jest.fn(), generationSubmissionsCol: jest.fn(),
@@ -48,7 +48,7 @@ const accessorNames = [
   'previewStudentSessionsCol', 'questionVersionsCol', 'questionsCol', 'reviewBookCol',
   'rosterCol', 'sessionSummariesCol', 'taInvitesCol', 'themesCol', 'usersCol', 'courseInstructorSharesCol',
   'questionDraftsCol', 'questionPresenceCol',
-  'builderExamsCol', 'examPublicationsCol', 'examCandidatesCol', 'examBuildRunsCol', 'assessmentAttemptsCol',
+  'builderExamsCol', 'examPublicationsCol', 'examCandidatesCol', 'examBuildRunsCol', 'assessmentAttemptsCol', 'previewAssessmentAttemptsCol',
 ] as const;
 
 function fakeCollection(rows: unknown[] = []): FakeCollection {

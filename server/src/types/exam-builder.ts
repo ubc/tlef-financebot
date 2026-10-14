@@ -97,7 +97,11 @@ export interface ExamBuildRun {
   createdAt: Date;
   updatedAt: Date;
 }
+export type AssessmentSubmissionReason = 'submitted' | 'window-closed' | 'connection-lost' | 'deadline';
+export interface AssessmentWindowLease { id: string; expiresAt: Date; }
 export interface AssessmentAttempt {
+  window?: AssessmentWindowLease;
+  submissionReason?: AssessmentSubmissionReason;
   answerRevision: number;
   courseId: ObjectId;
   examId: ObjectId;

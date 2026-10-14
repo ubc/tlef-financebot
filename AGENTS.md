@@ -509,3 +509,24 @@ Student filtering and exports retain both identity and enrollment information.
 When CWL does not release student affiliation, an active account without Admin
 or teaching grants is labelled Student workspace, matching the existing shell.
 This display fallback never creates a Student course role or institutional claim.
+
+## Exam publication and isolated rehearsal (2026-10-13)
+
+Review & publish saves validated draft settings automatically through revision
+CAS before final confirmation. Save failures retain inputs; subsequent paper
+changes invalidate the reviewed revision. New exams open at creation time and
+default to answers after the exam closes. Existing explicit dates/release policies
+and published snapshots stay unchanged. Student Preview now exposes Assessments
+and shares the student exam renderer through a separate API adapter. Frozen,
+actor/course/session/mode-scoped TTL attempts never write live student records
+or lock a builder paper. Restricted Preview obeys published availability/release;
+unrestricted rehearsal includes ready drafts and explicitly simulates results.
+See `docs/design/exam-builder-v2/IMPLEMENTATION.md` and the API contract.
+
+Active fixed-paper assessments now lock other app navigation until confirmed
+submission. Closing/reloading the document submits saved answers; a 20-second
+heartbeat and 120-second window lease plus a 30-second Agenda sweep handle lost
+close notifications and deadlines. Window ownership/CAS and frozen grading apply
+equally to live and isolated Preview attempts. Sustained network loss ends the
+sitting after the grace period; visibility changes do not. Historical unbound
+attempts remain API-compatible until bound by the current client.

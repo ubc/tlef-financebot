@@ -5,6 +5,7 @@
 // (route-match.ts, kept DOM-free so it's unit-testable) and passed to the
 // render function. See client/AGENTS.md.
 import { matchRoute, type RouteParams } from './route-match.js';
+import { guardAssessmentNavigation, hasActiveAssessmentWindow } from './assessment-window.js';
 
 export type { RouteParams };
 export { matchRoute };
@@ -84,6 +85,7 @@ export function startRouter(options: RouterOptions): RouterHandle {
   let confirming = false;
   let stopped = false;
   const guardNavigation = (event: Event): boolean => {
+    if (guardAssessmentNavigation(event)) return true;
     if (confirming) {
       event.stopImmediatePropagation();
       history.replaceState(null, '', acceptedHash || '#/');
@@ -121,7 +123,7 @@ export function startRouter(options: RouterOptions): RouterHandle {
   };
 
   const beforeUnload = (event: BeforeUnloadEvent): void => {
-    if (!hasUnsavedChanges()) return;
+    if (!hasUnsavedChanges() && !hasActiveAssessmentWindow()) return;
     event.preventDefault();
     event.returnValue = '';
   };

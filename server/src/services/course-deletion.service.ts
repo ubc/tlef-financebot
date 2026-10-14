@@ -8,7 +8,7 @@ import type { ObjectId } from 'mongodb';
 import { cancelJobsByDataIds } from '../components/jobs';
 import {
   modelCallReceiptsCol, modelUsageSessionsCol,
-  builderExamsCol, examPublicationsCol, examCandidatesCol, examBuildRunsCol, assessmentAttemptsCol,
+  builderExamsCol, examPublicationsCol, examCandidatesCol, examBuildRunsCol, assessmentAttemptsCol, previewAssessmentAttemptsCol,
   attemptsCol,
   auditCol,
   capabilitySettingsCol,
@@ -246,6 +246,7 @@ export async function permanentlyDeleteCourse(
     examCandidatesCol().deleteMany({ courseId }),
     examBuildRunsCol().deleteMany({ courseId }),
     assessmentAttemptsCol().deleteMany({ courseId }),
+    previewAssessmentAttemptsCol().deleteMany({ courseId }),
   ]);
   const peopleAccessDeletion = await coursePeopleAccessCol().deleteMany({ courseId });
   const importedPeopleDeletion = await coursePeopleImportsCol().deleteMany({ courseId });
@@ -267,7 +268,7 @@ export async function permanentlyDeleteCourse(
     'generationBlueprints', 'generationSubmissions', 'capabilitySettings', 'taInvites',
     'courseInstructorShares',
     'questionDrafts', 'questionPresence',
-    'builderExams', 'examPublications', 'examCandidates', 'examBuildRuns', 'assessmentAttempts',
+    'builderExams', 'examPublications', 'examCandidates', 'examBuildRuns', 'assessmentAttempts', 'previewAssessmentAttempts',
   ];
   return {
     deleted: true,

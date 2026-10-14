@@ -1043,7 +1043,12 @@ and in-flight progress/cancellation remain accessible.
 Settings: title, kind (`midterm|final`), purpose (`formal|practice`), durationMinutes,
 opensAt/closesAt (UTC ISO instants), timeZone (IANA label), feedback
 (`instructor|after-close|immediate`), shuffle, accommodations (`{puid,extraMinutes}[]`).
-Immediate feedback is practice-only. Client settings require explicit Save.
+Immediate feedback is practice-only. New papers default to `after-close` feedback
+and creation-time `opensAt`; closing time still needs an Instructor choice.
+Existing explicit settings and published snapshots remain unchanged. Review &
+publish automatically validates and saves the draft settings before confirmation.
+Failed/stale saves retain inputs and prevent publication; confirmation pins the
+returned revision. Unchanged local datetime fields retain their original seconds.
 Optimistic revisions return 409 for stale writes. Publish requires checked,
 approved frozen items and no active generation. A started exam cannot be
 republished; duplicate it instead. Old publications remain immutable.
@@ -1053,15 +1058,55 @@ Student routes require course enrollment and a published course:
 | Method | Path | Semantics |
 | --- | --- | --- |
 | GET | `/assessments` | Published schedules and own attempt summaries |
-| POST | `/assessments/:examId/start` | Start/resume one attempt per exam and authenticated PUID |
+| POST | `/assessments/:examId/start` | Start one attempt per exam/PUID; current client sends `{windowId}` |
 | GET | `/assessment-attempts/:attemptId` | Allowlisted stems/options/answers/deadline/serverTime; no keys |
-| PUT | `/assessment-attempts/:attemptId/answer` | `{itemId,selectedKey,answerRevision}`; deadline + CAS |
-| POST | `/assessment-attempts/:attemptId/submit` | Idempotent grading against pinned publication |
+| PUT | `/assessment-attempts/:attemptId/answer` | `{itemId,selectedKey,answerRevision,windowId}`; deadline + owner + CAS |
+| POST | `/assessment-attempts/:attemptId/submit` | `{windowId}`; idempotent grading against pinned publication |
 | GET | `/assessment-attempts/:attemptId/results` | Withheld message or released score/questions/explanations |
+| POST | `/assessment-attempts/:attemptId/window` | `{windowId}` UUID; bind a legacy sitting or confirm the same active window |
+| POST | `/assessment-attempts/:attemptId/window/heartbeat` | `{windowId}`; renew the current unexpired window lease |
+| POST | `/assessment-attempts/:attemptId/window/close` | `{windowId}`; finalize that window using server-saved answers |
+
+Teaching-team Student Preview uses the parallel `/preview/assessments` and
+`/preview/assessment-attempts/:attemptId` paths, including the same start, answer,
+submit, results and window lifecycle suffixes. Every route requires course Instructor/Admin or
+current TA through `ensureCourseStudentPreview`. `previewSessionId` is a UUID in
+GET query parameters and POST/PUT bodies; `access=restricted` is the optional
+query flag on every request. Actor identity always comes from the authenticated
+request. Student/foreign-course callers and forged actor identities cannot obtain
+another preview's state.
+
+Preview receipts are scoped to actor, course, session, access mode and exam in
+`previewAssessmentAttempts`, with a unique index and 24-hour TTL. They freeze the
+paper/settings, use server deadlines and answer/submission CAS, and never mark
+the live exam as started or write live attempts/analytics. Pre-submit responses
+allow only stems/options/selection/deadline; results require submission. Restricted
+Preview uses published papers and actual availability/release rules. Unrestricted
+Preview includes ready draft papers, bypasses availability for rehearsal, and
+marks after-submit answer release as `simulatedRelease: true`; it does not release
+live answers. List rows expose `source`, `previewMode`, `canStart` and an optional
+`unavailableReason`; resumed rows describe their frozen snapshot. Preview has no
+real student accommodation identity. The Student Preview shell now has an enabled
+Assessments entry; legacy Exam Prep remains a distinct live-student feature.
 
 Server deadline is min(exam closing time, start + duration + extra time).
-Expired attempts are finalized when accessed; late answers are always refused.
-Submission/answer races use answerRevision. Results remain withheld until the
+Expired attempts are finalized on access and by an explicitly registered Agenda
+sweep every 30 seconds (bounded batches). Late answers are always refused.
+Current clients bind a document-lifetime UUID at Start, send heartbeats every
+20 seconds and receive a 120-second server lease. A competing window cannot
+take over or write, and an expired lease cannot be revived. Historical unbound
+attempts accept the legacy request shape until bound. Window/heartbeat receipts
+return `{submitted,serverTime,windowExpiresAt?,submissionReason?}`; state includes
+the same optional fields. Window IDs and correct answers are never returned.
+`submissionReason` is `submitted`, `window-closed`, `connection-lost` or `deadline`.
+The app locks other course/account navigation during pending Start and active
+sittings, restoring it only after confirmed submission. `pagehide` sends the
+authenticated close beacon, with a keepalive fallback. Closing, reloading or
+leaving the document ends the sitting; switching tabs does not. If the browser
+cannot send the close request, lease expiry finalizes the saved answers after
+the 120-second grace period and a sweep. This is also the fallback for sustained
+network loss; brief loss pauses answering until the server confirms the window.
+Submission/answer/heartbeat races use answerRevision and lease CAS. Results remain withheld until the
 configured release condition. Attempts, grades and candidates are separate from
 practice AttemptRecords, mastery, Review Book, contentRuns and student analytics.
 

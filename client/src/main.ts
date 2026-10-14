@@ -710,6 +710,10 @@ function isStudentNavActive(item: StudentNavItem, path: string, courseId: string
       || path.startsWith(`/course/${courseId}/exam-attempt/`)
       || path.startsWith(`/course/${courseId}/exam-history`);
   }
+  if (item.label === 'Assessments') {
+    const list = item.path(courseId);
+    return path === list || path.startsWith(`${list.replace(/\/assessments$/, '')}/assessment/`);
+  }
   return item.path(courseId) === path;
 }
 
@@ -758,7 +762,7 @@ function previewNavItems(restricted = false): StudentNavItem[] {
     { label: 'Course Home', glyph: 'H', path: (id) => routes.course(id).replace(/^#/, '') },
     { label: 'Review Book', glyph: 'R', path: (id) => routes.reviewBook(id).replace(/^#/, '') },
     { label: 'Discussion', glyph: 'D', path: (id) => `${base}course/${encodeURIComponent(id)}/discussion` },
-    { label: 'Exam Prep', glyph: 'E', path: () => '#', disabled: true },
+    { label: 'Assessments', glyph: 'A', path: (id) => `${base}course/${encodeURIComponent(id)}/assessments` },
   ];
 }
 

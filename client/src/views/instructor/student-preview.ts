@@ -7,6 +7,8 @@ import { renderLoListWithExperience } from '../student/lo-list.js';
 import { renderPracticeWithExperience } from '../student/practice.js';
 import { renderReviewBookWithExperience } from '../student/review-book.js';
 import { renderSessionSummaryWithExperience } from '../student/session-summary.js';
+import { createPreviewAssessmentExperience } from '../../assessment-experience.js';
+import { renderAssessments, renderAssessmentAttempt } from '../student/assessments.js';
 
 /**
  * Preview uses the real student renderers and route structure. The only
@@ -15,7 +17,10 @@ import { renderSessionSummaryWithExperience } from '../student/session-summary.j
  */
 export function previewStudentRoutes(experience: StudentExperience, restricted = false): Route[] {
   const base = `/preview/${restricted ? 'restricted/' : ''}course/:id`;
+  const assessments = createPreviewAssessmentExperience(restricted);
   return [
+    { path: `${base}/assessments`, render: (outlet, params) => renderAssessments(outlet, params, assessments) },
+    { path: `${base}/assessment/:attemptId`, render: (outlet, params) => renderAssessmentAttempt(outlet, params, assessments) },
     { path: `${base}/discussion`, render: (outlet, params) => renderDiscussion(outlet, params, true) },
     {
       path: `${base}/practice-theme/:themeId`,

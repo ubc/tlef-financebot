@@ -12,7 +12,7 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
   const candidates: Array<{ _id: string; item: typeof item }> = [];
   const runs: Array<{ _id: string; status: string; interpretation: string; conflicts: string[]; cells: Array<{ id: string; loId: string; type: string; difficulty: string }>; completed: string[]; failures: unknown[] }> = [];
   const calls: string[] = [], unhandled: string[] = [], errors: string[] = [];
-  let submitted = false, answer: string | null = null, answerRevision = 0, deleted = false;
+  let submitted = false, answer: string | null = null, answerRevision = 0, deleted = false, windowId = '';
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
     let streams = 0;
@@ -62,6 +62,8 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
     if (path.endsWith('/approve')) { exam.items.find(i => i.id === body.itemId)!.approval = item.approval; exam.revision++; return route.fulfill({ json: exam }); }
     if (path.endsWith('/publish')) { exam.revision++; exam.publishedRevision = exam.revision; exam.publicationId = '507f1f77bcf86cd799439099'; return route.fulfill({ json: exam }); }
     if (path.includes('/assessment-attempts/')) {
+      if (path.endsWith('/window/close')) { submitted = true; return route.fulfill({ json: { submitted: true } }); }
+      if (path.endsWith('/window') || path.endsWith('/window/heartbeat')) { windowId = body.windowId; return route.fulfill({ json: { submitted, serverTime: new Date().toISOString(), windowExpiresAt: new Date(Date.now() + 120000).toISOString() } }); }
       if (path.endsWith('/answer')) { answer = body.selectedKey; answerRevision++; return route.fulfill({ json: { answerRevision } }); }
       if (path.endsWith('/submit')) { submitted = true; return route.fulfill({ json: { submitted: true } }); }
       if (path.endsWith('/results')) return route.fulfill({ json: { title: settings.title, released: false, message: 'Your Instructor will release the results.' } });
@@ -71,7 +73,7 @@ async function fixture(page: Page, role: 'instructor' | 'student' = 'instructor'
   });
   await page.goto(role === 'instructor' ? `/#/instructor/course/${courseId}/exam-builder/${examId}` : `/#/course/${courseId}/assessment/${examId}`);
   await expect(page.getByRole('heading', { name: 'Fall midterm', exact: true }).first()).toBeVisible();
-  return { calls, exam, candidates, runs, assertClean: () => { expect(unhandled).toEqual([]); expect(errors).toEqual([]); } };
+  return { calls, exam, candidates, runs, get windowId() { return windowId; }, assertClean: () => { expect(unhandled).toEqual([]); expect(errors).toEqual([]); } };
 }
 test('Instructor samples existing bank questions by topic, previews and publishes without generation', async ({ page }) => {
   const state = await fixture(page);
@@ -89,9 +91,8 @@ test('Instructor samples existing bank questions by topic, previews and publishe
   await expect(page.locator('.eb-paper')).toContainText('Topic coverage');
   await page.getByRole('button', { name: '2 Review paper' }).click();
   await expect(page.getByRole('button', { name: 'Approve question', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Student preview', exact: true }).click();
-  await expect(page.getByRole('dialog').locator('.correct')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  // Full isolated student sittings are covered by the assessment-preview suite.
+  await expect(page.getByRole('button', { name: 'Student preview', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '3 Publish' }).click();
   await page.getByRole('button', { name: 'Review & publish' }).click();
   await page.getByRole('button', { name: 'Publish exam', exact: true }).click();
@@ -129,11 +130,12 @@ test('topic quotas, shortage and failed adds preserve the paper for retry', asyn
   await expect(page.locator('.eb-paper-item')).toHaveCount(1);
   state.assertClean();
 });
-test('Student saves, reloads and submits without receiving correctness before release', async ({ page }) => {
+test('Student saves, reloads saved answers and submits without receiving correctness before release', async ({ page }) => {
   const state = await fixture(page, 'student');
   await page.getByRole('radio', { name: 'Option B' }).check();
   await expect(page.getByText('Answer saved.', { exact: true })).toBeVisible();
-  await page.reload(); await expect(page.getByRole('radio', { name: 'Option B' })).toBeChecked();
+  await page.getByRole('button', { name: 'Reload saved answers', exact: true }).click(); await expect(page.getByRole('radio', { name: 'Option B' })).toBeChecked();
+  expect(state.windowId).toMatch(/^[0-9a-f-]{36}$/);
   await expect(page.locator('.correct')).toHaveCount(0);
   page.on('dialog', d => d.accept());
   await page.getByRole('button', { name: 'Submit exam', exact: true }).click();

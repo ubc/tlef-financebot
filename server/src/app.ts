@@ -4,6 +4,7 @@ import { studentLearningRouter } from './routes/student-learning.routes';
 import { canvasRouter } from './routes/canvas.routes';
 import { peopleImportRouter } from './routes/people-import.routes';
 import { examBuilderRouter } from './routes/exam-builder.routes';
+import { assessmentPreviewRouter } from './routes/assessment-preview.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
@@ -108,6 +109,7 @@ export function createApp(): Express {
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
   app.use('/api', examBuilderRouter);
+  app.use('/api', assessmentPreviewRouter); // Teaching-team assessment rehearsal with isolated attempts.
   app.use('/api', examsRouter); // Exam templates and Exam Prep attempts/results (Phase 3 WS-10).
   app.use('/api', tasRouter); // TA invitations, permissions, review/suggestion/triage workflows (Phase 3 WS-12).
   app.use('/api', analyticsRouter); // Class/engagement/individual analytics (Phase 3 WS-11).

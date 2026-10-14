@@ -12,6 +12,10 @@ const err = (error: unknown): string => error instanceof Error ? error.message :
 const types: QuestionType[] = ['mcq', 'true-false'];
 const examTitle = (exam: BuilderExam): string => exam.displayTitle ?? exam.settings.title;
 const typeLabel = (type: string): string => type === 'mcq' ? 'MCQ' : 'True / False';
+const localDateTime = (iso: string): string => {
+  const date = new Date(iso);
+  return Number.isFinite(date.getTime()) ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+};
 
 export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams): Promise<void> {
   const courseId = params.id, examId = params.examId;
@@ -59,6 +63,7 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   let detail: BuilderDetail, outline: CourseOutline, bank: ExamBankQuestion[] = [];
   let tab: 'questions' | 'review' | 'publish' = 'questions', source = 'bank', search = '', topicFilter = '', loFilter = '', typeFilter = '', difficultyFilter = '', bankPage = 1;
   let settingsDraft: BuilderSettings | undefined, dirty = false, busy = false, message = '', connected = false, pendingSnapshot: BuilderDetail | undefined;
+  let reviewedRevision: number | undefined;
   const selected = new Set<string>();
   const mix = { mode: 'total', count: 10, topics: new Map<string, number>(), type: '', difficulty: '', numbers: false };
   let sample: ExamBankSample | undefined;
@@ -75,24 +80,36 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   function dialog(title: string, body: string, actions = ''): HTMLDialogElement {
     root.querySelector('dialog')?.remove();
     const node = el('dialog', { class: 'eb-dialog', 'aria-label': title, html: `<div class="eb-dialog-head"><h2>${esc(title)}</h2><button data-action="close" aria-label="Close dialog">×</button></div><div class="eb-dialog-body">${body}</div><div class="eb-dialog-foot">${actions || '<button data-action="close">Close</button>'}</div>` });
+    const confirmationRevision = reviewedRevision;
+    node.addEventListener('close', () => { if (confirmationRevision !== undefined && reviewedRevision === confirmationRevision) reviewedRevision = undefined; });
     root.append(node); hydrate(node); if (root.isConnected) node.showModal(); return node;
+  }
+  function resetSettingsDraft(exam: BuilderExam): void {
+    settingsDraft = { ...structuredClone(exam.settings), title: examTitle(exam) };
+    if (exam.publishedRevision !== exam.revision && !settingsDraft.opensAt) {
+      settingsDraft.opensAt = new Date().toISOString(); dirty = true;
+    }
   }
   async function load(): Promise<void> {
     const result = await api<BuilderDetail>(); if (!root.isConnected) return;
-    detail = result; if (!dirty) settingsDraft = { ...structuredClone(detail.exam.settings), title: examTitle(detail.exam) };
+    detail = result; if (!dirty) resetSettingsDraft(detail.exam);
   }
   function acceptSnapshot(next: BuilderDetail): void {
     if (!root.isConnected) return;
     if (busy) { pendingSnapshot = next; return; }
     if (next.exam.revision < detail.exam.revision) return;
+    if (reviewedRevision !== undefined && next.exam.revision !== reviewedRevision) {
+      root.querySelector('dialog')?.close(); reviewedRevision = undefined;
+      showError(new Error('The paper changed after your review. Review the updated paper before publishing.'));
+    }
     const changed = JSON.stringify(next.candidates) !== JSON.stringify(detail.candidates);
     detail.runs = next.runs; detail.candidates = next.candidates;
     // Keep the original revision while settings are dirty so concurrent changes
     // cause a conflict instead of silently overwriting another author's settings.
     if (!dirty && !root.querySelector('.eb-paper input:focus')) {
       const paperChanged = JSON.stringify(detail.exam) !== JSON.stringify(next.exam);
-      detail.exam = next.exam; settingsDraft = { ...structuredClone(next.exam.settings), title: examTitle(next.exam) };
-      if (paperChanged) { renderPaper(); renderMeta(); if (tab === 'questions' && source === 'bank') renderBank(); }
+      detail.exam = next.exam; resetSettingsDraft(next.exam);
+      if (paperChanged) { renderPaper(); renderMeta(); if (tab === 'questions' && source === 'bank') renderBank(); if (tab === 'publish') renderSettings(root.querySelector<HTMLElement>('.eb-content')!); }
     }
     renderRunArea();
     if (changed) { root.querySelector<HTMLButtonElement>('[data-source="saved"]')?.toggleAttribute('hidden', !detail.candidates.length); renderCandidates(); }
@@ -107,6 +124,7 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
     observer.observe(document.body, { childList: true, subtree: true });
   }
   async function mutate(suffix: string, body: object = {}, method: 'POST' | 'PUT' = 'POST'): Promise<void> {
+    if (dirty) await saveSettings();
     await api(suffix, method, { revision: detail.exam.revision, ...body }); await load(); if (root.isConnected) render();
   }
   const button = (label: string, action: string, id = '', disabled = false) => `<button data-action="${action}" data-id="${esc(id)}" ${disabled ? 'disabled' : ''}>${label}</button>`;
@@ -183,13 +201,61 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   function renderSettings(node: HTMLElement): void {
     const s = settingsDraft ?? detail.exam.settings;
     if (locked()) { node.innerHTML = `<div class="eb-panel eb-pad"><span class="eb-pill">Published revision</span><h2>${esc(examTitle(detail.exam))}</h2><p>${new Date(s.opensAt).toLocaleString()} → ${new Date(s.closesAt).toLocaleString()}</p><p>${detail.exam.items.length} fixed questions · ${s.durationMinutes} minutes · ${esc(s.feedback)}</p>${detail.exam.startedAt ? '<p>Students have started this exam. Use Duplicate exam to make changes.</p>' : button('Create revised draft', 'revise')} ${button('Release results', 'release-results')}</div>`; return; }
-    const local = (iso: string) => iso ? new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
-    node.innerHTML = `<div class="eb-panel"><div class="eb-panel-head"><div><h2>Publish this exam</h2><p>Lock the paper and decide when students can access it.</p></div></div><div class="eb-pad"><label class="eb-field">Exam title<input data-setting="title" maxlength="150" value="${esc(s.title)}"></label><div class="eb-fields"><label>Exam kind<select data-setting="kind">${['midterm', 'final'].map(t => `<option ${s.kind === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Purpose<select data-setting="purpose">${['formal', 'practice'].map(t => `<option ${s.purpose === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Opens · your timezone (${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)})<input type="datetime-local" data-setting="opensAt" value="${local(s.opensAt)}"></label><label>Closes · your timezone<input type="datetime-local" data-setting="closesAt" value="${local(s.closesAt)}"></label><label>Duration (minutes)<input data-setting="durationMinutes" type="number" min="1" max="1440" value="${s.durationMinutes}"></label><label>Score and answer release<select data-setting="feedback">${[['instructor', 'Instructor release'], ['after-close', 'After exam closes'], ...(s.purpose === 'practice' ? [['immediate', 'After submission']] : [])].map(([value, label]) => `<option value="${value}" ${s.feedback === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><label><input data-setting="shuffle" type="checkbox" ${s.shuffle ? 'checked' : ''}> Shuffle question order</label><details><summary>Individual timing accommodations</summary><p>One student PUID and extra minutes per line, separated by a comma. The exam close time still applies.</p><label class="eb-field">Student PUID, extra minutes<textarea id="eb-accommodations" placeholder="PUID-STUDENT-0001, 30">${s.accommodations.map(a => `${a.puid}, ${a.extraMinutes}`).join('\n')}</textarea></label></details><div class="eb-notice">One resumable attempt per student. The server enforces the deadline. Exam-only answers stay out of practice and Review Book.</div><div class="eb-actions">${button('Save settings', 'save-settings')}<small>${dirty ? 'Unsaved settings' : 'Settings saved'}</small></div><h3>Publication checklist</h3><ul class="eb-checks"><li>${detail.exam.items.length ? '✓' : '○'} Paper contains questions</li><li>${detail.exam.items.every(i => i.approval) && detail.exam.items.length ? '✓' : '○'} Every question is approved</li><li>${detail.exam.activeRunIds?.length ? '○' : '✓'} No active generation</li><li>${s.opensAt && s.closesAt && s.closesAt > s.opensAt ? '✓' : '○'} Valid availability window</li></ul><small>Publishing stores an immutable question and settings snapshot.</small></div><div class="eb-addbar"><small>${dirty ? 'Save settings before publishing.' : 'Review the exact paper before release.'}</small>${button('Review & publish →', 'publish-confirm', '', dirty || !detail.exam.items.length || detail.exam.items.some(i => !i.approval) || Boolean(detail.exam.activeRunIds?.length))}</div></div>`;
+    node.innerHTML = `<div class="eb-panel"><div class="eb-panel-head"><div><h2>Publish this exam</h2><p>Lock the paper and decide when students can access it.</p></div></div><div class="eb-pad"><label class="eb-field">Exam title<input data-setting="title" maxlength="150" value="${esc(s.title)}"></label><div class="eb-fields"><label>Exam kind<select data-setting="kind">${['midterm', 'final'].map(t => `<option ${s.kind === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Purpose<select data-setting="purpose">${['formal', 'practice'].map(t => `<option ${s.purpose === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Opens · your timezone (${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)})<input type="datetime-local" data-setting="opensAt" value="${localDateTime(s.opensAt)}"></label><label>Closes · your timezone<input type="datetime-local" data-setting="closesAt" value="${localDateTime(s.closesAt)}"></label><label>Duration (minutes)<input data-setting="durationMinutes" type="number" min="1" max="1440" value="${s.durationMinutes}"></label><label>Score and answer release<select data-setting="feedback">${[['instructor', 'Instructor release'], ['after-close', 'After exam closes'], ...(s.purpose === 'practice' ? [['immediate', 'After submission']] : [])].map(([value, label]) => `<option value="${value}" ${s.feedback === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><label><input data-setting="shuffle" type="checkbox" ${s.shuffle ? 'checked' : ''}> Shuffle question order</label><details><summary>Individual timing accommodations</summary><p>One student PUID and extra minutes per line, separated by a comma. The exam close time still applies.</p><label class="eb-field">Student PUID, extra minutes<textarea id="eb-accommodations" placeholder="PUID-STUDENT-0001, 30">${s.accommodations.map(a => `${a.puid}, ${a.extraMinutes}`).join('\n')}</textarea></label></details><div class="eb-notice">One resumable attempt per student. The server enforces the deadline. Exam-only answers stay out of practice and Review Book.</div><p class="eb-caption" data-settings-status role="status">${dirty ? 'Settings will save when you review publication.' : 'Settings saved. Changes save when you review publication.'}</p><h3>Publication checklist</h3><ul class="eb-checks"><li>${detail.exam.items.length ? '✓' : '○'} Paper contains questions</li><li>${detail.exam.items.every(i => i.approval) && detail.exam.items.length ? '✓' : '○'} Every question is approved</li><li>${detail.exam.activeRunIds?.length ? '○' : '✓'} No active generation</li><li>${s.opensAt && s.closesAt && s.closesAt > s.opensAt ? '✓' : '○'} Valid availability window</li></ul><small>Publishing stores an immutable question and settings snapshot.</small></div><div class="eb-addbar"><small>Settings save automatically before the final review.</small>${button('Review & publish →', 'publish-confirm', '', !detail.exam.items.length || detail.exam.items.some(i => !i.approval) || Boolean(detail.exam.activeRunIds?.length))}</div></div>`;
+  }
+  // Read the visible fields at the action boundary, including a focused field
+  // whose native change event has not fired yet. No background writes occur.
+  function captureSettings(): void {
+    if (!settingsDraft || !root.querySelector('[data-setting]')) return;
+    const draft = structuredClone(settingsDraft);
+    root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach(input => {
+      const key = input.dataset.setting as keyof BuilderSettings;
+      let value: string | number | boolean = input.value;
+      if (key === 'shuffle') value = (input as HTMLInputElement).checked;
+      if (key === 'durationMinutes') value = Number(input.value);
+      if (key === 'opensAt' || key === 'closesAt') value = input.value === localDateTime(draft[key]) ? draft[key] : input.value && Number.isFinite(new Date(input.value).getTime()) ? new Date(input.value).toISOString() : '';
+      Object.assign(draft, { [key]: value });
+    });
+    const accommodations = root.querySelector<HTMLTextAreaElement>('#eb-accommodations');
+    if (accommodations) draft.accommodations = accommodations.value.split('\n').filter(line => line.trim()).map(line => {
+      const [puid, extra, unexpected] = line.split(',');
+      return { puid: puid.trim(), extraMinutes: extra?.trim() && unexpected === undefined ? Number(extra) : Number.NaN };
+    });
+    if (draft.purpose === 'formal' && draft.feedback === 'immediate') draft.feedback = 'after-close';
+    if (JSON.stringify(draft) !== JSON.stringify(settingsDraft)) draft.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    settingsDraft = draft;
+    dirty = JSON.stringify(draft) !== JSON.stringify({ ...detail.exam.settings, title: examTitle(detail.exam) });
+    const status = root.querySelector('[data-settings-status]');
+    if (status) status.textContent = dirty ? 'Settings will save when you review publication.' : 'Settings saved. Changes save when you review publication.';
+  }
+  function validateDraft(publishing = false): void {
+    const s = settingsDraft!;
+    if (!s.title.trim() || s.title.trim().length > 150) throw new Error('Enter an exam title of up to 150 characters.');
+    if (!Number.isInteger(s.durationMinutes) || s.durationMinutes < 1 || s.durationMinutes > 1440) throw new Error('Duration must be a whole number from 1 to 1440 minutes.');
+    if (s.accommodations.some(a => !a.puid || a.puid.length > 128 || !Number.isInteger(a.extraMinutes) || a.extraMinutes < 0 || a.extraMinutes > 1440) || s.accommodations.length > 1000) throw new Error('Use one student PUID and a whole number of extra minutes from 0 to 1440 per line.');
+    if (new Set(s.accommodations.map(a => a.puid)).size !== s.accommodations.length) throw new Error('Each student can have only one accommodation.');
+    if (publishing && (!s.opensAt || !s.closesAt || !Number.isFinite(Date.parse(s.opensAt)) || !Number.isFinite(Date.parse(s.closesAt)) || Date.parse(s.closesAt) <= Date.parse(s.opensAt))) throw new Error('Choose a closing time after the opening time.');
+  }
+  async function saveSettings(): Promise<void> {
+    validateDraft();
+    if (!dirty) return;
+    const inputs = [...root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[data-setting], #eb-accommodations')];
+    inputs.forEach(input => { input.disabled = true; });
+    const status = root.querySelector('[data-settings-status]'); if (status) status.textContent = 'Saving settings…';
+    try {
+      const saved = await api<BuilderExam>('/settings', 'PUT', { revision: detail.exam.revision, settings: structuredClone(settingsDraft) });
+      if (!root.isConnected) return;
+      detail.exam = saved;
+      settingsDraft = { ...structuredClone(saved.settings), title: examTitle(saved) }; dirty = false;
+    } finally {
+      inputs.forEach(input => { input.disabled = false; });
+      if (status?.isConnected) status.textContent = dirty ? 'Settings were not saved. Your changes are still here; review publication to retry.' : 'Settings saved.';
+    }
   }
   root.addEventListener('input', event => {
     const target = event.target as HTMLInputElement;
     if (target.id === 'eb-search') { search = target.value; bankPage = 1; const caret = target.selectionStart; renderBank(); const input = root.querySelector<HTMLInputElement>('#eb-search')!; input.focus(); input.setSelectionRange(caret, caret); }
-    if (target.dataset.setting || target.id === 'eb-accommodations') dirty = true;
+    if (!busy && (target.dataset.setting || target.id === 'eb-accommodations')) captureSettings();
   });
   root.addEventListener('change', event => {
     const input = event.target as HTMLInputElement;
@@ -205,14 +271,10 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
     if (input.id === 'eb-mix-type') { mix.type = input.value; renderSampling(); }
     if (input.id === 'eb-mix-difficulty') { mix.difficulty = input.value; renderSampling(); }
     if (input.id === 'eb-mix-numbers') mix.numbers = input.checked;
-    if (input.dataset.setting && settingsDraft) {
-      const key = input.dataset.setting as keyof BuilderSettings;
-      const value = input.type === 'checkbox' ? input.checked : key === 'durationMinutes' ? Number(input.value) : ['opensAt', 'closesAt'].includes(key) ? (input.value ? new Date(input.value).toISOString() : '') : input.value;
-      settingsDraft = { ...settingsDraft, [key]: value, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-      if (settingsDraft.purpose === 'formal' && settingsDraft.feedback === 'immediate') settingsDraft.feedback = 'instructor';
-      dirty = true; if (key === 'purpose') render();
+    if (input.dataset.setting || input.id === 'eb-accommodations') {
+      captureSettings();
+      if (input.dataset.setting === 'purpose') render();
     }
-    if (input.id === 'eb-accommodations' && settingsDraft) { settingsDraft.accommodations = input.value.split('\n').filter(line => line.trim()).map(line => { const [puid, extra] = line.split(','); return { puid: puid.trim(), extraMinutes: Number(extra) }; }); dirty = true; }
     if ((input.dataset.points || input.dataset.minutes) && !busy) {
       const items = detail.exam.items.map(i => ({ id: i.id, points: input.dataset.points === i.id ? Number(input.value) : i.points, minutes: input.dataset.minutes === i.id ? Number(input.value) : i.minutes }));
       busy = true; void mutate('/items', { items }, 'PUT').catch(showError).finally(() => { busy = false; });
@@ -220,17 +282,17 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   });
   root.addEventListener('click', event => {
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>('button'); if (!target || target.disabled || busy) return;
-    if (target.dataset.tab) { if (dirty) { showError(new Error('Save settings before leaving this tab.')); return; } tab = target.dataset.tab as typeof tab; render(); return; }
+    if (target.dataset.tab) { tab = target.dataset.tab as typeof tab; render(); return; }
     if (target.dataset.source) { source = target.dataset.source; render(); return; }
     const action = target.dataset.action, id = target.dataset.id!; if (!action) return;
     if (action === 'bank-prev' || action === 'bank-next') { bankPage += action === 'bank-next' ? 1 : -1; renderBank(); return; }
     if (action === 'mix-all' || action === 'mix-clear') { mix.topics.clear(); if (action === 'mix-all') outline.themes.forEach(t => mix.topics.set(t._id, 1)); renderSampling(); return; }
-    if (action === 'close') { root.querySelector('dialog')?.close(); return; }
+    if (action === 'close') { root.querySelector('dialog')?.close(); reviewedRevision = undefined; return; }
     void runButtonAction(target, async () => {
       busy = true; message = '';
       try {
         if (action === 'reload') { if (dirty && !window.confirm('Discard unsaved settings and reload?')) return; dirty = false; await load(); bank = (await getExamBank(courseId)).questions; render(); }
-        if (action === 'next') { if (dirty) throw new Error('Save settings first.'); tab = tab === 'questions' ? 'review' : 'publish'; render(); }
+        if (action === 'next') { tab = tab === 'questions' ? 'review' : 'publish'; render(); }
         if (action === 'add-bank' || action === 'bulk-add' || action === 'numbers-add') { const ids = action === 'bulk-add' ? [...selected] : [id]; await mutate('/bank-items', { questions: bankRefs(ids, action === 'numbers-add') }); selected.clear(); render(); }
         if (action === 'sample-preview') {
           sample = await api<ExamBankSample>('/sample-bank', 'POST', { revision: detail.exam.revision, mode: mix.mode, topics: [...mix.topics].map(([topicId, count]) => ({ topicId, count })), count: mix.count, ...(mix.type ? { type: mix.type as QuestionType } : {}), ...(mix.difficulty ? { difficulty: mix.difficulty as Difficulty } : {}) });
@@ -250,11 +312,14 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
           dialog('Candidate preview', `${original ? `<h3>Source question</h3>${rich(original.sample?.stem ?? original.current.stem)}<p class="eb-caption">${esc(original.id)} · Pinned version ${esc(item.versionId ?? '')}</p><hr><h3>New variant</h3>` : ''}${questionCard(item)}`);
         }
         if (action === 'bank-preview') { const q = bank.find(q => q.id === id)!; dialog('Course question preview', `${rich(q.sample?.stem ?? q.current.stem)}${q.current.options.map(o => `<div class="eb-option ${o.role === 'correct' ? 'correct' : ''}"><b>${esc(o.key)}</b>${rich(q.sample?.options.find(s => s.key === o.key)?.text ?? o.text)}</div>`).join('')}`); }
-        if (action === 'preview') dialog('Student preview', `<div class="eb-notice">Isolated preview · answers and explanations are hidden.</div>${detail.exam.items.map((i, n) => `<article class="eb-review">${questionCard(i, n, true)}</article>`).join('')}`);
+        if (action === 'preview') { captureSettings(); await saveSettings(); if (root.isConnected) window.location.hash = `/preview/course/${encodeURIComponent(courseId)}/assessments?examId=${encodeURIComponent(examId)}&workspace=student`; }
         if (action === 'cancel-run') await mutate(`/runs/${id}/cancel`);
-        if (action === 'save-settings') { await api('/settings', 'PUT', { revision: detail.exam.revision, settings: settingsDraft }); dirty = false; await load(); render(); }
-        if (action === 'publish-confirm') { if (dirty) throw new Error('Save settings before publishing.'); dialog('Publish this exact paper?', `<h3>${esc(examTitle(detail.exam))}</h3><p>${detail.exam.items.length} pinned questions · ${detail.exam.items.reduce((n, i) => n + i.points, 0)} points · ${detail.exam.settings.durationMinutes} minutes</p><p>Students can start during the saved availability window. Published versions are immutable.</p><div class="eb-notice eb-warn">${detail.exam.items.filter(i => i.practiceExposure).length} selected questions or source families may have appeared in practice.</div>`, `${button('Back', 'close')}${button('Publish exam', 'publish')}`); }
-        if (action === 'publish') await mutate('/publish');
+        if (action === 'publish-confirm') { captureSettings(); validateDraft(true); await saveSettings(); if (!root.isConnected) return; render(); reviewedRevision = detail.exam.revision; dialog('Publish this exact paper?', `<h3>${esc(examTitle(detail.exam))}</h3><p>${detail.exam.items.length} pinned questions · ${detail.exam.items.reduce((n, i) => n + i.points, 0)} points · ${detail.exam.settings.durationMinutes} minutes</p><p>Opens ${esc(new Date(detail.exam.settings.opensAt).toLocaleString())} · Closes ${esc(new Date(detail.exam.settings.closesAt).toLocaleString())}</p><p>Score and answer release: ${detail.exam.settings.feedback === 'after-close' ? 'After exam closes' : detail.exam.settings.feedback === 'immediate' ? 'After submission' : 'Instructor release'}.</p><p>Students can start during the saved availability window. Published versions are immutable.</p><div class="eb-notice eb-warn">${detail.exam.items.filter(i => i.practiceExposure).length} selected questions or source families may have appeared in practice.</div>`, `${button('Back', 'close')}${button('Publish exam', 'publish')}`); }
+        if (action === 'publish') {
+          if (reviewedRevision === undefined) throw new Error('Review this paper before publishing.');
+          await api('/publish', 'POST', { revision: reviewedRevision }); reviewedRevision = undefined;
+          await load(); render();
+        }
         if (action === 'revise') await mutate('/revise');
         if (action === 'release-results') { await api('/release-results', 'POST', {}); root.querySelector('dialog')?.close(); message = 'Results released.'; render(); }
         if (action === 'duplicate') { const copy = await api<BuilderExam>('/duplicate', 'POST', {}); if (root.isConnected) window.location.hash = `/instructor/course/${courseId}/exam-builder/${copy._id}`; }
@@ -265,6 +330,6 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   protectUnsavedChanges(root, () => dirty || busy, async () => window.confirm('Leave this exam? Unsaved settings will be lost.'));
   try {
     const [data, course, questions] = await Promise.all([api<BuilderDetail>(), getCourseOutline(courseId), getExamBank(courseId)]);
-    if (!root.isConnected) return; detail = data; outline = course; bank = questions.questions; settingsDraft = { ...structuredClone(detail.exam.settings), title: examTitle(detail.exam) }; render(); connectStream();
+    if (!root.isConnected) return; detail = data; outline = course; bank = questions.questions; resetSettingsDraft(detail.exam); render(); connectStream();
   } catch (error) { if (root.isConnected) root.replaceChildren(errorState(err(error), () => void renderExamBuilder(outlet, params))); }
 }

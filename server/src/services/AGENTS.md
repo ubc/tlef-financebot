@@ -264,3 +264,23 @@ pure projection reducers; all exact PUID, publication, term, archive, deactivati
 and Canvas snapshot checks remain in effect. Dynamic candidate PUIDs participate
 in role/course search before the directory row limit. `syncedCourseRoles` is
 read-only display metadata for the course People management links.
+
+`assessment-preview.service.ts` freezes ready builder drafts or published papers
+into `previewAssessmentAttempts`, keyed by authenticated actor/course/session/
+mode/exam. Pure live grading is reused; live first-start locks, attempts, analytics
+and publication state are never written. Server deadlines, expiry and answer/
+submission CAS apply to every state mutation. Restricted reads honor course
+publication and source availability/release; unrestricted rehearsals bypass exam
+windows and explicitly simulate result release only after submission. Resume list
+rows describe the frozen paper even after source edits. Permanent course deletion
+includes this separate collection.
+
+Live and Preview assessment services bind optional historical sittings to a
+UUID-backed window lease, enforce owner/deadline/lease and answer CAS, and grade
+close or disconnected expiry against the frozen paper. `assessment-window.ts`
+shares only pure policy helpers. `assessment-window-jobs.service.ts` registers
+the bounded deadline/lease sweeper after Agenda starts, every 30 seconds; it does
+not depend on active enrollment and never changes release or practice data.
+The client heartbeat is 20 seconds, the lease grace is 120 seconds, and no expired
+or closed lease can revive. The local-only smoke script verifies physical races
+and cleanup in a disposable database without provider calls.

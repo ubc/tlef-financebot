@@ -296,3 +296,23 @@ names before/after commit with paginated lists. See
 `docs/design/course-people/IMPLEMENTATION.md`, `docs/api-contract.md`, and
 `playwright.course-people.config.ts`. Old standalone UI/enrollment descriptions
 above describe historical entry points; the current Instructor entry is People.
+
+
+Assessment Preview acceptance (2026-10-13): `assessment-preview.service/routes`
+unit suites cover scope, snapshot, deadlines, CAS and disclosure. The widened
+`playwright.exam-builder.config.ts` includes the original Builder flow,
+`exam-publish-autosave.spec.ts` and `assessment-preview.spec.ts`; role workspace
+checks verify enabled Preview Assessments navigation for Instructor/Admin/TA.
+All browser APIs are intercepted. Build first and serve `client/public` on 6118.
+`scripts/verify-assessment-preview.ts` is an opt-in synthetic local Mongo smoke;
+it refuses remote hosts, needs the new preview indexes, cleans its own fixture
+records, and never calls model providers or writes live student data.
+
+Strict assessment-window checks in `assessment-workspace.spec.ts` cover locked
+shell/hash/Back navigation, closing/reloading, Preview close isolation, pending
+saves, failed-submit recovery and shell restoration. Backend assessment/Preview
+route and service suites cover UUID ownership, close/answer/heartbeat CAS,
+expired leases and frozen release rules; the expiry-job suite checks bounded
+sweeps and safe registration. `scripts/verify-assessment-window.ts` is an opt-in
+physical Mongo smoke requiring a local disposable `financebot_window_smoke_*`
+database, with scoped synthetic fixtures and cleanup. No provider calls occur.
