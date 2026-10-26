@@ -32,10 +32,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(path, init); }
   catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.');
+    if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.', { endpoint: path });
     throw error;
   }
   if (!response.ok) {
+    const requestId = response.headers.get('X-Request-ID');
+    reportClientFailure('http', `An API request returned HTTP ${response.status}.`, { endpoint: path, statusCode: response.status,
+      ...(requestId && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId) ? { relatedRequestId: requestId } : {}) });
     const message = await errorMessage(response, `Request to ${path} failed (${response.status}).`);
     if (response.status === 401) onUnauthorized?.();
     throw new ApiError(message, response.status, response.headers.get('X-Request-ID') ?? undefined);
@@ -43,7 +46,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 204 No Content (e.g. the skip/bookmark-delete endpoints) has no body to
   // parse; callers of those endpoints declare Promise<void> and never read it.
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  try { return (await response.json()) as T; }
+  catch (error) {
+    const requestId = response.headers.get('X-Request-ID');
+    reportClientFailure('response', 'An API response was not valid JSON.', { endpoint: path, statusCode: response.status,
+      ...(requestId && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId) ? { relatedRequestId: requestId } : {}) });
+    throw error;
+  }
 }
 
 export { request as apiRequest };
@@ -3351,6 +3360,7 @@ export function getAnalyticsExamScores(courseId: string, filter: { from?: string
 
 // Platform diagnostics (Admin only).
 export interface DiagnosticFilters {
+  routing?: 'all' | 'unmatched' | 'other';
   page?: number; limit?: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
   outcome?: string; status?: string; state?: string; from?: string; until?: string; requestId?: string;
 }
@@ -3364,6 +3374,9 @@ export interface DiagnosticPage<T> extends DiagnosticIdentities {
 }
 export interface OperationRecord {
   _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
+  request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
+    client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
+    fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable' };
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial'; statusCode: number;
   actor?: { puid: string; uid: string; displayName: string };
   targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;

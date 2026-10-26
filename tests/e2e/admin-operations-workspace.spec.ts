@@ -12,9 +12,12 @@ const run = { _id: runId, courseId, kind: 'question-generation', requestedBy: 'P
   events: [{ at: operation.createdAt, stage: 'reviewing', status: 'partial', message: 'Second item failed review', completedUnits: 1 }], result: { createdQuestionIds: [courseId], failures: [{ item: 2, message: 'Invalid options' }] } };
 const identities = { courses: [{ _id: courseId, name: 'Finance', courseCode: 'FIN 101' }], users: [{ puid: 'PUID-FACULTY', uid: 'faculty', displayName: 'Alex Instructor' }] };
 const monitoring = { failedWrites: 0, pendingWrites: 0, oldestRecordAt: operation.createdAt };
+const unmatchedOperation = { ...operation, method: 'GET', route: '/unmatched', statusCode: 404,
+  actor: undefined, targets: {}, response: { error: 'Not Found' },
+  request: { path: '/api/:redacted', pathHash: 'a'.repeat(64), pathRedacted: true, pathTruncated: false, routeMatched: false, client: 'curl', fetchSite: 'unavailable' } };
 async function fixture(page: Page, hash = '#/admin/operations', fullShell = false) {
   const reads: URL[] = [];
-  const controls = { failList: false, failDetail: false, slowSearch: false };
+  const controls = { failList: false, failDetail: false, slowSearch: false, unmatched: false as false | 'new' | 'legacy' };
   const writes: string[] = [];
   await page.route('**/operations-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en" data-admin="true" data-theme="light"><head><title>Operations QA</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/admin-console.css"></head><body><main id="fixture" class="outlet"></main></body></html>' }));
   await page.route('**/api/**', async route => {
@@ -25,10 +28,10 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
       if (controls.failList) return route.fulfill({ status: 503, json: { error: 'Audit temporarily unavailable.' } });
       if (controls.slowSearch && url.searchParams.get('q') === 'slow') await new Promise(resolve => setTimeout(resolve, 650));
       const atPage = Number(url.searchParams.get('page') || 1);
-      const items = url.searchParams.get('q') === 'empty' ? [] : atPage === 2 ? [{ ...operation, requestId: secondId, route: 'Page two action' }] : [operation, { ...operation, requestId: secondId, outcome: 'accepted', response: {}, route: '/api/courses/:courseId/materials' }];
+      const items = controls.unmatched ? [{ ...unmatchedOperation, request: controls.unmatched === 'legacy' ? undefined : unmatchedOperation.request }] : url.searchParams.get('q') === 'empty' ? [] : atPage === 2 ? [{ ...operation, requestId: secondId, route: 'Page two action' }] : [operation, { ...operation, requestId: secondId, outcome: 'accepted', response: {}, route: '/api/courses/:courseId/materials' }];
       return route.fulfill({ json: { items, total: items.length ? 27 : 0, page: atPage, ...identities, monitoring } });
     }
-    if (url.pathname.startsWith('/api/admin/operations/')) return route.fulfill(controls.failDetail ? { status: 503, json: { error: 'Evidence temporarily unavailable.' } } : { json: { operation: url.pathname.endsWith(secondId) ? { ...operation, requestId: secondId, outcome: 'accepted', response: {} } : operation, runs: [run] } });
+    if (url.pathname.startsWith('/api/admin/operations/')) return route.fulfill(controls.failDetail ? { status: 503, json: { error: 'Evidence temporarily unavailable.' } } : { json: { operation: controls.unmatched ? { ...unmatchedOperation, request: controls.unmatched === 'legacy' ? undefined : unmatchedOperation.request } : url.pathname.endsWith(secondId) ? { ...operation, requestId: secondId, outcome: 'accepted', response: {} } : operation, runs: controls.unmatched ? [] : [run] } });
     if (url.pathname === '/api/admin/diagnostic-runs') return route.fulfill({ json: { items: [run], total: 1, page: 1, ...identities } });
     if (url.pathname.startsWith('/api/admin/diagnostic-runs/')) return route.fulfill({ json: { run, ...identities } });
     if (url.pathname === '/api/admin/audit-history') return route.fulfill({ json: { items: [{ _id: courseId, actorPuid: 'PUID-ADMIN', action: 'grant-instructor', targetType: 'user', targetId: 'PUID-FACULTY', createdAt: operation.createdAt, detail: { platformInstructor: true } }], total: 1, page: 1 } });
@@ -45,6 +48,89 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
   await expect(page.locator('.ac-table')).toBeVisible();
   return { reads, writes, controls };
 }
+
+test('unmatched 404s retain evidence, searchable hashes and persistent routing filters', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'new';
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('Routing', { exact: true }).selectOption('unmatched');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect.poll(() => state.reads.filter(url => url.pathname === '/api/admin/operations').at(-1)?.searchParams.get('routing')).toBe('unmatched');
+  await expect(page).toHaveURL(/routing=unmatched/);
+  await expect(page.locator('.ac-table')).toContainText('Unmatched route · HTTP 404');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.getByText('No API route matched this request.', { exact: false })).toBeVisible();
+  await expect(page.locator('.ac-panel')).toContainText(unmatchedOperation.request.pathHash);
+  await expect(page.locator('.ac-panel')).toContainText('curl');
+  await expect(page.getByText('Operation failed', { exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: 'audit-results/operations-logging/unmatched-404-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(page).toHaveURL(/routing=unmatched/);
+  await page.getByRole('searchbox', { name: 'Search activity' }).fill(unmatchedOperation.request.pathHash);
+  await expect.poll(() => state.reads.filter(url => url.pathname === '/api/admin/operations').at(-1)?.searchParams.get('q')).toBe(unmatchedOperation.request.pathHash);
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await expect(page.getByLabel('Routing', { exact: true })).toHaveValue('unmatched');
+  await page.getByLabel('Routing', { exact: true }).selectOption('other');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).toHaveURL(/routing=other/);
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(page).not.toHaveURL(/routing=/);
+  expect(state.writes).toEqual([]);
+});
+
+test('historical unmatched 404s disclose missing original paths without inventing diagnostics', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'legacy';
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.locator('.ac-table')).toContainText('original path unavailable');
+  await page.getByRole('link', { name: 'GET /unmatched', exact: true }).click();
+  await expect(page.getByText('The original path was not retained for this historical record.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Path hash (SHA-256)', { exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+test('browser API failures report endpoints, HTTP status and server correlation without queries or response content', async ({ page }) => {
+  await fixture(page);
+  const reports: Array<{ kind: string; request: { endpoint: string; statusCode?: number; relatedRequestId?: string } }> = [];
+  await page.route('**/api/diagnostics/client-error', route => { reports.push(route.request().postDataJSON()); return route.fulfill({ status: 204 }); });
+  await page.route('**/api/questions/telemetry-fixture?**', route => {
+    const mode = new URL(route.request().url()).searchParams.get('mode');
+    if (mode === 'network') return route.abort('connectionfailed');
+    if (mode === 'invalid-json') return route.fulfill({ status: 200, contentType: 'text/html', body: '<html>private response content</html>' });
+    return route.fulfill({ status: mode === 'proxy' ? 502 : 404, headers: mode === 'proxy' ? {} : { 'X-Request-ID': secondId }, contentType: 'text/html', body: '<html>private response content</html>' });
+  });
+  for (const mode of ['missing', 'proxy', 'invalid-json', 'network']) {
+    await page.evaluate(async mode => {
+      const { apiRequest } = await import('/js/api.js');
+      await apiRequest(`/api/questions/telemetry-fixture?mode=${mode}&token=private-query`).catch(() => undefined);
+    }, mode);
+  }
+  await expect.poll(() => reports.length).toBe(4);
+  expect(reports.map(report => report.kind)).toEqual(['http', 'http', 'response', 'network']);
+  expect(reports[0].request).toEqual({ endpoint: '/api/questions/telemetry-fixture', statusCode: 404, relatedRequestId: secondId });
+  expect(reports[1].request.statusCode).toBe(502);
+  expect(reports[1].request.relatedRequestId).toBeUndefined();
+  expect(reports[2].request.statusCode).toBe(200);
+  expect(reports[3].request.statusCode).toBeUndefined();
+  expect(JSON.stringify(reports)).not.toMatch(/private|token|\?/);
+  await page.evaluate(async () => {
+    const { apiRequest } = await import('/js/api.js');
+    const controller = new AbortController(); controller.abort();
+    await apiRequest('/api/questions/telemetry-fixture?mode=network', { signal: controller.signal }).catch(() => undefined);
+    for (let i = 0; i < 4; i++) await apiRequest('/api/questions/telemetry-fixture?mode=missing').catch(() => undefined);
+  });
+  await expect.poll(() => reports.length).toBe(5);
+});
+
+test('browser-reported request links are labelled as unverified evidence', async ({ page }) => {
+  await fixture(page);
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: { ...operation, method: 'CLIENT', statusCode: 0, response: { error: 'An API request returned HTTP 502.', relatedRequestId: secondId, reportedBy: 'browser' } }, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Related server request (browser-reported)', exact: true })).toHaveAttribute('href', `#/admin/operations/requests/${secondId}`);
+});
 
 test('operations preserve filters and table context while inspecting and closing evidence', async ({ page }) => {
   const state = await fixture(page);

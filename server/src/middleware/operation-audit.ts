@@ -3,13 +3,22 @@ import { withModelCallObserver } from '../components/genai/llm/model-call';
 import { randomUUID } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { operationContext } from '../services/operation-context';
-import { recordOperation, safeControls, safeDiagnostic } from '../services/operation-audit.service';
+import { recordOperation, safeControls, safeDiagnostic, operationLogContext } from '../services/operation-audit.service';
 import type { OperationEvent } from '../types/domain';
+import { requestDiagnostics } from '../services/request-diagnostics';
 
 /** Mounted before parsers/rate limiting: malformed requests are failures too. */
 export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
+  const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
+  const slowThresholdMs = 30000;
+  const slowTimer = setTimeout(() => {
+    if (String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
+    console.warn('[http.operation_pending]', JSON.stringify({ requestId, method: req.method,
+      elapsedMs: Date.now() - started, headersSent: res.headersSent, request: requestMetadata }));
+  }, slowThresholdMs);
+  slowTimer.unref();
   const usage = createModelUsageTracker(() => ({
     operationId: requestId,
     courseId: String(res.locals.courseId ?? req.params.courseId ?? req.body?.courseId ?? ''),
@@ -57,8 +66,9 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   function finish(aborted: boolean): void {
     if (recorded) return;
     recorded = true;
+    clearTimeout(slowTimer);
     void usage.close();
-    const failed = aborted || res.statusCode >= 400 || Boolean(response.error);
+    const failed = aborted || res.statusCode >= 400 || Boolean(response.error) || Boolean(res.locals.operationException);
     const rawPath = req.originalUrl.split('?')[0];
     // Authenticated browser reports own their request ID. A client navigating
     // away while that insert is pending must not insert a second event under
@@ -66,7 +76,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     if (rawPath === '/api/diagnostics/client-error' && res.statusCode < 400) return;
     // Closing an established SSE connection on navigation is normal, not a
     // failed user action. Failed handshakes are still recorded below.
-    if (res.statusCode < 400 && String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
+    if (res.statusCode < 400 && !res.locals.operationException && String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
     // Usage refreshes are diagnostics reads, not new user workflow steps.
     if (!failed && req.method === 'GET' && (/\/content-runs\/[a-f\d]{24}\/usage$/i.test(rawPath) || /^\/api\/admin\/(model-usage|workflows)/.test(rawPath))) return;
     // Successful infrastructure polls are intentionally excluded. Failures stay.
@@ -82,13 +92,26 @@ export const operationAudit: RequestHandler = (req, res, next) => {
       targets[({ courses: 'courseId', questions: 'questionId', materials: 'materialId', 'content-runs': 'runId', attempts: 'attemptId' } as Record<string, string>)[match[1]]] = match[2];
     }
     if (res.locals.courseId) targets.courseId = String(res.locals.courseId);
+    if (res.locals.operationException) response.exception = res.locals.operationException;
     const event: OperationEvent = {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
-      outcome: aborted ? 'interrupted' : res.statusCode >= 400 ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',
+      request: { ...requestMetadata, routeMatched: route !== '/unmatched' },
+      outcome: aborted ? 'interrupted' : res.statusCode >= 400 || res.locals.operationException ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',
       actor: req.user ? { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } : undefined,
       targets, input: { ...safeControls(req.query), ...safeControls(req.body) }, response,
     };
+    if (['failed', 'partial', 'interrupted'].includes(event.outcome)) {
+      const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
+        : event.statusCode === 401 ? 'authentication' : event.statusCode === 403 ? 'authorization'
+        : event.statusCode === 429 ? 'rate-limit' : event.statusCode >= 500 ? 'server-failure'
+        : event.statusCode === 400 || event.statusCode === 422 ? 'validation' : 'application');
+      response.failureCategory = category;
+      console.warn(event.statusCode === 404 && route === '/unmatched' ? '[http.route_not_found]' : '[http.operation_failed]',
+        JSON.stringify({ ...operationLogContext(event), category, ...(res.locals.operationException ? { exception: res.locals.operationException } : {}) }));
+    } else if (event.durationMs >= slowThresholdMs) {
+      console.warn('[http.operation_slow]', JSON.stringify(operationLogContext(event)));
+    }
     void recordOperation(event);
   }
   res.once('finish', () => finish(false));

@@ -1,5 +1,13 @@
 import { operationEventsCol } from '../components/mongodb/collections';
 import type { OperationEvent } from '../types/domain';
+import { exceptionDiagnostics } from './exception-diagnostics';
+
+/** This fallback remains available when MongoDB audit persistence is unavailable. */
+export function operationLogContext(event: OperationEvent) {
+  return { requestId: event.requestId, method: event.method, route: event.route,
+    statusCode: event.statusCode, outcome: event.outcome, durationMs: event.durationMs,
+    ...(event.request ? { request: event.request } : {}) };
+}
 
 let failedWrites = 0;
 let lastFailureAt: Date | undefined;
@@ -11,10 +19,17 @@ export function auditHealth(): { failedWrites: number; pendingWrites: number; la
 // Bounded, best-effort telemetry. A DB outage must not exhaust process memory
 // or turn a completed user mutation into a misleading HTTP failure.
 export async function recordOperation(event: OperationEvent): Promise<void> {
-  if (pendingWrites >= 100) { failedWrites++; lastFailureAt = new Date(); return; }
+  if (pendingWrites >= 100) {
+    failedWrites++; lastFailureAt = new Date();
+    console.error('[audit.record_dropped]', JSON.stringify({ ...operationLogContext(event), reason: 'pending-write-limit' }));
+    return;
+  }
   pendingWrites++;
   try { await operationEventsCol().insertOne(event); }
-  catch { failedWrites++; lastFailureAt = new Date(); console.error('[audit] Operation record could not be saved.'); }
+  catch (error) {
+    failedWrites++; lastFailureAt = new Date();
+    console.error('[audit.record_dropped]', JSON.stringify({ ...operationLogContext(event), reason: 'write-failed', exception: exceptionDiagnostics(error) }));
+  }
   finally { pendingWrites--; }
 }
 

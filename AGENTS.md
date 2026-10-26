@@ -18,6 +18,18 @@ commonly need:
 
 ## Current state
 
+- Admin request diagnostics retain allowlisted path shapes, query-free path
+  hashes and unverified client/fetch-site categories. Unmatched API 404s emit
+  correlated structured server warnings and remain failed records. Operations
+  Filters → Routing selects/excludes unmatched 404s without hiding matched
+  resource errors; historical paths stay unavailable. See the October 26 API
+  contract and `playwright.operations-logging.config.ts` for static UI checks.
+  Failed/partial/interrupted requests, bounded exceptions, 30-second pending
+  requests and dropped audit writes have correlated structured server logs.
+  Browser HTTP/JSON/network reports add unverified endpoint/status/request links.
+  See `docs/runbooks/request-failure-diagnostics.md` for investigation and gaps;
+  no complete proxy, process-crash or offline-client capture is claimed.
+
 - Enrollment uses Canvas Gradebook/people CSV imports as its primary path.
   Optional batches of 1–50 one-time student codes replace the live shared code;
   Instructor/Admin receipts show status, claimant identity and last CWL login.

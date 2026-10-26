@@ -1,4 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { operationContext } from '../services/operation-context';
+import { exceptionDiagnostics } from '../services/exception-diagnostics';
 
 /** Catch-all for requests that match no route. */
 export const notFoundHandler: RequestHandler = (_req, res) => {
@@ -11,7 +13,10 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
  * though it is unused.
  */
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  console.error('[error]', err);
+  const exception = exceptionDiagnostics(err);
+  res.locals.operationException = exception;
+  console.error('[http.exception]', JSON.stringify({ requestId: operationContext.getStore() ?? null, exception, headersSent: res.headersSent }));
+  if (res.headersSent) { res.destroy(); return; }
   const status = typeof err?.status === 'number' ? err.status : 500;
   res.status(status).json({ error: err?.message ?? 'Internal Server Error' });
 };

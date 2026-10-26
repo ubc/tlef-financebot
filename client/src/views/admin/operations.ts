@@ -16,6 +16,8 @@ const tabLabels: Record<ActivityTab, string> = { requests: 'User operations', ru
 const isTab = (value: string | null): value is ActivityTab => value !== null && Object.prototype.hasOwnProperty.call(tabLabels, value);
 const shortDate = (value: string): string => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const duration = (ms: number): string => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+const unmatched404 = (item: OperationRecord): boolean => item.route === '/unmatched' && item.statusCode === 404;
+const operationTitle = (item: OperationRecord): string => `${item.method} ${item.route === '/unmatched' && item.request ? item.request.path : item.route}`;
 function download(name: string, content: string, type: string): void {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = el('a', { href: url, download: name });
@@ -64,6 +66,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   let course = query.get('courseId') || '';
   let from = query.get('from') || '';
   let until = query.get('until') || '';
+  let routing: NonNullable<DiagnosticFilters['routing']> = query.get('routing') === 'unmatched' ? 'unmatched' : query.get('routing') === 'other' ? 'other' : 'all';
   const metrics = el('div', { class: 'ac-metrics', 'aria-label': 'Activity summary' });
   const tabs = el('nav', { class: 'ac-tabs', 'aria-label': 'Activity type' });
   const chips = el('div', { class: 'ac-chips' });
@@ -93,6 +96,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     if (tab === 'usage' && usageRun) params.set('runId', usageRun);
     if (status.value && (tab === 'requests' || tab === 'runs')) params.set(tab === 'runs' ? 'status' : 'outcome', status.value);
     if (tab === 'requests') params.set('activity', activity.value);
+    if (tab === 'requests' && routing !== 'all') params.set('routing', routing);
     if (page > 1) params.set('page', String(page));
     return params;
   }
@@ -142,8 +146,8 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     } })));
   }
   function renderChips(): void {
-    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`, tab === 'usage' && usageOperation && `Request: ${usageOperation}`, tab === 'usage' && usageRun && `Task: ${usageRun}`].filter((value): value is string => typeof value === 'string' && value.length > 0);
-    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = usageOperation = usageRun = ''; return load(1); } }));
+    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`, tab === 'requests' && routing !== 'all' && (routing === 'unmatched' ? 'Unmatched routes (404)' : 'Exclude unmatched 404s'), tab === 'usage' && usageOperation && `Request: ${usageOperation}`, tab === 'usage' && usageRun && `Task: ${usageRun}`].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = usageOperation = usageRun = ''; routing = 'all'; return load(1); } }));
   }
   function filtersDialog(): void {
     const localValue = (value: string): string => { const date = new Date(value); return value && !Number.isNaN(date.getTime()) ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; };
@@ -153,11 +157,13 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const untilInput = el('input', { class: 'input', type: 'datetime-local', value: localValue(until) });
     const operationInput = el('input', { class: 'input', value: usageOperation, maxlength: 128, placeholder: 'Any request' });
     const runInput = el('input', { class: 'input', value: usageRun, maxlength: 128, placeholder: 'Any background task' });
+    const routingInput = el('select', { class: 'input', 'aria-label': 'Routing' }, el('option', { value: 'all', text: 'All requests' }), el('option', { value: 'unmatched', text: 'Unmatched routes (404)' }), el('option', { value: 'other', text: 'Exclude unmatched 404s' }));
+    routingInput.value = routing;
     const dialog = el('dialog', { class: 'ac-filter-dialog', 'aria-labelledby': 'ac-filter-title' });
     const validate = (): void => untilInput.setCustomValidity(fromInput.value && untilInput.value && fromInput.value > untilInput.value ? 'End time must be after start time.' : '');
     fromInput.addEventListener('input', validate); untilInput.addEventListener('input', validate);
-    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; if (tab === 'usage') { usageOperation = operationInput.value.trim(); usageRun = runInput.value.trim(); } dialog.close(); return load(1); } },
-      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput), tab === 'usage' && field('Request ID', operationInput), tab === 'usage' && field('Task ID', runInput)),
+    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; if (tab === 'requests') routing = routingInput.value as NonNullable<DiagnosticFilters['routing']>; if (tab === 'usage') { usageOperation = operationInput.value.trim(); usageRun = runInput.value.trim(); } dialog.close(); return load(1); } },
+      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput), tab === 'requests' && field('Routing', routingInput), tab === 'usage' && field('Request ID', operationInput), tab === 'usage' && field('Task ID', runInput)),
       el('div', { class: 'ac-actions' }, el('button', { type: 'button', class: 'btn btn--secondary', text: 'Cancel', onclick: () => dialog.close() }), el('button', { class: 'btn btn--primary', type: 'submit', text: 'Apply filters' }))));
     dialog.addEventListener('close', () => dialog.remove()); root.append(dialog); dialog.showModal();
   }
@@ -215,7 +221,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
       return;
     }
     const filters: DiagnosticFilters = { page, limit: 25, q: search.value.trim(), actor, courseId: course, from, until,
-      ...(tab === 'runs' ? { status: status.value } : tab === 'requests' ? { outcome: status.value, activity: activity.value as 'all' | 'actions' } : {}) };
+      ...(tab === 'runs' ? { status: status.value } : tab === 'requests' ? { outcome: status.value, activity: activity.value as 'all' | 'actions', routing } : {}) };
     try {
       let data: DiagnosticPage<OperationRecord> | DiagnosticPage<DiagnosticRun> | DiagnosticPage<AuditHistoryRecord> | DiagnosticPage<ModelCallReceipt> | WorkflowPage;
       let nextRows: ActivityRow[];
@@ -237,7 +243,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
         nextRows = result.items.map(item => ({ id: item._id, kind: 'history', outcome: 'recorded', title: item.action, subtitle: `${item.targetType} · ${item.targetId}`, actor: userLabel(item.actorPuid, result), course: courseLabel(item.courseId, result), at: item.createdAt, duration: '—', history: item }));
       } else {
         const result = await listAdminOperations(filters); data = result;
-        nextRows = result.items.map(item => ({ id: item.requestId, kind: 'requests', outcome: item.outcome, title: `${item.method} ${item.route}`, subtitle: item.response.error ? String(item.response.error) : item.requestId, actor: item.actor?.displayName || item.actor?.uid || 'Identity unavailable', course: courseLabel(item.targets.courseId, result), at: item.createdAt, duration: duration(item.durationMs) }));
+        nextRows = result.items.map(item => ({ id: item.requestId, kind: 'requests', outcome: item.outcome, title: operationTitle(item), subtitle: unmatched404(item) ? `Unmatched route · HTTP 404${item.request ? '' : ' · original path unavailable'}` : item.response.error ? String(item.response.error) : item.requestId, actor: item.actor?.displayName || item.actor?.uid || 'Identity unavailable', course: courseLabel(item.targets.courseId, result), at: item.createdAt, duration: duration(item.durationMs) }));
       }
       if (own !== revision || !root.isConnected) return;
       rows = nextRows; total = data.total;
@@ -334,17 +340,19 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   }
   function showRequest(operation: OperationRecord, runs: DiagnosticRun[], usageData: { modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }): void {
     evidenceTabs([
-      ['Overview', () => el('div', {}, outcomeBadge(operation.outcome), el('h3', { text: `${operation.method} ${operation.route}` }),
-        operation.response.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: 'Operation failed' }), el('p', { text: String(operation.response.error) })) : false,
+      ['Overview', () => el('div', {}, outcomeBadge(operation.outcome), el('h3', { text: operationTitle(operation) }),
+        unmatched404(operation) ? el('div', { class: 'ac-callout ac-callout--warning' }, el('strong', { text: 'Unmatched route · HTTP 404' }), el('p', { text: 'No API route matched this request. This may be an outdated client, a misconfigured check or an automated probe; the record does not establish its source.' }), el('p', { text: operation.request ? 'Use the request ID and timestamp to correlate proxy access logs. Search the path hash to find repeated requests. Path segments outside the public route vocabulary are masked.' : 'The original path was not retained for this historical record. Check proxy access logs at the recorded time.' })) : operation.response.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: 'Operation failed' }), el('p', { text: String(operation.response.error) })) : false,
         operation.outcome === 'interrupted' && el('div', { class: 'ac-callout ac-callout--warning', text: 'The connection ended before completion was confirmed. This action may already have changed data. Check its linked task or resource before retrying.' }),
         operation.outcome === 'accepted' && el('div', { class: 'ac-callout', text: 'The request was accepted. Check associated background work for its final outcome.' }),
         properties([['User', operation.actor?.displayName || 'Identity unavailable'], ['PUID', operation.actor?.puid || 'Not recorded'], ['Recorded', dateLabel(operation.createdAt)], ['Response', operation.method === 'CLIENT' ? 'Browser report (unverified)' : `HTTP ${operation.statusCode}`], ['Duration', duration(operation.durationMs)]]),
+        operation.request ? properties([['Request path (sanitized)', operation.request.path], ['Route matched', operation.request.routeMatched ? 'Yes' : 'No'], ['Path hash (SHA-256)', operation.request.pathHash], ['Client category (unverified)', operation.request.client], ['Fetch site (unverified)', operation.request.fetchSite], ['Path truncated', operation.request.pathTruncated ? 'Yes — display or hash input was bounded' : 'No']]) : false,
         el('p', { class: 'mono', text: `Request ID: ${operation.requestId}` }), el('h3', { text: 'Related resources' }),
         el('div', { class: 'ac-actions' }, operation.targets.courseId ? diagnosticLink('Open course', `#/instructor/course/${operation.targets.courseId}`) : false,
           operation.targets.questionId ? diagnosticLink('Reproduce question', `#/admin/questions/${operation.targets.questionId}`) : false,
+          typeof operation.response.relatedRequestId === 'string' && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(operation.response.relatedRequestId) ? diagnosticLink('Related server request (browser-reported)', `#/admin/operations/requests/${operation.response.relatedRequestId}`) : false,
           operation.actor ? diagnosticLink('All user activity', `#/admin/operations?actor=${encodeURIComponent(operation.actor.puid)}`) : false),
         el('h3', { text: 'Associated background work' }), ...runs.map(run => el('a', { class: 'ac-linked', href: `#/admin/operations/runs/${run._id}`, onclick: (event: MouseEvent) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) { event.preventDefault(); void inspect({ kind: 'runs', id: run._id }); } } }, el('span', {}, run.kind.replace(/-/g, ' '), el('small', { text: run.stage })), outcomeBadge(run.status))), !runs.length && el('p', { class: 'ac-note', text: 'No linked background task recorded.' }))],
-      ['Input & response', () => el('div', {}, details('Targets', operation.targets), details('Recorded input controls', operation.input), details('Outcome and validation details', operation.response), el('p', { class: 'ac-note', text: 'Passwords, tokens, request bodies, uploaded documents and student answers are not copied into request logs. Linked tasks and question versions retain content evidence.' }))],
+      ['Input & response', () => el('div', {}, details('Request diagnostics', operation.request), details('Targets', operation.targets), details('Recorded input controls', operation.input), details('Outcome and validation details', operation.response), el('p', { class: 'ac-note', text: 'Request paths are sanitized. Query strings, raw headers, IP addresses, passwords, tokens, request bodies, uploaded documents and student answers are not copied into request diagnostics. Client and fetch-site categories are unverified hints. Linked tasks and question versions retain content evidence.' }))],
       ['Model usage', () => usageSection(usageData, () => getAdminOperation(operation.requestId), runs.map(run => run._id))],
     ]);
   }

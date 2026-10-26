@@ -5,7 +5,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 }));
 jest.mock('../../server/src/services/model-usage.service', () => ({ listModelCalls: jest.fn() }));
 import { questionsCol, questionVersionsCol, attemptsCol, contentRunsCol, coursesCol, usersCol, operationEventsCol } from '../../server/src/components/mongodb/collections';
-import { reproduceQuestion, diagnosticTree, modelUsageSummaryDto, modelCallDto, operationDetail, runDetail, listAdminModelUsage } from '../../server/src/services/admin-diagnostics.service';
+import { reproduceQuestion, diagnosticTree, modelUsageSummaryDto, modelCallDto, operationDetail, runDetail, listAdminModelUsage, listOperations } from '../../server/src/services/admin-diagnostics.service';
 import { listModelCalls } from '../../server/src/services/model-usage.service';
 import type { ModelCallReceipt, ModelUsageSummary } from '../../server/src/types/model-usage';
 const questionId = new ObjectId(); const courseId = new ObjectId(); const currentId = new ObjectId(); const oldId = new ObjectId();
@@ -99,4 +99,20 @@ it('keeps legacy unavailable usage explicit and forwards selected Admin filters'
   const result = await listAdminModelUsage(filters);
   expect(listModelCalls).toHaveBeenCalledWith(filters);
   expect(result.summary).toMatchObject({ status: 'unavailable', untracked: true, totalTokens: null });
+});
+
+it.each(['all', 'unmatched', 'other'] as const)('combines %s routing with outcome, action, identity, date and safe path search filters', async routing => {
+  const cursor = { sort: jest.fn().mockReturnThis(), skip: jest.fn().mockReturnThis(), limit: jest.fn().mockReturnThis(), project: jest.fn().mockReturnThis(), next: jest.fn().mockResolvedValue(null), toArray: jest.fn().mockResolvedValue([]) };
+  const find = jest.fn().mockReturnValue(cursor), countDocuments = jest.fn().mockResolvedValue(0);
+  jest.mocked(operationEventsCol).mockReturnValue({ find, countDocuments } as never);
+  await listOperations({ page: 2, limit: 25, routing, activity: 'actions', q: '/api/.env', actor: 'teacher', outcome: 'failed', from: '2026-10-26T00:00:00Z' });
+  const filter = find.mock.calls[0][0];
+  expect(filter).toMatchObject({ 'actor.puid': 'teacher', outcome: 'failed', createdAt: { $gte: new Date('2026-10-26T00:00:00Z') }, $and: [{ $or: [{ method: { $nin: ['GET', 'HEAD'] } }, { outcome: { $ne: 'succeeded' } }] }] });
+  expect(filter.$or).toEqual(expect.arrayContaining([{ 'request.path': /\/api\/\.env/i }, { 'request.pathHash': /\/api\/\.env/i }]));
+  expect(filter.$or[0].requestId.test('/api/Xenv')).toBe(false);
+  if (routing === 'unmatched') expect(filter).toMatchObject({ route: '/unmatched', statusCode: 404 });
+  else expect(filter.route).toBeUndefined();
+  expect(filter.$nor).toEqual(routing === 'other' ? [{ route: '/unmatched', statusCode: 404 }] : undefined);
+  expect(countDocuments).toHaveBeenCalledWith(filter);
+  expect(cursor.skip).toHaveBeenCalledWith(25);
 });

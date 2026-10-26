@@ -6,6 +6,7 @@ import type { OperationEvent } from '../../server/src/types/domain';
 jest.mock('../../server/src/components/mongodb/collections', () => ({ operationEventsCol: jest.fn(), modelCallReceiptsCol: jest.fn(), modelUsageSessionsCol: jest.fn() }));
 import { modelCallReceiptsCol, modelUsageSessionsCol, operationEventsCol } from '../../server/src/components/mongodb/collections';
 import { operationAudit } from '../../server/src/middleware/operation-audit';
+import { notFoundHandler } from '../../server/src/middleware/error-handler';
 import { operationContext } from '../../server/src/services/operation-context';
 import { safeControls, safeDiagnostic, auditHealth, recordOperation } from '../../server/src/services/operation-audit.service';
 const insertOne = jest.fn();
@@ -74,6 +75,34 @@ it('redacts common credentials and URL credentials without collecting arbitrary 
 it('does not double-record the transport when a browser report is interrupted', async () => {
   await expect(request(app()).post('/api/diagnostics/client-error').send({ kind: 'runtime' })).rejects.toThrow();
   expect(records).toHaveLength(0);
+});
+
+it('retains safe unmatched-404 context and a correlated server log without leaking request data', async () => {
+  const api = express();
+  api.use('/api', operationAudit);
+  api.get('/api/questions/:id', (_req, res) => res.status(404).json({ error: 'Question not found' }));
+  api.use(notFoundHandler);
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  try {
+    const response = await request(api).get('/api/unknown-private-path?token=private-query')
+      .set('User-Agent', 'curl/8.0 private-agent').set('Sec-Fetch-Site', 'cross-site')
+      .set('Referer', 'https://user:private@host.test/private?token=private')
+      .set('Authorization', 'Bearer private-token').set('Cookie', 'private-cookie');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: 'Not Found' });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ requestId: response.headers['x-request-id'], route: '/unmatched', outcome: 'failed', statusCode: 404,
+      request: { path: '/api/:redacted', routeMatched: false, pathRedacted: true, client: 'curl', fetchSite: 'cross-site' } });
+    expect(records[0].actor).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('[http.route_not_found]', expect.any(String));
+    expect(JSON.parse(warn.mock.calls[0][1])).toMatchObject({ requestId: response.headers['x-request-id'], request: { pathHash: records[0].request!.pathHash }, statusCode: 404 });
+    expect(JSON.stringify([records, warn.mock.calls])).not.toContain('private');
+
+    await request(api).get('/api/questions/123456789012345678901234');
+    expect(records[1]).toMatchObject({ route: '/api/questions/:id', statusCode: 404, request: { routeMatched: true } });
+    expect(warn.mock.calls.filter(([tag]) => tag === '[http.route_not_found]')).toHaveLength(1);
+    expect(warn.mock.calls.filter(([tag]) => tag === '[http.operation_failed]')).toHaveLength(1);
+  } finally { warn.mockRestore(); }
 });
 
 

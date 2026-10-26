@@ -1293,6 +1293,78 @@ editor uses existing course capability overrides and TA hard denials. Re-invite
 is not offered for CSV-derived expiry; update the import/course dates instead.
 Permanent course deletion also removes its people import snapshot.
 
+## Unmatched API request diagnostics (2026-10-26)
+
+`GET /api/admin/operations` accepts optional `routing=all|unmatched|other`.
+`all` (the default) retains every existing outcome. `unmatched` selects only
+`route: /unmatched` with HTTP 404, including historical records. `other` excludes
+only that combination: matched-resource 404s, pre-route parser/auth failures and
+other business failures remain visible. Routing combines with existing action,
+outcome, actor, course, date and search filters; it never changes retention.
+
+New server operation records add optional `request` diagnostics: `path`,
+`pathHash`, `pathRedacted`, `pathTruncated`, `routeMatched`, `client` and `fetchSite`.
+Only allowlisted public route words survive in `path`; arbitrary/encoded
+segments, identities and credentials become `:redacted`. Paths are bounded to
+4,096 input characters and 24 displayed segments. `pathHash` is the SHA-256 of
+the query/fragment-free path (the first 4,096 characters for oversized paths).
+It distinguishes paths masked to the same display shape; it is not reversible
+original-path evidence. `pathTruncated` discloses either display or hash limits.
+Search `q` also matches the sanitized path and its digest. User-agent and
+Sec-Fetch-Site headers reduce to fixed categories only; they are unverified and
+cannot prove browser, bot or same-origin identity. Raw URLs, query strings,
+headers, referers, IP addresses and request bodies are not added to this record.
+
+All failed, interrupted and partial API outcomes also emit structured server
+warnings with the server-owned request ID, route, status, duration and safe
+request diagnostics. Unmatched 404s use `[http.route_not_found]`; other failures
+use `[http.operation_failed]` and a bounded `failureCategory` (also retained in
+the operation's `response`). Denied access, rate limits, validation, server
+errors and interrupted connections remain distinct. No request is retried or
+changed into a success. `X-Request-ID` remains available for correlation.
+
+The central exception handler emits `[http.exception]` with the request ID,
+allowlisted exception name/code, category and up to six project-relative code
+locations. It excludes messages, absolute paths, raw stacks and payloads from
+the server warning; normal API error responses retain their existing contract.
+The same bounded exception metadata appears in `response.exception`. An error
+after headers are sent closes the response instead of attempting a second JSON
+response. At 30 seconds an unfinished non-SSE request emits one
+`[http.operation_pending]`; observed slow completion uses `[http.operation_slow]`.
+These warnings do not impose a request timeout. Healthy long-lived SSE streams
+retain their existing normal-navigation semantics.
+
+`[audit.record_dropped]` logs the affected request's safe metadata and either
+`write-failed` or `pending-write-limit`, even if MongoDB is unavailable. Audit
+health counters remain process-local and best effort. A hard process crash,
+unavailable log collector or a request blocked before Express can still leave
+gaps. This is diagnostic coverage, not a guarantee of every request's retention.
+
+Authenticated `POST /api/diagnostics/client-error` additionally accepts kinds
+`http` and `response`, plus optional `request: { endpoint, statusCode?,
+relatedRequestId? }`. Endpoints must begin `/api/`, statuses are integers
+100–599, and related IDs must be UUIDs. Only the sanitized path/digest is retained
+under `response.reportedRequest`, with optional `reportedStatusCode` and
+`relatedRequestId`. The central browser API client reports non-2xx responses,
+invalid JSON success responses and network failures with this context. Queries
+and response bodies are omitted; intentional aborts are ignored. The Admin
+inspector labels the related-server-request link as browser-reported. These
+reports are unverified, independently rate-limited (five/minute in the browser,
+30/minute per user on the server), and cannot arrive from a completely offline,
+crashed, signed-out or blocked client. Reporting transport errors never recurse.
+
+In Admin → Operations & Issues → User operations, open **Filters → Routing**
+to inspect or exclude unmatched 404s. Rows show sanitized paths when retained;
+the inspector explains the failure, categories and proxy-log recovery. Search
+the path hash to find repeats. Outdated clients, incorrect health checks and
+automated probes are possible causes, not automatic classifications. Historical
+records explicitly report the unavailable original path; no backfill is possible
+without separate access-log evidence. Anonymous requests alone do not prove a
+security incident or a failed question-generation task.
+
+See [the request failure runbook](runbooks/request-failure-diagnostics.md) for
+the deployed-release check, investigation steps and remaining coverage limits.
+
 ## LLM usage and operation-derived workflows (2026-10-03)
 
 `GET /api/courses/:courseId/content-runs/:runId/usage` requires the course

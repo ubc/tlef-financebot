@@ -846,12 +846,24 @@ export function canTransition(from: PublicationState, to: PublicationState): boo
 }
 
 /** API outcomes, separate from durable background-run completion. */
+export interface OperationRequestDiagnostics {
+  path: string;
+  pathHash: string;
+  pathRedacted: boolean;
+  pathTruncated: boolean;
+  routeMatched: boolean;
+  client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
+  fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
+}
+
 export interface OperationEvent {
   requestId: string;
   createdAt: Date;
   durationMs: number;
   method: string;
   route: string;
+  /** Absent on historical and client-reported records. Header categories are unverified. */
+  request?: OperationRequestDiagnostics;
   statusCode: number;
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial';
   actor?: { puid: string; uid: string; displayName: string };
