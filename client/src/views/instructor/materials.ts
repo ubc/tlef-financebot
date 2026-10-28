@@ -732,7 +732,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         'div',
         { class: 'workspace-inspector__content' },
         previewHeading(material),
-        canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
+        canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id, 'embedded-preview'), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
         material.deletedAt ? el('p', { class: 'workspace-deleted-note', text: 'This source is in Trash. Existing questions keep their provenance, but the source no longer grounds generation.' }) : false,
         previewActions(material),
       );

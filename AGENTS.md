@@ -18,6 +18,15 @@ commonly need:
 
 ## Current state
 
+- API request cause diagnostics retain observed failure stages/reasons, signed
+  session correlation groups and separately labelled stored-session account
+  associations. Interrupted audits can observe the existing authentication chain
+  for up to 1.5 seconds / 100 waits without delaying HTTP or replaying business
+  actions. Admin cause analysis separates these facts from unverified sanitized
+  browser page/callsite/trigger/channel hints. Missing legacy evidence stays
+  unknown; session/login policy and SAML logging behavior are unchanged. See the
+  request diagnostics API contract and runbook.
+
 - Request transport follow-up (2026-10-28): explicit proxy IP/CIDR trust defaults
   to loopback; optional daily resolved-client groups never store raw addresses.
   Routing-not-evaluated, response-started and range-request booleans explain

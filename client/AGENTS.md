@@ -28,6 +28,13 @@ their access source is managed through Enrollment.
 
 ## How it works
 
+`request-source.ts` adds sanitized page/call-location hints to central fetches
+and bounded source parameters to previews, source links and EventSource streams.
+Notification triggers distinguish initial/timer/focus/visibility/sync. Hints
+are unverified diagnostic context; never use them for authentication or infer
+that a missing hint proves external traffic. Admin request cause analysis keeps
+server-observed failures and browser-reported initiation separate.
+
 Student Topic Start uses the shared three-panel question design in both teaching
 modes. `views/student/practice.ts` selects the engine: Linear uses durable learning
 sessions; `topic-practice-workspace.ts` retains the original practice/retry/mastery

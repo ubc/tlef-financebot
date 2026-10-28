@@ -1,4 +1,5 @@
 import { reportClientFailure, setDiagnosticsAuthenticated } from './diagnostics.js';
+import { addRequestSource, nativeRequestSource, type RequestTrigger } from './request-source.js';
 // Typed client for the backend API. One function per endpoint, so the UI code
 // (views/*) never builds URLs or parses responses by hand. Keep the response
 // types in sync with the server (see server/src/routes and services).
@@ -28,11 +29,13 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   return data?.error ?? fallback;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { diagnosticTrigger?: RequestTrigger }): Promise<T> {
   let response: Response;
-  const headers = new Headers(init?.headers);
+  const { diagnosticTrigger, ...options } = init ?? {};
+  const headers = new Headers(options.headers);
   headers.set('X-Financebot-Client', 'web-v1');
-  try { response = await fetch(path, { ...init, headers }); }
+  addRequestSource(headers, diagnosticTrigger);
+  try { response = await fetch(path, { ...options, headers }); }
   catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.', { endpoint: path });
     throw error;
@@ -1983,7 +1986,7 @@ export function subscribeContentRuns(
     onError?: () => void;
   },
 ): () => void {
-  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/content-runs/events`);
+  const source = new EventSource(nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/content-runs/events`, 'event-stream'));
   source.addEventListener('snapshot', (event) => {
     const data = JSON.parse((event as MessageEvent<string>).data) as { runs: ContentRunSummary[] };
     handlers.onSnapshot(data.runs);
@@ -2017,8 +2020,8 @@ export function getMaterialWorkspaceDetail(courseId: string, materialId: string)
   );
 }
 
-export function materialSourceUrl(courseId: string, materialId: string): string {
-  return `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`;
+export function materialSourceUrl(courseId: string, materialId: string, channel: 'embedded-preview' | 'source-link' = 'source-link'): string {
+  return nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`, channel);
 }
 
 export function listTrashedMaterials(courseId: string): Promise<Material[]> {
@@ -3283,9 +3286,9 @@ export interface AppNotification {
 }
 
 /** GET /api/notifications?unreadOnly= -> newest-first, limit 50. Bell poll target. */
-export function listNotifications(unreadOnly?: boolean): Promise<AppNotification[]> {
+export function listNotifications(unreadOnly?: boolean, trigger: RequestTrigger = 'api-call'): Promise<AppNotification[]> {
   const qs = unreadOnly ? '?unreadOnly=true' : '';
-  return request<AppNotification[]>(`/api/notifications${qs}`);
+  return request<AppNotification[]>(`/api/notifications${qs}`, { diagnosticTrigger: trigger });
 }
 
 /** POST /api/notifications/:id/read -> the updated notification. */
@@ -3382,6 +3385,12 @@ export interface OperationRecord {
   request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
     routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
     proxy?: { forwarded: boolean; trustedPeer: boolean }; responseStarted?: boolean; rangeRequested?: boolean;
+    session?: { credential: 'absent' | 'signed' | 'invalid' | 'ambiguous'; group?: string };
+    identity?: { stage: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+      stageAtEnd?: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+      sessionLookup?: 'restored' | 'not-restored' | 'no-valid-credential'; failedDuring?: 'session-loading' | 'user-loading';
+      sessionAccountPuid?: string; wait?: 'resolved' | 'timed-out' | 'capacity-limited' };
+    source?: { page?: string; callsite?: string; trigger?: string; channel?: 'fetch' | 'embedded-preview' | 'source-link' | 'event-stream' };
     client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
     fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
     loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated'; webClient?: boolean;
@@ -3543,7 +3552,7 @@ export function closePreviewAssessmentWindow(courseId: string, previewSessionId:
 export function subscribeExamBuilder(courseId: string, examId: string, handlers: {
   onSnapshot: (detail: BuilderDetail) => void; onConnection: (connected: boolean) => void; onUnavailable?: () => void;
 }): () => void {
-  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/exam-builder/${encodeURIComponent(examId)}/events`);
+  const source = new EventSource(nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/exam-builder/${encodeURIComponent(examId)}/events`, 'event-stream'));
   source.addEventListener('snapshot', event => {
     try {
       const detail = JSON.parse((event as MessageEvent<string>).data) as BuilderDetail;

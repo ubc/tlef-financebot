@@ -1,5 +1,6 @@
 import type * as Yjs from 'yjs';
 import { ApiError, getQuestion } from '../../api.js';
+import { nativeRequestSource } from '../../request-source.js';
 import { el, mount } from '../../dom.js';
 import { confirmDialog } from '../../modal.js';
 import { protectUnsavedChanges, type RouteParams } from '../../router.js';
@@ -260,7 +261,7 @@ export async function renderCollaborativeEditor(outlet: HTMLElement, params: Rou
     reconnectTimer = window.setTimeout(reconnect, delay);
   }
   function connectEvents(): EventSource {
-    const next = new EventSource(`${path}/events`);
+    const next = new EventSource(nativeRequestSource(`${path}/events`, 'event-stream'));
     next.addEventListener('open', () => { clearTimeout(reconnectTimer); connected = true; renderStatus(); schedule(); });
     next.addEventListener('snapshot', (event) => { connected = true; receive(JSON.parse((event as MessageEvent<string>).data) as DraftSnapshot); });
     next.addEventListener('unavailable', (event) => {

@@ -114,6 +114,54 @@ test('historical unmatched 404s disclose missing original paths without inventin
   expect(state.writes).toEqual([]);
 });
 
+test('cause analysis separates observed identity/transport stages from unverified browser initiation', async ({ page }) => {
+  await fixture(page);
+  const group = 'e'.repeat(32);
+  const attributed = { ...unmatchedOperation, outcome: 'interrupted', statusCode: 499,
+    actor: { puid: 'SYNTHETIC-TEACHER', uid: 'teacher', displayName: 'Synthetic Teacher' },
+    request: { ...unmatchedOperation.request, loginState: 'authenticated',
+      session: { credential: 'signed', group }, identity: { stage: 'complete', stageAtEnd: 'user-loading', wait: 'resolved', sessionLookup: 'restored', sessionAccountPuid: 'SYNTHETIC-TEACHER' },
+      source: { page: '/instructor/course/:redacted/materials', callsite: 'views/instructor/materials.js:100:20', channel: 'embedded-preview' } },
+    response: { failurePhase: 'user-load', failureReason: 'connection-closed-before-identity' } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: attributed, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).first().click();
+  const analysis = page.getByRole('region', { name: 'Request cause analysis', exact: true });
+  await expect(analysis).toContainText('Account lookup pending');
+  await expect(analysis).toContainText('Loading the account');
+  await expect(analysis).toContainText('views/instructor/materials.js:100:20');
+  await expect(analysis).toContainText('Browser initiation hints (unverified)');
+  await expect(page.locator('.ac-panel')).toContainText('The account resolved from the server session after the connection closed.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await analysis.getByRole('link', { name: 'Compare session requests', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${group}`));
+  await expect(page).toHaveURL(/activity=all/);
+});
+
+test('notification requests identify initial, timer and focus triggers without page query values', async ({ page }) => {
+  await fixture(page);
+  const hints: Array<Record<string, string>> = [];
+  await page.route('**/api/notifications', route => {
+    hints.push(route.request().headers()); return route.fulfill({ json: [] });
+  });
+  await page.clock.install();
+  await page.evaluate(async () => {
+    history.replaceState(null, '', '#/admin/operations?private=private-query');
+    const { createNotificationBell } = await import('/js/notifications-bell.js');
+    document.body.append(createNotificationBell('admin'));
+  });
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-initial')).toBe(true);
+  await page.clock.runFor(30000);
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-timer')).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-focus')).toBe(true);
+  for (const hint of hints) {
+    expect(hint['x-financebot-page']).toBe('/admin/operations');
+    expect(hint['x-financebot-callsite']).toMatch(/^notifications-bell\.js:\d+:\d+$/);
+    expect(JSON.stringify(hint)).not.toContain('private-query');
+  }
+});
+
 test('browser API failures report endpoints, HTTP status and server correlation without queries or response content', async ({ page }) => {
   await fixture(page);
   const reports: Array<{ kind: string; request: { endpoint: string; statusCode?: number; relatedRequestId?: string } }> = [];

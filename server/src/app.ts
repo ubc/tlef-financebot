@@ -8,6 +8,7 @@ import { assessmentPreviewRouter } from './routes/assessment-preview.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
 import { rejectApiProbe } from './middleware/reject-api-probe';
+import { traceAuthentication } from './middleware/request-identity';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
 import { selfCapabilitiesRouter } from './routes/capabilities.routes';
 import path from 'node:path';
@@ -81,11 +82,9 @@ export function createApp(): Express {
 
   // Sessions + passport. Order matters: session -> initialize -> session.
   const { passport, sessionMiddleware } = configureAuth();
-  app.use(sessionMiddleware);
+  app.use(traceAuthentication('session-loading', sessionMiddleware));
   app.use(passport.initialize());
-  app.use((_req, res, next) => { res.locals.authenticationPending = true; next(); });
-  app.use(passport.session());
-  app.use((_req, res, next) => { res.locals.authenticationPending = false; next(); });
+  app.use(traceAuthentication('user-loading', passport.session()));
 
   // API routes are mounted under /api. Add new routers here as features grow.
   app.use('/api', healthRouter); // public (used by the pre-login landing screen).

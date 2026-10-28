@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { OperationRequestDiagnostics } from '../types/domain';
 import { classifyProbe } from './request-probe.service';
@@ -56,4 +56,46 @@ export function requestFingerprints(peer: string | undefined, agent: string | un
     .update(`financebot-request-group-v1\0${day}\0${kind}\0${value}`).digest('hex').slice(0, 32);
   return { day, ...(peer ? { peer: digest('peer', peer.slice(0, 128)) } : {}), ...(agent ? { agent: digest('agent', agent.slice(0, 512)) } : {}),
     ...(client && isIP(client) ? { client: digest('client', client) } : {}) };
+}
+
+export function sessionGroup(id: string, secret: string): string | undefined {
+  if (!id || !secret || secret.length < 32 || /^(?:dev-insecure-secret-change-me|change-me-in-production)$/.test(secret)) return;
+  return createHmac('sha256', secret).update(`financebot-audit-session-v1\0${id}`).digest('hex').slice(0, 32);
+}
+
+/** Matches express-session's signed connect.sid format; never stores the credential. */
+export function requestSession(header: string | undefined, secret: string): NonNullable<OperationRequestDiagnostics['session']> {
+  if (!header) return { credential: 'absent' };
+  if (header.length > 16384) return { credential: 'invalid' };
+  const values = header.split(';').map(part => part.trim()).filter(part => /^connect\.sid[\t ]*=/.test(part));
+  if (!values.length) return { credential: 'absent' };
+  if (values.length !== 1) return { credential: 'ambiguous' };
+  if (!secret) return { credential: 'invalid' };
+  let value = values[0].slice(values[0].indexOf('=') + 1).trim();
+  if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+  try { value = decodeURIComponent(value); } catch { return { credential: 'invalid' }; }
+  if (!value.startsWith('s:') || value.length > 1024) return { credential: 'invalid' };
+  const signed = value.slice(2), separator = signed.lastIndexOf('.');
+  if (separator <= 0) return { credential: 'invalid' };
+  const id = signed.slice(0, separator);
+  const expected = Buffer.from(createHmac('sha256', secret).update(id).digest('base64').replace(/=+$/, ''));
+  const provided = Buffer.from(signed.slice(separator + 1));
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) return { credential: 'invalid' };
+  const group = sessionGroup(id, secret);
+  return { credential: 'signed', ...(group ? { group } : {}) };
+}
+
+const triggers = new Set(['api-call', 'notification-initial', 'notification-timer', 'notification-visible', 'notification-focus', 'notification-sync', 'diagnostic-report']);
+export function requestSource(url: string, headers: { page?: string; callsite?: string; trigger?: string; webClient?: string }): OperationRequestDiagnostics['source'] {
+  let query: URLSearchParams;
+  try { query = new URL(url.slice(0, 8192), 'http://audit.invalid').searchParams; } catch { return; }
+  const native = /\/source(?:\?|$)/.test(url) && ['embedded-preview', 'source-link'].includes(query.get('_fbSource') ?? '') ? query.get('_fbSource') as 'embedded-preview' | 'source-link'
+    : /\/events(?:\?|$)/.test(url) && query.get('_fbSource') === 'event-stream' ? 'event-stream' : undefined;
+  if (!native && headers.webClient !== 'web-v1') return;
+  const source: NonNullable<OperationRequestDiagnostics['source']> = { channel: native ?? 'fetch' };
+  const page = native ? query.get('_fbPage') : headers.page;
+  if (page && page.length <= 512 && /^\/(?:admin|instructor|student|ta|preview)(?:\/|$)/.test(page)) source.page = requestDiagnostics(page, undefined, undefined).path;
+  if (headers.callsite && headers.callsite.length <= 180 && /^(?:[a-z\d_-]+\/)*[a-z\d_-]+\.js:\d{1,6}:\d{1,6}$/i.test(headers.callsite)) source.callsite = headers.callsite;
+  if (headers.trigger && triggers.has(headers.trigger)) source.trigger = headers.trigger;
+  return source;
 }

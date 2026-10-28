@@ -5,14 +5,19 @@ import type { RequestHandler } from 'express';
 import { operationContext } from '../services/operation-context';
 import { recordOperation, safeControls, safeDiagnostic, operationLogContext } from '../services/operation-audit.service';
 import type { OperationEvent } from '../types/domain';
-import { requestDiagnostics, requestFingerprints } from '../services/request-diagnostics';
+import { requestDiagnostics, requestFingerprints, requestSession, requestSource } from '../services/request-diagnostics';
 import { env } from '../config/env';
+import { startRequestIdentity, identitySnapshot, awaitRequestIdentity } from './request-identity';
+import { requestFailureAnalysis } from '../services/request-failure-analysis';
 
 /** Mounted before parsers/rate limiting: malformed requests are failures too. */
 export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
+  startRequestIdentity(res);
   const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
+  const session = requestSession(req.get('cookie'), env.sessionSecret);
+  const source = requestSource(req.originalUrl, { webClient: req.get('x-financebot-client'), page: req.get('x-financebot-page'), callsite: req.get('x-financebot-callsite'), trigger: req.get('x-financebot-trigger') });
   const peer = req.socket?.remoteAddress;
   const trust = req.app?.get('trust proxy fn');
   const proxy = { forwarded: Boolean(req.get('x-forwarded-for')), trustedPeer: Boolean(peer && typeof trust === 'function' && trust(peer, 0)) };
@@ -102,7 +107,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     const event: OperationEvent = {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
-      request: { ...requestMetadata, routeMatched: route !== '/unmatched',
+      request: { ...requestMetadata, session, ...(source ? { source } : {}), routeMatched: route !== '/unmatched',
         routeState: route !== '/unmatched' ? 'matched' : res.locals.probeRejected ? 'probe-rejected' : res.locals.routingComplete ? 'unmatched' : 'not-evaluated',
         proxy, responseStarted: res.headersSent, rangeRequested: Boolean(req.get('range')),
         loginState: res.locals.authenticationPending || typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
@@ -111,18 +116,31 @@ export const operationAudit: RequestHandler = (req, res, next) => {
       actor: req.user ? { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } : undefined,
       targets, input: { ...safeControls(req.query), ...safeControls(req.body) }, response,
     };
-    if (['failed', 'partial', 'interrupted'].includes(event.outcome)) {
-      const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : res.locals.probeRejected ? 'probe-rejected' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
-        : event.statusCode === 401 ? 'authentication' : event.statusCode === 403 ? 'authorization'
-        : event.statusCode === 429 ? 'rate-limit' : event.statusCode >= 500 ? 'server-failure'
-        : event.statusCode === 400 || event.statusCode === 422 ? 'validation' : 'application');
-      response.failureCategory = category;
-      console.warn(event.statusCode === 404 && route === '/unmatched' ? '[http.route_not_found]' : '[http.operation_failed]',
-        JSON.stringify({ ...operationLogContext(event), category, ...(res.locals.operationException ? { exception: res.locals.operationException } : {}) }));
-    } else if (event.durationMs >= slowThresholdMs) {
-      console.warn('[http.operation_slow]', JSON.stringify(operationLogContext(event)));
+    const stageAtEnd = identitySnapshot(req, res).stage;
+    function persist(wait?: 'resolved' | 'timed-out' | 'capacity-limited'): void {
+      const response = event.response;
+      const { actor, ...identity } = identitySnapshot(req, res);
+      event.actor = actor;
+      event.request!.identity = { ...identity, stageAtEnd, ...(wait ? { wait } : {}) };
+      if (actor) event.request!.loginState = 'authenticated';
+      else if (['failed', 'session-loading', 'user-loading'].includes(identity.stage)) event.request!.loginState = 'not-evaluated';
+      else if (identity.stage === 'complete') event.request!.loginState = 'unauthenticated';
+      if (['failed', 'partial', 'interrupted'].includes(event.outcome)) {
+        const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : res.locals.probeRejected ? 'probe-rejected' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
+          : event.statusCode === 401 ? 'authentication' : event.statusCode === 403 ? 'authorization'
+          : event.statusCode === 429 ? 'rate-limit' : event.statusCode >= 500 ? 'server-failure'
+          : event.statusCode === 400 || event.statusCode === 422 ? 'validation' : 'application');
+        response.failureCategory = category;
+        Object.assign(response, requestFailureAnalysis(event));
+        console.warn(event.statusCode === 404 && route === '/unmatched' ? '[http.route_not_found]' : '[http.operation_failed]',
+          JSON.stringify({ ...operationLogContext(event), category, ...(res.locals.operationException ? { exception: res.locals.operationException } : {}) }));
+      } else if (event.durationMs >= slowThresholdMs) {
+        console.warn('[http.operation_slow]', JSON.stringify(operationLogContext(event)));
+      }
+      void recordOperation(event);
     }
-    void recordOperation(event);
+    if (aborted && !event.actor && ['session-loading', 'user-loading'].includes(stageAtEnd)) void awaitRequestIdentity(res).then(persist);
+    else persist();
   }
   res.once('finish', () => finish(false));
   res.once('close', () => { if (!res.writableFinished) finish(true); });

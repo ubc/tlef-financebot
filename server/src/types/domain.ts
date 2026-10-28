@@ -856,6 +856,12 @@ export interface OperationRequestDiagnostics {
   proxy?: { forwarded: boolean; trustedPeer: boolean };
   responseStarted?: boolean;
   rangeRequested?: boolean;
+  session?: { credential: 'absent' | 'signed' | 'invalid' | 'ambiguous'; group?: string };
+  identity?: { stage: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+    stageAtEnd?: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+    sessionLookup?: 'restored' | 'not-restored' | 'no-valid-credential'; failedDuring?: 'session-loading' | 'user-loading';
+    sessionAccountPuid?: string; wait?: 'resolved' | 'timed-out' | 'capacity-limited' };
+  source?: { page?: string; callsite?: string; trigger?: string; channel?: 'fetch' | 'embedded-preview' | 'source-link' | 'event-stream' };
   client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
   fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
   loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated';

@@ -4,6 +4,12 @@ Cross-cutting Express middleware.
 
 ## Present
 
+- `request-identity.ts` observes the existing session and Passport callbacks.
+  API audit persistence alone may await pending identity after disconnect, with
+  a 1.5-second / 100-wait bound. Actor confirmation, stored-session association
+  and original transport state remain distinct; no second authentication or
+  business retry is performed.
+
 - `error-handler.ts`
   - `notFoundHandler` — 404 JSON for unmatched routes.
   - `errorHandler` — central error formatter. Express recognizes it as an error

@@ -1,4 +1,5 @@
 // Minimal failure telemetry: no form contents, DOM, cookies or local storage.
+import { addRequestSource } from './request-source.js';
 let reports = 0;
 let windowStart = Date.now();
 let authenticated = false;
@@ -9,8 +10,10 @@ export function reportClientFailure(kind: 'runtime' | 'unhandled-rejection' | 'n
   if (!authenticated) return;
   if (Date.now() - windowStart > 60_000) { reports = 0; windowStart = Date.now(); }
   if (reports++ >= 5) return;
+  const headers = new Headers({ 'Content-Type': 'application/json', 'X-Financebot-Client': 'web-v1' });
+  addRequestSource(headers, 'diagnostic-report');
   void fetch('/api/diagnostics/client-error', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Financebot-Client': 'web-v1' }, credentials: 'same-origin',
+    method: 'POST', headers, credentials: 'same-origin',
     body: JSON.stringify({ kind, message: message.slice(0, 2000), page: window.location.hash.split('?')[0].slice(0, 250),
       ...(request ? { request: { endpoint: request.endpoint.split(/[?#]/, 1)[0].slice(0, 4096),
         statusCode: request.statusCode, relatedRequestId: request.relatedRequestId } } : {}) }),

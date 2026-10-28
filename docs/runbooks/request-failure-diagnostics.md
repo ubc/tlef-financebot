@@ -9,6 +9,30 @@ exception location or browser request association retroactively.
 
 ## Investigate an Operations & Issues record
 
+### Determine why the API request happened
+
+Open **Request cause analysis**. Check the observed failure stage/reason first:
+parsing, rate limiting, session loading, account loading, authentication, access,
+routing and transfer are different failure mechanisms. A missing credential, an
+invalid signature, an unrestored signed session and a failed account lookup are
+not interchangeable explanations for a missing identity.
+
+Then check **Browser initiation hints (unverified)**: the sanitized page, compiled
+call location, trigger and channel. Notifications label initial/timer/focus/
+visibility/sync requests; previews, source links and event streams identify their
+native channel. These hints describe reported application context, not verified
+human intent. Missing hints on old clients or native/uninstrumented callers do
+not prove a scanner. A closed transfer alone cannot distinguish navigation,
+preview replacement, network loss and proxy behavior.
+
+Use **Compare session requests** to find retained authenticated activity carrying
+the same signed session credential. The raw credential is never logged, and the
+group does not authorize access. A PUID found in stored session data remains
+separate from successful account verification. Interrupted requests allow a
+bounded 1.5-second audit-only wait for the already-running authentication chain;
+the recorded failure time/status remain unchanged and timeouts stay explicit.
+Historical rows cannot recover those missing fields retroactively.
+
 ### Why a request has no user
 
 Publicly reachable URLs receive requests before anyone signs in to CWL. A request

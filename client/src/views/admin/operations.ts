@@ -8,6 +8,7 @@ import { field, details, outcomeBadge, dateLabel, diagnosticLink, courseLabel, u
 import { attachTutorial } from '../../tutorials.js';
 import { renderModelUsage, renderModelCalls, renderModelCall } from '../../model-usage-ui.js';
 import { tokenCount, usageCoverageLabel, usageCoverageNote } from '../../model-usage-format.js';
+import { requestAnalysis } from './request-analysis.js';
 
 type ActivityTab = 'requests' | 'runs' | 'history' | 'usage' | 'workflows';
 type Selection = { kind: 'requests' | 'runs'; id: string };
@@ -24,7 +25,9 @@ function identityLabel(item: OperationRecord): string {
     (item.request?.loginState === 'unauthenticated' ? 'Not signed in' : item.request?.loginState === 'not-evaluated' ? 'Identity not evaluated' : 'Identity not recorded');
 }
 function identityExplanation(item: OperationRecord): string {
+  if (item.actor && item.request?.identity?.wait === 'resolved') return 'The account resolved from the server session after the connection closed. The original interruption outcome and duration are retained.';
   if (item.actor) return 'The recorded user comes from the authenticated server session.';
+  if (item.request?.identity?.stage === 'failed') return 'The session/account lookup failed. The request cannot establish whether the caller was signed in.';
   if (item.request?.loginState === 'not-evaluated') return item.request.probe ? 'This known probe path was rejected before login/session processing. No CWL identity was evaluated.' : 'This request ended before authentication was evaluated. No user identity can be inferred.';
   if (item.request?.loginState === 'unauthenticated') return 'The server evaluated this request without an authenticated user. It may have no login session, or an expired/invalid session. This does not identify the caller or prove an intrusion.';
   return 'No user identity was retained for this record. Historical records cannot establish whether a session was absent, expired, or unavailable.';
@@ -363,6 +366,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
         operation.outcome === 'accepted' && el('div', { class: 'ac-callout', text: 'The request was accepted. Check associated background work for its final outcome.' }),
         properties([['User', identityLabel(operation)], ['PUID', operation.actor?.puid || 'Not recorded'], ['Recorded', dateLabel(operation.createdAt)], ['Response', operation.method === 'CLIENT' ? 'Browser report (unverified)' : `HTTP ${operation.statusCode}`], ['Duration', duration(operation.durationMs)]]),
         el('p', { class: 'ac-note', text: identityExplanation(operation) }),
+        requestAnalysis(operation),
         operation.request ? properties([['Request path (sanitized)', operation.request.path], ['Route matched', operation.request.routeMatched ? 'Yes' : operation.request.routeState === 'not-evaluated' ? 'Not evaluated before request ended' : operation.request.routeState === 'probe-rejected' ? 'Probe rejected before routing' : operation.outcome === 'interrupted' && !operation.request.routeState ? 'Not confirmed before disconnect' : 'No'], ['Path hash (SHA-256)', operation.request.pathHash], ['Client category (unverified)', operation.request.client], ['Fetch site (unverified)', operation.request.fetchSite], ['Path truncated', operation.request.pathTruncated ? 'Yes — display or hash input was bounded' : 'No']]) : false,
         operation.request?.proxy ? properties([['Forwarded header present', operation.request.proxy.forwarded ? 'Yes' : 'No'], ['Immediate proxy peer trusted', operation.request.proxy.trustedPeer ? 'Yes' : 'No']]) : false,
         operation.request?.responseStarted !== undefined ? properties([['Response started', operation.request.responseStarted ? 'Yes' : 'No'], ['Range requested', operation.request.rangeRequested ? 'Yes' : 'No']]) : false,

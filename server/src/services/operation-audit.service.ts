@@ -6,6 +6,7 @@ import { exceptionDiagnostics } from './exception-diagnostics';
 export function operationLogContext(event: OperationEvent) {
   return { requestId: event.requestId, method: event.method, route: event.route,
     statusCode: event.statusCode, outcome: event.outcome, durationMs: event.durationMs,
+    ...(event.actor ? { actorPuid: event.actor.puid } : {}),
     ...(event.request ? { request: event.request } : {}) };
 }
 

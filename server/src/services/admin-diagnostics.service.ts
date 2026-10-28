@@ -52,7 +52,7 @@ export async function listOperations(query: DiagnosticQuery) {
   if (query.outcome) filter.outcome = query.outcome;
   if (query.requestId) filter.requestId = query.requestId;
   if (dates(query)) filter.createdAt = dates(query);
-  if (query.q) filter.$or = ['requestId', 'route', 'request.path', 'request.pathHash', 'request.fingerprints.peer', 'request.fingerprints.agent', 'request.fingerprints.client', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
+  if (query.q) filter.$or = ['requestId', 'route', 'request.path', 'request.pathHash', 'request.fingerprints.peer', 'request.fingerprints.agent', 'request.fingerprints.client', 'request.session.group', 'request.identity.sessionAccountPuid', 'request.source.callsite', 'request.source.page', 'request.source.trigger', 'response.failurePhase', 'response.failureReason', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
   const [items, total, first] = await Promise.all([
     operationEventsCol().find(filter).sort({ createdAt: -1, _id: -1 }).skip(paging(query).skip).limit(query.limit).toArray(),
     operationEventsCol().countDocuments(filter),

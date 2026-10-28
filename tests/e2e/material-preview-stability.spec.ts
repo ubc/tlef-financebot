@@ -6,12 +6,14 @@ const secondId = '333333333333333333333333';
 const materials = [firstId, secondId].map((_id, index) => ({ _id, courseId, name: `Source ${index + 1}.pdf`, format: 'pdf', status: 'ready', assignments: [], uploadedAt: '2026-10-28T10:00:00Z' }));
 async function fixture(page: Page) {
   const transfers: string[] = [];
+  const nativeHints: Array<{ channel: string | null; page: string | null }> = [];
   const controls = { delayFirst: false };
   await page.addInitScript(() => {
     const streams: EventTarget[] = [];
-    Object.assign(window, { previewTestStreams: streams });
+    const streamUrls: string[] = [];
+    Object.assign(window, { previewTestStreams: streams, previewTestStreamUrls: streamUrls });
     window.EventSource = class extends EventTarget {
-      constructor() { super(); streams.push(this); }
+      constructor(url: string) { super(); streams.push(this); streamUrls.push(url); }
       close() { streams.splice(streams.indexOf(this), 1); }
     } as unknown as typeof EventSource;
   });
@@ -20,6 +22,8 @@ async function fixture(page: Page) {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith('/source')) {
       transfers.push(pathname);
+      const query = new URL(route.request().url()).searchParams;
+      nativeHints.push({ channel: query.get('_fbSource'), page: query.get('_fbPage') });
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><title>Retained preview</title><label>Preview position<input aria-label="Preview position"></label></html>' });
     }
     if (pathname.endsWith('/workspace')) {
@@ -36,14 +40,14 @@ async function fixture(page: Page) {
     if (pathname.includes('/tutorial')) return route.fulfill({ json: { progress: [], items: [] } });
     throw new Error(`Unexpected preview fixture request: ${pathname}`);
   });
-  await page.goto('/preview-fixture');
+  await page.goto(`/preview-fixture#/instructor/course/${courseId}/materials`);
   await page.evaluate(async course => {
     const { getAuthState } = await import('/js/api.js'); await getAuthState();
     const { renderMaterials } = await import('/js/views/instructor/materials.js');
     renderMaterials(document.getElementById('fixture')!, { id: course });
   }, courseId);
   await expect(page.frameLocator('iframe').getByLabel('Preview position')).toBeVisible();
-  return { transfers, controls };
+  return { transfers, controls, nativeHints };
 }
 async function emitRuns(page: Page, event: 'snapshot' | 'run', status = 'running') {
   await page.evaluate(({ event, status, courseId, firstId }) => {
@@ -65,6 +69,9 @@ test('snapshot, progress and completion updates preserve the preview browsing co
   await expect(page.frameLocator('iframe').getByLabel('Preview position')).toHaveValue('page 14');
   await expect(page.locator('.knowledge-workspace__inspector iframe')).toHaveCount(1);
   expect(state.transfers).toHaveLength(1);
+  expect(state.nativeHints).toEqual([{ channel: 'embedded-preview', page: '/instructor/course/:redacted/materials' }]);
+  expect(await page.evaluate(() => (window as unknown as { previewTestStreamUrls: string[] }).previewTestStreamUrls[0])).toContain('_fbSource=event-stream');
+  await expect(page.getByRole('link', { name: 'Open original', exact: true })).toHaveAttribute('href', /_fbSource=source-link/);
 });
 test('switching the selected source or inspector tab loads the intended preview', async ({ page }) => {
   const state = await fixture(page);

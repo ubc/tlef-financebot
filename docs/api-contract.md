@@ -1295,6 +1295,53 @@ Permanent course deletion also removes its people import snapshot.
 
 ## Unmatched API request diagnostics (2026-10-26)
 
+### Request initiation and identity resolution (2026-10-28)
+
+New API records retain separate observed failure mechanisms and unverified
+browser context. `response.failurePhase` distinguishes input parsing, probe
+rejection, rate limiting, session/account loading, authentication, authorization,
+routing, transfer and application handling. `failureReason` distinguishes absent,
+invalid, ambiguous and unrestored session credentials, lookup errors, unmatched
+routes and transport closure. An unrestored signed credential does not establish
+expiry specifically; deletion and other missing-store cases remain possible.
+
+`request.session` contains `credential: absent|signed|invalid|ambiguous` and an
+optional `group`. The existing express-session `connect.sid` signature is checked
+with the configured secret, and the session ID is HMACed in a separate domain.
+No credential/session ID is retained or returned. Groups require the same
+non-default 32-character minimum as peer groups, persist only for that session
+credential/key, and are searchable under `q`. A signed credential is not proof
+that its session still exists or that account verification passed.
+
+`request.identity` retains `stageAtEnd`, final `stage`, optional `sessionLookup`,
+`failedDuring`, `sessionAccountPuid` and `wait`. The stored-session PUID is an
+account association, separately labelled from the currently authenticated actor.
+For an interrupted request with authentication already running, only audit
+finalization waits up to 1.5 seconds (at most 100 simultaneous waits) for that
+existing lookup. No second lookup, new login, business-request retry or HTTP
+response delay is introduced. The original interruption status, route and
+duration stay fixed. Completed account verification can populate the actor;
+timeout/failure/capacity limits retain explicit uncertainty. Process loss can
+still lose telemetry. Historical rows are not assigned a guessed user.
+
+`request.source` optionally carries `page`, `callsite`, `trigger` and `channel`.
+The central browser fetch client reports a sanitized page, bounded compiled JS
+call location when supported, and an allowlisted trigger. Notifications distinguish
+initial, interval, visibility, focus and local-sync requests. Native source links,
+embedded previews and EventSource streams use bounded `_fbSource`/`_fbPage`
+query hints because native navigation cannot add custom headers. These parameters
+do not enter path hashes or authorization. Browser hints are spoofable, are
+explicitly labelled unverified, and do not establish sender intent or a specific
+network-cancellation reason. IDs, page queries and raw stacks are excluded;
+compiled line locations may belong to a cached older client.
+
+The Admin inspector's **Request cause analysis** separates server observations
+from initiation hints and links to same-session records. Search also covers
+failure phase/reason, source page/callsite/trigger and stored-session PUID. Missing
+historical hints remain unavailable; absent hints do not establish external or
+malicious traffic. DNS/TLS/proxy/parser rejections before Express and static/auth
+requests outside the existing API audit remain infrastructure evidence gaps.
+
 ### Probe rejection and caller context (2026-10-28)
 
 `traffic=all|probes|other` is an additional Admin operations filter. The default
