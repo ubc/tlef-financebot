@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { isIP } from 'node:net';
 
 // Load variables from a local .env file into process.env, if present. `quiet`
 // suppresses dotenv's "injected env (N) from .env" banner so it doesn't clutter
@@ -73,6 +74,21 @@ function csvList(key: string): string[] {
     .filter(Boolean);
 }
 
+/** Explicit address trust only; hop counts and globally trusting headers are unsafe. */
+export function parseTrustedProxyCidrs(value: string): string[] {
+  if (value.trim().toLowerCase() === 'false') return [];
+  const ranges = value.split(',').map(part => part.trim()).filter(Boolean);
+  for (const range of ranges) {
+    if (range === 'loopback') continue;
+    const [address, prefix, extra] = range.split('/');
+    const version = isIP(address);
+    if (!version || extra !== undefined || (prefix !== undefined && (!/^\d{1,3}$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > (version === 4 ? 32 : 128)))) {
+      throw new Error('TRUSTED_PROXY_CIDRS must contain explicit IP/CIDR addresses, loopback, or false.');
+    }
+  }
+  return [...new Set(ranges)];
+}
+
 /**
  * Typed view over the environment variables this skeleton actually reads.
  *
@@ -89,6 +105,8 @@ export const env = {
 
   nodeEnv: optional('NODE_ENV', 'development'),
   port: Number(optional('PORT', '3000')),
+  // Trust only the local reverse proxy by default, never arbitrary forwarded IPs.
+  trustedProxyCidrs: parseTrustedProxyCidrs(optional('TRUSTED_PROXY_CIDRS', 'loopback')),
 
   // MongoDB (see server/src/components/mongodb). Defaults match the local
   // tlef-mongodb-docker container (root user, auth enabled -> authSource=admin).

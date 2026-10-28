@@ -1324,15 +1324,43 @@ New optional request fields are:
 - `probe: { kind, evidence }`: a closed known-path category with `path-signature`
   or `retained-path-hash` evidence. Read-time recognition of a historical public
   path hash does not rewrite its record or reconstruct missing identity.
-- `fingerprints: { day, peer?, agent? }`: pseudonymous daily groups derived with
+- `fingerprints: { day, peer?, agent?, client? }`: pseudonymous daily groups derived with
   domain-separated HMAC-SHA-256 from the existing session signing secret. Groups
   use the UTC date and separate peer/agent domains, retain 128 digest bits, and
   are omitted when that secret is missing, a sample default, or shorter than 32
   characters. No additional secret is exposed or required. Peer uses the actual
   connection address, never client-supplied forwarding headers. It may represent
   a shared reverse proxy. Agent uses at most 512 user-agent characters. Neither
-  group authenticates a client or proves a shared physical sender. Both are
-  searchable under `q`; groups change by date/key, not by a data migration.
+  group authenticates a client or proves a shared physical sender. An optional
+  `client` group uses Express's resolved IP only when a forwarding header is
+  present and the immediate socket peer is explicitly trusted. Its separate
+  HMAC domain prevents confusion with the socket-peer group; shared NAT still
+  prevents individual attribution. All groups are searchable under `q` and
+  change by date/key, not by a data migration.
+- `routeState`: `matched`, `unmatched`, `not-evaluated`, or `probe-rejected`.
+  The boolean `routeMatched: false` alone does not prove an invalid endpoint:
+  parsing/authentication or a disconnected connection may stop before routing.
+  Only the final not-found handler confirms `unmatched`. Historical interrupted
+  records retain uncertainty and are not backfilled.
+- `proxy: { forwarded, trustedPeer }`: booleans indicating forwarding-header
+  presence and explicit immediate-peer trust; raw addresses/header values are
+  never retained. `responseStarted` and `rangeRequested` are additional booleans
+  to distinguish an interrupted transfer from a pre-response cancellation.
+
+`TRUSTED_PROXY_CIDRS` defaults to `loopback` for a same-host reverse proxy.
+Other layouts require the actual proxy IP/CIDR allowlist; `false` disables trust.
+Global trust (`true`), hop counts, hostnames and `/0` ranges are refused at startup.
+Express walks forwarding addresses from the socket right-to-left to the first
+untrusted address. Operators must overwrite or correctly append forwarding
+headers and prevent clients bypassing the proxy. Application diagnostics cannot
+establish that infrastructure configuration on their own.
+
+Known transport-abort exceptions after the connection closes do not emit a
+second server exception or attempt a JSON response; the interrupted/499 audit
+is retained. Upstream resets on an open response and genuine application errors
+remain logged. Materials progress updates retain the connected preview iframe
+to avoid repeatedly aborting the same source transfer. Other navigation, range
+reads, proxy timeouts and network disconnects can still produce interruptions.
 
 The inspector explains `Not signed in`, `Identity not evaluated`, and historical
 `Identity not recorded`. Known-probe labels and filters preserve rejected requests

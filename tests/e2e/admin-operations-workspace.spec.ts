@@ -83,6 +83,26 @@ test('unmatched 404s retain evidence, searchable hashes and persistent routing f
   expect(state.writes).toEqual([]);
 });
 
+for (const historical of [false, true]) test(`interrupted reads disclose ${historical ? 'historical uncertainty' : 'pre-routing cancellation and proxy evidence'}`, async ({ page }) => {
+  await fixture(page);
+  const interrupted = { ...unmatchedOperation, outcome: 'interrupted', statusCode: 499,
+    request: { ...unmatchedOperation.request, path: '/api/courses/:redacted/materials/:redacted/source',
+      ...(historical ? {} : { routeState: 'not-evaluated', proxy: { forwarded: true, trustedPeer: true }, responseStarted: false, rangeRequested: true,
+        fingerprints: { day: '2026-10-28', peer: 'a'.repeat(32), agent: 'b'.repeat(32), client: 'c'.repeat(32) } }) },
+    response: { failureCategory: 'connection-interrupted' } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: interrupted, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).first().click();
+  await expect(page.locator('.ac-panel')).toContainText(historical ? 'Not confirmed before disconnect' : 'Not evaluated before request ended');
+  await expect(page.locator('.ac-panel')).toContainText('Navigation, a replaced preview');
+  await expect(page.locator('.ac-panel')).not.toContainText('This action may already have changed data');
+  await expect(page.locator('.ac-panel')).not.toContainText('No API route matched');
+  if (!historical) {
+    await expect(page.locator('.ac-panel')).toContainText('Immediate proxy peer trusted');
+    await expect(page.locator('.ac-panel')).toContainText('Resolved client group (trusted proxy)');
+    await expect(page.locator('.ac-panel')).toContainText('c'.repeat(32));
+  }
+});
+
 test('historical unmatched 404s disclose missing original paths without inventing diagnostics', async ({ page }) => {
   const state = await fixture(page);
   state.controls.unmatched = 'legacy';

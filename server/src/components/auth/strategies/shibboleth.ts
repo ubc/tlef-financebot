@@ -4,7 +4,8 @@ import passport from 'passport';
 import { Strategy as UBCShibStrategy } from 'passport-ubcshib';
 import { env } from '../../../config/env';
 import { upsertUserFromSaml } from '../../../services/users.service';
-import { describeSamlAttributes, resolveSamlAttributes } from '../saml-attributes';
+import { resolveSamlAttributes } from '../saml-attributes';
+import { logSamlAttributes } from '../saml-logging';
 
 /**
  * The authenticated user we store in the session. In this boilerplate we keep
@@ -88,48 +89,6 @@ function loadIdpCert(): string {
     return fs.readFileSync(certPath, 'utf8');
   } catch {
     throw new Error(missingCertMessage(certPath));
-  }
-}
-
-/**
- * Log what the IdP actually asserted about the user, every login.
- *
- * When login fails because an attribute is missing, the only question that
- * matters is whether the IdP released it at all — and against an IdP you do not
- * control (UBC IAM's), you cannot answer that by reading your own code. So we
- * log the assertion's attribute NAMES (not values: those are personal data)
- * plus what we resolved them to. Three outcomes are then distinguishable:
- *
- *   - no names at all      -> the IdP released nothing; an IAM-side change.
- *   - names, but not ours  -> released under a name we do not recognise; add it
- *                             to SAML_ATTRIBUTE_ALIASES in ../saml-attributes.ts.
- *   - names resolved       -> our side is fine.
- *
- * Set SAML_DEBUG_ATTRIBUTES=true to also log the values. That is personal data
- * (names, email, PUID) going into the server log, so keep it off except for a
- * short, deliberate diagnostic window.
- */
-function logSamlAttributes(
-  profile: Record<string, unknown>,
-  attributes: Record<string, unknown>,
-): void {
-  const { rawNames, resolvedNames, missingNames } = describeSamlAttributes(profile, attributes);
-  console.log(
-    `[server] SAML: assertion attribute names: ${rawNames.join(', ') || '(none released)'}`,
-  );
-  console.log(`[server] SAML: resolved as: ${resolvedNames.join(', ') || '(none)'}`);
-  if (missingNames.length > 0) {
-    console.warn(
-      `[server] SAML: required attribute(s) not resolved: ${missingNames.join(', ')}. ` +
-        `Either the IdP did not release them (ask UBC IAM), or they arrived under an ` +
-        `unrecognised name — compare against the assertion attribute names logged above.`,
-    );
-  }
-  if (env.samlDebugAttributes) {
-    console.warn(
-      `[server] SAML: attribute values (SAML_DEBUG_ATTRIBUTES=true — personal data): ` +
-        JSON.stringify(attributes),
-    );
   }
 }
 

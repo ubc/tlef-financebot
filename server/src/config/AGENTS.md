@@ -17,6 +17,11 @@ Rules:
 - Keep secrets out of source control; only `.env.example` (no real values) is
   committed.
 
+`TRUSTED_PROXY_CIDRS` accepts only literal IP/CIDRs or `loopback` (the default);
+`false` disables trust. Broad global trust, hop counts and `/0` networks refuse
+startup. Deployed layouts must specify their actual immediate proxy addresses;
+do not substitute all private networks to suppress a validation warning.
+
 Currently read: core (`nodeEnv`, `port`), MongoDB (`mongodbUri`,
 `mongodbDbName`), session (`sessionSecret`), SAML/auth (`samlEnvironment`,
 `samlIssuer`, `samlCallbackUrl`, `samlEntryPoint`, `samlLogoutUrl`,

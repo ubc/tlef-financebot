@@ -15,7 +15,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { isProduction } from './config/env';
+import { env, isProduction } from './config/env';
 import { healthRouter } from './routes/health.routes';
 import { notesRouter } from './routes/notes.routes';
 import { ragRouter } from './routes/rag.routes';
@@ -57,6 +57,7 @@ const CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../client/public');
  */
 export function createApp(): Express {
   const app = express();
+  app.set('trust proxy', env.trustedProxyCidrs.length ? env.trustedProxyCidrs : false);
   app.use('/api', operationAudit);
 
   app.use(

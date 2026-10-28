@@ -13,7 +13,11 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
   const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
-  const fingerprints = requestFingerprints(req.socket?.remoteAddress, req.get('user-agent'), new Date(started), env.sessionSecret);
+  const peer = req.socket?.remoteAddress;
+  const trust = req.app?.get('trust proxy fn');
+  const proxy = { forwarded: Boolean(req.get('x-forwarded-for')), trustedPeer: Boolean(peer && typeof trust === 'function' && trust(peer, 0)) };
+  const fingerprints = requestFingerprints(peer, req.get('user-agent'), new Date(started), env.sessionSecret,
+    proxy.forwarded && proxy.trustedPeer ? req.ip : undefined);
   const slowThresholdMs = 30000;
   const slowTimer = setTimeout(() => {
     if (String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
@@ -99,6 +103,8 @@ export const operationAudit: RequestHandler = (req, res, next) => {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
       request: { ...requestMetadata, routeMatched: route !== '/unmatched',
+        routeState: route !== '/unmatched' ? 'matched' : res.locals.probeRejected ? 'probe-rejected' : res.locals.routingComplete ? 'unmatched' : 'not-evaluated',
+        proxy, responseStarted: res.headersSent, rangeRequested: Boolean(req.get('range')),
         loginState: typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
         webClient: req.get('x-financebot-client') === 'web-v1', ...(fingerprints ? { fingerprints } : {}) },
       outcome: aborted ? 'interrupted' : res.statusCode >= 400 || res.locals.operationException ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',

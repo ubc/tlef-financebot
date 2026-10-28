@@ -1,8 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
-// Compiled Admin UI with intercepted APIs; no database, login or provider calls.
+// Compiled diagnostics and source previews with intercepted APIs; no live services.
 export default defineConfig({
-  testDir: './tests/e2e', testMatch: ['admin-operations-workspace.spec.ts'], workers: 1,
+  testDir: './tests/e2e', testMatch: ['admin-operations-workspace.spec.ts', 'material-preview-stability.spec.ts'], workers: 1,
   reporter: 'list', outputDir: 'audit-results/operations-logging/test-results',
   use: { baseURL: 'http://127.0.0.1:6173', reducedMotion: 'reduce', trace: 'retain-on-failure' },
   webServer: {

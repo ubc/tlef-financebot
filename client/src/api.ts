@@ -3380,11 +3380,13 @@ export interface DiagnosticPage<T> extends DiagnosticIdentities {
 export interface OperationRecord {
   _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
   request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
+    routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
+    proxy?: { forwarded: boolean; trustedPeer: boolean }; responseStarted?: boolean; rangeRequested?: boolean;
     client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
     fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
     loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated'; webClient?: boolean;
     probe?: { kind: 'git-metadata' | 'environment-file' | 'phpunit' | 'wordpress' | 'phpmyadmin' | 'laravel-debug'; evidence: 'path-signature' | 'retained-path-hash' };
-    fingerprints?: { day: string; peer?: string; agent?: string } };
+    fingerprints?: { day: string; peer?: string; agent?: string; client?: string } };
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial'; statusCode: number;
   actor?: { puid: string; uid: string; displayName: string };
   targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;

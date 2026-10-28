@@ -852,13 +852,17 @@ export interface OperationRequestDiagnostics {
   pathRedacted: boolean;
   pathTruncated: boolean;
   routeMatched: boolean;
+  routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
+  proxy?: { forwarded: boolean; trustedPeer: boolean };
+  responseStarted?: boolean;
+  rangeRequested?: boolean;
   client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
   fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
   loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated';
   webClient?: boolean;
   probe?: { kind: 'git-metadata' | 'environment-file' | 'phpunit' | 'wordpress' | 'phpmyadmin' | 'laravel-debug'; evidence: 'path-signature' | 'retained-path-hash' };
   /** Daily keyed groups, not identities. A connection peer may be a shared proxy. */
-  fingerprints?: { day: string; peer?: string; agent?: string };
+  fingerprints?: { day: string; peer?: string; agent?: string; client?: string };
 }
 
 export interface OperationEvent {

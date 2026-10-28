@@ -40,7 +40,9 @@ Search an exact group to compare activity within that day. Groups use a keyed
 daily digest and never expose raw addresses or headers. A connection peer may be
 the shared reverse proxy; user agents can be shared/forged. Matching either group
 does not prove the same sender, and groups cannot identify an attacker. Forwarded
-IP headers are not trusted. These fields require an existing non-default session
+IP headers from untrusted peers are ignored. A separate resolved-client group is
+available only with forwarding headers from an explicitly trusted proxy, and can
+still represent shared NAT. These fields require an existing non-default session
 secret of at least 32 characters and are not added retroactively.
 
 Known probe traffic, first-party session failures and business failures must be
@@ -87,6 +89,36 @@ the appropriate protected logs. Application logs do not clear host compromise.
 | Browser-reported 502/504 without a server record | Proxy routing/timeout and process health; the error may have been generated before Express |
 | Browser-reported response failure with HTTP 200 | Proxy/login HTML or invalid response JSON; inspect response content locally without adding it to telemetry |
 | `audit.record_dropped` | Audit database failure or the 100-write pending limit; use server logs and process-local Audit health counters |
+
+### Proxy and interrupted preview checks
+
+`ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` identifies a proxy configuration problem,
+not an exploit verdict: rate limiting may group users under the proxy address.
+`TRUSTED_PROXY_CIDRS=loopback` supports same-host Nginx. For a remote proxy,
+configure only its actual IP/CIDR allowlist; `false` explicitly disables trust.
+Do not use global trust, hop counts or all private networks as a shortcut.
+The proxy must overwrite/append headers correctly and prevent direct backend
+access. See [Express proxy guidance](https://expressjs.com/en/guide/behind-proxies/).
+New records show header presence and whether the immediate peer was trusted.
+They do not expose raw IP/header values or prove the infrastructure is configured
+correctly. A missing resolved-client group remains an evidence gap.
+
+`routeState: not-evaluated` on an interrupted request means the connection ended
+before route evaluation completed. It does not establish an invalid URL. A read
+may be cancelled by navigation, a replaced iframe, range reads, proxy behavior or
+network loss. `responseStarted` and `rangeRequested` provide bounded hints.
+Materials now retain the connected preview across progress updates, avoiding an
+application-induced reload for every run event; other cancellations remain
+recorded. Closed, recognized transport errors retain a 499 without duplicate
+`http.exception` noise. Real application exceptions and open upstream resets
+continue to log.
+
+Real-IdP SAML environments suppress attribute values even if
+`SAML_DEBUG_ATTRIBUTES=true`. Names still diagnose mappings. Set the deployed
+flag to false as well; historical logs already containing personal values require
+the operator's restricted-access/retention process, not automatic deletion by
+this release. The Qdrant insecure-connection warning separately requires checking
+the internal transport/TLS boundary; it does not establish that a key was stolen.
 
 ## Server log tags
 

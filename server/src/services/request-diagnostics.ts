@@ -1,4 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
+import { isIP } from 'node:net';
 import type { OperationRequestDiagnostics } from '../types/domain';
 import { classifyProbe } from './request-probe.service';
 
@@ -47,11 +48,12 @@ export function requestDiagnostics(originalUrl: string, userAgent: string | unde
   return { path, pathHash, pathRedacted, pathTruncated, client, fetchSite: site, ...(probe ? { probe } : {}) };
 }
 
-/** Pseudonymous daily groups; do not trust forwarding headers or retain IP/UA. */
-export function requestFingerprints(peer: string | undefined, agent: string | undefined, date: Date, secret: string | undefined): OperationRequestDiagnostics['fingerprints'] {
+/** Pseudonymous daily groups; client must be resolved through explicit proxy trust. */
+export function requestFingerprints(peer: string | undefined, agent: string | undefined, date: Date, secret: string | undefined, client?: string): OperationRequestDiagnostics['fingerprints'] {
   if (!secret || secret.length < 32 || /^(?:dev-insecure-secret-change-me|change-me-in-production)$/.test(secret)) return;
   const day = date.toISOString().slice(0, 10);
   const digest = (kind: string, value: string): string => createHmac('sha256', secret)
     .update(`financebot-request-group-v1\0${day}\0${kind}\0${value}`).digest('hex').slice(0, 32);
-  return { day, ...(peer ? { peer: digest('peer', peer.slice(0, 128)) } : {}), ...(agent ? { agent: digest('agent', agent.slice(0, 512)) } : {}) };
+  return { day, ...(peer ? { peer: digest('peer', peer.slice(0, 128)) } : {}), ...(agent ? { agent: digest('agent', agent.slice(0, 512)) } : {}),
+    ...(client && isIP(client) ? { client: digest('client', client) } : {}) };
 }

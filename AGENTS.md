@@ -18,6 +18,15 @@ commonly need:
 
 ## Current state
 
+- Request transport follow-up (2026-10-28): explicit proxy IP/CIDR trust defaults
+  to loopback; optional daily resolved-client groups never store raw addresses.
+  Routing-not-evaluated, response-started and range-request booleans explain
+  pre-routing cancellations without upgrading historical evidence. Materials
+  keep preview browsing contexts attached across progress updates. Recognized
+  closed transport aborts retain 499 records without duplicate exception logs.
+  Real-IdP environments suppress SAML attribute values despite the debug flag.
+  See `docs/runbooks/request-failure-diagnostics.md` and the API contract.
+
 - Admin request diagnostics retain allowlisted path shapes, query-free path
   hashes and unverified client/fetch-site categories. Unmatched API 404s emit
   correlated structured server warnings and remain failed records. Operations
