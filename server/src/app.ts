@@ -83,7 +83,9 @@ export function createApp(): Express {
   const { passport, sessionMiddleware } = configureAuth();
   app.use(sessionMiddleware);
   app.use(passport.initialize());
+  app.use((_req, res, next) => { res.locals.authenticationPending = true; next(); });
   app.use(passport.session());
+  app.use((_req, res, next) => { res.locals.authenticationPending = false; next(); });
 
   // API routes are mounted under /api. Add new routers here as features grow.
   app.use('/api', healthRouter); // public (used by the pre-login landing screen).

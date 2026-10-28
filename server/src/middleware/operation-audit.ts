@@ -105,7 +105,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
       request: { ...requestMetadata, routeMatched: route !== '/unmatched',
         routeState: route !== '/unmatched' ? 'matched' : res.locals.probeRejected ? 'probe-rejected' : res.locals.routingComplete ? 'unmatched' : 'not-evaluated',
         proxy, responseStarted: res.headersSent, rangeRequested: Boolean(req.get('range')),
-        loginState: typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
+        loginState: res.locals.authenticationPending || typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
         webClient: req.get('x-financebot-client') === 'web-v1', ...(fingerprints ? { fingerprints } : {}) },
       outcome: aborted ? 'interrupted' : res.statusCode >= 400 || res.locals.operationException ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',
       actor: req.user ? { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } : undefined,

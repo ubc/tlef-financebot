@@ -76,6 +76,13 @@ it.each(['ECONNABORTED', 'ECONNRESET', 'EPIPE', 'ERR_STREAM_PREMATURE_CLOSE', 'A
   errorHandler(Object.assign(new Error('private'), { code }), req as never, res as never, jest.fn());
   expect(logError).not.toHaveBeenCalled(); expect(res.json).not.toHaveBeenCalled();
 });
+it('does not label a cancelled pending Passport deserialization as a signed-out caller', () => {
+  const req = { originalUrl: '/api/courses', method: 'GET', get: () => undefined, params: {}, query: {}, isAuthenticated: () => false };
+  const res = Object.assign(new EventEmitter(), { locals: { authenticationPending: true }, statusCode: 200, headersSent: false, writableFinished: false, setHeader: jest.fn(), getHeader: () => undefined, json: jest.fn() });
+  operationAudit(req as never, res as never, jest.fn());
+  res.emit('close');
+  expect(records[0]).toMatchObject({ outcome: 'interrupted', request: { loginState: 'not-evaluated', routeState: 'not-evaluated' } });
+});
 it('continues reporting upstream resets and genuine exceptions even after a disconnect', () => {
   const res = { destroyed: false, headersSent: false, locals: {}, status: jest.fn().mockReturnThis(), json: jest.fn(), destroy: jest.fn() };
   errorHandler(Object.assign(new Error('upstream reset'), { code: 'ECONNRESET' }), { aborted: false } as never, res as never, jest.fn());
