@@ -70,7 +70,7 @@ test('received and hash-recognized paths display as text with source IP evidence
     } else {
       await expect(panel).toContainText('Request path (query excluded)');
       await expect(panel).toContainText('198.51.100.7');
-      await expect(panel.getByRole('link', { name: 'Requests from this IP' })).toHaveAttribute('href', /q=198\.51\.100\.7/);
+      await expect(panel.getByRole('link', { name: 'Search this IP' })).toHaveAttribute('href', /q=198\.51\.100\.7/);
       await page.route('**/api/admin/ip-blocks?**', route => route.fulfill({ json: { items: [], total: 0, page: 1, currentIp: '203.0.113.10', addressSource: 'trusted-proxy' } }));
       await panel.getByRole('button', { name: 'Manage this IP' }).click();
       const rules = page.getByRole('dialog', { name: 'IP access rules', exact: true });
@@ -79,6 +79,12 @@ test('received and hash-recognized paths display as text with source IP evidence
     }
     await page.getByRole('button', { name: 'Close inspector' }).click();
   }
+  const matched = { ...operation, request: { ...unmatchedOperation.request, routeMatched: true,
+    network: { clientIp: '198.51.100.7', peerIp: '192.0.2.10', source: 'trusted-proxy' } } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: matched, runs: [] } }));
+  await page.getByRole('link', { name: 'GET /api/v1/version', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Network source');
+  await expect(page.locator('.ac-panel')).not.toContainText('The original path was not retained for this historical record.');
   expect(state.writes).toEqual([]);
 });
 
