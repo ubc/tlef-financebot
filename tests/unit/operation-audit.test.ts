@@ -96,10 +96,13 @@ it('retains safe unmatched-404 context and a correlated server log without leaki
     expect(records[0].actor).toBeUndefined();
     expect(warn).toHaveBeenCalledWith('[http.route_not_found]', expect.any(String));
     expect(JSON.parse(warn.mock.calls[0][1])).toMatchObject({ requestId: response.headers['x-request-id'], request: { pathHash: records[0].request!.pathHash }, statusCode: 404 });
-    expect(JSON.stringify([records, warn.mock.calls])).not.toContain('private');
+    expect(records[0].request?.originalPath).toBe('/api/unknown-private-path');
+    expect(JSON.stringify(records)).not.toMatch(/private-query|private-agent|private-token|private-cookie/);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private');
 
     await request(api).get('/api/questions/123456789012345678901234');
     expect(records[1]).toMatchObject({ route: '/api/questions/:id', statusCode: 404, request: { routeMatched: true } });
+    expect(records[1].request?.originalPath).toBeUndefined();
     expect(warn.mock.calls.filter(([tag]) => tag === '[http.route_not_found]')).toHaveLength(1);
     expect(warn.mock.calls.filter(([tag]) => tag === '[http.operation_failed]')).toHaveLength(1);
   } finally { warn.mockRestore(); }

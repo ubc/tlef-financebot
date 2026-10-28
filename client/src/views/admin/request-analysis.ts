@@ -2,9 +2,10 @@ import { el } from '../../dom.js';
 import type { OperationRecord } from '../../api.js';
 import { diagnosticLink } from './diagnostic-ui.js';
 
-const phases: Record<string, string> = { 'body-parser': 'Reading request input', 'probe-guard': 'Known probe rejection', 'rate-limit': 'Request rate limit',
+const phases: Record<string, string> = { 'ip-block': 'IP access rule', 'body-parser': 'Reading request input', 'probe-guard': 'Known probe rejection', 'rate-limit': 'Request rate limit',
   'session-load': 'Loading the login session', 'user-load': 'Loading the account', authentication: 'Checking authentication', authorization: 'Checking access', routing: 'Matching an API route', transfer: 'Transferring the response', application: 'Application handler' };
 const reasons: Record<string, string> = {
+  'ip-address-blocked': 'A manually configured IP rule rejected the API request before body parsing and login/session loading.',
   'malformed-json': 'The server could not parse the JSON input.', 'payload-too-large': 'The input exceeded the admitted size.',
   'known-path-rejected': 'A fixed known probe path was rejected.', 'rate-limit-reached': 'The request rate limit was reached.',
   'identity-lookup-failed': 'The session/account lookup returned an error; this does not establish that the caller was signed out.',

@@ -9,6 +9,8 @@ import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
 import { rejectApiProbe } from './middleware/reject-api-probe';
 import { traceAuthentication } from './middleware/request-identity';
+import { enforceIpBlock } from './middleware/ip-block';
+import { ipBlocksRouter } from './routes/ip-blocks.routes';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
 import { selfCapabilitiesRouter } from './routes/capabilities.routes';
 import path from 'node:path';
@@ -74,6 +76,7 @@ export function createApp(): Express {
     rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: true, legacyHeaders: false }),
   );
 
+  app.use('/api', enforceIpBlock);
   app.use('/api', rejectApiProbe);
   app.use(cors());
   app.use(express.json());
@@ -110,6 +113,7 @@ export function createApp(): Express {
   app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
   app.use('/api', clientDiagnosticsRouter);
   app.use('/api', adminDiagnosticsRouter);
+  app.use('/api', ipBlocksRouter);
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
   app.use('/api', examBuilderRouter);

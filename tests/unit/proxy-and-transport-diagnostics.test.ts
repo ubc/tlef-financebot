@@ -52,7 +52,8 @@ it('resolves the nearest untrusted address and cannot evade a limit by prependin
   expect(records[0].request?.fingerprints?.client).toMatch(/^[a-f\d]{32}$/);
   expect(records[0].request?.fingerprints?.client).toBe(records[1].request?.fingerprints?.client);
   expect(records[0].request?.fingerprints?.client).not.toBe(records[2].request?.fingerprints?.client);
-  expect(JSON.stringify(records)).not.toMatch(/198\.51\.100|192\.0\.2/);
+  expect(records[0].request?.network?.clientIp).toBe('192.0.2.10');
+  expect(JSON.stringify(warn.mock.calls)).not.toMatch(/198\.51\.100|192\.0\.2/);
 });
 it('ignores forged forwarding headers from an untrusted direct peer', async () => {
   const app = proxyApp(true);

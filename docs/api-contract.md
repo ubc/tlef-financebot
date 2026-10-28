@@ -1441,8 +1441,73 @@ It distinguishes paths masked to the same display shape; it is not reversible
 original-path evidence. `pathTruncated` discloses either display or hash limits.
 Search `q` also matches the sanitized path and its digest. User-agent and
 Sec-Fetch-Site headers reduce to fixed categories only; they are unverified and
-cannot prove browser, bot or same-origin identity. Raw URLs, query strings,
-headers, referers, IP addresses and request bodies are not added to this record.
+cannot prove browser, bot or same-origin identity. Query strings, raw headers,
+referers and request bodies are not added to this record. The following Admin-only
+path/IP additions supersede the earlier address/path retention policy.
+
+New unmatched 404 and IP-blocked records retain `request.originalPath` plus
+`originalPathTruncated`. This is the received path, with queries/fragments removed,
+limited to 4,096 characters; case, encoding and repeated slashes are preserved.
+The protected Admin list/detail and export display it as text. Path segments can
+contain sensitive values, so these fields remain restricted to existing Admin
+diagnostic access and are excluded from common structured logs, including dropped
+write fallbacks. Matched application routes keep their sanitized path shapes.
+Historical records are never rewritten. A finite catalog of public paths may
+produce `recognizedPath: { path, evidence: 'retained-path-hash' }` on exact,
+non-truncated historical unmatched-404 hash matches. Unknown historical segments
+cannot be recovered. Search `q` also matches retained paths and catalog hashes.
+
+New retained API records add `request.network: { clientIp?, peerIp?, source }`.
+Addresses are canonical exact IPv4/IPv6 values (IPv4-mapped IPv6 becomes IPv4).
+`peerIp` is the socket peer. `clientIp` uses Express's configured trusted proxy
+chain only when the immediate peer is trusted and forwarding information exists;
+otherwise it is the socket peer. `source` is `trusted-proxy`, `direct-peer`,
+`untrusted-forwarding` (forwarding ignored), or `unavailable`. Invalid/missing
+addresses are not guessed. These raw addresses are Admin database evidence only,
+excluded from common structured logs. Search `q` matches either address. An IP
+can represent shared NAT, VPN or a proxy; it does not establish a human identity.
+Historical keyed groups cannot recover missing raw addresses.
+
+### Manual IP access rules
+
+Admin → Operations & Issues → **IP access rules**, or a request's **Manage this
+IP**, manages exact-address API blocks. Opening evidence never creates a rule.
+There is no automatic ban and no CIDR/range support. Blocking requires explicit
+confirmation; unblocking remains available in the retained rule list.
+
+- `GET /api/admin/ip-blocks?page=1&blocked=true|false&ip=<exact-address>` is
+  Admin-only. Optional state/address filters combine; pages contain 25 records.
+  Returns `{ items, total, page, limit, refreshSeconds: 5, currentIp, addressSource }`.
+- `PUT /api/admin/ip-blocks` is Admin-only and accepts
+  `{ ip, blocked: boolean, reason?: string, expectedRevision?: number }`.
+  Reason is trimmed and limited to 300 characters. Returns the saved rule with
+  canonical IP, state, revision, updating Admin/time/reason and latest 50 history
+  changes. Actor identity comes from the authenticated server account.
+  Existing-row writes use revision CAS; stale/competing writes return 409.
+  Missing unblocks return 404. Repeating the current state is idempotent.
+- Blocking one's current source address, loopback/unspecified addresses or an
+  address trusted by the configured proxy policy returns 409. Changing any rule
+  with unavailable or untrusted-forwarding source identification returns 409.
+  This guard requires an accurate proxy allowlist and correctly maintained
+  upstream forwarding headers; it does not validate the infrastructure itself.
+
+Rules persist in `ipBlocks`, uniquely keyed by canonical IP. Unblocking retains
+the row/history. An API middleware checks blocks before body parsing and session
+processing, following the existing global rate limiter. A blocked call returns
+HTTP 403 `{ error, code: 'ip-blocked' }`, with retained failure phase `ip-block`
+and reason `ip-address-blocked`; it remains an audited failed request. It does
+not reach business routes. API-only enforcement does not configure a firewall,
+block static assets or cover traffic rejected upstream.
+
+Each process caches active rules for five seconds; local committed changes update
+that process immediately and invalidate pending older refreshes. Mongo refreshes
+have a one-second driver timeout. A refresh failure emits
+`[security.ip_block_refresh_failed]` with safe exception metadata, retains known
+rules and retries after five seconds. A cold process with no known rules permits
+requests during a lookup failure. This availability policy and worker refresh
+delay mean these controls are not a substitute for infrastructure filtering.
+
+### Structured failure warnings
 
 All failed, interrupted and partial API outcomes also emit structured server
 warnings with the server-owned request ID, route, status, duration and safe
@@ -1483,11 +1548,13 @@ reports are unverified, independently rate-limited (five/minute in the browser,
 crashed, signed-out or blocked client. Reporting transport errors never recurse.
 
 In Admin → Operations & Issues → User operations, open **Filters → Routing**
-to inspect or exclude unmatched 404s. Rows show sanitized paths when retained;
+to inspect or exclude unmatched 404s. Rows prefer received or hash-recognized paths
+when available, falling back to sanitized paths;
 the inspector explains the failure, categories and proxy-log recovery. Search
 the path hash to find repeats. Outdated clients, incorrect health checks and
 automated probes are possible causes, not automatic classifications. Historical
-records explicitly report the unavailable original path; no backfill is possible
+records explicitly report unavailable original paths except fixed catalog hash
+matches; arbitrary paths cannot be backfilled
 without separate access-log evidence. Anonymous requests alone do not prove a
 security incident or a failed question-generation task.
 

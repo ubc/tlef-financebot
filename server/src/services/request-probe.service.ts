@@ -24,11 +24,11 @@ export function classifyProbe(originalUrl: string): Probe | undefined {
 
 // These public constants recognize retained hashes without recovering arbitrary
 // private paths or rewriting historical records. Keep unknown hashes unknown.
-const historicalPaths = [
+export const historicalPaths = Object.freeze([
   '/api/.git/config', '/api/.git/HEAD', '/api/.git/index', '/api/.env', '/api/.env.local', '/api/.env.production',
   '/api/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php', '/api/phpunit/phpunit/src/Util/PHP/eval-stdin.php',
   '/api/wp-login.php', '/api/xmlrpc.php', '/api/wp-admin', '/api/phpmyadmin', '/api/_ignition/execute-solution',
-];
+]);
 const historicalProbes = new Map(historicalPaths.map(path => [createHash('sha256').update(path).digest('hex'), classifyProbe(path)!]));
 
 export function retainedProbe(event: Pick<OperationEvent, 'route' | 'statusCode' | 'request'>): Probe | undefined {

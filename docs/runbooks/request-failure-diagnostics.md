@@ -153,7 +153,42 @@ the internal transport/TLS boundary; it does not establish that a key was stolen
 - `audit.record_dropped`: the database telemetry record was lost; safe correlation
   metadata remains in the server's log stream if that stream is available.
 
-## Boundaries
+## Source IP and manual access rules (October 28 follow-up)
+
+New retained API records show **Network source**: resolved source IP, socket peer
+IP and resolution basis. Configured trusted proxies may supply the resolved
+address; forwarding from an untrusted peer is ignored. These fields identify a
+network address, which can be shared, not a person. Old keyed groups cannot
+recover missing historical IPs. Search the source IP or choose **Requests from
+this IP** to compare retained activity; examine paths, identity, cause and timing
+before drawing a conclusion.
+
+New unmatched 404/IP-blocked records display the received query/fragment-free
+path, capped at 4,096 characters. Unknown historical paths stay masked; fixed
+public catalog paths can be recognized by exact non-truncated digest matches.
+The original historical record is not rewritten or assigned a new sender.
+
+Choose **Manage this IP** or the page's **IP access rules** to manually block or
+unblock one exact IPv4/IPv6 address. Review the shared-address warning and confirm
+the block. The list retains reason, administrator, time and latest 50 changes;
+unblocking keeps this history. Own source, loopback/unspecified and trusted proxy
+addresses cannot be blocked. Uncertain proxy identification prevents changes.
+A 409 revision conflict requires reviewing the refreshed rule before retrying.
+
+Blocks reject API requests with an audited `ip-blocked` 403 before parsing/session
+work. They do not erase failed records, establish an intrusion or configure a
+network firewall. Local changes apply immediately; other workers refresh within
+five seconds during normal database operation. Refresh errors emit
+`security.ip_block_refresh_failed`, retain known rules and retry after five
+seconds. A cold process permits requests if its initial lookup fails. Use
+infrastructure controls for protection during application/database unavailability.
+No automatic ban is performed. Do not test a real user's address by banning it.
+
+Raw IPs/received paths are restricted to Admin database evidence and diagnostic
+exports. Common structured warnings/drop fallbacks exclude these raw fields;
+existing audit retention still applies. Raw headers and credentials are not added.
+
+## Remaining capture boundaries
 
 Requests rejected by DNS, TLS, the load balancer/proxy, Node's HTTP parser or an
 unreachable process never reach this middleware. They require infrastructure logs.
@@ -168,6 +203,7 @@ durable background task outcomes must be checked in their existing run evidence;
 a successful HTTP stream handshake does not prove that its work succeeded.
 Browser reports require connectivity, authentication, executing client code and
 available report budget. Client/fetch-site headers and browser reports are
-unverified hints and never authorize access. New logs omit raw URLs, query strings,
-raw headers, IP addresses, bodies, answers and uploaded documents. Error-message
+unverified hints and never authorize access. Common server logs omit raw URLs,
+query strings, raw headers, IP addresses, bodies, answers and uploaded documents.
+Admin path/IP evidence is the explicit exception described above. Error-message
 redaction in the existing database evidence remains bounded best effort.

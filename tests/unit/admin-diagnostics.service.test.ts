@@ -110,6 +110,7 @@ it.each(['all', 'unmatched', 'other'] as const)('combines %s routing with outcom
   const filter = find.mock.calls[0][0];
   expect(filter).toMatchObject({ 'actor.puid': 'teacher', outcome: 'failed', createdAt: { $gte: new Date('2026-10-26T00:00:00Z') }, $and: [{ $or: [{ method: { $nin: ['GET', 'HEAD'] } }, { outcome: { $ne: 'succeeded' } }] }] });
   expect(filter.$or).toEqual(expect.arrayContaining([{ 'request.path': /\/api\/\.env/i }, { 'request.pathHash': /\/api\/\.env/i }]));
+  expect(filter.$or).toContainEqual({ 'request.originalPath': /\/api\/\.env/i });
   expect(filter.$or[0].requestId.test('/api/Xenv')).toBe(false);
   if (routing === 'unmatched') expect(filter).toMatchObject({ route: '/unmatched', statusCode: 404 });
   else expect(filter.route).toBeUndefined();
@@ -133,4 +134,12 @@ it.each(['probes', 'other'] as const)('composes %s traffic filtering with action
   expect(countDocuments).toHaveBeenCalledWith(filter);
   expect(result.items[0].request?.probe).toEqual({ kind: 'phpunit', evidence: 'retained-path-hash' });
   expect(original.request).not.toHaveProperty('probe');
+});
+
+it('returns exact Admin paths without bypassing unrelated response credential redaction', async () => {
+  findOperation.mockResolvedValue({ requestId: 'path', route: '/unmatched', statusCode: 404,
+    request: { path: '/api/:redacted', originalPath: '/api/secret=value/path', originalPathTruncated: false }, response: { error: 'password=private' } });
+  const result = await operationDetail('path');
+  expect((result.operation as { request: { originalPath: string } }).request.originalPath).toBe('/api/secret=value/path');
+  expect(JSON.stringify((result.operation as { response: unknown }).response)).not.toContain('private');
 });

@@ -86,6 +86,10 @@ truth for material-ingest/question-generation progress; mutate it through
 `content-runs.service.ts` so revision CAS and post-write SSE publication remain
 coupled.
 
+`ipBlocksCol()` stores Admin-managed exact-IP rules with a unique canonical-IP
+index and active/update index. Unblocking retains the row and latest 50 changes;
+use `ip-blocks.service.ts` for revision CAS and local cache invalidation.
+
 Admin Console v0 adds `platformInstructorGrantsCol()`, uniquely keyed by the
 UBC `puid`. A grant can exist before the matching PUID-backed `User` logs in;
 `users.service.ts` applies it on first SAML login. The accessor uses the

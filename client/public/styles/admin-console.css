@@ -14,3 +14,14 @@
 /* Danger actions stay legible in both appearance modes. */
 :root[data-admin="true"] .admin-console .btn--danger,:root[data-admin="true"] .app-dialog .btn--danger{background:var(--surface);border-color:var(--ac-danger);color:var(--ac-danger)}
 :root[data-admin="true"] .admin-console .btn--danger:hover,:root[data-admin="true"] .app-dialog .btn--danger:hover{background:color-mix(in srgb,var(--ac-danger) 9%,var(--surface));color:var(--ac-danger)}
+.ac-ip-dialog { width: min(900px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: 90vh; overflow: auto; }
+.ac-ip-dialog .app-dialog__surface { display: grid; gap: 12px; }
+.ac-ip-dialog form { display: grid; gap: 10px; }
+.ac-ip-dialog label { display: grid; gap: 6px; }
+.ac-ip-dialog .ac-actions { flex-wrap: wrap; }
+.ac-ip-dialog .ac-actions input { flex: 1 1 180px; min-width: 0; }
+.ac-ip-dialog td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.ac-ip-dialog .ac-table-scroll { max-width: 100%; max-height: 40vh; }
+.ac-ip-dialog ol { padding-left: 20px; }
+.ac-ip-dialog summary { cursor: pointer; }
+.ac-ip-error { color: var(--danger, #b42318); margin: 0; }

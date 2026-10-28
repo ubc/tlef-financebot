@@ -3383,6 +3383,8 @@ export interface DiagnosticPage<T> extends DiagnosticIdentities {
 export interface OperationRecord {
   _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
   request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
+    originalPath?: string; originalPathTruncated?: boolean; recognizedPath?: { path: string; evidence: 'retained-path-hash' };
+    network?: { clientIp?: string; peerIp?: string; source: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable' };
     routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
     proxy?: { forwarded: boolean; trustedPeer: boolean }; responseStarted?: boolean; rangeRequested?: boolean;
     session?: { credential: 'absent' | 'signed' | 'invalid' | 'ambiguous'; group?: string };
@@ -3401,6 +3403,21 @@ export interface OperationRecord {
   targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;
 }
 export type DiagnosticRun = ContentRunSnapshot & { operationId?: string };
+export interface IpBlockRecord {
+  ip: string; blocked: boolean; revision: number; reason: string; updatedAt: string; updatedByPuid: string; updatedByName: string;
+  history: Array<{ blocked: boolean; at: string; actorPuid: string; actorName: string; reason: string }>;
+}
+export interface IpBlockPage {
+  items: IpBlockRecord[]; total: number; page: number; limit: number; refreshSeconds: number;
+  currentIp: string | null; addressSource: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable';
+}
+export function listIpBlocks(page = 1, ip?: string): Promise<IpBlockPage> {
+  const query = new URLSearchParams({ page: String(page) }); if (ip) query.set('ip', ip);
+  return request(`/api/admin/ip-blocks?${query}`);
+}
+export function setIpBlock(input: { ip: string; blocked: boolean; reason: string; expectedRevision?: number }): Promise<IpBlockRecord> {
+  return request('/api/admin/ip-blocks', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+}
 export interface AuditHistoryRecord { _id: string; actorPuid: string; action: string; targetType: string; targetId: string; courseId?: string; createdAt: string; detail?: Record<string, unknown> }
 export interface AdminQuestionRow {
   _id: string; courseId: string; state: PublicationState; currentVersion: number; currentVersionId: string;

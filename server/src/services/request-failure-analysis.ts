@@ -9,6 +9,7 @@ export function requestFailureAnalysis(event: OperationEvent): { failurePhase: s
       failureReason: ['session-loading', 'user-loading'].includes(stage ?? '') ? 'connection-closed-before-identity' : 'connection-closed' };
   }
   const category = event.response.failureCategory;
+  if (category === 'ip-blocked') return { failurePhase: 'ip-block', failureReason: 'ip-address-blocked' };
   if (category === 'malformed-json' || category === 'payload-too-large') return { failurePhase: 'body-parser', failureReason: category };
   if (category === 'probe-rejected') return { failurePhase: 'probe-guard', failureReason: 'known-path-rejected' };
   if (event.statusCode === 429) return { failurePhase: 'rate-limit', failureReason: 'rate-limit-reached' };

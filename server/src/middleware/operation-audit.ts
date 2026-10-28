@@ -9,6 +9,8 @@ import { requestDiagnostics, requestFingerprints, requestSession, requestSource 
 import { env } from '../config/env';
 import { startRequestIdentity, identitySnapshot, awaitRequestIdentity } from './request-identity';
 import { requestFailureAnalysis } from '../services/request-failure-analysis';
+import { originalRequestPath } from '../services/request-path.service';
+import { requestNetwork } from './request-network';
 
 /** Mounted before parsers/rate limiting: malformed requests are failures too. */
 export const operationAudit: RequestHandler = (req, res, next) => {
@@ -17,6 +19,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   startRequestIdentity(res);
   const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
   const session = requestSession(req.get('cookie'), env.sessionSecret);
+  const network = requestNetwork(req);
   const source = requestSource(req.originalUrl, { webClient: req.get('x-financebot-client'), page: req.get('x-financebot-page'), callsite: req.get('x-financebot-callsite'), trigger: req.get('x-financebot-trigger') });
   const peer = req.socket?.remoteAddress;
   const trust = req.app?.get('trust proxy fn');
@@ -107,7 +110,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     const event: OperationEvent = {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
-      request: { ...requestMetadata, session, ...(source ? { source } : {}), routeMatched: route !== '/unmatched',
+      request: { ...requestMetadata, network, ...(route === '/unmatched' && (res.statusCode === 404 || res.locals.ipBlocked) && !aborted ? originalRequestPath(req.originalUrl) : {}), session, ...(source ? { source } : {}), routeMatched: route !== '/unmatched',
         routeState: route !== '/unmatched' ? 'matched' : res.locals.probeRejected ? 'probe-rejected' : res.locals.routingComplete ? 'unmatched' : 'not-evaluated',
         proxy, responseStarted: res.headersSent, rangeRequested: Boolean(req.get('range')),
         loginState: res.locals.authenticationPending || typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
@@ -126,7 +129,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
       else if (['failed', 'session-loading', 'user-loading'].includes(identity.stage)) event.request!.loginState = 'not-evaluated';
       else if (identity.stage === 'complete') event.request!.loginState = 'unauthenticated';
       if (['failed', 'partial', 'interrupted'].includes(event.outcome)) {
-        const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : res.locals.probeRejected ? 'probe-rejected' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
+        const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : res.locals.ipBlocked ? 'ip-blocked' : res.locals.probeRejected ? 'probe-rejected' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
           : event.statusCode === 401 ? 'authentication' : event.statusCode === 403 ? 'authorization'
           : event.statusCode === 429 ? 'rate-limit' : event.statusCode >= 500 ? 'server-failure'
           : event.statusCode === 400 || event.statusCode === 422 ? 'validation' : 'application');

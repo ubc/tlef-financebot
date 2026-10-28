@@ -4,6 +4,7 @@ import type { BuilderExam, ExamPublication, ExamCandidate, ExamBuildRun, Assessm
 import type { CoursePeopleImport } from '../../types/people-import';
 import type { CourseRegistrationCodeBatch } from '../../types/registration-code';
 import type { OperationEvent } from '../../types/domain';
+import type { IpBlockEntry } from '../../types/ip-block';
 import type { CourseInstructorShare } from '../../types/course-sharing';
 import type { QuestionDraft, QuestionPresence } from '../../types/collaboration';
 import type { Collection, Document, ObjectId, IndexSpecification, CreateIndexesOptions } from 'mongodb';
@@ -57,6 +58,7 @@ export const tutorialProgressCol = (): Collection<TutorialProgress> =>
   getDb().collection<TutorialProgress>('tutorialProgress');
 
 export const operationEventsCol = (): Collection<OperationEvent> => getDb().collection<OperationEvent>('operationEvents');
+export const ipBlocksCol = (): Collection<IpBlockEntry> => getDb().collection<IpBlockEntry>('ipBlocks');
 export const courseInstructorSharesCol = (): Collection<CourseInstructorShare> =>
   getDb().collection<CourseInstructorShare>('courseInstructorShares');
 export const coursePeopleImportsCol = (): Collection<CoursePeopleImport> =>
@@ -94,6 +96,8 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'courseInstructorShares', keys: { status: 1, recipientPuid: 1 } },
   { collection: 'courseInstructorShares', keys: { status: 1, email: 1 } },
   { collection: 'operationEvents', keys: { requestId: 1 }, options: { unique: true } },
+  { collection: 'ipBlocks', keys: { ip: 1 }, options: { unique: true } },
+  { collection: 'ipBlocks', keys: { blocked: 1, updatedAt: -1 } },
   { collection: 'operationEvents', keys: { createdAt: -1, _id: -1 } },
   { collection: 'operationEvents', keys: { 'actor.puid': 1, createdAt: -1 } },
   { collection: 'operationEvents', keys: { outcome: 1, createdAt: -1 } },

@@ -4,10 +4,14 @@ import { exceptionDiagnostics } from './exception-diagnostics';
 
 /** This fallback remains available when MongoDB audit persistence is unavailable. */
 export function operationLogContext(event: OperationEvent) {
+  const request = event.request ? { ...event.request } : undefined;
+  // Exact unmatched paths are retained for the protected Admin view, not copied
+  // into the common structured log stream or dropped-write fallback.
+  if (request) { delete request.originalPath; delete request.originalPathTruncated; delete request.network; }
   return { requestId: event.requestId, method: event.method, route: event.route,
     statusCode: event.statusCode, outcome: event.outcome, durationMs: event.durationMs,
     ...(event.actor ? { actorPuid: event.actor.puid } : {}),
-    ...(event.request ? { request: event.request } : {}) };
+    ...(request ? { request } : {}) };
 }
 
 let failedWrites = 0;

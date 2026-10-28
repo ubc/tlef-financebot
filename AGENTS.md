@@ -18,6 +18,16 @@ commonly need:
 
 ## Current state
 
+- Admin request evidence now retains canonical source/socket IPs and received
+  query-free paths for new unmatched 404/IP-blocked calls (4,096-character cap).
+  Common server logs omit these raw fields. Historical public paths may be
+  recognized by exact catalog hash; missing historical IPs/unknown paths stay
+  unavailable. Operations offers explicit manual exact-IP block/unblock with
+  Admin history/revision CAS, own/proxy-address guards and five-second per-worker
+  refresh. Enforcement covers API requests before parsing/session work, not an
+  infrastructure firewall. Refresh faults retain known rules; cold faults permit
+  requests. See the current API contract and request-failure runbook.
+
 - API request cause diagnostics retain observed failure stages/reasons, signed
   session correlation groups and separately labelled stored-session account
   associations. Interrupted audits can observe the existing authentication chain
@@ -28,7 +38,8 @@ commonly need:
   request diagnostics API contract and runbook.
 
 - Request transport follow-up (2026-10-28): explicit proxy IP/CIDR trust defaults
-  to loopback; optional daily resolved-client groups never store raw addresses.
+  to loopback; daily resolved-client groups remain pseudonymous alongside the
+  newer protected Admin IP fields described above.
   Routing-not-evaluated, response-started and range-request booleans explain
   pre-routing cancellations without upgrading historical evidence. Materials
   keep preview browsing contexts attached across progress updates. Recognized
@@ -39,7 +50,7 @@ commonly need:
   hashes and unverified client/fetch-site categories. Unmatched API 404s emit
   correlated structured server warnings and remain failed records. Operations
   Filters → Routing selects/excludes unmatched 404s without hiding matched
-  resource errors; historical paths stay unavailable. See the October 26 API
+  resource errors; unknown historical paths stay unavailable. See the October 26 API
   contract and `playwright.operations-logging.config.ts` for static UI checks.
   Failed/partial/interrupted requests, bounded exceptions, 30-second pending
   requests and dropped audit writes have correlated structured server logs.
@@ -50,7 +61,7 @@ commonly need:
   audited failures. Traffic classification filters and explicit authenticated /
   unauthenticated / not-evaluated identity explanations distinguish them from
   application errors. Daily keyed peer/agent groups are pseudonymous hints, with
-  shared-proxy and spoofing limits; no forwarding header is trusted. Browser
+  shared-proxy and spoofing limits; only configured proxy peers are trusted. Browser
   reporting stops on 401 and resumes after confirmed sign-in to avoid duplicate
   signed-out error reports. See the October 28 API contract and runbook additions.
 

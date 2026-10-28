@@ -227,6 +227,11 @@ Admin Operations & Issues and All Questions (`views/admin/operations.ts`,
 version/seed or saved-attempt reproduction. User Directory links filter these
 views by PUID. `diagnostics.ts` reports bounded runtime/network failures without
 form contents or browser-session recording; reports are explicitly unverified.
+Operations also displays protected source/socket IP evidence and received paths
+for unmatched 404/IP-blocked calls. `views/admin/ip-blocks.ts` provides explicit
+manual block confirmation, unblocking, revision conflicts and retained history.
+Opening a record or the rules dialog never creates a ban. All evidence uses DOM
+text rendering; unknown historical IPs/paths are not reconstructed.
 
 Admin configuration keeps sparse permission assignments and explicit inheritance,
 reviews the loaded scope before saving, and preserves Admin/TA safety locks.

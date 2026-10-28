@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate';
 import { operationContext } from '../services/operation-context';
 import { recordOperation, safeDiagnostic } from '../services/operation-audit.service';
 import { requestDiagnostics } from '../services/request-diagnostics';
+import { requestNetwork } from '../middleware/request-network';
 
 export const clientDiagnosticsRouter = Router();
 const reportLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (req) => req.user!.puid, standardHeaders: true, legacyHeaders: false });
@@ -22,6 +23,7 @@ clientDiagnosticsRouter.post('/diagnostics/client-error', ensureApiAuthenticated
     const reportedRequest = req.body.request;
     const context = reportedRequest ? requestDiagnostics(reportedRequest.endpoint, undefined, undefined) : undefined;
     await recordOperation({ requestId, createdAt: new Date(), durationMs: 0, method: 'CLIENT', route: `/${route}`, statusCode: 0,
+      request: { ...requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site')), routeMatched: true, routeState: 'matched', loginState: 'authenticated', network: requestNetwork(req) },
       outcome: 'failed', actor: { puid: user.puid, uid: user.uid, displayName: user.displayName }, targets: {}, input: { kind: req.body.kind },
       response: { error: safeDiagnostic(req.body.message), reportedBy: 'browser', note: 'Client-reported evidence; not a server-verified failure.',
         ...(context ? { reportedRequest: { path: context.path, pathHash: context.pathHash, pathRedacted: context.pathRedacted, pathTruncated: context.pathTruncated },

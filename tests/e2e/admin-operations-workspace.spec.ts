@@ -51,6 +51,111 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
   return { reads, writes, controls };
 }
 
+test('received and hash-recognized paths display as text with source IP evidence', async ({ page }) => {
+  const state = await fixture(page);
+  for (const historical of [false, true]) {
+    const path = historical ? '/api/v1/version' : '/api/<img src=x onerror=alert(1)>';
+    const entry = { ...unmatchedOperation, request: { ...unmatchedOperation.request,
+      ...(historical ? { recognizedPath: { path, evidence: 'retained-path-hash' } } : { originalPath: path, originalPathTruncated: false, network: { clientIp: '198.51.100.7', peerIp: '192.0.2.10', source: 'trusted-proxy' } }) } };
+    await page.route('**/api/admin/operations?**', route => route.fulfill({ json: { items: [entry], total: 1, page: 1, ...identities, monitoring } }));
+    await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: entry, runs: [] } }));
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await page.getByRole('link', { name: `GET ${path}`, exact: true }).click();
+    const panel = page.locator('.ac-panel');
+    await expect(panel).toContainText(path);
+    await expect(panel.locator('img')).toHaveCount(0);
+    if (historical) {
+      await expect(panel).toContainText('Recognized historical path (hash match)');
+      await expect(panel).toContainText('Source IP was not retained');
+    } else {
+      await expect(panel).toContainText('Request path (query excluded)');
+      await expect(panel).toContainText('198.51.100.7');
+      await expect(panel.getByRole('link', { name: 'Requests from this IP' })).toHaveAttribute('href', /q=198\.51\.100\.7/);
+      await page.route('**/api/admin/ip-blocks?**', route => route.fulfill({ json: { items: [], total: 0, page: 1, currentIp: '203.0.113.10', addressSource: 'trusted-proxy' } }));
+      await panel.getByRole('button', { name: 'Manage this IP' }).click();
+      const rules = page.getByRole('dialog', { name: 'IP access rules', exact: true });
+      await expect(rules.getByRole('textbox', { name: 'IP address', exact: true })).toHaveValue('198.51.100.7');
+      await rules.getByRole('button', { name: 'Close IP rules' }).click();
+    }
+    await page.getByRole('button', { name: 'Close inspector' }).click();
+  }
+  expect(state.writes).toEqual([]);
+});
+
+async function ipFixture(page: Page, source = 'trusted-proxy') {
+  await fixture(page);
+  const mutations: Array<{ ip: string; blocked: boolean; reason: string; expectedRevision?: number }> = [];
+  let entry: Record<string, unknown> | undefined;
+  const controls = { reject: false };
+  await page.route('**/api/admin/ip-blocks**', async route => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON(); mutations.push(body);
+      if (controls.reject) return route.fulfill({ status: 409, json: { error: 'This IP rule changed. Refresh before retrying.' } });
+      const change = { blocked: body.blocked, at: '2026-10-28T20:00:00Z', actorPuid: 'SYNTHETIC-ADMIN', actorName: 'Synthetic Admin', reason: body.reason };
+      entry = { ip: body.ip, blocked: body.blocked, reason: body.reason, revision: Number(entry?.revision ?? 0) + 1, updatedAt: change.at, updatedByName: change.actorName, updatedByPuid: change.actorPuid, history: [...(entry?.history as unknown[] ?? []), change] };
+      return route.fulfill({ json: entry });
+    }
+    return route.fulfill({ json: { items: entry ? [entry] : [], total: entry ? 1 : 0, page: 1, currentIp: '203.0.113.10', addressSource: source, refreshSeconds: 5 } });
+  });
+  await page.getByRole('button', { name: 'IP access rules', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'IP access rules', exact: true });
+  await expect(dialog).toContainText('Your current source IP: 203.0.113.10');
+  return { dialog, mutations, controls };
+}
+
+test('IP rules require explicit confirmation, preserve history and allow manual unblocking', async ({ page }) => {
+  const { dialog, mutations } = await ipFixture(page);
+  const ip = dialog.getByRole('textbox', { name: 'IP address', exact: true });
+  await ip.fill('203.0.113.10');
+  await expect(dialog.getByRole('button', { name: 'Block IP', exact: true })).toBeDisabled();
+  await ip.fill('198.51.100.7');
+  await dialog.getByRole('textbox', { name: 'Block reason' }).fill('Synthetic probe review');
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Block API requests from this IP?' });
+  await expect(confirmation).toContainText('A shared address may represent several users');
+  expect(mutations).toEqual([]);
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(mutations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Block this IP', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Unblock 198.51.100.7', exact: true })).toBeVisible();
+  expect(mutations[0]).toEqual({ ip: '198.51.100.7', blocked: true, reason: 'Synthetic probe review' });
+  await dialog.getByRole('button', { name: 'Unblock 198.51.100.7', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Block 198.51.100.7', exact: true })).toBeVisible();
+  expect(mutations[1]).toMatchObject({ blocked: false, expectedRevision: 1 });
+  await dialog.getByText('History (2, latest 50)', { exact: true }).click();
+  await expect(dialog.locator('ol')).toContainText('Synthetic Admin');
+  await expect(dialog.locator('ol li')).toHaveCount(2);
+});
+
+test('IP rule conflicts retain inputs and proxy uncertainty prevents changes', async ({ page }) => {
+  const { dialog, controls } = await ipFixture(page);
+  controls.reject = true;
+  await dialog.getByRole('textbox', { name: 'IP address', exact: true }).fill('198.51.100.7');
+  await dialog.getByRole('textbox', { name: 'Block reason' }).fill('Keep this reason');
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  await page.getByRole('button', { name: 'Block this IP', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('This IP rule changed');
+  await expect(dialog.getByRole('textbox', { name: 'Block reason' })).toHaveValue('Keep this reason');
+  await dialog.getByRole('button', { name: 'Close IP rules' }).click();
+  await page.route('**/api/admin/ip-blocks**', route => route.fulfill({ json: { items: [], total: 0, page: 1, currentIp: '192.0.2.10', addressSource: 'untrusted-forwarding' } }));
+  await page.getByRole('button', { name: 'IP access rules', exact: true }).click();
+  await expect(dialog).toContainText('Proxy source identification must be fixed');
+  await dialog.getByRole('textbox', { name: 'IP address', exact: true }).fill('198.51.100.7');
+  await expect(dialog.getByRole('button', { name: 'Block IP', exact: true })).toBeDisabled();
+});
+
+for (const theme of ['light', 'dark']) test(`IP rules fit mobile and are accessible in ${theme} appearance`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { dialog, mutations } = await ipFixture(page);
+  await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+  expect(await dialog.evaluate(node => node.getBoundingClientRect().width <= innerWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.ac-ip-dialog').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `audit-results/operations-logging/ip-rules-mobile-${theme}.png`, fullPage: true });
+  expect(mutations).toEqual([]);
+});
+
 test('unmatched 404s retain evidence, searchable hashes and persistent routing filters', async ({ page }) => {
   const state = await fixture(page);
   state.controls.unmatched = 'new';

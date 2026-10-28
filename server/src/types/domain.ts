@@ -851,6 +851,11 @@ export interface OperationRequestDiagnostics {
   pathHash: string;
   pathRedacted: boolean;
   pathTruncated: boolean;
+  /** Admin-only retained unmatched-404/IP-blocked path; query/fragment excluded. */
+  originalPath?: string;
+  originalPathTruncated?: boolean;
+  recognizedPath?: { path: string; evidence: 'retained-path-hash' };
+  network?: { clientIp?: string; peerIp?: string; source: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable' };
   routeMatched: boolean;
   routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
   proxy?: { forwarded: boolean; trustedPeer: boolean };
