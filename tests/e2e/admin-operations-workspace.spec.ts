@@ -39,6 +39,8 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
   });
   await page.goto((fullShell ? '/' : '/operations-fixture') + hash);
   if (!fullShell) await page.evaluate(async () => {
+    const { getAuthState } = await import('/js/api.js');
+    await getAuthState();
     const { renderAdminOperations, renderAdminOperationDetail } = await import('/js/views/admin/operations.js');
     const match = location.hash.match(/operations\/(requests|runs)\/([^?]+)/);
     const outlet = document.getElementById('fixture')!;
@@ -130,6 +132,94 @@ test('browser-reported request links are labelled as unverified evidence', async
   await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: { ...operation, method: 'CLIENT', statusCode: 0, response: { error: 'An API request returned HTTP 502.', relatedRequestId: secondId, reportedBy: 'browser' } }, runs: [] } }));
   await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Related server request (browser-reported)', exact: true })).toHaveAttribute('href', `#/admin/operations/requests/${secondId}`);
+});
+
+test('expired sessions stop diagnostic reports and a confirmed login restores reporting', async ({ page }) => {
+  await fixture(page);
+  const reports: unknown[] = [], markers: string[] = [];
+  await page.route('**/api/diagnostics/client-error', route => { reports.push(route.request().postDataJSON()); return route.fulfill({ status: 204 }); });
+  await page.route('**/api/notifications', route => { markers.push(route.request().headers()['x-financebot-client']); return route.fulfill({ status: 401, json: { error: 'Authentication required.' } }); });
+  await page.route('**/api/questions/forbidden-fixture', route => route.fulfill({ status: 403, json: { error: 'Forbidden' } }));
+  await page.evaluate(async () => {
+    const { apiRequest, setUnauthorizedHandler } = await import('/js/api.js');
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    setUnauthorizedHandler(() => undefined);
+    await apiRequest('/api/notifications').catch(() => undefined);
+    reportClientFailure('runtime', 'Late signed-out runtime event');
+  });
+  expect(markers).toEqual(['web-v1']);
+  expect(reports).toEqual([]);
+  await page.evaluate(async () => {
+    const { apiRequest, getAuthState } = await import('/js/api.js');
+    await getAuthState();
+    await apiRequest('/api/questions/forbidden-fixture').catch(() => undefined);
+  });
+  await expect.poll(() => reports.length).toBe(1);
+  expect(reports[0]).toMatchObject({ kind: 'http', request: { statusCode: 403 } });
+});
+
+test('known probes disclose identity limits and retain traffic filters and daily search groups', async ({ page }) => {
+  const state = await fixture(page);
+  const probe = { ...unmatchedOperation, request: { ...unmatchedOperation.request, loginState: 'not-evaluated', webClient: false,
+    probe: { kind: 'phpunit', evidence: 'path-signature' }, fingerprints: { day: '2026-10-28', peer: 'b'.repeat(32), agent: 'c'.repeat(32) } }, response: { error: 'Not Found', failureCategory: 'probe-rejected' } };
+  await page.route('**/api/admin/operations?**', route => route.fulfill({ json: { items: [probe], total: 1, page: 1 } }));
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: probe, runs: [] } }));
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('Traffic classification', { exact: true }).selectOption('probes');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).toHaveURL(/traffic=probes/);
+  await expect(page.locator('.ac-table')).toContainText('Known probe path: PHPUnit');
+  await expect(page.locator('.ac-table')).toContainText('Identity not evaluated');
+  await expect(page.locator('.ac-metrics')).toContainText('includes 1 probe request');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('rejected before login/session processing');
+  await expect(page.locator('.ac-panel')).toContainText('may be a shared proxy');
+  await expect(page.locator('.ac-panel')).toContainText(probe.request.fingerprints.peer);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: 'audit-results/operations-logging/probe-identity-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(page).toHaveURL(/traffic=probes/);
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(page).not.toHaveURL(/traffic=/);
+  expect(state.writes).toEqual([]);
+});
+
+test('rejected diagnostic transport stops reports until the next confirmed sign-in', async ({ page }) => {
+  await fixture(page);
+  let reports = 0;
+  await page.route('**/api/diagnostics/client-error', route => { reports++; return route.fulfill({ status: 401, json: { error: 'Authentication required.' } }); });
+  const rejection = page.waitForResponse(response => response.url().endsWith('/api/diagnostics/client-error'));
+  await page.evaluate(async () => {
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    reportClientFailure('runtime', 'Synthetic transport test');
+  });
+  await rejection;
+  await page.evaluate(async () => {
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    reportClientFailure('runtime', 'Late error after rejected report');
+  });
+  expect(reports).toBe(1);
+  await page.evaluate(async () => {
+    const { getAuthState } = await import('/js/api.js');
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    await getAuthState();
+    reportClientFailure('runtime', 'Synthetic report after confirmed login');
+  });
+  await expect.poll(() => reports).toBe(2);
+});
+
+test('anonymous and historical request identity explanations never invent a user', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'new';
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: { ...unmatchedOperation,
+    request: { ...unmatchedOperation.request, loginState: 'unauthenticated', webClient: true } }, runs: [] } }));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.locator('.ac-table')).toContainText('Identity not recorded');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Not signed in');
+  await expect(page.locator('.ac-panel')).toContainText('expired/invalid session');
+  await expect(page.locator('.ac-panel')).toContainText('does not identify the caller');
 });
 
 test('operations preserve filters and table context while inspecting and closing evidence', async ({ page }) => {

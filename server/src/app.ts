@@ -7,6 +7,7 @@ import { examBuilderRouter } from './routes/exam-builder.routes';
 import { assessmentPreviewRouter } from './routes/assessment-preview.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
+import { rejectApiProbe } from './middleware/reject-api-probe';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
 import { selfCapabilitiesRouter } from './routes/capabilities.routes';
 import path from 'node:path';
@@ -71,6 +72,7 @@ export function createApp(): Express {
     rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: true, legacyHeaders: false }),
   );
 
+  app.use('/api', rejectApiProbe);
   app.use(cors());
   app.use(express.json());
   // The SAML callback is posted as form-urlencoded, so parse that too.

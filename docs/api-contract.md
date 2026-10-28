@@ -1295,6 +1295,60 @@ Permanent course deletion also removes its people import snapshot.
 
 ## Unmatched API request diagnostics (2026-10-26)
 
+### Probe rejection and caller context (2026-10-28)
+
+`traffic=all|probes|other` is an additional Admin operations filter. The default
+retains all records. `probes` selects fixed known probe signatures and a finite
+allowlist of matching historical path digests; `other` excludes only those
+records. Unknown unmatched paths remain unknown and remain visible. Routing,
+traffic, outcomes, actions, dates and literal search compose without changing
+retention. Matched-resource 404s are never classified from the digest alone.
+
+Known root API paths for Git metadata, environment files, PHPUnit eval-stdin,
+WordPress, phpMyAdmin and Laravel debug are rejected with the same generic 404
+before JSON parsing, sessions or other database reads. The operation audit still
+records the request, signature and `failureCategory: probe-rejected`. This reduces
+unnecessary processing; it does not prevent traffic reaching the proxy or claim
+complete bot/attack detection. A valid API endpoint, a generic `/api/login` or
+`/api/config`, and an arbitrary unknown route are not added to this denylist.
+
+New optional request fields are:
+
+- `loginState`: `authenticated`, `unauthenticated`, or `not-evaluated`. This
+  records whether Passport actually evaluated authentication. A rejected probe
+  or pre-auth parser failure has no inferred CWL identity. Historical absence
+  remains unavailable; a 401 does not distinguish missing versus expired sessions.
+- `webClient`: whether the public `X-Financebot-Client: web-v1` marker was present.
+  The central browser API client and diagnostic reporter add it. It is spoofable,
+  absent on older/other clients, and never grants authorization.
+- `probe: { kind, evidence }`: a closed known-path category with `path-signature`
+  or `retained-path-hash` evidence. Read-time recognition of a historical public
+  path hash does not rewrite its record or reconstruct missing identity.
+- `fingerprints: { day, peer?, agent? }`: pseudonymous daily groups derived with
+  domain-separated HMAC-SHA-256 from the existing session signing secret. Groups
+  use the UTC date and separate peer/agent domains, retain 128 digest bits, and
+  are omitted when that secret is missing, a sample default, or shorter than 32
+  characters. No additional secret is exposed or required. Peer uses the actual
+  connection address, never client-supplied forwarding headers. It may represent
+  a shared reverse proxy. Agent uses at most 512 user-agent characters. Neither
+  group authenticates a client or proves a shared physical sender. Both are
+  searchable under `q`; groups change by date/key, not by a data migration.
+
+The inspector explains `Not signed in`, `Identity not evaluated`, and historical
+`Identity not recorded`. Known-probe labels and filters preserve rejected requests
+as failures. Summary counts explicitly disclose probe inclusion and excluded
+successful reads. An unkeyed path digest is not generally reversible, but common
+public paths can be recognized by dictionary comparison; it is not encryption.
+
+Browser diagnostics start only after `/api/auth/me` confirms a signed-in user.
+A protected API returning 401 stops reporting before handling the auth transition;
+it does not trigger a second, inevitably rejected client-error POST. A report
+transport returning 401 also stops future reports. Confirmed sign-in restores
+reporting without resetting its existing rate cap. The original server 401 remains
+audited; authenticated 403, network, HTTP and response-JSON failures remain eligible.
+
+### Retained request evidence
+
 `GET /api/admin/operations` accepts optional `routing=all|unmatched|other`.
 `all` (the default) retains every existing outcome. `unmatched` selects only
 `route: /unmatched` with HTTP 404, including historical records. `other` excludes
@@ -1345,7 +1399,7 @@ Authenticated `POST /api/diagnostics/client-error` additionally accepts kinds
 relatedRequestId? }`. Endpoints must begin `/api/`, statuses are integers
 100–599, and related IDs must be UUIDs. Only the sanitized path/digest is retained
 under `response.reportedRequest`, with optional `reportedStatusCode` and
-`relatedRequestId`. The central browser API client reports non-2xx responses,
+`relatedRequestId`. The central browser API client reports eligible non-2xx responses (excluding 401),
 invalid JSON success responses and network failures with this context. Queries
 and response bodies are omitted; intentional aborts are ignored. The Admin
 inspector labels the related-server-request link as browser-reported. These

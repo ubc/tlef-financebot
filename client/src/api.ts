@@ -1,4 +1,4 @@
-import { reportClientFailure } from './diagnostics.js';
+import { reportClientFailure, setDiagnosticsAuthenticated } from './diagnostics.js';
 // Typed client for the backend API. One function per endpoint, so the UI code
 // (views/*) never builds URLs or parses responses by hand. Keep the response
 // types in sync with the server (see server/src/routes and services).
@@ -30,14 +30,17 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-  try { response = await fetch(path, init); }
+  const headers = new Headers(init?.headers);
+  headers.set('X-Financebot-Client', 'web-v1');
+  try { response = await fetch(path, { ...init, headers }); }
   catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.', { endpoint: path });
     throw error;
   }
   if (!response.ok) {
     const requestId = response.headers.get('X-Request-ID');
-    reportClientFailure('http', `An API request returned HTTP ${response.status}.`, { endpoint: path, statusCode: response.status,
+    if (response.status === 401) setDiagnosticsAuthenticated(false);
+    else reportClientFailure('http', `An API request returned HTTP ${response.status}.`, { endpoint: path, statusCode: response.status,
       ...(requestId && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId) ? { relatedRequestId: requestId } : {}) });
     const message = await errorMessage(response, `Request to ${path} failed (${response.status}).`);
     if (response.status === 401) onUnauthorized?.();
@@ -98,6 +101,7 @@ export interface AuthState {
 export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
+  setDiagnosticsAuthenticated(res.authenticated && Boolean(user));
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
 }
 
@@ -3361,6 +3365,7 @@ export function getAnalyticsExamScores(courseId: string, filter: { from?: string
 // Platform diagnostics (Admin only).
 export interface DiagnosticFilters {
   routing?: 'all' | 'unmatched' | 'other';
+  traffic?: 'all' | 'probes' | 'other';
   page?: number; limit?: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
   outcome?: string; status?: string; state?: string; from?: string; until?: string; requestId?: string;
 }
@@ -3376,7 +3381,10 @@ export interface OperationRecord {
   _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
   request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
     client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
-    fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable' };
+    fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
+    loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated'; webClient?: boolean;
+    probe?: { kind: 'git-metadata' | 'environment-file' | 'phpunit' | 'wordpress' | 'phpmyadmin' | 'laravel-debug'; evidence: 'path-signature' | 'retained-path-hash' };
+    fingerprints?: { day: string; peer?: string; agent?: string } };
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial'; statusCode: number;
   actor?: { puid: string; uid: string; displayName: string };
   targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;

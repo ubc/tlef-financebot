@@ -29,6 +29,13 @@ commonly need:
   Browser HTTP/JSON/network reports add unverified endpoint/status/request links.
   See `docs/runbooks/request-failure-diagnostics.md` for investigation and gaps;
   no complete proxy, process-crash or offline-client capture is claimed.
+  Fixed known probe paths are rejected before body/session processing and remain
+  audited failures. Traffic classification filters and explicit authenticated /
+  unauthenticated / not-evaluated identity explanations distinguish them from
+  application errors. Daily keyed peer/agent groups are pseudonymous hints, with
+  shared-proxy and spoofing limits; no forwarding header is trusted. Browser
+  reporting stops on 401 and resumes after confirmed sign-in to avoid duplicate
+  signed-out error reports. See the October 28 API contract and runbook additions.
 
 - Enrollment uses Canvas Gradebook/people CSV imports as its primary path.
   Optional batches of 1–50 one-time student codes replace the live shared code;

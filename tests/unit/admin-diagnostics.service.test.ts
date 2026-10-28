@@ -8,6 +8,7 @@ import { questionsCol, questionVersionsCol, attemptsCol, contentRunsCol, courses
 import { reproduceQuestion, diagnosticTree, modelUsageSummaryDto, modelCallDto, operationDetail, runDetail, listAdminModelUsage, listOperations } from '../../server/src/services/admin-diagnostics.service';
 import { listModelCalls } from '../../server/src/services/model-usage.service';
 import type { ModelCallReceipt, ModelUsageSummary } from '../../server/src/types/model-usage';
+import { probePredicate } from '../../server/src/services/request-probe.service';
 const questionId = new ObjectId(); const courseId = new ObjectId(); const currentId = new ObjectId(); const oldId = new ObjectId();
 const findQuestion = jest.fn(), findVersion = jest.fn(), findAttempt = jest.fn();
 const findRun = jest.fn(), findOperation = jest.fn();
@@ -115,4 +116,21 @@ it.each(['all', 'unmatched', 'other'] as const)('combines %s routing with outcom
   expect(filter.$nor).toEqual(routing === 'other' ? [{ route: '/unmatched', statusCode: 404 }] : undefined);
   expect(countDocuments).toHaveBeenCalledWith(filter);
   expect(cursor.skip).toHaveBeenCalledWith(25);
+});
+
+it.each(['probes', 'other'] as const)('composes %s traffic filtering with actions, routing and literal fingerprint search', async traffic => {
+  const original = { requestId: 'probe', route: '/unmatched', statusCode: 404, targets: {},
+    request: { pathHash: '881848a4c72d099d04c6544b5447a9ea614ebaa52d61ad046f29b585bd9e7ccf' } };
+  const cursor = { sort: jest.fn().mockReturnThis(), skip: jest.fn().mockReturnThis(), limit: jest.fn().mockReturnThis(), project: jest.fn().mockReturnThis(), next: jest.fn().mockResolvedValue(null), toArray: jest.fn().mockResolvedValue([original]) };
+  const find = jest.fn().mockReturnValue(cursor), countDocuments = jest.fn().mockResolvedValue(1);
+  jest.mocked(operationEventsCol).mockReturnValue({ find, countDocuments } as never);
+  const result = await listOperations({ page: 1, limit: 25, activity: 'actions', routing: 'unmatched', traffic, q: 'a.b' });
+  const filter = find.mock.calls[0][0];
+  expect(filter.$and).toHaveLength(2);
+  expect(filter.$and[1]).toEqual(traffic === 'probes' ? probePredicate() : { $nor: [probePredicate()] });
+  expect(filter).toMatchObject({ route: '/unmatched', statusCode: 404 });
+  expect(filter.$or).toContainEqual({ 'request.fingerprints.peer': /a\.b/i });
+  expect(countDocuments).toHaveBeenCalledWith(filter);
+  expect(result.items[0].request?.probe).toEqual({ kind: 'phpunit', evidence: 'retained-path-hash' });
+  expect(original.request).not.toHaveProperty('probe');
 });

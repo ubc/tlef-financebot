@@ -8,11 +8,13 @@ import { auditHealth, safeDiagnostic } from './operation-audit.service';
 import { resolveParamValues, substituteParams } from './params.service';
 import { isServable } from './numeric-gate.service';
 import { listModelCalls } from './model-usage.service';
+import { probePredicate, withRetainedProbe } from './request-probe.service';
 import type { ModelCallReceipt, ModelUsageFilters, ModelUsageSummary, ModelUsageTotals } from '../types/model-usage';
 
 export interface DiagnosticQuery {
   page: number; limit: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
   routing?: 'all' | 'unmatched' | 'other';
+  traffic?: 'all' | 'probes' | 'other';
   outcome?: OperationEvent['outcome']; status?: ContentRun['status'];
   state?: string; from?: string; until?: string; requestId?: string;
 }
@@ -43,18 +45,20 @@ export async function listOperations(query: DiagnosticQuery) {
   const unmatched = { route: '/unmatched', statusCode: 404 };
   if (query.routing === 'unmatched') Object.assign(filter, unmatched);
   if (query.routing === 'other') filter.$nor = [unmatched];
+  if (query.traffic === 'probes') filter.$and = [...(filter.$and ?? []), probePredicate()];
+  if (query.traffic === 'other') filter.$and = [...(filter.$and ?? []), { $nor: [probePredicate()] }];
   if (query.actor) filter['actor.puid'] = query.actor;
   if (query.courseId) filter['targets.courseId'] = query.courseId;
   if (query.outcome) filter.outcome = query.outcome;
   if (query.requestId) filter.requestId = query.requestId;
   if (dates(query)) filter.createdAt = dates(query);
-  if (query.q) filter.$or = ['requestId', 'route', 'request.path', 'request.pathHash', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
+  if (query.q) filter.$or = ['requestId', 'route', 'request.path', 'request.pathHash', 'request.fingerprints.peer', 'request.fingerprints.agent', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
   const [items, total, first] = await Promise.all([
     operationEventsCol().find(filter).sort({ createdAt: -1, _id: -1 }).skip(paging(query).skip).limit(query.limit).toArray(),
     operationEventsCol().countDocuments(filter),
     operationEventsCol().find().sort({ createdAt: 1 }).limit(1).project({ createdAt: 1 }).next(),
   ]);
-  return { items, total, page: query.page, monitoring: { ...auditHealth(), oldestRecordAt: first?.createdAt ?? null },
+  return { items: items.map(withRetainedProbe), total, page: query.page, monitoring: { ...auditHealth(), oldestRecordAt: first?.createdAt ?? null },
     ...await identities(items.map((item) => item.targets.courseId).filter(Boolean), []) };
 }
 
@@ -63,7 +67,7 @@ export async function operationDetail(requestId: string) {
   if (!operation) return missing();
   const runs = await contentRunsCol().find({ operationId: requestId }, { projection: { kind: 1, status: 1, stage: 1, courseId: 1, createdAt: 1, error: 1 } }).limit(100).toArray();
   const calls = await listModelCalls({ operationId: requestId, page: 1, limit: 100 });
-  return { operation: diagnosticTree(operation), runs: diagnosticTree(runs),
+  return { operation: diagnosticTree(withRetainedProbe(operation)), runs: diagnosticTree(runs),
     modelUsage: modelUsageSummaryDto(calls.summary), modelCalls: calls.items.map(modelCallDto), modelCallsTotal: calls.total, modelUsageNotes };
 }
 

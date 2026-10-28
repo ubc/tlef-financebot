@@ -5,13 +5,15 @@ import type { RequestHandler } from 'express';
 import { operationContext } from '../services/operation-context';
 import { recordOperation, safeControls, safeDiagnostic, operationLogContext } from '../services/operation-audit.service';
 import type { OperationEvent } from '../types/domain';
-import { requestDiagnostics } from '../services/request-diagnostics';
+import { requestDiagnostics, requestFingerprints } from '../services/request-diagnostics';
+import { env } from '../config/env';
 
 /** Mounted before parsers/rate limiting: malformed requests are failures too. */
 export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
   const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
+  const fingerprints = requestFingerprints(req.socket?.remoteAddress, req.get('user-agent'), new Date(started), env.sessionSecret);
   const slowThresholdMs = 30000;
   const slowTimer = setTimeout(() => {
     if (String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
@@ -96,13 +98,15 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     const event: OperationEvent = {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
-      request: { ...requestMetadata, routeMatched: route !== '/unmatched' },
+      request: { ...requestMetadata, routeMatched: route !== '/unmatched',
+        loginState: typeof req.isAuthenticated !== 'function' ? 'not-evaluated' : req.isAuthenticated() ? 'authenticated' : 'unauthenticated',
+        webClient: req.get('x-financebot-client') === 'web-v1', ...(fingerprints ? { fingerprints } : {}) },
       outcome: aborted ? 'interrupted' : res.statusCode >= 400 || res.locals.operationException ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',
       actor: req.user ? { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } : undefined,
       targets, input: { ...safeControls(req.query), ...safeControls(req.body) }, response,
     };
     if (['failed', 'partial', 'interrupted'].includes(event.outcome)) {
-      const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
+      const category = res.locals.operationException?.category ?? (aborted ? 'connection-interrupted' : res.locals.probeRejected ? 'probe-rejected' : event.statusCode === 404 && route === '/unmatched' ? 'route-not-found'
         : event.statusCode === 401 ? 'authentication' : event.statusCode === 403 ? 'authorization'
         : event.statusCode === 429 ? 'rate-limit' : event.statusCode >= 500 ? 'server-failure'
         : event.statusCode === 400 || event.statusCode === 422 ? 'validation' : 'application');
