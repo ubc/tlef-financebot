@@ -24,7 +24,6 @@ commonly need:
   pre-routing cancellations without upgrading historical evidence. Materials
   keep preview browsing contexts attached across progress updates. Recognized
   closed transport aborts retain 499 records without duplicate exception logs.
-  Real-IdP environments suppress SAML attribute values despite the debug flag.
   See `docs/runbooks/request-failure-diagnostics.md` and the API contract.
 
 - Admin request diagnostics retain allowlisted path shapes, query-free path

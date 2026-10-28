@@ -113,11 +113,7 @@ recorded. Closed, recognized transport errors retain a 499 without duplicate
 `http.exception` noise. Real application exceptions and open upstream resets
 continue to log.
 
-Real-IdP SAML environments suppress attribute values even if
-`SAML_DEBUG_ATTRIBUTES=true`. Names still diagnose mappings. Set the deployed
-flag to false as well; historical logs already containing personal values require
-the operator's restricted-access/retention process, not automatic deletion by
-this release. The Qdrant insecure-connection warning separately requires checking
+The Qdrant insecure-connection warning separately requires checking
 the internal transport/TLS boundary; it does not establish that a key was stolen.
 
 ## Server log tags

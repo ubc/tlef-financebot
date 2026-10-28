@@ -211,11 +211,9 @@ resolved to — names are not personal data, and they are what distinguishes:
 | Names listed, but a required one unresolved | Released under a name we don't recognise → add it to `SAML_ATTRIBUTE_ALIASES`. |
 | Everything resolved | Attribute plumbing is fine; look elsewhere. |
 
-`saml-logging.ts` retains attribute-name diagnostics. `SAML_DEBUG_ATTRIBUTES=true`
-can additionally log **values** only with `SAML_ENVIRONMENT=LOCAL` and
-`NODE_ENV=development`. STAGING/PRODUCTION and other runtime modes suppress
-personal values even if the flag was accidentally enabled. Existing server
-logs are not rewritten or deleted by this guard.
+`SAML_DEBUG_ATTRIBUTES=true` additionally logs the **values**. That puts
+personal data (name, email, PUID) in the server log, so enable it only for a
+short, deliberate diagnostic window and turn it back off.
 
 ## Protecting routes (auth-gating)
 
