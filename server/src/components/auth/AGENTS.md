@@ -2,7 +2,17 @@
 
 Authentication via SAML 2.0 against UBC's Shibboleth IdP, using
 [`passport-ubcshib`](https://github.com/ubc/passport-ubcshib) (a wrapper around
-`passport-saml`). Sessions are stored in MongoDB with `connect-mongo`.
+`@node-saml/passport-saml`). Sessions are stored in MongoDB with `connect-mongo`.
+
+> **Dependency note.** Until 0.1.6, `passport-ubcshib` wrapped the deprecated
+> `passport-saml@3`, which carries the critical, never-to-be-fixed SAML
+> signature-verification advisory
+> [GHSA-4mxg-3p6v-xgq3 / CVE-2025-54419](https://github.com/advisories/GHSA-4mxg-3p6v-xgq3).
+> We are on `passport-ubcshib@^0.1.7-rc.2`, which wraps
+> `@node-saml/passport-saml@5` instead. Its public API — option names, defaults,
+> profile shape, signature acceptance — is unchanged from 0.1.6; the 3.x→5.x
+> breaking changes are absorbed inside the wrapper. Do not downgrade. See
+> `docs/dependency-security.md`.
 
 ## Status
 
@@ -87,7 +97,7 @@ express.urlencoded()            // the SAML callback is form-urlencoded
 The login/callback/logout paths are NOT under `/api` because their URLs must
 match the ACS/SLO locations registered in the IdP's SP metadata.
 
-The ACS route path is **derived from `SAML_CALLBACK_URL`** (`new URL(env.samlCallbackUrl).pathname` in `auth.routes.ts`), not hardcoded, so it always matches the ACS URL passport-saml puts in the AuthnRequest. Locally that is `/auth/ubcshib/callback`; on STAGING/PRODUCTION UBC IAM registers `/Shibboleth.sso/SAML2/POST`, so the same code serves that path there. Hardcoding one would 404 the other environment's callback.
+The ACS route path is **derived from `SAML_CALLBACK_URL`** (`new URL(env.samlCallbackUrl).pathname` in `auth.routes.ts`), not hardcoded, so it always matches the ACS URL `@node-saml` puts in the AuthnRequest. Locally that is `/auth/ubcshib/callback`; on STAGING/PRODUCTION UBC IAM registers `/Shibboleth.sso/SAML2/POST`, so the same code serves that path there. Hardcoding one would 404 the other environment's callback.
 
 ## Environment variables
 
@@ -129,8 +139,10 @@ destroys the session, and clears the cookie. It does NOT terminate the IdP's own
 SSO session. To make logout meaningful in dev, the strategy sets
 `forceAuthn=true` (from `SAML_FORCE_AUTHN`), which adds `ForceAuthn="true"` to
 each AuthnRequest so the IdP re-prompts for credentials on the next login even if
-it still has a session. (passport-ubcshib does not forward `forceAuthn`, so it is
-set on the strategy's underlying `passport-saml` options after construction.)
+it still has a session. (`forceAuthn` is passed in the strategy options:
+passport-ubcshib >= 0.1.7 forwards any option it does not manage itself straight
+through to `@node-saml`. Before that it had to be set on the private
+`_saml.options` after construction.)
 
 Set `SAML_FORCE_AUTHN=false` in production if you want to preserve cross-app SSO.
 True SAML Single Logout (terminating the IdP session) is not enabled here; it
@@ -169,7 +181,7 @@ under different names depending on the IdP:
 | uid | `uid` | `urn:oid:0.9.2342.19200300.100.1.1` |
 | affiliation | `eduPersonAffiliation` | `urn:oid:1.3.6.1.4.1.5923.1.1.1.1` |
 
-`passport-saml` keys the profile by whatever `Name` the assertion carried — it
+`@node-saml` keys the profile by whatever `Name` the assertion carried — it
 never reads `FriendlyName`. `passport-ubcshib` then maps some of those into
 `profile.attributes`, but its table has gaps that bite on the real IdP:
 
@@ -306,7 +318,7 @@ split as `ensureApiAuthenticated`. Note `eduPersonAffiliation` is multi-valued, 
 On STAGING/PRODUCTION the app authenticates against the **real UBC Shibboleth
 IdP** (`https://authentication.stg.id.ubc.ca` / `https://authentication.ubc.ca`)
 instead of docker-simple-saml. The app is still the SAML Service Provider itself
-(passport-saml via passport-ubcshib) — there is no separate Shibboleth SP
+(`@node-saml/passport-saml` via passport-ubcshib) — there is no separate Shibboleth SP
 daemon (`shibd`) in front, even though UBC IAM registers the SP with the
 standard `/Shibboleth.sso/...` handler URLs.
 
@@ -378,7 +390,7 @@ HTTPS `POST_LOGIN_REDIRECT` / `POST_LOGOUT_REDIRECT` as needed.
 | Round-trip succeeds but an attribute (e.g. the PUID) is missing | Check the `assertion attribute names` log line before asking IAM: the attribute may be released under a name we don't map. See "SAML attribute names" above. |
 
 See the passport-ubcshib README's staging/production guide for the underlying
-`passport-saml` options.
+`@node-saml/passport-saml` options.
 
 ## Capability authorization (Phase 3)
 

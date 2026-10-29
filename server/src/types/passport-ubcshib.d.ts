@@ -28,6 +28,12 @@ declare module 'passport-ubcshib' {
     signatureAlgorithm?: string;
     digestAlgorithm?: string;
     identifierFormat?: string | null;
+    /**
+     * Re-prompt at the IdP even when it still holds an SSO session. Forwarded
+     * to @node-saml by passport-ubcshib >= 0.1.7 (which passes through any
+     * option it does not manage itself).
+     */
+    forceAuthn?: boolean;
   }
 
   export interface UBCProfile {

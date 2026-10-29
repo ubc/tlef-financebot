@@ -29,7 +29,7 @@ Rules:
 | --- | --- | --- |
 | `mongodb/` | Application data store | `mongodb` |
 | `qdrant/` | Vector database (RAG) | `@qdrant/js-client-rest` |
-| `auth/` | Sessions + SAML/Shibboleth auth | `express-session`, `connect-mongo`, `passport`, `passport-ubcshib`, `passport-saml` |
+| `auth/` | Sessions + SAML/Shibboleth auth | `express-session`, `connect-mongo`, `passport`, `passport-ubcshib` (wraps `@node-saml/passport-saml`) |
 | `genai/` | UBC GenAI toolkit modules | `ubc-genai-toolkit-*` |
 
 `passport-local` is also installed (a dependency) for optional local-dev logins,

@@ -145,7 +145,7 @@ export function registerShibbolethStrategy(): void {
       logoutUrl: env.samlLogoutUrl,
       metadataUrl: env.samlIdpMetadataUrl,
       cert: loadIdpCert(),
-      // SP private key: passport-ubcshib loads this into passport-saml as both
+      // SP private key: passport-ubcshib loads this into @node-saml as both
       // `privateKey` (to sign our AuthnRequests) and `decryptionPvk` (to decrypt
       // assertions the IdP encrypts to us). Required on STAGING/PRODUCTION, where
       // the real UBC IdP encrypts assertions and may require signed requests.
@@ -157,6 +157,13 @@ export function registerShibbolethStrategy(): void {
       // InResponseTo validation avoids a request-cache dependency in dev.
       enableSLO: false,
       validateInResponseTo: false,
+      // With ForceAuthn, the IdP re-prompts for credentials even if it still
+      // holds an SSO session — so after our local logout, the next login sends
+      // the user back to the IdP login page. passport-ubcshib >= 0.1.7 forwards
+      // options it does not manage itself straight through to @node-saml, so
+      // this no longer needs to be set on the private SAML options after
+      // construction.
+      forceAuthn: env.samlForceAuthn || undefined,
     },
     (profile, done) => {
       // Re-resolve the attributes rather than using profile.attributes directly:
@@ -170,19 +177,6 @@ export function registerShibbolethStrategy(): void {
         .catch((err) => done(err as Error));
     },
   );
-
-  // passport-ubcshib does not forward `forceAuthn` to passport-saml, so set it
-  // on the underlying SAML options directly. With ForceAuthn, the IdP re-prompts
-  // for credentials even if it still holds an SSO session — so after our local
-  // logout, the next login sends the user back to the IdP login page.
-  if (env.samlForceAuthn) {
-    const withSaml = strategy as unknown as {
-      _saml?: { options?: { forceAuthn?: boolean } };
-    };
-    if (withSaml._saml?.options) {
-      withSaml._saml.options.forceAuthn = true;
-    }
-  }
 
   passport.use(strategy);
 }
