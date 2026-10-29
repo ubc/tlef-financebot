@@ -70,9 +70,11 @@ jest.mock('../../server/src/components/auth', () => ({
 }));
 
 import { createApp } from '../../server/src/app';
+import { env } from '../../server/src/config/env';
 
 describe('createApp (C1 boot-crash regression guard)', () => {
   it('constructs the app without throwing', () => {
-    expect(() => createApp()).not.toThrow();
+    const app = createApp();
+    expect(app.get('trust proxy')).toEqual(env.trustedProxyCidrs.length ? env.trustedProxyCidrs : false);
   });
 });

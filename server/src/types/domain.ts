@@ -846,12 +846,44 @@ export function canTransition(from: PublicationState, to: PublicationState): boo
 }
 
 /** API outcomes, separate from durable background-run completion. */
+export interface OperationRequestDiagnostics {
+  path: string;
+  pathHash: string;
+  pathRedacted: boolean;
+  pathTruncated: boolean;
+  /** Admin-only retained unmatched-404/IP-blocked path; query/fragment excluded. */
+  originalPath?: string;
+  originalPathTruncated?: boolean;
+  recognizedPath?: { path: string; evidence: 'retained-path-hash' };
+  network?: { clientIp?: string; peerIp?: string; source: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable' };
+  routeMatched: boolean;
+  routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
+  proxy?: { forwarded: boolean; trustedPeer: boolean };
+  responseStarted?: boolean;
+  rangeRequested?: boolean;
+  session?: { credential: 'absent' | 'signed' | 'invalid' | 'ambiguous'; group?: string };
+  identity?: { stage: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+    stageAtEnd?: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+    sessionLookup?: 'restored' | 'not-restored' | 'no-valid-credential'; failedDuring?: 'session-loading' | 'user-loading';
+    sessionAccountPuid?: string; wait?: 'resolved' | 'timed-out' | 'capacity-limited' };
+  source?: { page?: string; callsite?: string; trigger?: string; channel?: 'fetch' | 'embedded-preview' | 'source-link' | 'event-stream' };
+  client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
+  fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
+  loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated';
+  webClient?: boolean;
+  probe?: { kind: 'git-metadata' | 'environment-file' | 'phpunit' | 'wordpress' | 'phpmyadmin' | 'laravel-debug'; evidence: 'path-signature' | 'retained-path-hash' };
+  /** Daily keyed groups, not identities. A connection peer may be a shared proxy. */
+  fingerprints?: { day: string; peer?: string; agent?: string; client?: string };
+}
+
 export interface OperationEvent {
   requestId: string;
   createdAt: Date;
   durationMs: number;
   method: string;
   route: string;
+  /** Absent on historical and client-reported records. Header categories are unverified. */
+  request?: OperationRequestDiagnostics;
   statusCode: number;
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial';
   actor?: { puid: string; uid: string; displayName: string };

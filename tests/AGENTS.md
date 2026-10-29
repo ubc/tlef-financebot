@@ -11,6 +11,14 @@ The testing setup. Three layers, mirroring the structure used in
 
 ## Commands
 
+IP access controls are covered by `ip-blocks.test.ts` (real Admin guard, pre-parser
+denial, canonical IP/self/proxy guards, revision/cache races and outage policy).
+`request-path.test.ts` checks exact query-free retention and historical hash
+recognition. Build first, then run `playwright.operations-logging.config.ts` for
+intercepted path/IP display, explicit block/cancel/unblock/history, conflict
+recovery and mobile light/dark axe checks. Fixtures use TEST-NET addresses only;
+never verify these controls by banning a real or staging user's address.
+
 One-time enrollment: `registration-codes.service.test.ts` and
 `registration-codes.routes.test.ts` cover claim/recovery, idempotency, course
 gates and authorization. `course-admin-workbench.spec.ts` covers the code UI

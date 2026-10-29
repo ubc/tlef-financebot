@@ -127,6 +127,10 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   let selectedId = materials[0]?._id ?? trash[0]?._id;
   let detail: MaterialWorkspaceDetail | undefined;
   let detailLoading = false;
+  let detailRevision = 0;
+  let workspace: HTMLElement | undefined;
+  let currentInspector: HTMLElement | undefined;
+  let currentPreviewKey: string | undefined;
   let fileSearch = '';
   let graphSearch = '';
   let graphType = 'all';
@@ -165,17 +169,23 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   async function loadDetail(materialId: string | undefined): Promise<void> {
+    const revision = ++detailRevision;
     detail = undefined;
-    if (!materialId) return;
+    detailLoading = false;
+    if (!materialId) { refresh(); return; }
     detailLoading = true;
     refresh();
     try {
-      detail = await getMaterialWorkspaceDetail(courseId, materialId);
+      const loaded = await getMaterialWorkspaceDetail(courseId, materialId);
+      if (revision !== detailRevision || !root.isConnected) return;
+      detail = loaded;
     } catch (error) {
-      feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
+      if (revision === detailRevision && root.isConnected) feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
     } finally {
-      detailLoading = false;
-      refresh();
+      if (revision === detailRevision && root.isConnected) {
+        detailLoading = false;
+        refresh();
+      }
     }
   }
 
@@ -680,8 +690,29 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     return container;
   }
 
+  function previewHeading(material: Material): HTMLElement {
+    return el('div', { class: 'workspace-preview__heading' }, el('div', {}, el('h3', { text: material.name }), el('p', { text: `${material.format.toUpperCase()} · Uploaded ${formatDate(material.uploadedAt)}` })), el('a', { class: 'btn btn--ghost btn--sm', href: materialSourceUrl(courseId, material._id), target: '_blank', rel: 'noopener', text: 'Open original' }));
+  }
+
+  function previewActions(material: Material): HTMLElement {
+    return el('div', { class: 'workspace-preview__actions' }, material.deletedAt ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: pendingActions.has(`restore:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`restore:${material._id}`), onclick: () => runMaterialAction(`restore:${material._id}`, () => doRestore(material)) }, 'Restore source') : el('button', { class: 'btn btn--danger btn--sm', type: 'button', disabled: pendingActions.has(`trash:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`trash:${material._id}`), onclick: () => runMaterialAction(`trash:${material._id}`, () => doTrash(material)) }, 'Move to Trash'));
+  }
+
   function inspectorPanel(): HTMLElement {
     const material = selectedMaterial();
+    const previewKey = rightTab === 'preview' && material && !material.deletedAt &&
+      (material.format === 'pdf' || material.format === 'url') && !detailLoading && detail?.material._id === material._id
+      ? JSON.stringify([material._id, material.format, material.uploadedAt, material.sourceUrl]) : undefined;
+    // Keep the iframe and every ancestor attached: reparenting an iframe also
+    // reloads its browsing context and cancels the in-flight source transfer.
+    if (previewKey && previewKey === currentPreviewKey && currentInspector?.isConnected) {
+      currentInspector.querySelector('.workspace-preview__heading')?.replaceWith(previewHeading(material!));
+      currentInspector.querySelector('.workspace-preview__actions')?.replaceWith(previewActions(material!));
+      const frame = currentInspector.querySelector('iframe');
+      if (frame) frame.title = `Preview ${material!.name}`;
+      return currentInspector;
+    }
+    currentPreviewKey = previewKey;
     const tabs: Array<{ id: typeof rightTab; label: string }> = [
       { id: 'preview', label: 'Preview' },
       { id: 'chunks', label: 'Chunks' },
@@ -700,10 +731,10 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       content = el(
         'div',
         { class: 'workspace-inspector__content' },
-        el('div', { class: 'workspace-preview__heading' }, el('div', {}, el('h3', { text: material.name }), el('p', { text: `${material.format.toUpperCase()} · Uploaded ${formatDate(material.uploadedAt)}` })), el('a', { class: 'btn btn--ghost btn--sm', href: materialSourceUrl(courseId, material._id), target: '_blank', rel: 'noopener', text: 'Open original' })),
-        canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
+        previewHeading(material),
+        canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id, 'embedded-preview'), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
         material.deletedAt ? el('p', { class: 'workspace-deleted-note', text: 'This source is in Trash. Existing questions keep their provenance, but the source no longer grounds generation.' }) : false,
-        el('div', { class: 'workspace-preview__actions' }, material.deletedAt ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: pendingActions.has(`restore:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`restore:${material._id}`), onclick: () => runMaterialAction(`restore:${material._id}`, () => doRestore(material)) }, 'Restore source') : el('button', { class: 'btn btn--danger btn--sm', type: 'button', disabled: pendingActions.has(`trash:${material._id}`) ? 'disabled' : undefined, busy: pendingActions.has(`trash:${material._id}`), onclick: () => runMaterialAction(`trash:${material._id}`, () => doTrash(material)) }, 'Move to Trash')),
+        previewActions(material),
       );
     }
     return el(
@@ -715,15 +746,19 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function refresh(): void {
-    body.replaceChildren(
-      el(
-        'div',
-        { class: 'knowledge-workspace-shell' },
+    if (!root.isConnected) return;
+    const inspector = inspectorPanel();
+    if (!workspace) {
+      workspace = el('div', { class: 'knowledge-workspace' }, leftPanel(), assistantPanel(), inspector);
+      body.replaceChildren(el('div', { class: 'knowledge-workspace-shell' },
         el('div', { class: 'knowledge-workspace__title' }, el('div', {}, el('p', { class: 'workspace-eyebrow', text: tree.course.name }), el('h1', { text: 'Course Knowledge Workspace' }), el('p', { text: 'Upload once. AI organizes the evidence; you intervene only when judgment is needed.' }))),
-        feedback,
-        el('div', { class: 'knowledge-workspace' }, leftPanel(), assistantPanel(), inspectorPanel()),
-      ),
-    );
+        feedback, workspace));
+    } else {
+      workspace.children[0].replaceWith(leftPanel());
+      workspace.children[1].replaceWith(assistantPanel());
+      if (inspector !== currentInspector) currentInspector?.replaceWith(inspector);
+    }
+    currentInspector = inspector;
     attachTutorial(root, 'instructor-materials', {"materials-files": ".knowledge-workspace__files", "materials-inspector": ".knowledge-workspace__inspector"});
   }
 
@@ -738,7 +773,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       refreshedTerminalRuns.add(run._id);
       try {
         [materials, trash, graph] = await Promise.all([listMaterials(courseId), listTrashedMaterials(courseId), getCourseKnowledgeGraph(courseId)]);
-        if (selectedId === run.input.materialId) detail = await getMaterialWorkspaceDetail(courseId, selectedId);
+        if (selectedId === run.input.materialId) {
+          const materialId = selectedId;
+          const revision = detailRevision;
+          const loaded = await getMaterialWorkspaceDetail(courseId, materialId);
+          if (selectedId === materialId && detailRevision === revision) detail = loaded;
+        }
       } catch {
         // The next SSE event or reload converges the durable snapshots.
       }

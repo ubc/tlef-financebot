@@ -12,9 +12,12 @@ const run = { _id: runId, courseId, kind: 'question-generation', requestedBy: 'P
   events: [{ at: operation.createdAt, stage: 'reviewing', status: 'partial', message: 'Second item failed review', completedUnits: 1 }], result: { createdQuestionIds: [courseId], failures: [{ item: 2, message: 'Invalid options' }] } };
 const identities = { courses: [{ _id: courseId, name: 'Finance', courseCode: 'FIN 101' }], users: [{ puid: 'PUID-FACULTY', uid: 'faculty', displayName: 'Alex Instructor' }] };
 const monitoring = { failedWrites: 0, pendingWrites: 0, oldestRecordAt: operation.createdAt };
+const unmatchedOperation = { ...operation, method: 'GET', route: '/unmatched', statusCode: 404,
+  actor: undefined, targets: {}, response: { error: 'Not Found' },
+  request: { path: '/api/:redacted', pathHash: 'a'.repeat(64), pathRedacted: true, pathTruncated: false, routeMatched: false, client: 'curl', fetchSite: 'unavailable' } };
 async function fixture(page: Page, hash = '#/admin/operations', fullShell = false) {
   const reads: URL[] = [];
-  const controls = { failList: false, failDetail: false, slowSearch: false };
+  const controls = { failList: false, failDetail: false, slowSearch: false, unmatched: false as false | 'new' | 'legacy' };
   const writes: string[] = [];
   await page.route('**/operations-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en" data-admin="true" data-theme="light"><head><title>Operations QA</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/admin-console.css"></head><body><main id="fixture" class="outlet"></main></body></html>' }));
   await page.route('**/api/**', async route => {
@@ -25,10 +28,10 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
       if (controls.failList) return route.fulfill({ status: 503, json: { error: 'Audit temporarily unavailable.' } });
       if (controls.slowSearch && url.searchParams.get('q') === 'slow') await new Promise(resolve => setTimeout(resolve, 650));
       const atPage = Number(url.searchParams.get('page') || 1);
-      const items = url.searchParams.get('q') === 'empty' ? [] : atPage === 2 ? [{ ...operation, requestId: secondId, route: 'Page two action' }] : [operation, { ...operation, requestId: secondId, outcome: 'accepted', response: {}, route: '/api/courses/:courseId/materials' }];
+      const items = controls.unmatched ? [{ ...unmatchedOperation, request: controls.unmatched === 'legacy' ? undefined : unmatchedOperation.request }] : url.searchParams.get('q') === 'empty' ? [] : atPage === 2 ? [{ ...operation, requestId: secondId, route: 'Page two action' }] : [operation, { ...operation, requestId: secondId, outcome: 'accepted', response: {}, route: '/api/courses/:courseId/materials' }];
       return route.fulfill({ json: { items, total: items.length ? 27 : 0, page: atPage, ...identities, monitoring } });
     }
-    if (url.pathname.startsWith('/api/admin/operations/')) return route.fulfill(controls.failDetail ? { status: 503, json: { error: 'Evidence temporarily unavailable.' } } : { json: { operation: url.pathname.endsWith(secondId) ? { ...operation, requestId: secondId, outcome: 'accepted', response: {} } : operation, runs: [run] } });
+    if (url.pathname.startsWith('/api/admin/operations/')) return route.fulfill(controls.failDetail ? { status: 503, json: { error: 'Evidence temporarily unavailable.' } } : { json: { operation: controls.unmatched ? { ...unmatchedOperation, request: controls.unmatched === 'legacy' ? undefined : unmatchedOperation.request } : url.pathname.endsWith(secondId) ? { ...operation, requestId: secondId, outcome: 'accepted', response: {} } : operation, runs: controls.unmatched ? [] : [run] } });
     if (url.pathname === '/api/admin/diagnostic-runs') return route.fulfill({ json: { items: [run], total: 1, page: 1, ...identities } });
     if (url.pathname.startsWith('/api/admin/diagnostic-runs/')) return route.fulfill({ json: { run, ...identities } });
     if (url.pathname === '/api/admin/audit-history') return route.fulfill({ json: { items: [{ _id: courseId, actorPuid: 'PUID-ADMIN', action: 'grant-instructor', targetType: 'user', targetId: 'PUID-FACULTY', createdAt: operation.createdAt, detail: { platformInstructor: true } }], total: 1, page: 1 } });
@@ -36,6 +39,8 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
   });
   await page.goto((fullShell ? '/' : '/operations-fixture') + hash);
   if (!fullShell) await page.evaluate(async () => {
+    const { getAuthState } = await import('/js/api.js');
+    await getAuthState();
     const { renderAdminOperations, renderAdminOperationDetail } = await import('/js/views/admin/operations.js');
     const match = location.hash.match(/operations\/(requests|runs)\/([^?]+)/);
     const outlet = document.getElementById('fixture')!;
@@ -45,6 +50,356 @@ async function fixture(page: Page, hash = '#/admin/operations', fullShell = fals
   await expect(page.locator('.ac-table')).toBeVisible();
   return { reads, writes, controls };
 }
+
+test('received and hash-recognized paths display as text with source IP evidence', async ({ page }) => {
+  const state = await fixture(page);
+  for (const historical of [false, true]) {
+    const path = historical ? '/api/v1/version' : '/api/<img src=x onerror=alert(1)>';
+    const entry = { ...unmatchedOperation, request: { ...unmatchedOperation.request,
+      ...(historical ? { recognizedPath: { path, evidence: 'retained-path-hash' } } : { originalPath: path, originalPathTruncated: false, network: { clientIp: '198.51.100.7', peerIp: '192.0.2.10', source: 'trusted-proxy' } }) } };
+    await page.route('**/api/admin/operations?**', route => route.fulfill({ json: { items: [entry], total: 1, page: 1, ...identities, monitoring } }));
+    await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: entry, runs: [] } }));
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await page.getByRole('link', { name: `GET ${path}`, exact: true }).click();
+    const panel = page.locator('.ac-panel');
+    await expect(panel).toContainText(path);
+    await expect(panel.locator('img')).toHaveCount(0);
+    if (historical) {
+      await expect(panel).toContainText('Recognized historical path (hash match)');
+      await expect(panel).toContainText('Source IP was not retained');
+    } else {
+      await expect(panel).toContainText('Request path (query excluded)');
+      await expect(panel).toContainText('198.51.100.7');
+      await expect(panel.getByRole('link', { name: 'Search this IP' })).toHaveAttribute('href', /q=198\.51\.100\.7/);
+      await page.route('**/api/admin/ip-blocks?**', route => route.fulfill({ json: { items: [], total: 0, page: 1, currentIp: '203.0.113.10', addressSource: 'trusted-proxy' } }));
+      await panel.getByRole('button', { name: 'Manage this IP' }).click();
+      const rules = page.getByRole('dialog', { name: 'IP access rules', exact: true });
+      await expect(rules.getByRole('textbox', { name: 'IP address', exact: true })).toHaveValue('198.51.100.7');
+      await rules.getByRole('button', { name: 'Close IP rules' }).click();
+    }
+    await page.getByRole('button', { name: 'Close inspector' }).click();
+  }
+  const matched = { ...operation, request: { ...unmatchedOperation.request, routeMatched: true,
+    network: { clientIp: '198.51.100.7', peerIp: '192.0.2.10', source: 'trusted-proxy' } } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: matched, runs: [] } }));
+  await page.getByRole('link', { name: 'GET /api/v1/version', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Network source');
+  await expect(page.locator('.ac-panel')).not.toContainText('The original path was not retained for this historical record.');
+  expect(state.writes).toEqual([]);
+});
+
+async function ipFixture(page: Page, source = 'trusted-proxy') {
+  await fixture(page);
+  const mutations: Array<{ ip: string; blocked: boolean; reason: string; expectedRevision?: number }> = [];
+  let entry: Record<string, unknown> | undefined;
+  const controls = { reject: false };
+  await page.route('**/api/admin/ip-blocks**', async route => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON(); mutations.push(body);
+      if (controls.reject) return route.fulfill({ status: 409, json: { error: 'This IP rule changed. Refresh before retrying.' } });
+      const change = { blocked: body.blocked, at: '2026-10-28T20:00:00Z', actorPuid: 'SYNTHETIC-ADMIN', actorName: 'Synthetic Admin', reason: body.reason };
+      entry = { ip: body.ip, blocked: body.blocked, reason: body.reason, revision: Number(entry?.revision ?? 0) + 1, updatedAt: change.at, updatedByName: change.actorName, updatedByPuid: change.actorPuid, history: [...(entry?.history as unknown[] ?? []), change] };
+      return route.fulfill({ json: entry });
+    }
+    return route.fulfill({ json: { items: entry ? [entry] : [], total: entry ? 1 : 0, page: 1, currentIp: '203.0.113.10', addressSource: source, refreshSeconds: 5 } });
+  });
+  await page.getByRole('button', { name: 'IP access rules', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'IP access rules', exact: true });
+  await expect(dialog).toContainText('Your current source IP: 203.0.113.10');
+  return { dialog, mutations, controls };
+}
+
+test('IP rules require explicit confirmation, preserve history and allow manual unblocking', async ({ page }) => {
+  const { dialog, mutations } = await ipFixture(page);
+  const ip = dialog.getByRole('textbox', { name: 'IP address', exact: true });
+  await ip.fill('203.0.113.10');
+  await expect(dialog.getByRole('button', { name: 'Block IP', exact: true })).toBeDisabled();
+  await ip.fill('198.51.100.7');
+  await dialog.getByRole('textbox', { name: 'Block reason' }).fill('Synthetic probe review');
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Block API requests from this IP?' });
+  await expect(confirmation).toContainText('A shared address may represent several users');
+  expect(mutations).toEqual([]);
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(mutations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Block this IP', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Unblock 198.51.100.7', exact: true })).toBeVisible();
+  expect(mutations[0]).toEqual({ ip: '198.51.100.7', blocked: true, reason: 'Synthetic probe review' });
+  await dialog.getByRole('button', { name: 'Unblock 198.51.100.7', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Block 198.51.100.7', exact: true })).toBeVisible();
+  expect(mutations[1]).toMatchObject({ blocked: false, expectedRevision: 1 });
+  await dialog.getByText('History (2, latest 50)', { exact: true }).click();
+  await expect(dialog.locator('ol')).toContainText('Synthetic Admin');
+  await expect(dialog.locator('ol li')).toHaveCount(2);
+});
+
+test('IP rule conflicts retain inputs and proxy uncertainty prevents changes', async ({ page }) => {
+  const { dialog, controls } = await ipFixture(page);
+  controls.reject = true;
+  await dialog.getByRole('textbox', { name: 'IP address', exact: true }).fill('198.51.100.7');
+  await dialog.getByRole('textbox', { name: 'Block reason' }).fill('Keep this reason');
+  await dialog.getByRole('button', { name: 'Block IP', exact: true }).click();
+  await page.getByRole('button', { name: 'Block this IP', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('This IP rule changed');
+  await expect(dialog.getByRole('textbox', { name: 'Block reason' })).toHaveValue('Keep this reason');
+  await dialog.getByRole('button', { name: 'Close IP rules' }).click();
+  await page.route('**/api/admin/ip-blocks**', route => route.fulfill({ json: { items: [], total: 0, page: 1, currentIp: '192.0.2.10', addressSource: 'untrusted-forwarding' } }));
+  await page.getByRole('button', { name: 'IP access rules', exact: true }).click();
+  await expect(dialog).toContainText('Proxy source identification must be fixed');
+  await dialog.getByRole('textbox', { name: 'IP address', exact: true }).fill('198.51.100.7');
+  await expect(dialog.getByRole('button', { name: 'Block IP', exact: true })).toBeDisabled();
+});
+
+for (const theme of ['light', 'dark']) test(`IP rules fit mobile and are accessible in ${theme} appearance`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { dialog, mutations } = await ipFixture(page);
+  await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+  expect(await dialog.evaluate(node => node.getBoundingClientRect().width <= innerWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.ac-ip-dialog').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `audit-results/operations-logging/ip-rules-mobile-${theme}.png`, fullPage: true });
+  expect(mutations).toEqual([]);
+});
+
+test('unmatched 404s retain evidence, searchable hashes and persistent routing filters', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'new';
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('Routing', { exact: true }).selectOption('unmatched');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect.poll(() => state.reads.filter(url => url.pathname === '/api/admin/operations').at(-1)?.searchParams.get('routing')).toBe('unmatched');
+  await expect(page).toHaveURL(/routing=unmatched/);
+  await expect(page.locator('.ac-table')).toContainText('Unmatched route · HTTP 404');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.getByText('No API route matched this request.', { exact: false })).toBeVisible();
+  await expect(page.locator('.ac-panel')).toContainText(unmatchedOperation.request.pathHash);
+  await expect(page.locator('.ac-panel')).toContainText('curl');
+  await expect(page.getByText('Operation failed', { exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: 'audit-results/operations-logging/unmatched-404-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(page).toHaveURL(/routing=unmatched/);
+  await page.getByRole('searchbox', { name: 'Search activity' }).fill(unmatchedOperation.request.pathHash);
+  await expect.poll(() => state.reads.filter(url => url.pathname === '/api/admin/operations').at(-1)?.searchParams.get('q')).toBe(unmatchedOperation.request.pathHash);
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await expect(page.getByLabel('Routing', { exact: true })).toHaveValue('unmatched');
+  await page.getByLabel('Routing', { exact: true }).selectOption('other');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).toHaveURL(/routing=other/);
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(page).not.toHaveURL(/routing=/);
+  expect(state.writes).toEqual([]);
+});
+
+for (const historical of [false, true]) test(`interrupted reads disclose ${historical ? 'historical uncertainty' : 'pre-routing cancellation and proxy evidence'}`, async ({ page }) => {
+  await fixture(page);
+  const interrupted = { ...unmatchedOperation, outcome: 'interrupted', statusCode: 499,
+    request: { ...unmatchedOperation.request, path: '/api/courses/:redacted/materials/:redacted/source',
+      ...(historical ? {} : { routeState: 'not-evaluated', proxy: { forwarded: true, trustedPeer: true }, responseStarted: false, rangeRequested: true,
+        fingerprints: { day: '2026-10-28', peer: 'a'.repeat(32), agent: 'b'.repeat(32), client: 'c'.repeat(32) } }) },
+    response: { failureCategory: 'connection-interrupted' } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: interrupted, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).first().click();
+  await expect(page.locator('.ac-panel')).toContainText(historical ? 'Not confirmed before disconnect' : 'Not evaluated before request ended');
+  await expect(page.locator('.ac-panel')).toContainText('Navigation, a replaced preview');
+  await expect(page.locator('.ac-panel')).not.toContainText('This action may already have changed data');
+  await expect(page.locator('.ac-panel')).not.toContainText('No API route matched');
+  if (!historical) {
+    await expect(page.locator('.ac-panel')).toContainText('Immediate proxy peer trusted');
+    await expect(page.locator('.ac-panel')).toContainText('Resolved client group (trusted proxy)');
+    await expect(page.locator('.ac-panel')).toContainText('c'.repeat(32));
+  }
+});
+
+test('historical unmatched 404s disclose missing original paths without inventing diagnostics', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'legacy';
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.locator('.ac-table')).toContainText('original path unavailable');
+  await page.getByRole('link', { name: 'GET /unmatched', exact: true }).click();
+  await expect(page.getByText('The original path was not retained for this historical record.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Path hash (SHA-256)', { exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+test('cause analysis separates observed identity/transport stages from unverified browser initiation', async ({ page }) => {
+  await fixture(page);
+  const group = 'e'.repeat(32);
+  const attributed = { ...unmatchedOperation, outcome: 'interrupted', statusCode: 499,
+    actor: { puid: 'SYNTHETIC-TEACHER', uid: 'teacher', displayName: 'Synthetic Teacher' },
+    request: { ...unmatchedOperation.request, loginState: 'authenticated',
+      session: { credential: 'signed', group }, identity: { stage: 'complete', stageAtEnd: 'user-loading', wait: 'resolved', sessionLookup: 'restored', sessionAccountPuid: 'SYNTHETIC-TEACHER' },
+      source: { page: '/instructor/course/:redacted/materials', callsite: 'views/instructor/materials.js:100:20', channel: 'embedded-preview' } },
+    response: { failurePhase: 'user-load', failureReason: 'connection-closed-before-identity' } };
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: attributed, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).first().click();
+  const analysis = page.getByRole('region', { name: 'Request cause analysis', exact: true });
+  await expect(analysis).toContainText('Account lookup pending');
+  await expect(analysis).toContainText('Loading the account');
+  await expect(analysis).toContainText('views/instructor/materials.js:100:20');
+  await expect(analysis).toContainText('Browser initiation hints (unverified)');
+  await expect(page.locator('.ac-panel')).toContainText('The account resolved from the server session after the connection closed.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await analysis.getByRole('link', { name: 'Compare session requests', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${group}`));
+  await expect(page).toHaveURL(/activity=all/);
+});
+
+test('notification requests identify initial, timer and focus triggers without page query values', async ({ page }) => {
+  await fixture(page);
+  const hints: Array<Record<string, string>> = [];
+  await page.route('**/api/notifications', route => {
+    hints.push(route.request().headers()); return route.fulfill({ json: [] });
+  });
+  await page.clock.install();
+  await page.evaluate(async () => {
+    history.replaceState(null, '', '#/admin/operations?private=private-query');
+    const { createNotificationBell } = await import('/js/notifications-bell.js');
+    document.body.append(createNotificationBell('admin'));
+  });
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-initial')).toBe(true);
+  await page.clock.runFor(30000);
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-timer')).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => hints.some(item => item['x-financebot-trigger'] === 'notification-focus')).toBe(true);
+  for (const hint of hints) {
+    expect(hint['x-financebot-page']).toBe('/admin/operations');
+    expect(hint['x-financebot-callsite']).toMatch(/^notifications-bell\.js:\d+:\d+$/);
+    expect(JSON.stringify(hint)).not.toContain('private-query');
+  }
+});
+
+test('browser API failures report endpoints, HTTP status and server correlation without queries or response content', async ({ page }) => {
+  await fixture(page);
+  const reports: Array<{ kind: string; request: { endpoint: string; statusCode?: number; relatedRequestId?: string } }> = [];
+  await page.route('**/api/diagnostics/client-error', route => { reports.push(route.request().postDataJSON()); return route.fulfill({ status: 204 }); });
+  await page.route('**/api/questions/telemetry-fixture?**', route => {
+    const mode = new URL(route.request().url()).searchParams.get('mode');
+    if (mode === 'network') return route.abort('connectionfailed');
+    if (mode === 'invalid-json') return route.fulfill({ status: 200, contentType: 'text/html', body: '<html>private response content</html>' });
+    return route.fulfill({ status: mode === 'proxy' ? 502 : 404, headers: mode === 'proxy' ? {} : { 'X-Request-ID': secondId }, contentType: 'text/html', body: '<html>private response content</html>' });
+  });
+  for (const mode of ['missing', 'proxy', 'invalid-json', 'network']) {
+    await page.evaluate(async mode => {
+      const { apiRequest } = await import('/js/api.js');
+      await apiRequest(`/api/questions/telemetry-fixture?mode=${mode}&token=private-query`).catch(() => undefined);
+    }, mode);
+  }
+  await expect.poll(() => reports.length).toBe(4);
+  expect(reports.map(report => report.kind)).toEqual(['http', 'http', 'response', 'network']);
+  expect(reports[0].request).toEqual({ endpoint: '/api/questions/telemetry-fixture', statusCode: 404, relatedRequestId: secondId });
+  expect(reports[1].request.statusCode).toBe(502);
+  expect(reports[1].request.relatedRequestId).toBeUndefined();
+  expect(reports[2].request.statusCode).toBe(200);
+  expect(reports[3].request.statusCode).toBeUndefined();
+  expect(JSON.stringify(reports)).not.toMatch(/private|token|\?/);
+  await page.evaluate(async () => {
+    const { apiRequest } = await import('/js/api.js');
+    const controller = new AbortController(); controller.abort();
+    await apiRequest('/api/questions/telemetry-fixture?mode=network', { signal: controller.signal }).catch(() => undefined);
+    for (let i = 0; i < 4; i++) await apiRequest('/api/questions/telemetry-fixture?mode=missing').catch(() => undefined);
+  });
+  await expect.poll(() => reports.length).toBe(5);
+});
+
+test('browser-reported request links are labelled as unverified evidence', async ({ page }) => {
+  await fixture(page);
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: { ...operation, method: 'CLIENT', statusCode: 0, response: { error: 'An API request returned HTTP 502.', relatedRequestId: secondId, reportedBy: 'browser' } }, runs: [] } }));
+  await page.getByRole('link', { name: 'POST /api/courses/:courseId/generate', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Related server request (browser-reported)', exact: true })).toHaveAttribute('href', `#/admin/operations/requests/${secondId}`);
+});
+
+test('expired sessions stop diagnostic reports and a confirmed login restores reporting', async ({ page }) => {
+  await fixture(page);
+  const reports: unknown[] = [], markers: string[] = [];
+  await page.route('**/api/diagnostics/client-error', route => { reports.push(route.request().postDataJSON()); return route.fulfill({ status: 204 }); });
+  await page.route('**/api/notifications', route => { markers.push(route.request().headers()['x-financebot-client']); return route.fulfill({ status: 401, json: { error: 'Authentication required.' } }); });
+  await page.route('**/api/questions/forbidden-fixture', route => route.fulfill({ status: 403, json: { error: 'Forbidden' } }));
+  await page.evaluate(async () => {
+    const { apiRequest, setUnauthorizedHandler } = await import('/js/api.js');
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    setUnauthorizedHandler(() => undefined);
+    await apiRequest('/api/notifications').catch(() => undefined);
+    reportClientFailure('runtime', 'Late signed-out runtime event');
+  });
+  expect(markers).toEqual(['web-v1']);
+  expect(reports).toEqual([]);
+  await page.evaluate(async () => {
+    const { apiRequest, getAuthState } = await import('/js/api.js');
+    await getAuthState();
+    await apiRequest('/api/questions/forbidden-fixture').catch(() => undefined);
+  });
+  await expect.poll(() => reports.length).toBe(1);
+  expect(reports[0]).toMatchObject({ kind: 'http', request: { statusCode: 403 } });
+});
+
+test('known probes disclose identity limits and retain traffic filters and daily search groups', async ({ page }) => {
+  const state = await fixture(page);
+  const probe = { ...unmatchedOperation, request: { ...unmatchedOperation.request, loginState: 'not-evaluated', webClient: false,
+    probe: { kind: 'phpunit', evidence: 'path-signature' }, fingerprints: { day: '2026-10-28', peer: 'b'.repeat(32), agent: 'c'.repeat(32) } }, response: { error: 'Not Found', failureCategory: 'probe-rejected' } };
+  await page.route('**/api/admin/operations?**', route => route.fulfill({ json: { items: [probe], total: 1, page: 1 } }));
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: probe, runs: [] } }));
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await page.getByLabel('Traffic classification', { exact: true }).selectOption('probes');
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).toHaveURL(/traffic=probes/);
+  await expect(page.locator('.ac-table')).toContainText('Known probe path: PHPUnit');
+  await expect(page.locator('.ac-table')).toContainText('Identity not evaluated');
+  await expect(page.locator('.ac-metrics')).toContainText('includes 1 probe request');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('rejected before login/session processing');
+  await expect(page.locator('.ac-panel')).toContainText('may be a shared proxy');
+  await expect(page.locator('.ac-panel')).toContainText(probe.request.fingerprints.peer);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await new AxeBuilder({ page }).include('.admin-console').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: 'audit-results/operations-logging/probe-identity-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(page).toHaveURL(/traffic=probes/);
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(page).not.toHaveURL(/traffic=/);
+  expect(state.writes).toEqual([]);
+});
+
+test('rejected diagnostic transport stops reports until the next confirmed sign-in', async ({ page }) => {
+  await fixture(page);
+  let reports = 0;
+  await page.route('**/api/diagnostics/client-error', route => { reports++; return route.fulfill({ status: 401, json: { error: 'Authentication required.' } }); });
+  const rejection = page.waitForResponse(response => response.url().endsWith('/api/diagnostics/client-error'));
+  await page.evaluate(async () => {
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    reportClientFailure('runtime', 'Synthetic transport test');
+  });
+  await rejection;
+  await page.evaluate(async () => {
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    reportClientFailure('runtime', 'Late error after rejected report');
+  });
+  expect(reports).toBe(1);
+  await page.evaluate(async () => {
+    const { getAuthState } = await import('/js/api.js');
+    const { reportClientFailure } = await import('/js/diagnostics.js');
+    await getAuthState();
+    reportClientFailure('runtime', 'Synthetic report after confirmed login');
+  });
+  await expect.poll(() => reports).toBe(2);
+});
+
+test('anonymous and historical request identity explanations never invent a user', async ({ page }) => {
+  const state = await fixture(page);
+  state.controls.unmatched = 'new';
+  await page.route(`**/api/admin/operations/${requestId}`, route => route.fulfill({ json: { operation: { ...unmatchedOperation,
+    request: { ...unmatchedOperation.request, loginState: 'unauthenticated', webClient: true } }, runs: [] } }));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.locator('.ac-table')).toContainText('Identity not recorded');
+  await page.getByRole('link', { name: 'GET /api/:redacted', exact: true }).click();
+  await expect(page.locator('.ac-panel')).toContainText('Not signed in');
+  await expect(page.locator('.ac-panel')).toContainText('expired/invalid session');
+  await expect(page.locator('.ac-panel')).toContainText('does not identify the caller');
+});
 
 test('operations preserve filters and table context while inspecting and closing evidence', async ({ page }) => {
   const state = await fixture(page);

@@ -28,6 +28,13 @@ their access source is managed through Enrollment.
 
 ## How it works
 
+`request-source.ts` adds sanitized page/call-location hints to central fetches
+and bounded source parameters to previews, source links and EventSource streams.
+Notification triggers distinguish initial/timer/focus/visibility/sync. Hints
+are unverified diagnostic context; never use them for authentication or infer
+that a missing hint proves external traffic. Admin request cause analysis keeps
+server-observed failures and browser-reported initiation separate.
+
 Student Topic Start uses the shared three-panel question design in both teaching
 modes. `views/student/practice.ts` selects the engine: Linear uses durable learning
 sessions; `topic-practice-workspace.ts` retains the original practice/retry/mastery
@@ -220,6 +227,11 @@ Admin Operations & Issues and All Questions (`views/admin/operations.ts`,
 version/seed or saved-attempt reproduction. User Directory links filter these
 views by PUID. `diagnostics.ts` reports bounded runtime/network failures without
 form contents or browser-session recording; reports are explicitly unverified.
+Operations also displays protected source/socket IP evidence and received paths
+for unmatched 404/IP-blocked calls. `views/admin/ip-blocks.ts` provides explicit
+manual block confirmation, unblocking, revision conflicts and retained history.
+Opening a record or the rules dialog never creates a ban. All evidence uses DOM
+text rendering; unknown historical IPs/paths are not reconstructed.
 
 Admin configuration keeps sparse permission assignments and explicit inheritance,
 reviews the loaded scope before saving, and preserves Admin/TA safety locks.

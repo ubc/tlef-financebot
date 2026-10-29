@@ -16,6 +16,7 @@ import {
 } from './api.js';
 import { broadcastNotificationsChanged, subscribeNotificationsChanged } from './notification-sync.js';
 import { notificationTarget, type NotificationAudience } from './notification-target.js';
+import type { RequestTrigger } from './request-source.js';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -65,7 +66,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   let notifications: AppNotification[] = [];
   let open = false;
   let intervalId: ReturnType<typeof setInterval> | undefined;
-  const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll());
+  const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll('notification-sync'));
   // Monotonic counter bumped by every LOCAL mutation of `notifications`
   // (activate/dismiss, "clear all", mark-panel-read) before that handler's
   // first `await`. poll() runs on a 30s interval, on window focus, and on
@@ -232,13 +233,14 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   document.addEventListener('click', onDocumentClick);
 
   function refreshWhenVisible(): void {
-    if (document.visibilityState === 'visible') void poll();
+    if (document.visibilityState === 'visible') void poll('notification-visible');
   }
+  function refreshOnFocus(): void { if (document.visibilityState === 'visible') void poll('notification-focus'); }
 
   function removeGlobalListeners(): void {
     document.removeEventListener('click', onDocumentClick);
     document.removeEventListener('visibilitychange', refreshWhenVisible);
-    window.removeEventListener('focus', refreshWhenVisible);
+    window.removeEventListener('focus', refreshOnFocus);
     unsubscribeNotificationsChanged();
   }
 
@@ -246,9 +248,9 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   // tab. Refresh immediately when they return instead of making that
   // two-tab workflow wait for the next 30-second poll.
   document.addEventListener('visibilitychange', refreshWhenVisible);
-  window.addEventListener('focus', refreshWhenVisible);
+  window.addEventListener('focus', refreshOnFocus);
 
-  async function poll(): Promise<void> {
+  async function poll(trigger: RequestTrigger): Promise<void> {
     if (!wrap.isConnected) {
       if (intervalId !== undefined) {
         clearInterval(intervalId);
@@ -259,7 +261,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     }
     const epoch = mutationEpoch;
     try {
-      const fetched = await listNotifications();
+      const fetched = await listNotifications(undefined, trigger);
       // A local mutation started after this GET went out, so this response
       // predates it and cannot be trusted to reflect it (see `mutationEpoch`).
       // Drop it; the next poll carries the post-mutation epoch and reconciles.
@@ -272,14 +274,14 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     if (open) renderPanel();
   }
 
-  intervalId = setInterval(() => void poll(), POLL_INTERVAL_MS);
+  intervalId = setInterval(() => void poll('notification-timer'), POLL_INTERVAL_MS);
   // Shell builders call createNotificationBell() while constructing the
   // topbar, before that topbar is appended to the document. Calling poll()
   // synchronously here made its `!wrap.isConnected` teardown branch cancel
   // the interval permanently on every normal page load. A microtask still
   // populates immediately from the user's perspective, but runs after the
   // synchronous shell construction/mount has completed.
-  queueMicrotask(() => void poll());
+  queueMicrotask(() => void poll('notification-initial'));
 
   syncBadge();
   renderPanel();

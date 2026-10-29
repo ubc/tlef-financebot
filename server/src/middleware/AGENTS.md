@@ -4,6 +4,19 @@ Cross-cutting Express middleware.
 
 ## Present
 
+- `request-network.ts` derives canonical source/socket addresses using the
+  configured Express trust policy; arbitrary forwarding headers are ignored.
+  Raw addresses are protected Admin evidence, never common server-log fields.
+- `ip-block.ts` enforces persisted manual exact-IP rules after global rate
+  limiting, before parsing/session work. Blocks return audited `ip-blocked` 403s.
+  No automatic banning; see `ip-blocks.service.ts` for refresh/failure behavior.
+
+- `request-identity.ts` observes the existing session and Passport callbacks.
+  API audit persistence alone may await pending identity after disconnect, with
+  a 1.5-second / 100-wait bound. Actor confirmation, stored-session association
+  and original transport state remain distinct; no second authentication or
+  business retry is performed.
+
 - `error-handler.ts`
   - `notFoundHandler` — 404 JSON for unmatched routes.
   - `errorHandler` — central error formatter. Express recognizes it as an error

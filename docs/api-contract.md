@@ -1293,6 +1293,274 @@ editor uses existing course capability overrides and TA hard denials. Re-invite
 is not offered for CSV-derived expiry; update the import/course dates instead.
 Permanent course deletion also removes its people import snapshot.
 
+## Unmatched API request diagnostics (2026-10-26)
+
+### Request initiation and identity resolution (2026-10-28)
+
+New API records retain separate observed failure mechanisms and unverified
+browser context. `response.failurePhase` distinguishes input parsing, probe
+rejection, rate limiting, session/account loading, authentication, authorization,
+routing, transfer and application handling. `failureReason` distinguishes absent,
+invalid, ambiguous and unrestored session credentials, lookup errors, unmatched
+routes and transport closure. An unrestored signed credential does not establish
+expiry specifically; deletion and other missing-store cases remain possible.
+
+`request.session` contains `credential: absent|signed|invalid|ambiguous` and an
+optional `group`. The existing express-session `connect.sid` signature is checked
+with the configured secret, and the session ID is HMACed in a separate domain.
+No credential/session ID is retained or returned. Groups require the same
+non-default 32-character minimum as peer groups, persist only for that session
+credential/key, and are searchable under `q`. A signed credential is not proof
+that its session still exists or that account verification passed.
+
+`request.identity` retains `stageAtEnd`, final `stage`, optional `sessionLookup`,
+`failedDuring`, `sessionAccountPuid` and `wait`. The stored-session PUID is an
+account association, separately labelled from the currently authenticated actor.
+For an interrupted request with authentication already running, only audit
+finalization waits up to 1.5 seconds (at most 100 simultaneous waits) for that
+existing lookup. No second lookup, new login, business-request retry or HTTP
+response delay is introduced. The original interruption status, route and
+duration stay fixed. Completed account verification can populate the actor;
+timeout/failure/capacity limits retain explicit uncertainty. Process loss can
+still lose telemetry. Historical rows are not assigned a guessed user.
+
+`request.source` optionally carries `page`, `callsite`, `trigger` and `channel`.
+The central browser fetch client reports a sanitized page, bounded compiled JS
+call location when supported, and an allowlisted trigger. Notifications distinguish
+initial, interval, visibility, focus and local-sync requests. Native source links,
+embedded previews and EventSource streams use bounded `_fbSource`/`_fbPage`
+query hints because native navigation cannot add custom headers. These parameters
+do not enter path hashes or authorization. Browser hints are spoofable, are
+explicitly labelled unverified, and do not establish sender intent or a specific
+network-cancellation reason. IDs, page queries and raw stacks are excluded;
+compiled line locations may belong to a cached older client.
+
+The Admin inspector's **Request cause analysis** separates server observations
+from initiation hints and links to same-session records. Search also covers
+failure phase/reason, source page/callsite/trigger and stored-session PUID. Missing
+historical hints remain unavailable; absent hints do not establish external or
+malicious traffic. DNS/TLS/proxy/parser rejections before Express and static/auth
+requests outside the existing API audit remain infrastructure evidence gaps.
+
+### Probe rejection and caller context (2026-10-28)
+
+`traffic=all|probes|other` is an additional Admin operations filter. The default
+retains all records. `probes` selects fixed known probe signatures and a finite
+allowlist of matching historical path digests; `other` excludes only those
+records. Unknown unmatched paths remain unknown and remain visible. Routing,
+traffic, outcomes, actions, dates and literal search compose without changing
+retention. Matched-resource 404s are never classified from the digest alone.
+
+Known root API paths for Git metadata, environment files, PHPUnit eval-stdin,
+WordPress, phpMyAdmin and Laravel debug are rejected with the same generic 404
+before JSON parsing, sessions or other database reads. The operation audit still
+records the request, signature and `failureCategory: probe-rejected`. This reduces
+unnecessary processing; it does not prevent traffic reaching the proxy or claim
+complete bot/attack detection. A valid API endpoint, a generic `/api/login` or
+`/api/config`, and an arbitrary unknown route are not added to this denylist.
+
+New optional request fields are:
+
+- `loginState`: `authenticated`, `unauthenticated`, or `not-evaluated`. This
+  records whether Passport actually evaluated authentication. A rejected probe
+  or pre-auth parser failure has no inferred CWL identity. Historical absence
+  remains unavailable; a 401 does not distinguish missing versus expired sessions.
+- `webClient`: whether the public `X-Financebot-Client: web-v1` marker was present.
+  The central browser API client and diagnostic reporter add it. It is spoofable,
+  absent on older/other clients, and never grants authorization.
+- `probe: { kind, evidence }`: a closed known-path category with `path-signature`
+  or `retained-path-hash` evidence. Read-time recognition of a historical public
+  path hash does not rewrite its record or reconstruct missing identity.
+- `fingerprints: { day, peer?, agent?, client? }`: pseudonymous daily groups derived with
+  domain-separated HMAC-SHA-256 from the existing session signing secret. Groups
+  use the UTC date and separate peer/agent domains, retain 128 digest bits, and
+  are omitted when that secret is missing, a sample default, or shorter than 32
+  characters. No additional secret is exposed or required. Peer uses the actual
+  connection address, never client-supplied forwarding headers. It may represent
+  a shared reverse proxy. Agent uses at most 512 user-agent characters. Neither
+  group authenticates a client or proves a shared physical sender. An optional
+  `client` group uses Express's resolved IP only when a forwarding header is
+  present and the immediate socket peer is explicitly trusted. Its separate
+  HMAC domain prevents confusion with the socket-peer group; shared NAT still
+  prevents individual attribution. All groups are searchable under `q` and
+  change by date/key, not by a data migration.
+- `routeState`: `matched`, `unmatched`, `not-evaluated`, or `probe-rejected`.
+  The boolean `routeMatched: false` alone does not prove an invalid endpoint:
+  parsing/authentication or a disconnected connection may stop before routing.
+  Only the final not-found handler confirms `unmatched`. Historical interrupted
+  records retain uncertainty and are not backfilled.
+- `proxy: { forwarded, trustedPeer }`: booleans indicating forwarding-header
+  presence and explicit immediate-peer trust; raw addresses/header values are
+  never retained. `responseStarted` and `rangeRequested` are additional booleans
+  to distinguish an interrupted transfer from a pre-response cancellation.
+
+`TRUSTED_PROXY_CIDRS` defaults to `loopback` for a same-host reverse proxy.
+Other layouts require the actual proxy IP/CIDR allowlist; `false` disables trust.
+Global trust (`true`), hop counts, hostnames and `/0` ranges are refused at startup.
+Express walks forwarding addresses from the socket right-to-left to the first
+untrusted address. Operators must overwrite or correctly append forwarding
+headers and prevent clients bypassing the proxy. Application diagnostics cannot
+establish that infrastructure configuration on their own.
+
+Known transport-abort exceptions after the connection closes do not emit a
+second server exception or attempt a JSON response; the interrupted/499 audit
+is retained. Upstream resets on an open response and genuine application errors
+remain logged. Materials progress updates retain the connected preview iframe
+to avoid repeatedly aborting the same source transfer. Other navigation, range
+reads, proxy timeouts and network disconnects can still produce interruptions.
+
+The inspector explains `Not signed in`, `Identity not evaluated`, and historical
+`Identity not recorded`. Known-probe labels and filters preserve rejected requests
+as failures. Summary counts explicitly disclose probe inclusion and excluded
+successful reads. An unkeyed path digest is not generally reversible, but common
+public paths can be recognized by dictionary comparison; it is not encryption.
+
+Browser diagnostics start only after `/api/auth/me` confirms a signed-in user.
+A protected API returning 401 stops reporting before handling the auth transition;
+it does not trigger a second, inevitably rejected client-error POST. A report
+transport returning 401 also stops future reports. Confirmed sign-in restores
+reporting without resetting its existing rate cap. The original server 401 remains
+audited; authenticated 403, network, HTTP and response-JSON failures remain eligible.
+
+### Retained request evidence
+
+`GET /api/admin/operations` accepts optional `routing=all|unmatched|other`.
+`all` (the default) retains every existing outcome. `unmatched` selects only
+`route: /unmatched` with HTTP 404, including historical records. `other` excludes
+only that combination: matched-resource 404s, pre-route parser/auth failures and
+other business failures remain visible. Routing combines with existing action,
+outcome, actor, course, date and search filters; it never changes retention.
+
+New server operation records add optional `request` diagnostics: `path`,
+`pathHash`, `pathRedacted`, `pathTruncated`, `routeMatched`, `client` and `fetchSite`.
+Only allowlisted public route words survive in `path`; arbitrary/encoded
+segments, identities and credentials become `:redacted`. Paths are bounded to
+4,096 input characters and 24 displayed segments. `pathHash` is the SHA-256 of
+the query/fragment-free path (the first 4,096 characters for oversized paths).
+It distinguishes paths masked to the same display shape; it is not reversible
+original-path evidence. `pathTruncated` discloses either display or hash limits.
+Search `q` also matches the sanitized path and its digest. User-agent and
+Sec-Fetch-Site headers reduce to fixed categories only; they are unverified and
+cannot prove browser, bot or same-origin identity. Query strings, raw headers,
+referers and request bodies are not added to this record. The following Admin-only
+path/IP additions supersede the earlier address/path retention policy.
+
+New unmatched 404 and IP-blocked records retain `request.originalPath` plus
+`originalPathTruncated`. This is the received path, with queries/fragments removed,
+limited to 4,096 characters; case, encoding and repeated slashes are preserved.
+The protected Admin list/detail and export display it as text. Path segments can
+contain sensitive values, so these fields remain restricted to existing Admin
+diagnostic access and are excluded from common structured logs, including dropped
+write fallbacks. Matched application routes keep their sanitized path shapes.
+Historical records are never rewritten. A finite catalog of public paths may
+produce `recognizedPath: { path, evidence: 'retained-path-hash' }` on exact,
+non-truncated historical unmatched-404 hash matches. Unknown historical segments
+cannot be recovered. Search `q` also matches retained paths and catalog hashes.
+
+New retained API records add `request.network: { clientIp?, peerIp?, source }`.
+Addresses are canonical exact IPv4/IPv6 values (IPv4-mapped IPv6 becomes IPv4).
+`peerIp` is the socket peer. `clientIp` uses Express's configured trusted proxy
+chain only when the immediate peer is trusted and forwarding information exists;
+otherwise it is the socket peer. `source` is `trusted-proxy`, `direct-peer`,
+`untrusted-forwarding` (forwarding ignored), or `unavailable`. Invalid/missing
+addresses are not guessed. These raw addresses are Admin database evidence only,
+excluded from common structured logs. Search `q` matches either address. An IP
+can represent shared NAT, VPN or a proxy; it does not establish a human identity.
+Historical keyed groups cannot recover missing raw addresses.
+
+### Manual IP access rules
+
+Admin → Operations & Issues → **IP access rules**, or a request's **Manage this
+IP**, manages exact-address API blocks. Opening evidence never creates a rule.
+There is no automatic ban and no CIDR/range support. Blocking requires explicit
+confirmation; unblocking remains available in the retained rule list.
+
+- `GET /api/admin/ip-blocks?page=1&blocked=true|false&ip=<exact-address>` is
+  Admin-only. Optional state/address filters combine; pages contain 25 records.
+  Returns `{ items, total, page, limit, refreshSeconds: 5, currentIp, addressSource }`.
+- `PUT /api/admin/ip-blocks` is Admin-only and accepts
+  `{ ip, blocked: boolean, reason?: string, expectedRevision?: number }`.
+  Reason is trimmed and limited to 300 characters. Returns the saved rule with
+  canonical IP, state, revision, updating Admin/time/reason and latest 50 history
+  changes. Actor identity comes from the authenticated server account.
+  Existing-row writes use revision CAS; stale/competing writes return 409.
+  Missing unblocks return 404. Repeating the current state is idempotent.
+- Blocking one's current source address, loopback/unspecified addresses or an
+  address trusted by the configured proxy policy returns 409. Changing any rule
+  with unavailable or untrusted-forwarding source identification returns 409.
+  This guard requires an accurate proxy allowlist and correctly maintained
+  upstream forwarding headers; it does not validate the infrastructure itself.
+
+Rules persist in `ipBlocks`, uniquely keyed by canonical IP. Unblocking retains
+the row/history. An API middleware checks blocks before body parsing and session
+processing, following the existing global rate limiter. A blocked call returns
+HTTP 403 `{ error, code: 'ip-blocked' }`, with retained failure phase `ip-block`
+and reason `ip-address-blocked`; it remains an audited failed request. It does
+not reach business routes. API-only enforcement does not configure a firewall,
+block static assets or cover traffic rejected upstream.
+
+Each process caches active rules for five seconds; local committed changes update
+that process immediately and invalidate pending older refreshes. Mongo refreshes
+have a one-second driver timeout. A refresh failure emits
+`[security.ip_block_refresh_failed]` with safe exception metadata, retains known
+rules and retries after five seconds. A cold process with no known rules permits
+requests during a lookup failure. This availability policy and worker refresh
+delay mean these controls are not a substitute for infrastructure filtering.
+
+### Structured failure warnings
+
+All failed, interrupted and partial API outcomes also emit structured server
+warnings with the server-owned request ID, route, status, duration and safe
+request diagnostics. Unmatched 404s use `[http.route_not_found]`; other failures
+use `[http.operation_failed]` and a bounded `failureCategory` (also retained in
+the operation's `response`). Denied access, rate limits, validation, server
+errors and interrupted connections remain distinct. No request is retried or
+changed into a success. `X-Request-ID` remains available for correlation.
+
+The central exception handler emits `[http.exception]` with the request ID,
+allowlisted exception name/code, category and up to six project-relative code
+locations. It excludes messages, absolute paths, raw stacks and payloads from
+the server warning; normal API error responses retain their existing contract.
+The same bounded exception metadata appears in `response.exception`. An error
+after headers are sent closes the response instead of attempting a second JSON
+response. At 30 seconds an unfinished non-SSE request emits one
+`[http.operation_pending]`; observed slow completion uses `[http.operation_slow]`.
+These warnings do not impose a request timeout. Healthy long-lived SSE streams
+retain their existing normal-navigation semantics.
+
+`[audit.record_dropped]` logs the affected request's safe metadata and either
+`write-failed` or `pending-write-limit`, even if MongoDB is unavailable. Audit
+health counters remain process-local and best effort. A hard process crash,
+unavailable log collector or a request blocked before Express can still leave
+gaps. This is diagnostic coverage, not a guarantee of every request's retention.
+
+Authenticated `POST /api/diagnostics/client-error` additionally accepts kinds
+`http` and `response`, plus optional `request: { endpoint, statusCode?,
+relatedRequestId? }`. Endpoints must begin `/api/`, statuses are integers
+100–599, and related IDs must be UUIDs. Only the sanitized path/digest is retained
+under `response.reportedRequest`, with optional `reportedStatusCode` and
+`relatedRequestId`. The central browser API client reports eligible non-2xx responses (excluding 401),
+invalid JSON success responses and network failures with this context. Queries
+and response bodies are omitted; intentional aborts are ignored. The Admin
+inspector labels the related-server-request link as browser-reported. These
+reports are unverified, independently rate-limited (five/minute in the browser,
+30/minute per user on the server), and cannot arrive from a completely offline,
+crashed, signed-out or blocked client. Reporting transport errors never recurse.
+
+In Admin → Operations & Issues → User operations, open **Filters → Routing**
+to inspect or exclude unmatched 404s. Rows prefer received or hash-recognized paths
+when available, falling back to sanitized paths;
+the inspector explains the failure, categories and proxy-log recovery. Search
+the path hash to find repeats. Outdated clients, incorrect health checks and
+automated probes are possible causes, not automatic classifications. Historical
+records explicitly report unavailable original paths except fixed catalog hash
+matches; arbitrary paths cannot be backfilled
+without separate access-log evidence. Anonymous requests alone do not prove a
+security incident or a failed question-generation task.
+
+See [the request failure runbook](runbooks/request-failure-diagnostics.md) for
+the deployed-release check, investigation steps and remaining coverage limits.
+
 ## LLM usage and operation-derived workflows (2026-10-03)
 
 `GET /api/courses/:courseId/content-runs/:runId/usage` requires the course

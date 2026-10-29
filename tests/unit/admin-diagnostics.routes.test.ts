@@ -44,7 +44,7 @@ it('passes bounded user, course, date and correlation filters to Admin read mode
   expect(listWorkflows).toHaveBeenCalledWith({ actor: 'teacher', courseId: id, page: 1, limit: 10 });
 });
 it('validates paging, date bounds, seed and exclusive replay evidence', async () => {
-  for (const query of ['page=-1', 'limit=101', 'courseId=no', 'outcome=unknown', 'from=2026-09-19T00:00:00Z&until=2026-09-18T00:00:00Z']) {
+  for (const query of ['page=-1', 'limit=101', 'courseId=no', 'outcome=unknown', 'routing=unknown', 'traffic=unknown', 'from=2026-09-19T00:00:00Z&until=2026-09-18T00:00:00Z']) {
     expect((await request(app('admin')).get(`/api/admin/operations?${query}`)).status).toBe(400);
   }
   expect((await request(app('admin')).get(`/api/admin/all-questions/${id}/reproduce?seed=NaN`)).status).toBe(400);
@@ -53,8 +53,8 @@ it('validates paging, date bounds, seed and exclusive replay evidence', async ()
 });
 it('passes validated Admin filters and replay choices to the service', async () => {
   jest.mocked(service.listOperations).mockResolvedValue({ items: [], total: 0 } as never);
-  expect((await request(app('admin')).get('/api/admin/operations?actor=teacher&outcome=failed&page=2')).status).toBe(200);
-  expect(service.listOperations).toHaveBeenCalledWith(expect.objectContaining({ actor: 'teacher', page: 2, limit: 25, outcome: 'failed' }));
+  expect((await request(app('admin')).get('/api/admin/operations?actor=teacher&outcome=failed&page=2&routing=unmatched&traffic=probes')).status).toBe(200);
+  expect(service.listOperations).toHaveBeenCalledWith(expect.objectContaining({ actor: 'teacher', page: 2, limit: 25, outcome: 'failed', routing: 'unmatched', traffic: 'probes' }));
   jest.mocked(service.reproduceQuestion).mockResolvedValue({} as never);
   await request(app('admin')).get(`/api/admin/all-questions/${id}/reproduce?versionId=${id}&seed=99`);
   expect(service.reproduceQuestion).toHaveBeenCalledWith(expect.anything(), { versionId: id, seed: 99 });

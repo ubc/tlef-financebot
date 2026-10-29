@@ -8,14 +8,32 @@ import { field, details, outcomeBadge, dateLabel, diagnosticLink, courseLabel, u
 import { attachTutorial } from '../../tutorials.js';
 import { renderModelUsage, renderModelCalls, renderModelCall } from '../../model-usage-ui.js';
 import { tokenCount, usageCoverageLabel, usageCoverageNote } from '../../model-usage-format.js';
+import { requestAnalysis } from './request-analysis.js';
+import { openIpBlocks } from './ip-blocks.js';
 
 type ActivityTab = 'requests' | 'runs' | 'history' | 'usage' | 'workflows';
 type Selection = { kind: 'requests' | 'runs'; id: string };
-type ActivityRow = { id: string; kind: ActivityTab; outcome: string; title: string; subtitle: string; actor: string; course: string; at: string; duration: string; history?: AuditHistoryRecord; call?: ModelCallReceipt; workflow?: WorkflowGroup };
+type ActivityRow = { id: string; kind: ActivityTab; outcome: string; title: string; subtitle: string; actor: string; course: string; at: string; duration: string; probe?: boolean; history?: AuditHistoryRecord; call?: ModelCallReceipt; workflow?: WorkflowGroup };
 const tabLabels: Record<ActivityTab, string> = { requests: 'User operations', runs: 'Background tasks', history: 'Change history', usage: 'Model usage', workflows: 'Workflow timeline' };
 const isTab = (value: string | null): value is ActivityTab => value !== null && Object.prototype.hasOwnProperty.call(tabLabels, value);
 const shortDate = (value: string): string => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const duration = (ms: number): string => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+const unmatched404 = (item: OperationRecord): boolean => item.route === '/unmatched' && item.statusCode === 404;
+const displayedRequestPath = (item: OperationRecord): string => item.request?.originalPath ?? item.request?.recognizedPath?.path ?? item.request?.path ?? item.route;
+const operationTitle = (item: OperationRecord): string => `${item.method} ${item.route === '/unmatched' ? displayedRequestPath(item) : item.route}`;
+const probeLabels = { 'git-metadata': 'Git metadata', 'environment-file': 'Environment file', phpunit: 'PHPUnit', wordpress: 'WordPress', phpmyadmin: 'phpMyAdmin', 'laravel-debug': 'Laravel debug' };
+function identityLabel(item: OperationRecord): string {
+  return item.actor?.displayName || item.actor?.uid || item.actor?.puid ||
+    (item.request?.loginState === 'unauthenticated' ? 'Not signed in' : item.request?.loginState === 'not-evaluated' ? 'Identity not evaluated' : 'Identity not recorded');
+}
+function identityExplanation(item: OperationRecord): string {
+  if (item.actor && item.request?.identity?.wait === 'resolved') return 'The account resolved from the server session after the connection closed. The original interruption outcome and duration are retained.';
+  if (item.actor) return 'The recorded user comes from the authenticated server session.';
+  if (item.request?.identity?.stage === 'failed') return 'The session/account lookup failed. The request cannot establish whether the caller was signed in.';
+  if (item.request?.loginState === 'not-evaluated') return item.request.probe ? 'This known probe path was rejected before login/session processing. No CWL identity was evaluated.' : 'This request ended before authentication was evaluated. No user identity can be inferred.';
+  if (item.request?.loginState === 'unauthenticated') return 'The server evaluated this request without an authenticated user. It may have no login session, or an expired/invalid session. This does not identify the caller or prove an intrusion.';
+  return 'No user identity was retained for this record. Historical records cannot establish whether a session was absent, expired, or unavailable.';
+}
 function download(name: string, content: string, type: string): void {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = el('a', { href: url, download: name });
@@ -64,6 +82,8 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   let course = query.get('courseId') || '';
   let from = query.get('from') || '';
   let until = query.get('until') || '';
+  let routing: NonNullable<DiagnosticFilters['routing']> = query.get('routing') === 'unmatched' ? 'unmatched' : query.get('routing') === 'other' ? 'other' : 'all';
+  let traffic: NonNullable<DiagnosticFilters['traffic']> = query.get('traffic') === 'probes' ? 'probes' : query.get('traffic') === 'other' ? 'other' : 'all';
   const metrics = el('div', { class: 'ac-metrics', 'aria-label': 'Activity summary' });
   const tabs = el('nav', { class: 'ac-tabs', 'aria-label': 'Activity type' });
   const chips = el('div', { class: 'ac-chips' });
@@ -93,6 +113,8 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     if (tab === 'usage' && usageRun) params.set('runId', usageRun);
     if (status.value && (tab === 'requests' || tab === 'runs')) params.set(tab === 'runs' ? 'status' : 'outcome', status.value);
     if (tab === 'requests') params.set('activity', activity.value);
+    if (tab === 'requests' && routing !== 'all') params.set('routing', routing);
+    if (tab === 'requests' && traffic !== 'all') params.set('traffic', traffic);
     if (page > 1) params.set('page', String(page));
     return params;
   }
@@ -125,9 +147,10 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const counts = [total, rows.filter(row => ['failed', 'partial', 'interrupted'].includes(row.outcome)).length,
       rows.filter(row => ['accepted', 'running', 'queued'].includes(row.outcome)).length,
       rows.filter(row => ['succeeded', 'completed'].includes(row.outcome)).length];
+    const rejectedProbes = rows.filter(row => row.probe && ['failed', 'partial', 'interrupted'].includes(row.outcome)).length;
     mount(metrics, ...['Matching records', 'Needs attention', 'Accepted / active', 'Succeeded'].map((label, index) => el('div', { class: 'ac-metric' },
       el('span', { text: label }), el('strong', { text: !loaded || (tab === 'history' && index > 0) ? '—' : counts[index].toLocaleString() }),
-      el('small', { text: index === 0 ? 'Across all matching pages' : tab === 'history' ? 'Outcomes not recorded' : index === 2 ? 'On this page · check task outcome' : 'On this page' }))));
+      el('small', { text: index === 0 ? 'Across all matching pages' : tab === 'history' ? 'Outcomes not recorded' : index === 1 && tab === 'requests' && rejectedProbes ? `On this page · includes ${rejectedProbes} probe request${rejectedProbes === 1 ? '' : 's'}` : index === 2 ? 'On this page · check task outcome' : index === 3 && tab === 'requests' && activity.value === 'actions' ? 'On this page · successful reads excluded' : 'On this page' }))));
   }
   function renderFilters(resetStatus = false): void {
     const selectedStatus = resetStatus ? '' : status.value || query.get(tab === 'runs' ? 'status' : 'outcome') || '';
@@ -142,8 +165,9 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     } })));
   }
   function renderChips(): void {
-    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`, tab === 'usage' && usageOperation && `Request: ${usageOperation}`, tab === 'usage' && usageRun && `Task: ${usageRun}`].filter((value): value is string => typeof value === 'string' && value.length > 0);
-    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = usageOperation = usageRun = ''; return load(1); } }));
+    const values = [actor && `User: ${actor}`, course && `Course: ${course}`, from && `From: ${dateLabel(from)}`, until && `Until: ${dateLabel(until)}`, tab === 'requests' && routing !== 'all' && (routing === 'unmatched' ? 'Unmatched routes (404)' : 'Exclude unmatched 404s'), tab === 'usage' && usageOperation && `Request: ${usageOperation}`, tab === 'usage' && usageRun && `Task: ${usageRun}`].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    if (tab === 'requests' && traffic !== 'all') values.push(traffic === 'probes' ? 'Known probe paths' : 'Exclude known probe paths');
+    mount(chips, ...values.map(text => el('span', { class: 'ac-chip', text })), values.length > 0 && el('button', { class: 'btn btn--ghost', text: 'Clear filters', onclick: () => { actor = course = from = until = usageOperation = usageRun = ''; routing = traffic = 'all'; return load(1); } }));
   }
   function filtersDialog(): void {
     const localValue = (value: string): string => { const date = new Date(value); return value && !Number.isNaN(date.getTime()) ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; };
@@ -153,11 +177,15 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
     const untilInput = el('input', { class: 'input', type: 'datetime-local', value: localValue(until) });
     const operationInput = el('input', { class: 'input', value: usageOperation, maxlength: 128, placeholder: 'Any request' });
     const runInput = el('input', { class: 'input', value: usageRun, maxlength: 128, placeholder: 'Any background task' });
+    const routingInput = el('select', { class: 'input', 'aria-label': 'Routing' }, el('option', { value: 'all', text: 'All requests' }), el('option', { value: 'unmatched', text: 'Unmatched routes (404)' }), el('option', { value: 'other', text: 'Exclude unmatched 404s' }));
+    routingInput.value = routing;
+    const trafficInput = el('select', { class: 'input', 'aria-label': 'Traffic classification' }, el('option', { value: 'all', text: 'All traffic' }), el('option', { value: 'probes', text: 'Known probe paths' }), el('option', { value: 'other', text: 'Exclude known probe paths' }));
+    trafficInput.value = traffic;
     const dialog = el('dialog', { class: 'ac-filter-dialog', 'aria-labelledby': 'ac-filter-title' });
     const validate = (): void => untilInput.setCustomValidity(fromInput.value && untilInput.value && fromInput.value > untilInput.value ? 'End time must be after start time.' : '');
     fromInput.addEventListener('input', validate); untilInput.addEventListener('input', validate);
-    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; if (tab === 'usage') { usageOperation = operationInput.value.trim(); usageRun = runInput.value.trim(); } dialog.close(); return load(1); } },
-      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput), tab === 'usage' && field('Request ID', operationInput), tab === 'usage' && field('Task ID', runInput)),
+    dialog.append(el('form', { onsubmit: (event: Event) => { event.preventDefault(); actor = actorInput.value.trim(); course = courseInput.value.trim(); from = fromInput.value ? new Date(fromInput.value).toISOString() : ''; until = untilInput.value ? new Date(untilInput.value).toISOString() : ''; if (tab === 'requests') { routing = routingInput.value as NonNullable<DiagnosticFilters['routing']>; traffic = trafficInput.value as NonNullable<DiagnosticFilters['traffic']>; } if (tab === 'usage') { usageOperation = operationInput.value.trim(); usageRun = runInput.value.trim(); } dialog.close(); return load(1); } },
+      el('h2', { id: 'ac-filter-title', text: 'Filter activity' }), el('div', { class: 'ac-filter-fields' }, field('User PUID', actorInput), field('Course ID', courseInput), field('From (local time)', fromInput), field('Until (local time)', untilInput), tab === 'requests' && field('Routing', routingInput), tab === 'requests' && field('Traffic classification', trafficInput), tab === 'usage' && field('Request ID', operationInput), tab === 'usage' && field('Task ID', runInput)),
       el('div', { class: 'ac-actions' }, el('button', { type: 'button', class: 'btn btn--secondary', text: 'Cancel', onclick: () => dialog.close() }), el('button', { class: 'btn btn--primary', type: 'submit', text: 'Apply filters' }))));
     dialog.addEventListener('close', () => dialog.remove()); root.append(dialog); dialog.showModal();
   }
@@ -215,7 +243,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
       return;
     }
     const filters: DiagnosticFilters = { page, limit: 25, q: search.value.trim(), actor, courseId: course, from, until,
-      ...(tab === 'runs' ? { status: status.value } : tab === 'requests' ? { outcome: status.value, activity: activity.value as 'all' | 'actions' } : {}) };
+      ...(tab === 'runs' ? { status: status.value } : tab === 'requests' ? { outcome: status.value, activity: activity.value as 'all' | 'actions', routing, traffic } : {}) };
     try {
       let data: DiagnosticPage<OperationRecord> | DiagnosticPage<DiagnosticRun> | DiagnosticPage<AuditHistoryRecord> | DiagnosticPage<ModelCallReceipt> | WorkflowPage;
       let nextRows: ActivityRow[];
@@ -237,7 +265,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
         nextRows = result.items.map(item => ({ id: item._id, kind: 'history', outcome: 'recorded', title: item.action, subtitle: `${item.targetType} · ${item.targetId}`, actor: userLabel(item.actorPuid, result), course: courseLabel(item.courseId, result), at: item.createdAt, duration: '—', history: item }));
       } else {
         const result = await listAdminOperations(filters); data = result;
-        nextRows = result.items.map(item => ({ id: item.requestId, kind: 'requests', outcome: item.outcome, title: `${item.method} ${item.route}`, subtitle: item.response.error ? String(item.response.error) : item.requestId, actor: item.actor?.displayName || item.actor?.uid || 'Identity unavailable', course: courseLabel(item.targets.courseId, result), at: item.createdAt, duration: duration(item.durationMs) }));
+        nextRows = result.items.map(item => ({ id: item.requestId, kind: 'requests', outcome: item.outcome, title: operationTitle(item), probe: Boolean(item.request?.probe), subtitle: item.request?.probe ? `Known probe path: ${probeLabels[item.request.probe.kind]} · HTTP ${item.statusCode}` : unmatched404(item) ? `Unmatched route · HTTP 404${item.request ? '' : ' · original path unavailable'}` : item.response.error ? String(item.response.error) : item.requestId, actor: identityLabel(item), course: courseLabel(item.targets.courseId, result), at: item.createdAt, duration: duration(item.durationMs) }));
       }
       if (own !== revision || !root.isConnected) return;
       rows = nextRows; total = data.total;
@@ -334,17 +362,28 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   }
   function showRequest(operation: OperationRecord, runs: DiagnosticRun[], usageData: { modelUsage?: ModelUsageSummary; modelCalls?: ModelCallReceipt[]; modelCallsTotal?: number }): void {
     evidenceTabs([
-      ['Overview', () => el('div', {}, outcomeBadge(operation.outcome), el('h3', { text: `${operation.method} ${operation.route}` }),
-        operation.response.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: 'Operation failed' }), el('p', { text: String(operation.response.error) })) : false,
-        operation.outcome === 'interrupted' && el('div', { class: 'ac-callout ac-callout--warning', text: 'The connection ended before completion was confirmed. This action may already have changed data. Check its linked task or resource before retrying.' }),
+      ['Overview', () => el('div', {}, outcomeBadge(operation.outcome), el('h3', { text: operationTitle(operation) }),
+        operation.request?.probe ? el('div', { class: 'ac-callout ac-callout--warning' }, el('strong', { text: `Known probe path: ${probeLabels[operation.request.probe.kind]}` }), el('p', { text: `This path targets software or files outside the Financebot API. This request returned HTTP ${operation.statusCode}. The path pattern does not identify the sender or establish a successful intrusion.` }), el('p', { text: operation.request.probe.evidence === 'retained-path-hash' ? 'Recognized by comparing the retained digest with a fixed public probe path. The original record and missing identity remain unchanged.' : operation.response.failureCategory === 'probe-rejected' ? 'Recognized from a fixed path signature and rejected before body parsing and login/session processing.' : 'Recognized from a fixed path signature. Check the recorded outcome and failure category for how this request ended.' })) : unmatched404(operation) ? el('div', { class: 'ac-callout ac-callout--warning' }, el('strong', { text: 'Unmatched route · HTTP 404' }), el('p', { text: 'No API route matched this request. This may be an outdated client, a misconfigured check or an automated probe; the record does not establish its source.' }), el('p', { text: operation.request ? operation.request.originalPath !== undefined ? 'The received request path is retained below without query strings or fragments. Use its request ID and timestamp to correlate proxy logs.' : operation.request.recognizedPath ? 'The historical path is recognized by an exact digest match to a fixed public path. This does not identify its caller.' : 'Use the request ID and timestamp to correlate proxy access logs. Search the path hash to find repeated requests. Path segments outside the public route vocabulary are masked.' : 'The original path was not retained for this historical record. Check proxy access logs at the recorded time.' })) : operation.response.error ? el('div', { class: 'ac-callout ac-callout--danger' }, el('strong', { text: 'Operation failed' }), el('p', { text: String(operation.response.error) })) : false,
+        operation.outcome === 'interrupted' && el('div', { class: 'ac-callout ac-callout--warning', text: ['GET', 'HEAD'].includes(operation.method) ? 'The read or transfer ended before completion was confirmed. Navigation, a replaced preview, a proxy timeout or a network disconnect can cause this. HTTP 499 is the recorded interruption status; it does not establish an attack.' : 'The connection ended before completion was confirmed. This action may already have changed data. Check its linked task or resource before retrying.' }),
         operation.outcome === 'accepted' && el('div', { class: 'ac-callout', text: 'The request was accepted. Check associated background work for its final outcome.' }),
-        properties([['User', operation.actor?.displayName || 'Identity unavailable'], ['PUID', operation.actor?.puid || 'Not recorded'], ['Recorded', dateLabel(operation.createdAt)], ['Response', operation.method === 'CLIENT' ? 'Browser report (unverified)' : `HTTP ${operation.statusCode}`], ['Duration', duration(operation.durationMs)]]),
+        properties([['User', identityLabel(operation)], ['PUID', operation.actor?.puid || 'Not recorded'], ['Recorded', dateLabel(operation.createdAt)], ['Response', operation.method === 'CLIENT' ? 'Browser report (unverified)' : `HTTP ${operation.statusCode}`], ['Duration', duration(operation.durationMs)]]),
+        el('p', { class: 'ac-note', text: identityExplanation(operation) }),
+        requestAnalysis(operation),
+        operation.request?.network ? el('div', { class: 'ac-callout' }, el('h3', { text: 'Network source' }), properties([['Source IP', operation.request.network.clientIp || 'Unavailable'], ['Connection peer IP', operation.request.network.peerIp || 'Unavailable'], ['IP resolution', operation.request.network.source]]), el('p', { class: 'ac-note', text: operation.request.network.source === 'trusted-proxy' ? 'Resolved through the configured trusted proxy chain. A shared address may represent multiple users.' : operation.request.network.source === 'untrusted-forwarding' ? 'The forwarding header was ignored because its immediate peer was not trusted. This is the direct connection address.' : 'Taken from the direct connection. An address does not identify a person.' }), operation.request.network.clientIp ? el('div', { class: 'ac-actions' }, diagnosticLink('Search this IP', `#/admin/operations?tab=requests&activity=all&q=${encodeURIComponent(operation.request.network.clientIp)}`), el('button', { class: 'btn btn--secondary', type: 'button', text: 'Manage this IP', onclick: () => openIpBlocks(operation.request!.network!.clientIp) })) : false) : el('p', { class: 'ac-note', text: 'Source IP was not retained for this historical record. A pseudonymous group cannot restore the original address.' }),
+        operation.request ? properties([[operation.request.originalPath !== undefined ? 'Request path (query excluded)' : operation.request.recognizedPath ? 'Recognized historical path (hash match)' : 'Request path (sanitized)', displayedRequestPath(operation)], ['Route matched', operation.request.routeMatched ? 'Yes' : operation.request.routeState === 'not-evaluated' ? 'Not evaluated before request ended' : operation.request.routeState === 'probe-rejected' ? 'Probe rejected before routing' : operation.outcome === 'interrupted' && !operation.request.routeState ? 'Not confirmed before disconnect' : 'No'], ['Path hash (SHA-256)', operation.request.pathHash], ['Client category (unverified)', operation.request.client], ['Fetch site (unverified)', operation.request.fetchSite], ['Path truncated', operation.request.originalPath !== undefined ? operation.request.originalPathTruncated ? 'Yes — original path limited to 4,096 characters' : 'No — received path retained' : operation.request.pathTruncated ? 'Yes — display or hash input was bounded' : 'No']]) : false,
+        operation.request?.recognizedPath && operation.request.originalPath === undefined ? el('p', { class: 'ac-note', text: 'The retained SHA-256 digest exactly matches this fixed public path. The historical record has not been rewritten; no sender identity is inferred.' }) : false,
+        unmatched404(operation) && operation.request?.pathRedacted && operation.request.originalPath === undefined && !operation.request.recognizedPath ? el('p', { class: 'ac-note', text: 'The original path was not retained for this historical record. Its masked segments cannot be unhidden from the stored shape.' }) : false,
+        operation.request?.proxy ? properties([['Forwarded header present', operation.request.proxy.forwarded ? 'Yes' : 'No'], ['Immediate proxy peer trusted', operation.request.proxy.trustedPeer ? 'Yes' : 'No']]) : false,
+        operation.request?.responseStarted !== undefined ? properties([['Response started', operation.request.responseStarted ? 'Yes' : 'No'], ['Range requested', operation.request.rangeRequested ? 'Yes' : 'No']]) : false,
+        operation.request?.webClient !== undefined ? properties([['Financebot client marker (unverified)', operation.request.webClient ? 'Present' : 'Absent']]) : false,
+        operation.request?.fingerprints ? el('div', {}, properties([['Fingerprint day (UTC)', operation.request.fingerprints.day], ['Connection peer group', operation.request.fingerprints.peer || 'Unavailable'], ['User-agent group (unverified)', operation.request.fingerprints.agent || 'Unavailable'], ['Resolved client group (trusted proxy)', operation.request.fingerprints.client || 'Unavailable']]), el('p', { class: 'ac-note', text: 'Search a group to compare requests on this UTC day. A connection peer may be a shared proxy; a resolved client address may represent shared NAT. User-agent strings can be shared or forged. Matching groups do not prove the same caller. Historical groups cannot restore missing addresses.' })) : false,
         el('p', { class: 'mono', text: `Request ID: ${operation.requestId}` }), el('h3', { text: 'Related resources' }),
         el('div', { class: 'ac-actions' }, operation.targets.courseId ? diagnosticLink('Open course', `#/instructor/course/${operation.targets.courseId}`) : false,
           operation.targets.questionId ? diagnosticLink('Reproduce question', `#/admin/questions/${operation.targets.questionId}`) : false,
+          typeof operation.response.relatedRequestId === 'string' && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(operation.response.relatedRequestId) ? diagnosticLink('Related server request (browser-reported)', `#/admin/operations/requests/${operation.response.relatedRequestId}`) : false,
           operation.actor ? diagnosticLink('All user activity', `#/admin/operations?actor=${encodeURIComponent(operation.actor.puid)}`) : false),
         el('h3', { text: 'Associated background work' }), ...runs.map(run => el('a', { class: 'ac-linked', href: `#/admin/operations/runs/${run._id}`, onclick: (event: MouseEvent) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) { event.preventDefault(); void inspect({ kind: 'runs', id: run._id }); } } }, el('span', {}, run.kind.replace(/-/g, ' '), el('small', { text: run.stage })), outcomeBadge(run.status))), !runs.length && el('p', { class: 'ac-note', text: 'No linked background task recorded.' }))],
-      ['Input & response', () => el('div', {}, details('Targets', operation.targets), details('Recorded input controls', operation.input), details('Outcome and validation details', operation.response), el('p', { class: 'ac-note', text: 'Passwords, tokens, request bodies, uploaded documents and student answers are not copied into request logs. Linked tasks and question versions retain content evidence.' }))],
+      ['Input & response', () => el('div', {}, details('Request diagnostics', operation.request), details('Targets', operation.targets), details('Recorded input controls', operation.input), details('Outcome and validation details', operation.response), el('p', { class: 'ac-note', text: 'New unmatched 404s and IP-blocked calls retain the received path for this Admin view, excluding queries and fragments. New records retain resolved source and connection IP addresses. Other path shapes stay sanitized. Raw headers, session credentials, request bodies, uploaded documents and student answers are not copied into request diagnostics. Browser hints remain unverified.' }))],
       ['Model usage', () => usageSection(usageData, () => getAdminOperation(operation.requestId), runs.map(run => run._id))],
     ]);
   }
@@ -365,7 +404,7 @@ async function renderWorkspace(outlet: HTMLElement, initialSelection?: Selection
   root.addEventListener('keydown', event => { if (event.key === 'Escape' && !root.querySelector('dialog[open]') && !panel.hidden) { event.preventDefault(); closePanel(); } });
   renderFilters(); renderMetrics(false);
   mount(root, el('header', { class: 'ac-header' }, el('div', {}, el('h1', { text: 'Operations & Issues' }), el('p', { text: 'Trace user activity, inspect failures and follow background work.' })),
-    el('div', { class: 'ac-actions' }, el('button', { class: 'btn btn--secondary', text: 'Audit health', onclick: healthDialog }), exportButton)), metrics,
+    el('div', { class: 'ac-actions' }, el('button', { class: 'btn btn--secondary', text: 'IP access rules', onclick: () => openIpBlocks() }), el('button', { class: 'btn btn--secondary', text: 'Audit health', onclick: healthDialog }), exportButton)), metrics,
     el('div', { class: 'ac-workspace' }, el('section', { class: 'ac-main', 'aria-label': 'Activity workspace' }, tabs,
       el('form', { class: 'ac-toolbar', role: 'search', onsubmit: (event: Event) => { event.preventDefault(); window.clearTimeout(searchTimer); return load(1); } }, search, status, activity, el('button', { class: 'btn btn--secondary', type: 'button', text: 'Filters', onclick: filtersDialog }), el('button', { class: 'btn btn--ghost', type: 'submit', text: 'Refresh' })), chips, usageOverview, tableRegion, footer)), announcement, panel);
   mount(outlet, root);

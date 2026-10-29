@@ -7,6 +7,10 @@ import { examBuilderRouter } from './routes/exam-builder.routes';
 import { assessmentPreviewRouter } from './routes/assessment-preview.routes';
 import { clientDiagnosticsRouter } from './routes/client-diagnostics.routes';
 import { operationAudit } from './middleware/operation-audit';
+import { rejectApiProbe } from './middleware/reject-api-probe';
+import { traceAuthentication } from './middleware/request-identity';
+import { enforceIpBlock } from './middleware/ip-block';
+import { ipBlocksRouter } from './routes/ip-blocks.routes';
 import { adminDiagnosticsRouter } from './routes/admin-diagnostics.routes';
 import { selfCapabilitiesRouter } from './routes/capabilities.routes';
 import path from 'node:path';
@@ -14,7 +18,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { isProduction } from './config/env';
+import { env, isProduction } from './config/env';
 import { healthRouter } from './routes/health.routes';
 import { notesRouter } from './routes/notes.routes';
 import { ragRouter } from './routes/rag.routes';
@@ -56,6 +60,7 @@ const CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../client/public');
  */
 export function createApp(): Express {
   const app = express();
+  app.set('trust proxy', env.trustedProxyCidrs.length ? env.trustedProxyCidrs : false);
   app.use('/api', operationAudit);
 
   app.use(
@@ -71,6 +76,8 @@ export function createApp(): Express {
     rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: true, legacyHeaders: false }),
   );
 
+  app.use('/api', enforceIpBlock);
+  app.use('/api', rejectApiProbe);
   app.use(cors());
   app.use(express.json());
   // The SAML callback is posted as form-urlencoded, so parse that too.
@@ -78,9 +85,9 @@ export function createApp(): Express {
 
   // Sessions + passport. Order matters: session -> initialize -> session.
   const { passport, sessionMiddleware } = configureAuth();
-  app.use(sessionMiddleware);
+  app.use(traceAuthentication('session-loading', sessionMiddleware));
   app.use(passport.initialize());
-  app.use(passport.session());
+  app.use(traceAuthentication('user-loading', passport.session()));
 
   // API routes are mounted under /api. Add new routers here as features grow.
   app.use('/api', healthRouter); // public (used by the pre-login landing screen).
@@ -106,6 +113,7 @@ export function createApp(): Express {
   app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
   app.use('/api', clientDiagnosticsRouter);
   app.use('/api', adminDiagnosticsRouter);
+  app.use('/api', ipBlocksRouter);
   app.use('/api', adminRouter); // Platform Admin account provisioning (Admin Console v0).
   app.use('/api', previewRouter); // Instructor-only student preview with isolated preview records.
   app.use('/api', examBuilderRouter);

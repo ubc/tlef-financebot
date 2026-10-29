@@ -1,4 +1,5 @@
-import { reportClientFailure } from './diagnostics.js';
+import { reportClientFailure, setDiagnosticsAuthenticated } from './diagnostics.js';
+import { addRequestSource, nativeRequestSource, type RequestTrigger } from './request-source.js';
 // Typed client for the backend API. One function per endpoint, so the UI code
 // (views/*) never builds URLs or parses responses by hand. Keep the response
 // types in sync with the server (see server/src/routes and services).
@@ -28,14 +29,22 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   return data?.error ?? fallback;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { diagnosticTrigger?: RequestTrigger }): Promise<T> {
   let response: Response;
-  try { response = await fetch(path, init); }
+  const { diagnosticTrigger, ...options } = init ?? {};
+  const headers = new Headers(options.headers);
+  headers.set('X-Financebot-Client', 'web-v1');
+  addRequestSource(headers, diagnosticTrigger);
+  try { response = await fetch(path, { ...options, headers }); }
   catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.');
+    if (!(error instanceof DOMException && error.name === 'AbortError')) reportClientFailure('network', 'An API request could not reach the server.', { endpoint: path });
     throw error;
   }
   if (!response.ok) {
+    const requestId = response.headers.get('X-Request-ID');
+    if (response.status === 401) setDiagnosticsAuthenticated(false);
+    else reportClientFailure('http', `An API request returned HTTP ${response.status}.`, { endpoint: path, statusCode: response.status,
+      ...(requestId && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId) ? { relatedRequestId: requestId } : {}) });
     const message = await errorMessage(response, `Request to ${path} failed (${response.status}).`);
     if (response.status === 401) onUnauthorized?.();
     throw new ApiError(message, response.status, response.headers.get('X-Request-ID') ?? undefined);
@@ -43,7 +52,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 204 No Content (e.g. the skip/bookmark-delete endpoints) has no body to
   // parse; callers of those endpoints declare Promise<void> and never read it.
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  try { return (await response.json()) as T; }
+  catch (error) {
+    const requestId = response.headers.get('X-Request-ID');
+    reportClientFailure('response', 'An API response was not valid JSON.', { endpoint: path, statusCode: response.status,
+      ...(requestId && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId) ? { relatedRequestId: requestId } : {}) });
+    throw error;
+  }
 }
 
 export { request as apiRequest };
@@ -89,6 +104,7 @@ export interface AuthState {
 export async function getAuthState(): Promise<AuthState> {
   const res = await request<{ authenticated: boolean; user?: AuthUser }>('/api/auth/me');
   const user = res.user ?? null;
+  setDiagnosticsAuthenticated(res.authenticated && Boolean(user));
   return { authenticated: res.authenticated, user, roles: user?.affiliations ?? [] };
 }
 
@@ -1970,7 +1986,7 @@ export function subscribeContentRuns(
     onError?: () => void;
   },
 ): () => void {
-  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/content-runs/events`);
+  const source = new EventSource(nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/content-runs/events`, 'event-stream'));
   source.addEventListener('snapshot', (event) => {
     const data = JSON.parse((event as MessageEvent<string>).data) as { runs: ContentRunSummary[] };
     handlers.onSnapshot(data.runs);
@@ -2004,8 +2020,8 @@ export function getMaterialWorkspaceDetail(courseId: string, materialId: string)
   );
 }
 
-export function materialSourceUrl(courseId: string, materialId: string): string {
-  return `/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`;
+export function materialSourceUrl(courseId: string, materialId: string, channel: 'embedded-preview' | 'source-link' = 'source-link'): string {
+  return nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`, channel);
 }
 
 export function listTrashedMaterials(courseId: string): Promise<Material[]> {
@@ -3270,9 +3286,9 @@ export interface AppNotification {
 }
 
 /** GET /api/notifications?unreadOnly= -> newest-first, limit 50. Bell poll target. */
-export function listNotifications(unreadOnly?: boolean): Promise<AppNotification[]> {
+export function listNotifications(unreadOnly?: boolean, trigger: RequestTrigger = 'api-call'): Promise<AppNotification[]> {
   const qs = unreadOnly ? '?unreadOnly=true' : '';
-  return request<AppNotification[]>(`/api/notifications${qs}`);
+  return request<AppNotification[]>(`/api/notifications${qs}`, { diagnosticTrigger: trigger });
 }
 
 /** POST /api/notifications/:id/read -> the updated notification. */
@@ -3351,6 +3367,8 @@ export function getAnalyticsExamScores(courseId: string, filter: { from?: string
 
 // Platform diagnostics (Admin only).
 export interface DiagnosticFilters {
+  routing?: 'all' | 'unmatched' | 'other';
+  traffic?: 'all' | 'probes' | 'other';
   page?: number; limit?: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
   outcome?: string; status?: string; state?: string; from?: string; until?: string; requestId?: string;
 }
@@ -3364,11 +3382,42 @@ export interface DiagnosticPage<T> extends DiagnosticIdentities {
 }
 export interface OperationRecord {
   _id: string; requestId: string; createdAt: string; durationMs: number; method: string; route: string;
+  request?: { path: string; pathHash: string; pathRedacted: boolean; pathTruncated: boolean; routeMatched: boolean;
+    originalPath?: string; originalPathTruncated?: boolean; recognizedPath?: { path: string; evidence: 'retained-path-hash' };
+    network?: { clientIp?: string; peerIp?: string; source: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable' };
+    routeState?: 'matched' | 'unmatched' | 'not-evaluated' | 'probe-rejected';
+    proxy?: { forwarded: boolean; trustedPeer: boolean }; responseStarted?: boolean; rangeRequested?: boolean;
+    session?: { credential: 'absent' | 'signed' | 'invalid' | 'ambiguous'; group?: string };
+    identity?: { stage: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+      stageAtEnd?: 'not-started' | 'session-loading' | 'user-loading' | 'complete' | 'failed';
+      sessionLookup?: 'restored' | 'not-restored' | 'no-valid-credential'; failedDuring?: 'session-loading' | 'user-loading';
+      sessionAccountPuid?: string; wait?: 'resolved' | 'timed-out' | 'capacity-limited' };
+    source?: { page?: string; callsite?: string; trigger?: string; channel?: 'fetch' | 'embedded-preview' | 'source-link' | 'event-stream' };
+    client: 'absent' | 'edge' | 'firefox' | 'chrome' | 'safari' | 'curl' | 'wget' | 'python' | 'other';
+    fetchSite: 'same-origin' | 'same-site' | 'cross-site' | 'none' | 'unavailable';
+    loginState?: 'authenticated' | 'unauthenticated' | 'not-evaluated'; webClient?: boolean;
+    probe?: { kind: 'git-metadata' | 'environment-file' | 'phpunit' | 'wordpress' | 'phpmyadmin' | 'laravel-debug'; evidence: 'path-signature' | 'retained-path-hash' };
+    fingerprints?: { day: string; peer?: string; agent?: string; client?: string } };
   outcome: 'succeeded' | 'accepted' | 'failed' | 'interrupted' | 'partial'; statusCode: number;
   actor?: { puid: string; uid: string; displayName: string };
   targets: Record<string, string>; input: Record<string, unknown>; response: Record<string, unknown>;
 }
 export type DiagnosticRun = ContentRunSnapshot & { operationId?: string };
+export interface IpBlockRecord {
+  ip: string; blocked: boolean; revision: number; reason: string; updatedAt: string; updatedByPuid: string; updatedByName: string;
+  history: Array<{ blocked: boolean; at: string; actorPuid: string; actorName: string; reason: string }>;
+}
+export interface IpBlockPage {
+  items: IpBlockRecord[]; total: number; page: number; limit: number; refreshSeconds: number;
+  currentIp: string | null; addressSource: 'trusted-proxy' | 'direct-peer' | 'untrusted-forwarding' | 'unavailable';
+}
+export function listIpBlocks(page = 1, ip?: string): Promise<IpBlockPage> {
+  const query = new URLSearchParams({ page: String(page) }); if (ip) query.set('ip', ip);
+  return request(`/api/admin/ip-blocks?${query}`);
+}
+export function setIpBlock(input: { ip: string; blocked: boolean; reason: string; expectedRevision?: number }): Promise<IpBlockRecord> {
+  return request('/api/admin/ip-blocks', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+}
 export interface AuditHistoryRecord { _id: string; actorPuid: string; action: string; targetType: string; targetId: string; courseId?: string; createdAt: string; detail?: Record<string, unknown> }
 export interface AdminQuestionRow {
   _id: string; courseId: string; state: PublicationState; currentVersion: number; currentVersionId: string;
@@ -3520,7 +3569,7 @@ export function closePreviewAssessmentWindow(courseId: string, previewSessionId:
 export function subscribeExamBuilder(courseId: string, examId: string, handlers: {
   onSnapshot: (detail: BuilderDetail) => void; onConnection: (connected: boolean) => void; onUnavailable?: () => void;
 }): () => void {
-  const source = new EventSource(`/api/courses/${encodeURIComponent(courseId)}/exam-builder/${encodeURIComponent(examId)}/events`);
+  const source = new EventSource(nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/exam-builder/${encodeURIComponent(examId)}/events`, 'event-stream'));
   source.addEventListener('snapshot', event => {
     try {
       const detail = JSON.parse((event as MessageEvent<string>).data) as BuilderDetail;
