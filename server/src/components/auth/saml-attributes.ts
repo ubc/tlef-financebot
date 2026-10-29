@@ -8,7 +8,7 @@
  *   - the real UBC IdP sends an OID:                    `urn:oid:1.3.6.1.4.1.60.6.1.6`
  *   - ...or a MACE URN:                                 `urn:mace:dir:attribute-def:ubcEduCwlPuid`
  *
- * `passport-saml` keys the profile by whatever `Name` the assertion carried (it
+ * `@node-saml` keys the profile by whatever `Name` the assertion carried (it
  * never looks at `FriendlyName`), and `passport-ubcshib` then maps a handful of
  * those to friendly names in `profile.attributes`. Its table has gaps we hit in
  * practice, so a released attribute can arrive and still be dropped:
@@ -79,7 +79,7 @@ const NON_ATTRIBUTE_KEYS = new Set([
   'ID',
   'inResponseTo',
   'attributes',
-  // passport-saml derives `email` from `mail`; listing both is just noise.
+  // @node-saml derives `email` from `mail`; listing both is just noise.
   'email',
 ]);
 
@@ -94,7 +94,7 @@ function hasValue(value: unknown): boolean {
 }
 
 /**
- * The assertion `Name`s present on a profile, in the order passport-saml added
+ * The assertion `Name`s present on a profile, in the order @node-saml added
  * them. Names only — the values are personal data (see `describeSamlAttributes`).
  */
 export function rawSamlAttributeNames(profile: Record<string, unknown>): string[] {
