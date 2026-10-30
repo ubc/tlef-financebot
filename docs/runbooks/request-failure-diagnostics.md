@@ -2,6 +2,27 @@
 
 ## Start with the deployed code
 
+### SAML private-key format after the dependency upgrade
+
+`privateKey is neither valid PEM nor a valid Base64 private key: Invalid PEM format`
+on `/auth/ubcshib` occurs while preparing the signed login request. A valid key
+with OpenSSL bag annotations reproduces this error under the new parser even
+though Node crypto accepts it; the error alone does not establish the exact
+contents of the staging file. The application now parses the configured key
+with Node and exports that same key as standard PKCS#8 PEM before constructing
+the wrapper. The original configured file and registered public identity stay
+unchanged. The wrapper's filename-only API uses a restricted temporary file,
+removed immediately after its synchronous reads, including constructor failures.
+Hard-kill cleanup remains an OS responsibility. Missing files fail with safe
+guidance. Unsupported, ambiguous or encrypted input is not rewritten: a fixed
+warning retains the library's existing validation, including its base64 support.
+It does not convert a malformed key into a valid one or skip signature checks.
+Do not disable signatures or generate a replacement SP identity to fix formatting.
+Synthetic tests verify unchanged public identity, file permissions/cleanup and
+an actual signed redirect, not a completed real IdP login.
+
+### Release check
+
 Confirm the staging deployment includes the diagnostics commit, then hard-refresh
 the browser to load its compiled client. A Git push alone does not establish that
 the running process was replaced. Historical records cannot gain a missing path,

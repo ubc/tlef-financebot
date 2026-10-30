@@ -36,6 +36,18 @@ Two one-time local setup steps are required (documented in the root README):
 
 ## Files
 
+- `private-key.ts` validates the configured SP key with Node crypto and exports
+  the same key as PKCS#8 PEM for the stricter @node-saml parser. This accepts
+  valid PEM with OpenSSL bag annotations without modifying the original file.
+  The filename-only wrapper reads a temporary 0600 file in a 0700 directory
+  synchronously; construction success/failure immediately removes it. A hard
+  process kill during construction can leave the restricted temporary directory
+  until OS cleanup. Unsupported, ambiguous or encrypted input is not rewritten:
+  a fixed warning retains the library's original key validation (including its
+  base64 support), avoiding new startup failures for an unconfirmed format.
+  LOCAL without a configured key retains its no-key behavior.
+  This does not change certificate validation, SAML attributes or session policy.
+
 - `session.ts` — `createSessionMiddleware()`. express-session backed by
   `connect-mongo`, reusing the mongodb component's client via `getMongoClient()`
   (so `connectMongo()` must run first — it does, in `server.ts`).

@@ -5,6 +5,7 @@ import { Strategy as UBCShibStrategy } from 'passport-ubcshib';
 import { env } from '../../../config/env';
 import { upsertUserFromSaml } from '../../../services/users.service';
 import { describeSamlAttributes, resolveSamlAttributes } from '../saml-attributes';
+import { withPrivateKeyPath } from '../private-key';
 
 /**
  * The authenticated user we store in the session. In this boilerplate we keep
@@ -135,7 +136,7 @@ function logSamlAttributes(
 
 /** Register the "ubcshib" strategy on the shared passport instance. */
 export function registerShibbolethStrategy(): void {
-  const strategy = new UBCShibStrategy(
+  const strategy = withPrivateKeyPath(env.samlPrivateKeyPath || undefined, privateKeyPath => new UBCShibStrategy(
     {
       issuer: env.samlIssuer,
       callbackUrl: env.samlCallbackUrl,
@@ -151,7 +152,7 @@ export function registerShibbolethStrategy(): void {
       // the real UBC IdP encrypts assertions and may require signed requests.
       // Blank for LOCAL, where the docker-simple-saml IdP does neither. Pass
       // undefined (not '') so the library's "no key" path is taken when unset.
-      privateKeyPath: env.samlPrivateKeyPath || undefined,
+      privateKeyPath,
       attributeConfig: ATTRIBUTES,
       // The local IdP does not sign our AuthnRequests or use SLO, and skipping
       // InResponseTo validation avoids a request-cache dependency in dev.
@@ -176,7 +177,7 @@ export function registerShibbolethStrategy(): void {
         .then((user) => done(null, { nameId: profile.nameID, puid: user.puid, attributes }))
         .catch((err) => done(err as Error));
     },
-  );
+  ));
 
   passport.use(strategy);
 }
