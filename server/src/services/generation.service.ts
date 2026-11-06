@@ -17,6 +17,8 @@ export {
   HARDNESS_MOVE_ASSIGNMENT, GENERATOR_PROMPT,
 } from './question-generation/generator-prompt';
 export { MAX_SECONDARY_LOS } from './question-generation/grounding';
+import { REVIEW_VERDICT_POLICY } from './question-generation/checker-prompt';
+export { REVIEW_VERDICT_POLICY };
 import { assertGenerationReviewRepairProtocol, reviewRepairReceiptMatches } from './generation-review-repair';
 import { assertGenerationExclusionReviewProtocol, exclusionReviewReceiptMatches } from './generation-exclusion-review';
 import { withModelCallContext } from '../components/genai/llm/model-call';
@@ -2241,38 +2243,6 @@ export function VALIDATOR_PROMPT(params: {
       : '{ "roleAssessment": string }  // one concise paragraph covering each option by key',
   ].join('\n');
 }
-
-/**
- * What a verdict is FOR (Saurav, 2026-08-22). Reject is reserved for faults an
- * instructor cannot fix with one edit: wrong facts, a wrong answer key, an
- * unservable question, or a question that tests a different objective — the
- * last stays a reject because mastery is attributed per LO and the review
- * queue bulk-approves flags. Everything that is one field in the editor is a
- * flag: a difficulty label (with the earned label named, since the persisted
- * difficulty is the instructor's target and the generator's honest label is
- * otherwise lost), a role label, an instructor preset not followed. Exported
- * by name so the A/B harness can strip it for a control arm.
- */
-export const REVIEW_VERDICT_POLICY: string = [
-  'VERDICT POLICY. "reject" is reserved for what the instructor cannot fix with one',
-  'edit: a factual error, a wrong answer key, a question the verifier cannot serve,',
-  'or a question that tests a DIFFERENT learning objective than the one named (it',
-  'would credit mastery of the wrong objective, and flags can be bulk-approved).',
-  'Everything that is one field in the question editor is a "flag", never a reject:',
-  '  - the DIFFICULTY label does not match the demand: flag, and set',
-  '    "suggestedDifficulty" to the label the question actually earns;',
-  '  - an option ROLE is mislabeled: flag, naming the swap;',
-  '  - the instructor\'s preset or instruction was not followed (a concept check',
-  '    where a calculation was asked for, or the reverse) while the question still',
-  '    tests the objective soundly: flag, saying what was asked and what was made.',
-  'Do not reject a usable question for being a different kind or level than',
-  'requested — "kind" here means conceptual vs. calculation, NOT the declared question',
-  'TYPE: a true/false question whose options are not "True" and "False", or a',
-  'multiple-choice question without four options, violates its type contract and',
-  'is a reject (measured 2026-08-22: a numeric two-option true/false was flagged as',
-  '"a different kind than requested"). Do reject a question that is wrong or answers',
-  'a different objective, however well-made.',
-].join('\n');
 
 export function REVIEWER_PROMPT(params: {
   loName: string;

@@ -392,6 +392,8 @@ export interface Question {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    /** Concrete one-edit fixes from the checker (absent on questions checked before 2026-11). */
+    suggestions?: string[];
     /** The reviewer's honest label when it flags a difficulty mismatch. The
      * persisted `difficulty` is the instructor's TARGET (input wins over the
      * generator's self-label), so this is the only place the reviewer's
