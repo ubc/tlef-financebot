@@ -1,11 +1,14 @@
-jest.mock('../../server/src/components/mongodb/collections', () => ({ contentRunsCol: jest.fn() }));
+jest.mock('../../server/src/services/source-readiness.service', () => ({ getMaterialSourceReadiness: jest.fn() }));
+jest.mock('../../server/src/components/mongodb/collections', () => ({ contentRunsCol: jest.fn(), materialsCol: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ hasPendingJob: jest.fn() }));
 
 import { ObjectId, type WithId } from 'mongodb';
-import { contentRunsCol } from '../../server/src/components/mongodb/collections';
+import { contentRunsCol, materialsCol } from '../../server/src/components/mongodb/collections';
+import { getMaterialSourceReadiness } from '../../server/src/services/source-readiness.service';
 import { hasPendingJob } from '../../server/src/components/jobs';
 import {
   assertContentRunActive,
+  claimStructureGenerationRun,
   createMaterialIngestRun,
   createStructureGenerationRun,
   createQuestionGenerationRun,
@@ -80,6 +83,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(contentRunsCol).mockReturnValue({ insertOne, findOne, findOneAndUpdate, find } as never);
   jest.mocked(hasPendingJob).mockResolvedValue(true);
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue(null), updateOne: jest.fn(), updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }) } as never);
 });
 
 function materialRun(overrides: Partial<WithId<ContentRun>> = {}): WithId<ContentRun> {
@@ -117,6 +121,119 @@ describe('content run creation', () => {
     expect(pilot.input.qualityPolicy).toBe('grounded-memory-v1');
     expect(await getContentRun(pilot._id)).toMatchObject({ input: { qualityPolicy: 'grounded-memory-v1' } });
   });
+  it('pins provenance-aware evidence without upgrading historical quality-policy-only records', async () => {
+    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+    const legacy = await createQuestionGenerationRun(input);
+    const current = await createQuestionGenerationRun({ ...input, sourceProvenance: 'pdf-pages-v1' });
+    expect(legacy.input).not.toHaveProperty('sourceProvenance');
+    expect(await getContentRun(current._id)).toMatchObject({ input: { sourceProvenance: 'pdf-pages-v1' } });
+    expect(await getContentRun(legacy._id)).toMatchObject({ input: legacy.input });
+  });
+  it('pins answerability independently while preserving historical absence', async () => {
+    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+    const legacy = await createQuestionGenerationRun(input);
+    const current = await createQuestionGenerationRun({ ...input, answerabilityProtocol: 'option-answerability-v1' });
+    expect(legacy.input).not.toHaveProperty('answerabilityProtocol');
+    expect((await getContentRun(current._id))?.input).toMatchObject({ answerabilityProtocol: 'option-answerability-v1' });
+  });
+  it('pins task demand independently while preserving historical absence', async () => {
+    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+    const legacy = await createQuestionGenerationRun(input);
+    const current = await createQuestionGenerationRun({ ...input, taskDemandProtocol: 'task-demand-v1' });
+    expect(legacy.input).not.toHaveProperty('taskDemandProtocol');
+    expect((await getContentRun(current._id))?.input).toMatchObject({ taskDemandProtocol: 'task-demand-v1' });
+  });
+  it('pins task demand independently while preserving historical absence', async () => {
+    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+    const legacy = await createQuestionGenerationRun(input);
+    const current = await createQuestionGenerationRun({ ...input, exactBankProtocol: 'course-exact-bank-v1' });
+    expect(legacy.input).not.toHaveProperty('exactBankProtocol');
+    expect((await getContentRun(current._id))?.input).toMatchObject({ exactBankProtocol: 'course-exact-bank-v1' });
+  });
+  it.each([undefined, 'course-task-retrieval-v1', 'unknown-protocol', '', null])(
+    'preserves the exact task-retrieval selector for downstream validation: %s', async taskRetrievalProtocol => {
+      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+      const run = await createQuestionGenerationRun({ ...input,
+        ...(taskRetrievalProtocol !== undefined ? { taskRetrievalProtocol: taskRetrievalProtocol as never } : {}) });
+      const stored = await getContentRun(run._id);
+      if (taskRetrievalProtocol === undefined) {
+        expect(run.input).not.toHaveProperty('taskRetrievalProtocol');
+        expect(stored?.input).not.toHaveProperty('taskRetrievalProtocol');
+      } else {
+        expect(run.input.taskRetrievalProtocol).toBe(taskRetrievalProtocol);
+        expect(stored?.input).toMatchObject({ taskRetrievalProtocol });
+      }
+    },
+  );
+  it.each([undefined, 'compact-authoring-v1', 'unknown-protocol', '', null])(
+    'preserves the exact authoring-prompt selector for downstream validation: %s', async authoringPromptProtocol => {
+      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+      const run = await createQuestionGenerationRun({ ...input,
+        ...(authoringPromptProtocol !== undefined ? { authoringPromptProtocol: authoringPromptProtocol as never } : {}) });
+      const stored = await getContentRun(run._id);
+      if (authoringPromptProtocol === undefined) {
+        expect(run.input).not.toHaveProperty('authoringPromptProtocol');
+        expect(stored?.input).not.toHaveProperty('authoringPromptProtocol');
+      } else {
+        expect(run.input.authoringPromptProtocol).toBe(authoringPromptProtocol);
+        expect(stored?.input).toMatchObject({ authoringPromptProtocol });
+      }
+    },
+  );
+  it.each([undefined, 'server-rendered-numeric-review-v1', 'unknown-protocol', '', null])(
+    'preserves the exact numeric-review selector for downstream validation: %s', async numericReviewProtocol => {
+      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+      const run = await createQuestionGenerationRun({ ...input,
+        ...(numericReviewProtocol !== undefined ? { numericReviewProtocol: numericReviewProtocol as never } : {}) });
+      const stored = await getContentRun(run._id);
+      if (numericReviewProtocol === undefined) {
+        expect(run.input).not.toHaveProperty('numericReviewProtocol');
+        expect(stored?.input).not.toHaveProperty('numericReviewProtocol');
+      } else {
+        expect(run.input.numericReviewProtocol).toBe(numericReviewProtocol);
+        expect(stored?.input).toMatchObject({ numericReviewProtocol });
+      }
+    },
+  );
+  it.each([undefined, 'literal-exclusion-warrants-v1', 'unknown-protocol', '', null])(
+    'preserves the exact exclusion-review selector for downstream validation: %s', async exclusionReviewProtocol => {
+      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+      const run = await createQuestionGenerationRun({ ...input,
+        ...(exclusionReviewProtocol !== undefined ? { exclusionReviewProtocol: exclusionReviewProtocol as never } : {}) });
+      const stored = await getContentRun(run._id);
+      if (exclusionReviewProtocol === undefined) {
+        expect(run.input).not.toHaveProperty('exclusionReviewProtocol');
+        expect(stored?.input).not.toHaveProperty('exclusionReviewProtocol');
+      } else {
+        expect(run.input.exclusionReviewProtocol).toBe(exclusionReviewProtocol);
+        expect(stored?.input).toMatchObject({ exclusionReviewProtocol });
+      }
+    },
+  );
+  it.each([undefined, 'frozen-review-decisions-v1', 'unknown-protocol', '', null])(
+    'preserves the exact review-repair selector for downstream validation: %s', async reviewRepairProtocol => {
+      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
+        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
+      const run = await createQuestionGenerationRun({ ...input,
+        ...(reviewRepairProtocol !== undefined ? { reviewRepairProtocol: reviewRepairProtocol as never } : {}) });
+      const stored = await getContentRun(run._id);
+      if (reviewRepairProtocol === undefined) {
+        expect(run.input).not.toHaveProperty('reviewRepairProtocol');
+        expect(stored?.input).not.toHaveProperty('reviewRepairProtocol');
+      } else {
+        expect(run.input.reviewRepairProtocol).toBe(reviewRepairProtocol);
+        expect(stored?.input).toMatchObject({ reviewRepairProtocol });
+      }
+    },
+  );
   it('creates distinct durable ids for identical material requests', async () => {
     const input = {
       courseId: new ObjectId(),
@@ -152,6 +269,35 @@ describe('content run creation', () => {
 });
 
 describe('content run compare-and-set updates', () => {
+  it('atomically gives one duplicate structure worker ownership and publishes only the winning start', async () => {
+    const run = await createStructureGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', options: { materialIds: [new ObjectId().toHexString()] } });
+    const listener = jest.fn(); const unsubscribe = subscribeToCourseContentRuns(run.courseId, listener);
+    const results = await Promise.all([claimStructureGenerationRun(run._id), claimStructureGenerationRun(run._id)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(results.filter(row => row === null)).toHaveLength(1);
+    const stored = await getContentRun(run._id);
+    expect(stored).toMatchObject({ status: 'running', revision: 1, startedAt: expect.any(Date) });
+    expect(stored!.events.filter(event => event.status === 'running')).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(findOneAndUpdate).toHaveBeenCalledWith(expect.objectContaining({ _id: run._id, kind: 'structure-generation', status: 'queued', revision: 0 }),
+      expect.anything(), { returnDocument: 'after' });
+    expect(await claimStructureGenerationRun(run._id)).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('does not claim missing, non-structure or terminal work', async () => {
+    expect(await claimStructureGenerationRun(new ObjectId())).toBeNull();
+    const material = materialRun(); docs.push(material);
+    expect(await claimStructureGenerationRun(material._id)).toBeNull();
+    for (const status of ['running', 'failed', 'completed'] as const) {
+      const run = await createStructureGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', options: { materialIds: [new ObjectId().toHexString()] } });
+      const stored = docs.find(row => row._id.equals(run._id))!; stored.status = status;
+      expect(await claimStructureGenerationRun(run._id)).toBeNull();
+    }
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('persists the snapshot/event before notifying a course subscriber', async () => {
     const run = materialRun();
     docs.push(run);
@@ -368,4 +514,25 @@ it('persists streamed previews before publishing without evicting stage history 
   await expect(updateContentRun(run._id, { stage: 'analyzing' })).rejects.toThrow('content-run-conflict');
   await endGenerationRun(run.courseId, run._id);
   await expect(updateContentRun(run._id, { structurePreview: { themes: [] } })).rejects.toThrow('content-run-conflict');
+});
+
+
+it('preserves an indexed source when only advisory classification was interrupted', async () => {
+  const run = materialRun({ status: 'running', stage: 'classifying' }); docs.push(run);
+  if (run.kind !== 'material-ingest') throw new Error('Expected material fixture.');
+  const updateOne = jest.fn();
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue({ _id: run.input.materialId, activeRunId: run._id, status: 'ready' }), updateOne, updateMany: jest.fn() } as never);
+  jest.mocked(getMaterialSourceReadiness).mockResolvedValue({ ready: true } as never);
+  await reconcileContentRuns();
+  expect(updateOne).not.toHaveBeenCalled();
+  expect((await getContentRun(run._id))?.status).toBe('failed');
+});
+
+it('enables retry for an interrupted upload without a complete indexed manifest', async () => {
+  const run = materialRun({ status: 'running', stage: 'embedding' }); docs.push(run);
+  if (run.kind !== 'material-ingest') throw new Error('Expected material fixture.');
+  const updateOne = jest.fn().mockResolvedValue({ matchedCount: 1 });
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue({ _id: run.input.materialId, activeRunId: run._id, status: 'processing' }), updateOne, updateMany: jest.fn() } as never);
+  await reconcileContentRuns();
+  expect(updateOne).toHaveBeenCalledWith(expect.objectContaining({ activeRunId: run._id, status: 'processing' }), expect.objectContaining({ $set: expect.objectContaining({ status: 'failed' }), $unset: { sourceManifest: '' } }));
 });

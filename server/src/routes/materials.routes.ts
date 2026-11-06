@@ -1,4 +1,7 @@
-import { enqueueStructureGeneration, structureOptionsSchema } from '../services/structure-generation.service';
+import { structureConsolidationProposalSchema } from '../services/structure-consolidation.service';
+import { enqueueStructureConsolidationProposal, enqueueStructureConsolidationReview, getStructureConsolidationView } from '../services/structure-generation.service';
+import { enqueueStructureGeneration, structureOptionsSchema, enqueueStructureOutlineRepair, enqueueStructureOutlineCoverageRepair,
+  getStructureOutlineRepairView } from '../services/structure-generation.service';
 import fs from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -24,10 +27,16 @@ import {
   updateMaterialKind,
 } from '../services/materials.service';
 import {
-  applySuggestedHierarchy,
+  applyGeneratedHierarchy,
   resolveClassification,
   suggestHierarchy,
 } from '../services/classification.service';
+import {
+  acceptMaterialUploadBatch, claimMaterialUploadBatch, prepareMaterialUploadBatch,
+  prepareUploadBatchSchema, readMaterialUploadBatch, rejectMaterialUploadBatch,
+} from '../services/material-upload-batches.service';
+import { resolveSourceSelection } from '../services/source-readiness.service';
+import { openVerifiedMaterialPdfSource, readMaterialSourceProvenance } from '../services/material-source-provenance.service';
 
 // Material upload + async RAG ingestion endpoints (IN-S04/S05), plus Task 7's
 // IN-S06 classification accept/reject (`POST .../classification`, in the
@@ -48,6 +57,20 @@ const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const materialIdParams = z.object({ materialId: objectIdParam });
 const courseMaterialParams = z.object({ courseId: objectIdParam, materialId: objectIdParam });
+const courseBatchParams = z.object({ courseId: objectIdParam, batchId: objectIdParam });
+const courseStructureRunParams = z.object({ courseId: objectIdParam, runId: objectIdParam });
+const structureRepairQuery = z.object({ page: z.coerce.number().int().min(1).max(100000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(10).optional() }).strict();
+const structureRepairBody = z.discriminatedUnion('version', [
+  z.object({ version: z.literal('wording-only-outline-repair-v1'), targetIds: z.array(z.string().regex(/^L[1-9]\d*$/)).min(1).max(2) }).strict(),
+  z.object({ version: z.literal('coverage-wording-outline-repair-v1'), targets: z.array(z.object({
+    id: z.string().regex(/^L[1-9]\d*$/), evidenceIds: z.array(z.string().regex(/^E[1-9]\d*$/)).min(1).max(8),
+  }).strict()).min(1).max(2) }).strict(),
+]).superRefine((body, context) => {
+  const ids = body.version === 'wording-only-outline-repair-v1' ? body.targetIds : body.targets.map(row => row.id);
+  const points = body.version === 'coverage-wording-outline-repair-v1' ? body.targets.flatMap(row => row.evidenceIds) : [];
+  if (new Set(ids).size !== ids.length || new Set(points).size !== points.length) context.addIssue({ code: 'custom', message: 'Repair targets and requested evidence IDs must be unique.' });
+});
 const materialKind = z.enum([
   'lecture',
   'reading',
@@ -59,9 +82,10 @@ const materialKind = z.enum([
 ]);
 const materialMetadataBody = z.object({ kind: materialKind, expectedRevision: z.number().int().nonnegative() });
 
-function publicMaterial<T extends { storagePath?: string }>(material: T): Omit<T, 'storagePath'> {
+function publicMaterial<T extends { storagePath?: string; rawTextStoragePath?: string }>(material: T): Omit<T, 'storagePath' | 'rawTextStoragePath'> {
   const safe = { ...material };
   delete safe.storagePath;
+  delete safe.rawTextStoragePath;
   return safe;
 }
 
@@ -74,6 +98,7 @@ const assignmentsBody = z.object({
 
 const classificationBody = z.object({ action: z.enum(['accept', 'reject']), expectedRevision: z.number().int().nonnegative() });
 const applySuggestedHierarchyBody = z.object({
+  runId: objectIdParam,
   themes: z
     .array(
       z.object({
@@ -81,9 +106,11 @@ const applySuggestedHierarchyBody = z.object({
         los: z.array(
           z.object({
             name: z.string().trim().min(1),
+            sourceThemeIndex: z.number().int().nonnegative(),
+            sourceLoIndex: z.number().int().nonnegative(),
             materialIds: z.array(objectIdParam),
           }),
-        ),
+        ).min(1),
       }),
     )
     .min(1),
@@ -125,6 +152,53 @@ const upload = multer({
   }),
   limits: { fileSize: 50 * 1024 * 1024, files: MAX_FILES_PER_UPLOAD },
 });
+
+/** Versioned manifest preparation precedes multipart parsing/admission. */
+materialsRouter.post('/courses/:courseId/material-upload-batches', validate({ params: courseIdParams }),
+  ensureCourseInstructor(), validate({ body: prepareUploadBatchSchema }), async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const body = req.body as z.infer<typeof prepareUploadBatchSchema>;
+    const batch = await prepareMaterialUploadBatch(courseId, req.user!.puid, body.requestId, body.files);
+    res.status(201).json(await readMaterialUploadBatch(courseId, batch._id, req.user!.puid));
+  });
+
+materialsRouter.get('/courses/:courseId/material-upload-batches/:batchId', validate({ params: courseBatchParams }),
+  ensureCourseInstructor(), async (req, res) => {
+    res.json(await readMaterialUploadBatch(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.batchId)), req.user!.puid));
+  });
+
+materialsRouter.post('/courses/:courseId/material-upload-batches/:batchId/files', validate({ params: courseBatchParams }),
+  ensureCourseInstructor(), async (req, res, next) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const batchId = new ObjectId(String(req.params.batchId));
+    const { owner } = await claimMaterialUploadBatch(courseId, batchId, req.user!.puid);
+    if (!owner) { res.json(await readMaterialUploadBatch(courseId, batchId, req.user!.puid)); return; }
+    upload.array('files')(req, res, (uploadError) => {
+      void (async () => {
+        if (uploadError) throw uploadError;
+        const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+        try {
+          await acceptMaterialUploadBatch(courseId, batchId, req.user!.puid, owner, files);
+        } catch (error) {
+          if (error instanceof Error && (error.message.startsWith('unsupported-format:') || error.message === 'material-upload-manifest-mismatch')) {
+            await Promise.all(files.map((file) => fs.rm(file.path, { force: true })));
+          }
+          throw error;
+        }
+        res.status(201).json(await readMaterialUploadBatch(courseId, batchId, req.user!.puid));
+      })().catch(async (error: unknown) => {
+        await rejectMaterialUploadBatch(courseId, batchId, owner, error instanceof Error ? error.message : 'material-upload-failed').catch(() => undefined);
+        next(error);
+      });
+    });
+    req.once('aborted', () => { void rejectMaterialUploadBatch(courseId, batchId, owner, 'material-upload-interrupted').catch(() => undefined); });
+  });
+
+/** Readiness is computed from indexed manifests and actual chunks, never just
+ * the display status or the subset that happened to finish first. */
+materialsRouter.post('/courses/:courseId/source-readiness', validate({ params: courseIdParams }),
+  ensureCourseInstructor(), validate({ body: z.object({ sourceBatchId: objectIdParam.optional(), materialIds: z.array(objectIdParam).min(1).max(100).optional() }) }),
+  async (req, res) => { res.json(await resolveSourceSelection(new ObjectId(String(req.params.courseId)), req.body)); });
 
 /**
  * Resolve `res.locals.courseId` from the material a child route targets,
@@ -231,13 +305,31 @@ materialsRouter.get(
  * containment check. URL sources redirect only to http(s). */
 materialsRouter.get(
   '/courses/:courseId/materials/:materialId/source',
-  validate({ params: courseMaterialParams }),
+  validate({ params: courseMaterialParams, query: z.object({ provenanceId: objectIdParam.optional() }) }),
   ensureCourseTeachingMember(),
   async (req, res, next) => {
     const { material } = await getMaterialWorkspaceDetail(
       new ObjectId(String(req.params.courseId)),
       new ObjectId(String(req.params.materialId)),
     );
+    const provenanceId = req.query.provenanceId;
+    if (typeof provenanceId === 'string') {
+      const record = await readMaterialSourceProvenance(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.materialId)), new ObjectId(provenanceId));
+      if (!record || material.format !== 'pdf' || !material.storagePath) throw new Error('material-source-unavailable');
+      const [base, source] = await Promise.all([fs.realpath(UPLOAD_DIR), fs.realpath(material.storagePath)]);
+      if (!source.startsWith(`${base}${path.sep}`)) throw new Error('material-source-unavailable');
+      let handle;
+      try { handle = await openVerifiedMaterialPdfSource(source, record.receipt); }
+      catch { throw new Error('material-source-unavailable'); }
+      res.type('application/pdf');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(material.name)}`);
+      const stream = handle.createReadStream({ start: 0, autoClose: true });
+      res.once('close', () => stream.destroy());
+      stream.once('error', next);
+      stream.pipe(res);
+      return;
+    }
     if (material.format === 'url' && material.sourceUrl) {
       const source = new URL(material.sourceUrl);
       if (source.protocol !== 'http:' && source.protocol !== 'https:') throw new Error('material-source-unavailable');
@@ -305,12 +397,12 @@ materialsRouter.patch(
   validate({ body: materialMetadataBody }),
   async (req, res) => {
     res.json(
-      await updateMaterialKind(
+      publicMaterial(await updateMaterialKind(
         new ObjectId(String(req.params.courseId)),
         new ObjectId(String(req.params.materialId)),
         (req.body as z.infer<typeof materialMetadataBody>).kind,
         (req.body as z.infer<typeof materialMetadataBody>).expectedRevision,
-      ),
+      )),
     );
   },
 );
@@ -323,7 +415,7 @@ materialsRouter.post(
   stashCourseIdFromMaterial(),
   ensureCourseInstructor(),
   async (req, res) => {
-    res.json(await retryMaterial(new ObjectId(String(req.params.materialId)), req.user!.puid));
+    res.json(publicMaterial(await retryMaterial(new ObjectId(String(req.params.materialId)), req.user!.puid)));
   },
 );
 
@@ -348,7 +440,7 @@ materialsRouter.put(
       })),
       expectedRevision,
     );
-    res.json(material);
+    res.json(publicMaterial(material));
   },
 );
 
@@ -369,23 +461,23 @@ materialsRouter.post(
   async (req, res) => {
     const materialId = new ObjectId(String(req.params.materialId));
     const { action, expectedRevision } = req.body as z.infer<typeof classificationBody>;
-    res.json(await resolveClassification(materialId, action, expectedRevision));
+    res.json(publicMaterial(await resolveClassification(materialId, action, expectedRevision)));
   },
 );
 
 /**
  * GET /api/courses/:courseId/suggest-hierarchy
  * -> { themes: [{ name, los }], assignments: [...] }
- * (IN-S06, slip candidate #3). Instructor-only. Read-only: computes an
+ * (IN-S06, slip candidate #3). Instructor-only: computes an
  * AI-suggested Theme/LO outline and per-LO source mappings from the course's
- * ingested materials. It never writes the DB.
+ * ingested materials and retains a durable run/source receipt for guarded Apply.
  */
 materialsRouter.get(
   '/courses/:courseId/suggest-hierarchy',
   validate({ params: courseIdParams }),
   ensureCourseInstructor(),
   async (req, res) => {
-    res.json(await suggestHierarchy(new ObjectId(String(req.params.courseId))));
+    res.json(await suggestHierarchy(new ObjectId(String(req.params.courseId)), req.user!.puid));
   },
 );
 
@@ -400,6 +492,51 @@ materialsRouter.post(
   },
 );
 
+/** Read-only bounded projection, including parent recovery for a failed child.
+ * This endpoint never queues work or calls a model. */
+materialsRouter.get('/courses/:courseId/structure-generation/:runId/repair',
+  validate({ params: courseStructureRunParams }), ensureCourseInstructor(), validate({ query: structureRepairQuery }), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await getStructureOutlineRepairView(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.runId)),
+      req.query as unknown as z.infer<typeof structureRepairQuery>));
+  });
+
+/** Explicit teacher request. Models, budgets, preservation and verdicts remain
+ * server-owned, and a successful child still requires separately reviewed Apply. */
+materialsRouter.post('/courses/:courseId/structure-generation/:runId/repair',
+  validate({ params: courseStructureRunParams }), ensureCourseInstructor(), validate({ body: structureRepairBody }), async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId)), parentRunId = new ObjectId(String(req.params.runId));
+    const body = req.body as z.infer<typeof structureRepairBody>;
+    const run = body.version === 'coverage-wording-outline-repair-v1'
+      ? await enqueueStructureOutlineCoverageRepair(courseId, parentRunId, req.user!.puid, body.targets)
+      : await enqueueStructureOutlineRepair(courseId, parentRunId, req.user!.puid, body.targetIds);
+    res.status(202).json({ runId: run._id.toHexString(), parentRunId: parentRunId.toHexString() });
+  });
+
+/** Explicit prospective consolidation; no browser model, budget or verdict fields. */
+materialsRouter.get('/courses/:courseId/structure-generation/:runId/consolidation',
+  validate({ params: courseStructureRunParams }), ensureCourseInstructor(), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await getStructureConsolidationView(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.runId))));
+  });
+materialsRouter.post('/courses/:courseId/structure-generation/:runId/consolidation/propose',
+  validate({ params: courseStructureRunParams }), ensureCourseInstructor(),
+  validate({ body: z.object({ version: z.literal('durable-outline-consolidation-v1'),
+    selectedIds: z.array(z.string().regex(/^L[1-9]\d*$/)).min(2).max(4).optional(), proposal: structureConsolidationProposalSchema.optional() }).strict() }),
+  async (req, res) => {
+    const run = await enqueueStructureConsolidationProposal(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.runId)), req.user!.puid, req.body.selectedIds, req.body.proposal);
+    res.status(202).json({ runId: run._id.toHexString() });
+  });
+materialsRouter.post('/courses/:courseId/structure-generation/:runId/consolidation/review',
+  validate({ params: courseStructureRunParams }), ensureCourseInstructor(),
+  validate({ body: z.object({ version: z.literal('durable-outline-consolidation-v1'), expectedRevision: z.number().int().min(0),
+    expectedProposalHash: z.string().regex(/^[a-f0-9]{64}$/), proposal: structureConsolidationProposalSchema.optional() }).strict() }),
+  async (req, res) => {
+    const run = await enqueueStructureConsolidationReview(new ObjectId(String(req.params.courseId)), new ObjectId(String(req.params.runId)), req.user!.puid,
+      req.body.expectedRevision, req.body.expectedProposalHash, req.body.proposal);
+    res.status(202).json({ runId: run._id.toHexString() });
+  });
+
 /**
  * POST /api/courses/:courseId/apply-suggested-hierarchy
  * Creates the reviewed Topic/LO subset and automatically merges the AI source
@@ -412,7 +549,7 @@ materialsRouter.post(
   validate({ body: applySuggestedHierarchyBody }),
   async (req, res) => {
     res.status(201).json(
-      await applySuggestedHierarchy(
+      await applyGeneratedHierarchy(
         new ObjectId(String(req.params.courseId)),
         req.body as z.infer<typeof applySuggestedHierarchyBody>,
       ),
@@ -453,8 +590,21 @@ materialsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunct
     return;
   }
   if (err instanceof Error) {
+    if ('report' in err && typeof (err as { status?: unknown }).status === 'number') {
+      res.status((err as unknown as { status: number }).status).json({ error: err.message, report: err.report });
+      return;
+    }
     if (Object.hasOwn(MATERIAL_ERROR_STATUS, err.message)) {
       res.status(MATERIAL_ERROR_STATUS[err.message]).json({ error: err.message });
+      return;
+    }
+    if (err.message.startsWith('structure-consolidation-') || err.message.startsWith('structure-repair-') || err.message.startsWith('structure-review-') ||
+      err.message === 'authoring-coordinated-commit-unavailable') {
+      const status = ['structure-repair-view-run-unavailable', 'structure-repair-view-parent-unavailable'].includes(err.message) ? 404
+        : err.message === 'structure-repair-proposal-input-cap' ? 413
+          : err.message === 'structure-repair-view-page-invalid' ? 400
+            : err.message === 'structure-consolidation-enqueue-failed' || err.message === 'structure-repair-enqueue-failed' || err.message === 'authoring-coordinated-commit-unavailable' ? 503 : 409;
+      res.status(status).json({ error: err.message });
       return;
     }
     if (err.message.startsWith('unsupported-format:')) {

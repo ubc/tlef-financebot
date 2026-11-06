@@ -202,6 +202,7 @@ function withPlaceholderReport<T extends NumericGateVersion>(version: T): T & { 
 }
 
 function verifyOptionFormulas(
+  stem: string,
   options: Array<{ text: string }>,
   slots: ParamSlot[],
   derivedValues: DerivedValue[],
@@ -221,6 +222,7 @@ function verifyOptionFormulas(
   if (!optionValues.ok) return { verificationError: optionValues.error };
 
   const result = verifyQuestionNumerics({
+    stem,
     slots,
     derivedValues,
     optionValueNames: optionValues.names,
@@ -455,6 +457,7 @@ questionsRouter.patch(
     ) {
       const { current } = await getQuestionDetail(questionId);
       ({ verification, verificationError } = verifyOptionFormulas(
+        body.stem ?? current.stem,
         body.options ?? current.options,
         (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
         (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
@@ -533,6 +536,7 @@ questionsRouter.patch(
     ) {
       const { current } = await getQuestionDetail(questionId);
       ({ verification, verificationError } = verifyOptionFormulas(
+        current.stem,
         current.options,
         (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
         (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],

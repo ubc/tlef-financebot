@@ -95,3 +95,16 @@ it('rejects unsupported arguments before reading files or starting generation', 
   expect(log).toHaveBeenCalledWith(expect.stringContaining('no model or database access'));
   await expect(runEvaluationCli(['generate', 'anything'], log)).rejects.toThrow('Offline FinanceBot');
 });
+
+it('requires and honors the explicit comparison policy for a mixed v1/v2 dataset', async () => {
+  const path = await demo(); const dataset = DatasetSchema.parse(await json(join(path, 'dataset.json')));
+  dataset.runs.push(...dataset.runs.filter(run => run.policy === 'grounded-memory-v1').map(run => ({ ...run, runId: `v2:${run.runId}`, policy: 'grounded-memory-v2' as const })));
+  const file = join(directory, 'mixed.json'); await write(file, dataset);
+  const output = join(directory, 'mixed-review');
+  await expect(runEvaluationCli(['prepare', file, output], () => {})).rejects.toThrow('cannot be pooled');
+  await runEvaluationCli(['prepare', file, output, '--pilot-policy', 'grounded-memory-v2'], () => {});
+  const report = await json(join(output, 'report.unreviewed.json'));
+  expect(report.comparison.pilotPolicy).toBe('grounded-memory-v2'); expect(report.arms).toHaveLength(3);
+  expect(report.comparison.teacherLabelsComplete).toBe(false);
+  expect(await readFile(join(output, 'report.unreviewed.md'), 'utf8')).toContain('grounded-memory-v2');
+});

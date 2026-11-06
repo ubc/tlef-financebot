@@ -22,6 +22,10 @@ import {
   listCourseFlags,
   notifyRemediation,
   regenerateQuestion as requestQuestionRegeneration,
+  regenerateGroundedQuestion,
+  adoptRegenerationCandidate,
+  getRegenerationCandidate,
+  getAuthoringQualityStatus,
   resolveFlag,
   resolveTaQuestionSuggestion,
   transitionQuestion,
@@ -35,6 +39,9 @@ import {
   type QuestionSample,
   type QuestionVersion,
   type RegenerationVariant,
+  type RegenerationIntent,
+  type GroundedRegenerationResult,
+  type AuthoringQualityStatus,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { runButtonAction } from '../../action-state.js';
@@ -49,10 +56,74 @@ import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
+import { getSession } from '../../auth.js';
 import { STATUS_LABEL, TYPE_LABEL } from './bank.js';
+import { sourceCitationDetails } from './source-citations.js';
+import { answerabilityChecks } from './answerability-checks.js';
+import { exactBankChecks } from './exact-bank-checks.js';
+import { taskRetrievalChecks } from './task-retrieval-checks.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
+}
+
+/** Only a recognized prerequisite rejection proves that replay cannot adopt this candidate. */
+function regenerationPrerequisiteFailure(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.status === 409) {
+    switch (error.message) {
+      case 'generation-evidence-source-changed':
+        return 'The course sources changed after this candidate was checked. Review the current files, then generate a new alternative before replacing.';
+      case 'generation-evidence-provenance-changed':
+        return 'The PDF source and page evidence changed or could not be verified after this candidate was checked. Review the current files, then generate a new alternative before replacing.';
+      case 'generation-evidence-material-unavailable':
+        return 'A source used to check this candidate is no longer available. Restore or select current course files, then generate a new alternative.';
+      case 'generation-evidence-source-not-ready':
+      case 'generation-evidence-chunks-missing':
+      case 'generation-evidence-ingest-incomplete':
+        return 'The course sources are not fully processed. Wait for the files to finish processing, then generate a new alternative.';
+      case 'authoring-objective-changed':
+        return 'The learning objective changed after this candidate was checked. Review the current learning objective, then generate a new alternative.';
+      case 'generation-memory-original-changed':
+      case 'generation-memory-original-version-unavailable':
+      case 'question-changed-during-regeneration':
+        return 'The saved question changed or its original version is unavailable. Preserve any unsaved edits, reload the current question, then generate a new alternative.';
+      case 'authoring-memory-changed':
+        return 'The Question Bank or Review Queue changed after this candidate was checked. Generate a new alternative against the current question memory before replacing.';
+      case 'authoring-exact-bank-duplicate':
+        return 'The same question content now exists in the Question Bank or Review Queue. Generate a different task before replacing.';
+      case 'regeneration-script-template-requires-manual-edit':
+        return 'This question uses an imported generation script. Edit or migrate that template before using shared-memory regeneration; no model request was made.';
+    }
+  }
+  if (error.status === 422) {
+    switch (error.message) {
+      case 'generation-evidence-schema-invalid':
+        return 'This candidate uses a source evidence format that this server cannot validate. Preserve any unsaved edits, reload the app, then generate a new alternative before replacing.';
+      case 'regeneration-original-comparison-required':
+      case 'authoring-original-comparison-required':
+      case 'authoring-original-comparison-invalid':
+        return 'This candidate is missing a valid comparison with the original question. Generate a new alternative; this candidate cannot replace the question.';
+      case 'generation-memory-original-scope-missing':
+      case 'generation-memory-required-original-missing':
+        return 'The original question could not be included in the checked-regeneration context. Review its learning objective and original version, then generate a new alternative.';
+      case 'generation-memory-required-original-too-large':
+        return 'The original question is too large for the checked-regeneration context. Shorten the saved question or use manual editing before trying again.';
+      case 'generation-task-retrieval-receipt-invalid':
+      case 'generation-task-retrieval-selection-invalid':
+      case 'generation-task-retrieval-assessment-invalid':
+      case 'generation-task-retrieval-query-invalid':
+      case 'generation-task-retrieval-scope-invalid':
+      case 'generation-task-retrieval-protocol-invalid':
+      case 'generation-task-retrieval-policy-invalid':
+      case 'generation-task-retrieval-vector-invalid':
+        return 'This candidate does not have a valid current task-retrieval check. Review its source and memory checks, then generate a new alternative before replacing.';
+      case 'regeneration-candidate-not-eligible':
+      case 'generation-exact-bank-receipt-invalid':
+        return 'This candidate is no longer eligible for replacement. Review its source and memory checks, then generate a new alternative.';
+    }
+  }
+  return undefined;
 }
 
 /** Generic "did this field change" comparator behind the `.edited` highlight
@@ -343,6 +414,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     );
     const anyEdited = isFieldEdited(draftStem, baseline.stem) || isFieldEdited(draftDifficulty, baseline.difficulty) || optionsChanged;
     saveButton.disabled = !anyEdited;
+    root.querySelectorAll<HTMLButtonElement>('[data-regen-requires-saved]').forEach(button => {
+      button.disabled = anyEdited || button.dataset.regenLocked === 'true';
+    });
     flagUpdateButton.disabled = !anyEdited;
   }
 
@@ -477,6 +551,11 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   function applySavedVersion(saved: QuestionVersion): void {
     expectedVersionId = saved._id;
+    if (regenerationCandidate?.originalVersionId && regenerationCandidate.originalVersionId !== expectedVersionId) {
+      regenerationVariant = null;
+      regenerationMessage = 'The saved question changed after this candidate was generated. Generate against the current version before replacing.';
+      if (regenerationOpen) renderRegenerationPanel();
+    }
     renderPlaceholderWarning(saved.unresolvablePlaceholders);
     // `saved` comes from the server in STORED form; the editor works in
     // display form, so convert on the way in.
@@ -742,7 +821,24 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   let regenerationBusyAction: 'generate' | 'replace' | null = null;
   let regenerationError: string | null = null;
   let regenerationMessage: string | null = null;
+  let regenerationReplacementBlock: string | null = null;
   let regenerationVariant: RegenerationVariant | null = null;
+  let regenerationCandidate: GroundedRegenerationResult | undefined;
+  let regenerationRequest: { key: string; id: string } | undefined;
+  let regenerationPilot = false;
+  let regenerationIntent: RegenerationIntent = 'edit-existing';
+  let regenerationAuthoringStatus: AuthoringQualityStatus | undefined;
+  const regenerationStorageKey = `financebot:regeneration:${getSession().user?.puid ?? 'unknown'}:${courseId}:${questionId}`;
+  const preserveRequirements = el('textarea', { class: 'input', rows: '2', 'aria-label': 'Preserve requirements', placeholder: 'Keep unchanged, one requirement per line (optional)' }) as HTMLTextAreaElement;
+  const changeRequirements = el('textarea', { class: 'input', rows: '2', 'aria-label': 'Required changes', placeholder: 'Required changes, one requirement per line (optional)' }) as HTMLTextAreaElement;
+
+  function clearRegenerationRecovery(): void {
+    regenerationRequest = undefined;
+    try {
+      sessionStorage.removeItem(regenerationStorageKey);
+      sessionStorage.removeItem(`${regenerationStorageKey}:pending`);
+    } catch { /* In-memory state still prevents reuse of a confirmed unusable candidate. */ }
+  }
 
   function previewQuestion(
     title: string,
@@ -775,6 +871,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       el('p', {
         text: 'The alternative is only a preview. The current question stays unchanged until you choose Replace with variant.',
       }),
+      el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Sources and question memory v2 pilot' }),
+        el('input', { type: 'checkbox', checked: regenerationPilot, disabled: regenerationBusy, onchange: (event: Event) => {
+          regenerationPilot = (event.target as HTMLInputElement).checked;
+          if (regenerationPilot && regenerationPrompt.value === 'Create a distinct alternative that tests the same learning objective with a different scenario.') regenerationPrompt.value = '';
+          regenerationPrompt.placeholder = regenerationPilot ? 'Describe the requested edits or the learning task you want.' : '';
+          regenerationVariant = null; regenerationCandidate = undefined; renderRegenerationPanel();
+        } })),
+      regenerationPilot ? el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Regeneration intent' }),
+        el('select', { class: 'input', disabled: regenerationBusy, onchange: (event: Event) => {
+          regenerationIntent = (event.target as HTMLSelectElement).value as RegenerationIntent; regenerationVariant = null; regenerationCandidate = undefined; renderRegenerationPanel();
+        } }, ...([['edit-existing', 'Edit the existing question'], ['create-variant', 'Create a practice variant'], ['create-independent-task', 'Create a different learning task']] as const).map(([value, text]) => el('option', { value, text, selected: regenerationIntent === value })))) : false,
+      regenerationPilot ? el('div', { class: 'question-detail-layout' }, changeRequirements, preserveRequirements) : false,
+      regenerationPilot && regenerationAuthoringStatus?.coordinatedSaveAvailable === false ? el('p', { class: 'form-error', text: 'Diagnostic mode: candidates are retained for inspection, but this server cannot safely adopt concurrent v2 changes. These model checks consume tokens.' }) : false,
       el(
         'label',
         { class: 'form-field' },
@@ -785,6 +894,14 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       regenerationMessage
         ? el('p', { class: 'preseeding-queued-message', role: 'status', text: regenerationMessage })
         : false,
+      regenerationCandidate?.quality ? el('details', {}, el('summary', { text: 'Source and memory checks' }),
+        el('p', { text: `Source support: ${regenerationCandidate.quality.sourceSupport}. Notation: ${regenerationCandidate.quality.notation}. Task: ${regenerationCandidate.quality.novelty}.` }),
+        exactBankChecks(regenerationCandidate.quality),
+        taskRetrievalChecks(regenerationCandidate.quality),
+        ...regenerationCandidate.reasons.map(reason => el('p', { text: reason })),
+        sourceCitationDetails(courseId, regenerationCandidate.quality.citations),
+        answerabilityChecks(courseId, regenerationCandidate.quality, regenerationCandidate.variant?.options)) : false,
+      regenerationCandidate?.budget ? el('p', { class: 'question-meta__label', text: `${regenerationCandidate.budget.observedSends} observed model sends · input ${regenerationCandidate.budget.reportedInputTokens ?? 'unavailable'} tokens · output ${regenerationCandidate.budget.reportedOutputTokens ?? 'unavailable'} tokens.` }) : false,
       el(
         'div',
         { class: 'question-actions' },
@@ -793,11 +910,13 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           {
             class: 'btn btn--instr-primary',
             type: 'button',
-            disabled: regenerationBusy ? 'disabled' : undefined,
+            'data-regen-requires-saved': 'true',
+            'data-regen-locked': String(regenerationBusy),
+            disabled: regenerationBusy || !saveButton.disabled ? 'disabled' : undefined,
             busy: regenerationBusyAction === 'generate',
             onclick: () => generateVariant(),
           },
-          regenerationBusyAction === 'generate' ? 'Generating alternative…' : 'Generate alternative',
+          regenerationBusyAction === 'generate' ? 'Generating alternative…' : regenerationPilot && regenerationAuthoringStatus?.coordinatedSaveAvailable === false ? 'Generate diagnostic candidate' : 'Generate alternative',
         ),
         el(
           'button',
@@ -831,7 +950,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             {
               class: 'btn btn--instr-primary',
               type: 'button',
-              disabled: regenerationBusy ? 'disabled' : undefined,
+              'data-regen-requires-saved': 'true',
+              'data-regen-locked': String(regenerationBusy || !!regenerationReplacementBlock || (regenerationPilot && regenerationAuthoringStatus?.coordinatedSaveAvailable === false)),
+              disabled: regenerationBusy || !!regenerationReplacementBlock || !saveButton.disabled || (regenerationPilot && regenerationAuthoringStatus?.coordinatedSaveAvailable === false) ? 'disabled' : undefined,
               busy: regenerationBusyAction === 'replace',
               onclick: () => replaceWithVariant(),
             },
@@ -842,6 +963,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   async function generateVariant(): Promise<void> {
+    if (!saveButton.disabled) { regenerationError = 'Save or discard your current edits before regenerating.'; renderRegenerationPanel(); return; }
     const prompt = regenerationPrompt.value.trim();
     if (!prompt) {
       regenerationError = 'Enter a regeneration prompt.';
@@ -852,14 +974,38 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     regenerationBusyAction = 'generate';
     regenerationError = null;
     regenerationMessage = null;
+    regenerationReplacementBlock = null;
     regenerationVariant = null;
+    regenerationCandidate = undefined;
     renderRegenerationPanel();
     try {
-      const response = await requestQuestionRegeneration(courseId, questionId, prompt);
-      regenerationVariant = response.variant;
-      regenerationMessage = 'Alternative generated. Compare both versions before replacing.';
+      if (regenerationPilot) {
+        const lines = (input: HTMLTextAreaElement) => input.value.split('\n').map(value => value.trim()).filter(Boolean);
+        const input = { prompt, intent: regenerationIntent, expectedVersionId, requiredChanges: lines(changeRequirements), preserve: lines(preserveRequirements) };
+        const key = JSON.stringify(input);
+        if (regenerationRequest?.key !== key) regenerationRequest = { key, id: crypto.randomUUID() };
+        try {
+          sessionStorage.setItem(`${regenerationStorageKey}:pending`, JSON.stringify(regenerationRequest));
+          sessionStorage.removeItem(regenerationStorageKey);
+        } catch { /* The same request identity remains in memory. */ }
+        regenerationCandidate = await regenerateGroundedQuestion(courseId, questionId, { ...input, requestId: regenerationRequest!.id });
+        try { sessionStorage.setItem(regenerationStorageKey, regenerationCandidate.candidateId); } catch { /* The candidate remains on the server. */ }
+        if (regenerationCandidate.status !== 'preparing') {
+          regenerationRequest = undefined;
+          try { sessionStorage.removeItem(`${regenerationStorageKey}:pending`); } catch { /* Storage is optional. */ }
+        }
+        regenerationVariant = regenerationCandidate.status === 'eligible' ? regenerationCandidate.variant ?? null : null;
+        regenerationMessage = regenerationVariant ? 'Alternative checked against original sources and the current Bank / Queue. Compare before replacing.' : `Candidate ${regenerationCandidate.status}: ${regenerationCandidate.reasons.join(' ') || 'No eligible alternative saved.'}`;
+      } else {
+        const response = await requestQuestionRegeneration(courseId, questionId, prompt);
+        regenerationVariant = response.variant;
+        regenerationMessage = 'Alternative generated. Compare both versions before replacing.';
+      }
     } catch (error) {
-      regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
+      const failure = error instanceof ApiError ? error.message : (error as Error).message;
+      const prerequisite = regenerationPrerequisiteFailure(error);
+      if (prerequisite) clearRegenerationRecovery();
+      regenerationError = prerequisite ?? failure;
     }
     regenerationBusy = false;
     regenerationBusyAction = null;
@@ -867,6 +1013,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   async function replaceWithVariant(): Promise<void> {
+    if (!saveButton.disabled) { regenerationError = 'Save or discard your current edits before replacing.'; renderRegenerationPanel(); return; }
+    if (regenerationReplacementBlock) { regenerationError = regenerationReplacementBlock; renderRegenerationPanel(); return; }
     if (!regenerationVariant) return;
     regenerationBusy = true;
     regenerationBusyAction = 'replace';
@@ -874,7 +1022,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     regenerationMessage = null;
     renderRegenerationPanel();
     try {
-      const saved = await editQuestion(questionId, {
+      const saved = regenerationCandidate ? await adoptRegenerationCandidate(courseId, questionId, regenerationCandidate.candidateId, expectedVersionId) : await editQuestion(questionId, {
         expectedVersionId,
         stem: regenerationVariant.stem,
         options: regenerationVariant.options,
@@ -891,9 +1039,20 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       });
       applySavedVersion(saved);
       regenerationVariant = null;
+      regenerationCandidate = undefined;
+      clearRegenerationRecovery();
       regenerationMessage = `Variant saved explicitly as question version ${saved.version}.`;
     } catch (error) {
-      regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
+      const prerequisite = regenerationPrerequisiteFailure(error);
+      if (prerequisite) {
+        regenerationReplacementBlock = prerequisite;
+        clearRegenerationRecovery();
+      }
+      regenerationError = prerequisite ?? (error instanceof ApiError && error.status === 503 && error.message === 'authoring-exact-bank-incomplete'
+        ? 'The current Question Bank could not be checked completely. Your candidate is retained. Retry Replace when the bank is available.'
+        : error instanceof ApiError && error.status === 503 && error.message === 'generation-task-retrieval-incomplete'
+          ? 'The current Question Bank task retrieval could not finish. Your candidate is retained. Retry Replace when the bank is available.'
+        : error instanceof ApiError ? error.message : (error as Error).message);
     }
     regenerationBusy = false;
     regenerationBusyAction = null;
@@ -906,9 +1065,43 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       return;
     }
     regenerationOpen = true;
-    regenerationError = null;
+    regenerationError = regenerationReplacementBlock;
     regenerationMessage = null;
+    if (!regenerationRequest) {
+      try {
+        const pending = JSON.parse(sessionStorage.getItem(`${regenerationStorageKey}:pending`) ?? 'null') as { key?: unknown; id?: unknown } | null;
+        if (pending && typeof pending.key === 'string' && typeof pending.id === 'string') {
+          const input = JSON.parse(pending.key) as { prompt?: unknown; intent?: unknown; expectedVersionId?: unknown; requiredChanges?: unknown; preserve?: unknown };
+          if (input.expectedVersionId === expectedVersionId && typeof input.prompt === 'string' && ['edit-existing', 'create-variant', 'create-independent-task'].includes(String(input.intent))) {
+            regenerationRequest = { key: pending.key, id: pending.id };
+            regenerationPrompt.value = input.prompt;
+            regenerationIntent = input.intent as RegenerationIntent; regenerationPilot = true;
+            const restoreLines = (value: unknown) => Array.isArray(value) ? value.filter(item => typeof item === 'string').join('\n') : '';
+            changeRequirements.value = restoreLines(input.requiredChanges); preserveRequirements.value = restoreLines(input.preserve);
+            regenerationMessage = 'Recover the previous request with the same identity; a retry will not start another model job.';
+          }
+        }
+      } catch { /* Invalid or unavailable local storage cannot authorize an action. */ }
+    }
     renderRegenerationPanel();
+    void getAuthoringQualityStatus(courseId).then(status => { regenerationAuthoringStatus = status; if (regenerationOpen) renderRegenerationPanel(); }).catch(() => undefined);
+    if (!regenerationCandidate) {
+      let candidateId: string | null = null;
+      try { candidateId = sessionStorage.getItem(regenerationStorageKey); } catch { /* Storage is optional. */ }
+      if (candidateId) void getRegenerationCandidate(courseId, questionId, candidateId).then(candidate => {
+        if (!regenerationOpen || regenerationBusy || regenerationCandidate) return;
+        regenerationPilot = true; regenerationCandidate = candidate; regenerationIntent = candidate.intent;
+        if (regenerationPrompt.value === 'Create a distinct alternative that tests the same learning objective with a different scenario.') regenerationPrompt.value = '';
+        const current = !candidate.originalVersionId || candidate.originalVersionId === expectedVersionId;
+        regenerationVariant = current && candidate.status === 'eligible' ? candidate.variant ?? null : null;
+        regenerationMessage = current ? `Restored candidate · ${candidate.status}. ${candidate.reasons.join(' ')}` : 'The saved question changed after this candidate was generated. Generate against the current version before replacing.';
+        if (candidate.status !== 'preparing') {
+          regenerationRequest = undefined;
+          try { sessionStorage.removeItem(`${regenerationStorageKey}:pending`); } catch { /* Storage is optional. */ }
+        }
+        renderRegenerationPanel();
+      }).catch(() => undefined);
+    }
   });
 
   // --- Topics & LOs chips ----------------------------------------------------

@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { ensureCapability } from '../components/auth';
 import { validate } from '../middleware/validate';
+import { generateAnalyticsReport } from '../services/analytics-report.service';
 import {
   answerDistributions,
   examScores,
@@ -94,7 +95,34 @@ analyticsRouter.get(
       new ObjectId(String(req.params.courseId)),
       range(req.query as z.infer<typeof rangeQuery>),
     );
-    res.type('text/csv').attachment('engagement.csv').send(csvSerialize(result.weeks));
+    const rows = result.weeks.map(week => ({
+      week: week.week, questionsAttempted: week.questionsAttempted, sessions: week.sessions,
+      activeStudents: week.activeStudents, avgSessionMinutes: week.avgSessionMinutes,
+      loCoverageRate: week.loCoverageRate, reviewBookActivityRate: week.reviewBookActivityRate,
+    }));
+    res.type('text/csv').attachment('engagement.csv').send(csvSerialize(rows));
+  },
+);
+
+const reportQuery = rangeQuery.extend({ mode: outcomeQuery.shape.mode });
+analyticsRouter.get(
+  '/courses/:courseId/analytics/report.pdf',
+  validate({ params: courseParams, query: reportQuery }),
+  ensureCapability('analytics.view'),
+  async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof reportQuery>;
+    const scope = { ...range(query), mode: query.mode };
+    // Bound calendar expansion while accepting the dashboard's all-time sentinel.
+    if (scope.from.getTime() < 0 || scope.to.getTime() > Date.now() + 86_400_000) {
+      throw new Error('invalid-analytics-range');
+    }
+    const report = await generateAnalyticsReport(new ObjectId(String(req.params.courseId)), scope);
+    if (!report) {
+      res.status(404).json({ error: 'Course not found.' });
+      return;
+    }
+    const filename = `financebot-analytics-${scope.mode}-${scope.to.toISOString().slice(0, 10)}.pdf`;
+    res.set('Cache-Control', 'private, no-store').attachment(filename).send(report);
   },
 );
 

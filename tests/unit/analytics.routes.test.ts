@@ -1,10 +1,18 @@
 import express from 'express';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
-jest.mock('../../server/src/components/auth', () => ({ ensureCapability: (capability: string) => (req: express.Request, res: express.Response, next: () => void) => req.headers['x-view-only'] && capability === 'analytics.individual' ? res.sendStatus(403) : next() }));
+jest.mock('../../server/src/components/auth', () => ({ ensureCapability: (capability: string) => (req: express.Request, res: express.Response, next: () => void) => {
+  if (req.headers['x-signed-out']) return res.sendStatus(401);
+  if (req.headers['x-no-analytics'] || (req.headers['x-view-only'] && capability !== 'analytics.view')) return res.sendStatus(403);
+  return next();
+} }));
+jest.mock('../../server/src/services/analytics-report.service', () => ({
+  generateAnalyticsReport: jest.fn(async () => Buffer.from('%PDF-1.7')),
+}));
 jest.mock('../../server/src/services/analytics.service', () => ({ examScores: jest.fn(async () => ({ items: [], excludedUnscored: 0 })), failureRates: jest.fn(async () => []), questionPatterns: jest.fn(async () => ({ items: [], total: 0, limit: 20 })), answerDistributions: jest.fn(async () => ({})), engagement: jest.fn(async () => ({ weeks: [] })), csvSerialize: jest.fn(() => ''), lowEngagement: jest.fn(), searchStudents: jest.fn(), studentProfile: jest.fn() }));
 import { analyticsRouter } from '../../server/src/routes/analytics.routes';
 import { failureRates, answerDistributions, questionPatterns, engagement } from '../../server/src/services/analytics.service';
+import { generateAnalyticsReport } from '../../server/src/services/analytics-report.service';
 const courseId = new ObjectId().toHexString();
 const questionId = new ObjectId().toHexString();
 const versionId = new ObjectId().toHexString();
@@ -29,6 +37,28 @@ it('passes recorded version and returns missing version as 404', async () => {
 it('CSV and engagement share mode/range', async () => {
   for (const suffix of ['', '.csv']) await request(app).get(`${base}/engagement${suffix}?mode=exam-prep&from=2026-08-01&to=2026-08-28`);
   expect(engagement).toHaveBeenLastCalledWith(new ObjectId(courseId), { mode: 'exam-prep', from: new Date('2026-08-01'), to: new Date('2026-08-28') });
+});
+
+it('downloads a private PDF for aggregate-only viewers with the selected date and mode', async () => {
+  const response = await request(app).get(`${base}/report.pdf?mode=exam-prep&from=2026-08-01&to=2026-08-28`).set('x-view-only', 'yes');
+  expect(response.status).toBe(200);
+  expect(response.headers['content-type']).toMatch(/^application\/pdf/);
+  expect(response.headers['content-disposition']).toMatch(/^attachment; filename="?financebot-analytics-exam-prep-2026-08-28\.pdf"?$/);
+  expect(response.headers['cache-control']).toBe('private, no-store');
+  expect(generateAnalyticsReport).toHaveBeenLastCalledWith(new ObjectId(courseId), {
+    mode: 'exam-prep', from: new Date('2026-08-01'), to: new Date('2026-08-28'),
+  });
+});
+
+it('rejects inaccessible and invalid report requests before rendering', async () => {
+  jest.mocked(generateAnalyticsReport).mockClear();
+  const path = `${base}/report.pdf`;
+  expect((await request(app).get(path).set('x-signed-out', 'yes')).status).toBe(401);
+  expect((await request(app).get(path).set('x-no-analytics', 'yes')).status).toBe(403);
+  for (const query of ['mode=retry', 'from=2026-08-28&to=2026-08-01', 'from=1960-01-01', 'to=9999-01-01']) {
+    expect((await request(app).get(`${path}?${query}`)).status).toBe(400);
+  }
+  expect(generateAnalyticsReport).not.toHaveBeenCalled();
 });
 
 it('keeps identity-bearing follow-up behind individual permission while aggregates remain readable', async () => {

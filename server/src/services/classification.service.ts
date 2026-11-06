@@ -1,11 +1,15 @@
-import { generateStructure } from './structure-generation.service';
+import { authoringCollection, authoringCommitAvailable, currentAuthoringSession, withCourseAuthoringWrite } from './authoring-commit.service';
+import { assertStructureConsolidationAdoptable, assertStructureCapabilityAdoptable, assertStructureRepairAdoptable, generateStructure, loadStructureCorpus } from './structure-generation.service';
 import { assertEditRevision, editConflict, editRevisionFilter } from './edit-revision';
 import { ObjectId, type WithId } from 'mongodb';
 import { completeJson } from '../components/genai/llm';
-import { materialsCol, themesCol, losCol } from '../components/mongodb/collections';
+import { materialsCol, themesCol, losCol, contentRunsCol } from '../components/mongodb/collections';
 import type { LearningObjective, Material, MaterialKind, Theme } from '../types/domain';
 import { utilityStepConfig } from './admin.service';
 import { upsertCourseOutline } from './courses.service';
+import { createStructureGenerationRun, updateContentRun, failContentRun } from './content-runs.service';
+import { withModelUsage } from './model-usage.service';
+import type { StructureGenerationRun } from '../types/domain';
 
 // -----------------------------------------------------------------------------
 // Classification service (IN-S06): LLM-assisted material auto-classification and
@@ -23,7 +27,8 @@ import { upsertCourseOutline } from './courses.service';
 //
 //  - suggestHierarchy(courseId): from the ingested materials' text, propose a
 //    whole Theme -> LO outline plus the ready materials relevant to each LO.
-//    Pure read: it NEVER writes the DB.
+//    Public calls retain a durable generation run/source receipt for guarded
+//    Apply. Internal calls without an actor retain the read-only projection.
 //
 //  - applySuggestedHierarchy(courseId, input): creates the instructor-reviewed
 //    subset and atomically merges each suggested material link into the new
@@ -64,19 +69,19 @@ function normalizeName(name: string): string {
  * become review items. Extraction still runs before a hierarchy exists.
  */
 export async function classifyMaterial(materialId: ObjectId): Promise<void> {
-  const material = await materialsCol().findOne({ _id: materialId, deletedAt: { $exists: false } });
+  const material = await authoringCollection(materialsCol()).findOne({ _id: materialId, deletedAt: { $exists: false } });
   if (!material?.excerpt) return; // nothing ingested to classify
 
   const courseId = material.courseId;
   const [themes, los] = await Promise.all([
-    themesCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
-    losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    authoringCollection(themesCol()).find({ courseId, archivedAt: { $exists: false } }).toArray(),
+    authoringCollection(losCol()).find({ courseId, archivedAt: { $exists: false } }).toArray(),
   ]);
   const result = await completeJson<ClassificationResult>(buildClassificationPrompt(material, themes, los), {
     // temperature 0 is what this step has always used; an admin who sets one on
     // the utility step is overriding it deliberately, so the spread comes last.
     temperature: 0,
-    ...(await utilityStepConfig()),
+    ...(await utilityStepConfig(courseId)),
   });
 
   const rawMatches = Array.isArray(result.matches)
@@ -177,23 +182,36 @@ export async function classifyMaterial(materialId: ObjectId): Promise<void> {
   };
   if (aiKind && kindConfidence >= REVIEW_CONFIDENCE) set.kind = aiKind;
   if (needsReview[0]) set.classificationSuggestion = needsReview[0];
-  await materialsCol().updateOne(
+  await withCourseAuthoringWrite(courseId, () => authoringCollection(materialsCol()).updateOne(
     // AI work may take minutes. Do not overwrite a correction made while it ran.
     { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(material.revision ?? 0) },
     needsReview[0] ? { $set: set, $inc: { revision: 1 } } : { $set: set, $unset: { classificationSuggestion: '' }, $inc: { revision: 1 } },
-  );
+  ));
 }
 
-/** Legacy consumers retain their response shape, using the same full-source
- * analysis as the streaming Course Structure workspace. No outline is saved. */
-export async function suggestHierarchy(courseId: ObjectId): Promise<SuggestedHierarchy> {
+/** Public legacy suggestions also retain a durable source receipt for Apply.
+ * Internal read-only consumers may still request the historical projection. */
+export async function suggestHierarchy(courseId: ObjectId, requestedBy?: string): Promise<SuggestedHierarchy> {
+  let run: WithId<StructureGenerationRun> | undefined;
   try {
-    const result = await generateStructure(courseId, {});
+    if (requestedBy) {
+      const corpus = await loadStructureCorpus(courseId);
+      try { run = await createStructureGenerationRun({ courseId, requestedBy, options: { materialIds: corpus.materials.map(material => material.materialId), synthesisProtocol: 'source-condition-context-v1', pageTextObservationProtocol: 'native-page-text-observations-v1' } }); }
+      catch (error) { if ((error as { code?: number }).code === 11000) throw structureApplyError('structure-generation-in-progress'); throw error; }
+      await updateContentRun(run._id, { status: 'running', message: 'Preparing source analysis' });
+    }
+    const result = run ? await withModelUsage({ runId: run._id.toHexString(), courseId: courseId.toHexString(), actor: { puid: requestedBy! }, stage: 'structure-analysis' },
+      () => generateStructure(courseId, run!.input, run!._id)) : await generateStructure(courseId, {});
+    if (run) await updateContentRun(run._id, { status: 'completed', structureResult: result, message: 'Draft ready for review' });
     return {
+      ...(run ? { runId: run._id.toHexString() } : {}),
       themes: result.themes.map(t => ({ name: t.name, los: t.los.map(lo => lo.name) })),
       assignments: result.themes.flatMap((t, themeIndex) => t.los.map((lo, loIndex) => ({ themeIndex, loIndex, materialIds: lo.materialIds }))),
     };
   } catch (error) {
+    if (run && !(error instanceof Error && error.message === 'content-run-conflict')) {
+      await failContentRun(run._id, { code: 'structure-generation-failed', message: 'The outline could not be completed. Generate a new draft.', atStage: 'analyzing', retryable: true });
+    }
     if (error instanceof Error && error.message === 'structure-no-materials') return { themes: [], assignments: [] };
     throw error;
   }
@@ -211,17 +229,127 @@ export interface ApplySuggestedHierarchyResult {
   losCreated: number;
   materialsAssigned: number;
   assignmentsCreated: number;
+  consistency?: 'transactional' | 'best-effort';
+  warning?: string;
+  /** A teacher label edit is intentional authoring, not a new model review. */
+  capabilityReview?: { protocol: 'outline-capability-distinctness-v1'; reviewedObjectives: number; withheldObjectives: number;
+    wording: 'reviewed' | 'instructor-edited'; teacherEditedNames: number };
+  consolidationReview?: { protocol: 'durable-outline-consolidation-v1'; parentRunId: string; retiredIds: string[]; reviewedObjectives: number;
+    wording: 'reviewed' | 'instructor-edited'; teacherEditedNames: number };
+  repairReview?: { runId: string; parentRunId: string;
+    mode: 'wording-only-outline-repair-v1' | 'coverage-wording-outline-repair-v1';
+    wording: 'reviewed' | 'instructor-edited'; teacherEditedNames: number };
+}
+
+export interface ApplyGeneratedHierarchyInput {
+  runId: string;
+  themes: Array<{ name: string; los: Array<{ name: string; materialIds: string[]; sourceThemeIndex: number; sourceLoIndex: number }> }>;
+}
+
+function structureApplyError(message: string, status = 409): Error & { status: number } {
+  return Object.assign(new Error(message), { status });
+}
+
+/** Public AI adoption always resolves its source scope from a completed run.
+ * Text edits are instructor-authored; source links cannot be replaced or omitted. */
+export async function applyGeneratedHierarchy(courseId: ObjectId, input: ApplyGeneratedHierarchyInput): Promise<ApplySuggestedHierarchyResult> {
+  if (!ObjectId.isValid(input.runId)) throw structureApplyError('structure-apply-run-required', 400);
+  // An existing session must also belong to this course before the first read.
+  if (authoringCommitAvailable() || currentAuthoringSession()) {
+    return withCourseAuthoringWrite(courseId, () => applyGeneratedHierarchyInScope(courseId, input));
+  }
+  return applyGeneratedHierarchyInScope(courseId, input);
+}
+
+async function applyGeneratedHierarchyInScope(courseId: ObjectId, input: ApplyGeneratedHierarchyInput): Promise<ApplySuggestedHierarchyResult> {
+  const transactional = Boolean(currentAuthoringSession());
+  const run = await authoringCollection(contentRunsCol()).findOne({ _id: new ObjectId(input.runId), courseId, kind: 'structure-generation', status: 'completed' });
+  if (!run || run.kind !== 'structure-generation' || !run.structureResult?.coverage.sourceFingerprint) throw structureApplyError('structure-apply-run-unavailable');
+  // Repair branches have stronger authority than ordinary historical drafts.
+  // Re-enter a required course transaction rather than best-effort adoption.
+  const hasRepair = Object.hasOwn(run, 'structureRepair');
+  const hasCapability = Object.hasOwn(run.input, 'capabilityDistinctnessProtocol');
+  const hasConsolidation = Object.hasOwn(run, 'structureConsolidation');
+  if ((hasRepair || hasCapability || hasConsolidation) && !currentAuthoringSession()) {
+    return withCourseAuthoringWrite(courseId, () => applyGeneratedHierarchyInScope(courseId, input), { required: true });
+  }
+  const consolidation = hasConsolidation ? await assertStructureConsolidationAdoptable(courseId, run) : undefined;
+  if (hasConsolidation && !consolidation) throw structureApplyError('structure-apply-consolidation-authority-missing');
+  const capability = hasCapability && !hasConsolidation ? await assertStructureCapabilityAdoptable(courseId, run) : undefined;
+  if (hasCapability && !hasConsolidation && !capability) throw structureApplyError('structure-apply-capability-authority-missing');
+  const repair = hasRepair ? await assertStructureRepairAdoptable(courseId, run) : undefined;
+  if (hasRepair && !repair) throw structureApplyError('structure-apply-repair-authority-missing');
+  const selected = new Set<string>();
+  let teacherEditedNames = 0;
+  const expectedIds = new Set(run.structureResult.coverage.sourceSelection.included.map(source => source.materialId));
+  const identities = (ids: string[]) => JSON.stringify([...new Set(ids)].sort());
+  for (const theme of input.themes) {
+    let editedTopic = false;
+    for (const lo of theme.los) {
+      const source = Number.isSafeInteger(lo.sourceThemeIndex) && Number.isSafeInteger(lo.sourceLoIndex) && lo.sourceThemeIndex >= 0 && lo.sourceLoIndex >= 0
+        ? run.structureResult.themes[lo.sourceThemeIndex]?.los[lo.sourceLoIndex] : undefined;
+      const key = `${lo.sourceThemeIndex}:${lo.sourceLoIndex}`;
+      if (!source || selected.has(key) || !source.materialIds.length || source.materialIds.some(id => !expectedIds.has(id)) ||
+        identities(lo.materialIds) !== identities(source.materialIds)) throw structureApplyError('structure-apply-source-scope-changed');
+      selected.add(key);
+      if (repair || capability || consolidation) {
+        if (lo.name.trim() !== source.name.trim()) teacherEditedNames += 1;
+        if (theme.name.trim() !== run.structureResult.themes[lo.sourceThemeIndex]!.name.trim()) editedTopic = true;
+      }
+    }
+    if (editedTopic) teacherEditedNames += 1;
+  }
+  if (consolidation && selected.size !== run.structureResult.themes.reduce((sum, theme) => sum + theme.los.length, 0)) throw structureApplyError('structure-apply-consolidation-full-projection-required');
+  if (!selected.size) throw structureApplyError('suggested-hierarchy-invalid', 400);
+  // Replica-set reads share the short course-fenced transaction. Standalone
+  // checks both sides of revision-guarded writes and reports its weaker guarantee.
+  const currentCorpus = () => loadStructureCorpus(courseId, run.input.materialIds, run.input.sourceBatchId, run.input.sourceReplacements);
+  let corpus: Awaited<ReturnType<typeof loadStructureCorpus>>;
+  try { corpus = await currentCorpus(); }
+  catch { throw structureApplyError('structure-apply-source-changed'); }
+  if (corpus.fingerprint !== run.structureResult.coverage.sourceFingerprint) throw structureApplyError('structure-apply-source-changed');
+  let writesStarted = false;
+  try {
+    const result = await applySuggestedHierarchy(courseId, input, {
+      expectedRevisions: new Map(corpus.sourceSelection.included.map(source => [source.materialId, source.revision ?? 0])),
+      beforeHierarchyWrite: () => { writesStarted = true; },
+    });
+    if ((await currentCorpus()).fingerprint !== corpus.fingerprint) throw structureApplyError('structure-apply-source-changed');
+    return { ...result, consistency: transactional ? 'transactional' : 'best-effort',
+      ...(!transactional ? { warning: 'Sources were checked before and after applying. This database does not support atomic source adoption; concurrent source changes cannot be ruled out.' } : {}),
+      ...(capability ? { capabilityReview: { ...capability, wording: teacherEditedNames ? 'instructor-edited' as const : 'reviewed' as const, teacherEditedNames },
+        ...(teacherEditedNames ? { warning: 'Your edited labels were applied as instructor-authored wording. Capability comparisons cover the stored proposal, not these subsequent text edits.' } : {}) } : {}),
+      ...(consolidation ? { consolidationReview: { protocol: consolidation.protocol, parentRunId: consolidation.parentRunId, retiredIds: consolidation.retiredIds, reviewedObjectives: consolidation.reviewedObjectives, wording: teacherEditedNames ? 'instructor-edited' as const : 'reviewed' as const, teacherEditedNames },
+        ...(teacherEditedNames ? { warning: 'Your edited labels are instructor-authored. The full consolidation review covers the stored wording, not subsequent teacher edits.' } : {}) } : {}),
+      ...(repair ? { repairReview: { runId: run._id.toHexString(), ...repair,
+        wording: teacherEditedNames ? 'instructor-edited' as const : 'reviewed' as const, teacherEditedNames },
+        ...(teacherEditedNames ? { warning: 'Your edited labels were applied as instructor-authored wording. The independent repair review covers the stored proposal, not these subsequent text edits.' } : {}) } : {}),
+    };
+  } catch (error) {
+    // Standalone cannot roll back shared hierarchy rows safely. Never return a
+    // ready/success receipt after a detected race or an uncertain partial write.
+    if (!transactional && writesStarted) throw structureApplyError('structure-apply-conflict-after-write');
+    throw error;
+  }
+}
+
+interface HierarchySourceGuard {
+  expectedRevisions: Map<string, number>;
+  beforeHierarchyWrite: () => void;
 }
 
 /**
- * Applies an instructor-reviewed AI hierarchy and its source mappings. All
+ * Internal/manual hierarchy application. Public AI callers must use
+ * applyGeneratedHierarchy so omitting its run proof cannot choose this path. All
  * referenced materials are validated before the first hierarchy write so a
  * stale or cross-course material id cannot leave a partially-created outline.
  */
 export async function applySuggestedHierarchy(
   courseId: ObjectId,
   input: ApplySuggestedHierarchyInput,
+  sourceGuard?: HierarchySourceGuard,
 ): Promise<ApplySuggestedHierarchyResult> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => applySuggestedHierarchy(courseId, input, sourceGuard));
   const normalized = input.themes.map((theme) => ({
     name: theme.name.trim(),
     los: theme.los.map((lo) => ({
@@ -231,7 +359,8 @@ export async function applySuggestedHierarchy(
   }));
   if (
     normalized.length === 0 ||
-    normalized.some((theme) => theme.name === '' || theme.los.some((lo) => lo.name === ''))
+    normalized.some((theme) => theme.name === '' || !theme.los.length || theme.los.some((lo) => lo.name === '') ||
+      new Set(theme.los.map(lo => lo.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-CA'))).size !== theme.los.length)
   ) {
     throw new Error('suggested-hierarchy-invalid');
   }
@@ -246,13 +375,17 @@ export async function applySuggestedHierarchy(
   const materials =
     materialIds.length === 0
       ? []
-      : await materialsCol()
+      : await authoringCollection(materialsCol())
           .find({ _id: { $in: materialIds }, courseId, status: 'ready', deletedAt: { $exists: false } })
           .toArray();
   if (materials.length !== materialIds.length) {
     throw new Error('suggested-hierarchy-material-not-found');
   }
+  if (sourceGuard && materials.some(material => sourceGuard.expectedRevisions.get(material._id.toHexString()) !== (material.revision ?? 0))) {
+    throw structureApplyError('structure-apply-source-changed');
+  }
 
+  sourceGuard?.beforeHierarchyWrite();
   const outline = await upsertCourseOutline(courseId, {
     themes: normalized.map((theme) => ({
       name: theme.name,
@@ -288,14 +421,18 @@ export async function applySuggestedHierarchy(
     );
     if (novel.length === 0) continue;
     assignmentsCreated += novel.length;
-    await materialsCol().updateOne(
-      { _id: material._id, courseId },
+    const expectedRevision = material.revision ?? 0;
+    const written = await authoringCollection(materialsCol()).updateOne(
+      { _id: material._id, courseId, ...(sourceGuard ? { status: 'ready', deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision) } : {}) },
       {
         $addToSet: { assignments: { $each: novel } },
         $inc: { revision: 1 },
         $unset: { classificationSuggestion: '' },
       },
     );
+    if (sourceGuard) {
+      if (written.matchedCount !== 1) throw structureApplyError('structure-apply-source-changed');
+    }
   }
 
   return {
@@ -318,14 +455,15 @@ export async function resolveClassification(
   action: 'accept' | 'reject',
   expectedRevision?: number,
 ): Promise<WithId<Material>> {
-  const material = await materialsCol().findOne({ _id: materialId });
+  const material = await authoringCollection(materialsCol()).findOne({ _id: materialId });
   if (!material) throw new Error('material-not-found');
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(material.courseId, () => resolveClassification(materialId, action, expectedRevision));
   assertEditRevision('Material', material, expectedRevision);
 
   const clearSuggestion = { $unset: { classificationSuggestion: '', classificationSuggestions: '' }, $inc: { revision: 1 } } as const;
 
   if (action === 'reject') {
-    const updated = await materialsCol().findOneAndUpdate(
+    const updated = await authoringCollection(materialsCol()).findOneAndUpdate(
       { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision ?? material.revision ?? 0) },
       clearSuggestion,
       { returnDocument: 'after' },
@@ -352,7 +490,7 @@ export async function resolveClassification(
     ? assignments
     : [...assignments, { themeId: suggestion.themeId, ...(suggestion.loId ? { loId: suggestion.loId } : {}) }];
 
-  const updated = await materialsCol().findOneAndUpdate(
+  const updated = await authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision ?? material.revision ?? 0) },
     { $set: { assignments: nextAssignments }, ...clearSuggestion },
     { returnDocument: 'after' },
@@ -363,6 +501,7 @@ export async function resolveClassification(
 
 /** The shape suggestHierarchy returns and the endpoint serializes. */
 export interface SuggestedHierarchy {
+  runId?: string;
   themes: Array<{ name: string; los: string[] }>;
   assignments: Array<{
     themeIndex: number;

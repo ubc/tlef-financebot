@@ -1,5 +1,15 @@
 # AGENTS.md — server/src/routes
 
+`materials.routes.ts` exposes Instructor/Admin GET/POST
+`/courses/:courseId/structure-generation/:runId/repair`. GET is no-store and
+read-only, resolves linked parents/children and returns bounded exact point
+quotes. POST accepts only strict versioned wording-target or assigned-point
+selections (two objectives, eight points each), with no caller verdict, provider
+or budget authority. Both share one checkpoint cycle and the existing worker;
+neither applies hierarchy automatically. Apply revalidates repaired authority
+inside a required course transaction. Ordinary historical unavailable repair
+state is explicit 200, not guessed from a 404. See the API contract.
+
 `registration-codes.routes.ts` exposes course Instructor/Admin-only list,
 idempotent batch creation, unused-code revocation and soft record deletion.
 List queries are code-level paginated (10/25/50) with optional status filters;

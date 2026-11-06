@@ -1,5 +1,5 @@
 import type { ObjectId } from 'mongodb';
-import type { Difficulty, QuestionOption, QuestionType } from './domain';
+import type { DerivedValue, Difficulty, GenerationModelSnapshot, ParamSlot, QuestionOption, QuestionType } from './domain';
 
 export interface PaperQuestion {
   id: string;
@@ -16,6 +16,13 @@ export interface PaperQuestion {
   minutes: number;
   seed?: number;
   paramValues?: Record<string, number>;
+  /** Private immutable premises for checking this exact frozen numerical instance. */
+  numericDefinition?: {
+    stem: string;
+    options: Array<{ key: string; text: string }>;
+    paramSlots: ParamSlot[];
+    derivedValues: DerivedValue[];
+  };
   validated: boolean;
   approval?: { by: string; at: string };
   assessment?: { decision: string; reasoning: string };
@@ -82,6 +89,7 @@ export interface ExamGenerationProgress {
 }
 export interface ExamBuildRun {
   operationId?: string;
+  modelSnapshot?: GenerationModelSnapshot;
   progress?: ExamGenerationProgress;
   courseId: ObjectId;
   examId: ObjectId;

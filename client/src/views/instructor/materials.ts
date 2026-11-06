@@ -16,16 +16,23 @@ import {
   subscribeContentRuns,
   trashMaterial,
   updateMaterialKind,
-  uploadMaterials,
+  prepareMaterialUploadBatch,
+  uploadMaterialBatchFiles,
+  getMaterialUploadBatch,
+  getSourceReadiness,
   addUrlMaterial,
   type ContentRunSummary,
   type CourseKnowledgeGraph,
   type CourseTree,
   type Material,
   type MaterialAssignment,
+  type MaterialChunk,
   type MaterialKind,
   type MaterialWorkspaceDetail,
+  type MaterialUploadBatch,
+  type SourceSelectionReport,
 } from '../../api.js';
+import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
 import { uploadZone } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
@@ -131,6 +138,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   let graphSearch = '';
   let graphType = 'all';
   let graphZoom = 0.9;
+  const batchStorageKey = `financebot:source-batch:${getSession().user?.puid ?? 'unknown'}:${courseId}`;
+  let sourceBatchId: string | undefined;
+  let sourceBatch: MaterialUploadBatch | undefined;
+  let sourceReport: SourceSelectionReport | undefined;
+  let uploadRequest: { key: string; id: string } | undefined;
+  try { sourceBatchId = sessionStorage.getItem(batchStorageKey) ?? undefined; } catch { /* The receipt remains on the server. */ }
   const runs = new Map(recentRuns.map((run) => [run._id, run]));
   const refreshedTerminalRuns = new Set<string>();
   const assistantMessages: Array<{ role: 'assistant' | 'user'; text: string; action?: { label: string; run: () => void } }> = [
@@ -200,15 +213,35 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   async function doUpload(files: File[]): Promise<void> {
     feedback.replaceChildren();
     try {
-      const created = await uploadMaterials(courseId, files);
-      materials = [...created, ...materials];
+      const key = JSON.stringify(files.map(file => [file.name, file.size, file.lastModified]));
+      if (uploadRequest?.key !== key) uploadRequest = { key, id: crypto.randomUUID() };
+      sourceBatch = await prepareMaterialUploadBatch(courseId, files, uploadRequest!.id);
+      sourceBatchId = sourceBatch._id;
+      try { sessionStorage.setItem(batchStorageKey, sourceBatchId); } catch { /* Storage is optional. */ }
+      refresh();
+      sourceBatch = await uploadMaterialBatchFiles(courseId, sourceBatchId, files);
+      const ids = new Set(sourceBatch.items.flatMap(item => item.materialId ? [item.materialId] : []));
+      materials = await listMaterials(courseId);
+      const created = materials.filter(material => ids.has(material._id));
+      uploadRequest = undefined;
       fileMode = 'files';
       if (created[0]) selectMaterial(created[0]);
-      flash(`${created.length} material${created.length === 1 ? '' : 's'} added. Processing is running in the activity stream.`);
+      const reused = sourceBatch.items.filter(item => item.disposition === 'reused').length;
+      flash(`${sourceBatch.items.length} requested files received · ${reused} existing sources reused. Processing is running in the activity stream.`);
+      await refreshSourceBatch();
       refresh();
     } catch (error) {
+      await refreshSourceBatch().catch(() => undefined);
       feedback.replaceChildren(errorState(error instanceof ApiError ? error.message : (error as Error).message));
     }
+  }
+
+  async function refreshSourceBatch(): Promise<void> {
+    if (!sourceBatchId) return;
+    const id = sourceBatchId;
+    const [batch, report] = await Promise.all([getMaterialUploadBatch(courseId, id), getSourceReadiness(courseId, { sourceBatchId: id })]);
+    if (sourceBatchId !== id || !root.isConnected) return;
+    sourceBatch = batch; sourceReport = report; refresh();
   }
 
   async function doAddUrl(input: HTMLInputElement): Promise<void> {
@@ -275,14 +308,24 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     refresh();
   }
 
-  async function buildKnowledgeBase(source: 'quick' | 'assistant' = 'quick'): Promise<void> {
+  async function buildKnowledgeBase(source: 'quick' | 'assistant' = 'quick', readySubset = false): Promise<void> {
     if (knowledgeBuildSource) return;
     knowledgeBuildSource = source;
     assistantMessages.push({ role: 'assistant', text: 'Analyzing the indexed materials for a draft Topic/LO structure…' });
     refresh();
     try {
-      const materialIds = materials.filter((material) => material.status === 'ready' && !material.deletedAt).map((material) => material._id);
-      await startStructureGeneration(courseId, { materialIds });
+      const allIds = materials.filter(material => !material.deletedAt).map(material => material._id);
+      const selection = sourceBatchId ? await getSourceReadiness(courseId, { sourceBatchId }) : await getSourceReadiness(courseId, { materialIds: allIds });
+      if (!readySubset && !selection.ready) throw new Error(`Sources are not ready: ${selection.requested.filter(item => !item.ready).map(item => `${item.name} (${item.reason ?? item.state})`).join('; ')}. Wait, retry the files, or explicitly analyze the ready subset.`);
+      const combined = await getSourceReadiness(courseId, { materialIds: allIds });
+      const missing = combined.requested.filter(item => !item.ready);
+      if (!readySubset && missing.length) throw new Error(`Sources are not ready: ${missing.map(item => `${item.name} (${item.reason ?? item.state})`).join('; ')}.`);
+      const materialIds = readySubset ? combined.included.map(item => item.materialId) : allIds;
+      if (readySubset) {
+        const omitted = [...selection.requested.filter(item => !item.ready), ...missing].map(item => item.name);
+        if (!await confirmDialog({ title: 'Analyze only ready sources?', message: `The draft will exclude: ${[...new Set(omitted)].join(', ') || 'no unavailable files'}. Existing outline and sources remain.`, confirmLabel: 'Analyze ready subset' })) { knowledgeBuildSource = null; refresh(); return; }
+      }
+      await startStructureGeneration(courseId, { materialIds, ...(sourceBatchId ? { sourceBatchId } : {}) });
       assistantMessages.push({
         role: 'assistant',
         text: 'Draft generation started. You can review its live progress, edit the result, and choose what to add to the course.',
@@ -489,6 +532,11 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('button', { class: 'workspace-action', type: 'button', onclick: () => { fileMode = 'review'; refresh(); } }, el('strong', { text: 'Review suggestions' }), el('span', { text: 'Resolve medium-confidence matches' })),
         el('button', { class: 'workspace-action', type: 'button', onclick: () => { rightTab = 'graph'; refresh(); } }, el('strong', { text: 'Explore graph' }), el('span', { text: 'Trace source → concept → LO → question' })),
       ),
+      sourceBatch ? el('details', { class: 'workspace-message', open: !sourceReport?.ready },
+        el('summary', { text: `Latest upload · ${sourceBatch.counts?.ready ?? 0}/${sourceBatch.items.length} sources indexed` }),
+        el('ul', {}, ...sourceBatch.items.map(item => el('li', { text: `${item.name} · ${item.readiness?.ready ? 'Indexed' : item.readiness?.reason ?? item.error ?? item.disposition}${item.disposition === 'reused' ? ' · Reused existing source' : ''}` }))),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: refreshSourceBatch }, 'Refresh source status'),
+        sourceReport && !sourceReport.ready ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: !!knowledgeBuildSource, onclick: () => buildKnowledgeBase('quick', true) }, 'Analyze ready subset…') : false) : false,
       el(
         'div',
         { class: 'workspace-chat', role: 'log', 'aria-live': 'polite' },
@@ -504,6 +552,43 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       el('div', { class: 'workspace-assistant__composer' }, prompt, el('button', { class: 'btn btn--instr-primary', type: 'button', disabled: assistantBusy ? 'disabled' : undefined, busy: assistantBusy, onclick: () => handleAssistantPrompt(prompt) }, assistantBusy ? 'Working…' : 'Send')),
       activityTimeline(),
     );
+  }
+
+  function sourceReceipt(material: Material, loaded: MaterialWorkspaceDetail | undefined): HTMLElement {
+    const receipt = loaded?.sourceProvenance;
+    const status = receipt?.status === 'verified' ? 'Physical page locations verified'
+      : receipt?.status === 'partial' ? 'Some physical page locations are unavailable' : 'Physical page locations unavailable';
+    return el('div', { class: 'workspace-metadata-block' }, el('h3', { text: 'PDF source receipt' }),
+      el('p', { class: 'workspace-muted', text: material.status === 'processing' ? 'Source receipt will appear after processing.' : status }),
+      receipt?.successfulEngine ? el('p', { class: 'workspace-muted', text: `Text parser: ${receipt.successfulEngine === 'poppler-pdftotext' ? 'Poppler' : 'Document toolkit'}${receipt.engineVersion ? ` · ${receipt.engineVersion}` : ''}` }) : false,
+      Number.isSafeInteger(receipt?.pageCount) && receipt!.pageCount! > 0 ? el('p', { class: 'workspace-muted', text: `${receipt!.pageCount} physical PDF pages` }) : false,
+      el('p', { class: 'workspace-muted', text: 'Page locations identify the original file. They do not verify chart interpretation or teaching coverage.' }),
+      receipt?.pdfSha256 ? el('p', { class: 'workspace-muted', style: 'overflow-wrap:anywhere', text: `PDF SHA-256: ${receipt.pdfSha256}` }) : false,
+      receipt?.rawTextSha256 ? el('p', { class: 'workspace-muted', style: 'overflow-wrap:anywhere', text: `Parsed text SHA-256: ${receipt.rawTextSha256}` }) : false);
+  }
+
+  function chunkPageLinks(material: Material, loaded: MaterialWorkspaceDetail, chunk: MaterialChunk): HTMLElement {
+    const provenance = chunk.sourceProvenance;
+    const locator = provenance?.locator;
+    const receipt = loaded.sourceProvenance;
+    const expected = receipt?.provenanceId;
+    const valid = !!provenance && !!expected && /^[a-f0-9]{24}$/.test(expected) && provenance.provenanceId === expected &&
+      (receipt?.status === 'verified' || receipt?.status === 'partial') && Number.isSafeInteger(receipt.pageCount) && receipt.pageCount! > 0 &&
+      provenance.pdfSha256 === receipt.pdfSha256 && provenance.rawTextSha256 === receipt.rawTextSha256 &&
+      [provenance.pdfSha256, provenance.rawTextSha256, provenance.pageMapSha256, locator?.chunkTextSha256].every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) &&
+      locator?.status === 'verified' && locator.version === 'pdf-chunk-locator-v1' && locator.offsetUnit === 'utf16-code-units' &&
+      Number.isSafeInteger(locator.rawStart) && Number.isSafeInteger(locator.rawEnd) && locator.rawStart >= 0 && locator.rawEnd - locator.rawStart === chunk.text.length &&
+      Array.isArray(locator.pageSpans) && locator.pageSpans.length > 0 &&
+      locator.pageSpans.every((span, index, spans) => !!span && Number.isSafeInteger(span.physicalPage) && span.physicalPage > 0 &&
+        span.physicalPage <= receipt.pageCount! && Number.isSafeInteger(span.rawStart) && Number.isSafeInteger(span.rawEnd) &&
+        Number.isSafeInteger(span.chunkStart) && Number.isSafeInteger(span.chunkEnd) && span.chunkStart >= 0 && span.chunkEnd > span.chunkStart && span.chunkEnd <= chunk.text.length &&
+        span.rawStart === locator.rawStart + span.chunkStart && span.rawEnd === locator.rawStart + span.chunkEnd &&
+        (index === 0 || (span.physicalPage > spans[index - 1].physicalPage && span.chunkStart >= spans[index - 1].chunkEnd)));
+    if (!valid || locator?.status !== 'verified') return el('p', { class: 'workspace-muted', text: 'Physical PDF page unavailable.' });
+    return el('div', { class: 'row', 'aria-label': `Physical PDF pages for chunk ${chunk.index + 1}` },
+      ...locator.pageSpans.map(span => el('a', { class: 'btn btn--ghost btn--sm',
+        href: `${materialSourceUrl(courseId, material._id, expected)}#page=${span.physicalPage}`,
+        target: '_blank', rel: 'noopener', text: `PDF p. ${span.physicalPage}` })));
   }
 
   function metadataPanel(material: Material, loaded: MaterialWorkspaceDetail | undefined): HTMLElement {
@@ -559,6 +644,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     return el(
       'div',
       { class: 'workspace-inspector__content' },
+      material.format === 'pdf' ? sourceReceipt(material, loaded) : false,
       material.automation?.assignment
         ? el(
             'div',
@@ -693,7 +779,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     else if (!material) content = el('p', { class: 'workspace-empty', text: 'Select a source.' });
     else if (detailLoading || detail?.material._id !== material._id) content = loadingState('Loading source…');
     else if (rightTab === 'chunks') {
-      content = el('div', { class: 'workspace-inspector__content' }, ...(detail?.chunks.length ? detail.chunks.map((chunk) => el('article', { class: 'workspace-chunk' }, el('div', { class: 'row row--between' }, el('strong', { text: `Chunk ${chunk.index + 1}` }), el('span', { text: `${chunk.characterCount} chars` })), el('p', { text: chunk.text }))) : [el('p', { class: 'workspace-empty', text: material.status === 'processing' ? 'Chunks will appear after parsing.' : 'No extracted chunks.' })]));
+      content = el('div', { class: 'workspace-inspector__content' },
+        material.format === 'pdf' ? el('p', { class: 'workspace-muted', text: 'PDF pages refer to the original file, not printed slide numbers.' }) : false,
+        ...(detail?.chunks.length ? detail.chunks.map((chunk) => el('article', { class: 'workspace-chunk' },
+          el('div', { class: 'row row--between' }, el('strong', { text: `Chunk ${chunk.index + 1}` }), el('span', { text: `${chunk.characterCount} chars` })),
+          material.format === 'pdf' ? chunkPageLinks(material, detail!, chunk) : false,
+          el('p', { text: chunk.text }))) : [el('p', { class: 'workspace-empty', text: material.status === 'processing' ? 'Chunks will appear after parsing.' : 'No extracted chunks.' })]));
     } else if (rightTab === 'metadata') content = metadataPanel(material, detail);
     else {
       const canEmbed = material.format === 'pdf' || material.format === 'url';
@@ -750,9 +841,16 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     onSnapshot: (snapshot) => { for (const run of snapshot) void applyRunUpdate(run, 'snapshot'); },
     onRun: (run) => void applyRunUpdate(run, 'live'),
   });
+  if (sourceBatchId) void refreshSourceBatch().catch(() => undefined);
+  let batchPollBusy = false;
+  const batchPoll = setInterval(() => {
+    if (!sourceBatchId || batchPollBusy || !root.isConnected) return;
+    batchPollBusy = true; void refreshSourceBatch().catch(() => undefined).finally(() => { batchPollBusy = false; });
+  }, 5000);
   const observer = new MutationObserver(() => {
     if (root.isConnected) return;
     closeStream();
+    clearInterval(batchPoll);
     observer.disconnect();
   });
   observer.observe(outlet, { childList: true });

@@ -12,8 +12,12 @@ jest.mock('../../server/src/config/env', () => ({ env: {
 // pointing back at the settings change that caused it.
 const findPlatformSettings = jest.fn();
 const replacePlatformSettings = jest.fn();
+const findCourse = jest.fn();
+const updateCourse = jest.fn();
+const insertAudit = jest.fn();
 jest.mock('../../server/src/components/mongodb/collections', () => ({
-  auditCol: jest.fn(() => ({ insertOne: jest.fn() })),
+  auditCol: jest.fn(() => ({ insertOne: insertAudit })),
+  coursesCol: jest.fn(() => ({ findOne: findCourse, updateOne: updateCourse })),
   capabilitySettingsCol: jest.fn(),
   platformInstructorGrantsCol: jest.fn(),
   platformSettingsCol: jest.fn(() => ({ findOne: findPlatformSettings, replaceOne: replacePlatformSettings })),
@@ -21,11 +25,15 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
 }));
 
 import {
+  getAdminCourseModels,
   getPlatformSettings,
   normalizePlatformSettings,
   updatePlatformSettings,
   utilityStepConfig,
+  saveAdminCourseModels,
 } from '../../server/src/services/admin.service';
+import { ObjectId } from 'mongodb';
+import { modelRequestOptions } from '../../server/src/components/genai/llm/model-capabilities';
 import { env } from '../../server/src/config/env';
 import type { PlatformSettings } from '../../server/src/types/domain';
 
@@ -50,7 +58,39 @@ function validPatch(over: Partial<PlatformSettings['models']> = {}) {
 beforeEach(() => {
   findPlatformSettings.mockReset();
   replacePlatformSettings.mockReset();
+  findCourse.mockReset();
+  updateCourse.mockReset();
+  insertAudit.mockReset();
   findPlatformSettings.mockResolvedValue({ _id: 'platform', ...validPatch() });
+});
+
+it('isolates course model choices, inherits compatible parameters and clears with a revisioned save', async () => {
+  const courseId = new ObjectId();
+  findPlatformSettings.mockResolvedValue({
+    _id: 'platform', ...validPatch({ generator: { model: NANO, modelSource: 'override', reasoningEffort: 'high' } }),
+    customModels: [{ id: 'campus-reasoner', profile: 'reasoning-fixed' }],
+  });
+  const course = { _id: courseId };
+  findCourse.mockImplementation(async (filter) => filter._id.equals(courseId) ? course : { _id: filter._id });
+  updateCourse.mockResolvedValue({ matchedCount: 1 });
+  const next = await saveAdminCourseModels(courseId, 0, { generator: 'campus-reasoner', utility: NANO }, 'ADMIN');
+  expect(next).toMatchObject({ revision: 1, overrides: { generator: 'campus-reasoner', utility: NANO }, effectiveModels: {
+    generator: { model: 'campus-reasoner', capabilityProfile: 'reasoning-fixed', reasoningEffort: 'high' },
+  } });
+  const mutation = updateCourse.mock.calls[0][1];
+  Object.assign(course, mutation.$set);
+  expect(updateCourse.mock.calls[0][0]).toEqual({ _id: courseId, 'llmModelSettings.revision': { $exists: false } });
+  expect(modelRequestOptions({ ...(await getPlatformSettings(courseId)).models.generator, maxTokens: 10 })).toMatchObject({
+    model: 'campus-reasoner', max_completion_tokens: 10, reasoning_effort: 'high',
+  });
+  await expect(utilityStepConfig(courseId)).resolves.toMatchObject({ model: NANO });
+  await expect(utilityStepConfig(new ObjectId())).resolves.toMatchObject({ model: 'gpt-6-luna' });
+  expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ courseId, action: 'course-models.update' }));
+  await expect(saveAdminCourseModels(courseId, 0, {}, 'ADMIN')).rejects.toThrow('course-models-conflict');
+  await expect(saveAdminCourseModels(courseId, 1, { generator: 'unknown-model' }, 'ADMIN')).rejects.toThrow('invalid-model-selector');
+  const cleared = await saveAdminCourseModels(courseId, 1, {}, 'ADMIN');
+  expect(cleared).toMatchObject({ overrides: {}, effectiveModels: { generator: { model: NANO } }, revision: 2 });
+  await expect(getAdminCourseModels(courseId)).resolves.toMatchObject({ revision: 1 });
 });
 
 describe('reading a document written by an older deploy', () => {

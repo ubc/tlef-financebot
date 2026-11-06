@@ -87,6 +87,7 @@ export async function exportGenerationEvaluation(courseId: ObjectId, runId: Obje
       if (sources.recordedSourceRefsTruncated) limitations.add('At least one saved question source-reference list was truncated to the export budget. These excerpts cannot establish complete source coverage.');
       return { item, outcome: 'saved', candidate, questionVersionId: version._id.toHexString(), failureCodes,
         ...(assessment ? { assessment } : {}), ...sources,
+        ...(version.taskDescriptor ? { taskDescriptor: version.taskDescriptor } : {}),
         ...(version.verification ? { numericVerification: { ...version.verification, sampleSeeds: [...version.verification.sampleSeeds], verifiedAt: iso(version.verification.verifiedAt) } } : {}),
       };
     }
@@ -111,6 +112,7 @@ export async function exportGenerationEvaluation(courseId: ObjectId, runId: Obje
     limitations.add('No frozen source evidence packet is retained for this run. Copied question sourceRefs, when present, are partial original excerpts, not reconstructed source eligibility/version or complete retrieval context.');
   }
   if (run.result?.quality?.evidence?.coverage.truncated) limitations.add('The frozen evidence packet omitted passages because of its generation-time budget.');
+  if (run.result?.quality?.evidencePackets?.some(packet => packet.coverage.truncated)) limitations.add('At least one per-slot evidence packet omitted passages under its bounded original-source budget.');
   if (assessments.some(assessment => assessment.coverage.memoryTruncated || assessment.coverage.missingVersions > 0)) {
     limitations.add('Question-memory comparison was bounded or contained missing versions. Compared version IDs do not reconstruct the complete starting Bank/Queue.');
   }
@@ -146,6 +148,15 @@ export async function exportGenerationEvaluation(courseId: ObjectId, runId: Obje
       ...(run.startedAt ? { startedAt: iso(run.startedAt) } : {}), ...(run.completedAt ? { finishedAt: iso(run.completedAt) } : {}),
     },
     slots, ...(run.result?.quality?.evidence ? { evidence: run.result.quality.evidence } : {}),
+    ...(run.result?.quality?.evidencePackets ? { evidencePackets: run.result.quality.evidencePackets } : {}),
+    ...(run.result?.quality?.policy === 'grounded-memory-v2' ? { executionDiagnostics: {
+      ...(run.result.quality.taskPlanId ? { taskPlanId: run.result.quality.taskPlanId } : {}),
+      ...(run.result.quality.independentRequested !== undefined ? { independentRequested: run.result.quality.independentRequested } : {}),
+      ...(run.result.quality.independentPlanned !== undefined ? { independentPlanned: run.result.quality.independentPlanned } : {}),
+      ...(run.result.quality.variantsCreated !== undefined ? { variantsCreated: run.result.quality.variantsCreated } : {}),
+      ...(run.result.quality.slotBudgets ? { slotBudgets: run.result.quality.slotBudgets } : {}),
+      evidencePacketIds: [...new Set([...(run.result.quality.evidence ? [run.result.quality.evidence.id] : []), ...(run.result.quality.evidencePackets ?? []).map(packet => packet.id)])],
+    } } : {}),
     usage: { summary: modelUsageSummaryDto(summary), calls, totalCalls, callsTruncated: totalCalls > calls.length },
     limitations: [...limitations],
   };

@@ -8,14 +8,14 @@ const patterns = { items: [
   { questionId: question, versionId: historical, version: 1, isCurrent: false, available: true, stem: 'How much is the historical value?', loId: objective, loName: 'Value at Risk', themeId: 'theme', themeName: 'Risk', attempts: 6, insufficient: false, failureRate: 0 },
   { questionId: question, versionId: current, version: 2, isCurrent: true, available: true, objectiveCount: 2, stem: 'How much is the current value?', loId: objective, loName: 'Value at Risk', themeId: 'theme', themeName: 'Risk', attempts: 6, insufficient: false, failureRate: 1 },
 ], total: 2, limit: 20 };
-async function fixture(page: Page, individual = true) {
+async function fixture(page: Page, individual = true, workspace: 'instructor' | 'ta' = 'instructor') {
   await page.route('**/analytics-fixture', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><title>Analytics</title><link rel="stylesheet" href="/styles/main.css"></head><body><main id="app"></main></body></html>' }));
   await page.route('**/api/**', (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
-    if (path.endsWith('/auth/me')) return route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'teacher', courseRoles: [{ courseId: course, role: 'instructor' }] } } });
+    if (path.endsWith('/auth/me')) return route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'teacher', courseRoles: [{ courseId: course, role: workspace }] } } });
     if (path.includes('/tutorials')) return route.fulfill({ json: [] });
-    if (path.endsWith('/capabilities/me')) return route.fulfill({ json: { 'analytics.individual': individual } });
+    if (path.endsWith('/capabilities/me')) return route.fulfill({ json: { 'analytics.view': true, 'analytics.individual': individual } });
     if (path.endsWith('/failure-rates')) return route.fulfill({ json: url.searchParams.get('mode') === 'exam-prep' ? [{ ...rates[0], attempts: 3, insufficient: true, failureRate: undefined, los: rates[0].los.map((item) => ({ ...item, attempts: 3, insufficient: true, failureRate: undefined })) }] : rates });
     if (path.endsWith('/question-patterns')) return route.fulfill({ json: patterns });
     if (path.endsWith('/distribution')) return route.fulfill({ json: { questionId: question, versionId: historical, version: 1, stem: 'Recorded historical stem', isCurrent: false, attempts: 6, insufficient: false, misconceptionHighlight: false, options: [{ key: 'A', text: 'Recorded old answer', role: 'correct', count: 6, pct: 1 }] } });
@@ -27,11 +27,13 @@ async function fixture(page: Page, individual = true) {
   });
   await page.goto('/analytics-fixture');
   await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
-  await page.evaluate(async (id) => {
-    window.location.hash = `/instructor/course/${id}/analytics`;
+  await page.evaluate(async ({ id, workspace }) => {
+    window.location.hash = `/${workspace}/course/${id}/analytics`;
     await (await import('/js/auth.js')).loadSession();
-    (await import('/js/views/instructor/analytics.js')).renderAnalytics(document.querySelector('#app')!, { id });
-  }, course);
+    const outlet = document.querySelector('#app')!;
+    if (workspace === 'ta') (await import('/js/views/ta/analytics.js')).renderTaAnalytics(outlet, { id });
+    else (await import('/js/views/instructor/analytics.js')).renderAnalytics(outlet, { id });
+  }, { id: course, workspace });
   await expect(page.getByText(/Last updated/)).toBeVisible();
 }
 
@@ -57,6 +59,29 @@ test('aggregate viewers cannot request named score records', async ({ page }) =>
   expect(requested).toEqual([]);
 });
 
+test('a TA with aggregate access can retry and download the selected scope as a PDF', async ({ page }) => {
+  await fixture(page, false, 'ta');
+  await page.getByRole('combobox', { name: 'Outcome date range' }).selectOption('7');
+  const engagement = page.waitForRequest(request => request.url().includes('/analytics/engagement?mode=exam-prep'));
+  await page.getByRole('button', { name: 'Exam Prep', exact: true }).click();
+  const query = new URL((await engagement).url()).search;
+  let calls = 0;
+  await page.route('**/report.pdf?*', route => {
+    expect(new URL(route.request().url()).search).toBe(query);
+    if (++calls === 1) return route.fulfill({ status: 503, json: { error: 'Try again shortly.' } });
+    return route.fulfill({
+      contentType: 'application/pdf',
+      headers: { 'Content-Disposition': 'attachment; filename="financebot-analytics-exam-prep.pdf"' },
+      body: '%PDF-1.7',
+    });
+  });
+  const exportPdf = page.getByRole('button', { name: 'Export PDF' });
+  await exportPdf.click();
+  await expect(page.getByText('PDF export failed. Try again shortly.')).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await exportPdf.click();
+  expect((await downloaded).suggestedFilename()).toBe('financebot-analytics-exam-prep.pdf');
+});
 
 test('master profile shows recorded mastery, answers and submitted scores', async ({ page }) => {
   await fixture(page);

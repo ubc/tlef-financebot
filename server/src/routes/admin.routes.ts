@@ -14,6 +14,8 @@ import {
   capabilityMatrix,
   deactivateUser,
   getPlatformSettings,
+  getAdminCourseModels,
+  saveAdminCourseModels,
   defaultPlatformSettings,
   listAdminAccounts,
   listAdminCourses,
@@ -86,6 +88,14 @@ const platformSettingsBody = z.object({
     retryOnReject: z.boolean().default(true),
   }),
   confirmQualityImpact: z.boolean().optional(),
+});
+const courseModelParams = z.object({ courseId: objectId });
+const modelChoice = z.string().trim().min(1).max(250).optional();
+const courseModelBody = z.object({
+  revision: z.number().int().nonnegative().safe(),
+  overrides: z.object({
+    generator: modelChoice, validator: modelChoice, reviewer: modelChoice, utility: modelChoice,
+  }).strict(),
 });
 
 adminRouter.get(
@@ -241,7 +251,25 @@ adminRouter.put(
   )),
 );
 
+adminRouter.get(
+  '/admin/courses/:courseId/models',
+  ensureAdmin(),
+  validate({ params: courseModelParams }),
+  async (req, res) => res.json(await getAdminCourseModels(new ObjectId(String(req.params.courseId)))),
+);
+
+adminRouter.put(
+  '/admin/courses/:courseId/models',
+  ensureAdmin(),
+  validate({ params: courseModelParams, body: courseModelBody }),
+  async (req, res) => res.json(await saveAdminCourseModels(
+    new ObjectId(String(req.params.courseId)), req.body.revision, req.body.overrides, req.user!.puid,
+  )),
+);
+
 const ADMIN_ERROR_STATUS: Record<string, number> = {
+  'course-not-found': 404,
+  'course-models-conflict': 409,
   'admin-user-not-found': 404,
   'admin-cannot-deactivate-self': 409,
   'invalid-cost-controls': 400,

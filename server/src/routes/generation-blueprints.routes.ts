@@ -21,7 +21,7 @@ const blueprintBody = z.object({
   loId: objectIdParam,
   count: z.number().int().min(1).max(20),
   type: z.enum(['mcq', 'true-false']),
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional(),
+  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   prompt: z.string().max(2000).optional(),
   materialIds: z.array(objectIdParam).max(100).optional(),

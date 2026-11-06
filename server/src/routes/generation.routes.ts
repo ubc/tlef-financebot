@@ -1,3 +1,7 @@
+import { prepareHistoricalQuestionMemory } from '../services/authoring-task-plan.service';
+import { getPlatformSettings } from '../services/admin.service';
+import { authoringCommitAvailable } from '../services/authoring-commit.service';
+import { env } from '../config/env';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
@@ -13,6 +17,8 @@ import {
   PRESET_PROMPTS,
   preseedingProgress,
   regenerateQuestion,
+  adoptRegenerationCandidate,
+  getRegenerationCandidate,
 } from '../services/generation.service';
 import {
   autoGenerationPlan,
@@ -31,7 +37,13 @@ export const generationRouter = Router();
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const regenerationParams = z.object({ courseId: objectIdParam, questionId: objectIdParam });
-const regenerationBody = z.object({ prompt: z.string().trim().min(1).max(2000) });
+const regenerationBody = z.object({ prompt: z.string().trim().min(1).max(2000),
+  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional(),
+  intent: z.enum(['edit-existing', 'create-variant', 'create-independent-task']).optional(),
+  requiredChanges: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
+  preserve: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
+  requestId: z.string().uuid().optional(), expectedVersionId: objectIdParam.optional(),
+}).refine(body => !(body.intent || body.requiredChanges || body.preserve || body.requestId) || body.qualityPolicy === 'grounded-memory-v2', { message: 'Explicit authoring intent and requirements require grounded-memory-v2.' }).refine(body => body.qualityPolicy !== 'grounded-memory-v2' || (body.requestId && body.expectedVersionId), { message: 'V2 regeneration requires a requestId and original expectedVersionId.' });
 
 function ensureAnyInstructor(req: Request, res: Response, next: NextFunction): void {
   if (
@@ -58,7 +70,7 @@ generationRouter.get(
 // unbounded run (each question is 3 LLM calls). Default is a small batch.
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional(),
+  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional(),
   loId: objectIdParam.optional(),
   /** Multi-LO generation: further objectives every question must integrate.
    * Bounded by MAX_SECONDARY_LOS; the service re-validates that each exists,
@@ -136,7 +148,7 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional(), qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional() });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional(), qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -202,14 +214,52 @@ generationRouter.post(
   async (req, res) => {
     const params = req.params as z.infer<typeof regenerationParams>;
     const body = req.body as z.infer<typeof regenerationBody>;
-    res.json(
-      await regenerateQuestion(
-        new ObjectId(params.questionId),
-        body.prompt,
-        req.user!.puid,
-        new ObjectId(params.courseId),
-      ),
-    );
+    const questionId = new ObjectId(params.questionId); const courseId = new ObjectId(params.courseId);
+    res.json(body.qualityPolicy ? await regenerateQuestion(questionId, body.prompt, req.user!.puid, courseId,
+      { ...body, ...(body.expectedVersionId ? { expectedVersionId: new ObjectId(body.expectedVersionId) } : { expectedVersionId: undefined }) })
+      : await regenerateQuestion(questionId, body.prompt, req.user!.puid, courseId));
+  },
+);
+
+generationRouter.get(
+  '/courses/:courseId/questions/:questionId/regeneration-candidates/:candidateId',
+  validate({ params: regenerationParams.extend({ candidateId: objectIdParam }) }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    res.json(await getRegenerationCandidate({ courseId: new ObjectId(String(req.params.courseId)), questionId: new ObjectId(String(req.params.questionId)),
+      candidateId: new ObjectId(String(req.params.candidateId)), byPuid: req.user!.puid }));
+  },
+);
+
+generationRouter.post(
+  '/courses/:courseId/question-memory/prepare',
+  validate({ params: courseIdParams }), ensureCourseInstructor(),
+  validate({ body: z.object({ limit: z.number().int().min(1).max(10).default(5) }).strict() }),
+  async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const { models } = await getPlatformSettings(courseId);
+    res.json(await prepareHistoricalQuestionMemory({ courseId, limit: req.body.limit as number, model: models.reviewer, byPuid: req.user!.puid }));
+  },
+);
+
+generationRouter.get(
+  '/courses/:courseId/authoring-quality-status',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  (_req, res) => res.json({ policy: 'grounded-memory-v2', pilot: true, teacherCalibrated: false,
+    coordinatedSaveAvailable: authoringCommitAvailable(), concurrencyScope: 'process', providerConcurrency: env.authoringProviderConcurrency ?? 4 }),
+);
+
+/** Explicit adoption uses only the stored candidate and never trusts client flags. */
+generationRouter.post(
+  '/courses/:courseId/questions/:questionId/regeneration-candidates/:candidateId/adopt',
+  validate({ params: regenerationParams.extend({ candidateId: objectIdParam }) }),
+  ensureCourseInstructor(),
+  validate({ body: z.object({ expectedVersionId: objectIdParam }).strict() }),
+  async (req, res) => {
+    res.json(await adoptRegenerationCandidate({ courseId: new ObjectId(String(req.params.courseId)),
+      questionId: new ObjectId(String(req.params.questionId)), candidateId: new ObjectId(String(req.params.candidateId)),
+      expectedVersionId: new ObjectId(req.body.expectedVersionId as string), byPuid: req.user!.puid }));
   },
 );
 
@@ -235,9 +285,52 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'lo-not-in-course': 403,
   'content-run-enqueue-failed': 503,
   'question-not-found': 404,
+  'course-not-found': 404,
+  'course-authoring-unavailable': 409,
   'version-not-found': 404,
   'question-has-no-lo': 409,
   'question-changed-during-regeneration': 409,
+  'authoring-memory-changed': 409,
+  'authoring-exact-bank-duplicate': 409,
+  'authoring-exact-bank-incomplete': 503,
+  'generation-exact-bank-receipt-invalid': 422,
+  'generation-task-retrieval-incomplete': 503,
+  'generation-task-retrieval-scope-changed': 409,
+  'generation-task-retrieval-receipt-invalid': 422,
+  'generation-task-retrieval-assessment-invalid': 422,
+  'generation-task-retrieval-selection-invalid': 422,
+  'generation-task-retrieval-query-invalid': 422,
+  'generation-task-retrieval-scope-invalid': 422,
+  'generation-task-retrieval-policy-invalid': 422,
+  'generation-task-retrieval-protocol-invalid': 422,
+  'generation-task-retrieval-vector-invalid': 422,
+  'generation-task-retrieval-limits-invalid': 422,
+  // These are changed authoring prerequisites, not unexpected server failures.
+  'generation-evidence-source-changed': 409,
+  'generation-evidence-provenance-changed': 409,
+  'generation-evidence-material-unavailable': 409,
+  'generation-evidence-source-not-ready': 409,
+  'generation-evidence-chunks-missing': 409,
+  'generation-evidence-ingest-incomplete': 409,
+  'authoring-objective-changed': 409,
+  'generation-memory-original-changed': 409,
+  'generation-memory-original-version-unavailable': 409,
+  // A retained candidate without its required original comparison is unusable.
+  'regeneration-original-comparison-required': 422,
+  'generation-evidence-schema-invalid': 422,
+  'authoring-original-comparison-required': 422,
+  'authoring-original-comparison-invalid': 422,
+  'generation-memory-original-scope-missing': 422,
+  'generation-memory-required-original-missing': 422,
+  'generation-memory-required-original-too-large': 422,
+  'authoring-coordinated-commit-unavailable': 503,
+  'regeneration-candidate-conflict': 409,
+  'regeneration-request-conflict': 409,
+  'regeneration-candidate-not-found': 404,
+  'regeneration-candidate-not-eligible': 422,
+  'regeneration-request-id-required': 400,
+  'regeneration-v2-policy-required': 400,
+  'regeneration-script-template-requires-manual-edit': 409,
   'generation-material-mention-not-found': 400,
   'generation-material-mention-ambiguous': 400,
   'generation-no-assigned-materials': 409,
@@ -255,6 +348,9 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof Error && err.message === 'source-not-ready' && 'report' in err) {
+    res.status(409).json({ error: err.message, report: err.report }); return;
+  }
   if (err instanceof Error && Object.hasOwn(GENERATION_ERROR_STATUS, err.message)) {
     res.status(GENERATION_ERROR_STATUS[err.message]).json({ error: err.message });
     return;

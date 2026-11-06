@@ -12,6 +12,8 @@ jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
   regenerateQuestion: jest.fn(),
+  adoptRegenerationCandidate: jest.fn(),
+  getRegenerationCandidate: jest.fn(),
   MAX_SECONDARY_LOS: 2,
   PRESET_PROMPTS: [
     { label: 'Calculation question', text: 'Write a calculation question.' },
@@ -31,6 +33,8 @@ import {
   enqueueGenerationRun,
   preseedingProgress,
   regenerateQuestion,
+  adoptRegenerationCandidate,
+  getRegenerationCandidate,
 } from '../../server/src/services/generation.service';
 import { enqueueGenerationPlan } from '../../server/src/services/generation-plan.service';
 import { enqueueBlueprintRun } from '../../server/src/services/generation-blueprints.service';
@@ -72,6 +76,8 @@ beforeEach(() => {
   jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
   jest.mocked(regenerateQuestion).mockReset();
+  jest.mocked(adoptRegenerationCandidate).mockReset();
+  jest.mocked(getRegenerationCandidate).mockReset();
   jest.mocked(enqueueGenerationPlan).mockReset();
   jest.mocked(enqueueGenerationPlan).mockResolvedValue({ runs: [] });
   jest.mocked(enqueueBlueprintRun).mockReset();
@@ -303,5 +309,89 @@ describe('GET /api/courses/:courseId/preseeding (IN-Q10)', () => {
       target: 5,
     });
     expect(preseedingProgress).toHaveBeenCalledWith(expect.any(ObjectId));
+  });
+});
+
+
+describe('stored-candidate adoption prerequisite failures', () => {
+  const questionId = new ObjectId();
+  const candidateId = new ObjectId();
+  const expectedVersionId = new ObjectId();
+  const url = `/api/courses/${courseId}/questions/${questionId}/regeneration-candidates/${candidateId}/adopt`;
+  const payload = { expectedVersionId: expectedVersionId.toHexString() };
+
+  it.each([
+    [undefined, 401], [student, 403], [userFixture([{ courseId: new ObjectId(), role: 'instructor' }]), 403],
+  ] as const)('checks course access before inspecting a candidate (%s)', async (user, status) => {
+    const response = await request(makeApp(user)).post(url).send(payload);
+    expect(response.status).toBe(status);
+    expect(adoptRegenerationCandidate).not.toHaveBeenCalled();
+  });
+
+  it('requires a version pin and rejects client-provided eligibility flags', async () => {
+    for (const body of [{}, { ...payload, eligible: true }]) {
+      const response = await request(makeApp(instructor)).post(url).send(body);
+      expect(response.status).toBe(400);
+    }
+    expect(adoptRegenerationCandidate).not.toHaveBeenCalled();
+  });
+
+  it('binds adoption to the signed-in actor and parsed course/question/version IDs', async () => {
+    jest.mocked(adoptRegenerationCandidate).mockResolvedValue({ version: { _id: new ObjectId() } } as never);
+    const response = await request(makeApp(instructor)).post(url).send(payload);
+    expect(response.status).toBe(200);
+    expect(adoptRegenerationCandidate).toHaveBeenCalledWith({ courseId, questionId, candidateId,
+      expectedVersionId, byPuid: instructor.puid });
+  });
+
+  it.each([
+    'generation-evidence-source-changed', 'generation-evidence-provenance-changed', 'generation-evidence-material-unavailable',
+    'generation-evidence-source-not-ready', 'generation-evidence-chunks-missing', 'generation-evidence-ingest-incomplete',
+    'authoring-objective-changed', 'generation-memory-original-changed', 'generation-memory-original-version-unavailable',
+    'authoring-memory-changed', 'question-changed-during-regeneration', 'authoring-exact-bank-duplicate', 'generation-task-retrieval-scope-changed',
+  ])('returns an actionable conflict for %s', async code => {
+    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
+    const response = await request(makeApp(instructor)).post(url).send(payload);
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: code });
+  });
+
+  it.each([
+    'regeneration-original-comparison-required', 'authoring-original-comparison-required',
+    'authoring-original-comparison-invalid', 'generation-memory-original-scope-missing',
+    'generation-memory-required-original-missing', 'generation-memory-required-original-too-large',
+    'regeneration-candidate-not-eligible', 'generation-evidence-schema-invalid', 'generation-exact-bank-receipt-invalid',
+    'generation-task-retrieval-receipt-invalid', 'generation-task-retrieval-assessment-invalid',
+    'generation-task-retrieval-selection-invalid', 'generation-task-retrieval-query-invalid',
+    'generation-task-retrieval-scope-invalid', 'generation-task-retrieval-policy-invalid',
+    'generation-task-retrieval-protocol-invalid', 'generation-task-retrieval-vector-invalid', 'generation-task-retrieval-limits-invalid',
+  ])('keeps an unusable retained candidate unprocessable for %s', async code => {
+    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
+    const response = await request(makeApp(instructor)).post(url).send(payload);
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({ error: code });
+  });
+
+  it('keeps incomplete task retrieval retryable without claiming stale retained content', async () => {
+    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error('generation-task-retrieval-incomplete'));
+    const response = await request(makeApp(instructor)).post(url).send(payload);
+    expect(response.status).toBe(503); expect(response.body).toEqual({ error: 'generation-task-retrieval-incomplete' });
+  });
+
+  it('keeps incomplete Bank scanning retryable without claiming a stale candidate', async () => {
+    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error('authoring-exact-bank-incomplete'));
+    const response = await request(makeApp(instructor)).post(url).send(payload);
+    expect(response.status).toBe(503); expect(response.body).toEqual({ error: 'authoring-exact-bank-incomplete' });
+  });
+
+  it.each(['unexpected-storage-failure', 'generation-evidence-invalid-scope', 'generation-evidence-source-changed-unrecognized-suffix',
+    'generation-evidence-provenance-changed-unrecognized-suffix', 'generation-evidence-schema-invalid-unrecognized-suffix'])('keeps unexpected failures at 500: %s', async code => {
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
+      const response = await request(makeApp(instructor)).post(url).send(payload);
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: code });
+    } finally { errorLog.mockRestore(); }
   });
 });

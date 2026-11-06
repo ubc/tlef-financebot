@@ -12,6 +12,7 @@ const id = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid record ID.');
 const query = z.object({
   page: z.coerce.number().int().min(1).max(10000).default(1), limit: z.coerce.number().int().min(1).max(100).default(25),
   activity: z.enum(['all', 'actions']).optional(),
+  routing: z.enum(['all', 'unmatched', 'other']).optional(),
   actor: z.string().trim().max(128).optional(), courseId: id.optional(), q: z.string().trim().max(100).optional(),
   outcome: z.enum(['succeeded', 'accepted', 'failed', 'interrupted', 'partial']).optional(),
   status: z.enum(['queued', 'running', 'completed', 'partial', 'failed']).optional(),

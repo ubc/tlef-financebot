@@ -12,10 +12,11 @@ import type {
 } from '../types/domain';
 import { getCourseContentRun } from './content-runs.service';
 import { enqueueGenerationRun } from './generation.service';
+import { getPlatformSettings } from './admin.service';
 import {
-  configuredGenerationModels,
   persistedModels,
   resolvedFromPersisted,
+  stepModelsFrom,
 } from './step-models';
 
 export interface GenerationBlueprintInput {
@@ -70,6 +71,7 @@ export async function createGenerationBlueprint(
 ): Promise<WithId<GenerationBlueprint>> {
   await assertBlueprintScope(courseId, input);
   const now = new Date();
+  const modelSnapshot = stepModelsFrom(await getPlatformSettings(courseId));
   const doc: GenerationBlueprint = {
     courseId,
     name: input.name,
@@ -80,7 +82,8 @@ export async function createGenerationBlueprint(
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.materialIds?.length ? { materialIds: input.materialIds } : {}),
-    models: persistedModels(configuredGenerationModels()),
+    models: persistedModels(modelSnapshot),
+    modelSnapshot,
     createdBy: byPuid,
     createdAt: now,
     updatedAt: now,
@@ -165,7 +168,7 @@ export async function enqueueBlueprintRun(
     ...(blueprint.difficulty ? { difficulty: blueprint.difficulty } : {}),
     ...(blueprint.prompt !== undefined ? { prompt: blueprint.prompt } : {}),
     byPuid,
-    models: resolvedFromPersisted(blueprint.models),
+    models: blueprint.modelSnapshot ?? resolvedFromPersisted(blueprint.models, await getPlatformSettings()),
     blueprintId,
     ...(blueprint.materialIds ? { pinnedMaterialIds: blueprint.materialIds } : {}),
   });
@@ -189,14 +192,20 @@ export async function retryGenerationRun(
     count: run.input.count,
     type: run.input.type,
     ...(run.input.qualityPolicy ? { qualityPolicy: run.input.qualityPolicy } : {}),
+    ...(run.input.sourceProvenance ? { sourceProvenance: run.input.sourceProvenance } : {}),
+    ...(run.input.answerabilityProtocol ? { answerabilityProtocol: run.input.answerabilityProtocol } : {}),
+    ...(run.input.taskDemandProtocol ? { taskDemandProtocol: run.input.taskDemandProtocol } : {}),
+    ...(run.input.exactBankProtocol ? { exactBankProtocol: run.input.exactBankProtocol } : {}),
+    ...(run.input.taskRetrievalProtocol !== undefined ? { taskRetrievalProtocol: run.input.taskRetrievalProtocol } : {}),
+    ...(run.input.authoringPromptProtocol !== undefined ? { authoringPromptProtocol: run.input.authoringPromptProtocol } : {}),
+    ...(run.input.numericReviewProtocol !== undefined ? { numericReviewProtocol: run.input.numericReviewProtocol } : {}),
+    ...(run.input.exclusionReviewProtocol !== undefined ? { exclusionReviewProtocol: run.input.exclusionReviewProtocol } : {}), ...(run.input.reviewRepairProtocol !== undefined ? { reviewRepairProtocol: run.input.reviewRepairProtocol } : {}),
     ...(run.input.kind ? { kind: run.input.kind } : {}),
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
     ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,
-    // Model ids only: enqueue persists ids, and the job recovers the admin's
-    // per-step parameters from the CURRENT settings at execution time.
-    models: resolvedFromPersisted(run.input.models),
+    models: run.input.modelSnapshot ?? resolvedFromPersisted(run.input.models, await getPlatformSettings()),
     ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
     retryOfRunId: runId,
     ...(run.grounding?.allowedMaterialIds

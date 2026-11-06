@@ -1,5 +1,185 @@
 # AGENTS.md — server/src/services
 
+`generation-review-repair` freezes valid decisions before raw reference
+resolution during the selected existing logical schema correction. Never drop
+negative findings because their locator or a neighboring row is invalid.
+Normalize only schema-trimmed text, use the actual candidate answer kind and
+retain conflicts for repeated semantic identities. A drift receipt withholds
+and cannot guide automatic candidate repair. Final public save/regeneration
+adoption require complete input-bound replay and unchanged fresh selectors.
+Historical absence stays lazy. This is consistency, not source entailment,
+provider attestation or the native wrapper's internal JSON retry protocol.
+
+`generation-exclusion-review` is the selected MCQ same-call adapter over the unchanged literal-answer validator. Preserve exact option/stem targets, complete candidate/requirements/evidence bindings, safe source joins and independently reported alternatives. Admitted placement/strength/silence-only bases and viable/uncertain challenges withhold without format retry. Strict malformed references may use only the existing correction. Recorded replay for withheld repair diagnostics is not final admission; final saves/adoption require eligible/passed and selector equality at transactional reread. Compare strict plain data across BSON realms, never waive changed source/requirements to fix prototype-only differences. Historical absence/T-F stay lazy and byte-compatible. No quote/hash proves entailment.
+
+`generation-numeric-review` builds one deterministic, bounded additional numeric
+representation from injected trusted verifier/resolver functions. Its wrapper
+connects production arithmetic; no script or model-provided proof is authority.
+The explicit new-v2 `numericReviewProtocol` reaches role/content/quality checks,
+repair, expansion, exact retry, worker and UUID recovery. Full candidate stage
+bindings and quality receipts must replay at final course-fenced save/adoption;
+captured initial selectors cannot disappear on transactional reread. Record the
+actual pre-canonical candidate shown during a repair, never retrospectively
+attest another representation. Compact model feedback references need exact
+schema/template and witness identity; private samples and the original full
+packet stay intact. Not-applicable examples add no prompt text. Keep absent
+historical branches lazy: do not evaluate new snapshots on legacy/v1 calls.
+Whole native/correction inputs still face unchanged caps. An arithmetic example
+is not a source, financial, teacher or model-quality verdict.
+
+`structure-outline-consolidation` is an unreviewed proposal/obligation core with
+explicit stable IDs, predecessor lineage, source scope and old-credit duties.
+`structure-consolidation-parent.service` requires the caller's matching-course
+transaction and authenticates the latest terminal budget plus full production
+raw history, including exact failed-all-held parents. Its receipt grants no
+send, source-row reuse, child or Apply authority. Derive fresh-worker correction
+diagnostics exactly from checked raw logical failures; continuation retains
+its frozen synthesis receipt. Do not broaden ordinary completed Apply while
+fixing the failed-parent path. A separate durable child/checkpoint/worker and
+stable-ID finalization/Apply are still needed. The 735-test checkpoint is
+mechanical, with mocked storage/transactions and scripted semantic judgments.
+
+Keep `structure-outline-grounding` and `structure-outline-review` unchanged for
+the absent-selector historical contract. Fresh explicit capability reviews use
+the separate `structure-capability-*` adapters, full original/peer bindings,
+lazy stored prompts, same-attempt reciprocal correction and raw replay at
+continuation/transactional Apply. Candidate point definitions stay complete;
+private hashes/coordinates and peer internal extracted summaries are not model
+source evidence. Whole-review admission checks minimum native input/output/sends
+against the inherited allowance before its first review. Do not enable by
+default: actual142LO minimum exceeds its remaining budget. Old wording/coverage
+repair cannot consolidate new-policy parents. Scripted tests are not semantic
+or useful-yield acceptance.
+
+`structure-capability-packing` uses the shared full-packet renderer for bounded
+trial sizing, preserves a complete recursive fallback and chooses the greedy
+plan only when its complete reservation is smaller. Rebuild every final group
+with real hashes and exact native/JSON-correction measurements. Review groups
+may reorder, but final Topic/LO order and raw item/ID authority must remain exact.
+The explicit protocol hash binds the packing and plan-cache files; absence
+delegates before either path. `structure-capability-plan-cache` stores only
+pure completed plans, with exact ordered graph/input/code identity, cloned
+returns and four-entry/16M encoded-payload limits. It grants no source verdict,
+pair judgment, currentness, budget or transaction authority. A cold miss still
+computes a plan; warm CPU timings are not provider or database latency claims.
+
+A fully resolved source-ineligible peer cannot block an otherwise supported LO.
+Before this exception applies, replay every source finding through the unchanged
+legacy parser and require complete global source/comparison authority. Missing
+verdicts, invalid quotations and supported duplicates still withhold admission.
+Record exact source-finding/comparison hashes in the optional
+`resolved-source-ineligible-peers-v1` disclosure; omit it entirely when empty.
+Transactional Apply must recompute it from raw history, including after BSON
+round-trip. This removes a mechanical false hold, not a semantic model verdict.
+
+The Instructor outline-repair read projection and enqueue wrappers reuse the
+existing single-cycle engine. Safe GET rows include exact point quotes, original
+and proposed wording, findings, shortfalls and conservative allowance; they do
+not expose raw private model/checkpoint payloads. A completed child is not Apply
+authority. Repaired adoption must run inside a matching-course transaction and
+session-bound replay of parent/checkpoint/progress/branch/source, raw review
+history, old-credit preservation, budget and the full finalized result. Explicit
+malformed links cannot fall back to ordinary historical Apply. Keep intentional
+teacher edits, but return reviewed versus instructor-edited wording separately.
+See `OUTLINE-REPAIR-WORKSPACE-IMPLEMENTATION-2026-10-17.md`; scripted findings and
+UI states do not prove actual pedagogical recovery.
+
+`compact-authoring-v1` is a fresh-v2 server-owned rendering pin, preserved through
+worker restoration, exact retry and regeneration UUID recovery. Group only
+adjacent equal source identities; canonical text/IDs/order/scope must round-trip.
+Compact owned instructions, never raw teacher/source/Bank/candidate data; exact
+teacher echoes may be omitted only when already complete in required rows.
+Actual streaming envelopes and nested JSON correction consume unchanged limits.
+Historical absence keeps old prompts; unknown/non-v2 pins fail before work.
+`coverage-wording-outline-repair-v1` shares the existing parent cycle/CAS/native
+budget and changes selected supported LO names only. Derive old credits from
+full parent authority; final fresh review must gain requested points and retain
+all old credits. Persist explicit shortfalls before refusing finalization; never
+invent a missing review, overwrite the parent or auto-Apply. Both additions have
+mechanical/scripted evidence only; no new real-model or valid-yield claim.
+
+`generation-task-retrieval` performs bounded current-course nomination before
+prompt selection for explicit fresh `course-task-retrieval-v1` requests. Keep
+historical absence/recovery, 128-head pages, 20,000-head/five-second ceilings,
+64 nominations/200 retained entries, 12-entry/12,000-character prompt and at most
+two full mandatory comparators. Local retrieval dispatches no embedding or
+backfill; unknown cached-vector identities cannot be reused. Local lexical/
+profile scores are not semantic duplicate decisions. Independent tasks need a
+valid same-call inference/path row for every required comparator; explicit
+edit/variant overlap semantics remain unchanged. Missing rows may consume the
+existing paid correction allowance, with no new standalone stage or higher cap.
+Canonical candidate and changed
+repair queries must refresh memory and return the actual assessed selection;
+final admission/course-fenced currentness replays effective content/profile
+bindings without provider work. Preserve the separate exact-content guard.
+Incomplete retrieval is explicit, not a no-duplicate result. The no-profile
+fixture's exposure does not imply mandatory selection. See the current-course
+task-retrieval implementation note for synthetic tests versus actual owned
+Mongo controls and the unfinished semantic acceptance.
+
+`generation-memory` additionally owns the explicit `course-exact-bank-v1`
+zero-model current-version lookup, separate from bounded semantic memory.
+Keyset pages/projected contents cover historical/imported heads without prepared
+fingerprints; no descriptor preparation, embedding, backfill or whole-Bank
+prompt runs. Preserve the existing exact-hash definition and report caps,
+deadlines and missing/corrupt records as incomplete. `generation-exact-bank`
+validates the recorded candidate/course/count bindings and rescans inside final
+course-fenced public saves and independent regeneration adoption. Unknown/new
+selectors cannot silently become legacy; absent historical selectors and
+intentional edit/variant overlap remain unchanged. A local duplicate/incomplete
+quality check sends no quality review call, but prior generator work may already
+be billed. Extra model tokens are zero; database/CPU work and transaction time
+are not free. Keep the semantic 120/80 window and pinned-original requirements;
+neither exact content nor simulated concurrency proves semantic novelty or a
+real Mongo commit. The separate disposable real replica-set control verifies
+one concurrent commit and one refused duplicate, without model work or product
+records. See `EXACT-BANK-COVERAGE-2026-10-17.md` in the quality design
+folder for limits, errors and evidence scope.
+
+Native PDF page-text observations are additive private-sidecar metadata. Fresh
+durable outline requests explicitly persist `native-page-text-observations-v1`;
+old absent retry/checkpoint selectors remain absent. `loadStructureCorpus`
+projects current sidecars into separate physical-page counts/ranges without
+changing chunk/raw text, source hashes, prompts, extraction IDs or corpus/cache
+fingerprints. Blank/sparse/present states at 120 non-whitespace UTF-16 units
+never classify visuals or grant teaching coverage, and mapped neighboring
+passages cannot clear them. Missing/invalid or size-omitted observations stay
+unavailable without failing otherwise valid text ingestion. Pure receipt checks
+perform no filesystem work inside authoring transactions. The ten-file replay
+is file-only, not a fresh live-ingest or generation-quality result; local OCR
+remains a separate unadmitted diagnostic. See the October 17 page-text
+observations implementation note in the quality design folder.
+
+`generation-task-demand` implements explicit new-v2 demand assessment inside
+the existing quality call. Fixed public difficulty/type/kind survive planning
+and one existing supported repair; insufficient/uncertain source capacity earns
+no requested quota. Full requirements, actual candidate and original citations
+bind the server receipt; persistence/adoption replay it inside the course fence.
+New conceptual empty arrays match the fields actually persisted. Freeform
+regeneration pins intrinsic type and teacher clauses without guessing desired
+difficulty/kind from its original. Absent historical selectors retain old paths.
+Do not describe scripted gate tests as measured model difficulty or improved yield.
+
+`generation-answerability` validates the explicit new v2 option-answerability
+contract within the existing source-quality call. Historical absent selectors
+retain their old prompts/replay. Literal responses, corrective feedback and
+formal numerical proof remain separate. Ambiguous/uncertain option verdicts
+withhold; they never become optimistic acceptance or an extra repair loop.
+`structure-source-conditions` preserves validated extracted condition context
+through exact original passage joins. K/CP aliases are advisory synthesis inputs,
+not learning points, source-support verdicts or additional coverage. Changed
+synthesis prompts invalidate pack reuse; same-policy extraction identities stay
+unchanged. Oversized full context stops before the affected dispatch.
+
+`source-passages.ts` versions derived outline locators. New corpus receipts pin
+`line-boundary-v2`; missing historical policy resolves to `word-boundary-v1`.
+Unknown explicit policies fail rather than rebinding stored passage IDs. Cache
+keys continue to bind exact rendered prompts; policy metadata alone is excluded
+from identity. Final inventory, cache validation, catalog and resumed/repair
+work must resolve the receipt's own policy. Identical single-section prompts do
+not guarantee reuse when an enclosing batch key changes. These are structural
+source-integrity checks, not proof of table/chart interpretation.
+
 Supplemental enrollment lives in `registration-codes.service.ts`: one atomic
 Mongo batch insert per request UUID, one claimant per code through a conditional
 array update, and durable claimed-state recovery on session reload. Used codes
@@ -13,6 +193,71 @@ co-instructor invitations without guessing email from CWL. Read
 `docs/design/supplemental-enrollment/IMPLEMENTATION.md` before changing these paths.
 
 Business logic. Services sit between routes and components:
+
+Source coverage: `material-upload-batches`, `source-readiness` and
+`source-evidence-cache` own intended admission, original index integrity and
+exact source-local extraction reuse. `authoring-context` shares originals plus
+current question memory; `generation-catalog` uses cached knowledge only to
+locate original premises. `authoring-task-plan` persists independent tasks and
+immutable-version fingerprints. `authoring-execution` guards queued worker
+ownership. `authoring-commit` owns short course-fenced Mongo transactions and a
+topology audit; no model/embedding call may run inside one. V2 persistence is
+diagnostic-only without transaction support. Deletion tombstones block new
+authoring first writes. Read the October 13 generation-quality implementation
+before changing these services; never describe source traversal or valid quote
+IDs as semantic/teacher acceptance.
+
+Large final-outline review v2 separates source support from advisory topic fit.
+Only source judgments gate admission; grouping concerns stay visible without
+being relabelled as out-of-source wording. Individually valid review rows survive
+malformed neighbors; one bounded correction receives only unresolved known IDs
+and their exact allowed sources/evidence. Foreign identities and unresolved
+reviews remain explicit failures. Historical v1 receipts are never reinterpreted.
+Negative/uncertain new findings credit no coverage. Known model coverage claims
+remain only in a server-computed non-authoritative diagnostic; they cannot block
+valid siblings solely for an uncited original or become mapped points. Positive
+coverage still requires a cited own original, with precise point/source feedback
+for the existing bounded correction. Unknown/duplicate identities remain errors.
+
+V2 reliability follow-up: `generation-citation-spans` resolves short aliases into
+exact original quote groups and canonical task passage IDs. Bank comparisons
+must use memory identities, never source worked examples. Compact checks keep
+all source/option/numeric obligations; known unservable v2 candidates stop before
+paid reviews. Only v2 run/slot/durable regeneration budgets opt into successful
+complete-usage settlement; unknown or failed sends stay reserved. Read the
+October 14 repair/retest report before claiming recovered saved supply or
+negative semantic accuracy from the four review-only probes.
+
+Task planning binds its generated first inference requirement explicitly.
+`generation-semantic-repair` may retire only that exact marked row when replacing
+an independent duplicate task; all teacher changes/invariants remain. Historical
+unmarked rows are preserved. Novelty correction explains contradictions between
+`novelty` and `taskComparisons`; it never overrides a verdict into eligibility.
+Persistent inconsistencies and actual duplicates remain withheld. See the
+October 17 yield-repair report for the retained public failures and test scope.
+
+`parameter-display` owns unchanged shared number rendering.
+Independent regeneration's original is a mandatory pinned Bank comparator,
+loaded outside ordinary memory limits and rendered in full or refused explicitly.
+It is never source proof. Local edits and intentional variants retain exclusion.
+Positive source judgments with missing premises stay withheld; trusted numerical
+proofs/provenance are server-computed, never accepted from generator extras.
+
+`numeric-input-display` checks answers recomputed from visible inputs; admission
+proofs and every fresh draw use it. `assessment-numeric-admission` validates
+frozen private definitions or a recoverable pinned historical version before
+publication/new sittings. Never redraw/regrade historical active or submitted
+attempts, or expose private formulas through student/pre-submit Preview DTOs.
+Serving refuses after eight unsuccessful collision/precision redraws; it must
+never return an earlier known-unsafe draw. Fresh formula verification now retains
+100 samples and additionally enumerates every slot-entry tuple up to 256 total.
+Seeded and indexed draws must share exact range/value and derived arithmetic.
+`finite-slot-grid-v1` records full versus sampled scope; historical proofs are
+not upgraded, large/unsafe domains stay sampled, and entries need not be distinct
+or PRNG-reachable. A grid failure records its actual tuple, never a fake seed.
+The exact synthetic 135-entry regression catches a collision missed by the old
+70 unique sampled tuples; it is arithmetic evidence, not semantic/yield proof.
+See `FINITE-NUMERICAL-DOMAIN-2026-10-17.md` in the quality design folder.
 
 `people-import-parser.ts` parses manual Canvas CSV rosters with explicit Login ID
 and optional role/state/restriction columns. `people-import.service.ts` owns
@@ -166,7 +411,27 @@ original quote on the server), retries invalid batches in smaller sections, and 
 outline into a dedicated durable run preview. Counts default to AI choice; explicit
 counts are validated. Source/size failures never produce a silently partial outline.
 Coverage gaps and exclusions accompany the draft. `classification.suggestHierarchy`
-uses the same analyzer through its legacy read-only response shape.
+uses the same analyzer through its historical themes/assignments projection.
+
+Large organized outlines additionally review final LO wording against complete
+original sections resolved by exact primary/supporting passage identities.
+`structure-outline-grounding` validates one bound verdict per LO and retains only
+explicitly covered learning-point/material links. Unsupported/uncertain wording
+is withheld; partial and all-withheld receipts persist in run diagnostics before
+admission, including bounded schema-correction failures. Model support is not
+teacher acceptance. Do not infer pedagogical coverage from assigned IDs or
+replace source text with generated pack summaries during final review.
+
+Public outline Apply requires a completed durable run and selected source-LO
+indices; it rechecks the original/ingest fingerprint and intended batch/exclusions
+while allowing instructor wording edits. Advisory classification metadata revisions
+do not invalidate unchanged indexed originals. Replica/sharded Mongo uses the
+course transaction; standalone uses source pre/post checks plus assignment CAS,
+reports best-effort consistency, and returns an explicit conflict if writes may
+have partially completed. Internal manual application and manual hierarchy CRUD
+remain separate. The public legacy suggestion GET now retains a durable runId;
+internal actorless projection remains read-only. Review shows every exact support
+quote group and each passage disposition with its reason.
 
 Admin diagnostics lives in `admin-diagnostics.service.ts`: global, Admin-gated
 read models over request outcomes, existing change history, durable runs and

@@ -5,7 +5,9 @@ const id = z.string().min(1).max(160);
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const text = z.string().max(40000);
-export const PolicySchema = z.enum(['baseline', 'grounded-memory-v1']);
+export const PolicySchema = z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']);
+export const PilotPolicySchema = z.enum(['grounded-memory-v1', 'grounded-memory-v2']);
+export type EvaluationPilotPolicy = z.infer<typeof PilotPolicySchema>;
 export const IssueSchema = z.enum(['present', 'absent', 'uncertain']);
 export const issueDimensions = ['sourceScope', 'notation', 'duplication', 'difficulty', 'answerQuality'] as const;
 export type IssueDimension = typeof issueDimensions[number];
@@ -41,6 +43,23 @@ export const UsageSchema = z.object({
   if (usage.status === 'complete' && (usage.inputTokens === null || usage.outputTokens === null || usage.totalTokens === null || usage.unknownCalls || usage.pendingCalls || usage.coverageGaps || usage.untracked)) ctx.addIssue({ code: 'custom', message: 'Complete usage requires known totals and no recorded coverage gaps.' });
 });
 
+const nonnegative = z.number().finite().nonnegative();
+const logicalCounts = z.object({ generatorAttempts: count, repairCycles: count, evidenceExpansions: count }).strip();
+/** Private diagnostic metadata only; these estimates never replace provider
+ * usage totals or teacher labels and are excluded from blinded cards. */
+export const BudgetReceiptSchema = z.object({
+  version: z.literal(1), estimator: z.literal('utf8-bytes-conservative-v1'), retryVisibility: z.literal('unknown'), limitScope: z.literal('process'),
+  observedSends: count, estimatedInputTokens: count, reservedOutputTokens: count, reportedInputTokens: count.nullable(), reportedOutputTokens: count.nullable(),
+  usageCompleteness: z.enum(['complete', 'partial', 'unknown']), queueWaitMs: nonnegative, executionMs: nonnegative, rejectedSends: count,
+  logical: logicalCounts.extend({ limits: logicalCounts }).strip(),
+  limits: z.object({ maxSends: count, maxInputTokens: count, maxOutputTokens: count, maxEstimatedTokens: count }).strip(),
+}).strip();
+export const ExecutionDiagnosticsSchema = z.object({
+  taskPlanId: id.optional(), independentRequested: count.optional(), independentPlanned: count.optional(), variantsCreated: count.optional(),
+  evidencePacketIds: z.array(id).max(200).optional(),
+  slotBudgets: z.array(z.object({ item: z.number().int().min(0).max(99), receipt: BudgetReceiptSchema }).strip()).max(100).optional(),
+}).strip();
+
 export const CandidateSchema = z.object({ content: QuestionSchema, contentHash: hash, truncated: z.boolean() }).strict().superRefine((candidate, ctx) => {
   if (candidate.contentHash !== hashValue(candidate.content)) ctx.addIssue({ code: 'custom', path: ['contentHash'], message: 'Candidate hash does not match the supplied content.' });
 });
@@ -59,6 +78,7 @@ export const RunSchema = z.object({
   requestedSlots: z.number().int().min(1).max(100),
   slots: z.array(SlotSchema).min(1).max(100),
   usage: UsageSchema,
+  executionDiagnostics: ExecutionDiagnosticsSchema.optional(),
   elapsedMs: z.number().finite().nonnegative().nullable(),
   limitations: z.array(z.string().max(2000)).max(30),
 }).strict().superRefine((run, ctx) => {

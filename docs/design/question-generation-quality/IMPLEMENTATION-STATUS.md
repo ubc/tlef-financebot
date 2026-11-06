@@ -1,8 +1,41 @@
 # Generation Quality and Observability Implementation Status
 
+**October 17 follow-up:** [Source-line boundaries](SOURCE-PASSAGE-LINE-BOUNDARIES-2026-10-17.md)
+repair a real table-input split while retaining historical aliases; changed batch
+identities leave warm-cache cost unmeasured. [Currentness/recovery](AUTHORING-CURRENTNESS-AND-RECOVERY-2026-10-17.md)
+has 226 focused unit checks, 31 intercepted-browser cases and eight real local
+HTTP/Mongo guard groups; those scopes do not prove semantic model quality.
+[Production PDF provenance](PDF-PROVENANCE-IMPLEMENTATION-2026-10-17.md)
+now passes native parsing and isolated Mongo/HTTP checks for 599 pages / 671
+chunks / 32 responses, with separately labelled embedding/vector substitutes;
+visual/OCR interpretation remains design work. The new
+[answerability and source-condition context](ANSWERABILITY-AND-SOURCE-CONDITIONS-2026-10-17.md)
+adds literal-option validation inside the existing review call and preserves
+source-local conditions during outline synthesis. Its retained input replay is
+not a new semantic verdict or outline. The six-candidate review probe remains
+unexecuted pending explicit approval; previous r3 code pins are historical after
+these production changes. Historical paid failures, 379 point
+gaps, saved-question ambiguities and absent professor acceptance remain open.
+
 **Date:** 2026-10-05
 
+**Latest reliability follow-up:** [October 14 repair and bounded retest](REPAIR-AND-RETEST-2026-10-14.md)
+separates the latest 1/6 full-batch saved supply from two eligible retained
+positives in four quality-only probes. Span/novelty metadata and v2-only budget
+repairs do not establish general quality or teacher acceptance; baseline stays
+default. Historical results below retain their original scope.
+
 **Delivery:** Local implementation of model usage visibility, Admin workflow inspection, an opt-in source-grounding/question-memory pilot, and offline teacher-review evaluation tools. This does not complete every requirement of the [implementation plan](IMPLEMENTATION-PLAN.md). Legacy and default generation retain the baseline policy.
+
+The [October 13 delivery](IMPLEMENTATION-2026-10-13.md) adds intended upload
+receipts, authoritative readiness, validated chapter extraction reuse and shared
+v2 generation/regeneration task memory with bounded calls and coordinated
+commits. The sections below retain the October 5 historical results; they do not
+describe the newer v2 delivery. Baseline remains the default, and professor
+calibration remains necessary before claiming business-quality improvement.
+The [October 14 public-PDF acceptance](ACCEPTANCE-2026-10-14.md) records real
+provider calls, cache reuse, source gaps, low v2 supply, agent inspection and
+all observed tuning costs. It does not establish a quality or efficiency win.
 
 ## Local acceptance walkthrough (2026-10-05)
 

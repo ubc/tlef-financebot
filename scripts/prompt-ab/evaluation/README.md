@@ -140,7 +140,12 @@ content changes; they are not signatures authenticating who supplied a manifest.
   unchanged or after edits with duplication explicitly absent count as delivered
   independent supply. Accepted variants and acceptable withheld candidates are
   separate. Unreviewed outputs leave supply unresolved; they are not teacher
-  rejections.
+  rejections. With no resolved supply dispositions, accepted/requested is
+  unavailable (`null`), even though the count of known accepted questions is
+  zero. With partial dispositions, the ratio remains over every requested slot
+  and is explicitly a recorded lower bound; supply-label coverage states how
+  many slots are known or unresolved. A measured zero acceptance rate requires
+  fully resolved supply labels rather than an empty review file.
 - **Incidence:** source, notation, duplication, difficulty, and answer issues are
   reported with present/absent/uncertain/unreviewed counts. Resolved-only and
   reviewed-including-uncertain denominators are explicit. Saved-output incidence

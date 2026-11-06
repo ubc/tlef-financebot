@@ -14,6 +14,7 @@ import {
 import {
   CAPABILITY_PROFILES,
   capabilitiesForConfigured,
+  modelCatalogue,
   temperatureAllowed,
 } from '../components/genai/llm/model-capabilities';
 import { env } from '../config/env';
@@ -23,13 +24,15 @@ import {
   effectivePermission,
   saveCapabilitySettings,
 } from './capabilities.service';
-import { PIPELINE_STEPS } from '../types/domain';
+import { COURSE_MODEL_STEPS, PIPELINE_STEPS } from '../types/domain';
 import { courseLifecycle } from './courses.service';
 import { activeSharedInstructorPuids, projectCourseInstructorShares, revokeSharedInstructorGrants } from './course-sharing.service';
 import type {
   CapabilityRole,
   CapabilitySettings,
+  Course,
   CourseLifecycle,
+  CourseModelStep,
   CourseRole,
   PipelineStep,
   PlatformInstructorGrant,
@@ -438,7 +441,9 @@ function environmentStepConfig(
   customModels: PlatformSettings['customModels'],
 ): StepModelConfig {
   const resolved: StepModelConfig = { ...config, model, modelSource: 'environment' };
-  const caps = capabilitiesForConfigured(model, customModels);
+  const caps = resolved.capabilityProfile
+    ? CAPABILITY_PROFILES[resolved.capabilityProfile]
+    : capabilitiesForConfigured(model, customModels);
   if (resolved.reasoningEffort !== undefined && !caps.reasoningEffort?.includes(resolved.reasoningEffort)) delete resolved.reasoningEffort;
   if (resolved.temperature !== undefined && !temperatureAllowed(caps, resolved.reasoningEffort)) delete resolved.temperature;
   return resolved;
@@ -465,9 +470,102 @@ export function normalizePlatformSettings(stored: PlatformSettings): PlatformSet
   };
 }
 
-export async function getPlatformSettings(): Promise<PlatformSettings> {
+type CourseModelSettings = NonNullable<Course['llmModelSettings']>;
+type CourseModelChoices = Partial<Record<CourseModelStep, string>>;
+
+async function readPlatformSettings(): Promise<PlatformSettings> {
   const stored = await platformSettingsCol().findOne({ _id: 'platform' });
   return stored ? normalizePlatformSettings(stored) : defaultPlatformSettings();
+}
+
+function withCourseModels(platform: PlatformSettings, overrides: CourseModelSettings['overrides']): PlatformSettings {
+  const models = { ...platform.models };
+  for (const step of COURSE_MODEL_STEPS) {
+    const choice = overrides[step];
+    if (!choice) continue;
+    const { reasoningEffort, temperature } = models[step];
+    const config = environmentStepConfig({
+      ...choice,
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+    }, choice.model, platform.customModels);
+    const caps = choice.capabilityProfile ? CAPABILITY_PROFILES[choice.capabilityProfile] : capabilitiesForConfigured(choice.model, platform.customModels);
+    if (config.temperature !== undefined && caps.temperature &&
+      (config.temperature < caps.temperature.min || config.temperature > caps.temperature.max)) delete config.temperature;
+    models[step] = {
+      ...config,
+      modelSource: 'override',
+    };
+  }
+  return { ...platform, models };
+}
+
+function readCourseModelSettings(courseId: ObjectId) {
+  return coursesCol().findOne({ _id: courseId }, { projection: { llmModelSettings: 1 } });
+}
+
+export async function getPlatformSettings(courseId?: ObjectId): Promise<PlatformSettings> {
+  if (!courseId) return readPlatformSettings();
+  const [platform, course] = await Promise.all([readPlatformSettings(), readCourseModelSettings(courseId)]);
+  return course?.llmModelSettings ? withCourseModels(platform, course.llmModelSettings.overrides) : platform;
+}
+
+function courseModelView(platform: PlatformSettings, stored?: CourseModelSettings) {
+  const configured = stored?.overrides ?? {};
+  const overrides: CourseModelChoices = {};
+  for (const step of COURSE_MODEL_STEPS) {
+    if (configured[step]) overrides[step] = configured[step].model;
+  }
+  const modelIds = [
+    ...Object.values(defaultPlatformSettings().models).map(config => config.model),
+    ...Object.values(platform.models).map(config => config.model),
+  ];
+  return {
+    revision: stored?.revision ?? 0,
+    overrides,
+    platformModels: platform.models,
+    effectiveModels: withCourseModels(platform, configured).models,
+    availableModels: modelCatalogue(platform.customModels, modelIds).models.map(entry => entry.id),
+  };
+}
+
+export async function getAdminCourseModels(courseId: ObjectId) {
+  const [platform, course] = await Promise.all([readPlatformSettings(), readCourseModelSettings(courseId)]);
+  if (!course) throw new Error('course-not-found');
+  return courseModelView(platform, course.llmModelSettings);
+}
+
+export async function saveAdminCourseModels(courseId: ObjectId, revision: number, choices: CourseModelChoices, actorPuid: string) {
+  const [platform, course] = await Promise.all([readPlatformSettings(), readCourseModelSettings(courseId)]);
+  if (!course) throw new Error('course-not-found');
+  if (revision !== (course.llmModelSettings?.revision ?? 0)) throw new Error('course-models-conflict');
+  const previous = courseModelView(platform, course.llmModelSettings);
+  const overrides: CourseModelSettings['overrides'] = {};
+  for (const step of COURSE_MODEL_STEPS) {
+    const model = choices[step];
+    if (!model) continue;
+    const existing = course.llmModelSettings?.overrides[step];
+    if (existing?.model === model) {
+      overrides[step] = existing;
+      continue;
+    }
+    if (!previous.availableModels.includes(model)) throw new Error('invalid-model-selector');
+    const custom = platform.customModels?.find(entry => entry.id === model);
+    overrides[step] = { model, ...(custom ? { capabilityProfile: custom.profile } : {}) };
+  }
+  const stored = { revision: revision + 1, overrides };
+  const update = await coursesCol().updateOne(
+    { _id: courseId, 'llmModelSettings.revision': revision === 0 ? { $exists: false } : revision },
+    { $set: { llmModelSettings: stored } },
+  );
+  if (!update.matchedCount) throw new Error('course-models-conflict');
+  const view = courseModelView(platform, stored);
+  await auditCol().insertOne({
+    actorPuid, action: 'course-models.update', targetType: 'course', targetId: courseId, courseId,
+    detail: { before: previous.overrides, after: view.overrides, revision: stored.revision },
+    createdAt: new Date(),
+  });
+  return view;
 }
 
 /**
@@ -476,8 +574,8 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
  * These ran on `LLM_DEFAULT_MODEL` with no admin control at all until the
  * `utility` step existed.
  */
-export async function utilityStepConfig(): Promise<StepModelConfig> {
-  return (await getPlatformSettings()).models.utility;
+export async function utilityStepConfig(courseId?: ObjectId): Promise<StepModelConfig> {
+  return (await getPlatformSettings(courseId)).models.utility;
 }
 
 /**

@@ -1,7 +1,38 @@
 # AGENTS.md — client/
 
+Course Structure now exposes the existing bounded outline repair through the
+saved parent/child repair view. Instructors explicitly choose one goal and at
+most two objectives, inspect original quotes and requested source points, then
+review before/after wording, fresh findings and missing/lost coverage receipts.
+The two goals share one repair attempt and the parent allowance; nothing is
+applied automatically. Unknown repair identity stays quarantined, failed child
+runs retain the original draft, and per-run instructor wording/selection is
+restored only against its exact current draft baseline. Explicitly reviewed
+child drafts remain separate; later teacher wording edits are labelled in the
+apply receipt. Historical drafts require an explicit unavailable repair view.
+The 13-case compiled static UI check uses intercepted APIs, including an actual
+retained-baseline comparison. It verifies workflow and recovery, not model
+quality, semantic coverage or paid cost.
+
+Checked regeneration handles only exact recognized 409/422 prerequisite codes as
+confirmed unusable candidates. Retain both previews, source/memory checks and
+editor text, disable Replace until explicit fresh generation, and clear only
+that question's recovery keys. Unknown network/500 failures retain same-candidate
+replay/storage because adoption may have completed. Never regenerate automatically
+to recover an adoption error. See the October 17 currentness/recovery report.
+
 The frontend. Deliberately framework-free and bundler-free: plain TypeScript
 authored as native ES modules, compiled by `tsc` and served statically.
+
+The existing authoring surfaces support intended upload receipts, all-source
+indexed readiness, explicit subsets/replacements, source cache/coverage receipts
+and the opt-in shared-memory v2 pilot. Regenerate selects Edit/Variant/Independent
+intent, retains requirements and request UUID through response loss/reload, and
+requires explicit version-checked adoption. Dirty edits and stale originals
+disable adoption. Diagnostic-only topology is disclosed before paid work.
+Optional historical-memory preparation is an explicit five-version action.
+Instructor/Admin run details retain source/task/budget checks. No new standalone
+evaluation application is required; baseline remains the default.
 
 Course Structure provides confirmed Delete topic and per-LO Delete controls
 directly in the outline, including All objectives/search topic groups. They use
@@ -214,6 +245,16 @@ counts. Durable `structure-generation` snapshots retain edits, display explicit
 failure/recovery states and support selected-subset apply. Source coverage separates
 analyzed sections, mapped learning points, exclusions and gaps; exact passages can
 open the existing highlighted source preview.
+
+`structure-source-coverage.ts` renders a compact, searchable, paginated original
+AI-draft receipt above the objectives. Point gaps, original passage decisions and
+zero-objective sections remain different units. Missing or contradictory counts
+stay unavailable; duplicate identities and foreign bindings retain their raw
+records without selecting a misleading source/context link. Failed runs can show
+retained processing diagnostics without an applicable outline. This read model
+does not change selection, Apply or generation eligibility. Its 19 coverage cases
+and 14 existing editor flows pass the isolated static UI check; source prose in
+the large committed fixture is explicitly synthetic, not semantic acceptance.
 
 Admin Operations & Issues and All Questions (`views/admin/operations.ts`,
 `questions.ts`) expose cross-user diagnostics, durable job evidence and read-only

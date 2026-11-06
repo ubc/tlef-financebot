@@ -5,6 +5,7 @@ import { createApp } from './app';
 import { env, assertConfig } from './config/env';
 import { connectMongo, closeMongo } from './components/mongodb';
 import { ensureIndexes } from './components/mongodb/collections';
+import { initializeAuthoringCommitSupport } from './services/authoring-commit.service';
 import { verifyIdpCertificatePresent } from './components/auth';
 import { pingQdrant } from './components/qdrant';
 import { startJobs, stopJobs } from './components/jobs';
@@ -32,6 +33,8 @@ async function main(): Promise<void> {
 
   await ensureIndexes();
   console.log('[server] MongoDB indexes ensured');
+  const authoringCommit = await initializeAuthoringCommitSupport();
+  console.log(`[server] authoring commit topology=${authoringCommit.topology}, coordinated=${authoringCommit.available}`);
 
   await startJobs();
   console.log('[server] job queue started');

@@ -5,11 +5,13 @@ import type { RequestHandler } from 'express';
 import { operationContext } from '../services/operation-context';
 import { recordOperation, safeControls, safeDiagnostic } from '../services/operation-audit.service';
 import type { OperationEvent } from '../types/domain';
+import { requestDiagnostics } from '../services/request-diagnostics';
 
 /** Mounted before parsers/rate limiting: malformed requests are failures too. */
 export const operationAudit: RequestHandler = (req, res, next) => {
   const requestId = randomUUID();
   const started = Date.now();
+  const requestMetadata = requestDiagnostics(req.originalUrl, req.get('user-agent'), req.get('sec-fetch-site'));
   const usage = createModelUsageTracker(() => ({
     operationId: requestId,
     courseId: String(res.locals.courseId ?? req.params.courseId ?? req.body?.courseId ?? ''),
@@ -85,10 +87,16 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     const event: OperationEvent = {
       requestId, createdAt: new Date(started), durationMs: Date.now() - started,
       method: req.method, route, statusCode: aborted ? 499 : res.statusCode,
+      request: { ...requestMetadata, routeMatched: route !== '/unmatched' },
       outcome: aborted ? 'interrupted' : res.statusCode >= 400 ? 'failed' : response.hasIssues ? 'partial' : failed ? 'failed' : res.statusCode === 202 ? 'accepted' : 'succeeded',
       actor: req.user ? { puid: req.user.puid, uid: req.user.uid, displayName: req.user.displayName } : undefined,
       targets, input: { ...safeControls(req.query), ...safeControls(req.body) }, response,
     };
+    if (event.statusCode === 404 && route === '/unmatched') {
+      // Correlate proxy access logs even if the best-effort database write fails.
+      console.warn('[http.route_not_found]', JSON.stringify({ requestId, method: req.method,
+        statusCode: event.statusCode, durationMs: event.durationMs, ...event.request }));
+    }
     void recordOperation(event);
   }
   res.once('finish', () => finish(false));

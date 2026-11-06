@@ -1,0 +1,179 @@
+{
+  "scope": "Retained public-source input fixture only. No new model verdict, pedagogical coverage, saved yield, or teacher acceptance.",
+  "checkpointSha256": "82aaab21c39e92a113ae5405e4cec4650a3c1a42bcd91d24f9a7657ce7aefd69",
+  "input": {
+    "sourceFingerprint": "32c828c5aa9a4778b8f6b0802026a2861968d09bc0362a7be833c14b310a97ed",
+    "passagePolicy": "word-boundary-v1",
+    "sections": [
+      {
+        "id": "S313",
+        "localId": "C8.S1",
+        "materialId": "6ad2ad06e474ab8460b47c12",
+        "materialName": "Chapter 6: Estimating Side Costs and Benefits.pdf",
+        "chunkIndex": 7,
+        "text": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the opportunity\n     cost is the expected present value of the after-tax rental or lease\n     revenues.\n   § use elsewhere in the business, in which case the opportunity cost\n     is the cost of replacing it."
+      },
+      {
+        "id": "S635",
+        "localId": "C32.S1",
+        "materialId": "6ad2ad06e474ab8460b47c1c",
+        "materialName": "Chapter 12: Basics of Valuation.pdf",
+        "chunkIndex": 31,
+        "text": "Aswath Damodaran                                                                                 252\n\f§ Since we cannot estimate cash flows forever, we estimate cash flows for\n  a “growth period” and then estimate a terminal value, to capture the\n  value at the end of the period:\n                              t=N CF\n                       Value = ∑       t + Terminal Value\n                                         t     (1+r) N\n                               t=1 (1+r)\n\n§ When a firm’s cash flows grow at a “constant” rate forever, the present\n  value of those cash flows can be written as:\n   Value = Expected Cash Flow Next Period / (r - g)\n   § This “constant” growth rate is called a stable growth rate and cannot\n     be higher than the growth rate of the economy in which the firm\n     operates.\n   § The firm, once put into this state, has to have stability in all of its\n     parameters (risk, margins, accounting returns)"
+      }
+    ],
+    "materials": [
+      {
+        "materialId": "6ad2ad06e474ab8460b47c12",
+        "name": "Chapter 6: Estimating Side Costs and Benefits.pdf",
+        "chunks": 42,
+        "sections": 42,
+        "sourceTextHash": "f104c8e79b81a09b4272e2e36f5c8f3324de481214fefae834295f10aaf1153b",
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      },
+      {
+        "materialId": "6ad2ad06e474ab8460b47c1c",
+        "name": "Chapter 12: Basics of Valuation.pdf",
+        "chunks": 68,
+        "sections": 68,
+        "sourceTextHash": "219f113033323bf0f0f58af0ea4fe1a5ff7d47c00ce82b59d6b95e9058fccae6",
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      }
+    ],
+    "extractions": [
+      {
+        "sectionId": "S313",
+        "row": {
+          "sectionId": "C8.S1",
+          "objectives": [
+            {
+              "name": "Determine an owned resource's opportunity cost by identifying its next-best alternative use and valuing the resource accordingly.",
+              "passageId": "C8.S1.P1",
+              "quote": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the",
+              "supportingPassages": [
+                {
+                  "passageId": "C8.S1.P2",
+                  "quote": "opportunity\n     cost is the expected present value of the after-tax rental or lease\n     revenues.\n   § use elsewhere in the business, in which case the opportunity cost\n     is the cost of replacing it."
+                }
+              ]
+            }
+          ],
+          "knowledge": [
+            {
+              "name": "An opportunity cost arises when a project uses a resource that may already have been paid for by the firm.",
+              "kind": "concept",
+              "passageId": "C8.S1.P1",
+              "quote": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the"
+            },
+            {
+              "name": "If the next-best alternative is selling the asset, opportunity cost is expected sale proceeds net of capital gains taxes.",
+              "kind": "condition",
+              "passageId": "C8.S1.P1",
+              "quote": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the"
+            },
+            {
+              "name": "If the next-best alternative is renting or leasing the asset, opportunity cost is the expected present value of after-tax rental or lease revenues.",
+              "kind": "condition",
+              "passageId": "C8.S1.P1",
+              "quote": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the",
+              "supportingPassages": [
+                {
+                  "passageId": "C8.S1.P2",
+                  "quote": "opportunity\n     cost is the expected present value of the after-tax rental or lease\n     revenues.\n   § use elsewhere in the business, in which case the opportunity cost\n     is the cost of replacing it."
+                }
+              ]
+            },
+            {
+              "name": "If the next-best alternative is using the resource elsewhere in the business, opportunity cost is the cost of replacing it.",
+              "kind": "condition",
+              "passageId": "C8.S1.P2",
+              "quote": "opportunity\n     cost is the expected present value of the after-tax rental or lease\n     revenues.\n   § use elsewhere in the business, in which case the opportunity cost\n     is the cost of replacing it."
+            }
+          ],
+          "passageDispositions": []
+        },
+        "reused": true
+      },
+      {
+        "sectionId": "S635",
+        "row": {
+          "sectionId": "C32.S1",
+          "objectives": [
+            {
+              "name": "Estimate firm value by forecasting cash flows over a finite growth period and adding a terminal value to capture value at the end of that period.",
+              "passageId": "C32.S1.P1",
+              "quote": "Aswath Damodaran                                                                                 252\n\f§ Since we cannot estimate cash flows forever, we estimate cash flows for\n  a “growth period” and then estimate a terminal value, to capture the\n  value at the end of the period:\n                              t=N CF\n                       Value = ∑       t + Terminal Value\n                                         t     (1+r) N\n                               t=1 (1+r)\n\n§ When a firm’s cash flows"
+            },
+            {
+              "name": "Calculate the value of cash flows growing at a constant rate forever using next-period expected cash flow and the difference between the discount rate and stable growth rate.",
+              "passageId": "C32.S1.P2",
+              "quote": "grow at a “constant” rate forever, the present\n  value of those cash flows can be written as:\n   Value = Expected Cash Flow Next Period / (r - g)\n   § This “constant” growth rate is called a stable growth rate and cannot\n     be higher than the growth rate of the economy in which the firm\n     operates.\n   § The firm, once put into this state, has to have stability in all of its\n     parameters (risk, margins, accounting returns)"
+            }
+          ],
+          "knowledge": [
+            {
+              "name": "Value = the sum from t = 1 to N of CFₜ / (1 + r)ᵗ, plus Terminal Value / (1 + r)ᴺ.",
+              "kind": "formula",
+              "passageId": "C32.S1.P1",
+              "quote": "Aswath Damodaran                                                                                 252\n\f§ Since we cannot estimate cash flows forever, we estimate cash flows for\n  a “growth period” and then estimate a terminal value, to capture the\n  value at the end of the period:\n                              t=N CF\n                       Value = ∑       t + Terminal Value\n                                         t     (1+r) N\n                               t=1 (1+r)\n\n§ When a firm’s cash flows"
+            },
+            {
+              "name": "For cash flows growing at a constant rate forever, value = expected cash flow next period / (r − g).",
+              "kind": "formula",
+              "passageId": "C32.S1.P2",
+              "quote": "grow at a “constant” rate forever, the present\n  value of those cash flows can be written as:\n   Value = Expected Cash Flow Next Period / (r - g)\n   § This “constant” growth rate is called a stable growth rate and cannot\n     be higher than the growth rate of the economy in which the firm\n     operates.\n   § The firm, once put into this state, has to have stability in all of its\n     parameters (risk, margins, accounting returns)"
+            },
+            {
+              "name": "The stable growth rate cannot be higher than the growth rate of the economy in which the firm operates; in stable growth, the firm must have stability in risk, margins, and accounting returns.",
+              "kind": "condition",
+              "passageId": "C32.S1.P2",
+              "quote": "grow at a “constant” rate forever, the present\n  value of those cash flows can be written as:\n   Value = Expected Cash Flow Next Period / (r - g)\n   § This “constant” growth rate is called a stable growth rate and cannot\n     be higher than the growth rate of the economy in which the firm\n     operates.\n   § The firm, once put into this state, has to have stability in all of its\n     parameters (risk, margins, accounting returns)"
+            }
+          ],
+          "passageDispositions": []
+        },
+        "reused": true
+      }
+    ],
+    "evidence": [
+      {
+        "id": "E482",
+        "objective": "Determine an owned resource's opportunity cost by identifying its next-best alternative use and valuing the resource accordingly.",
+        "materialId": "6ad2ad06e474ab8460b47c12",
+        "materialName": "Chapter 6: Estimating Side Costs and Benefits.pdf",
+        "chunkIndex": 7,
+        "quote": "Aswath Damodaran\n\f§ An opportunity cost arises when a project uses a resource that\n  may already have been paid for by the firm.\n§ When a resource that is already owned by a firm is being\n  considered for use in a project, this resource has to be priced\n  on its next best alternative use, which may be\n   § a sale of the asset, in which case the opportunity cost is the\n     expected proceeds from the sale, net of any capital gains taxes\n   § renting or leasing the asset out, in which case the",
+        "sourcePassageId": "C8.S1.P1",
+        "extraction": "reused",
+        "supportingPassages": [
+          {
+            "passageId": "C8.S1.P2",
+            "quote": "opportunity\n     cost is the expected present value of the after-tax rental or lease\n     revenues.\n   § use elsewhere in the business, in which case the opportunity cost\n     is the cost of replacing it."
+          }
+        ]
+      },
+      {
+        "id": "E946",
+        "objective": "Estimate firm value by forecasting cash flows over a finite growth period and adding a terminal value to capture value at the end of that period.",
+        "materialId": "6ad2ad06e474ab8460b47c1c",
+        "materialName": "Chapter 12: Basics of Valuation.pdf",
+        "chunkIndex": 31,
+        "quote": "Aswath Damodaran                                                                                 252\n\f§ Since we cannot estimate cash flows forever, we estimate cash flows for\n  a “growth period” and then estimate a terminal value, to capture the\n  value at the end of the period:\n                              t=N CF\n                       Value = ∑       t + Terminal Value\n                                         t     (1+r) N\n                               t=1 (1+r)\n\n§ When a firm’s cash flows",
+        "sourcePassageId": "C32.S1.P1",
+        "extraction": "reused"
+      },
+      {
+        "id": "E947",
+        "objective": "Calculate the value of cash flows growing at a constant rate forever using next-period expected cash flow and the difference between the discount rate and stable growth rate.",
+        "materialId": "6ad2ad06e474ab8460b47c1c",
+        "materialName": "Chapter 12: Basics of Valuation.pdf",
+        "chunkIndex": 31,
+        "quote": "grow at a “constant” rate forever, the present\n  value of those cash flows can be written as:\n   Value = Expected Cash Flow Next Period / (r - g)\n   § This “constant” growth rate is called a stable growth rate and cannot\n     be higher than the growth rate of the economy in which the firm\n     operates.\n   § The firm, once put into this state, has to have stability in all of its\n     parameters (risk, margins, accounting returns)",
+        "sourcePassageId": "C32.S1.P2",
+        "extraction": "reused"
+      }
+    ]
+  }
+}

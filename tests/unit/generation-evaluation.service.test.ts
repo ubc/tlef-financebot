@@ -88,6 +88,17 @@ it('exports exact immutable slot-bound generated versions, not current content o
   expect(result.evidence).toEqual(run.result!.quality!.evidence);
 });
 
+it('exports v2 planning supply and per-slot original evidence without inventing teacher acceptance', async () => {
+  run.input.qualityPolicy = 'grounded-memory-v2';
+  run.result!.quality = { ...run.result!.quality!, policy: 'grounded-memory-v2', taskPlanId: 'plan-id', independentRequested: 3, independentPlanned: 2, variantsCreated: 0,
+    evidencePackets: [{ ...evidence(), id: 'expanded-originals', policyVersion: 'grounded-memory-v2' }] };
+  const result = await exportGenerationEvaluation(courseId, runId);
+  expect(result.run.policy).toBe('grounded-memory-v2');
+  expect(result.executionDiagnostics).toMatchObject({ taskPlanId: 'plan-id', independentRequested: 3, independentPlanned: 2, variantsCreated: 0, evidencePacketIds: ['snapshot', 'expanded-originals'] });
+  expect(result.evidencePackets![0].passages[0].text).toBe('Source.');
+  expect(result).not.toHaveProperty('labels'); expect(JSON.stringify(result)).not.toContain('PRIVATE-');
+});
+
 it('does not include actors, request/session/provider-response IDs or arbitrary receipt options', async () => {
   const result = await exportGenerationEvaluation(courseId, runId);
   expect(JSON.stringify(result)).not.toContain('PRIVATE-');

@@ -1,14 +1,16 @@
 import { LLMModule, type LLMConfig, type LLMOptions, type ProviderType } from 'ubc-genai-toolkit-llm';
 import { env } from '../../../config/env';
-import { modelRequestOptions, type ModelRequestOptions } from './model-capabilities';
+import { defaultJsonReasoningEffort, modelRequestOptions, type ModelRequestOptions } from './model-capabilities';
 import { createGenaiLogger } from '../logger';
 import { escapeInvalidJsonBackslashes, restoreLatexEscapes } from './latex-escapes';
 import { observeLLMModule, withModelCallContext, type ModelCallObserver, type ModelUsageContext } from './model-call';
 import { installOpenAIUsageAdapter } from './openai-usage-adapter';
+import { currentAuthoringBudget, type ModelSendAdmission } from './authoring-budget';
 
 export { withModelCallObserver } from './model-call';
 export type { ModelCallEvent, ModelCallObserver, ModelUsageContext } from './model-call';
 export type { ModelUsage } from './provider-usage';
+export type { ModelSendAdmission } from './authoring-budget';
 
 // Chat / text generation via ubc-genai-toolkit-llm. A single, process-wide
 // module is constructed from `env`; the provider (ollama | openai | anthropic |
@@ -32,13 +34,13 @@ function buildConfig(): LLMConfig {
 /** The configured LLM module. Use `sendMessage` / `createConversation`. */
 const config = buildConfig();
 const moduleInstance = new LLMModule(config);
-installOpenAIUsageAdapter(moduleInstance, config);
+installOpenAIUsageAdapter(moduleInstance, config, { requestTimeoutMs: env.llmRequestTimeoutMs });
 export const llm = observeLLMModule(moduleInstance, config);
 
 export interface CompleteJsonOptions extends ModelRequestOptions {
   systemPrompt?: string;
   /** Recheck durable cancellation before every provider attempt, including JSON retry. */
-  beforeRequest?: () => Promise<void>;
+  beforeRequest?: (request?: ModelSendAdmission) => Promise<void | (() => void | Promise<void>)>;
   /** Cumulative visible response text; resets to empty before each JSON attempt. */
   onText?: (text: string) => void;
   /** Called with the provider's token usage after each underlying request
@@ -94,7 +96,9 @@ function extractJson<T>(content: string): T {
  * "Unclassified").
  */
 export async function completeJson<T>(prompt: string, options: CompleteJsonOptions = {}): Promise<T> {
-  // Effort `none` unless the caller asks otherwise. Every caller of this helper
+  // Prefer effort `none` on compatible models unless the caller asks otherwise.
+  // Reasoning-required models use their declared default when effort is absent.
+  // Every historical caller of this helper
   // passes `temperature: 0` (or relies on its default) BECAUSE it wants a
   // reproducible JSON answer — and a temperature is only legal while the
   // effective effort is `none`. Without this, switching the configured model to
@@ -104,14 +108,21 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
   // (a reviewer at `high`, say) pass `reasoningEffort` and knowingly give up the
   // temperature in exchange.
   const sendOptions: LLMOptions = {
-    ...modelRequestOptions({ ...options, reasoningEffort: options.reasoningEffort ?? 'none' }),
+    ...modelRequestOptions({ ...options, maxTokens: options.maxTokens ?? currentAuthoringBudget()?.snapshot().limits.maxOutputTokens,
+      reasoningEffort: options.reasoningEffort ?? defaultJsonReasoningEffort(options.model, options.capabilityProfile) }),
     responseFormat: 'json',
     ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
   };
 
   const send = async (text: string, jsonAttempt: number) => {
-    await options.beforeRequest?.();
-    return withModelCallContext({ ...options.usageContext, jsonAttempt }, options.onAttempt, async () => {
+    const admission: ModelSendAdmission = { prompt: text, systemPrompt: options.systemPrompt, provider: config.provider,
+      model: sendOptions.model ?? config.defaultModel, options: sendOptions, jsonAttempt,
+      outputCap: Number(sendOptions.maxTokens ?? sendOptions.max_completion_tokens ?? sendOptions.max_output_tokens ?? 0) };
+    // Both format repairs and ordinary requests are admitted against their
+    // actual text and shaped provider options; hooks may reserve extra scopes.
+    const hookRelease = await options.beforeRequest?.(admission);
+    try {
+      return await withModelCallContext({ ...options.usageContext, jsonAttempt }, options.onAttempt, async () => {
       if (!options.onText) return llm.sendMessage(text, sendOptions);
       let content = '';
       options.onText('');
@@ -119,7 +130,10 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
         content += chunk;
         options.onText?.(content);
       }, sendOptions);
-    });
+      });
+    } finally {
+      if (hookRelease) await hookRelease();
+    }
   };
   const reportUsage = async (usage: typeof first.usage) => {
     // A legacy callback is telemetry too; it must not cause a paid JSON retry.

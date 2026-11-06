@@ -2,10 +2,11 @@ jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.f
 jest.mock('../../server/src/components/mongodb/collections', () => ({}));
 
 import { completeJson } from '../../server/src/components/genai/llm';
-import { assessGenerationQuality, generationQualityInstruction } from '../../server/src/services/generation-quality.service';
+import { assessGenerationQuality, generationQualityInstruction, snapshotQualityCandidate } from '../../server/src/services/generation-quality.service';
 import { withBatchGenerationMemory } from '../../server/src/services/generation-memory.service';
 import type { GenerationMemoryContent, GenerationMemorySnapshot } from '../../server/src/services/generation-memory.service';
 import type { GenerationEvidencePacket } from '../../server/src/services/generation-evidence.service';
+import { AuthoringBudget, withAuthoringBudget } from '../../server/src/services/authoring-budget.service';
 
 const materialId = '000000000000000000000001';
 const loId = '000000000000000000000002';
@@ -276,5 +277,103 @@ describe('generation structured quality assessment', () => {
     expect(prompt).toContain('E1');
     expect(prompt).toContain('batch:0');
     expect(completeJson).not.toHaveBeenCalled();
+  });
+});
+
+describe('v2 intent-aware changes and source assessment', () => {
+  function v2Args(intent: 'edit-existing' | 'create-variant' | 'create-independent-task' = 'edit-existing') {
+    return { ...args(), policy: 'grounded-memory-v2' as const,
+      requirements: { intent, requiredChanges: ['Change notation to the lecture symbols.'], preserve: ['Preserve the learning task.'],
+        requestedDifficulty: 'hard' as const, original: snapshotQualityCandidate(candidate('Original learning task')) } };
+  }
+  function v2Review() {
+    return { ...review(), changes: [{ requirement: 'Change notation to the lecture symbols.', status: 'fulfilled', reason: 'Symbols match the lecture.' }],
+      invariants: [{ requirement: 'Preserve the learning task.', status: 'preserved', reason: 'Only symbols changed.' }], achievedDifficulty: 'easy', justifiedLength: 'justified' };
+  }
+  it('corrects one malformed v2 assessment with safe field diagnostics and one shared repair cycle', async () => {
+    const first = { ...v2Review(), achievedDifficulty: 'probably-hard' };
+    jest.mocked(completeJson).mockResolvedValueOnce(first).mockResolvedValueOnce(v2Review());
+    const budget = new AuthoringBudget('quality-fixture', { maxSends: 8 });
+    const result = await withAuthoringBudget(budget, () => assessGenerationQuality(v2Args()));
+    expect(result.status).toBe('eligible'); expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(result.responseIssues).toContainEqual(expect.objectContaining({ attempt: 0, path: 'achievedDifficulty' }));
+    expect(JSON.stringify(result.responseIssues)).not.toContain('probably-hard');
+    expect(budget.snapshot().logical.repairCycles).toBe(1);
+    expect(jest.mocked(completeJson).mock.calls[1][0]).toContain('Do not rewrite the candidate.');
+    expect(jest.mocked(completeJson).mock.calls[0][0]).toContain('"changes"');
+    expect(jest.mocked(completeJson).mock.calls[0][0]).toContain('"invariants"');
+  });
+  it('rechecks corrected exact quotes, and never guesses support or repeats a failed citation correction', async () => {
+    const invalid = v2Review(); invalid.citations[0].quote = 'Paraphrased source';
+    jest.mocked(completeJson).mockResolvedValueOnce(invalid).mockResolvedValueOnce(v2Review());
+    const corrected = await assessGenerationQuality(v2Args());
+    expect(corrected.status).toBe('eligible');
+    expect(corrected.responseIssues).toContainEqual({ attempt: 0, path: 'citations.0.quote', code: 'quote-not-exact-substring' });
+    jest.mocked(completeJson).mockReset().mockResolvedValue(invalid);
+    const stillInvalid = await assessGenerationQuality(v2Args());
+    expect(stillInvalid.status).toBe('withheld'); expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(stillInvalid.responseIssues).toContainEqual({ attempt: 1, path: 'citations.0.quote', code: 'quote-not-exact-substring' });
+    expect(stillInvalid.citations).toHaveLength(1);
+  });
+  it('does not open another quality correction after a generator repair consumed the slot allowance', async () => {
+    const invalid = v2Review(); invalid.citations[0].quote = 'Paraphrased source';
+    jest.mocked(completeJson).mockResolvedValue(invalid);
+    const budget = new AuthoringBudget('quality-fixture', { maxSends: 8 }); budget.reserveLogical('repair-cycle');
+    const result = await withAuthoringBudget(budget, () => assessGenerationQuality(v2Args()));
+    expect(result.status).toBe('withheld'); expect(completeJson).toHaveBeenCalledTimes(1);
+    expect(result.reasons.join(' ')).toContain('authoring-budget-exhausted:repair-cycle');
+    expect(result.responseIssues).toContainEqual({ attempt: 0, path: 'citations.0.quote', code: 'quote-not-exact-substring' });
+  });
+  it('permits local edits preserving an existing task and stores honest achieved difficulty', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), novelty: 'uncertain' });
+    const result = await assessGenerationQuality(v2Args());
+    expect(result).toMatchObject({ status: 'eligible', policy: 'grounded-memory-v2', intent: 'edit-existing', achievedDifficulty: 'easy', requestedDifficulty: 'hard', difficultyMismatch: true });
+  });
+  it('withholds a positive review that still lists a necessary missing premise', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), missingPremises: ['The notes must establish the required rate convention.'] });
+    const result = await assessGenerationQuality(v2Args());
+    expect(result).toMatchObject({ status: 'withheld', sourceSupport: 'uncertain', missingPremises: ['The notes must establish the required rate convention.'] });
+    expect(result.reasons.join(' ')).toContain('missing necessary premises');
+    expect(completeJson).toHaveBeenCalledTimes(1);
+  });
+  it('keeps an explicit unsupported verdict when missing premises are also listed', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), sourceSupport: 'unsupported', missingPremises: ['Required pricing dependency.'] });
+    expect(await assessGenerationQuality(v2Args())).toMatchObject({ status: 'withheld', sourceSupport: 'unsupported' });
+  });
+  it('accepts an intentional variant of the excluded original without inventing a Bank match', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), novelty: 'variant' });
+    expect((await assessGenerationQuality(v2Args('create-variant'))).status).toBe('eligible');
+  });
+  it('does not count a deliberate variant as an independent task', async () => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), novelty: 'variant' });
+    expect((await assessGenerationQuality(v2Args('create-independent-task'))).status).toBe('withheld');
+  });
+  it('rejects an unchanged candidate, including pure answer reshuffling, before a model call', async () => {
+    const input = v2Args(); input.requirements.original = snapshotQualityCandidate(input.candidate);
+    input.candidate.options.reverse();
+    const result = await assessGenerationQuality(input);
+    expect(result.status).toBe('withheld'); expect(result.reasons.join(' ')).toContain('No material change');
+    expect(completeJson).not.toHaveBeenCalled();
+  });
+  it.each([
+    { changes: [] },
+    { changes: [{ requirement: 'Different requirement', status: 'fulfilled', reason: 'Looks good.' }] },
+    { invariants: [{ requirement: 'Preserve the learning task.', status: 'violated', reason: 'The answer semantics changed.' }] },
+    { justifiedLength: 'excessive' },
+    { sourceSupport: 'unsupported' },
+  ])('withholds failed/missing requirements and unsupported old reasoning: %o', async patch => {
+    jest.mocked(completeJson).mockResolvedValue({ ...v2Review(), ...patch });
+    expect((await assessGenerationQuality(v2Args())).status).toBe('withheld');
+  });
+  it('allows consistent numerical symbol renaming while blocking changed formula/distribution', async () => {
+    const original: GenerationMemoryContent = { ...candidate('Original {{r}}'), paramSlots: [{ name: 'r', min: 1, max: 10, step: 1 }], derivedValues: [{ name: 'y', formula: 'r*2' }] };
+    const input = v2Args(); input.requirements.original = snapshotQualityCandidate(original);
+    input.candidate = { ...candidate('Renamed {{rate}}'), paramSlots: [{ name: 'rate', min: 1, max: 10, step: 1 }], derivedValues: [{ name: 'answer', formula: 'rate*2' }] };
+    jest.mocked(completeJson).mockResolvedValue(v2Review());
+    expect((await assessGenerationQuality(input)).status).toBe('eligible');
+    input.candidate.derivedValues![0].formula = 'rate*3';
+    expect((await assessGenerationQuality(input)).reasons.join(' ')).toContain('underlying formula');
+    input.candidate.derivedValues![0].formula = 'rate*2'; input.candidate.paramSlots![0].step = 0.5;
+    expect((await assessGenerationQuality(input)).reasons.join(' ')).toContain('parameter distributions');
   });
 });

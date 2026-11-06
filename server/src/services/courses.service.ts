@@ -1,3 +1,4 @@
+import { authoringCollection, authoringCommitAvailable, currentAuthoringSession, withCourseAuthoringWrite } from './authoring-commit.service';
 import type { Filter, WithId, ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { customAlphabet } from 'nanoid';
@@ -41,6 +42,7 @@ function normalizeCourse(course: WithId<Course>): WithId<Course> {
   const publicCourse = { ...course };
   delete publicCourse.identityKey;
   delete publicCourse.outlineApplyLease;
+  delete publicCourse.llmModelSettings;
   return { ...publicCourse, lifecycle: courseLifecycle(course) };
 }
 
@@ -76,7 +78,7 @@ function throwCourseWriteError(error: unknown): never {
 }
 
 export async function getCourse(courseId: ObjectId): Promise<WithId<Course>> {
-  const course = await coursesCol().findOne({ _id: courseId });
+  const course = await authoringCollection(coursesCol()).findOne({ _id: courseId });
   if (!course) throw new Error('course-not-found');
   return normalizeCourse(course);
 }
@@ -93,7 +95,7 @@ export async function listInstructorCourses(courseIds: ObjectId[]): Promise<With
   );
   if (uniqueIds.length === 0) return [];
 
-  const courses = await coursesCol().find({ _id: { $in: uniqueIds } }).toArray();
+  const courses = await authoringCollection(coursesCol()).find({ _id: { $in: uniqueIds } }).toArray();
   const coursesById = new Map(
     courses.map((course) => [course._id.toHexString(), normalizeCourse(course)]),
   );
@@ -127,7 +129,7 @@ export async function createCourse(
       ? { section: normalizedInput.section }
       : { $or: [{ section: { $exists: false } }, { section: '' }] }),
   };
-  const duplicate = await coursesCol().findOne(
+  const duplicate = await authoringCollection(coursesCol()).findOne(
     { $or: [{ identityKey }, legacyIdentity] },
     { projection: { _id: 1 }, collation: { locale: 'en', strength: 2 } },
   );
@@ -150,7 +152,7 @@ export async function createCourse(
   };
   let insertedId: ObjectId;
   try {
-    ({ insertedId } = await coursesCol().insertOne(course));
+    ({ insertedId } = await authoringCollection(coursesCol()).insertOne(course));
   } catch (error) {
     throwCourseWriteError(error);
   }
@@ -203,7 +205,7 @@ export async function updateCourse(
       })
     : undefined;
   try {
-    const result = await coursesCol().updateOne(
+    const result = await authoringCollection(coursesCol()).updateOne(
       { _id: courseId, ...editRevisionFilter(expectedRevision) },
       {
         $inc: { revision: 1 },
@@ -234,7 +236,7 @@ export async function regenerateRegistrationCode(courseId: ObjectId): Promise<st
   const code = registrationCode();
   // This independent action never writes editor-owned fields. Advancing the
   // editor token here would invalidate the same page's retained settings draft.
-  await coursesCol().updateOne({ _id: courseId }, { $set: { registrationCode: code } });
+  await authoringCollection(coursesCol()).updateOne({ _id: courseId }, { $set: { registrationCode: code } });
   return code;
 }
 
@@ -244,10 +246,11 @@ export async function addTheme(
   courseId: ObjectId,
   input: { name: string; availableFrom?: Date },
 ): Promise<WithId<Theme>> {
-  const [last] = await themesCol().find({ courseId }).sort({ order: -1 }).limit(1).toArray();
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => addTheme(courseId, input));
+  const [last] = await authoringCollection(themesCol()).find({ courseId }).sort({ order: -1 }).limit(1).toArray();
   const order = (last?.order ?? 0) + 1;
   const theme: Theme = { courseId, name: input.name, order, ...(input.availableFrom ? { availableFrom: input.availableFrom } : {}) };
-  const { insertedId } = await themesCol().insertOne(theme);
+  const { insertedId } = await authoringCollection(themesCol()).insertOne(theme);
   return { _id: insertedId, ...theme };
 }
 
@@ -259,12 +262,17 @@ export async function updateTheme(
   patch: Partial<Pick<Theme, 'name' | 'order'>> & { availableFrom?: Date | null },
   expectedRevision?: number,
 ): Promise<WithId<Theme>> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) {
+    const courseId = await getThemeCourseId(themeId);
+    if (!courseId) throw new Error('theme-not-found');
+    return withCourseAuthoringWrite(courseId, () => updateTheme(themeId, patch, expectedRevision));
+  }
   const { availableFrom, ...rest } = patch;
   const set: Partial<Theme> = { ...rest, ...(availableFrom instanceof Date ? { availableFrom } : {}) };
   const update = availableFrom === null
     ? { $set: set, $unset: { availableFrom: '' as const } }
     : { $set: set };
-  const theme = await themesCol().findOneAndUpdate({ _id: themeId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { ...update, $inc: { revision: 1 } }, { returnDocument: 'after' });
+  const theme = await authoringCollection(themesCol()).findOneAndUpdate({ _id: themeId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { ...update, $inc: { revision: 1 } }, { returnDocument: 'after' });
   if (!theme) throw expectedRevision !== undefined ? editConflict('Topic') : new Error('theme-not-found');
   return theme;
 }
@@ -286,14 +294,19 @@ export async function updateTheme(
  * carry one consistent archive time.
  */
 export async function archiveTheme(themeId: ObjectId): Promise<WithId<Theme>> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) {
+    const courseId = await getThemeCourseId(themeId);
+    if (!courseId) throw new Error('theme-not-found');
+    return withCourseAuthoringWrite(courseId, () => archiveTheme(themeId));
+  }
   const archivedAt = new Date();
-  const theme = await themesCol().findOneAndUpdate(
+  const theme = await authoringCollection(themesCol()).findOneAndUpdate(
     { _id: themeId },
     { $set: { archivedAt }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
   );
   if (!theme) throw new Error('theme-not-found');
-  await losCol().updateMany({ themeId, archivedAt: { $exists: false } }, { $set: { archivedAt }, $inc: { revision: 1 } });
+  await authoringCollection(losCol()).updateMany({ themeId, archivedAt: { $exists: false } }, { $set: { archivedAt }, $inc: { revision: 1 } });
   return theme;
 }
 
@@ -305,7 +318,7 @@ export async function archiveTheme(themeId: ObjectId): Promise<WithId<Theme>> {
  * ("no database or SDK calls directly in a route").
  */
 export async function getThemeCourseId(themeId: ObjectId): Promise<ObjectId | null> {
-  const theme = await themesCol().findOne({ _id: themeId }, { projection: { courseId: 1 } });
+  const theme = await authoringCollection(themesCol()).findOne({ _id: themeId }, { projection: { courseId: 1 } });
   return theme?.courseId ?? null;
 }
 
@@ -335,10 +348,11 @@ export async function addLo(
   themeId: ObjectId,
   input: { name: string; kind?: LoKind },
 ): Promise<WithId<LearningObjective>> {
-  const [last] = await losCol().find({ themeId }).sort({ order: -1 }).limit(1).toArray();
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => addLo(courseId, themeId, input));
+  const [last] = await authoringCollection(losCol()).find({ themeId }).sort({ order: -1 }).limit(1).toArray();
   const order = (last?.order ?? 0) + 1;
   const lo: LearningObjective = { courseId, themeId, name: input.name, order, kind: input.kind ?? inferLoKind(input.name) };
-  const { insertedId } = await losCol().insertOne(lo);
+  const { insertedId } = await authoringCollection(losCol()).insertOne(lo);
   return { _id: insertedId, ...lo };
 }
 
@@ -371,7 +385,7 @@ async function withOutlineApplyLease<T>(
 ): Promise<T> {
   const token = randomUUID();
   const now = new Date();
-  const acquired = await coursesCol().updateOne(
+  const acquired = await authoringCollection(coursesCol()).updateOne(
     { _id: courseId, $or: [{ outlineApplyLease: { $exists: false } }, { 'outlineApplyLease.expiresAt': { $lte: now } }] },
     { $set: { outlineApplyLease: { token, expiresAt: new Date(now.getTime() + OUTLINE_LEASE_MS) } } },
   );
@@ -379,7 +393,7 @@ async function withOutlineApplyLease<T>(
     throw Object.assign(new Error('Another course outline is being applied. Your draft is unchanged; try applying it again shortly.'), { status: 409 });
   }
   const renew = async () => {
-    const result = await coursesCol().updateOne(
+    const result = await authoringCollection(coursesCol()).updateOne(
       { _id: courseId, 'outlineApplyLease.token': token },
       { $set: { 'outlineApplyLease.expiresAt': new Date(Date.now() + OUTLINE_LEASE_MS) } },
     );
@@ -388,7 +402,7 @@ async function withOutlineApplyLease<T>(
   try {
     return await apply(renew);
   } finally {
-    await coursesCol().updateOne(
+    await authoringCollection(coursesCol()).updateOne(
       { _id: courseId, 'outlineApplyLease.token': token },
       { $unset: { outlineApplyLease: '' } },
     );
@@ -405,6 +419,7 @@ export async function upsertCourseOutline(
   courseId: ObjectId,
   input: UpsertCourseOutlineInput,
 ): Promise<UpsertCourseOutlineResult> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => upsertCourseOutline(courseId, input));
   const requested = input.themes.map((theme) => ({
     name: theme.name.trim(),
     los: [...new Map(
@@ -423,11 +438,11 @@ export async function upsertCourseOutline(
 
   return withOutlineApplyLease(courseId, async (renew) => {
 
-    const existingThemes = await themesCol()
+    const existingThemes = await authoringCollection(themesCol())
       .find({ courseId, archivedAt: { $exists: false } })
       .sort({ order: 1 })
       .toArray();
-    const activeLos = await losCol()
+    const activeLos = await authoringCollection(losCol())
       .find({ courseId, archivedAt: { $exists: false } })
       .sort({ order: 1 })
       .toArray();
@@ -477,13 +492,23 @@ export async function updateLo(
   patch: Partial<Pick<LearningObjective, 'name' | 'order' | 'kind'>>,
   expectedRevision?: number,
 ): Promise<WithId<LearningObjective>> {
-  const lo = await losCol().findOneAndUpdate({ _id: loId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { $set: patch, $inc: { revision: 1 } }, { returnDocument: 'after' });
+  if (authoringCommitAvailable() && !currentAuthoringSession()) {
+    const courseId = await getLoCourseId(loId);
+    if (!courseId) throw new Error('lo-not-found');
+    return withCourseAuthoringWrite(courseId, () => updateLo(loId, patch, expectedRevision));
+  }
+  const lo = await authoringCollection(losCol()).findOneAndUpdate({ _id: loId, ...editRevisionFilter(expectedRevision), ...(expectedRevision !== undefined ? { archivedAt: { $exists: false } } : {}) }, { $set: patch, $inc: { revision: 1 } }, { returnDocument: 'after' });
   if (!lo) throw expectedRevision !== undefined ? editConflict('Learning objective') : new Error('lo-not-found');
   return lo;
 }
 
 export async function archiveLo(loId: ObjectId): Promise<WithId<LearningObjective>> {
-  const lo = await losCol().findOneAndUpdate(
+  if (authoringCommitAvailable() && !currentAuthoringSession()) {
+    const courseId = await getLoCourseId(loId);
+    if (!courseId) throw new Error('lo-not-found');
+    return withCourseAuthoringWrite(courseId, () => archiveLo(loId));
+  }
+  const lo = await authoringCollection(losCol()).findOneAndUpdate(
     { _id: loId },
     { $set: { archivedAt: new Date() }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
@@ -494,7 +519,7 @@ export async function archiveLo(loId: ObjectId): Promise<WithId<LearningObjectiv
 
 /** The course a Learning Objective belongs to — see getThemeCourseId(). */
 export async function getLoCourseId(loId: ObjectId): Promise<ObjectId | null> {
-  const lo = await losCol().findOne({ _id: loId }, { projection: { courseId: 1 } });
+  const lo = await authoringCollection(losCol()).findOne({ _id: loId }, { projection: { courseId: 1 } });
   return lo?.courseId ?? null;
 }
 
@@ -503,11 +528,11 @@ export async function getCourseTree(
   courseId: ObjectId,
 ): Promise<WithId<Course> & { themes: Array<WithId<Theme> & { los: WithId<LearningObjective>[] }> }> {
   const course = await getCourse(courseId);
-  const themes = await themesCol()
+  const themes = await authoringCollection(themesCol())
     .find({ courseId, archivedAt: { $exists: false } })
     .sort({ order: 1 })
     .toArray();
-  const los = await losCol()
+  const los = await authoringCollection(losCol())
     .find({ courseId, archivedAt: { $exists: false } })
     .sort({ order: 1 })
     .toArray();
@@ -544,8 +569,8 @@ export async function getCourseOutline(
 ): Promise<{ course: CourseOutlineIdentity; themes: CourseOutlineTheme[] }> {
   const [course, themes, los] = await Promise.all([
     getCourse(courseId),
-    themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
-    losCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    authoringCollection(themesCol()).find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
+    authoringCollection(losCol()).find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1 }).toArray(),
   ]);
   return {
     course: {
@@ -577,24 +602,24 @@ export async function duplicateNameWarning(
   name: string,
 ): Promise<boolean> {
   if (scope === 'theme') {
-    const existing = await themesCol().countDocuments({ courseId, name, archivedAt: { $exists: false } });
+    const existing = await authoringCollection(themesCol()).countDocuments({ courseId, name, archivedAt: { $exists: false } });
     return existing > 0;
   }
   const filter: Record<string, unknown> = { courseId, name, archivedAt: { $exists: false } };
   if (parentId) filter.themeId = parentId;
-  const existing = await losCol().countDocuments(filter);
+  const existing = await authoringCollection(losCol()).countDocuments(filter);
   return existing > 0;
 }
 
 // --- Publish checklist (IN-L06) -----------------------------------------------
 
 export async function publishChecklist(courseId: ObjectId): Promise<Array<{ item: string; ok: boolean }>> {
-  const course = await coursesCol().findOne({ _id: courseId });
+  const course = await authoringCollection(coursesCol()).findOne({ _id: courseId });
   if (!course) throw new Error('course-not-found');
-  const themes = await themesCol()
+  const themes = await authoringCollection(themesCol())
     .find({ courseId, archivedAt: { $exists: false } })
     .toArray();
-  const los = await losCol()
+  const los = await authoringCollection(losCol())
     .find({ courseId, archivedAt: { $exists: false } })
     .toArray();
   const thinLos: string[] = [];
@@ -626,7 +651,7 @@ export async function setPublished(courseId: ObjectId, published: boolean, expec
   const course = await getCourse(courseId);
   assertEditRevision('Course', course, expectedRevision);
   if (course.lifecycle === 'archived') throw new Error('course-archived');
-  const result = await coursesCol().updateOne(
+  const result = await authoringCollection(coursesCol()).updateOne(
     { _id: courseId, ...editRevisionFilter(expectedRevision) },
     {
       $inc: { revision: 1 },
@@ -643,9 +668,10 @@ export async function setPublished(courseId: ObjectId, published: boolean, expec
 
 /** Archive is reversible, but restoration always returns to an unpublished draft. */
 export async function archiveCourse(courseId: ObjectId): Promise<WithId<Course>> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => archiveCourse(courseId));
   await getCourse(courseId);
   const now = new Date();
-  await coursesCol().updateOne(
+  await authoringCollection(coursesCol()).updateOne(
     { _id: courseId },
     {
       $inc: { revision: 1 },
@@ -661,10 +687,11 @@ export async function archiveCourse(courseId: ObjectId): Promise<WithId<Course>>
 }
 
 export async function restoreCourse(courseId: ObjectId): Promise<WithId<Course>> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => restoreCourse(courseId));
   const course = await getCourse(courseId);
   if (course.lifecycle !== 'archived') throw new Error('course-not-archived');
   const updatedAt = new Date();
-  await coursesCol().updateOne(
+  await authoringCollection(coursesCol()).updateOne(
     { _id: courseId },
     {
       $inc: { revision: 1 },

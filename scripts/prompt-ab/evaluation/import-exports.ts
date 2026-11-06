@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CaseSchema, DatasetSchema, QuestionSchema, UsageSchema, hashValue } from './schema';
+import { CaseSchema, DatasetSchema, QuestionSchema, UsageSchema, PolicySchema, ExecutionDiagnosticsSchema, hashValue } from './schema';
 import type { EvaluationDataset, EvaluationRun, EvaluationSlot } from './schema';
 
 export const ExportManifestSchema = z.object({
@@ -14,7 +14,7 @@ const candidate = QuestionSchema.extend({ contentHash: z.string(), truncated: z.
  * identifiers cannot enter the blinded evaluation through incidental keys. */
 const ExportSchema = z.object({
   schemaVersion: z.literal('generation-evaluation-export-v1'),
-  run: z.object({ id: z.string().min(1), policy: z.enum(['baseline', 'grounded-memory-v1']), requestedSlots: z.number().int().min(1).max(100),
+  run: z.object({ id: z.string().min(1), policy: PolicySchema, requestedSlots: z.number().int().min(1).max(100),
     type: z.enum(['mcq', 'true-false']), difficulty: z.enum(['easy', 'medium', 'hard']).optional(), prompt: z.string().optional(),
     status: z.enum(['completed', 'partial', 'failed']), startedAt: z.string().datetime().optional(), finishedAt: z.string().datetime().optional() }),
   slots: z.array(z.object({ item: z.number().int().min(0).max(99), outcome: z.enum(['saved', 'withheld', 'failed', 'unavailable']),
@@ -27,6 +27,7 @@ const ExportSchema = z.object({
     observedCalls: z.number().int().nonnegative(), unknownCalls: z.number().int().nonnegative(), pendingCalls: z.number().int().nonnegative(), coverageGaps: z.number().int().nonnegative(), untracked: z.boolean() }),
     totalCalls: z.number().int().nonnegative(), callsTruncated: z.boolean() }),
   limitations: z.array(z.string().max(2000)).max(30),
+  executionDiagnostics: ExecutionDiagnosticsSchema.optional(),
 });
 
 export function importGenerationExports(manifestInput: ExportManifest, inputs: unknown[]): EvaluationDataset {
@@ -60,6 +61,7 @@ export function importGenerationExports(manifestInput: ExportManifest, inputs: u
       contextHash: hashValue(fixture.context),
       comparison: { contextTiming: 'retrospective', isolated: null, controlsHash: null },
       requestedSlots: observed.run.requestedSlots, slots, usage: UsageSchema.parse(observed.usage.summary),
+      ...(observed.executionDiagnostics ? { executionDiagnostics: observed.executionDiagnostics } : {}),
       elapsedMs: duration !== null && duration >= 0 ? duration : null,
       limitations: ['Reference context was supplied after execution; the starting bank, execution settings, and experiment isolation are not reconstructed.',
         'Only final recorded candidates are assessed. Earlier replaced candidates remain outside quality incidence; their recorded usage is included.',

@@ -10,6 +10,7 @@ import {
   questionVersionsCol,
   reviewBookCol,
 } from '../components/mongodb/collections';
+import { authoringCollection, authoringCommitAvailable, currentAuthoringSession, withCourseAuthoringWrite } from './authoring-commit.service';
 import { drawSeed } from './params.service';
 import { shuffleOptions } from './option-order.service';
 import { canTransition } from '../types/domain';
@@ -65,6 +66,8 @@ export async function createQuestion(input: {
   stem: string;
   options: QuestionOption[];
   difficulty: Difficulty;
+  authoringQuality?: QuestionVersion['authoringQuality'];
+  taskDescriptor?: QuestionVersion['taskDescriptor'];
   sourceRefs?: QuestionVersion['sourceRefs'];
   createdBy: string;
   generationPrompt?: string;
@@ -90,6 +93,7 @@ export async function createQuestion(input: {
   // the bug this exists to prevent.
   optionsAlreadyShuffled?: boolean;
 }): Promise<{ questionId: ObjectId; version: WithId<QuestionVersion> }> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(input.courseId, () => createQuestion(input));
   const validated = assertOptionInvariants(input.type, input.options);
   // Shuffled HERE, at version creation, and nowhere else. The hook that reads
   // naturally is approval, and it is the wrong one: PUBLICATION_TRANSITIONS
@@ -118,6 +122,8 @@ export async function createQuestion(input: {
     stem: input.stem,
     options,
     difficulty: input.difficulty,
+    ...(input.authoringQuality ? { authoringQuality: input.authoringQuality } : {}),
+    ...(input.taskDescriptor ? { taskDescriptor: input.taskDescriptor } : {}),
     sourceRefs: input.sourceRefs ?? [],
     provenance: input.provenance ?? { kind: 'manual' },
     createdBy: input.createdBy,
@@ -150,8 +156,8 @@ export async function createQuestion(input: {
   // fails) is discoverable and points to a nonexistent currentVersionId — the
   // worse failure mode. No transactions/sessions here; both _ids are
   // pre-generated so neither has a read-after-write dependency.
-  await questionVersionsCol().insertOne({ _id: versionId, ...version });
-  await questionsCol().insertOne({ _id: questionId, ...question });
+  await authoringCollection(questionVersionsCol()).insertOne({ _id: versionId, ...version });
+  await authoringCollection(questionsCol()).insertOne({ _id: questionId, ...question });
 
   return { questionId, version: { _id: versionId, ...version } };
 }
@@ -193,11 +199,15 @@ export async function editQuestion(
     submitForReview?: boolean;
     collaborationDraftId?: ObjectId;
     collaborationCommitId?: string;
+    regenerationCandidateId?: ObjectId;
+    authoringQuality?: QuestionVersion['authoringQuality'];
+    taskDescriptor?: QuestionVersion['taskDescriptor'];
   },
   byPuid: string,
 ): Promise<WithId<QuestionVersion>> {
-  const question = await questionsCol().findOne({ _id: questionId });
+  const question = await authoringCollection(questionsCol()).findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(question.courseId, () => editQuestion(questionId, patch, byPuid));
   const sharedCommit = Boolean(patch.collaborationDraftId && patch.collaborationCommitId);
 
   if (patch.expectedVersionId && !question.currentVersionId.equals(patch.expectedVersionId)) throw new Error('question-conflict');
@@ -212,9 +222,9 @@ export async function editQuestion(
   }
   if (patch.sourceRefs !== undefined) {
     const ids = [...new Map(patch.sourceRefs.map(ref => [ref.materialId.toHexString(), ref.materialId])).values()];
-    if (ids.length && await materialsCol().countDocuments({ _id: { $in: ids }, courseId: question.courseId }) !== ids.length) throw new Error('invalid-options:source-outside-course');
+    if (ids.length && await authoringCollection(materialsCol()).countDocuments({ _id: { $in: ids }, courseId: question.courseId }) !== ids.length) throw new Error('invalid-options:source-outside-course');
   }
-  const current = await questionVersionsCol().findOne({ _id: question.currentVersionId });
+  const current = await authoringCollection(questionVersionsCol()).findOne({ _id: question.currentVersionId });
   if (!current) throw new Error('version-not-found');
 
   // Only the content keys actually present in the patch are recorded/applied —
@@ -275,7 +285,7 @@ export async function editQuestion(
     if (Object.keys(headPatch).length === 0) {
       return current;
     }
-    const result = await questionsCol().updateOne(headFilter, { $set: { updatedAt: new Date(), ...headPatch }, ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}) });
+    const result = await authoringCollection(questionsCol()).updateOne(headFilter, { $set: { updatedAt: new Date(), ...headPatch }, ...(patch.submitForReview ? { $unset: { agentDecision: '' as const } } : {}) });
     if (result.matchedCount !== 1) throw new Error('question-conflict');
     return current;
   }
@@ -296,6 +306,12 @@ export async function editQuestion(
   // A later ordinary edit must never inherit another commit's recovery marker.
   delete next.collaborationDraftId;
   delete next.collaborationCommitId;
+  delete next.regenerationCandidateId;
+  delete next.authoringQuality;
+  delete next.taskDescriptor;
+  if (patch.taskDescriptor) next.taskDescriptor = patch.taskDescriptor;
+  if (patch.regenerationCandidateId) next.regenerationCandidateId = patch.regenerationCandidateId;
+  if (patch.authoringQuality) next.authoringQuality = patch.authoringQuality;
   if (patch.collaborationDraftId && patch.collaborationCommitId) {
     next.collaborationDraftId = patch.collaborationDraftId;
     next.collaborationCommitId = patch.collaborationCommitId;
@@ -310,7 +326,7 @@ export async function editQuestion(
   else delete next.verification;
 
   let insertedId: ObjectId;
-  try { ({ insertedId } = await questionVersionsCol().insertOne(next)); }
+  try { ({ insertedId } = await authoringCollection(questionVersionsCol()).insertOne(next)); }
   catch (error) {
     // Two edits can race on the immutable (questionId, version) unique index
     // before either reaches the head CAS. Surface the same retryable conflict.
@@ -318,7 +334,7 @@ export async function editQuestion(
     throw error;
   }
 
-  const result = await questionsCol().updateOne(
+  const result = await authoringCollection(questionsCol()).updateOne(
     headFilter,
     {
       $set: { currentVersionId: insertedId, currentVersion: next.version, updatedAt: now, ...headPatch },
@@ -333,10 +349,10 @@ export async function editQuestion(
       // A shared-draft recovery may have published this immutable version
       // between insertOne and our head CAS. Version numbers are unique per
       // question, so a head at this number (or later) includes this commit.
-      const recovered = await questionsCol().findOne({ _id: questionId });
+      const recovered = await authoringCollection(questionsCol()).findOne({ _id: questionId });
       if (recovered && recovered.currentVersion >= next.version) return { _id: insertedId, ...next };
     }
-    await questionVersionsCol().deleteMany({ _id: insertedId });
+    await authoringCollection(questionVersionsCol()).deleteMany({ _id: insertedId });
     throw new Error('question-conflict');
   }
   return { _id: insertedId, ...next };
@@ -350,8 +366,9 @@ export async function transitionQuestion(
   expectedVersionId?: ObjectId,
   rejectionReason?: string,
 ): Promise<WithId<Question>> {
-  const question = await questionsCol().findOne({ _id: questionId });
+  const question = await authoringCollection(questionsCol()).findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(question.courseId, () => transitionQuestion(questionId, to, byPuid, expectedVersionId, rejectionReason));
   // Callers that rendered a specific QuestionVersion may pin that version in
   // the transition request. Reject before checking the state when the head has
   // already moved, so a stale review cannot approve somebody else's newer
@@ -366,7 +383,7 @@ export async function transitionQuestion(
   const note = to === 'archived' && reason
     ? { puid: byPuid, text: `Rejection reason: ${reason}`, at: now }
     : undefined;
-  const result = await questionsCol().updateOne(
+  const result = await authoringCollection(questionsCol()).updateOne(
     {
       _id: questionId,
       state: question.state,
@@ -375,7 +392,7 @@ export async function transitionQuestion(
     { $set: { state: to, updatedAt: now }, ...(note ? { $push: { internalNotes: note } } : {}) },
   );
   if (result.matchedCount !== 1) throw new Error('question-conflict');
-  await auditCol().insertOne({
+  await authoringCollection(auditCol()).insertOne({
     actorPuid: byPuid,
     action: 'question.transition',
     targetType: 'question',
@@ -397,12 +414,12 @@ export async function addQuestionInternalNote(
   const normalized = text.trim();
   if (!normalized) throw new Error('internal-note-required');
   const note = { puid: byPuid, text: normalized, at: new Date() };
-  const result = await questionsCol().updateOne(
+  const result = await authoringCollection(questionsCol()).updateOne(
     { _id: questionId },
     { $push: { internalNotes: note }, $set: { updatedAt: note.at } },
   );
   if (result.matchedCount !== 1) throw new Error('question-not-found');
-  await auditCol().insertOne({
+  await authoringCollection(auditCol()).insertOne({
     actorPuid: byPuid,
     action: 'question.internal-note.add',
     targetType: 'question',
@@ -443,7 +460,7 @@ export async function bulkDeleteUnserved(
   let deleted = 0;
   const skipped: Array<{ questionId: ObjectId; reason: BulkDeleteSkipReason }> = [];
   for (const questionId of questionIds) {
-    const question = await questionsCol().findOne({ _id: questionId });
+    const question = await authoringCollection(questionsCol()).findOne({ _id: questionId });
     if (!question) { skipped.push({ questionId, reason: 'not-found' }); continue; }
     if (!DELETABLE_STATES.has(question.state)) { skipped.push({ questionId, reason: 'ever-approved' }); continue; }
     const [attempts, examAttempts, flags, reviewBook] = await Promise.all([
@@ -453,10 +470,10 @@ export async function bulkDeleteUnserved(
       reviewBookCol().countDocuments({ questionId }, { limit: 1 }),
     ]);
     if (attempts + examAttempts + flags + reviewBook > 0) { skipped.push({ questionId, reason: 'has-history' }); continue; }
-    await questionVersionsCol().deleteMany({ questionId });
-    const result = await questionsCol().deleteOne({ _id: questionId, state: question.state });
+    await authoringCollection(questionVersionsCol()).deleteMany({ questionId });
+    const result = await authoringCollection(questionsCol()).deleteOne({ _id: questionId, state: question.state });
     if (result.deletedCount !== 1) { skipped.push({ questionId, reason: 'not-found' }); continue; }
-    await auditCol().insertOne({
+    await authoringCollection(auditCol()).insertOne({
       actorPuid: byPuid,
       action: 'question.delete',
       targetType: 'question',

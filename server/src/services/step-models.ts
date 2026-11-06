@@ -1,6 +1,7 @@
 import { env } from '../config/env';
 import type {
   PipelineStep,
+  GenerationModelSnapshot,
   PlatformSettings,
   QuestionGenerationRun,
   StepModelConfig,
@@ -36,12 +37,7 @@ export const STEP_TEMPERATURE_DEFAULTS: Readonly<Partial<Record<PipelineStep, nu
 });
 
 /** The three agents' models plus their per-step parameters, as used in memory. */
-export interface ResolvedStepModels {
-  embedding: string;
-  generator: StepModelConfig;
-  validator: StepModelConfig;
-  reviewer: StepModelConfig;
-}
+export type ResolvedStepModels = GenerationModelSnapshot;
 
 export function configuredGenerationModels(): ResolvedStepModels {
   return {
@@ -75,7 +71,7 @@ export function persistedModels(resolved: ResolvedStepModels): QuestionGeneratio
 /**
  * Rebuild the in-memory shape from a stored run or blueprint.
  *
- * Runs record model ids only. Per-step parameters (reasoning effort,
+ * Historical runs may record model ids only. Per-step parameters (reasoning effort,
  * temperature) are recovered from the CURRENT platform settings when the
  * recorded model id matches the configured one -- see the `settings` param.
  * A run whose model has since been changed in the console runs that model

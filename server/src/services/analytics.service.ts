@@ -177,15 +177,30 @@ function weekStart(date: Date): string {
   return day.toISOString().slice(0, 10);
 }
 
-export async function engagement(courseId: ObjectId, range: { from: Date; to: Date; mode?: AnalyticsMode }): Promise<{
-  totals: { questionsAttempted: number; correctAttempts?: number; avgSessionMinutes: number; sessionsPerStudent: number; loCoverageRate: number; reviewBookActivityRate: number };
+type EngagementRange = { from: Date; to: Date; mode?: AnalyticsMode };
+interface EngagementSummary {
+  totals: { questionsAttempted: number; correctAttempts?: number; activeStudents: number; avgSessionMinutes: number; sessionsPerStudent: number; loCoverageRate: number; reviewBookActivityRate: number };
   weeks: Array<{ week: string; questionsAttempted: number; correctAttempts?: number; sessions: number; activeStudents: number; avgSessionMinutes: number; loCoverageRate: number; reviewBookActivityRate: number }>;
-}> {
+}
+
+async function loadEngagement(courseId: ObjectId, range: EngagementRange) {
   const [attempts, reviewEntries, activeLos] = await Promise.all([
     attemptsCol().find(attemptFilter(courseId, range)).sort({ createdAt: 1 }).toArray(),
     reviewBookCol().find({ courseId, addedAt: { $gte: range.from, $lte: range.to } }).toArray(),
     losCol().find({ courseId, archivedAt: { $exists: false } }).toArray(),
   ]);
+  return { attempts, reviewEntries, activeLos };
+}
+
+type EngagementData = Awaited<ReturnType<typeof loadEngagement>>;
+interface ObjectiveActivity {
+  name: string;
+  attempts: number;
+  correctAttempts: number;
+  students: Set<string>;
+}
+
+function summarizeEngagement({ attempts, reviewEntries, activeLos }: EngagementData, range: EngagementRange): EngagementSummary {
   const activeLoIds = new Set(activeLos.map((lo) => lo._id.toHexString()));
   const loCount = activeLoIds.size;
   const coverage = (items: typeof attempts): number => loCount ? new Set(items.map((item) => item.loId.toHexString()).filter((id) => activeLoIds.has(id))).size / loCount : 0;
@@ -200,7 +215,9 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
   const byWeek = new Map<string, typeof attempts>();
   for (const attempt of attempts) {
     const key = weekStart(attempt.createdAt);
-    byWeek.set(key, [...(byWeek.get(key) ?? []), attempt]);
+    const bucket = byWeek.get(key);
+    if (bucket) bucket.push(attempt);
+    else byWeek.set(key, [attempt]);
   }
   // A bounded selected range includes weeks with no activity. All-time begins at first evidence.
   const first = range.from.getTime() === 0 ? (attempts[0]?.createdAt ?? range.to) : range.from;
@@ -214,6 +231,7 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
     return {
       week,
       questionsAttempted: weekAttempts.length,
+      correctAttempts: weekAttempts.length >= ANALYTICS_MIN_ATTEMPTS ? weekAttempts.filter(a => a.correct).length : undefined,
       sessions: weekSessions.length,
       activeStudents: students.size,
       avgSessionMinutes: average(weekSessions.map((session) => (session.endedAt.getTime() - session.startedAt.getTime()) / 60_000)),
@@ -225,6 +243,7 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
     totals: {
       questionsAttempted: attempts.length,
       correctAttempts: attempts.length >= ANALYTICS_MIN_ATTEMPTS ? attempts.filter(a => a.correct).length : undefined,
+      activeStudents: activeStudents.size,
       avgSessionMinutes: average(sessionMinutes),
       sessionsPerStudent: activeStudents.size ? sessions.length / activeStudents.size : 0,
       loCoverageRate: coverage(attempts),
@@ -234,6 +253,74 @@ export async function engagement(courseId: ObjectId, range: { from: Date; to: Da
     },
     weeks,
   };
+}
+
+export async function engagement(courseId: ObjectId, range: EngagementRange): Promise<EngagementSummary> {
+  return summarizeEngagement(await loadEngagement(courseId, range), range);
+}
+
+export async function analyticsReportData(courseId: ObjectId, range: EngagementRange) {
+  const [data, themes] = await Promise.all([
+    loadEngagement(courseId, range),
+    themesCol().find({ courseId, archivedAt: { $exists: false } }).sort({ order: 1, _id: 1 }).toArray(),
+  ]);
+  const byTheme = new Map(themes.map(theme => [theme._id.toHexString(), {
+    name: theme.name, objectives: [] as ObjectiveActivity[],
+  }]));
+  const byObjective = new Map<string, ObjectiveActivity>();
+  for (const lo of data.activeLos) {
+    const topic = byTheme.get(lo.themeId.toHexString());
+    if (!topic) continue;
+    const objective = { name: lo.name, attempts: 0, correctAttempts: 0, students: new Set<string>() };
+    topic.objectives.push(objective);
+    byObjective.set(lo._id.toHexString(), objective);
+  }
+  const firstWeekByStudent = new Map<string, string>();
+  const repeatStudents = new Set<string>();
+  const studentsByWeek = new Map<string, Set<string>>();
+  // Each submission belongs to its recorded objective, even if its question has several tags.
+  for (const attempt of data.attempts) {
+    const week = weekStart(attempt.createdAt);
+    const firstWeek = firstWeekByStudent.get(attempt.puid);
+    if (!firstWeek) firstWeekByStudent.set(attempt.puid, week);
+    else if (firstWeek !== week) repeatStudents.add(attempt.puid);
+    const weeklyStudents = studentsByWeek.get(week) ?? new Set<string>();
+    weeklyStudents.add(attempt.puid);
+    studentsByWeek.set(week, weeklyStudents);
+
+    const objective = byObjective.get(attempt.loId.toHexString());
+    if (!objective) continue;
+    objective.attempts++;
+    if (attempt.correct) objective.correctAttempts++;
+    objective.students.add(attempt.puid);
+  }
+  const topics = [...byTheme.values()].map(topic => {
+    const students = new Set<string>();
+    const objectiveRows = topic.objectives.map(({ name, attempts, correctAttempts, students: learners }) => {
+      for (const student of learners) students.add(student);
+      return { name, attempts, correctAttempts, activeStudents: learners.size };
+    });
+    return {
+      name: topic.name, objectives: objectiveRows.length,
+      attempts: objectiveRows.reduce((sum, row) => sum + row.attempts, 0),
+      correctAttempts: objectiveRows.reduce((sum, row) => sum + row.correctAttempts, 0),
+      coveredObjectives: objectiveRows.filter(row => row.attempts > 0).length,
+      activeStudents: students.size, objectiveRows,
+    };
+  });
+  const engagement = summarizeEngagement(data, range);
+  const completeWeeks = engagement.weeks.filter(({ week }) => {
+    const start = Date.parse(week);
+    return start >= range.from.getTime() && start + 7 * 86_400_000 - 1 <= range.to.getTime();
+  });
+  const [base, followUp] = completeWeeks.slice(-2);
+  const cohort = base && studentsByWeek.get(base.week);
+  const nextStudents = followUp && studentsByWeek.get(followUp.week);
+  const nextWeek = cohort?.size && followUp ? {
+    baseWeek: base.week, followUpWeek: followUp.week, eligible: cohort.size,
+    returned: [...cohort].filter(student => nextStudents?.has(student)).length,
+  } : undefined;
+  return { ...engagement, topics, repeatStudents: repeatStudents.size, nextWeek };
 }
 
 export async function lowEngagement(courseId: ObjectId, inactiveDays: number, now = new Date()): Promise<Array<{

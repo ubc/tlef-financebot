@@ -20,7 +20,7 @@ function options(...texts: string[]): QuestionOption[] {
   }));
 }
 
-const proof = { evaluatorVersion: EVALUATOR_VERSION, sampleSeeds: [1], verifiedAt: new Date() };
+const proof = { evaluatorVersion: EVALUATOR_VERSION, inputDisplayVersion: 1, sampleSeeds: [1], verifiedAt: new Date() };
 
 describe('detectNumeric', () => {
   it('flags currency amounts', () => {

@@ -78,7 +78,7 @@ function readString(text: string, start: number): { value: string; end: number; 
 
 /** Coalesce provider fragments to at most four durable writes per second.
  * Every write is serialized and drained before the caller advances its stage. */
-export async function withGenerationPreview<T>(runId: ObjectId, item: number, generate: (onText: (text: string) => void) => Promise<T>): Promise<T> {
+export async function withGenerationPreview<T>(runId: ObjectId, item: number, generate: (onText: (text: string) => void) => Promise<T>, writePreview?: (preview: QuestionGenerationRun['preview']) => Promise<unknown>): Promise<T> {
   let attempt = 0;
   let lastContent = '';
   let pending: QuestionGenerationRun['preview'];
@@ -88,7 +88,7 @@ export async function withGenerationPreview<T>(runId: ObjectId, item: number, ge
   const flush = () => {
     const next = pending; pending = undefined;
     if (!next || failure) return;
-    writing = writing.then(async () => { if (!failure) await updateContentRun(runId, { preview: next }); }).catch(error => { failure = error; });
+    writing = writing.then(async () => { if (!failure) { if (writePreview) await writePreview(next); else await updateContentRun(runId, { preview: next }); } }).catch(error => { failure = error; });
   };
   const onText = (text: string) => {
     if (failure) return;

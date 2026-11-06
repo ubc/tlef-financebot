@@ -2,6 +2,8 @@ import type { Difficulty, NumericVerification, QuestionType, QuestionKind, Quest
 import type { GenerationEvidencePacket } from './generation-evidence';
 import type { GenerationQualityAssessment, GenerationQualityCandidate, GenerationQualityPolicy } from './generation-quality';
 import type { ModelCallReceipt, ModelUsageSummary } from './model-usage';
+import type { AuthoringBudgetReceipt } from './authoring-budget';
+import type { PedagogicalTaskDescriptor } from './authoring-task';
 
 /** An observation export, never a claim that an experiment was prospectively paired. */
 export interface GenerationEvaluationCall {
@@ -34,6 +36,7 @@ export interface GenerationEvaluationSlot {
   recordedSourceRefs?: Array<{ materialId: string; chunk?: string }>;
   recordedSourceRefsTruncated?: boolean;
   numericVerification?: Omit<NumericVerification, 'verifiedAt'> & { verifiedAt: string };
+  taskDescriptor?: PedagogicalTaskDescriptor;
 }
 
 export interface GenerationEvaluationExport {
@@ -60,6 +63,15 @@ export interface GenerationEvaluationExport {
   };
   slots: GenerationEvaluationSlot[];
   evidence?: GenerationEvidencePacket;
+  evidencePackets?: GenerationEvidencePacket[];
+  executionDiagnostics?: {
+    taskPlanId?: string;
+    independentRequested?: number;
+    independentPlanned?: number;
+    variantsCreated?: number;
+    evidencePacketIds?: string[];
+    slotBudgets?: Array<{ item: number; receipt: AuthoringBudgetReceipt }>;
+  };
   usage: {
     summary: ModelUsageSummary;
     calls: GenerationEvaluationCall[];

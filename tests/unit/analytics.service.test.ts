@@ -33,6 +33,7 @@ import {
   csvSerialize,
   failureRates,
   engagement,
+  analyticsReportData,
   questionPatterns,
 } from '../../server/src/services/analytics.service';
 
@@ -49,6 +50,44 @@ function cursor<T>(rows: T[]): { sort: jest.Mock; toArray: () => Promise<T[]> } 
 }
 
 beforeEach(() => jest.clearAllMocks());
+
+it('builds topic coverage from the active outline and counts distinct students across objectives', async () => {
+  const secondLo = new ObjectId();
+  const idleTheme = new ObjectId();
+  const from = new Date('2026-10-04T00:00:00Z');
+  const to = new Date('2026-10-17T23:59:59.999Z');
+  const find = jest.fn(() => cursor([
+    { loId, puid: 'a', correct: true, createdAt: from },
+    { loId: secondLo, puid: 'a', correct: false, createdAt: from },
+    { loId: secondLo, puid: 'b', correct: true, createdAt: from },
+    { loId: new ObjectId(), puid: 'c', correct: true, createdAt: from },
+    { loId, puid: 'a', correct: true, createdAt: new Date('2026-10-11T01:00:00Z') },
+    { loId, puid: 'd', correct: true, createdAt: new Date('2026-10-11T02:00:00Z') },
+  ]));
+  jest.mocked(attemptsCol).mockReturnValue({ find } as never);
+  jest.mocked(themesCol).mockReturnValue({ find: jest.fn(() => cursor([
+    { _id: themeId, name: 'Valuation' }, { _id: idleTheme, name: 'Risk' },
+  ])) } as never);
+  jest.mocked(losCol).mockReturnValue({ find: jest.fn(() => cursor([
+    { _id: loId, themeId, name: 'Discount future cash flows' },
+    { _id: secondLo, themeId, name: 'Estimate terminal value' },
+    { _id: new ObjectId(), themeId: idleTheme, name: 'Compare sources of risk' },
+  ])) } as never);
+  jest.mocked(reviewBookCol).mockReturnValue({ find: jest.fn(() => cursor([])) } as never);
+  const result = await analyticsReportData(courseId, { from, to, mode: 'exam-prep' });
+  expect(find).toHaveBeenCalledWith({ courseId, mode: 'exam-prep', createdAt: { $gte: from, $lte: to } });
+  expect(result.totals.questionsAttempted).toBe(6);
+  expect(result.repeatStudents).toBe(1);
+  expect(result.nextWeek).toEqual({ baseWeek: '2026-10-04', followUpWeek: '2026-10-11', eligible: 3, returned: 1 });
+  expect(result.topics).toMatchObject([
+    { name: 'Valuation', objectives: 2, coveredObjectives: 2, attempts: 5, correctAttempts: 4, activeStudents: 3,
+      objectiveRows: [
+        { name: 'Discount future cash flows', attempts: 3, correctAttempts: 3, activeStudents: 2 },
+        { name: 'Estimate terminal value', attempts: 2, correctAttempts: 1, activeStudents: 2 },
+      ] },
+    { name: 'Risk', objectives: 1, coveredObjectives: 0, attempts: 0, correctAttempts: 0, activeStudents: 0 },
+  ]);
+});
 
 describe('failure rates (IN-A01)', () => {
   it('returns the insufficient-data floor below five attempts', async () => {
@@ -196,6 +235,8 @@ it('counts only active LO coverage and fills empty weeks with mode-scoped activi
   jest.mocked(reviewBookCol).mockReturnValue({ find: jest.fn(() => cursor([{ puid: 'other', addedAt: from }])) } as never);
   const result = await engagement(courseId, { from, to, mode: 'exam-prep' });
   expect(result.totals).toMatchObject({ questionsAttempted: 2, loCoverageRate: 1, reviewBookActivityRate: 0, sessionsPerStudent: 1, avgSessionMinutes: 10 });
+  expect(result.totals.activeStudents).toBe(1);
+  expect(result.weeks[0].correctAttempts).toBeUndefined();
   expect(result.weeks).toHaveLength(4); expect(result.weeks[1].questionsAttempted).toBe(0);
   expect(find).toHaveBeenCalledWith({ courseId, mode: 'exam-prep', createdAt: { $gte: from, $lte: to } });
 });

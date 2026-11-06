@@ -1,0 +1,140 @@
+{
+  "scope": "Two unchanged real paid TF review JSON bodies. Used only to reproduce boolean-versus-string enum failure; no semantic acceptance claim.",
+  "declarationSha256": "d3e42f89b12cfe5224f222501d46a9bc6697aa6f6dd812a705636ff9be0832e9",
+  "responses": [
+    {
+      "captureId": "408fd8dd-49fd-4bdc-b45d-a996d8aa2e31",
+      "transcriptSha256": "637ace336f5f5cf2e08b005e42116c920964f8ae01a12d24dd14f66473032c70",
+      "rawResponse": {
+        "sourceSupport": "supported",
+        "notation": "consistent",
+        "novelty": "variant",
+        "reasons": [
+          "The stem preserves the original true/false proposition and answer while adding the requested brief investment context.",
+          "The source distinguishes firm-specific risk, which can be diversified away, from market risk, which cannot (S1).",
+          "No prior Bank/Queue questions are shown; the variant relation is to the supplied original, not a memory entry."
+        ],
+        "citations": [
+          {
+            "kind": "premise",
+            "claim": "Firm-specific risk can be diversified away, while market risk cannot.",
+            "spanIds": [
+              "S1"
+            ]
+          },
+          {
+            "kind": "solution",
+            "claim": "A diversified portfolio can reduce firm-specific risk; market risk cannot be diversified away.",
+            "spanIds": [
+              "S1"
+            ]
+          }
+        ],
+        "taskComparisons": [],
+        "changes": [
+          {
+            "requirement": "Use a brief different investment context to test the same diversification proposition. Preserve the answer semantics.",
+            "status": "fulfilled",
+            "reason": "The stem uses an investor holding shares in several companies and retains the original True proposition."
+          }
+        ],
+        "invariants": [
+          {
+            "requirement": "Preserve the learning task, required inference and solution path of the original.",
+            "status": "preserved",
+            "reason": "It remains a conceptual true/false judgment about diversification and the two risk types."
+          }
+        ],
+        "achievedDifficulty": "easy",
+        "justifiedLength": "justified",
+        "missingPremises": [],
+        "answerability": {
+          "kind": "true-false",
+          "stemTruth": true,
+          "reason": "The source says firm-specific risk can be diversified away and market risk cannot.",
+          "spanIds": [
+            "S1"
+          ]
+        },
+        "taskDemand": {
+          "verdict": "fulfilled",
+          "capacity": "supported",
+          "rationale": "The task asks for the same easy conceptual true/false judgment as the original.",
+          "missingOperation": "",
+          "spanIds": [
+            "S1"
+          ]
+        }
+      }
+    },
+    {
+      "captureId": "ac35e82c-6cb9-42d7-9928-358d4bd4f607",
+      "transcriptSha256": "0a37180a5eb25821d7387cc6d3fb91ea994e50ddcd54a982e36e5dde53a0c72c",
+      "rawResponse": {
+        "sourceSupport": "supported",
+        "notation": "consistent",
+        "novelty": "variant",
+        "reasons": [
+          "The stem is true: diversification can reduce firm-specific risk and cannot diversify away market risk.",
+          "The investment context is changed, but the required inference and solution path match the original."
+        ],
+        "citations": [
+          {
+            "kind": "premise",
+            "claim": "Firm-specific risk can be reduced through diversification.",
+            "spanIds": [
+              "S3"
+            ]
+          },
+          {
+            "kind": "premise",
+            "claim": "Market-wide risk cannot be diversified away.",
+            "spanIds": [
+              "S3"
+            ]
+          }
+        ],
+        "taskComparisons": [],
+        "changes": [
+          {
+            "requirement": "Use a brief different investment context to test the same diversification proposition.",
+            "status": "fulfilled",
+            "reason": "The stem uses an investor holding shares in several companies."
+          },
+          {
+            "requirement": "Preserve the answer semantics.",
+            "status": "fulfilled",
+            "reason": "The true/false labels and explanations preserve the original proposition."
+          }
+        ],
+        "invariants": [
+          {
+            "requirement": "Preserve the learning task, required inference and solution path of the original.",
+            "status": "preserved",
+            "reason": "The student judges the same diversification proposition using the same risk distinctions."
+          }
+        ],
+        "achievedDifficulty": "easy",
+        "justifiedLength": "justified",
+        "missingPremises": [],
+        "answerability": {
+          "kind": "true-false",
+          "stemTruth": true,
+          "reason": "Diversification can reduce firm-specific risk but cannot diversify away market risk.",
+          "spanIds": [
+            "S3"
+          ]
+        },
+        "taskDemand": {
+          "verdict": "fulfilled",
+          "capacity": "supported",
+          "rationale": "The task asks for a conceptual true/false judgment about the two risk types.",
+          "missingOperation": "",
+          "spanIds": [
+            "S3"
+          ]
+        }
+      }
+    }
+  ]
+}

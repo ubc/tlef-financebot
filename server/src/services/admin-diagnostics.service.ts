@@ -12,6 +12,7 @@ import type { ModelCallReceipt, ModelUsageFilters, ModelUsageSummary, ModelUsage
 
 export interface DiagnosticQuery {
   page: number; limit: number; activity?: 'all' | 'actions'; actor?: string; courseId?: string; q?: string;
+  routing?: 'all' | 'unmatched' | 'other';
   outcome?: OperationEvent['outcome']; status?: ContentRun['status'];
   state?: string; from?: string; until?: string; requestId?: string;
 }
@@ -39,12 +40,15 @@ async function identities(courseIds: string[], puids: string[]) {
 export async function listOperations(query: DiagnosticQuery) {
   const filter: Filter<OperationEvent> = {};
   if (query.activity === 'actions') filter.$and = [{ $or: [{ method: { $nin: ['GET', 'HEAD'] } }, { outcome: { $ne: 'succeeded' } }] }];
+  const unmatched = { route: '/unmatched', statusCode: 404 };
+  if (query.routing === 'unmatched') Object.assign(filter, unmatched);
+  if (query.routing === 'other') filter.$nor = [unmatched];
   if (query.actor) filter['actor.puid'] = query.actor;
   if (query.courseId) filter['targets.courseId'] = query.courseId;
   if (query.outcome) filter.outcome = query.outcome;
   if (query.requestId) filter.requestId = query.requestId;
   if (dates(query)) filter.createdAt = dates(query);
-  if (query.q) filter.$or = ['requestId', 'route', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
+  if (query.q) filter.$or = ['requestId', 'route', 'request.path', 'request.pathHash', 'actor.displayName', 'actor.uid', 'actor.puid', 'response.error'].map((key) => ({ [key]: literal(query.q!) }));
   const [items, total, first] = await Promise.all([
     operationEventsCol().find(filter).sort({ createdAt: -1, _id: -1 }).skip(paging(query).skip).limit(query.limit).toArray(),
     operationEventsCol().countDocuments(filter),

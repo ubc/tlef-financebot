@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "catalogUrl": "https://pages.stern.nyu.edu/adamodar/New_Home_Page/ACF4E/appldCF4E.htm",
+  "coldBatch": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "addition": 13,
+  "replacement": {
+    "chapter": 4,
+    "replacementChapter": 1,
+    "wholeDocument": true,
+    "method": "The complete public Foundations PDF replaces Chapter 4 by explicit test selection; neither PDF is modified and this is not an author revision."
+  },
+  "license": "Publicly downloadable author slides; no open redistribution license established. Do not commit downloaded PDFs or full text.",
+  "chapters": [
+    {
+      "chapter": 1,
+      "title": "The Foundations",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/cfintro.pdf",
+      "sha256": "8de696a2fe671d1d3fad06bb6f98aa27f0be4c9ea76c0f91358deed5aa72c6fa",
+      "bytes": 876138,
+      "pages": 13,
+      "extractedCharacters": 18143,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 2,
+      "title": "The Objective",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/mgtobj.pdf",
+      "sha256": "3a8965fca03e37ff370bd42420f6d6901fa4c466bc8faef1b1668e3cf32ddbae",
+      "bytes": 10289974,
+      "pages": 84,
+      "extractedCharacters": 50120,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 3,
+      "title": "The Basics of Risk",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/risk%26ret.pdf",
+      "sha256": "d769df65cae91467169ab59f11f402cb4a41a6656914aa63a6fc6f170a2cd2e8",
+      "bytes": 1425143,
+      "pages": 21,
+      "extractedCharacters": 20453,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 4,
+      "title": "Risk Measurement and Hurdle Rates",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/hurdlerate.pdf",
+      "sha256": "c3dc67b7ab92a35bcc202d50a1f979170b99d0a2918afa77dd8193ecd2082860",
+      "bytes": 7518192,
+      "pages": 111,
+      "extractedCharacters": 81366,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 5,
+      "title": "Measuring Returns on Investments",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/invretA.pdf",
+      "sha256": "44694c2d6aef13888ac6c279ca71664c10f7f4f02ec49b94d3417730c4433dca",
+      "bytes": 4667266,
+      "pages": 87,
+      "extractedCharacters": 63053,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 6,
+      "title": "Estimating Side Costs and Benefits",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/invretB.pdf",
+      "sha256": "6f66d9b41919a1c558a41e434cd2ab544e992ac9a27b09734792c2e65627550a",
+      "bytes": 2036712,
+      "pages": 43,
+      "extractedCharacters": 27802,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 7,
+      "title": "Capital Structure: An Overview of the Financing Decisions",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/capstruchoices.pdf",
+      "sha256": "b62c23727ec0a287a47aafe712f18f57454bd710baabc528d5c1d02a13445071",
+      "bytes": 1061989,
+      "pages": 9,
+      "extractedCharacters": 4108,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 8,
+      "title": "Capital Structure: Model and Applications",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/capstr.pdf",
+      "sha256": "64a1ed30497241e77741e7506ad05c3b847bffa211c7822c2dddeeb16c42f6ef",
+      "bytes": 5734309,
+      "pages": 90,
+      "extractedCharacters": 60355,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 9,
+      "title": "Capital Structure: The Financing Details",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/debtdesign.pdf",
+      "sha256": "e158967f0332caf34dc4d80eb640ad698ccfcb7fe648158bb1566fb664de683e",
+      "bytes": 1350934,
+      "pages": 46,
+      "extractedCharacters": 47326,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 10,
+      "title": "The Determinants of Dividend Policy",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/divintro.pdf",
+      "sha256": "761ede92b0509f09c46a0275632271a1ff609d30ff83adf9d2a30002639e1809",
+      "bytes": 3056498,
+      "pages": 40,
+      "extractedCharacters": 41737,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 11,
+      "title": "A Framework for Analyzing Dividend Policy",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/divassessment.pdf",
+      "sha256": "9964b47b2d96b8383a07cf46b4cd67c40a2fe1509596b3516bcc7a9d9e760803",
+      "bytes": 2350919,
+      "pages": 36,
+      "extractedCharacters": 33887,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 12,
+      "title": "Basics of Valuation",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/valuation.pdf",
+      "sha256": "f4f790a1cedba90ed05c23f2944bafae6f050299b9c319a1b8bd5bf743e22880",
+      "bytes": 3610816,
+      "pages": 41,
+      "extractedCharacters": 47729,
+      "wholeDocument": true
+    },
+    {
+      "chapter": 13,
+      "title": "Supplement: Basics of Statistics",
+      "author": "Aswath Damodaran",
+      "institution": "NYU Stern School of Business",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/statisticsbasics.pdf",
+      "sha256": "7c1f54f3804d664888951ba777f300d79d3ce32896d720f1b749233a3a8d23b9",
+      "bytes": 836611,
+      "pages": 16,
+      "extractedCharacters": 18383,
+      "wholeDocument": true
+    }
+  ]
+}

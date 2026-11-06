@@ -1,4 +1,5 @@
 import type { ObjectId } from 'mongodb';
+import type { SourceLocation } from './source-provenance';
 
 export type EvidenceRole = 'primary' | 'secondary' | 'prerequisite';
 export interface EvidenceMaterialScope {
@@ -11,6 +12,8 @@ export interface EvidenceSeed {
   materialId?: string;
   chunkIndex?: number;
   text: string;
+  /** Server-validated catalog locator within the original chunk. */
+  preferredStart?: number;
 }
 export interface GenerationEvidenceInput {
   courseId: ObjectId;
@@ -19,6 +22,9 @@ export interface GenerationEvidenceInput {
   allowedMaterials: EvidenceMaterialScope[];
   seeds: EvidenceSeed[];
   policyVersion: string;
+  /** Explicit internal opt-in. Absent historical requests retain v1 identities. */
+  sourceProvenance?: 'pdf-pages-v1';
+  query?: string;
 }
 export interface EvidenceFinding {
   code: 'evidence-budget-truncated' | 'source-text-damage';
@@ -34,6 +40,8 @@ export interface EvidencePassage extends EvidenceMaterialScope {
   end: number;
   text: string;
   selection: 'retrieved' | 'neighbor';
+  /** Server-computed physical location only; never semantic source proof. */
+  sourceLocation?: SourceLocation;
 }
 export interface EvidenceMaterialSnapshot extends EvidenceMaterialScope {
   name: string;
@@ -41,16 +49,19 @@ export interface EvidenceMaterialSnapshot extends EvidenceMaterialScope {
   activeRunId: string | null;
   contentHash: string;
   chunkCount: number;
+  parserVersion?: string;
+  chunkerVersion?: string;
+  sourceProvenance?: { provenanceId: string; receiptHash: string };
 }
 export interface GenerationEvidencePacket {
   id: string;
-  schemaVersion: 'source-passages-v1';
+  schemaVersion: 'source-passages-v1' | 'source-passages-v2';
   policyVersion: string;
   courseId: string;
   loIds: string[];
   sourceFingerprint: string;
   /** Existing source chunks do not record the actual parser/fallback version. */
-  parsingProvenance: 'unrecorded';
+  parsingProvenance: 'unrecorded' | 'verified' | 'partial';
   materials: EvidenceMaterialSnapshot[];
   passages: EvidencePassage[];
   coverage: {
@@ -60,6 +71,9 @@ export interface GenerationEvidencePacket {
     omittedPassages: number;
     truncated: boolean;
     searchScope: 'retrieved-chunks-and-immediate-neighbors';
+    catalogChunks?: number;
+    catalogRejectedReferences?: number;
+    catalogUnrepresentedMaterials?: string[];
   };
   findings: EvidenceFinding[];
 }

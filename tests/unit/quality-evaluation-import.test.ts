@@ -27,7 +27,7 @@ function manifest(): ExportManifest {
 }
 
 /** The production DTO is intentionally richer than the offline projection. */
-function productionExport(policy: 'baseline' | 'grounded-memory-v1'): GenerationEvaluationExport {
+function productionExport(policy: 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2'): GenerationEvaluationExport {
   const candidate = { ...question(), contentHash: hashValue('original unbounded candidate'), truncated: false };
   return { schemaVersion: 'generation-evaluation-export-v1', exportedAt: now,
     run: { id: `${policy}-run`, courseId: 'course-id', loId: 'lo-id', secondaryLoIds: ['secondary-lo'],
@@ -43,7 +43,7 @@ function productionExport(policy: 'baseline' | 'grounded-memory-v1'): Generation
       { item: 1, outcome: 'unavailable', failureCodes: ['historical-slot-missing'] },
       { item: 2, outcome: 'failed', failureCodes: ['generation-invalid-options'] },
       { item: 3, outcome: 'withheld', candidate: { ...candidate, stem: 'A retained candidate for instructor review.' }, failureCodes: ['quality-withheld'],
-        ...(policy === 'grounded-memory-v1' ? { assessment: {
+        ...(policy !== 'baseline' ? { assessment: {
           policy, item: 3, status: 'withheld' as const, sourceSupport: 'unsupported' as const, notation: 'consistent' as const, novelty: 'variant' as const,
           reasons: ['The source does not establish the proposed inference.'], citations: [], matchedEntryIds: [], comparedEntryIds: [],
           evidencePacketId: 'original-packet', memoryDigest: 'original-memory', checkedAt: new Date(now),
@@ -76,6 +76,17 @@ function label(entry: ReviewKey['entries'][number], patch: Partial<TeacherLabel>
 }
 
 describe('production generation export import', () => {
+  it('imports v2 as its exact policy while retaining safe planning diagnostics separately from labels', () => {
+    const exports = [productionExport('baseline'), productionExport('grounded-memory-v2')];
+    exports[1].executionDiagnostics = { taskPlanId: 'task-plan', independentRequested: 4, independentPlanned: 2, variantsCreated: 0, evidencePacketIds: ['packet-1', 'packet-2'] };
+    Object.assign(exports[1].executionDiagnostics, { actor: 'UNSAFE-DIAGNOSTIC-ACTOR', rawPrompt: 'UNSAFE-DIAGNOSTIC-PROMPT' });
+    const result = importGenerationExports(manifest(), exports);
+    expect(result.runs[1].policy).toBe('grounded-memory-v2');
+    expect(result.runs[1].executionDiagnostics).toEqual({ taskPlanId: 'task-plan', independentRequested: 4, independentPlanned: 2, variantsCreated: 0, evidencePacketIds: ['packet-1', 'packet-2'] });
+    expect(result.runs[1].slots[3].automatic.gate).toBe('withheld');
+    expect(JSON.stringify(result)).not.toContain('UNSAFE-');
+    const blind = createBlindReview(result); expect(JSON.stringify(blind.bundle)).not.toContain('task-plan'); expect(blind.reviews.labels).toEqual([]);
+  });
   it('preserves every requested slot and explicit missing, failure, saved and withheld outcomes in both policies', () => {
     const result = dataset();
     expect(result.origin).toBe('recorded');

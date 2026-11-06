@@ -7,6 +7,7 @@ import { gradeAssessment } from './assessment-attempts.service';
 import { courseLifecycle } from './courses.service';
 import { examError } from './question-variant.service';
 import { assessmentWindowLease, requireWindowOwner, validateAssessmentWindowId, windowCas, windowDueReason, windowReceipt } from './assessment-window';
+import { frozenNumericalPaperProblem } from './assessment-numeric-admission.service';
 
 const PREVIEW_LIFETIME_MS = 86_400_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -63,7 +64,7 @@ export async function listPreviewAssessments(courseId: ObjectId, context: Assess
     const source = attempt?.sourceStatus ?? (draft ? 'draft' as const : 'published' as const);
     const settings = attempt?.snapshot.settings ?? (draft ? exam.settings : publication!.settings);
     const items = attempt?.snapshot.items ?? (draft ? exam.items : publication!.items);
-    const problem = attempt ? undefined : draft ? await draftProblem(exam) : itemProblem(items) ?? settingsProblem(settings) ?? (context.access === 'restricted' ? availabilityProblem(settings) : undefined);
+    const problem = attempt ? undefined : (draft ? await draftProblem(exam) : itemProblem(items) ?? settingsProblem(settings) ?? (context.access === 'restricted' ? availabilityProblem(settings) : undefined)) ?? await frozenNumericalPaperProblem(items);
     return {
       id: exam._id.toHexString(), title: attempt?.snapshot.title ?? title(exam, settings), kind: settings.kind, purpose: settings.purpose, durationMinutes: settings.durationMinutes,
       opensAt: settings.opensAt, closesAt: settings.closesAt, timeZone: settings.timeZone, feedback: settings.feedback, questionCount: items.length,
@@ -92,6 +93,8 @@ export async function startPreviewAssessment(courseId: ObjectId, examId: ObjectI
   const items = draft ? exam.items : publication!.items;
   const problem = draft ? await draftProblem(exam) : itemProblem(items) ?? settingsProblem(settings) ?? (context.access === 'restricted' ? availabilityProblem(settings) : undefined);
   if (problem) examError(problem);
+  const numericalProblem = await frozenNumericalPaperProblem(items);
+  if (numericalProblem) examError(numericalProblem);
   // A second read rejects a changed/deleting head without taking the live first-start lock.
   const current = await builderExamsCol().findOne({ _id: examId, courseId, revision: exam.revision, deletingAt: { $exists: false } });
   if (!current) examError('The paper changed before preview started. Please try again.');

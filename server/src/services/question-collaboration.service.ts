@@ -1,3 +1,4 @@
+import { authoringCollection, authoringCommitAvailable, currentAuthoringSession, withCourseAuthoringWrite } from './authoring-commit.service';
 import type { ObjectId, WithId } from 'mongodb';
 import * as Y from 'yjs';
 import { coursesCol, questionsCol, questionVersionsCol, questionDraftsCol, questionPresenceCol } from '../components/mongodb/collections';
@@ -22,7 +23,7 @@ export async function authorizeQuestionDraft(courseId: ObjectId, questionId: Obj
   const user = await findUserByPuid(puid);
   if (!user || (!user.isAdmin && !user.courseRoles.some(role => role.role === 'instructor' && role.courseId.equals(courseId)))
     || !await hasCapability(user, courseId, 'question.approve')) return fail('Course editing access is no longer available.', 403);
-  const [question, course] = await Promise.all([questionsCol().findOne({ _id: questionId, courseId }), coursesCol().findOne({ _id: courseId })]);
+  const [question, course] = await Promise.all([authoringCollection(questionsCol()).findOne({ _id: questionId, courseId }), authoringCollection(coursesCol()).findOne({ _id: courseId })]);
   if (!question || !course) return fail('Question not found.', 404);
   if (question.state === 'archived' || courseLifecycle(course) === 'archived') return fail('Restore this question and course before editing.');
   return { user, question };
@@ -41,23 +42,24 @@ function seed(version: WithId<QuestionVersion>): string {
 }
 
 async function draftFor(courseId: ObjectId, questionId: ObjectId, puid: string): Promise<WithId<QuestionDraft>> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => draftFor(courseId, questionId, puid));
   let { question } = await authorizeQuestionDraft(courseId, questionId, puid);
-  let draft = await questionDraftsCol().findOne({ questionId });
+  let draft = await authoringCollection(questionDraftsCol()).findOne({ questionId });
   if (draft) {
     // Finish an explicit save interrupted after the immutable version insert.
     // Only the unchanged parent can advance; every recovered shared version
     // returns to review. A racing original writer recognizes this same version
     // as committed instead of deleting a version now referenced by the head.
     if (draft.baseVersionId.equals(question.currentVersionId)) {
-      const prepared = await questionVersionsCol().findOne({ questionId, collaborationDraftId: draft._id,
+      const prepared = await authoringCollection(questionVersionsCol()).findOne({ questionId, collaborationDraftId: draft._id,
         'provenance.kind': 'edited', 'provenance.parentVersionId': draft.baseVersionId,
         collaborationCommitId: { $exists: true } });
       if (prepared) {
-        await questionsCol().updateOne({ _id: questionId, currentVersionId: draft.baseVersionId, state: question.state }, {
+        await authoringCollection(questionsCol()).updateOne({ _id: questionId, currentVersionId: draft.baseVersionId, state: question.state }, {
           $set: { currentVersionId: prepared._id, currentVersion: prepared.version, state: 'pending-review', updatedAt: new Date() },
           $addToSet: { labels: 'manually-edited' }, $unset: { agentDecision: '' },
         });
-        const refreshed = await questionsCol().findOne({ _id: questionId, courseId });
+        const refreshed = await authoringCollection(questionsCol()).findOne({ _id: questionId, courseId });
         if (!refreshed || refreshed.state === 'archived') return fail('Question editing is no longer available.');
         question = refreshed;
       }
@@ -65,27 +67,27 @@ async function draftFor(courseId: ObjectId, questionId: ObjectId, puid: string):
     // Recover an acknowledged head write even if the process stopped before
     // advancing the draft. The immutable version is the recovery journal.
     if (!draft.baseVersionId.equals(question.currentVersionId)) {
-      const saved = await questionVersionsCol().findOne({ _id: question.currentVersionId });
+      const saved = await authoringCollection(questionVersionsCol()).findOne({ _id: question.currentVersionId });
       if (saved?.collaborationDraftId?.equals(draft._id) && saved.collaborationCommitId
         && saved.provenance?.kind === 'edited' && saved.provenance.parentVersionId.equals(draft.baseVersionId)) {
-        await questionDraftsCol().updateOne({ _id: draft._id, baseVersionId: draft.baseVersionId }, {
+        await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, baseVersionId: draft.baseVersionId }, {
           $set: { baseVersionId: saved._id, lastCommit: { id: saved.collaborationCommitId, versionId: saved._id } },
           $inc: { revision: 1 }, $unset: { commit: '' },
         });
-        draft = await questionDraftsCol().findOne({ _id: draft._id }) ?? draft;
+        draft = await authoringCollection(questionDraftsCol()).findOne({ _id: draft._id }) ?? draft;
       }
     }
     return draft;
   }
-  const current = await questionVersionsCol().findOne({ _id: question.currentVersionId });
+  const current = await authoringCollection(questionVersionsCol()).findOne({ _id: question.currentVersionId });
   if (!current) return fail('Question version not found.', 404);
   try {
-    await questionDraftsCol().updateOne({ questionId }, { $setOnInsert: {
+    await authoringCollection(questionDraftsCol()).updateOne({ questionId }, { $setOnInsert: {
       questionId, courseId, baseVersionId: current._id, state: seed(current), revision: 0,
       updatedAt: new Date(), updatedBy: puid,
     } }, { upsert: true });
   } catch (error) { if ((error as { code?: number }).code !== 11000) throw error; }
-  draft = await questionDraftsCol().findOne({ questionId });
+  draft = await authoringCollection(questionDraftsCol()).findOne({ questionId });
   if (!draft) return fail('Shared draft could not be opened. Please retry.', 503);
   return draft;
 }
@@ -93,8 +95,8 @@ async function draftFor(courseId: ObjectId, questionId: ObjectId, puid: string):
 export async function getQuestionDraft(courseId: ObjectId, questionId: ObjectId, puid: string) {
   const draft = await draftFor(courseId, questionId, puid);
   const [question, base] = await Promise.all([
-    questionsCol().findOne({ _id: questionId, courseId }),
-    questionVersionsCol().findOne({ _id: draft.baseVersionId, questionId }),
+    authoringCollection(questionsCol()).findOne({ _id: questionId, courseId }),
+    authoringCollection(questionVersionsCol()).findOne({ _id: draft.baseVersionId, questionId }),
   ]);
   if (!question) return fail('Question not found.', 404);
   if (!base) return fail('Shared draft base version not found.', 404);
@@ -133,7 +135,7 @@ export async function mergeQuestionDraft(courseId: ObjectId, questionId: ObjectI
     } catch (error) { if ((error as { status?: number }).status) throw error; return fail('Invalid shared draft update.', 400); }
     finally { doc.destroy(); }
     if (state === draft.state) return getQuestionDraft(courseId, questionId, puid);
-    const result = await questionDraftsCol().updateOne({ _id: draft._id, revision: draft.revision,
+    const result = await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, revision: draft.revision,
       $or: [{ commit: { $exists: false } }, { 'commit.until': { $lte: new Date() } }] },
     { $set: { state, updatedAt: new Date(), updatedBy: puid }, $inc: { revision: 1 }, $unset: { commit: '' } });
     if (result.matchedCount === 1) return getQuestionDraft(courseId, questionId, puid);
@@ -143,22 +145,23 @@ export async function mergeQuestionDraft(courseId: ObjectId, questionId: ObjectI
 
 /** Saving a shared draft is an explicit version boundary. A short persisted
  * lease prevents edits being acknowledged while that exact snapshot commits. */
-export async function commitQuestionDraft(courseId: ObjectId, questionId: ObjectId, puid: string, expectedRevision: number, requestId: string) {
+export async function commitQuestionDraft(courseId: ObjectId, questionId: ObjectId, puid: string, expectedRevision: number, requestId: string): Promise<{ versionId: string }> {
+  if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(courseId, () => commitQuestionDraft(courseId, questionId, puid, expectedRevision, requestId));
   const draft = await draftFor(courseId, questionId, puid);
   const { question } = await authorizeQuestionDraft(courseId, questionId, puid);
   if (draft.lastCommit?.id === requestId) return { versionId: draft.lastCommit.versionId.toHexString() };
-  const previousCommit = await questionVersionsCol().findOne({ questionId, collaborationDraftId: draft._id, collaborationCommitId: requestId });
+  const previousCommit = await authoringCollection(questionVersionsCol()).findOne({ questionId, collaborationDraftId: draft._id, collaborationCommitId: requestId });
   if (previousCommit && question.currentVersion >= previousCommit.version) return { versionId: previousCommit._id.toHexString() };
   if (previousCommit) return fail('A previous save is still recovering. Your shared draft is retained; retry shortly.');
   if (draft.revision !== expectedRevision) return fail('A teammate updated this draft. Review the latest changes and submit again.');
   if (!draft.baseVersionId.equals(question.currentVersionId)) return fail('The saved question changed outside this draft. Your shared draft is retained; compare it with the latest version before continuing.');
-  const claimed = await questionDraftsCol().updateOne({ _id: draft._id, revision: expectedRevision,
+  const claimed = await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, revision: expectedRevision,
     $or: [{ commit: { $exists: false } }, { 'commit.until': { $lte: new Date() } }] },
   { $set: { commit: { id: requestId, by: puid, until: new Date(Date.now() + 60_000) } } });
   if (claimed.matchedCount !== 1) return fail('A teammate is submitting this draft. Please retry.');
   const doc = decode(draft.state);
   try {
-    const current = await questionVersionsCol().findOne({ _id: draft.baseVersionId });
+    const current = await authoringCollection(questionVersionsCol()).findOne({ _id: draft.baseVersionId });
     if (!current) return fail('Question version not found.', 404);
     const settings = doc.getMap<string>('settings');
     const difficulty = settings.get('difficulty') as Difficulty;
@@ -176,21 +179,21 @@ export async function commitQuestionDraft(courseId: ObjectId, questionId: Object
     if (current.numericKind === 'numeric' || current.derivedValues?.length) {
       const names = optionValueNamesForVerification(options.map(option => option.text), (current.derivedValues ?? []).map(value => value.name));
       if (!names.ok) return fail(names.error, 400);
-      const verified = verifyQuestionNumerics({ slots: current.paramSlots ?? [], derivedValues: current.derivedValues ?? [], optionValueNames: names.names, optionCurrency: names.currency });
+      const verified = verifyQuestionNumerics({ stem, slots: current.paramSlots ?? [], derivedValues: current.derivedValues ?? [], optionValueNames: names.names, optionCurrency: names.currency });
       if (!verified.ok) return fail(verified.error, 400);
       verification = verified.verification;
     }
     const version = await editQuestion(questionId, { stem, options, difficulty, expectedVersionId: draft.baseVersionId,
       collaborationDraftId: draft._id, collaborationCommitId: requestId,
       expectedState: question.state, submitForReview: true, ...(verification ? { verification } : {}) }, puid);
-    await questionDraftsCol().updateOne({ _id: draft._id, 'commit.id': requestId }, {
+    await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, 'commit.id': requestId }, {
       $set: { baseVersionId: version._id, updatedAt: new Date(), updatedBy: puid, lastCommit: { id: requestId, versionId: version._id } },
       $inc: { revision: 1 }, $unset: { commit: '' },
     });
     return { versionId: version._id.toHexString() };
   } finally {
     doc.destroy();
-    await questionDraftsCol().updateOne({ _id: draft._id, 'commit.id': requestId }, { $unset: { commit: '' } });
+    await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, 'commit.id': requestId }, { $unset: { commit: '' } });
   }
 }
 
@@ -201,11 +204,11 @@ export async function rebaseQuestionDraft(courseId: ObjectId, questionId: Object
   const { question } = await authorizeQuestionDraft(courseId, questionId, puid);
   if (!question.currentVersionId.equals(expectedVersionId)) return fail('The saved question changed again. Compare the latest version first.');
   const [base, current] = await Promise.all([
-    questionVersionsCol().findOne({ _id: draft.baseVersionId }), questionVersionsCol().findOne({ _id: expectedVersionId }),
+    authoringCollection(questionVersionsCol()).findOne({ _id: draft.baseVersionId }), authoringCollection(questionVersionsCol()).findOne({ _id: expectedVersionId }),
   ]);
   if (!base || !current || base.type !== current.type || base.options.map(o => o.key).sort().join(',') !== current.options.map(o => o.key).sort().join(','))
     return fail('The question structure changed. Download this draft and merge it in the full editor.');
-  const result = await questionDraftsCol().updateOne({ _id: draft._id, revision: expectedRevision,
+  const result = await authoringCollection(questionDraftsCol()).updateOne({ _id: draft._id, revision: expectedRevision,
     $or: [{ commit: { $exists: false } }, { 'commit.until': { $lte: new Date() } }] }, {
     $set: { baseVersionId: expectedVersionId, updatedAt: new Date(), updatedBy: puid },
     $inc: { revision: 1 }, $unset: { commit: '' },

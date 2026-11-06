@@ -16,6 +16,7 @@ import { el, mount } from '../../dom.js';
 import { confirmDialog } from '../../modal.js';
 import { protectUnsavedChanges, type RouteParams } from '../../router.js';
 import { errorState, helpTip, loadingState } from '../../ui.js';
+import { createCourseModelsPanel } from './course-models.js';
 
 const STEP_LABEL: Record<PipelineStep, string> = {
   generator: 'Generator',
@@ -76,6 +77,8 @@ const PROFILE_BLURB: Record<string, string> = {
     + 'switching it on takes the temperature away',
   'reasoning-fixed':
     'reasons by default, so a temperature is rejected unless you explicitly set effort to “none”',
+  'reasoning-required':
+    'always reasons; effort “none” and temperature are unavailable',
 };
 
 /** A plain-language sentence built from a profile's measured capabilities. */
@@ -83,7 +86,7 @@ function describeProfile(caps: ModelCapabilities): string {
   const parts = [
     caps.temperature ? 'accepts a temperature' : 'accepts no temperature',
     caps.reasoningEffort
-      ? `reasons (API default ${caps.defaultEffort}; the pipeline sends none unless a step sets an effort)`
+      ? `reasons (API default ${caps.defaultEffort}; JSON default ${caps.reasoningEffort.includes('none') ? 'none' : caps.defaultEffort})`
       : 'does not reason',
     `sends its token limit as ${caps.tokenLimitParam}`,
   ];
@@ -115,8 +118,8 @@ const PANEL_HELP = {
 };
 
 type SettingsDraft = Pick<PlatformSettings, 'models' | 'customModels' | 'costControls' | 'featureFlags'>;
-type SettingsTab = 'pipeline' | 'quality' | 'usage' | 'custom';
-const TAB_LABELS: Record<SettingsTab, string> = { pipeline: 'Model pipeline', quality: 'Quality controls', usage: 'Usage & limits', custom: 'Custom models' };
+type SettingsTab = 'pipeline' | 'courseModels' | 'quality' | 'usage' | 'custom';
+const TAB_LABELS: Record<SettingsTab, string> = { pipeline: 'Model pipeline', courseModels: 'Course models', quality: 'Quality controls', usage: 'Usage & limits', custom: 'Custom models' };
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const draftOf = (settings: PlatformSettings): SettingsDraft => copy({ models: settings.models, customModels: settings.customModels ?? [], costControls: settings.costControls, featureFlags: settings.featureFlags });
 const errorMessage = (error: unknown): string => error instanceof ApiError ? error.message : (error as Error).message;
@@ -135,6 +138,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   let draft = copy(saved);
   let selected: PipelineStep | undefined;
   let tab: SettingsTab = 'pipeline';
+  let courseModels: ReturnType<typeof createCourseModelsPanel> | undefined;
   let pending = false;
   const metrics = el('div', { class: 'ac-metrics' });
   const tabs = el('div', { class: 'ac-tabs', role: 'tablist', 'aria-label': 'Settings sections' });
@@ -153,7 +157,11 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   root.replaceChildren(el('header', { class: 'ac-header' }, el('div', {}, el('h1', { text: 'Platform Settings' }), el('p', { text: 'Configure the model pipeline, quality checks, and usage limits.' }))), metrics, el('div', { class: 'ac-workspace' }, main, inspectorSlot));
   const dirty = (): boolean => JSON.stringify(draft) !== JSON.stringify(saved);
   const discardConfirmation = (): Promise<boolean> => confirmDialog({ title: 'Discard settings changes?', message: 'Restore the last saved settings across all tabs. Unsaved model registrations and parameter changes will be removed.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing' });
-  protectUnsavedChanges(root, () => dirty() || pending, async () => pending ? false : discardConfirmation());
+  protectUnsavedChanges(root, () => dirty() || pending || !!courseModels?.dirty() || !!courseModels?.pending(), async () => {
+    if (pending || courseModels?.pending()) return false;
+    if (courseModels?.dirty()) return confirmDialog({ title: 'Leave Platform Settings?', message: 'Unsaved platform and course model changes will be discarded.', confirmLabel: 'Discard and leave' });
+    return discardConfirmation();
+  });
 
   function modelList(): ModelCatalogue['models'] {
     // Catalogue entries include saved custom models; use the draft list so removed
@@ -190,7 +198,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   function refreshSummary(): void {
     const limit = draft.costControls.maxGenerationsPerDay;
     metrics.replaceChildren(...[
-      ['Pipeline stages', String(PIPELINE_STEPS.length), '1 reserved stage'], ['Reviewer', draft.featureFlags.reviewerAgent ? 'On' : 'Off', draft.featureFlags.reviewerAgent ? 'Semantic review' : 'Manual attention'],
+      ['Enabled LLM stages', draft.featureFlags.reviewerAgent ? '4' : '3', 'Mastery evaluator is reserved'], ['Reviewer', draft.featureFlags.reviewerAgent ? 'On' : 'Off', draft.featureFlags.reviewerAgent ? 'Semantic review' : 'Manual attention'],
       ['Daily allowance', Number.isFinite(limit) && limit > 0 ? limit.toLocaleString() : '—', 'Questions / platform'], ['Custom models', String(draft.customModels?.length ?? 0), 'Additional registrations'],
     ].map(([label, value, detail]) => el('div', { class: 'ac-metric' }, el('span', { text: label }), el('strong', { text: value }), el('small', { text: detail }))));
     const changeCount = changes().length;
@@ -204,7 +212,10 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     const focusId = root.contains(document.activeElement) ? (document.activeElement as HTMLElement)?.id : '';
     tabs.replaceChildren(...(Object.entries(TAB_LABELS) as Array<[SettingsTab, string]>).map(([key, text]) => el('button', { class: 'btn btn--ghost', type: 'button', role: 'tab', id: `admin-tab-${key}`, 'aria-controls': 'admin-settings-content', 'aria-selected': String(tab === key), tabindex: tab === key ? 0 : -1, text, onclick: () => { tab = key; selected = undefined; render(); document.getElementById(`admin-tab-${key}`)?.focus(); } })));
     content.setAttribute('aria-labelledby', `admin-tab-${tab}`);
-    content.replaceChildren(tab === 'pipeline' ? pipelineTable() : tab === 'quality' ? qualityControls() : tab === 'usage' ? usageControls() : customModels());
+    content.replaceChildren(tab === 'pipeline' ? pipelineTable()
+      : tab === 'courseModels' ? (courseModels ??= createCourseModelsPanel(STEP_LABEL)).root
+      : tab === 'quality' ? qualityControls() : tab === 'usage' ? usageControls() : customModels());
+    saveBar.hidden = tab === 'courseModels';
     refreshSummary(); renderInspector();
     if (focusId) document.getElementById(focusId)?.focus();
   }
@@ -212,7 +223,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return el('header', { class: 'ac-config-intro' }, el('div', {}, el('h2', {}, title, helpTip(title, tip)), el('p', { text: description })));
   }
   function pipelineTable(): HTMLElement {
-    return el('div', { class: 'admin-step-list ac-config-pane' }, intro('Pipeline models', 'Select a stage to edit its model and supported parameters.', PANEL_HELP.pipeline),
+    return el('div', { class: 'admin-step-list ac-config-pane' }, intro('Pipeline models', 'Question generation runs Generator → Structure validator → Reviewer. Utility handles course authoring tasks separately.', PANEL_HELP.pipeline),
       el('div', { class: 'ac-table-scroll', tabindex: 0, 'aria-label': 'Pipeline models' }, el('table', { class: 'ac-table ac-pipeline-table' },
         el('thead', {}, el('tr', {}, ...['Stage', 'Model', 'Parameters', ''].map(text => el('th', { scope: 'col', text: text || 'Edit' })))),
         el('tbody', {}, ...PIPELINE_STEPS.map(step => {
@@ -224,7 +235,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
             el('td', {}, el('button', { class: 'btn btn--ghost', type: 'button', text: 'Edit', 'aria-label': `Edit ${STEP_LABEL[step]}`, onclick: () => openStage(step) })),
           );
         })),
-      )), el('p', { class: 'ac-note', text: 'Changes apply to new generation and evaluation work. Existing queued work keeps its saved configuration.' }));
+      )), el('p', { class: 'ac-note', text: 'New work uses these platform defaults unless the course overrides a model. Saved question and exam generation runs keep their model snapshot when available.' }));
   }
   function openStage(step: PipelineStep): void { selected = step; renderInspector(); inspectorSlot.querySelector<HTMLSelectElement>('select')?.focus(); }
   function closeInspector(): void { const previous = selected; selected = undefined; renderInspector(); if (previous) root.querySelector<HTMLButtonElement>(`[aria-label="Edit ${STEP_LABEL[previous]}"]`)?.focus(); }
@@ -249,7 +260,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     const params = el('div', { class: 'ac-config-fields' });
     if (caps.reasoningEffort) {
       const effort = el('select', { class: 'input', id: 'admin-stage-effort', 'aria-label': `${STEP_LABEL[step]} reasoning effort` }, ...caps.reasoningEffort.map(value => el('option', { value, text: value === 'none' ? 'none — pipeline default' : value === caps.defaultEffort ? `${value} — model API default` : value })));
-      effort.value = config.reasoningEffort ?? 'none'; effort.disabled = pending;
+      effort.value = config.reasoningEffort ?? (caps.reasoningEffort.includes('none') ? 'none' : caps.defaultEffort); effort.disabled = pending;
       effort.onchange = () => { draft.models[step].reasoningEffort = effort.value as ReasoningEffort; if (!temperatureAllowed(caps, effort.value as ReasoningEffort)) delete draft.models[step].temperature; render(); };
       params.append(field('Reasoning effort', effort, EFFORT_HELP));
     }
@@ -334,6 +345,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       const response = await saveAdminPlatformSettings(payload, confirmQualityImpact);
       if (!root.isConnected) return;
       settings = { ...response, catalogue: settings.catalogue }; saved = draftOf(response); draft = copy(saved);
+      if (!courseModels?.dirty() && !courseModels?.pending()) courseModels = undefined;
       status.textContent = 'Settings saved. Applied to new generation and evaluation work.';
     } catch (error) { if (root.isConnected) status.textContent = errorMessage(error); }
     finally { pending = false; if (root.isConnected) render(); }

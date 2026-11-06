@@ -18,7 +18,7 @@ export function prepareExamVersion<T extends ExamQuestionVersion>(version: T): T
     if (syntax) examError(`Numerical check failed: ${syntax}`);
     const names = optionValueNamesForVerification(version.options.map(o => o.text), version.derivedValues.map(v => v.name));
     if (!names.ok) examError(`Numerical check failed: ${names.error}. Edit this question in Question Bank.`);
-    const checked = verifyQuestionNumerics({ slots: version.paramSlots ?? [], derivedValues: version.derivedValues, optionValueNames: names.names, optionCurrency: names.currency });
+    const checked = verifyQuestionNumerics({ stem: version.stem, slots: version.paramSlots ?? [], derivedValues: version.derivedValues, optionValueNames: names.names, optionCurrency: names.currency });
     if (!checked.ok) examError(`Numerical check failed: ${checked.error}. Edit this question in Question Bank.`);
     return { ...version, verification: checked.verification };
   }
@@ -26,7 +26,7 @@ export function prepareExamVersion<T extends ExamQuestionVersion>(version: T): T
 }
 
 /** Freeze one checked draw so preview, publication and grading use identical text. */
-export async function freezeExamQuestion(version: ExamQuestionVersion, identity: string): Promise<Pick<PaperQuestion, 'stem' | 'options' | 'type' | 'difficulty' | 'seed' | 'paramValues' | 'validated'>> {
+export async function freezeExamQuestion(version: ExamQuestionVersion, identity: string): Promise<Pick<PaperQuestion, 'stem' | 'options' | 'type' | 'difficulty' | 'seed' | 'paramValues' | 'numericDefinition' | 'validated'>> {
   const checked = prepareExamVersion(version);
   let draw: Awaited<ReturnType<typeof drawCollisionFreeParams>>;
   try { draw = await drawCollisionFreeParams(checked, stableSeedsForId(identity)); }
@@ -38,7 +38,11 @@ export async function freezeExamQuestion(version: ExamQuestionVersion, identity:
   if (options.length !== (version.type === 'mcq' ? 4 : 2) || options.filter(o => o.role === 'correct').length !== 1
     || new Set(options.map(o => o.key)).size !== options.length || new Set(options.map(o => o.text.trim())).size !== options.length
     || [stem, ...options.flatMap(o => [o.text, o.explanation ?? ''])].some(text => /\{\{[^}]+\}\}/.test(text))) examError('The rendered question has invalid or unresolved options.');
-  return { stem, options, type: version.type, difficulty: version.difficulty, seed, ...(paramValues ? { paramValues } : {}), validated: true };
+  return { stem, options, type: version.type, difficulty: version.difficulty, seed, ...(paramValues ? { paramValues } : {}),
+    ...(!version.generateScript && paramValues ? { numericDefinition: {
+      stem: version.stem, options: version.options.map(option => ({ key: option.key, text: option.text })),
+      paramSlots: version.paramSlots ?? [], derivedValues: version.derivedValues ?? [],
+    } } : {}), validated: true };
 }
 
 /** A reusable variant boundary: no exam or bank writes, always explicit versions. */

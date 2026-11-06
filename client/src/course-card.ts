@@ -1,25 +1,35 @@
 import { el } from './dom.js';
 import { statusBadge, type BadgeVariant } from './instructor-ui.js';
 
-export interface CourseCardOptions {
+interface CourseCardOptions {
   courseCode: string;
   name: string;
   term: string;
   section?: string;
-  href: string;
   status: { label: string; variant: BadgeVariant };
   actionLabel?: string;
-  /** Omit for teaching projects; null means student progress could not load. */
-  coverage?: { covered: number; total: number } | null;
+  instructor?: string;
 }
 
+type CourseCardLink = CourseCardOptions & {
+  href: string;
+  /** Omit for teaching projects; null means student progress could not load. */
+  coverage?: { covered: number; total: number } | null;
+};
+
+type CourseCardAction = CourseCardOptions & {
+  onSelect: (event: Event) => void;
+};
+
 /** One course-project card for teaching, learning, and isolated Student Preview. */
-export function courseCard(options: CourseCardOptions): HTMLAnchorElement {
+export function courseCard(options: CourseCardLink): HTMLAnchorElement;
+export function courseCard(options: CourseCardAction): HTMLButtonElement;
+export function courseCard(options: CourseCardLink | CourseCardAction): HTMLElement {
   // Code is available in every role's course identity, including enrollments.
   // The same course therefore retains its cover color when switching roles.
   const tone = [...options.courseCode].reduce((total, character) => total + character.charCodeAt(0), 0) % 6;
   const actionLabel = options.actionLabel ?? 'Open →';
-  const coverage = options.coverage;
+  const coverage = 'href' in options ? options.coverage : undefined;
   const progress = coverage === undefined ? undefined : el(
     'div',
     { class: 'course-card__progress' },
@@ -45,15 +55,19 @@ export function courseCard(options: CourseCardOptions): HTMLAnchorElement {
     }),
   );
 
-  return el(
-    'a',
-    {
-      class: `course-card course-card--tone-${tone}`,
-      href: options.href,
-      'aria-label': `${actionLabel.replace(/\s*→$/, '')} ${options.courseCode} ${options.name}`,
-    },
+  const isLink = 'href' in options;
+  const block = isLink ? 'div' : 'span';
+  const meta = isLink ? 'p' : 'span';
+  const attrs = {
+    class: `course-card course-card--tone-${tone}`,
+    'aria-label': [
+      `${actionLabel.replace(/\s*→$/, '')} ${options.courseCode} ${options.name}`,
+      ...(!isLink ? [options.term, options.section ? `Section ${options.section}` : '', options.instructor] : []),
+    ].filter(Boolean).join(', '),
+  };
+  const content = [
     el(
-      'div',
+      block,
       { class: 'course-card__cover' },
       el('span', { class: 'course-card__code', text: options.courseCode }),
       statusBadge(options.status.label, options.status.variant),
@@ -64,20 +78,24 @@ export function courseCard(options: CourseCardOptions): HTMLAnchorElement {
       }),
     ),
     el(
-      'div',
+      block,
       { class: 'course-card__main' },
-      el('h3', { class: 'course-card__title', text: options.name }),
-      el('p', {
+      el(isLink ? 'h3' : 'strong', { class: 'course-card__title', text: options.name }),
+      el(meta, {
         class: 'course-card__meta',
         text: [options.term, options.section ? `Section ${options.section}` : ''].filter(Boolean).join(' · '),
       }),
+      options.instructor ? el(meta, { class: 'course-card__meta course-card__owner', text: `Instructor: ${options.instructor}` }) : undefined,
       progress,
     ),
     el(
-      'div',
+      block,
       { class: 'course-card__footer' },
-      el('span', { text: 'Course project' }),
+      isLink ? el('span', { text: 'Course project' }) : undefined,
       el('strong', { text: actionLabel }),
     ),
-  );
+  ];
+  return isLink
+    ? el('a', { ...attrs, href: options.href }, ...content)
+    : el('button', { ...attrs, type: 'button', onclick: options.onSelect }, ...content);
 }
