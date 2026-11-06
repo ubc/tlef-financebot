@@ -22,7 +22,6 @@ import type * as MaterialsModule from '../server/src/services/materials.service'
 import type * as RunsModule from '../server/src/services/content-runs.service';
 import type * as ProvenanceModule from '../server/src/services/material-source-provenance.service';
 import type * as ReadinessModule from '../server/src/services/source-readiness.service';
-import type * as EvidenceModule from '../server/src/services/generation-evidence.service';
 import type * as RoutesModule from '../server/src/routes/materials.routes';
 import type * as ErrorModule from '../server/src/middleware/error-handler';
 
@@ -231,7 +230,6 @@ export async function verifyPdfProvenanceIngest(args: PdfIngestArguments): Promi
       const runs = runtime<typeof RunsModule>('server/src/services/content-runs.service.ts');
       const provenance = runtime<typeof ProvenanceModule>('server/src/services/material-source-provenance.service.ts');
       const readiness = runtime<typeof ReadinessModule>('server/src/services/source-readiness.service.ts');
-      const evidence = runtime<typeof EvidenceModule>('server/src/services/generation-evidence.service.ts');
       const { ObjectId: Id } = load('mongodb') as typeof MongoDriver;
       const courseId = new Id(), otherCourseId = new Id(), themeId = new Id(), loId = new Id();
       const course: Course = { name: 'Retained ten-PDF provenance integration fixture', courseCode: 'PDF-PROVENANCE', term: '2026W1', ownerPuid: actor, registrationCode: randomUUID(), published: false, lifecycle: 'draft', feedbackStrategy: 'adaptive',
@@ -313,22 +311,8 @@ export async function verifyPdfProvenanceIngest(args: PdfIngestArguments): Promi
       }
       assert.equal(verifiedWorkspaceLocators, 671);
       observations.push({ label: 'native-ingest-and-private-publication', status: 'passed', files: 10, pages: 599, chunks: 671, verifiedWorkspaceLocators });
-      const allowedMaterials = retained.map(item => ({ materialId: item.materialId.toHexString(), role: 'primary' as const, loId: loId.toHexString() }));
-      const seeds = retained.map(item => ({ materialId: item.materialId.toHexString(), chunkIndex: 0, text: item.source.chunks[0].text }));
-      const evidenceInput = { courseId, loIds: [loId], allowedMaterials, seeds, policyVersion: 'grounded-memory-v2' as const };
-      const legacy = await evidence.buildGenerationEvidence(evidenceInput), located = await evidence.buildGenerationEvidence({ ...evidenceInput, sourceProvenance: 'pdf-pages-v1' });
-      assert.equal(legacy.schemaVersion, 'source-passages-v1'); assert.equal(legacy.parsingProvenance, 'unrecorded'); assert(legacy.passages.every(passage => !passage.sourceLocation));
-      assert.equal(located.schemaVersion, 'source-passages-v2'); assert.equal(located.parsingProvenance, 'verified'); assert(located.passages.every(passage => passage.sourceLocation?.status === 'verified'));
-      await evidence.assertGenerationEvidenceCurrent(legacy); await evidence.assertGenerationEvidenceCurrent(located);
-      await writeJson(path.join(args.output, 'evidence-packets.json'), { legacy, located });
-      const first = retained[0], second = retained[1]; const firstChunk = await collections.materialChunksCol().findOne({ courseId, materialId: first.materialId, index: 0 }); assert(firstChunk?.sourceProvenance);
-      await collections.materialChunksCol().updateOne({ _id: firstChunk._id }, { $set: { 'sourceProvenance.locator.pageSpans.0.physicalPage': 99999 } });
-      await assert.rejects(evidence.assertGenerationEvidenceCurrent(located), /generation-evidence-source-changed/); await evidence.assertGenerationEvidenceCurrent(legacy);
-      const legacyAfter = await evidence.buildGenerationEvidence(evidenceInput); assert.equal(legacyAfter.id, legacy.id);
-      await collections.materialChunksCol().updateOne({ _id: firstChunk._id }, { $set: { sourceProvenance: firstChunk.sourceProvenance } }); await evidence.assertGenerationEvidenceCurrent(located);
-      observations.push({ label: 'legacy-identity-and-new-currentness-tamper-guard', status: 'passed', legacyId: legacy.id, locatedId: located.id, materialId: first.materialId.toHexString() });
-      // Independent construction must reject a mechanically consistent, same-page
-      // shifted locator as well as rejecting changes to an already frozen packet.
+      const first = retained[0], second = retained[1];
+      // The workspace must refuse a mechanically consistent, same-page shifted locator.
       assert(shiftFixture, 'Retained corpus must provide a real single-page locator with room for a consistent offset shift.');
       const shifted = structuredClone(shiftFixture.sourceProvenance);
       assert(shifted.locator.status === 'verified'); shifted.locator.rawStart += shiftFixture.delta; shifted.locator.rawEnd += shiftFixture.delta;
@@ -338,17 +322,12 @@ export async function verifyPdfProvenanceIngest(args: PdfIngestArguments): Promi
         const detail = await send('same-page-shift-workspace', `/api/courses/${courseId}/materials/${shiftFixture.materialId}/workspace`, 200);
         assert.equal(detail.body.sourceProvenance.status, 'unavailable');
         const row = (detail.body.chunks as Array<{ index: number; sourceProvenance?: unknown }>).find(chunk => chunk.index === shiftFixture!.index); assert(row && !row.sourceProvenance);
-        const rebuilt = await evidence.buildGenerationEvidence({ ...evidenceInput, seeds: [{ materialId: shiftFixture.materialId.toHexString(), chunkIndex: shiftFixture.index, text: shiftFixture.text }], sourceProvenance: 'pdf-pages-v1' });
-        const affected = rebuilt.passages.filter(passage => passage.materialId === shiftFixture!.materialId.toHexString() && passage.chunkIndex === shiftFixture!.index);
-        assert(affected.length > 0 && affected.every(passage => passage.sourceLocation?.status === 'unavailable'));
-        assert.equal(rebuilt.parsingProvenance, 'partial');
         await writeJson(path.join(args.output, 'negative-same-page-shift.json'), { label: 'Fresh construction after same-page locator shift', materialId: shiftFixture.materialId.toHexString(), chunkIndex: shiftFixture.index,
-          original: shiftFixture.sourceProvenance, shifted, workspaceStatus: detail.body.sourceProvenance, affectedPassages: affected });
+          original: shiftFixture.sourceProvenance, shifted, workspaceStatus: detail.body.sourceProvenance });
       } finally {
         await collections.materialChunksCol().updateOne({ courseId, materialId: shiftFixture.materialId, index: shiftFixture.index }, { $set: { sourceProvenance: shiftFixture.sourceProvenance } });
       }
-      await evidence.assertGenerationEvidenceCurrent(located);
-      observations.push({ label: 'fresh-evidence-and-workspace-refuse-consistent-same-page-locator-shift', status: 'passed', materialId: shiftFixture.materialId.toHexString(), chunkIndex: shiftFixture.index, offsetShift: shiftFixture.delta });
+      observations.push({ label: 'workspace-refuses-consistent-same-page-locator-shift', status: 'passed', materialId: shiftFixture.materialId.toHexString(), chunkIndex: shiftFixture.index, offsetShift: shiftFixture.delta });
       const base = `/api/courses/${courseId}/materials/${first.materialId}`;
       for (const [auth, expected] of [['signed-out', 401], ['foreign', 403], ['student', 403], ['ta', 200]] as const) await send(`workspace-auth-${auth}`, `${base}/workspace`, expected, auth);
       await send('cross-course-material-binding', `/api/courses/${otherCourseId}/materials/${first.materialId}/workspace`, 404);
@@ -363,9 +342,8 @@ export async function verifyPdfProvenanceIngest(args: PdfIngestArguments): Promi
       const sidecar = await provenance.readMaterialSourceProvenance(courseId, first.materialId, first.provenanceId); assert(sidecar); const rawBefore = await pin(sidecar.rawTextStoragePath);
       await send('trash-owned-material', base, 200, 'owner', 'delete');
       assert.equal((await pin(sidecar.rawTextStoragePath)).sha256, rawBefore.sha256); assert(await collections.materialSourceProvenanceCol().findOne({ _id: first.provenanceId }));
-      await assert.rejects(evidence.assertGenerationEvidenceCurrent(located), /generation-evidence-material-unavailable/);
       await send('trashed-pin-unavailable', `${base}/source?provenanceId=${first.provenanceId}`, 404);
-      observations.push({ label: 'trash-retains-private-artifact-and-blocks-grounding', status: 'passed', materialId: first.materialId.toHexString(), artifactRetained: true });
+      observations.push({ label: 'trash-retains-private-artifact-and-blocks-source', status: 'passed', materialId: first.materialId.toHexString(), artifactRetained: true });
       assert.equal(substitutions.filter(item => item.boundary === 'embedding.embed:deterministic-sha256-four-values').length, 10);
       assert.equal(substitutions.filter(item => item.boundary === 'embedding.embed:deterministic-sha256-four-values').reduce((sum, item) => sum + item.items, 0), 671);
       assert.equal(substitutions.filter(item => item.boundary === 'classification.classifyMaterial:explicitly-skipped').length, 10);

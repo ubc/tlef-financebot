@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { CompleteJsonOptions, ModelCallEvent, ModelSendAdmission } from '../../server/src/components/genai/llm';
-import type { AuthoringRequirements } from '../../server/src/types/generation-quality';
-import type { GenerationEvidencePacket } from '../../server/src/types/generation-evidence';
-import type { GenerationMemorySnapshot } from '../../server/src/services/generation-memory.service';
 import type { Difficulty, QuestionKind, QuestionType } from '../../server/src/types/domain';
+
+// Frozen question-lab fixtures recorded retired v2 shapes. Only the source
+// coordinates validateFixture checks are typed; the rest stays opaque.
+type FrozenRecord = Record<string, unknown>;
+interface FrozenSourcePacket extends FrozenRecord {
+  passages: Array<{ id: string; materialId: string; chunkIndex: number; start: number; end: number; text: string }>;
+  findings: Array<{ code: string }>;
+}
 
 export type LabEffort = 'low' | 'medium' | 'high';
 export interface LabArm { id: string; model: 'gpt-6-luna' | 'gpt-6.1-sol'; effort: LabEffort; allowedActualModels: string[] }
@@ -19,9 +24,9 @@ export interface LabCase {
   split: 'tuning' | 'held-out';
   description: string;
   request: { loName: string; type: QuestionType; kind: QuestionKind; difficulty: Difficulty; instructions: string };
-  packet: GenerationEvidencePacket;
-  memory: GenerationMemorySnapshot;
-  requirements: AuthoringRequirements;
+  packet: FrozenSourcePacket;
+  memory: FrozenRecord;
+  requirements: FrozenRecord;
   generatorPrompt: string;
   generatorPromptSha256: string;
   controlsSha256: string;

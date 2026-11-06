@@ -2,9 +2,22 @@ import { importGenerationExports, type ExportManifest } from '../../scripts/prom
 import { importTeacherReviews } from '../../scripts/prompt-ab/evaluation/import-reviews';
 import { createBlindReview } from '../../scripts/prompt-ab/evaluation/review';
 import { hashValue, type EvaluationDataset, type EvaluationQuestion, type ReviewKey, type TeacherLabel } from '../../scripts/prompt-ab/evaluation/schema';
-import type { GenerationEvaluationExport } from '../../server/src/types/generation-evaluation';
 
 const now = '2026-10-03T18:00:00.000Z';
+
+/** A recorded `generation-evaluation-export-v1` file. The server route that
+ * produced these is retired; recorded files remain importable offline. */
+interface GenerationEvaluationExport {
+  schemaVersion: 'generation-evaluation-export-v1';
+  exportedAt: string;
+  run: { id: string; policy: 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2'; requestedSlots: number; type: 'mcq' | 'true-false';
+    difficulty?: 'easy' | 'medium' | 'hard'; prompt?: string; status: 'completed' | 'partial' | 'failed'; [key: string]: unknown };
+  slots: Array<{ item: number; outcome: 'saved' | 'withheld' | 'failed' | 'unavailable'; candidate?: EvaluationQuestion & { contentHash: string; truncated: boolean };
+    failureCodes: string[]; recordedSourceRefs?: Array<{ materialId: string; chunk?: string }>; recordedSourceRefsTruncated?: boolean; [key: string]: unknown }>;
+  executionDiagnostics?: Record<string, unknown>;
+  usage: { summary: Record<string, unknown>; calls: Array<Record<string, unknown>>; totalCalls: number; callsTruncated: boolean };
+  limitations: string[];
+}
 
 function question(stem = 'What does beta measure in CAPM?'): EvaluationQuestion {
   return { type: 'mcq', stem, numericKind: 'conceptual', options: [
