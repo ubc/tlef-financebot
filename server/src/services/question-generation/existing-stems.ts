@@ -26,7 +26,8 @@ export async function loadExistingLoStems(input: { courseId: ObjectId; loIds: Ob
       .toArray();
     const stemById = new Map(versions.map(v => [v._id.toHexString(), v.stem]));
     return heads.map(h => stemById.get(h.currentVersionId.toHexString())).filter((s): s is string => typeof s === 'string');
-  } catch {
+  } catch (error) {
+    console.warn(`[existing-stems] context skipped: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 }

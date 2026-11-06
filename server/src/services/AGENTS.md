@@ -220,7 +220,7 @@ objects directly.
   mismatches without writing, and creates only Draft question versions.
 - `option-order.service.ts` — one pure function, `shuffleOptions`: seeded
   Fisher-Yates over MCQ answer options with the keys relabelled by new position.
-  Called from `generateValidQuestion` (upstream of the checker,
+  Called from `generateAndCheck` (upstream of the checker,
   whose prose cites options by letter) and from `createQuestion` (covering the
   import path). Callers that shuffled already pass `optionsAlreadyShuffled` so
   the order is not randomized twice.

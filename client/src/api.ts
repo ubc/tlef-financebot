@@ -2667,6 +2667,7 @@ export interface RegenerationVariant {
     reasoning: string;
     roleAssessment: string;
     suggestions?: string[];
+    suggestedDifficulty?: 'easy' | 'medium' | 'hard';
   };
 }
 

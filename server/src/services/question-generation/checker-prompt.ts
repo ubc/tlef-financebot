@@ -34,8 +34,6 @@ export const REVIEW_VERDICT_POLICY: string = [
   'a different objective, however well-made.',
 ].join('\n');
 
-
-
 export interface CheckerOutput {
   decision: 'pass' | 'flag' | 'reject';
   reasoning: string;
@@ -92,7 +90,9 @@ const MAX_SUGGESTIONS = 8;
 export function parseCheckerOutput(raw: unknown): CheckerOutput {
   const value = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const text = (v: unknown) => (typeof v === 'string' ? v : '');
-  const decision = normalizeDecision(typeof value.decision === 'string' ? value.decision.toLowerCase() : value.decision);
+  const decision = normalizeDecision(typeof value.decision === 'string' ? value.decision.trim().toLowerCase() : value.decision);
+  const rawDifficulty = typeof value.suggestedDifficulty === 'string' ? value.suggestedDifficulty.trim().toLowerCase() : '';
+  const suggestedDifficulty = DIFFICULTIES.has(rawDifficulty) ? rawDifficulty : undefined;
   const suggestions = Array.isArray(value.suggestions)
     ? value.suggestions.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, MAX_SUGGESTIONS)
     : [];
@@ -101,8 +101,7 @@ export function parseCheckerOutput(raw: unknown): CheckerOutput {
     reasoning: text(value.reasoning),
     roleAssessment: text(value.roleAssessment),
     suggestions,
-    ...(typeof value.suggestedDifficulty === 'string' && DIFFICULTIES.has(value.suggestedDifficulty)
-      ? { suggestedDifficulty: value.suggestedDifficulty as Difficulty } : {}),
+    ...(suggestedDifficulty ? { suggestedDifficulty: suggestedDifficulty as Difficulty } : {}),
   };
 }
 

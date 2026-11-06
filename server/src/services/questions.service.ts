@@ -85,9 +85,9 @@ export async function createQuestion(input: {
   templateFamilyId?: ObjectId;
   provenance?: QuestionVersion['provenance'];
   // Set by callers that have ALREADY shuffled, so the order they shuffled is
-  // the order stored. The generation pipeline needs this: its validator and
-  // reviewer cite options by letter, so they must read the final order, which
-  // means the shuffle has to happen upstream of them (generateValidQuestion).
+  // the order stored. The generation pipeline needs this: its checker cites
+  // options by letter, so it must read the final order, which means the
+  // shuffle has to happen upstream of it (generateAndCheck).
   // Defaults to false, so a caller that forgets it still gets a shuffle — the
   // safe direction, since shuffling twice is harmless but never shuffling is
   // the bug this exists to prevent.

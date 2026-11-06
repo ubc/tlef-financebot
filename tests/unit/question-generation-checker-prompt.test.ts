@@ -39,6 +39,10 @@ describe('parseCheckerOutput', () => {
     expect(parseCheckerOutput({ decision: 'maybe', suggestions: 'x', suggestedDifficulty: 'extreme' }))
       .toEqual({ decision: 'flag', reasoning: '', roleAssessment: '', suggestions: [] });
   });
+  it('normalises decision and suggestedDifficulty case and whitespace', () => {
+    expect(parseCheckerOutput({ decision: ' PASS ' }).decision).toBe('pass');
+    expect(parseCheckerOutput({ decision: 'pass', suggestedDifficulty: ' Hard ' }).suggestedDifficulty).toBe('hard');
+  });
   it('caps suggestions at 8 strings', () => {
     expect(parseCheckerOutput({ decision: 'pass', suggestions: Array.from({ length: 12 }, (_, i) => `s${i}`) }).suggestions).toHaveLength(8);
   });

@@ -26,7 +26,7 @@ import type {
  *
  * ⚠️ This is why the console must not pre-fill a temperature. A step config
  * spreads OVER this default (`{ temperature: DEFAULT, ...step }` in
- * `generateValidQuestion`), so persisting an explicit `0` for the generator —
+ * `generateAndCheck`), so persisting an explicit `0` for the generator —
  * which is what a pre-filled "0" box would save the moment anyone touched it —
  * silently turns batch diversity off and makes all three questions near
  * identical. Absent means "use the step's own default", and that is the only
