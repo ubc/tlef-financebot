@@ -3,6 +3,24 @@
 **Date:** 2026-11-06
 **Status:** Approved for planning
 
+## Amendments (made while writing the implementation plan)
+
+1. **Regenerate does not store candidates.** The client already has a simple
+   Regenerate path: the server returns an unsaved variant, and the
+   instructor's Replace saves it with `editQuestion`. The candidate-and-adopt
+   flow depends entirely on v2's `eligible` gate. So Regenerate now uses the
+   simple path, and the candidate routes and the `regenerationCandidates`
+   writer are deleted. Existing documents in that collection stay in MongoDB,
+   unused. This supersedes "The result stays a candidate…" in
+   "Manual Regenerate" below.
+2. **The checker keeps the `reviewer` step key.** Renaming it to `checker`
+   would ripple through course model overrides, the admin UI, stored settings
+   and env names for no behavioural gain. So `validator` is removed, and
+   `reviewer` holds the checker's model, labelled "Checker" in the console.
+   `LLM_MODEL_REVIEWER` stays, and `LLM_MODEL_CHECKER` is not introduced.
+   This supersedes the `checker` key and env described in
+   "Model configuration".
+
 ## Problem
 
 Generating questions currently runs a chain of model calls per question:
