@@ -1,7 +1,9 @@
 import { operationContext } from './operation-context';
 import type { ObjectId, WithId } from 'mongodb';
+import { authoringCollection, withCourseAuthoringWrite } from './authoring-commit.service';
 import { hasPendingJob } from '../components/jobs';
-import { contentRunsCol } from '../components/mongodb/collections';
+import { contentRunsCol, materialsCol } from '../components/mongodb/collections';
+import { getMaterialSourceReadiness } from './source-readiness.service';
 import type {
   ContentRun,
   ContentRunError,
@@ -53,6 +55,11 @@ export interface ContentRunUpdate {
   grounding?: QuestionGenerationRun['grounding'];
   structurePreview?: StructureGenerationRun['structurePreview'];
   structureResult?: StructureGenerationRun['structureResult'];
+  structureSynthesisPacks?: StructureGenerationRun['structureSynthesisPacks'];
+  structureDiagnostics?: StructureGenerationRun['structureDiagnostics'];
+  structureReview?: StructureGenerationRun['structureReview'];
+  structureRepair?: StructureGenerationRun['structureRepair'];
+  structureConsolidation?: StructureGenerationRun['structureConsolidation'];
   preview?: QuestionGenerationRun['preview'];
   warning?: Omit<ContentRunWarning, 'at'>;
   error?: ContentRunError;
@@ -166,12 +173,15 @@ export async function createMaterialIngestRun(input: {
     updatedAt: now,
   };
   doc.events = [initialEvent(doc)];
-  const { insertedId } = await contentRunsCol().insertOne(doc);
+  const { insertedId } = await authoringCollection(contentRunsCol()).insertOne(doc);
   return { _id: insertedId, ...doc };
 }
 
 export async function createStructureGenerationRun(input: {
   courseId: ObjectId; requestedBy: string; options: StructureGenerationRun['input'];
+  structureReview?: StructureGenerationRun['structureReview'];
+  structureRepair?: StructureGenerationRun['structureRepair'];
+  structureConsolidation?: StructureGenerationRun['structureConsolidation'];
 }): Promise<WithId<StructureGenerationRun>> {
   const now = new Date();
   const doc: StructureGenerationRun = {
@@ -179,9 +189,12 @@ export async function createStructureGenerationRun(input: {
     courseId: input.courseId, requestedBy: input.requestedBy, kind: 'structure-generation',
     status: 'queued', stage: 'queued', completedUnits: 0, revision: 0,
     events: [], warnings: [], input: input.options, createdAt: now, updatedAt: now,
+    ...(input.structureReview ? { structureReview: input.structureReview } : {}),
+    ...(input.structureRepair ? { structureRepair: input.structureRepair } : {}),
+    ...(input.structureConsolidation ? { structureConsolidation: input.structureConsolidation } : {}),
   };
   doc.events = [initialEvent(doc)];
-  const { insertedId } = await contentRunsCol().insertOne(doc);
+  const { insertedId } = await authoringCollection(contentRunsCol()).insertOne(doc);
   return { _id: insertedId, ...doc };
 }
 
@@ -190,7 +203,6 @@ export async function createQuestionGenerationRun(input: {
   courseId: ObjectId;
   requestedBy: string;
   loId: ObjectId;
-  qualityPolicy?: QuestionGenerationRun['input']['qualityPolicy'];
   secondaryLoIds?: ObjectId[];
   count: number;
   type: QuestionType;
@@ -202,6 +214,7 @@ export async function createQuestionGenerationRun(input: {
   retryOfRunId?: ObjectId;
   grounding?: QuestionGenerationRun['grounding'];
   models: QuestionGenerationRun['input']['models'];
+  modelSnapshot?: QuestionGenerationRun['input']['modelSnapshot'];
 }): Promise<WithId<QuestionGenerationRun>> {
   const now = new Date();
   const doc: QuestionGenerationRun & { _id?: ObjectId } = {
@@ -219,7 +232,6 @@ export async function createQuestionGenerationRun(input: {
     warnings: [],
     input: {
       loId: input.loId,
-      ...(input.qualityPolicy ? { qualityPolicy: input.qualityPolicy } : {}),
       ...(input.secondaryLoIds && input.secondaryLoIds.length > 0
         ? { secondaryLoIds: input.secondaryLoIds }
         : {}),
@@ -232,6 +244,7 @@ export async function createQuestionGenerationRun(input: {
       ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}),
       ...(input.retryOfRunId ? { retryOfRunId: input.retryOfRunId } : {}),
       models: input.models,
+      ...(input.modelSnapshot ? { modelSnapshot: input.modelSnapshot } : {}),
     },
     ...(input.grounding ? { grounding: input.grounding } : {}),
     result: { createdQuestionIds: [], failures: [] },
@@ -239,12 +252,31 @@ export async function createQuestionGenerationRun(input: {
     updatedAt: now,
   };
   doc.events = [initialEvent(doc)];
-  const { insertedId } = await contentRunsCol().insertOne(doc);
+  const { insertedId } = await authoringCollection(contentRunsCol()).insertOne(doc);
   return { _id: insertedId, ...doc };
 }
 
 export async function getContentRun(runId: ObjectId): Promise<WithId<ContentRun> | null> {
-  return contentRunsCol().findOne({ _id: runId });
+  return authoringCollection(contentRunsCol()).findOne({ _id: runId });
+}
+
+/** Agenda may deliver distinct queued jobs for the same durable run. Only the
+ * winner of this queued-to-running CAS owns structure work; losers exit quietly. */
+export async function claimStructureGenerationRun(runId: ObjectId): Promise<WithId<StructureGenerationRun> | null> {
+  const current = await getContentRun(runId);
+  if (!current || current.kind !== 'structure-generation' || current.status !== 'queued') return null;
+  const now = new Date(); const revision = current.revision + 1;
+  const event: ContentRunEvent = { revision, at: now, type: 'status', status: 'running', stage: current.stage,
+    completedUnits: current.completedUnits, ...(current.totalUnits !== undefined ? { totalUnits: current.totalUnits } : {}),
+    message: 'Preparing source analysis' };
+  const next = await authoringCollection(contentRunsCol()).findOneAndUpdate(
+    { _id: runId, kind: 'structure-generation', status: 'queued', revision: current.revision },
+    { $set: { status: 'running', startedAt: now, updatedAt: now, revision, events: [...current.events, event].slice(-MAX_EVENTS) } },
+    { returnDocument: 'after' },
+  );
+  if (!next || next.kind !== 'structure-generation') return null;
+  publish(next);
+  return next;
 }
 
 export async function getCourseContentRun(courseId: ObjectId, runId: ObjectId): Promise<WithId<ContentRun> | null> {
@@ -304,14 +336,28 @@ export async function updateContentRun(runId: ObjectId, update: ContentRunUpdate
   if (update.grounding) set.grounding = update.grounding;
   if (update.preview && current.kind === 'question-generation') set.preview = update.preview;
   if (current.kind === 'structure-generation') {
+    if (update.structureConsolidation) {
+      if (Object.hasOwn(current, 'structureConsolidation') && JSON.stringify(current.structureConsolidation) !== JSON.stringify(update.structureConsolidation)) throw new Error('structure-consolidation-reference-immutable');
+      set.structureConsolidation = update.structureConsolidation;
+    }
+    if (update.structureRepair) {
+      if (current.structureRepair && JSON.stringify(current.structureRepair) !== JSON.stringify(update.structureRepair)) throw new Error('structure-repair-reference-immutable');
+      set.structureRepair = update.structureRepair;
+    }
+    if (update.structureReview) {
+      if (current.structureReview && JSON.stringify(current.structureReview) !== JSON.stringify(update.structureReview)) throw new Error('structure-review-reference-immutable');
+      set.structureReview = update.structureReview;
+    }
     if (update.structurePreview) set.structurePreview = update.structurePreview;
     if (update.structureResult) set.structureResult = update.structureResult;
+    if (update.structureSynthesisPacks) set.structureSynthesisPacks = update.structureSynthesisPacks;
+    if (update.structureDiagnostics) set.structureDiagnostics = update.structureDiagnostics;
   }
   if (update.warning) {
     set.warnings = [...current.warnings, { ...update.warning, at: now }].slice(-MAX_WARNINGS);
   }
 
-  const next = await contentRunsCol().findOneAndUpdate(
+  const next = await authoringCollection(contentRunsCol()).findOneAndUpdate(
     { _id: runId, revision: current.revision, status: current.status },
     { $set: set },
     { returnDocument: 'after' },
@@ -412,6 +458,7 @@ export async function reconcileContentRuns(): Promise<{ interrupted: number; mis
       atStage: run.stage,
       retryable: true,
     }, run.result);
+    await recoverInterruptedMaterial(run, 'The server restarted before source indexing completed. Retry processing.');
     interrupted += 1;
   }
 
@@ -424,8 +471,23 @@ export async function reconcileContentRuns(): Promise<{ interrupted: number; mis
       atStage: run.stage,
       retryable: true,
     }, run.result);
+    await recoverInterruptedMaterial(run, 'The source processing job is missing. Retry processing.');
     missingJobs += 1;
   }
 
+  // Old pre-manifest uploads could stop between the head insert and run link.
+  await materialsCol().updateMany({ status: 'processing', activeRunId: { $exists: false }, sourceManifest: { $exists: false } },
+    { $set: { status: 'failed', error: 'Source processing was interrupted before a run was linked. Retry processing.' }, $inc: { revision: 1 } });
   return { interrupted, missingJobs };
+}
+
+async function recoverInterruptedMaterial(run: WithId<ContentRun>, error: string): Promise<void> {
+  if (run.kind !== 'material-ingest') return;
+  await withCourseAuthoringWrite(run.courseId, async () => {
+    const material = await authoringCollection(materialsCol()).findOne({ _id: run.input.materialId, courseId: run.courseId, activeRunId: run._id, deletedAt: { $exists: false } });
+    if (!material) return;
+    if (material.status === 'ready' && (await getMaterialSourceReadiness(run.courseId, material._id, material)).ready) return;
+    await authoringCollection(materialsCol()).updateOne({ _id: material._id, activeRunId: run._id, status: material.status },
+      { $set: { status: 'failed', error }, $unset: { sourceManifest: '' }, $inc: { revision: 1 } });
+  });
 }

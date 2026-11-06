@@ -2,6 +2,7 @@ import {
   ApiError,
   addUrlMaterial,
   applySuggestedHierarchy,
+  suggestedHierarchyApplyFailure,
   enqueueGenerationPlan,
   getGenerationPlan,
   type GenerationPlanCell,
@@ -11,13 +12,15 @@ import {
   getInstructorWorkflow,
   getPreseeding,
   getReviewQueue,
-  getSuggestedHierarchy,
+  startStructureGeneration,
+  getSourceReadiness,
+  prepareMaterialUploadBatch,
+  uploadMaterialBatchFiles,
   listContentRuns,
   listMaterials,
   retryMaterial,
   subscribeContentRuns,
   transitionQuestion,
-  uploadMaterials,
   upsertCourseOutline,
   updateLo,
   type ContentRunSummary,
@@ -26,7 +29,6 @@ import {
   type Material,
   type PreseedingLo,
   type ReviewQueueItem,
-  type SuggestedHierarchy,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { getSession } from '../../auth.js';
@@ -47,6 +49,8 @@ interface HierarchyDraftLo {
   checked: boolean;
   name: string;
   materialIds: string[];
+  sourceThemeIndex: number;
+  sourceLoIndex: number;
 }
 
 interface HierarchyDraftTheme {
@@ -147,6 +151,13 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   let hierarchyDrafts: HierarchyDraftTheme[] | undefined;
   let hierarchyError = '';
   let hierarchyBusy = false;
+  const actorCourseKey = `${getSession().user?.puid ?? 'unknown'}:${options.courseId}`;
+  const sourceBatchKey = `financebot:source-batch:${actorCourseKey}`;
+  const hierarchyRunKey = `financebot:setup-structure:${actorCourseKey}`;
+  let hierarchyRunId: string | undefined;
+  let sourceBatchId: string | undefined;
+  let hierarchyCoverage = '';
+  try { sourceBatchId = sessionStorage.getItem(sourceBatchKey) ?? undefined; hierarchyRunId = sessionStorage.getItem(hierarchyRunKey) ?? undefined; } catch { /* Server snapshots remain available. */ }
   let applyingHierarchy = false;
   let generationBusy = false;
   let generationError = '';
@@ -741,7 +752,12 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       ` Uploading ${files.length} file${files.length === 1 ? '' : 's'}\u2026`,
     );
     try {
-      const created = await uploadMaterials(options.courseId, files);
+      const batch = await prepareMaterialUploadBatch(options.courseId, files, crypto.randomUUID());
+      sourceBatchId = batch._id;
+      try { sessionStorage.setItem(sourceBatchKey, batch._id); } catch { /* Storage is optional. */ }
+      const accepted = await uploadMaterialBatchFiles(options.courseId, batch._id, files);
+      const allMaterials = await listMaterials(options.courseId);
+      const created = allMaterials.filter(material => accepted.items.some(item => item.materialId === material._id));
       if (closed) return;
       mergeMaterials(created);
       if (ui === sourceUi && currentScreen === 'sources') {
@@ -871,21 +887,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     if (!materialsLoaded) void loadSources(revision);
   }
 
-  function suggestionToDrafts(suggestion: SuggestedHierarchy): HierarchyDraftTheme[] {
-    return suggestion.themes.map((theme, themeIndex) => ({
-      checked: true,
-      name: theme.name,
-      los: theme.los.map((name, loIndex) => ({
-        checked: true,
-        name,
-        materialIds: suggestion.assignments.find(
-          (assignment) => assignment.themeIndex === themeIndex && assignment.loIndex === loIndex,
-        )?.materialIds ?? [],
-      })),
-    }));
-  }
-
-  function selectedHierarchyInput(): Array<{ name: string; los: Array<{ name: string; materialIds: string[] }> }> {
+  function selectedHierarchyInput(): Array<{ name: string; los: Array<{ name: string; materialIds: string[]; sourceThemeIndex: number; sourceLoIndex: number }> }> {
     if (!hierarchyDrafts) return [];
     return hierarchyDrafts
       .filter((theme) => theme.checked)
@@ -893,7 +895,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         name: theme.name.trim(),
         los: theme.los
           .filter((lo) => lo.checked)
-          .map((lo) => ({ name: lo.name.trim(), materialIds: lo.materialIds })),
+          .map((lo) => ({ name: lo.name.trim(), materialIds: lo.materialIds, sourceThemeIndex: lo.sourceThemeIndex, sourceLoIndex: lo.sourceLoIndex })),
       }));
   }
 
@@ -914,14 +916,22 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     hierarchyError = '';
     renderHierarchyScreen();
     try {
-      const suggestion = await getSuggestedHierarchy(options.courseId);
-      if (closed) return;
-      hierarchyDrafts = suggestionToDrafts(suggestion);
-      if (hierarchyDrafts.length === 0) hierarchyError = 'No structure could be suggested from the ready sources. Try adding a more detailed source or enter LOs manually.';
+      if (!materialsLoaded) await loadSources();
+      if (sourceBatchId) {
+        const batch = await getSourceReadiness(options.courseId, { sourceBatchId });
+        if (!batch.ready) throw new Error(`Sources are not ready: ${batch.requested.filter(item => !item.ready).map(item => `${item.name}: ${item.reason ?? item.state}`).join('; ')}`);
+      }
+      const materialIds = materials.filter(material => !material.deletedAt).map(material => material._id);
+      const selection = await getSourceReadiness(options.courseId, { materialIds });
+      if (!selection.ready) throw new Error(`Sources are not ready: ${selection.requested.filter(item => !item.ready).map(item => `${item.name}: ${item.reason ?? item.state}`).join('; ')}`);
+      const response = await startStructureGeneration(options.courseId, { materialIds, ...(sourceBatchId ? { sourceBatchId } : {}) });
+      hierarchyRunId = response.runId;
+      try { sessionStorage.setItem(hierarchyRunKey, response.runId); } catch { /* Storage is optional. */ }
+      handleRunUpdate(await getContentRun(options.courseId, response.runId), 'live');
     } catch (caught) {
       hierarchyError = errorMessage(caught);
     } finally {
-      hierarchyBusy = false;
+      hierarchyBusy = !!hierarchyRunId && !!runs.get(hierarchyRunId) && !isTerminal(runs.get(hierarchyRunId)!);
       if (!closed && currentScreen === 'hierarchy') renderHierarchyScreen();
     }
   }
@@ -939,7 +949,8 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     renderHierarchyScreen();
     try {
       const selected = selectedHierarchyInput();
-      const result = await applySuggestedHierarchy(options.courseId, { themes: selected });
+      if (!hierarchyRunId) throw new Error('structure-apply-run-required');
+      const result = await applySuggestedHierarchy(options.courseId, { runId: hierarchyRunId, themes: selected });
       if (closed) return;
       learningObjectiveCount = Math.max(
         learningObjectiveCount,
@@ -949,12 +960,12 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
       notifyChanged();
       void refreshWorkflow();
       setLive(
-        `Applied ${result.losCreated} new Learning Objective${result.losCreated === 1 ? '' : 's'} and ${result.assignmentsCreated} source assignment${result.assignmentsCreated === 1 ? '' : 's'}.`,
+        `Applied ${result.losCreated} new Learning Objective${result.losCreated === 1 ? '' : 's'} and ${result.assignmentsCreated} source assignment${result.assignmentsCreated === 1 ? '' : 's'}.${result.warning ? ` ${result.warning}` : ''}`,
         'success',
       );
       renderScreen('generation');
     } catch (caught) {
-      hierarchyError = errorMessage(caught);
+      hierarchyError = suggestedHierarchyApplyFailure(caught);
       applyingHierarchy = false;
       if (!closed) renderHierarchyScreen();
     }
@@ -1062,6 +1073,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     const content = hierarchyDrafts
       ? [
           alert('Review every selected Topic and Learning Objective. Nothing below is part of the course until you apply it.'),
+          hierarchyCoverage ? alert(hierarchyCoverage) : false,
           hierarchyEditor(),
           hierarchyError ? alert(hierarchyError, 'error') : false,
           actionRow(
@@ -1751,6 +1763,15 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
         locallyQueuedRuns.delete(run.input.loId);
       }
     }
+    if (run.kind === 'structure-generation' && run._id === hierarchyRunId) {
+      hierarchyBusy = !isTerminal(run);
+      if (run.status === 'completed' && run.structureResult) {
+        hierarchyDrafts = run.structureResult.themes.map((theme, sourceThemeIndex) => ({ checked: true, name: theme.name, los: theme.los.map((lo, sourceLoIndex) => ({ checked: true, name: lo.name, materialIds: lo.materialIds, sourceThemeIndex, sourceLoIndex })) }));
+        const coverage = run.structureResult.coverage;
+        hierarchyCoverage = `${coverage.materials.length} sources analyzed; ${coverage.mappedObjectives}/${coverage.extractedObjectives} extracted learning points mapped. ${coverage.unmappedEvidenceIds.length} gaps need review. Inspect exact source passages in Course Structure.`;
+      } else if (run.status === 'failed') hierarchyError = run.error?.message ?? 'Source analysis failed.';
+      if (currentScreen === 'hierarchy') renderHierarchyScreen();
+    }
     if (currentScreen === 'sources') refreshSourcesPanel();
     if (currentScreen === 'generation') refreshGenerationPanel();
 
@@ -1761,7 +1782,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
     if (source === 'live' && stageChanged) {
       const subject = run.kind === 'material-ingest'
         ? run.input.sourceName
-        : 'Question generation';
+        : run.kind === 'structure-generation' ? 'Source structure analysis' : 'Question generation';
       const detail = run.status === 'completed'
         ? 'Completed'
         : run.status === 'partial'
@@ -1799,6 +1820,7 @@ export function openCourseSetupGuide(options: CourseSetupGuideOptions): void {
   dialog.showModal();
   renderScreen(currentScreen);
   void refreshWorkflow();
+  if (hierarchyRunId) void getContentRun(options.courseId, hierarchyRunId).then(run => { if (!closed) handleRunUpdate(run, 'snapshot'); }).catch(() => undefined);
   void listContentRuns(options.courseId, { limit: 50 }).then((recent) => {
     if (closed) return;
     for (const run of recent) handleRunUpdate(run, 'snapshot');

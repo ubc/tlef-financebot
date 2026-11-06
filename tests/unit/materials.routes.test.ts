@@ -1,5 +1,10 @@
-jest.mock('../../server/src/services/structure-generation.service', () => ({ ...jest.requireActual('../../server/src/services/structure-generation.service'), enqueueStructureGeneration: jest.fn() }));
-import { enqueueStructureGeneration } from '../../server/src/services/structure-generation.service';
+jest.mock('../../server/src/services/structure-generation.service', () => ({ ...jest.requireActual('../../server/src/services/structure-generation.service'), enqueueStructureGeneration: jest.fn(),
+  enqueueStructureOutlineRepair: jest.fn(), enqueueStructureOutlineCoverageRepair: jest.fn(), getStructureOutlineRepairView: jest.fn() }));
+jest.mock('../../server/src/services/material-upload-batches.service', () => ({ ...jest.requireActual('../../server/src/services/material-upload-batches.service'), prepareMaterialUploadBatch: jest.fn(), readMaterialUploadBatch: jest.fn(), claimMaterialUploadBatch: jest.fn(), acceptMaterialUploadBatch: jest.fn(), rejectMaterialUploadBatch: jest.fn() }));
+jest.mock('../../server/src/services/source-readiness.service', () => ({ resolveSourceSelection: jest.fn() }));
+import { enqueueStructureGeneration, enqueueStructureOutlineRepair, enqueueStructureOutlineCoverageRepair, getStructureOutlineRepairView } from '../../server/src/services/structure-generation.service';
+import { prepareMaterialUploadBatch, readMaterialUploadBatch, claimMaterialUploadBatch, acceptMaterialUploadBatch, rejectMaterialUploadBatch } from '../../server/src/services/material-upload-batches.service';
+import { resolveSourceSelection } from '../../server/src/services/source-readiness.service';
 // Integration test — the materialsRouter via supertest, mirroring
 // tests/unit/questions.routes.test.ts's makeApp pattern (req.user set to a
 // domain-User fixture carrying courseRoles). materials.service is fully
@@ -14,10 +19,17 @@ import { enqueueStructureGeneration } from '../../server/src/services/structure-
 // rather than trusting a mock to reflect what the route actually does.
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
+jest.mock('../../server/src/services/material-source-provenance.service', () => ({
+  ...jest.requireActual('../../server/src/services/material-source-provenance.service'),
+  readMaterialSourceProvenance: jest.fn(),
+}));
+import { readMaterialSourceProvenance } from '../../server/src/services/material-source-provenance.service';
 
 jest.mock('../../server/src/services/materials.service', () => ({
   createMaterials: jest.fn(),
@@ -33,7 +45,7 @@ jest.mock('../../server/src/services/materials.service', () => ({
   getMaterialCourseId: jest.fn(),
 }));
 jest.mock('../../server/src/services/classification.service', () => ({
-  applySuggestedHierarchy: jest.fn(),
+  applyGeneratedHierarchy: jest.fn(),
   resolveClassification: jest.fn(),
   suggestHierarchy: jest.fn(),
 }));
@@ -54,7 +66,7 @@ import {
   getMaterialCourseId,
 } from '../../server/src/services/materials.service';
 import {
-  applySuggestedHierarchy,
+  applyGeneratedHierarchy,
   resolveClassification,
   suggestHierarchy,
 } from '../../server/src/services/classification.service';
@@ -62,6 +74,7 @@ import {
 const courseId = new ObjectId();
 const otherCourseId = new ObjectId();
 const materialId = new ObjectId();
+const batchId = new ObjectId();
 
 function userFixture(courseRoles: User['courseRoles']): User {
   return {
@@ -108,6 +121,7 @@ afterEach(async () => {
 });
 
 beforeEach(() => {
+  jest.mocked(readMaterialSourceProvenance).mockReset();
   jest.mocked(createMaterials).mockReset();
   jest.mocked(createUrlMaterial).mockReset();
   jest.mocked(listMaterials).mockReset();
@@ -115,9 +129,85 @@ beforeEach(() => {
   jest.mocked(assignMaterial).mockReset();
   jest.mocked(updateMaterialKind).mockReset();
   jest.mocked(getMaterialCourseId).mockReset();
-  jest.mocked(applySuggestedHierarchy).mockReset();
+  jest.mocked(applyGeneratedHierarchy).mockReset();
   jest.mocked(resolveClassification).mockReset();
   jest.mocked(suggestHierarchy).mockReset();
+  jest.mocked(prepareMaterialUploadBatch).mockReset();
+  jest.mocked(readMaterialUploadBatch).mockReset();
+  jest.mocked(claimMaterialUploadBatch).mockReset();
+  jest.mocked(acceptMaterialUploadBatch).mockReset();
+  jest.mocked(rejectMaterialUploadBatch).mockReset();
+  jest.mocked(rejectMaterialUploadBatch).mockResolvedValue(undefined);
+  jest.mocked(resolveSourceSelection).mockReset();
+});
+
+describe('intended-file receipts and authoritative source-readiness HTTP boundaries', () => {
+  const manifest = Array.from({ length: 10 }, (_, index) => ({ clientFileId: String(index), name: `chapter-${index + 1}.pdf`, size: 10 }));
+  it('guards preparation before writes and records every requested filename', async () => {
+    const body = { requestId: '08daf40c-2668-4b71-98ba-19318233c411', files: manifest };
+    for (const user of [undefined, ta, student]) {
+      expect((await request(makeApp(user)).post(`/api/courses/${courseId}/material-upload-batches`).send(body)).status).toBe(user ? 403 : 401);
+    }
+    expect(prepareMaterialUploadBatch).not.toHaveBeenCalled();
+    jest.mocked(prepareMaterialUploadBatch).mockResolvedValue({ _id: batchId } as never);
+    jest.mocked(readMaterialUploadBatch).mockResolvedValue({ _id: batchId, items: manifest } as never);
+    const response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/material-upload-batches`).send(body);
+    expect(response.status).toBe(201);
+    expect(response.body.items).toHaveLength(10);
+    expect(prepareMaterialUploadBatch).toHaveBeenCalledWith(courseId, instructor.puid, body.requestId, manifest);
+  });
+
+  it('checks actor/course ownership before receiving multipart bytes and recovers accepted response replays', async () => {
+    jest.mocked(claimMaterialUploadBatch).mockRejectedValueOnce(Object.assign(new Error('material-upload-batch-not-found'), { status: 404 }));
+    let response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/material-upload-batches/${batchId}/files`).attach('files', Buffer.from('bytes'), 'chapter.pdf');
+    expect(response.status).toBe(404);
+    expect(acceptMaterialUploadBatch).not.toHaveBeenCalled();
+    jest.mocked(claimMaterialUploadBatch).mockResolvedValueOnce({ batch: { _id: batchId, admission: 'accepted' } } as never);
+    jest.mocked(readMaterialUploadBatch).mockResolvedValue({ _id: batchId, admission: 'accepted', items: manifest } as never);
+    response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/material-upload-batches/${batchId}/files`).attach('files', Buffer.from('bytes'), 'chapter.pdf');
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(10);
+    expect(acceptMaterialUploadBatch).not.toHaveBeenCalled();
+  });
+
+  it('links Multer count admission failure to the prepared intended receipt', async () => {
+    jest.mocked(claimMaterialUploadBatch).mockResolvedValue({ owner: 'upload-owner', batch: { _id: batchId } } as never);
+    let pending = request(makeApp(instructor)).post(`/api/courses/${courseId}/material-upload-batches/${batchId}/files`);
+    for (let index = 0; index < 21; index++) pending = pending.attach('files', Buffer.from('bytes'), `chapter-${index}.pdf`);
+    const response = await pending;
+    expect(response.status).toBe(400);
+    expect(rejectMaterialUploadBatch).toHaveBeenCalledWith(courseId, batchId, 'upload-owner', 'Too many files');
+    expect(acceptMaterialUploadBatch).not.toHaveBeenCalled();
+  });
+
+  it('cleans only whole-batch unsupported uploads before persistence and returns admission failure', async () => {
+    jest.mocked(claimMaterialUploadBatch).mockResolvedValue({ owner: 'owner', batch: { _id: batchId } } as never);
+    let serverPath = '';
+    jest.mocked(acceptMaterialUploadBatch).mockImplementation(async (_course, _batch, _actor, _owner, files) => { serverPath = files[0]!.path; filesToCleanUp.push(serverPath); throw new Error('unsupported-format:exe'); });
+    const response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/material-upload-batches/${batchId}/files`).attach('files', Buffer.from('bytes'), 'bad.exe');
+    expect(response.status).toBe(400);
+    expect(rejectMaterialUploadBatch).toHaveBeenCalledWith(courseId, batchId, 'owner', 'unsupported-format:exe');
+    expect(fs.existsSync(serverPath)).toBe(false);
+  });
+
+  it('retains named not-ready reports and passes intentional subsets through the server resolver', async () => {
+    const report = { requested: [{ name: 'chapter-7.pdf', ready: false, reason: 'material-processing' }], included: [], excluded: [], ready: false };
+    jest.mocked(resolveSourceSelection).mockResolvedValue(report as never);
+    const body = { sourceBatchId: batchId.toHexString(), materialIds: [materialId.toHexString()] };
+    const response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/source-readiness`).send(body);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(report);
+    expect(resolveSourceSelection).toHaveBeenCalledWith(courseId, body);
+    expect((await request(makeApp(ta)).post(`/api/courses/${courseId}/source-readiness`).send(body)).status).toBe(403);
+  });
+
+  it('returns structure readiness errors with the full named receipt rather than only a generic error', async () => {
+    const report = { requested: [{ name: 'chapter-7.pdf', ready: false }], included: [], excluded: [], ready: false };
+    jest.mocked(enqueueStructureGeneration).mockRejectedValueOnce(Object.assign(new Error('source-not-ready'), { status: 409, report }));
+    const response = await request(makeApp(instructor)).post(`/api/courses/${courseId}/structure-generation`).send({ materialIds: [materialId.toHexString()] });
+    expect(response.status).toBe(409);
+    expect(response.body.report).toEqual(report);
+  });
 });
 
 describe('TA read-only material access', () => {
@@ -316,9 +406,24 @@ describe('PATCH /api/courses/:courseId/materials/:materialId', () => {
 });
 
 describe('Course Knowledge Workspace lifecycle routes', () => {
+  it.each(['retry', 'assignments', 'kind', 'classification'])('omits private filesystem paths from the %s response', async mutation => {
+    const privateMaterial = { _id: materialId, courseId, storagePath: '/private/original.pdf', rawTextStoragePath: '/private/raw-sidecar.txt' } as never;
+    jest.mocked(getMaterialCourseId).mockResolvedValue(courseId);
+    jest.mocked(retryMaterial).mockResolvedValue(privateMaterial); jest.mocked(assignMaterial).mockResolvedValue(privateMaterial);
+    jest.mocked(updateMaterialKind).mockResolvedValue(privateMaterial); jest.mocked(resolveClassification).mockResolvedValue(privateMaterial);
+    const app = makeApp(instructor);
+    const pending = mutation === 'retry' ? request(app).post(`/api/materials/${materialId}/retry`)
+      : mutation === 'assignments' ? request(app).put(`/api/materials/${materialId}/assignments`).send({ assignments: [], expectedRevision: 0 })
+        : mutation === 'kind' ? request(app).patch(`/api/courses/${courseId}/materials/${materialId}`).send({ kind: 'reading', expectedRevision: 0 })
+          : request(app).post(`/api/materials/${materialId}/classification`).send({ action: 'reject', expectedRevision: 0 });
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty('storagePath'); expect(response.body).not.toHaveProperty('rawTextStoragePath');
+  });
+
   it('returns an authorized material detail with private storagePath removed', async () => {
     jest.mocked(getMaterialWorkspaceDetail).mockResolvedValue({
-      material: { _id: materialId, courseId, storagePath: '/private/upload.pdf' } as never,
+      material: { _id: materialId, courseId, storagePath: '/private/upload.pdf', rawTextStoragePath: '/private/raw.txt' } as never,
       chunks: [{ index: 0, text: 'Evidence', characterCount: 8 }],
     });
     const res = await request(makeApp(instructor)).get(
@@ -326,6 +431,7 @@ describe('Course Knowledge Workspace lifecycle routes', () => {
     );
     expect(res.status).toBe(200);
     expect(res.body.material.storagePath).toBeUndefined();
+    expect(res.body.material.rawTextStoragePath).toBeUndefined();
     expect(res.body.chunks).toHaveLength(1);
   });
 
@@ -351,6 +457,47 @@ describe('Course Knowledge Workspace lifecycle routes', () => {
     expect(denied.status).toBe(403);
     const allowed = await request(makeApp(instructor)).get(`/api/courses/${courseId.toHexString()}/materials-trash`);
     expect(allowed.status).toBe(200);
+  });
+});
+
+describe('provenance-pinned original PDF access (real file hashing; synthetic authorization and receipt lookup)', () => {
+  const provenanceId = new ObjectId();
+  const url = `/api/courses/${courseId}/materials/${materialId}/source?provenanceId=${provenanceId}`;
+  const pdf = Buffer.from('%PDF-1.4\nSynthetic route bytes; physical parsing is tested separately.');
+  async function sourceFixture() {
+    const storagePath = path.resolve(process.cwd(), 'uploads', `provenance-route-${new ObjectId()}.pdf`);
+    filesToCleanUp.push(storagePath); await fsPromises.writeFile(storagePath, pdf);
+    jest.mocked(getMaterialWorkspaceDetail).mockResolvedValue({ material: { _id: materialId, courseId, format: 'pdf', name: 'Source.pdf', storagePath } as never, chunks: [] });
+    jest.mocked(readMaterialSourceProvenance).mockResolvedValue({ receipt: { pdfSha256: createHash('sha256').update(pdf).digest('hex'), pdfBytes: pdf.length } } as never);
+    return storagePath;
+  }
+  it('allows an authorized TA to stream exact verified bytes and never returns the private path', async () => {
+    const storagePath = await sourceFixture();
+    const response = await request(makeApp(ta)).get(url);
+    expect(response.status).toBe(200); expect(response.body).toEqual(pdf);
+    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(JSON.stringify(response.headers)).not.toContain(storagePath);
+    expect(readMaterialSourceProvenance).toHaveBeenCalledWith(courseId, materialId, provenanceId);
+  });
+  it('refuses unavailable, stale or foreign provenance IDs without falling back to an unpinned original', async () => {
+    await sourceFixture(); jest.mocked(readMaterialSourceProvenance).mockResolvedValueOnce(null);
+    const response = await request(makeApp(instructor)).get(url);
+    expect(response.status).toBe(404); expect(response.body.error).toBe('material-source-unavailable');
+  });
+  it('refuses changed PDF bytes for a page pin while preserving historical unpinned viewing', async () => {
+    const storagePath = await sourceFixture(); await fsPromises.writeFile(storagePath, 'changed source bytes');
+    expect((await request(makeApp(instructor)).get(url)).status).toBe(404);
+    expect((await request(makeApp(instructor)).get(`/api/courses/${courseId}/materials/${materialId}/source`)).status).toBe(200);
+  });
+  it('authenticates and authorizes before provenance lookup, and rejects malformed pins', async () => {
+    await sourceFixture();
+    for (const [person, expected] of [[undefined, 401], [student, 403], [userFixture([{ courseId: otherCourseId, role: 'instructor' }]), 403]] as const) {
+      expect((await request(makeApp(person)).get(url)).status).toBe(expected);
+    }
+    expect(readMaterialSourceProvenance).not.toHaveBeenCalled();
+    expect((await request(makeApp(instructor)).get(`/api/courses/${courseId}/materials/${materialId}/source?provenanceId=bad-id`)).status).toBe(400);
+    expect(readMaterialSourceProvenance).not.toHaveBeenCalled();
   });
 });
 
@@ -519,16 +666,17 @@ describe('GET /api/courses/:courseId/suggest-hierarchy (IN-S06)', () => {
         },
       ],
     });
-    expect(suggestHierarchy).toHaveBeenCalledWith(expect.any(ObjectId));
+    expect(suggestHierarchy).toHaveBeenCalledWith(expect.any(ObjectId), instructor.puid);
   });
 });
 
 describe('POST /api/courses/:courseId/apply-suggested-hierarchy', () => {
   const body = {
+    runId: new ObjectId().toHexString(),
     themes: [
       {
         name: 'Forces',
-        los: [{ name: 'Friction', materialIds: [materialId.toHexString()] }],
+        los: [{ name: 'Friction', materialIds: [materialId.toHexString()], sourceThemeIndex: 0, sourceLoIndex: 0 }],
       },
     ],
   };
@@ -539,11 +687,11 @@ describe('POST /api/courses/:courseId/apply-suggested-hierarchy', () => {
       .send(body);
 
     expect(res.status).toBe(403);
-    expect(applySuggestedHierarchy).not.toHaveBeenCalled();
+    expect(applyGeneratedHierarchy).not.toHaveBeenCalled();
   });
 
   it('creates the reviewed hierarchy and assignments for an instructor', async () => {
-    jest.mocked(applySuggestedHierarchy).mockResolvedValue({
+    jest.mocked(applyGeneratedHierarchy).mockResolvedValue({
       themesCreated: 1,
       losCreated: 1,
       materialsAssigned: 1,
@@ -561,18 +709,26 @@ describe('POST /api/courses/:courseId/apply-suggested-hierarchy', () => {
       materialsAssigned: 1,
       assignmentsCreated: 1,
     });
-    expect(applySuggestedHierarchy).toHaveBeenCalledWith(expect.any(ObjectId), body);
+    expect(applyGeneratedHierarchy).toHaveBeenCalledWith(expect.any(ObjectId), body);
   });
 
   it('400s malformed material ids before calling the service', async () => {
     const res = await request(makeApp(instructor))
       .post(`/api/courses/${courseId.toHexString()}/apply-suggested-hierarchy`)
       .send({
-        themes: [{ name: 'Forces', los: [{ name: 'Friction', materialIds: ['bad-id'] }] }],
+        runId: body.runId,
+        themes: [{ name: 'Forces', los: [{ name: 'Friction', materialIds: ['bad-id'], sourceThemeIndex: 0, sourceLoIndex: 0 }] }],
       });
 
     expect(res.status).toBe(400);
-    expect(applySuggestedHierarchy).not.toHaveBeenCalled();
+    expect(applyGeneratedHierarchy).not.toHaveBeenCalled();
+  });
+  it.each(['runId', 'source-identities'])('rejects omission of %s instead of falling back to manual Apply', async field => {
+    const unguarded = field === 'runId' ? { themes: body.themes } : { runId: body.runId,
+      themes: [{ name: 'Forces', los: [{ name: 'Friction', materialIds: [materialId.toHexString()] }] }] };
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/apply-suggested-hierarchy`).send(unguarded);
+    expect(res.status).toBe(400);
+    expect(applyGeneratedHierarchy).not.toHaveBeenCalled();
   });
 });
 
@@ -589,6 +745,69 @@ describe('POST structure-generation', () => {
     const id = new ObjectId(); jest.mocked(enqueueStructureGeneration).mockResolvedValue({ _id: id } as never);
     expect((await request(makeApp(instructor)).post(url).send({ topicCount: 4, losPerTopic: 3 })).body).toEqual({ runId: id.toHexString() });
     expect(enqueueStructureGeneration).toHaveBeenLastCalledWith(courseId, instructor.puid, { topicCount: 4, losPerTopic: 3 });
+  });
+});
+
+describe('bounded outline repair workspace endpoints', () => {
+  const runId = new ObjectId(), childId = new ObjectId();
+  const url = `/api/courses/${courseId.toHexString()}/structure-generation/${runId.toHexString()}/repair`;
+  const coverage = { version: 'coverage-wording-outline-repair-v1', targets: [{ id: 'L3', evidenceIds: ['E4'] }] };
+  beforeEach(() => {
+    jest.mocked(enqueueStructureOutlineRepair).mockReset().mockResolvedValue({ _id: childId } as never);
+    jest.mocked(enqueueStructureOutlineCoverageRepair).mockReset().mockResolvedValue({ _id: childId } as never);
+    jest.mocked(getStructureOutlineRepairView).mockReset().mockResolvedValue({ version: 'outline-wording-repair-view-v1', parentRunId: runId.toHexString() } as never);
+  });
+
+  it.each([undefined, student, ta, userFixture([{ courseId: otherCourseId, role: 'instructor' }])])('denies unauthorized workspace reads and sends before service work', async user => {
+    const expected = user ? 403 : 401;
+    expect((await request(makeApp(user)).get(url)).status).toBe(expected);
+    expect((await request(makeApp(user)).post(url).send(coverage)).status).toBe(expected);
+    expect(getStructureOutlineRepairView).not.toHaveBeenCalled(); expect(enqueueStructureOutlineCoverageRepair).not.toHaveBeenCalled();
+  });
+
+  it('returns a no-store read projection and never queues work on GET', async () => {
+    const response = await request(makeApp(instructor)).get(`${url}?page=2&pageSize=5`);
+    expect(response.status).toBe(200); expect(response.headers['cache-control']).toBe('no-store');
+    expect(getStructureOutlineRepairView).toHaveBeenCalledWith(courseId, runId, { page: 2, pageSize: 5 });
+    expect(enqueueStructureOutlineRepair).not.toHaveBeenCalled(); expect(enqueueStructureOutlineCoverageRepair).not.toHaveBeenCalled();
+  });
+
+  it('routes the two explicit exclusive modes to the existing bounded workers with the session actor', async () => {
+    const first = await request(makeApp(instructor)).post(url).send(coverage);
+    expect(first.status).toBe(202); expect(first.body).toEqual({ runId: childId.toHexString(), parentRunId: runId.toHexString() });
+    expect(enqueueStructureOutlineCoverageRepair).toHaveBeenCalledWith(courseId, runId, instructor.puid, coverage.targets);
+    const second = await request(makeApp({ ...instructor, isAdmin: true, courseRoles: [] })).post(url).send({ version: 'wording-only-outline-repair-v1', targetIds: ['L1', 'L2'] });
+    expect(second.status).toBe(202); expect(enqueueStructureOutlineRepair).toHaveBeenCalledWith(courseId, runId, instructor.puid, ['L1', 'L2']);
+  });
+
+  it.each([
+    { ...coverage, model: 'anything' }, { ...coverage, verdict: 'supported' }, { ...coverage, maxSends: 100 },
+    { ...coverage, targetIds: ['L1'] }, { version: 'unknown', targets: coverage.targets },
+    { ...coverage, targets: [] }, { ...coverage, targets: [{ id: 'L3', evidenceIds: [] }] },
+    { ...coverage, targets: [{ id: 'L3', evidenceIds: ['E4'], preserveEvidenceIds: ['E3'] }] },
+    { ...coverage, targets: [{ id: 'L3', evidenceIds: ['E4', 'E4'] }] },
+    { ...coverage, targets: [{ id: 'L3', evidenceIds: ['E4'] }, { id: 'L4', evidenceIds: ['E4'] }] },
+    { ...coverage, targets: [{ id: 'L3', evidenceIds: ['E4'] }, { id: 'L3', evidenceIds: ['E5'] }] },
+    { version: 'wording-only-outline-repair-v1', targetIds: ['L1', 'L1'] },
+    { version: 'wording-only-outline-repair-v1', targetIds: ['L1', 'L2', 'L3'] },
+    { ...coverage, targets: [{ id: 'L3', evidenceIds: Array.from({ length: 9 }, (_, index) => `E${index + 1}`) }] },
+  ])('strictly refuses caller-supplied authority or malformed selection: %j', async body => {
+    expect((await request(makeApp(instructor)).post(url).send(body)).status).toBe(400);
+    expect(enqueueStructureOutlineRepair).not.toHaveBeenCalled(); expect(enqueueStructureOutlineCoverageRepair).not.toHaveBeenCalled();
+  });
+
+  it.each(['page=0', 'pageSize=11', 'pageSize=bad', 'provider=anything'])('validates read pagination and rejects extra query authority: %s', async query => {
+    expect((await request(makeApp(instructor)).get(`${url}?${query}`)).status).toBe(400); expect(getStructureOutlineRepairView).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['structure-repair-view-run-unavailable', 404], ['structure-repair-cycle-already-used', 409],
+    ['structure-repair-parent-or-provider-changed', 409], ['structure-repair-budget-exhausted', 409],
+    ['structure-repair-proposal-input-cap', 413], ['structure-repair-enqueue-failed', 503], ['authoring-coordinated-commit-unavailable', 503],
+  ])('normalizes %s without changing the recorded failure', async (message, status) => {
+    jest.mocked(enqueueStructureOutlineCoverageRepair).mockRejectedValueOnce(new Error(String(message)));
+    const response = await request(makeApp(instructor)).post(url).send(coverage);
+    expect(response.status).toBe(status); expect(response.body).toEqual({ error: message });
   });
 });
 

@@ -459,7 +459,7 @@ function questionOptions(candidate: ImportCandidate): QuestionOption[] {
   }));
 }
 
-async function convertOther(candidate: ImportCandidate): Promise<ImportCandidate> {
+async function convertOther(courseId: ObjectId, candidate: ImportCandidate): Promise<ImportCandidate> {
   const converted = await completeJson<ConvertedCandidate>(
     [
       'Convert this short-answer question into either a four-option MCQ or a two-option True/False question.',
@@ -471,7 +471,7 @@ async function convertOther(candidate: ImportCandidate): Promise<ImportCandidate
       systemPrompt:
         'You convert instructor-supplied questions without adding publication approval. Preserve the learning intent.',
       temperature: 0,
-      ...(await utilityStepConfig()),
+      ...(await utilityStepConfig(courseId)),
     },
   );
   const normalized = normalizeCandidate(converted as RawCandidate);
@@ -531,7 +531,7 @@ export async function commitImport(
   for (const candidate of normalized) {
     try {
       prepared.push({
-        candidate: candidate.type === 'other' ? await convertOther(candidate) : candidate,
+        candidate: candidate.type === 'other' ? await convertOther(courseId, candidate) : candidate,
         autoConverted: candidate.type === 'other',
       });
     } catch (error) {

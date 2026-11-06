@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import type { LLMConfig, LLMModule, LLMOptions, LLMResponse } from 'ubc-genai-toolkit-llm';
 import { normalizeProviderUsage, type ModelUsage, type ProviderUsageFormat } from './provider-usage';
+import { admitAuthoringSend } from './authoring-budget';
 
 export interface ModelUsageContext {
   stage?: string;
@@ -87,8 +88,11 @@ export function captureModelCallResponse(value: { usage?: unknown; format?: Prov
 }
 
 export async function observeModelCall<T extends LLMResponse>(config: Pick<LLMConfig, 'provider' | 'defaultModel'>,
-  options: LLMOptions, work: () => Promise<T>): Promise<T> {
+  options: LLMOptions, work: () => Promise<T>, prompt = ''): Promise<T> {
   const scope = scopes.getStore();
+  const release = await admitAuthoringSend({ prompt, systemPrompt: options.systemPrompt, provider: config.provider,
+    model: options.model ?? config.defaultModel, options, outputCap: Number(options.maxTokens ?? options.max_completion_tokens ?? options.max_output_tokens ?? 0),
+    jsonAttempt: scope?.usageContext.jsonAttempt ?? 0 });
   const start = Date.now();
   const base: ModelCallBase = { callId: randomUUID(), provider: config.provider,
     requestedModel: safeString(options.model) ?? config.defaultModel, actualModel: null, responseId: null,
@@ -111,6 +115,8 @@ export async function observeModelCall<T extends LLMResponse>(config: Pick<LLMCo
     throw error;
   } finally {
     const finish = Date.now();
+    release({ ...(capture.usage.inputTokens !== null ? { promptTokens: capture.usage.inputTokens } : {}),
+      ...(capture.usage.outputTokens !== null ? { completionTokens: capture.usage.outputTokens } : {}) }, outcome);
     await notify(scope, { ...base, type: 'finished', actualModel: capture.actualModel, responseId: capture.responseId,
       finishedAt: new Date(finish).toISOString(), durationMs: Math.max(0, finish - start), outcome, usage: capture.usage });
   }
@@ -132,7 +138,8 @@ export function observeLLMModule(module: LLMModule, config: LLMConfig): LLMModul
     const wrapped = (...args: unknown[]) => {
       const options = { ...config.defaultOptions, ...(args[optionIndex] as LLMOptions | undefined),
         ...(name === 'streamConversation' ? { stream: true } : {}) };
-      return observeModelCall(config, options, () => (original as (...values: unknown[]) => Promise<LLMResponse>).apply(module, args));
+      const prompt = typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]);
+      return observeModelCall(config, options, () => (original as (...values: unknown[]) => Promise<LLMResponse>).apply(module, args), prompt);
     };
     Object.defineProperty(module, name, { value: wrapped, writable: true, configurable: true });
   }

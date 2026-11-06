@@ -1,0 +1,1027 @@
+{
+  "version": 1,
+  "date": "2026-10-16",
+  "owner": "Stephen",
+  "goal": "Improve grounded multi-file Topic/LO authoring, validation with bounded correction, and exact-model generation quality with observable same-input/output comparisons.",
+  "status": "active",
+  "baseline": {
+    "gitHead": "1fb3778",
+    "workingTree": "Preserve the uncommitted October 13-14 quality implementation and the pulled practice-quiz update.",
+    "latestFullPaidSaved": "1/6 Drafts before final October 14 citation grouping and settlement wiring",
+    "latestQualityOnly": "2 eligible positives; 2 citation-withheld negatives with unknown semantic findings; zero saved/adopted",
+    "teacherAcceptance": null
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Multiple complete uploaded chapters are accounted for in source-grounded Topics and LOs, with explicit coverage gaps and exclusions.",
+      "state": "in-progress",
+      "proof": "Actual10-file HTTP/index599pages/671chunks. Exact142-LO proposal reconstructed and all142reviewed after reuseof103findings;119source-supportedLOs in30topics,23withheld,3groupingissues. All10files have mappedobjectives.999extractedpoints/620mapped/379unmapped and136visual-reviewpassages remainexplicit; these counts do not establish fullpedagogicalcoverage. Source-only semanticrepair ofbundlednegatives andvisualcoverage stillneeded."
+    },
+    {
+      "id": "R2",
+      "requirement": "Validation identifies source/notation/duplicate/actor/numeric issues and repairs only with permitted evidence, inside existing bounded cycles.",
+      "state": "in-progress",
+      "proof": "Bounded question correction and source/Bank rechecks exist. Internal wording-only outline repair now passes229 integration tests and19 independent focused checks, but has no paid repair result or UI. Public6-slot/3-regeneration retest is running; model role/source judgments still need independent inspection."
+    },
+    {
+      "id": "R3",
+      "requirement": "Compare gpt-6-luna effort levels and gpt-6.1-sol using exact frozen task/source/Bank inputs and fixed assessment conditions.",
+      "state": "in-progress",
+      "proof": "Transport recovery completed all30 prior connection gaps without redrawing old successful/invalid/rejected output.60parsed candidates,59schemas/semantic assessments,42model-eligible. Positive requests:34/50lab-eligible,16/50also match requested kind+difficulty. Five arms/two repetitions, later recovery cohort, original30unknown costs retained. No teacher acceptance or general model ranking."
+    },
+    {
+      "id": "R4",
+      "requirement": "Record changes, tests, findings and product screenshots in a readable English HTML book.",
+      "state": "in-progress",
+      "proof": "Locally rendered chapter reader, exact input/output views, links to evidence, screenshot scope labels, desktop/mobile accessibility and link checks."
+    },
+    {
+      "id": "R5",
+      "requirement": "Design a real-exam generation and direct Canvas import route as a stretch goal.",
+      "state": "design-recorded-implementation-unverified",
+      "proof": "Source-supported design over pinned verified exam snapshots, reviewed export/import boundaries and a safe offline export proof; no external publishing without explicit authorization."
+    }
+  ],
+  "phases": [
+    {
+      "id": "P1",
+      "name": "Contract and instrumentation",
+      "state": "instrumentation-and-pilot-completed-further-verification-active",
+      "deliverables": [
+        "Exact Luna/Sol availability receipt",
+        "Reasoning-required Sol profile and compatible JSON defaults",
+        "Lossless private per-attempt visible I/O recorder",
+        "Source and code controls frozen before sends"
+      ]
+    },
+    {
+      "id": "P2",
+      "name": "Tuning pilot",
+      "state": "completed-tuning-only",
+      "arms": [
+        {
+          "model": "gpt-6-luna",
+          "effort": "low"
+        },
+        {
+          "model": "gpt-6-luna",
+          "effort": "medium"
+        },
+        {
+          "model": "gpt-6-luna",
+          "effort": "high"
+        },
+        {
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        },
+        {
+          "model": "gpt-6.1-sol",
+          "effort": "high"
+        }
+      ],
+      "cases": [
+        "Thin-topic task novelty",
+        "Source-percentage CAPM decimal calculation",
+        "Diagram actor ownership",
+        "Unsupported requested premise / honest hardness"
+      ],
+      "repetitions": 1,
+      "generatorSlots": 20,
+      "fixedQualityJudge": {
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "observations": {
+        "slots": 20,
+        "observedSends": 40,
+        "inputTokens": 165053,
+        "outputTokens": 50038,
+        "modelAssessedEligible": 10,
+        "checkedAdmissionEligible": 10,
+        "saved": 0,
+        "teacherAcceptance": null,
+        "checkedEligibleAtRequestedDifficulty": 7,
+        "limitations": [
+          "Lab semantic eligibility does not require the requested difficulty to match; only 7/20 also passed the checked admission gates at the requested assessed difficulty.",
+          "Generic option-role validation, content review, current live source/Bank rechecks, concurrent persistence and teacher approval were not performed by this generator comparison.",
+          "All four cases are tuning data with one draw per model/effort arm; the fixed judge shares a model family with the Sol generators.",
+          "No Draft was saved, and 10/20 lab eligibility cannot be compared causally with the earlier 1/6 saved-Draft pipeline result."
+        ]
+      }
+    },
+    {
+      "id": "P3",
+      "name": "Same-candidate validation repair",
+      "state": "one-recorded-fixed-context-repair-eligible-full-production-adoption-unverified",
+      "deliverables": [
+        "Before/after retained candidate repair",
+        "Known positives and semantic negative controls",
+        "All budgets, malformed responses and unresolved gaps visible"
+      ],
+      "observations": {
+        "receipt": "audit-results/quality-lab-2026-10-16/validation-controls-live/results.json",
+        "status": "stopped",
+        "observedSends": 6,
+        "inputTokens": 23890,
+        "outputTokens": 4827,
+        "actorOwnership": {
+          "before": "withheld-unsupported-actor-relation",
+          "after": "withheld-uncertain-flattened-diagram-alignment",
+          "acceptedRepair": false
+        },
+        "capmFractionVariant": {
+          "before": "withheld-variant-of-frozen-comparator",
+          "repair": "stopped-before-dispatch-by-24k-input-cap",
+          "acceptedRepair": false
+        },
+        "saved": 0,
+        "adopted": 0,
+        "teacherAcceptance": null,
+        "recordedRepairAdmissionStop": {
+          "receipt": "audit-results/quality-lab-2026-10-16/recorded-repair-live/results.json",
+          "state": "stopped-before-provider-dispatch",
+          "observedSends": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "reason": "quality-lab-ledger-input-cap"
+        },
+        "policyCompaction": {
+          "receipt": "audit-results/quality-lab-2026-10-16/recorded-positive-policy-preflight-final.json",
+          "providerCalls": 0,
+          "databaseCalls": 0,
+          "previousInputEnvelopeUnits": 24483,
+          "currentInputEnvelopeUnits": 23783,
+          "inputCap": 24000,
+          "sourceMemoryCandidateRequirementsUnchanged": true,
+          "scope": "General v2 generator policy prose only; establishes input fit, not quality."
+        },
+        "recordedRepairRetest": {
+          "receipt": "audit-results/quality-lab-2026-10-16/recorded-repair-retest/results.json",
+          "state": "completed",
+          "observedSends": 4,
+          "elapsedMs": 43566,
+          "inputTokens": 16789,
+          "outputTokens": 2171,
+          "frozenControlCandidateEligible": true,
+          "saved": 0,
+          "adopted": 0,
+          "fullPipelineSaved": false,
+          "teacherAcceptance": null,
+          "scope": "Same retained CAPM candidate repaired and rechecked against frozen source/Bank/request controls; no live adoption or production persistence."
+        },
+        "actualNumericGridAudit": {
+          "receipt": "audit-results/quality-lab-2026-10-16/numeric-grid-audit.json",
+          "providerCalls": 0,
+          "databaseCalls": 0,
+          "originalCombinations": 27,
+          "originalCollidingCombinations": 12,
+          "originalFixedSeedListVisits": 25,
+          "repairedCombinations": 27,
+          "repairedCollidingCombinations": 0,
+          "repairedValidCombinations": 27,
+          "displayedInputFailures": 0,
+          "exhaustiveProductionAdmissionImplemented": false
+        }
+      }
+    },
+    {
+      "id": "P4",
+      "name": "Multi-file source accounting and outline",
+      "state": "ten-file-source-review-complete-pedagogical-and-visual-coverage-incomplete",
+      "deliverables": [
+        "Complete chapter inventory",
+        "Same-input outline comparison",
+        "Warm reuse / addition / replacement checks",
+        "Original-source coverage inspection"
+      ],
+      "coldTenFileMinimum": {
+        "extractionSends": 48,
+        "conservativeTokensBeforeSynthesis": 1275670,
+        "withinRemainingFirstPhase": false
+      },
+      "observations": {
+        "physicalCorpus": {
+          "files": 10,
+          "pages": 599,
+          "indexedSections": 671,
+          "localEmbeddings": true,
+          "advisoryClassification": "deliberately-skipped",
+          "newMultipartAdmissionTest": false
+        },
+        "twoSourceOutline": {
+          "receipt": "audit-results/quality-lab-2026-10-16/outline-subset-live/results.json",
+          "state": "completed",
+          "chapters": [
+            3,
+            6
+          ],
+          "pages": 64,
+          "sections": 71,
+          "excludedFiles": 8,
+          "model": "gpt-6-luna",
+          "effort": "medium",
+          "maxOutputTokens": 10000,
+          "wallTimeMs": 226064,
+          "observedSends": 12,
+          "inputTokens": 65582,
+          "outputTokens": 40635,
+          "conservativeReservedTokens": 416206,
+          "topics": 10,
+          "learningObjectives": 47,
+          "extractedLearningPoints": 96,
+          "mappedLearningPoints": 94,
+          "unmappedLearningPoints": 2,
+          "originalPassageGroups": 127,
+          "mappedPassageGroups": 117,
+          "visualReviewPassageGroups": 10,
+          "appliedToSavedCourse": false,
+          "teacherAcceptance": null,
+          "semanticCoverage": null
+        },
+        "sameInputWarmReplay": {
+          "receipt": "audit-results/quality-lab-2026-10-16/outline-warm-live/results.json",
+          "state": "cache-miss",
+          "extractionCacheHits": 5,
+          "reusedSections": 71,
+          "newlyExtractedSections": 0,
+          "observedSends": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "dispatchGuard": "completion-without-provider-reference-and-native-maxSends-zero",
+          "blockedStage": "outline-synthesis",
+          "timeToCacheMissMs": 338,
+          "completeWarmOutlineLatencyMs": null,
+          "warmOutline": null,
+          "identicalOutlineContent": null,
+          "completeWarmReuseEstablished": false
+        },
+        "tenSourceOutline": {
+          "state": "unfinished",
+          "completeCoverageEstablished": false,
+          "completeWarmResult": null
+        },
+        "finalSynthesisCache": {
+          "state": "design-only-not-implemented",
+          "design": "docs/design/question-generation-quality/FINAL-OUTLINE-CACHE-FEASIBILITY-2026-10-16.md"
+        },
+        "limitations": [
+          "The completed subset uses every original section of Chapters 3 and 6; it does not establish coverage of the eight excluded sources.",
+          "Parsed passage accounting, mapped IDs and visual dispositions do not establish professor-confirmed semantic coverage.",
+          "338 ms is time to a guarded synthesis cache miss, not full warm-outline latency.",
+          "The first-phase ledger is not reset; a complete ten-file cold outline and addition/replacement experiments remain required."
+        ]
+      }
+    },
+    {
+      "id": "P5",
+      "name": "Held-out repetitions and release audit",
+      "state": "transport-overlay-completed-semantic-request-fulfillment-still-low",
+      "deliverables": [
+        "Separate unseen task-family evaluation",
+        "Repeated trials for candidate model configurations",
+        "Human acceptance and review effort remain null until actually supplied",
+        "Keep baseline default until release evidence"
+      ],
+      "execution": {
+        "declaration": "audit-results/quality-lab-2026-10-16-heldout-phase-three/declaration.json",
+        "sessionId": null,
+        "terminalShardsAtCheckpoint": 6,
+        "fullRequestedDenominator": 60,
+        "sourceAudit": "audit-results/quality-lab-2026-10-16-heldout-phase-three/notation-chart-independent-source-audit.json",
+        "teacherAcceptance": null,
+        "analysis": "audit-results/quality-lab-2026-10-16-heldout-phase-three/heldout-receipt-analysis-final-2026-10-16.json",
+        "summary": {
+          "declaredCells": 60,
+          "recordStates": {
+            "terminal": 60,
+            "active": 0,
+            "incomplete": 0,
+            "unrecorded": 0,
+            "out-of-scope": 0
+          },
+          "generationParsed": {
+            "true": 40,
+            "false": 20,
+            "unknown": 0
+          },
+          "schemaRetained": {
+            "true": 39,
+            "false": 1,
+            "unknown": 20
+          },
+          "numericStates": {
+            "verified": 9,
+            "failed": 1,
+            "not-applicable": 30,
+            "unrecorded": 20
+          },
+          "qualityStates": {
+            "assessed": 29,
+            "unrecorded": 21,
+            "transport-unavailable": 10
+          },
+          "semanticRejected": {
+            "true": 6,
+            "false": 23,
+            "unknown": 31
+          },
+          "combinedLabEligible": {
+            "true": 23,
+            "false": 16,
+            "unknown": 21
+          },
+          "requestedKindFulfilled": {
+            "true": 35,
+            "false": 5,
+            "unknown": 20
+          },
+          "requestedDifficultyMatched": {
+            "true": 14,
+            "false": 15,
+            "unknown": 31
+          },
+          "calls": {
+            "generation": {
+              "actualObservedSends": 60,
+              "knownTotalTokens": 153243,
+              "unknownUsageCalls": 20,
+              "completeUsage": false,
+              "inputTokensKnownSum": 85250,
+              "outputTokensKnownSum": 67993,
+              "knownUsageCalls": 40,
+              "durationMsKnownSum": 5646155,
+              "durationMsMedian": 15222.0,
+              "knownDurationCalls": 60,
+              "unknownDurationCalls": 0,
+              "outcomes": {
+                "succeeded": 40,
+                "failed": 20
+              },
+              "measurement": "observed SDK invocations; hidden SDK retries and wire requests remain unknown"
+            },
+            "judge": {
+              "actualObservedSends": 39,
+              "knownTotalTokens": 97954,
+              "unknownUsageCalls": 10,
+              "completeUsage": false,
+              "inputTokensKnownSum": 73845,
+              "outputTokensKnownSum": 24109,
+              "knownUsageCalls": 29,
+              "durationMsKnownSum": 5748475,
+              "durationMsMedian": 15451,
+              "knownDurationCalls": 39,
+              "unknownDurationCalls": 0,
+              "outcomes": {
+                "succeeded": 29,
+                "failed": 10
+              },
+              "measurement": "observed SDK invocations; hidden SDK retries and wire requests remain unknown"
+            },
+            "other": {
+              "actualObservedSends": 0,
+              "knownTotalTokens": null,
+              "unknownUsageCalls": 0,
+              "completeUsage": null,
+              "inputTokensKnownSum": null,
+              "outputTokensKnownSum": null,
+              "knownUsageCalls": 0,
+              "durationMsKnownSum": null,
+              "durationMsMedian": null,
+              "knownDurationCalls": 0,
+              "unknownDurationCalls": 0,
+              "outcomes": {},
+              "measurement": "observed SDK invocations; hidden SDK retries and wire requests remain unknown"
+            }
+          },
+          "allObservedSdkCalls": {
+            "actualObservedSends": 99,
+            "knownTotalTokens": 251197,
+            "unknownUsageCalls": 30,
+            "completeUsage": false,
+            "inputTokensKnownSum": 159095,
+            "outputTokensKnownSum": 92102,
+            "knownUsageCalls": 69,
+            "durationMsKnownSum": 11394630,
+            "durationMsMedian": 15349,
+            "knownDurationCalls": 99,
+            "unknownDurationCalls": 0,
+            "outcomes": {
+              "succeeded": 69,
+              "failed": 30
+            },
+            "measurement": "observed SDK invocations; hidden SDK retries and wire requests remain unknown"
+          },
+          "teacherAcceptance": null,
+          "savedByAnalyzer": 0,
+          "adoptedByAnalyzer": 0,
+          "recordedSaved": {
+            "true": 0,
+            "false": 60,
+            "unknown": 0
+          },
+          "recordedAdopted": {
+            "true": 0,
+            "false": 60,
+            "unknown": 0
+          },
+          "unobservedAttemptDispatches": 0
+        },
+        "modelRankingClaim": false
+      }
+    },
+    {
+      "id": "P6",
+      "name": "Full ten-file admission and outline acceptance",
+      "state": "all142source-reviews-completed-119supported-379point-gaps-still-explicit",
+      "declaration": "audit-results/quality-lab-2026-10-16-phase-two/declaration.json",
+      "limits": {
+        "maxSends": 160,
+        "maxConservativeTokens": 4000000,
+        "maxInputTokens": 200000
+      },
+      "effectiveOutputCaps": {
+        "extraction": 12000,
+        "synthesisAndOrganization": 24000
+      },
+      "scope": "New owned disposable HTTP upload/index course; all ten complete original PDFs, no source trimming. Record admission and original indexing separately from advisory classification.",
+      "tests": [
+        "Actual ten-file multipart admission and intended receipt with early source-readiness refusal",
+        "Real local original parsing/chunking/embedding/indexing; classification explicitly blocked and recorded as advisory",
+        "Cold full-source production outline with zero prior extraction cache",
+        "Same exact source/model/cap warm extraction reuse with full final synthesis costs visible",
+        "Append one complete chapter and explicit replacement with old-source history preserved",
+        "Original-source inspection and semantic coverage evaluation distinct from parsed-passage accounting"
+      ],
+      "preservesPriorPhaseLedger": true,
+      "teacherAcceptance": null,
+      "completed": false,
+      "observations": {
+        "uploadReceipt": "audit-results/quality-lab-2026-10-16-phase-two/upload-index/results.json",
+        "uploadStatus": "completed",
+        "httpObservations": 34,
+        "files": 10,
+        "pages": 599,
+        "indexedChunks": 671,
+        "uploadAndIndexElapsedMs": 225417,
+        "coldReceipt": "audit-results/quality-lab-2026-10-16-phase-two/outline-ten-cold/results.json",
+        "coldStatus": "stopped",
+        "coldFailureClass": "provider-transport",
+        "coldElapsedMs": 4441173,
+        "coldObservedSends": 64,
+        "coldConservativeUnits": 1575756,
+        "coldNativeRejectedSends": 0,
+        "knownInputTokens": 169878,
+        "knownOutputTokens": 231740,
+        "knownUsageCalls": 62,
+        "unknownUsageCalls": 2,
+        "validatedSections": 552,
+        "structurallyRecoveredSections": 33,
+        "finalTopics": null,
+        "finalLearningObjectives": null,
+        "teacherAcceptance": null,
+        "semanticCoverage": null,
+        "recoveryState": "terminal-source-alias-stop",
+        "recoveryReceipt": "audit-results/quality-lab-2026-10-16-phase-two/outline-ten-transport-recovery/results.json",
+        "recovery": {
+          "observedSends": 26,
+          "elapsedMs": 639467,
+          "knownInputTokens": 335922,
+          "knownOutputTokens": 122761,
+          "unknownUsageCalls": 0,
+          "reusedSections": 552,
+          "newSections": 119,
+          "completedPacks": 5,
+          "proposedLOs": 111,
+          "reviewedLOs": 33,
+          "supportedLOs": 29,
+          "withheldLOs": 4,
+          "applicableOutline": false,
+          "error": "structure-grounding-review-source"
+        },
+        "reviewV2": {
+          "state": "three-case-paid-probe-complete-full-warm-v2-stopped-offline-normalization-verified",
+          "repair": "Separate source support from advisory topic placement; retain valid siblings; one bounded invalid-row correction with exact allowed aliases.",
+          "verification": "audit-results/quality-lab-2026-10-16-phase-two/outline-v2-verification.json",
+          "fullTests": 2727,
+          "fullSuites": 203,
+          "browserCases": 14,
+          "teacherAcceptance": null,
+          "latestCompletePaidReview": {
+            "receipt": "audit-results/quality-lab-2026-10-16-outline-v2-acceptance/live/results.json",
+            "status": "stopped",
+            "reviewed": 102,
+            "proposed": 142,
+            "supported": 82,
+            "withheld": 20,
+            "sends": 20,
+            "inputTokens": 194215,
+            "outputTokens": 81903,
+            "applicableOutline": false
+          },
+          "negativeCoverageReplay": {
+            "receipt": "audit-results/quality-lab-2026-10-16-outline-v2-acceptance/negative-coverage-replay.json",
+            "newCanonicalNegativeCoverage": 0,
+            "rawIgnoredClaims": 8,
+            "unchangedSiblings": 7,
+            "apiCalls": 0,
+            "databaseCalls": 0,
+            "focusedTests": [
+              57,
+              49
+            ],
+            "full2727CheckpointPredatesFix": true
+          },
+          "continuationDesign": "docs/design/question-generation-quality/OUTLINE-REVIEW-CONTINUATION-DESIGN-2026-10-16.md"
+        },
+        "parserPolicy": {
+          "state": "native-first-wired-file-only-acceptance-complete",
+          "receipt": "audit-results/quality-lab-2026-10-16-phase-two/pdf-text-first-policy-acceptance/results.json",
+          "files": 10,
+          "pages": 599,
+          "byteIdenticalChunks": 671,
+          "nativeCalls": 10,
+          "toolkitCalls": 0,
+          "parserOnlyMs": 2298.32,
+          "chunkingMs": 8.89,
+          "wholeIngestionSpeedupMeasured": false
+        }
+      }
+    }
+  ],
+  "firstPhaseCallAllowance": {
+    "observedSends": 100,
+    "conservativeEstimatedTokens": 2000000,
+    "generatorMaxCompletionTokens": 8000,
+    "fixedJudgeMaxCompletionTokens": 6000,
+    "includes": [
+      "Generator calls",
+      "JSON corrections",
+      "Validation or quality checks",
+      "Targeted bounded repairs",
+      "Any generation availability probes"
+    ],
+    "excludedAndSeparatelyReported": [
+      "Model-list read",
+      "Local embeddings",
+      "Parsing",
+      "SDK-hidden physical retries",
+      "Money pricing"
+    ],
+    "rules": [
+      "No silent budget reset or model/effort substitution",
+      "No platform model-setting changes",
+      "No production course/student writes",
+      "The initial 20-slot pilot is tuning evidence, not a held-out quality win",
+      "The ten-file cold outline minimum exceeds the remaining phase-one allowance; no trimming, ledger reset or undeclared cap increase is permitted."
+    ],
+    "snapshotBeforePendingRecordedRepairProbe": {
+      "ledger": "audit-results/quality-lab-2026-10-16/phase-one-ledger.json",
+      "reservedSends": 60,
+      "conservativeReservedTokens": 1697821,
+      "remainingConservativeTokens": 302179,
+      "pendingProbeIncluded": false,
+      "basis": "Read-only snapshot before terminal evidence from the separate at-most-four-send recorded repair probe. Shared reservations remain conservative and are not billing totals."
+    },
+    "snapshotAfterRecordedRepairRetest": {
+      "ledger": "audit-results/quality-lab-2026-10-16/phase-one-ledger.json",
+      "reservedSends": 64,
+      "conservativeReservedTokens": 1799920,
+      "remainingConservativeTokens": 200080,
+      "basis": "Terminal shared-ledger snapshot after the four-send recorded repair retest. Original phase limits remain 100 sends / 2,000,000 conservative units; no reset or downward settlement."
+    }
+  },
+  "officialGuidance": [
+    "https://developers.openai.com/api/docs/guides/deployment-checklist#set-up-reasoningeffort"
+  ],
+  "book": {
+    "path": "artifacts/quality-lab-book-2026-10-16/index.html",
+    "language": "English",
+    "media": "Real local screenshots only; no generated decorative assets",
+    "privateEvidence": "Exact provider inputs/outputs are local ignored evidence, never the metadata-only token ledger or public student DTOs."
+  },
+  "completion": {
+    "claimed": false,
+    "reason": "Ten public PDFs were uploaded and indexed. A guarded continuation returned 30 Topics and 119 LOs, but 379 of 999 points remain unmapped, with independent semantic and visual gaps. Later model transport recovery produced 16 of 50 strict requested outcomes; this is neither teacher acceptance nor a matched causal model ranking. Public acceptance saved 4 of 6 Drafts, but two had substantive answer ambiguity, and independent regeneration/stale-version cases were not reached. Source-interpretation guards and bounded LO repair have offline evidence; new paid validation is not established. The 33-case UI pass makes gaps inspectable and does not repair them. The six-candidate OpenAI probe awaits explicit approval. Canvas export is design only."
+  },
+  "verification": {
+    "integratedRegression": {
+      "receipt": "audit-results/quality-lab-2026-10-16/jest-integrated-final-recheck.json",
+      "success": true,
+      "passedSuites": 189,
+      "passedTests": 2552,
+      "failedSuites": 0,
+      "failedTests": 0
+    },
+    "teacherAcceptance": null,
+    "scope": "Offline/unit integration evidence is separate from actual model quality, source-semantic coverage and live persistence/adoption.",
+    "latestOutlineV2": {
+      "receipt": "audit-results/quality-lab-2026-10-16-phase-two/outline-v2-verification.json",
+      "success": true,
+      "passedSuites": 203,
+      "passedTests": 2727,
+      "browserCases": 14,
+      "scope": "Historical full2727-test checkpoint before negative-coverage normalization; latest narrow patch has separate57grounding+49service+26harness checks, build and typecheck."
+    },
+    "transportDeadline": {
+      "receipt": "audit-results/quality-lab-transport-deadline-tests-final-2026-10-17.json",
+      "passedSuites": 5,
+      "passedTests": 83,
+      "realProviderValidation": false
+    },
+    "semanticRepair": {
+      "receipt": "audit-results/quality-lab-semantic-repair-tests-2026-10-17.json",
+      "passedSuites": 6,
+      "passedTests": 188,
+      "realProviderValidation": false
+    }
+  },
+  "nextPhase": "Obtain explicit approval before executing the frozen retained six-candidate review. Preserve negatives; investigate P01/P04 source exclusivity and modality, CAPM decimal false refusal, and TF feedback false flag. Separately validate bounded correction, independent regeneration and stale-version behavior; continue original-page visual/atomic LO coverage and teacher calibration. Do not treat source UI or saved count as quality solved.",
+  "recordedAt": "2026-10-17T08:50:42.624779+00:00",
+  "retainedYieldRepair": {
+    "version": 1,
+    "recordedAt": "2026-10-17T06:58:51.603034+00:00",
+    "execSession": 21452,
+    "exitCode": 0,
+    "status": "completed",
+    "resultsSha256": "8edab61eaa6989705177ef24ad783146efb07b4641139b73969536f22e940bb2",
+    "ledgerSha256": "63daba8fbeff51e30bcca7cec6597a5ca8dfa335f14729b1b945e7b09f4b7f3e",
+    "providerCalls": 2,
+    "saved": 0,
+    "adopted": 0,
+    "teacherAcceptance": null,
+    "receipt": "audit-results/quality-lab-retained-yield-repair-2026-10-17-live/results.json",
+    "usage": {
+      "observedSdkCalls": 2,
+      "finishedCalls": 2,
+      "knownInputSubtotal": 8393,
+      "knownOutputSubtotal": 780,
+      "inputKnownCalls": 2,
+      "outputKnownCalls": 2,
+      "unknownUsageCalls": 0,
+      "complete": true,
+      "retryVisibility": "unknown"
+    },
+    "outcomes": [
+      {
+        "id": "A-contradictory-novelty",
+        "status": "eligible",
+        "novelty": "independent",
+        "sourceSupport": "supported"
+      },
+      {
+        "id": "B-retained-replacement",
+        "status": "withheld",
+        "novelty": "variant",
+        "sourceSupport": "supported"
+      }
+    ]
+  },
+  "outlineContinuationPreparation": {
+    "receipt": "audit-results/quality-lab-outline-continuation-2026-10-17/prepare-receipt.json",
+    "projectionAudit": "audit-results/quality-lab-outline-continuation-2026-10-17/projection-independent-audit.json",
+    "status": "completed-controlled-continuation-not-hierarchy-apply",
+    "sourceFiles": 10,
+    "sourceSections": 671,
+    "topics": 31,
+    "objectives": 142,
+    "resolved": 103,
+    "pending": 39,
+    "providerCalls": 0,
+    "databaseWrites": 0
+  },
+  "outlineContinuationResult": {
+    "receipt": "audit-results/quality-lab-outline-continuation-2026-10-17/live-after-fixture-reconciliation/results.json",
+    "terminalReceipt": "audit-results/quality-lab-outline-continuation-2026-10-17/live-after-fixture-reconciliation/terminal-receipt.json",
+    "status": "completed",
+    "execSession": 34735,
+    "exitCode": 0,
+    "sourceFiles": 10,
+    "sourceSections": 671,
+    "reviewed": 142,
+    "supported": 119,
+    "withheld": 23,
+    "groupingIssues": 3,
+    "finalTopics": 30,
+    "finalLOs": 119,
+    "newObservedCalls": 11,
+    "reportedInputTokens": 80717,
+    "reportedOutputTokens": 39545,
+    "elapsedMs": 378978,
+    "newConservativeUnits": 449843,
+    "cumulativeConservativeUnits": 1454173,
+    "originalCumulativeCeiling": 2000000,
+    "hierarchyApplied": false,
+    "teacherAcceptance": null
+  },
+  "currentNextPhase": "pending-approved-source-interpretation-model-probe-with-offline-source-coverage-review-complete",
+  "modelTransportRecovery": {
+    "state": "completed",
+    "receipt": "audit-results/quality-lab-heldout-transport-recovery-2026-10-17-live/terminal-receipt.json",
+    "analysis": "audit-results/quality-lab-heldout-transport-recovery-2026-10-17-live/analysis.json",
+    "newSends": 50,
+    "elapsedMs": 908120,
+    "newInputTokens": 119400,
+    "newOutputTokens": 56387,
+    "newReasoningTokensSubset": 25853,
+    "newUnknownUsageCalls": 0,
+    "originalUnknownUsageCallsRetained": 30,
+    "newConservativeUnits": 943398,
+    "originalConservativeUnits": 1854981,
+    "positiveRequested": 50,
+    "positiveLabEligible": 34,
+    "positiveStrictRequestedSupply": 16,
+    "byArm": {
+      "luna-low": {
+        "positiveRequested": 10,
+        "positiveLabEligible": 8,
+        "positiveRequestedKindFulfilled": 10,
+        "positiveRequestedDifficultyMatched": 2,
+        "positiveStrictRequestedSupply": 2,
+        "positiveQualityStates": {
+          "assessed": 10
+        },
+        "safetyNegativeRequested": 2,
+        "safetyNumericCandidates": 0,
+        "safetyConceptualFallbacks": 2,
+        "safetyEligibleNumericCandidates": 0,
+        "cohorts": {
+          "original": 8,
+          "transport-recovery": 4
+        }
+      },
+      "luna-medium": {
+        "positiveRequested": 10,
+        "positiveLabEligible": 5,
+        "positiveRequestedKindFulfilled": 10,
+        "positiveRequestedDifficultyMatched": 3,
+        "positiveStrictRequestedSupply": 2,
+        "positiveQualityStates": {
+          "assessed": 10
+        },
+        "safetyNegativeRequested": 2,
+        "safetyNumericCandidates": 0,
+        "safetyConceptualFallbacks": 2,
+        "safetyEligibleNumericCandidates": 0,
+        "cohorts": {
+          "original": 8,
+          "transport-recovery": 4
+        }
+      },
+      "luna-high": {
+        "positiveRequested": 10,
+        "positiveLabEligible": 4,
+        "positiveRequestedKindFulfilled": 10,
+        "positiveRequestedDifficultyMatched": 2,
+        "positiveStrictRequestedSupply": 0,
+        "positiveQualityStates": {
+          "assessed": 10
+        },
+        "safetyNegativeRequested": 2,
+        "safetyNumericCandidates": 0,
+        "safetyConceptualFallbacks": 2,
+        "safetyEligibleNumericCandidates": 0,
+        "cohorts": {
+          "original": 8,
+          "transport-recovery": 4
+        }
+      },
+      "sol-medium": {
+        "positiveRequested": 10,
+        "positiveLabEligible": 9,
+        "positiveRequestedKindFulfilled": 10,
+        "positiveRequestedDifficultyMatched": 5,
+        "positiveStrictRequestedSupply": 5,
+        "positiveQualityStates": {
+          "assessed": 10
+        },
+        "safetyNegativeRequested": 2,
+        "safetyNumericCandidates": 0,
+        "safetyConceptualFallbacks": 2,
+        "safetyEligibleNumericCandidates": 0,
+        "cohorts": {
+          "original": 8,
+          "transport-recovery": 4
+        }
+      },
+      "sol-high": {
+        "positiveRequested": 10,
+        "positiveLabEligible": 8,
+        "positiveRequestedKindFulfilled": 10,
+        "positiveRequestedDifficultyMatched": 7,
+        "positiveStrictRequestedSupply": 7,
+        "positiveQualityStates": {
+          "assessed": 10
+        },
+        "safetyNegativeRequested": 2,
+        "safetyNumericCandidates": 0,
+        "safetyConceptualFallbacks": 2,
+        "safetyEligibleNumericCandidates": 0,
+        "cohorts": {
+          "original": 8,
+          "transport-recovery": 4
+        }
+      }
+    },
+    "saved": 0,
+    "adopted": 0,
+    "teacherAcceptance": null
+  },
+  "outlineWordingRepairPilot": {
+    "state": "offline-implemented-not-paid-tested",
+    "documentation": "docs/design/question-generation-quality/OUTLINE-WORDING-REPAIR-IMPLEMENTATION-2026-10-17.md",
+    "tests": 229,
+    "independentFocusedTests": 19,
+    "targetsPerCycle": 2,
+    "generalRepairWorkflow": false,
+    "remaining": [
+      "Other withheld objectives and supported-but-uncredited points",
+      "Atomic capability splitting and semantic duplicate LOs",
+      "Original-page visual/table recovery",
+      "Teacher-facing continuation/repair entry and calibrated acceptance"
+    ]
+  },
+  "publicYieldRetest": {
+    "state": "terminal-stopped-after-complete-generation-and-two-regeneration-cases",
+    "processSession": null,
+    "declaration": "audit-results/quality-lab-public-http-2026-10-17-preflight/declaration.json",
+    "sha256": "8a8bc7263fc45a38c48754d538a6c9b5d7ac794db9a8eba2a15e5afd362f88a9",
+    "newOwnedDatabase": "financebot_quality_smoke_retest_20261017_public",
+    "requestedQuestions": 6,
+    "regenerationIntents": 3,
+    "maxAttemptReservations": 78,
+    "maxConservativeUnits": 3744000,
+    "savedResult": {
+      "requested": 6,
+      "savedDrafts": 4,
+      "independentlySourceSafeYield": null,
+      "sourceInterpretationConcerns": [
+        "P01",
+        "P04"
+      ],
+      "soundConceptualOnSuppliedEvidence": [
+        "P02"
+      ],
+      "full16drawArithmeticVerified": [
+        "P03"
+      ],
+      "requestAlignmentQualified": [
+        "P03"
+      ]
+    },
+    "teacherAcceptance": null,
+    "terminalReceipt": "audit-results/quality-lab-public-http-2026-10-17-live/terminal-receipt.json",
+    "completedRegenerationIntents": [
+      "edit-existing",
+      "create-variant"
+    ],
+    "unexecuted": [
+      "create-independent-task",
+      "stale-original-version-negative"
+    ],
+    "newNativeCalls": 37,
+    "newInputTokens": 132956,
+    "newOutputTokens": 10125,
+    "conservativeUnits": 717877
+  },
+  "sourceInterpretationRepair": {
+    "state": "prepared-successor-unexecuted-pending-explicit-approval",
+    "productionScope": "v2-only prompts; no source/memory/teacher/gate/budget waiver",
+    "controls": "audit-results/quality-lab-public-http-2026-10-17-live/retained-review-controls.json",
+    "controlsSha256": "486d151093e76bf2bed8b2a869c8f9484a9349cbb5994b1008d0c6eef1cc0bd5",
+    "historicalExactPrompts": 6,
+    "identityPins": 28,
+    "tuningCaseIds": [
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "CAPM",
+      "TF"
+    ],
+    "newProviderCalls": 0,
+    "saved": 0,
+    "adopted": 0,
+    "teacherAcceptance": null,
+    "rootRunnerOfflineTests": 24,
+    "rootRunnerChecks": "Jest24 + scopedESLint + standaloneTSwithpassporttypes passed2026-10-17",
+    "sizeFailureReceipt": "audit-results/quality-lab-public-http-2026-10-17-live/source-interpretation-prompt-size-failure.json",
+    "inputCap": 24000,
+    "prospectiveCeilings": {
+      "observedSdkAttempts": 16,
+      "conservativeUnits": 320000,
+      "outputPerAttempt": 2000
+    },
+    "limits": "No generator, numerical repair, DB writes, adoption or effective saved-yield evidence in this review-only phase.",
+    "declaration": "/Users/fanhaocheng/tlef/tlef-financebot/audit-results/quality-lab-source-interpretation-2026-10-17-preflight-r3/declaration.json",
+    "declarationSha256": "6f57c2aa36c870864159d8c9d045c7650a5df4121486281ae70d3ee7d08fa1a7",
+    "initialSizesAfterCompaction": {
+      "P01": 20847,
+      "P02": 22488,
+      "P03": 22038,
+      "P04": 20692,
+      "CAPM": 20779,
+      "TF": 19192
+    },
+    "productionOfflineTests": 130,
+    "rootProbeOfflineTests": 24,
+    "testCountsMayOverlap": true,
+    "automaticReviewReceipt": "/Users/fanhaocheng/tlef/tlef-financebot/audit-results/quality-lab-source-interpretation-2026-10-17-preflight/automatic-approval-rejection.json",
+    "requiredUserApproval": "Six retained candidate/source/Bank/requestpayloads toOpenAI; atmost16observedSDKcalls and320000conservative units. No generation/DBsave/adoption.",
+    "bookPendingQaReceipt": "artifacts/quality-lab-book-2026-10-16/interpretation-pending-verification.json",
+    "bookPendingScreenshotHandoff": "artifacts/quality-lab-book-2026-10-16/source-interpretation-pending-handoff.json",
+    "approval": "Explicit user approval requested asynchronously; no answer recorded. No dependent execution.",
+    "sizeFixState": "Completed offline: exact original context is preserved and all six initial prompts fit the unchanged 24,000-unit input cap.",
+    "supersededOriginalDeclaration": {
+      "file": "/Users/fanhaocheng/tlef/tlef-financebot/audit-results/quality-lab-source-interpretation-2026-10-17-preflight/declaration.json",
+      "sha256": "5af08ef905c6054824a6410d87013bcc2bba67f70a573d8c02a8490c5baa0b1f",
+      "archivedCodeFiles": 252
+    },
+    "currentCodePins": 253,
+    "promptShapesByteIdentical": true,
+    "successorPreparation": "audit-results/quality-lab-source-interpretation-2026-10-17-preflight-r3/supersession.json"
+  },
+  "publicMissingOnlyContinuation": {
+    "state": "implemented-offline-not-executed",
+    "newTests": 20,
+    "combinedGuardTests": 45,
+    "parentReservations": 37,
+    "parentConservativeUnits": 717877,
+    "originalMaxAttempts": 78,
+    "originalMaxConservativeUnits": 3744000,
+    "additionalIndependentTaskAttemptCap": 8,
+    "missingCases": [
+      "regeneration-create-independent-task",
+      "stale-original-version-negative"
+    ],
+    "completedCasesNeverRerun": true,
+    "historicalAndProspectiveCodeCohortsSeparate": true,
+    "newModelCalls": 0,
+    "permanentDeclaration": null
+  },
+  "sourceCoverageUi": {
+    "state": "implemented-and-mocked-browser-verified",
+    "receipt": "audit-results/structure-source-coverage-2026-10-17/verification.json",
+    "receiptSha256": "c91a3298e6571f2262f2d00f17892c5616b0af5f014f329c60ceaf02f0cc22c7",
+    "browserCases": 33,
+    "sourceReceiptCases": 19,
+    "existingEditorCases": 14,
+    "screenshots": 5,
+    "unchangedRecordedPointGaps": 379,
+    "newModelCalls": 0,
+    "saved": 0,
+    "adopted": 0,
+    "teacherAcceptance": null,
+    "limits": "Content-sanitized source prose and intercepted APIs establish UI/receipt behavior only, not semantic coverage or model yield."
+  },
+  "canvasStretchDesign": {
+    "state": "design-only-updated-from-primary-docs",
+    "document": "docs/design/question-generation-quality/CANVAS-EXAM-EXPORT-DESIGN-2026-10-16.md",
+    "checkedAt": "2026-10-17",
+    "newCanvasRequests": 0,
+    "newScopes": 0,
+    "implementedExport": false,
+    "limits": "Current requested scopes are GET only. A reviewed namespace/PATCH extension, unpublished-creation contract, scoring/release fidelity and sandbox read-back remain required."
+  },
+  "sourcePassageRepair": {
+    "state": "implemented-offline-verified",
+    "receipt": "audit-results/source-passage-line-boundaries-2026-10-17-final/results.json",
+    "sections": 671,
+    "changedSections": 384,
+    "beforePassages": 1238,
+    "afterPassages": 1292,
+    "withinLineCutsBefore": 393,
+    "withinLineCutsAfter": 0,
+    "historicalTargetsRetained": 1238,
+    "changedBatchKeys": "45 / 48",
+    "actualWarmCacheReuse": null,
+    "newModelCalls": 0,
+    "semanticRecovery": null
+  },
+  "authoringCurrentnessFollowup": {
+    "state": "verified-local-synthetic-guards-and-mocked-ui",
+    "receipt": "audit-results/authoring-zero-call-guards-2026-10-17/verification.json",
+    "httpResponses": 18,
+    "guardGroups": 8,
+    "unitTests": 226,
+    "unitSuites": 13,
+    "mockedBrowserCases": 31,
+    "extraPanelCapture": "One already counted case; not an extra unique test.",
+    "newModelCalls": 0,
+    "teacherAcceptance": null,
+    "limits": "Synthetic auth/seeded eligibility; no generation or semantic outcome. These unit counts overlap earlier runs."
+  },
+  "pdfPageProvenance": {
+    "state": "offline-audit-only",
+    "receipt": "audit-results/pdf-page-provenance-2026-10-17/results.json",
+    "files": 10,
+    "pages": 599,
+    "uniquelyLocatedChunks": 671,
+    "multiPageChunks": 439,
+    "tests": 19,
+    "productionPageCitations": false,
+    "visualExtractionImplemented": false,
+    "design": "docs/design/question-generation-quality/PDF-PAGE-AND-VISUAL-COVERAGE-DESIGN-2026-10-17.md"
+  }
+}

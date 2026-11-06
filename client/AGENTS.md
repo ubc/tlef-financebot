@@ -1,7 +1,28 @@
 # AGENTS.md — client/
 
+Course Structure now exposes the existing bounded outline repair through the
+saved parent/child repair view. Instructors explicitly choose one goal and at
+most two objectives, inspect original quotes and requested source points, then
+review before/after wording, fresh findings and missing/lost coverage receipts.
+The two goals share one repair attempt and the parent allowance; nothing is
+applied automatically. Unknown repair identity stays quarantined, failed child
+runs retain the original draft, and per-run instructor wording/selection is
+restored only against its exact current draft baseline. Explicitly reviewed
+child drafts remain separate; later teacher wording edits are labelled in the
+apply receipt. Historical drafts require an explicit unavailable repair view.
+The 13-case compiled static UI check uses intercepted APIs, including an actual
+retained-baseline comparison. It verifies workflow and recovery, not model
+quality, semantic coverage or paid cost.
+
 The frontend. Deliberately framework-free and bundler-free: plain TypeScript
 authored as native ES modules, compiled by `tsc` and served statically.
+
+Question generation: the bank shows each Draft's AI check (pass/flag/reject,
+reasoning, role assessment, suggestions) and a nearest-question similarity label
+(same LO / same topic, with the matching question). Regenerate sends a prompt to
+`POST /api/courses/:courseId/questions/:questionId/regenerate`, shows the unsaved
+variant side by side, and Replace saves it through the ordinary PATCH. There are
+no quality policies, pilot toggles, candidate recovery or adoption flows.
 
 Course Structure provides confirmed Delete topic and per-LO Delete controls
 directly in the outline, including All objectives/search topic groups. They use
@@ -221,6 +242,16 @@ counts. Durable `structure-generation` snapshots retain edits, display explicit
 failure/recovery states and support selected-subset apply. Source coverage separates
 analyzed sections, mapped learning points, exclusions and gaps; exact passages can
 open the existing highlighted source preview.
+
+`structure-source-coverage.ts` renders a compact, searchable, paginated original
+AI-draft receipt above the objectives. Point gaps, original passage decisions and
+zero-objective sections remain different units. Missing or contradictory counts
+stay unavailable; duplicate identities and foreign bindings retain their raw
+records without selecting a misleading source/context link. Failed runs can show
+retained processing diagnostics without an applicable outline. This read model
+does not change selection, Apply or generation eligibility. Its 19 coverage cases
+and 14 existing editor flows pass the isolated static UI check; source prose in
+the large committed fixture is explicitly synthetic, not semantic acceptance.
 
 Admin Operations & Issues and All Questions (`views/admin/operations.ts`,
 `questions.ts`) expose cross-user diagnostics, durable job evidence and read-only

@@ -6,6 +6,8 @@
 // -----------------------------------------------------------------------------
 import { EVALUATOR_VERSION } from '../components/formula';
 import type { QuestionVersion } from '../types/domain';
+import { INPUT_DISPLAY_VERIFICATION_VERSION } from './numeric-input-display.service';
+import { optionValueNamesForVerification, verifyQuestionNumerics } from './numeric-verification.service';
 
 export type NumericGateVersion = Pick<QuestionVersion, 'stem' | 'options' | 'numericKind' | 'verification'>
   & Partial<Pick<QuestionVersion, 'paramSlots' | 'derivedValues' | 'generateScript'>>;
@@ -99,5 +101,14 @@ export function unresolvablePlaceholders(version: NumericGateVersion): string[] 
 export function isServable(version: NumericGateVersion): boolean {
   if (unresolvablePlaceholders(version).length > 0) return false;
   if (!isNumericQuestion(version)) return true;
-  return version.verification?.evaluatorVersion === EVALUATOR_VERSION;
+  if (version.verification?.evaluatorVersion !== EVALUATOR_VERSION) return false;
+  // Script proofs remain governed by their existing sandbox checks. Closed formulas
+  // need the newer precision admission; historical approved content is rechecked
+  // locally without rewriting its immutable version or any recorded answer.
+  if (version.generateScript) return true;
+  if (version.verification.inputDisplayVersion === INPUT_DISPLAY_VERIFICATION_VERSION) return true;
+  if (!version.derivedValues?.length) return false;
+  const names = optionValueNamesForVerification(version.options.map(option => option.text), version.derivedValues.map(value => value.name));
+  return names.ok && verifyQuestionNumerics({ stem: version.stem, slots: version.paramSlots ?? [],
+    derivedValues: version.derivedValues, optionValueNames: names.names, optionCurrency: names.currency }).ok;
 }

@@ -1,6 +1,11 @@
 import { evaluateFormula, parseFormula } from '../components/formula';
 import { executeGenerate } from '../components/param-worker';
 import type { DerivedValue, ParamSlot, QuestionVersion } from '../types/domain';
+import { numericInputDisplayFailure } from './numeric-input-display.service';
+import { substituteParams } from './parameter-display';
+import { describeFiniteSlotDomain, drawSlotValue } from './finite-slot-domain';
+export { formatParamValue, isCurrencyPlaceholder, substituteParams } from './parameter-display';
+export { describeFiniteSlotDomain, type FiniteSlotDomainDescription } from './finite-slot-domain';
 
 // -----------------------------------------------------------------------------
 // Parameterization service (Task 5, IN-Q09/ST-P03/ST-R04): seeded value
@@ -41,26 +46,6 @@ export function seededRandom(seed: number): () => number {
 }
 
 /**
- * One slot's draw: a value from `values` (seeded pick) if given, else a
- * seeded uniform draw over the inclusive `[min, max]` range stepped by
- * `step` — `min + step * floor(random() * ((max - min) / step + 1))`
- * (brief's exact formula). `min`/`max`/`step` default to 0/0/1 when absent
- * so a malformed slot degrades to a constant 0 rather than throwing.
- */
-function drawSlot(slot: ParamSlot, rand: () => number): number {
-  if (slot.values && slot.values.length > 0) {
-    const idx = Math.min(slot.values.length - 1, Math.floor(rand() * slot.values.length));
-    return slot.values[idx];
-  }
-  const min = slot.min ?? 0;
-  const max = slot.max ?? min;
-  const step = slot.step && slot.step !== 0 ? slot.step : 1;
-  const count = Math.floor((max - min) / step) + 1;
-  const idx = Math.min(count - 1, Math.floor(rand() * count));
-  return min + step * idx;
-}
-
-/**
  * Draws every slot, then evaluates every `derivedValue` formula in declaration
  * order so a later formula may reference an earlier one by name. Returns drawn
  * and derived values in one flat map — exactly what `substituteParams`
@@ -82,8 +67,13 @@ export function resolveSlotsAndDerived(
 ): Record<string, number> {
   const rand = seededRandom(seed);
   const values: Record<string, number> = {};
-  for (const slot of slots) values[slot.name] = drawSlot(slot, rand);
+  for (const slot of slots) values[slot.name] = drawSlotValue(slot, rand);
 
+  return resolveDerivedFromValues(values, derivedValues);
+}
+
+/** Shared declaration-order arithmetic for both seeded and explicit draws. */
+function resolveDerivedFromValues(values: Record<string, number>, derivedValues: DerivedValue[]): Record<string, number> {
   for (const derived of derivedValues) {
     const parsed = parseFormula(derived.formula);
     if (!parsed.ok) throw new Error(`${derived.name}: ${parsed.error}`);
@@ -92,6 +82,31 @@ export function resolveSlotsAndDerived(
     values[derived.name] = evaluated.value;
   }
   return values;
+}
+
+/** Resolve one explicit Cartesian index tuple through the production formula
+ * evaluator. This is not a claim that some PRNG seed reaches every tuple. */
+export function resolveSlotsAndDerivedAtIndices(
+  slots: ParamSlot[],
+  derivedValues: DerivedValue[],
+  indices: number[],
+): Record<string, number> {
+  if (indices.length !== slots.length) throw new Error('finite parameter tuple must contain one index per slot');
+  const names = new Set<string>();
+  for (const entry of [...slots, ...derivedValues]) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name) || entry.name === '__proto__' || names.has(entry.name)) {
+      throw new Error('finite parameter tuple requires unique, valid slot and derived-value names');
+    }
+    names.add(entry.name);
+  }
+  const values: Record<string, number> = {};
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index]!;
+    const domain = describeFiniteSlotDomain(slot);
+    if (!domain.ok) throw new Error(domain.reason);
+    values[slot.name] = domain.valueAt(indices[index]!);
+  }
+  return resolveDerivedFromValues(values, derivedValues);
 }
 
 /**
@@ -119,7 +134,7 @@ export async function resolveParamValues(
   return undefined;
 }
 
-/** Rerolls before the serve-time guard gives up and serves the draw anyway. */
+/** Maximum bounded redraws for option collisions or unsafe input display. */
 export const SERVE_DRAW_ATTEMPTS = 8;
 
 /** One rendered draw of a saved version — what a student would actually see.
@@ -227,89 +242,43 @@ export function stableSeedsForId(questionId: string): () => number {
  * in the explanation — a redraw regenerates the whole consistent set.
  *
  * Comparison is on the fully rendered option TEXT — exactly what the student
- * sees — via the same substituteParams the serve itself uses. On exhaustion the
- * last draw is served anyway with a warning: never worse than the behaviour
- * this replaces, and a question colliding on most draws cannot hold a proof, so
- * exhaustion implies something verification would already have rejected.
+ * sees — via the same substituteParams the serve itself uses. On exhaustion,
+ * refuse delivery: a sampled proof cannot justify returning a draw already
+ * known to have colliding options or unsafe displayed inputs.
  *
  * `seedFn` is injectable for tests only; production callers use the default.
  */
 export async function drawCollisionFreeParams(
-  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots' | 'derivedValues' | 'options'>,
+  version: Pick<QuestionVersion, 'generateScript' | 'paramSlots' | 'derivedValues' | 'options' | 'stem'>,
   seedFn: () => number = drawSeed,
 ): Promise<{ seed: number; paramValues: Record<string, number> | undefined }> {
-  let last: { seed: number; paramValues: Record<string, number> | undefined } | undefined;
+  let lastFailure: string | undefined;
   for (let attempt = 1; attempt <= SERVE_DRAW_ATTEMPTS; attempt += 1) {
     const seed = seedFn();
     const paramValues = await resolveParamValues(version, seed);
     // Conceptual question: nothing substituted, nothing to collide.
     if (!paramValues) return { seed, paramValues };
+    // The sampled proof cannot cover every value of a large slot domain. Check
+    // this exact draw before any fresh practice, retry, preview or exam freeze.
+    if (!version.generateScript && version.derivedValues?.length) {
+      const failure = numericInputDisplayFailure({
+        stem: version.stem, slots: version.paramSlots ?? [], derivedValues: version.derivedValues,
+        optionTexts: version.options.map(option => option.text), values: paramValues,
+      });
+      if (failure) {
+        lastFailure = failure;
+        continue;
+      }
+    }
     const rendered = version.options.map((option) => substituteParams(option.text, paramValues));
     if (new Set(rendered).size === rendered.length) return { seed, paramValues };
-    last = { seed, paramValues };
+    lastFailure = `answer options display identically at seed ${seed}`;
     console.warn(
       `[params] two options display identically at seed ${seed} ` +
         `(attempt ${attempt}/${SERVE_DRAW_ATTEMPTS}); redrawing`,
     );
   }
-  return last!;
-}
-
-/** Significant figures kept for a non-currency value below 1 in magnitude. */
-const SMALL_VALUE_SIGNIFICANT_FIGURES = 3;
-
-/**
- * R3 (design spec 2026-08-05): the ONE place a computed value becomes display
- * text. Integers print bare. A currency amount, and any value of magnitude 1
- * or more, rounds to 2 decimals — dollars and cents. A non-currency value
- * below 1 keeps 3 significant figures (at least 2 decimals, trailing zeros
- * trimmed back to 2): 2 decimals turned a monthly rate of 0.004868 into "0.00"
- * and a profitability index of -0.0756 into "-0.08" (2026-09-14). The formula
- * evaluator itself never rounds — all arithmetic upstream of here runs at
- * full double precision, so intermediate rounding can never compound into the
- * answer. That compounding is exactly the `190.48 + 272.11` class of error
- * this work exists to eliminate.
- *
- * Showing more digits can only separate values, never merge them, so a proof
- * earned under the old 2-decimal rule stays valid under this one.
- */
-export function formatParamValue(value: number, options: { currency?: boolean } = {}): string {
-  if (Number.isInteger(value)) return String(value);
-  if (options.currency || Math.abs(value) >= 1) return (Math.round(value * 100) / 100).toFixed(2);
-  const decimals = Math.max(2, SMALL_VALUE_SIGNIFICANT_FIGURES - 1 - Math.floor(Math.log10(Math.abs(value))));
-  const fixed = value.toFixed(decimals);
-  return fixed.replace(/(\.\d{2}\d*?)0+$/, '$1');
-}
-
-/** A placeholder written as a dollar amount — `${{X}}`, or `\${{X}}` inside math. */
-export function isCurrencyPlaceholder(textBefore: string): boolean {
-  return /\$\s*$/.test(textBefore);
-}
-
-/** A LaTeX token that takes the NEXT group as its argument: a super/subscript,
- * `\frac`/`\dfrac`/`\tfrac`/`\sqrt`, or the `}` that closes a `\frac`'s first
- * argument. Generated LaTeX routinely writes `(1+r)^{{PERIODS}}` meaning
- * `^{ {{PERIODS}} }`: the slot's braces double as the LaTeX group, so a bare
- * substitution leaves `^24`, which superscripts only the `2` (seen 2026-09-14,
- * "(1 + 8/100)^2 4"). Matched against the text BEFORE substitution. */
-const TAKES_GROUP_ARGUMENT = /(?:[\^_]|\\[dt]?frac|\\sqrt|\})\s*$/;
-
-/** Replaces every `{{name}}` placeholder in `text` with its resolved value
- * from `values`; a placeholder with no matching key is left untouched
- * (verbatim `{{name}}`) rather than substituted with `undefined`/blank, so a
- * stale/missing slot is visibly obvious instead of silently disappearing.
- * Where the placeholder is a LaTeX argument (see TAKES_GROUP_ARGUMENT) the
- * value keeps a brace group — `^{24}` — so multi-digit values render whole.
- * Callers apply this to stem, option text, AND option explanations
- * individually (there is no options-array overload — one string in, one
- * string out). */
-export function substituteParams(text: string, values: Record<string, number>): string {
-  return text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (match, name: string, offset: number) => {
-    if (!Object.prototype.hasOwnProperty.call(values, name)) return match;
-    const before = text.slice(0, offset);
-    const value = formatParamValue(values[name], { currency: isCurrencyPlaceholder(before) });
-    return TAKES_GROUP_ARGUMENT.test(before) ? `{${value}}` : value;
-  });
+  throw new Error(`No safe numerical parameter draw was available after ${SERVE_DRAW_ATTEMPTS} attempts: ${lastFailure ?? 'all draws were invalid'}.`);
 }
 
 /**

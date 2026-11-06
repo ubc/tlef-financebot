@@ -1,5 +1,5 @@
 import {
-  getAnalyticsExamScores, analyticsQuery, getAnswerDistribution, getEngagementAnalytics, getFailureRates,
+  getAnalyticsExamScores, analyticsQuery, getAnalyticsReport, getAnswerDistribution, getEngagementAnalytics, getFailureRates,
   getLowEngagement, getMyCourseCapabilities, getQuestionPatterns, searchAnalyticsStudents,
   type AnalyticsFilter, type QuestionPattern, type ThemeFailureRate,
 } from '../../api.js';
@@ -35,6 +35,8 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
   let patternTotal = 0;
   const questionSearch = el('input', { class: 'input', type: 'search', 'aria-label': 'Search questions', placeholder: 'Search questions, topics or objectives…' });
   const status = el('p', { class: 'analytics-updated', role: 'status' });
+  const exportStatus = el('p', { class: 'analytics-updated', role: 'status' });
+  exportStatus.hidden = true;
   const scope = el('p', { class: 'analytics-scope' });
   const overview = el('div', { class: 'analytics-metrics' });
   const focus = el('div', { class: 'analytics-focus-list' });
@@ -56,6 +58,26 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
   const practice = button('Topic Practice', () => changeMode('topic-practice'));
   const exam = button('Exam Prep', () => changeMode('exam-prep'));
   function changeMode(next: typeof mode): void { mode = next; void refresh(); }
+  const pdf = el('button', {
+    class: 'btn btn--instr-primary btn--sm', type: 'button', text: 'Export PDF',
+    onclick: async () => {
+      exportStatus.hidden = false;
+      exportStatus.textContent = 'Preparing the course summary PDF…';
+      try {
+        const { pdf: file, filename } = await getAnalyticsReport(courseId, { ...filter });
+        if (!alive()) return;
+        const url = URL.createObjectURL(file);
+        const download = el('a', { href: url, download: filename });
+        root.append(download);
+        download.click();
+        download.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        exportStatus.textContent = 'Course summary PDF ready.';
+      } catch (error) {
+        if (alive()) exportStatus.textContent = `PDF export failed. ${message(error)}`;
+      }
+    },
+  });
   const csv = el('a', { class: 'btn btn--ghost btn--sm', text: 'Export weekly CSV' });
   const link = (text: string, path: string): HTMLAnchorElement => el('a', { href: `${base}/${path}`, text });
   const profile = (student: { puid: string; displayName: string; uid: string }): HTMLElement => individual
@@ -65,8 +87,8 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
   root.append(
     pageHeader('Student Analytics', 'Use observed activity to choose what to review and where to follow up.'),
     section('Evidence overview', 'analytics-overview',
-      el('div', { class: 'analytics-controls analytics-toolbar' }, el('div', { class: 'analytics-segmented', role: 'group', 'aria-label': 'Activity mode' }, practice, exam), el('label', {}, 'Date range', dates), button('Refresh', () => { void refresh(); void loadFollow(); })),
-      el('div', { class: 'analytics-scope-line' }, scope, status), overview),
+      el('div', { class: 'analytics-controls analytics-toolbar' }, el('div', { class: 'analytics-segmented', role: 'group', 'aria-label': 'Activity mode' }, practice, exam), el('label', {}, 'Date range', dates), button('Refresh', () => { void refresh(); void loadFollow(); }), pdf),
+      el('div', { class: 'analytics-scope-line' }, scope, status), exportStatus, overview),
     el('section', { class: 'card analytics-topic-panel', 'data-tutorial': 'analytics-outcomes' },
       el('div', { class: 'analytics-topic-main' },
         el('header', { class: 'analytics-panel-heading' }, el('div', {}, el('h2', { text: 'Topic performance' }), el('p', { text: 'Explore topics, then inspect the evidence for each objective.' })), sort), outcomes),

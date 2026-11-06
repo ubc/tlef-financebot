@@ -12,8 +12,8 @@ import {
   MAX_SECONDARY_LOS,
   PRESET_PROMPTS,
   preseedingProgress,
-  regenerateQuestion,
 } from '../services/generation.service';
+import { regenerateQuestionVariant } from '../services/question-generation/pipeline';
 import {
   autoGenerationPlan,
   enqueueGenerationPlan,
@@ -22,7 +22,7 @@ import {
 } from '../services/generation-plan.service';
 import { enqueueBlueprintRun } from '../services/generation-blueprints.service';
 
-// Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
+// Generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
 // course-scoped (`:courseId` in the path), so they guard exactly like
 // courses.routes.ts's course-scoped routes: `validate(params)` then
 // `ensureCourseInstructor()` (which checks authentication itself).
@@ -55,10 +55,9 @@ generationRouter.get(
 );
 
 // Bounds: at least one question, capped so a single request can't enqueue an
-// unbounded run (each question is 3 LLM calls). Default is a small batch.
+// unbounded run (each question is 2 LLM calls). Default is a small batch.
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional(),
   loId: objectIdParam.optional(),
   /** Multi-LO generation: further objectives every question must integrate.
    * Bounded by MAX_SECONDARY_LOS; the service re-validates that each exists,
@@ -101,11 +100,10 @@ generationRouter.post(
     const courseId = new ObjectId(String(req.params.courseId));
     const body = req.body as z.infer<typeof generateBody>;
     const runId = body.blueprintId
-      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid, body.qualityPolicy)
+      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid)
       : await enqueueGenerationRun({
           courseId,
           loId: new ObjectId(body.loId!),
-          ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}),
           ...(body.secondaryLoIds?.length
             ? { secondaryLoIds: body.secondaryLoIds.map((id) => new ObjectId(id)) }
             : {}),
@@ -136,7 +134,7 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional(), qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional() });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -179,7 +177,7 @@ generationRouter.post(
           : { secondaryLoIds: undefined }),
       })),
       req.user!.puid,
-      body.submissionId || body.prompt || body.qualityPolicy ? { ...(body.submissionId ? { id: body.submissionId } : {}), prompt: body.prompt, ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}) } : undefined,
+      body.submissionId || body.prompt ? { ...(body.submissionId ? { id: body.submissionId } : {}), prompt: body.prompt } : undefined,
     );
     res.status(202).json({
       runs: result.runs.map((run) => ({
@@ -191,8 +189,9 @@ generationRouter.post(
 
 /**
  * POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }
- * -> a transient side-by-side variant. The service records only request
- * provenance; replacing content remains an explicit PATCH to the question.
+ * -> { variant }: an UNSAVED side-by-side variant from the two-call pipeline.
+ * The service records only request provenance; the instructor's Replace saves
+ * it through the existing PATCH edit route.
  */
 generationRouter.post(
   '/courses/:courseId/questions/:questionId/regenerate',
@@ -202,14 +201,8 @@ generationRouter.post(
   async (req, res) => {
     const params = req.params as z.infer<typeof regenerationParams>;
     const body = req.body as z.infer<typeof regenerationBody>;
-    res.json(
-      await regenerateQuestion(
-        new ObjectId(params.questionId),
-        body.prompt,
-        req.user!.puid,
-        new ObjectId(params.courseId),
-      ),
-    );
+    const questionId = new ObjectId(params.questionId); const courseId = new ObjectId(params.courseId);
+    res.json(await regenerateQuestionVariant({ questionId, courseId, prompt: body.prompt, byPuid: req.user!.puid }));
   },
 );
 
@@ -235,9 +228,13 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'lo-not-in-course': 403,
   'content-run-enqueue-failed': 503,
   'question-not-found': 404,
+  'course-not-found': 404,
+  'course-authoring-unavailable': 409,
   'version-not-found': 404,
   'question-has-no-lo': 409,
   'question-changed-during-regeneration': 409,
+  'authoring-coordinated-commit-unavailable': 503,
+  'regeneration-script-template-requires-manual-edit': 409,
   'generation-material-mention-not-found': 400,
   'generation-material-mention-ambiguous': 400,
   'generation-no-assigned-materials': 409,
@@ -245,7 +242,6 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
   'generation-retrieval-failed': 503,
   'generation-no-grounding': 422,
   'generation-daily-limit': 429,
-  'generation-quality-reviewer-required': 409,
   'generation-blueprint-not-found': 404,
   // Multi-LO generation: every one is a request the instructor can correct.
   'generation-secondary-lo-limit': 400,
@@ -255,6 +251,9 @@ const GENERATION_ERROR_STATUS: Record<string, number> = {
 };
 
 generationRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof Error && err.message === 'source-not-ready' && 'report' in err) {
+    res.status(409).json({ error: err.message, report: err.report }); return;
+  }
   if (err instanceof Error && Object.hasOwn(GENERATION_ERROR_STATUS, err.message)) {
     res.status(GENERATION_ERROR_STATUS[err.message]).json({ error: err.message });
     return;

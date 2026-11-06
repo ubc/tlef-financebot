@@ -37,6 +37,7 @@ import {
   type RegenerationVariant,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { similarityLabel, similarityLinks } from './similarity-label.js';
 import { runButtonAction } from '../../action-state.js';
 import {
   editableVariableNames,
@@ -343,6 +344,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     );
     const anyEdited = isFieldEdited(draftStem, baseline.stem) || isFieldEdited(draftDifficulty, baseline.difficulty) || optionsChanged;
     saveButton.disabled = !anyEdited;
+    root.querySelectorAll<HTMLButtonElement>('[data-regen-requires-saved]').forEach(button => {
+      button.disabled = anyEdited || button.dataset.regenLocked === 'true';
+    });
     flagUpdateButton.disabled = !anyEdited;
   }
 
@@ -764,6 +768,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     );
   }
 
+  function variantDecisionPanel(decision: RegenerationVariant['agentDecision']): HTMLElement {
+    return el(
+      'article',
+      { class: 'agent-report-panel', 'aria-label': 'Check of generated variant' },
+      el('h4', { class: 'agent-report-panel__title', text: 'Check of generated variant' }),
+      statusBadge(decision.decision.toUpperCase(), decision.decision),
+      el('p', { class: 'agent-report-block__body', text: decision.reasoning }),
+      decision.suggestions?.length
+        ? el('ul', { class: 'agent-report-block__body' }, ...decision.suggestions.map((suggestion) => el('li', { text: suggestion })))
+        : false,
+    );
+  }
+
   function renderRegenerationPanel(): void {
     if (!regenerationOpen) {
       regenerationPanel.replaceChildren();
@@ -793,7 +810,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           {
             class: 'btn btn--instr-primary',
             type: 'button',
-            disabled: regenerationBusy ? 'disabled' : undefined,
+            'data-regen-requires-saved': 'true',
+            'data-regen-locked': String(regenerationBusy),
+            disabled: regenerationBusy || !saveButton.disabled ? 'disabled' : undefined,
             busy: regenerationBusyAction === 'generate',
             onclick: () => generateVariant(),
           },
@@ -825,13 +844,16 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             previewQuestion('Generated variant', regenerationVariant),
           )
         : false,
+      regenerationVariant ? variantDecisionPanel(regenerationVariant.agentDecision) : false,
       regenerationVariant
         ? el(
             'button',
             {
               class: 'btn btn--instr-primary',
               type: 'button',
-              disabled: regenerationBusy ? 'disabled' : undefined,
+              'data-regen-requires-saved': 'true',
+              'data-regen-locked': String(regenerationBusy),
+              disabled: regenerationBusy || !saveButton.disabled ? 'disabled' : undefined,
               busy: regenerationBusyAction === 'replace',
               onclick: () => replaceWithVariant(),
             },
@@ -842,6 +864,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   async function generateVariant(): Promise<void> {
+    if (!saveButton.disabled) { regenerationError = 'Save or discard your current edits before regenerating.'; renderRegenerationPanel(); return; }
     const prompt = regenerationPrompt.value.trim();
     if (!prompt) {
       regenerationError = 'Enter a regeneration prompt.';
@@ -857,9 +880,10 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     try {
       const response = await requestQuestionRegeneration(courseId, questionId, prompt);
       regenerationVariant = response.variant;
-      regenerationMessage = 'Alternative generated. Compare both versions before replacing.';
+      regenerationMessage = 'Alternative generated. Compare both versions and its check before replacing.';
     } catch (error) {
-      regenerationError = error instanceof ApiError ? error.message : (error as Error).message;
+      const failure = error instanceof ApiError ? error.message : (error as Error).message;
+      regenerationError = failure;
     }
     regenerationBusy = false;
     regenerationBusyAction = null;
@@ -867,6 +891,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
 
   async function replaceWithVariant(): Promise<void> {
+    if (!saveButton.disabled) { regenerationError = 'Save or discard your current edits before replacing.'; renderRegenerationPanel(); return; }
     if (!regenerationVariant) return;
     regenerationBusy = true;
     regenerationBusyAction = 'replace';
@@ -1016,8 +1041,20 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             statusBadge(agentDecision.decision.toUpperCase(), agentDecision.decision),
           ),
           el('p', { class: 'agent-report-block__body', text: agentDecision.reasoning }),
+          agentDecision.suggestions?.length
+            ? el('ul', { class: 'agent-report-block__body' }, ...agentDecision.suggestions.map((s) => el('li', { text: s })))
+            : false,
         )
       : el('p', { class: 'agent-report-empty', text: 'No agent report available for this question.' }),
+    detail.similarity
+      ? el(
+          'div',
+          { class: 'agent-report-block' },
+          el('div', { class: 'agent-report-block__head' }, el('span', { text: 'Similarity' })),
+          el('p', { class: 'agent-report-block__body', text: similarityLabel(detail.similarity) }),
+          similarityLinks(courseId, detail.similarity),
+        )
+      : false,
     agentDecision
       ? el(
           'div',

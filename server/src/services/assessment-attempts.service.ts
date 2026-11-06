@@ -4,6 +4,7 @@ import { assessmentAttemptsCol, builderExamsCol, examPublicationsCol, coursesCol
 import type { AssessmentAttempt, AssessmentSubmissionReason, ExamPublication } from '../types/exam-builder';
 import { examError } from './question-variant.service';
 import { assessmentWindowLease, requireWindowOwner, validateAssessmentWindowId, windowCas, windowDueReason, windowReceipt } from './assessment-window';
+import { frozenNumericalPaperProblem } from './assessment-numeric-admission.service';
 
 async function studentCourse(courseId: ObjectId) {
   const course = await coursesCol().findOne({ _id: courseId });
@@ -36,6 +37,8 @@ export async function startAssessment(courseId: ObjectId, examId: ObjectId, puid
   if (!publication) examError('Published exam not found.', 404);
   const now = new Date();
   if (now.getTime() < Date.parse(publication.settings.opensAt) || now.getTime() >= Date.parse(publication.settings.closesAt)) examError('This exam is outside its availability window.');
+  const numericalProblem = await frozenNumericalPaperProblem(publication.items);
+  if (numericalProblem) examError(numericalProblem);
   const pinned = await builderExamsCol().updateOne({ _id: examId, courseId, publicationId: publication._id, deletingAt: { $exists: false } }, { $set: { startedAt: now } });
   if (!pinned.matchedCount) examError('The paper changed before your attempt started. Please try again.');
   const extra = publication.settings.accommodations.find(a => a.puid === puid)?.extraMinutes ?? 0;

@@ -1,9 +1,11 @@
 # Offline quality evaluation
 
+> **2026-11-06:** the server `evaluation-export` route was removed with the quality policies. The offline CLI still works on previously downloaded export JSON and the synthetic demo, but no new exports can be produced.
+
 This tool connects FinanceBot's recorded generation results to blinded teacher
 review and explicit quality, supply, time, and token denominators. It does not
 call a model, connect to MongoDB, execute question code, or generate teacher
-labels. The CLI imports only local JSON files. A separate authenticated API
+labels. The CLI imports only local JSON files.
 exports existing records without generating or changing course content.
 
 ## Try the complete workflow without a provider
@@ -140,7 +142,12 @@ content changes; they are not signatures authenticating who supplied a manifest.
   unchanged or after edits with duplication explicitly absent count as delivered
   independent supply. Accepted variants and acceptable withheld candidates are
   separate. Unreviewed outputs leave supply unresolved; they are not teacher
-  rejections.
+  rejections. With no resolved supply dispositions, accepted/requested is
+  unavailable (`null`), even though the count of known accepted questions is
+  zero. With partial dispositions, the ratio remains over every requested slot
+  and is explicitly a recorded lower bound; supply-label coverage states how
+  many slots are known or unresolved. A measured zero acceptance rate requires
+  fully resolved supply labels rather than an empty review file.
 - **Incidence:** source, notation, duplication, difficulty, and answer issues are
   reported with present/absent/uncertain/unreviewed counts. Resolved-only and
   reviewed-including-uncertain denominators are explicit. Saved-output incidence

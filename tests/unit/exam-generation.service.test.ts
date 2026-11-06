@@ -4,7 +4,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => Object.fromEn
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
 jest.mock('../../server/src/services/admin.service', () => ({ getPlatformSettings: jest.fn() }));
-jest.mock('../../server/src/services/generation.service', () => ({ generatePrivateAssessmentQuestion: jest.fn() }));
+jest.mock('../../server/src/services/question-generation/pipeline', () => ({ generatePrivateAssessmentQuestion: jest.fn() }));
 jest.mock('../../server/src/services/exam-builder.service', () => ({ getBuilderExam: jest.fn(), assertEditable: jest.fn(), validateExamLos: jest.fn(), requireExamCourse: jest.fn() }));
 jest.mock('../../server/src/services/question-variant.service', () => ({
   examError: (message: string) => { throw new Error(message); },
@@ -12,7 +12,7 @@ jest.mock('../../server/src/services/question-variant.service', () => ({
   QuestionVariantService: jest.fn().mockImplementation(() => ({})),
 }));
 import { builderExamsCol, examBuildRunsCol, examCandidatesCol } from '../../server/src/components/mongodb/collections';
-import { generatePrivateAssessmentQuestion } from '../../server/src/services/generation.service';
+import { generatePrivateAssessmentQuestion } from '../../server/src/services/question-generation/pipeline';
 import { processExamGeneration, retryExamGeneration, cancelExamGeneration, reconcileExamReservations, confirmExamGeneration } from '../../server/src/services/exam-generation.service';
 const courseId = new ObjectId(), examId = new ObjectId(), runId = new ObjectId();
 let run: ExamBuildRun & { _id: ObjectId };
@@ -61,13 +61,13 @@ test('stream preview is persisted before stage changes and exposes only visible 
   jest.mocked(generatePrivateAssessmentQuestion).mockImplementation(async input => {
     await input.onStage?.('generating');
     input.onText?.('{"stem":"Streaming question","reasoning":"private scratchpad","options":[{"key":"A","text":"Visible option","role":"correct"}]}');
-    await input.onStage?.('validating');
+    await input.onStage?.('reviewing');
     return { stem: 'Saved question', sourceRefs: [], agentDecision: { decision: 'approve', reasoning: '' } } as never;
   });
   await processExamGeneration(runId);
   const progress = updates.mock.calls.map(([, update]) => update.$set?.progress).filter(Boolean);
   const streamed = progress.find(value => value.preview?.stem === 'Streaming question');
   expect(streamed.preview).toEqual({ stem: 'Streaming question', options: [{ key: 'A', text: 'Visible option' }] });
-  expect(progress.find(value => value.stage === 'validating').preview.stem).toBe('Streaming question');
+  expect(progress.find(value => value.stage === 'reviewing').preview.stem).toBe('Streaming question');
   expect(JSON.stringify(progress)).not.toContain('scratchpad');
 });

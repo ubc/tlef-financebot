@@ -43,3 +43,7 @@ local_cache/
 # storage for multer, not a build artifact but never committed.
 uploads/
 scripts/prompt-ab/results/
+tmp/pdfs/
+
+# Local exact-input/output book data may contain copyrighted source excerpts.
+artifacts/quality-lab-book-2026-10-16/private/

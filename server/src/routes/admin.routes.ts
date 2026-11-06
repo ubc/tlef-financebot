@@ -14,6 +14,8 @@ import {
   capabilityMatrix,
   deactivateUser,
   getPlatformSettings,
+  getAdminCourseModels,
+  saveAdminCourseModels,
   defaultPlatformSettings,
   listAdminAccounts,
   listAdminCourses,
@@ -68,7 +70,6 @@ const stepModelConfig = z.object({
 const platformSettingsBody = z.object({
   models: z.object({
     generator: stepModelConfig,
-    validator: stepModelConfig,
     reviewer: stepModelConfig,
     masteryEvaluator: stepModelConfig,
     utility: stepModelConfig,
@@ -79,13 +80,16 @@ const platformSettingsBody = z.object({
   })).optional(),
   costControls: z.object({ maxGenerationsPerDay: z.number().int().positive() }),
   featureFlags: z.object({
-    reviewerAgent: z.boolean(),
     layer2Evaluator: z.boolean(),
-    // default(true) rather than required: clients predating the flag (and any
-    // scripted caller) keep working, and the cost-saving direction is opt-OUT.
-    retryOnReject: z.boolean().default(true),
   }),
-  confirmQualityImpact: z.boolean().optional(),
+});
+const courseModelParams = z.object({ courseId: objectId });
+const modelChoice = z.string().trim().min(1).max(250).optional();
+const courseModelBody = z.object({
+  revision: z.number().int().nonnegative().safe(),
+  overrides: z.object({
+    generator: modelChoice, reviewer: modelChoice, utility: modelChoice,
+  }).strict(),
 });
 
 adminRouter.get(
@@ -241,12 +245,29 @@ adminRouter.put(
   )),
 );
 
+adminRouter.get(
+  '/admin/courses/:courseId/models',
+  ensureAdmin(),
+  validate({ params: courseModelParams }),
+  async (req, res) => res.json(await getAdminCourseModels(new ObjectId(String(req.params.courseId)))),
+);
+
+adminRouter.put(
+  '/admin/courses/:courseId/models',
+  ensureAdmin(),
+  validate({ params: courseModelParams, body: courseModelBody }),
+  async (req, res) => res.json(await saveAdminCourseModels(
+    new ObjectId(String(req.params.courseId)), req.body.revision, req.body.overrides, req.user!.puid,
+  )),
+);
+
 const ADMIN_ERROR_STATUS: Record<string, number> = {
+  'course-not-found': 404,
+  'course-models-conflict': 409,
   'admin-user-not-found': 404,
   'admin-cannot-deactivate-self': 409,
   'invalid-cost-controls': 400,
   'invalid-model-selector': 400,
-  'reviewer-disable-confirmation-required': 409,
 };
 
 /** Capability rejections are per-step, so they carry the step name as a suffix. */

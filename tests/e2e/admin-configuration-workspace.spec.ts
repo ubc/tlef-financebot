@@ -11,18 +11,19 @@ const initialSettings = {
   customModels: [], costControls: { maxGenerationsPerDay: 1000 }, featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true }, updatedBy: 'admin', updatedAt: '2026-09-20T12:00:00.000Z',
   catalogue: { environmentModels: { generator: 'fixture-reasoning', validator: 'fixture-reasoning', reviewer: 'fixture-reasoning', masteryEvaluator: 'fixture-reasoning', utility: 'fixture-classic' }, models: [{ id: 'fixture-classic', profile: 'classic', custom: false }, { id: 'fixture-reasoning', profile: 'reasoning-fixed', custom: false }], profiles: { classic: profileClassic, 'reasoning-fixed': { ...profileClassic, profile: 'reasoning-fixed', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'medium' }, 'reasoning-tunable': { ...profileClassic, profile: 'reasoning-tunable', reasoningEffort: ['none', 'low', 'medium', 'high'], defaultEffort: 'none' } }, stepTemperatureDefaults: { generator: 0.7, validator: 0, reviewer: 0, masteryEvaluator: 0, utility: 0 } },
 };
-async function fixture(page: Page, view: 'capabilities' | 'settings') {
+async function fixture(page: Page, view: 'capabilities' | 'settings', settingsFixture = initialSettings) {
   const writes: Array<{ path: string; body: Record<string, unknown> }> = [];
   let assignments: Record<string, Record<string, Record<string, boolean>>> = { platform: {}, [courseA]: {}, [courseB]: {} };
-  let settings = structuredClone(initialSettings);
+  let settings = structuredClone(settingsFixture);
   const controls = { failSave: false, delayScopeA: false, scopeALoaded: false, failRead: false };
-  await page.route('**/configuration-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en" data-theme="light" data-admin="true"><head><title>Admin configuration</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/admin-console.css"><link rel="stylesheet" href="/styles/admin-configuration.css"></head><body><main id="app" class="outlet"></main></body></html>' }));
+  await page.route('**/configuration-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en" data-theme="light" data-admin="true"><head><title>Admin configuration</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/course-cards.css"><link rel="stylesheet" href="/styles/admin-console.css"><link rel="stylesheet" href="/styles/admin-configuration.css"></head><body><main id="app" class="outlet"></main></body></html>' }));
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname;
     const method = route.request().method();
     if (path === '/api/auth/me') return route.fulfill({ json: { authenticated: true, roles: [], user: { puid: 'admin', isAdmin: true, courseRoles: [] } } });
     if (path.includes('tutorial')) return route.fulfill({ json: [] });
+    if (path === '/api/diagnostics/client-error') return route.fulfill({ status: 204 });
     if (method !== 'GET') {
       const body = route.request().postDataJSON(); writes.push({ path, body });
       if (controls.failSave) return route.fulfill({ status: 503, json: { error: 'Save unavailable. Try again.' } });
@@ -54,6 +55,72 @@ async function fixture(page: Page, view: 'capabilities' | 'settings') {
   await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeVisible();
   return { writes, controls };
 }
+
+test('Admin can save one course’s model choice and restore platform inheritance', async ({ page }) => {
+  await fixture(page, 'settings');
+  await page.route('**/api/admin/courses', route => route.fulfill({ json: [
+    { _id: courseA, courseCode: 'COMM 298', name: 'Intro to Finance', section: '101', term: '2026W1', lifecycle: 'published', owner: { displayName: 'Ana García' } },
+    { _id: courseB, courseCode: 'COMM 298', name: 'Intro to Finance', section: '102', term: '2026W1', lifecycle: 'published', owner: { displayName: 'Sam Chen' } },
+  ] }));
+  let revision = 0;
+  let override: string | undefined;
+  await page.route('**/api/admin/courses/*/models', route => {
+    const forA = route.request().url().includes(courseA);
+    if (route.request().method() === 'PUT') {
+      expect(forA).toBe(true);
+      const body = route.request().postDataJSON();
+      expect(body.revision).toBe(revision++);
+      override = body.overrides.generator;
+    }
+    const generator = forA ? override : undefined;
+    return route.fulfill({ json: {
+      revision: forA ? revision : 0, overrides: generator ? { generator } : {},
+      platformModels: initialSettings.models,
+      effectiveModels: { ...initialSettings.models, ...(generator ? { generator: { model: generator } } : {}) },
+      availableModels: ['fixture-classic', 'fixture-reasoning'],
+    } });
+  });
+  await page.getByRole('tab', { name: 'Course models' }).click();
+  const search = page.getByRole('searchbox', { name: 'Search by course or instructor' });
+  const courseCardA = page.getByRole('button', { name: /Model settings COMM 298.*Section 101.*Ana García/ });
+  const courseCardB = page.getByRole('button', { name: /Model settings COMM 298.*Section 102.*Sam Chen/ });
+  const back = page.getByRole('button', { name: 'Back to courses' });
+  await search.fill('comm298');
+  await expect(courseCardA).toBeVisible();
+  await expect(courseCardB).toBeVisible();
+  await search.fill('does not exist');
+  await expect(page.getByText('No courses match your search.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Model settings COMM 298/ })).toHaveCount(0);
+  await search.fill('garcia ana');
+  await expect(courseCardB).toHaveCount(0);
+  await courseCardA.press('Enter');
+  await expect(page.getByRole('heading', { name: 'COMM 298 · Intro to Finance' })).toBeFocused();
+  await expect(search).toBeHidden();
+  const generator = page.getByLabel('Generator course model', { exact: true });
+  await generator.selectOption('fixture-reasoning');
+  await back.click();
+  await expect(page.getByRole('dialog')).toContainText('Discard course model changes?');
+  await page.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(generator).toHaveValue('fixture-reasoning');
+  await page.getByRole('button', { name: 'Review course changes' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Section 101');
+  await page.getByRole('button', { name: 'Save course models', exact: true }).click();
+  await expect(page.getByText('Currently fixture-reasoning · Course override')).toBeVisible();
+  await back.click();
+  await expect(search).toHaveValue('garcia ana');
+  await expect(courseCardA).toBeFocused();
+  await search.clear();
+  await courseCardB.click();
+  await expect(generator).toHaveValue('');
+  await back.click();
+  await courseCardA.click();
+  await expect(generator).toHaveValue('fixture-reasoning');
+  await generator.selectOption('');
+  await page.getByRole('button', { name: 'Review course changes' }).click();
+  await page.getByRole('button', { name: 'Save course models', exact: true }).click();
+  await expect(page.getByText('Currently fixture-classic · Inherited').first()).toBeVisible();
+  expect(override).toBeUndefined();
+});
 
 test('capabilities preserve sparse assignments, enforce safety locks and save the loaded scope', async ({ page }) => {
   const { writes } = await fixture(page, 'capabilities');
@@ -149,6 +216,65 @@ test('settings use catalogue parameters, validate limits, preserve tabs and save
   expect((writes[0].body.models as Record<string, unknown>).validator).toEqual({ model: 'fixture-reasoning', temperature: 0.3, reasoningEffort: 'none' });
   expect(writes[0].body.costControls).toEqual({ maxGenerationsPerDay: 1200 });
   await expect(page.getByText('No unsaved changes', { exact: true })).toBeVisible();
+});
+
+test('Sol reasoning-required profile defaults to medium without none and Luna retains supported none save payloads', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const settingsFixture = {
+    ...initialSettings,
+    models: { ...initialSettings.models, generator: { model: 'gpt-6-luna', reasoningEffort: 'none', temperature: 0.4 } },
+    catalogue: { ...initialSettings.catalogue,
+      models: [...initialSettings.catalogue.models, { id: 'gpt-6-luna', profile: 'reasoning-fixed', custom: false }, { id: 'gpt-6.1-sol', profile: 'reasoning-required', custom: false }],
+      profiles: { ...initialSettings.catalogue.profiles,
+        'reasoning-fixed': { ...initialSettings.catalogue.profiles['reasoning-fixed'], reasoningEffort: ['none', 'low', 'medium', 'high', 'xhigh'], tokenLimitParam: 'max_completion_tokens' },
+        'reasoning-required': { profile: 'reasoning-required', temperature: null, reasoningEffort: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', tokenLimitParam: 'max_completion_tokens' } },
+    },
+  };
+  const { writes } = await fixture(page, 'settings', settingsFixture);
+  await page.evaluate(() => {
+    const label = document.createElement('p');
+    label.textContent = 'API fixture · Compiled Admin settings UI · Intercepted responses only · No live model or platform setting changes';
+    label.style.cssText = 'margin:12px 24px;padding:12px;border:1px solid #607080;border-radius:8px;background:#eef4f8;color:#17202a;font:14px system-ui';
+    document.body.prepend(label);
+  });
+  await page.getByRole('button', { name: 'Edit Generator', exact: true }).click();
+  await expect(page.getByLabel('Generator reasoning effort', { exact: true })).toHaveValue('none');
+  await expect(page.getByLabel('Generator temperature', { exact: true })).toHaveValue('0.4');
+  await page.getByLabel('Generator model', { exact: true }).selectOption('gpt-6.1-sol');
+  const effort = page.getByLabel('Generator reasoning effort', { exact: true });
+  await expect(effort).toHaveValue('medium');
+  expect(await effort.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(['low', 'medium', 'high', 'xhigh']);
+  await expect(page.getByLabel('Generator temperature', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Generator configuration')).toContainText('reasoning-required');
+  await expect(page.getByText('always reasons; effort “none” and temperature are unavailable', { exact: true })).toBeVisible();
+  await effort.selectOption('medium');
+  await page.screenshot({ path: 'artifacts/quality-lab-book-2026-10-16/admin-sol-reasoning-required-api-fixture.png', fullPage: true });
+  expect((await new AxeBuilder({ page }).include('.admin-configuration').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect((writes[0].body.models as Record<string, unknown>).generator).toEqual({ model: 'gpt-6.1-sol', modelSource: 'override', reasoningEffort: 'medium' });
+  await expect(page.getByText('No unsaved changes', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Edit Generator', exact: true }).click();
+  await expect(page.getByLabel('Generator model', { exact: true })).toHaveValue('gpt-6.1-sol');
+  await expect(page.getByLabel('Generator reasoning effort', { exact: true })).toHaveValue('medium');
+  await page.getByLabel('Generator model', { exact: true }).selectOption('gpt-6-luna');
+  await expect(effort).toHaveValue('none');
+  expect(await effort.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(['none', 'low', 'medium', 'high', 'xhigh']);
+  await expect(page.getByLabel('Generator temperature', { exact: true })).toBeVisible();
+  await effort.selectOption('none');
+  await page.getByLabel('Generator temperature', { exact: true }).fill('0.4');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Generator', exact: true }).click();
+  await page.screenshot({ path: 'artifacts/quality-lab-book-2026-10-16/admin-luna-none-api-fixture.png', fullPage: true });
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect((writes[1].body.models as Record<string, unknown>).generator).toEqual({ model: 'gpt-6-luna', modelSource: 'override', reasoningEffort: 'none', temperature: 0.4 });
+  expect(writes.every(write => write.path === '/api/admin/platform-settings')).toBe(true);
 });
 
 test('settings reviewer disabling requires quality confirmation and failed writes retain draft', async ({ page }) => {

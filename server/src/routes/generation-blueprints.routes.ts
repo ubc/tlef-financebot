@@ -21,7 +21,6 @@ const blueprintBody = z.object({
   loId: objectIdParam,
   count: z.number().int().min(1).max(20),
   type: z.enum(['mcq', 'true-false']),
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1']).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
   prompt: z.string().max(2000).optional(),
   materialIds: z.array(objectIdParam).max(100).optional(),
@@ -49,7 +48,6 @@ generationBlueprintsRouter.post(
       loId: new ObjectId(body.loId),
       count: body.count,
       type: body.type,
-      ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}),
       ...(body.difficulty ? { difficulty: body.difficulty } : {}),
       ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
       ...(body.materialIds
@@ -77,7 +75,6 @@ generationBlueprintsRouter.patch(
       ...(body.loId ? { loId: new ObjectId(body.loId) } : {}),
       ...(body.count !== undefined ? { count: body.count } : {}),
       ...(body.type ? { type: body.type } : {}),
-      ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}),
       ...(body.difficulty ? { difficulty: body.difficulty } : {}),
       ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
       ...(body.materialIds
@@ -114,7 +111,6 @@ const ERROR_STATUS: Record<string, number> = {
   'lo-not-in-course': 400,
   'blueprint-material-not-ready': 400,
   'content-run-enqueue-failed': 503,
-  'generation-quality-reviewer-required': 409,
 };
 
 generationBlueprintsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

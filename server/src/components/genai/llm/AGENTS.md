@@ -15,6 +15,7 @@ Implemented. A single, env-configured `LLMModule` is exported from `index.ts`.
 | `LLM_DEFAULT_MODEL` | Default model id | `ministral-3:latest` |
 | `LLM_ENDPOINT` | Server URL (ollama / ubc-llm-sandbox / OpenAI-compatible) | `http://localhost:11434` |
 | `LLM_API_KEY` | API key (openai / anthropic / ubc-llm-sandbox) | |
+| `LLM_REQUEST_TIMEOUT_MS` | Total OpenAI/UBC-compatible completion deadline, including stream body and SDK retries | `180000` |
 
 `endpoint` is passed only when set; `apiKey` likewise. This one generic pair maps
 to whatever the chosen provider needs, so switching providers is a config change
@@ -69,9 +70,11 @@ conversation.addMessage('user', 'What is the capital of France?');
 const reply = await conversation.send(modelRequestOptions({ maxTokens: 100, reasoningEffort: 'none' }));
 ```
 
-`reasoningEffort: 'none'` is what keeps a temperature legal and keeps a small
-token budget spendable on visible output rather than on hidden reasoning. Drop
-it only when you want the model to think.
+Use `defaultJsonReasoningEffort(model)` when a JSON caller needs the compatible
+default. Models supporting `none` retain that default; the `reasoning-required`
+Sol 6.1 profile defaults to `medium` and rejects an explicit `none` before a
+provider send. Never substitute an unsupported effort silently. Active reasoning
+omits temperature and consumes the completion cap together with visible output.
 
 Streaming is supported via `streamConversation` / `conversation.stream()`.
 
@@ -101,7 +104,8 @@ Streaming is supported via `streamConversation` / `conversation.stream()`.
 - **`max_completion_tokens` is not a renamed `max_tokens`.** It budgets reasoning
   AND visible output together, so a reasoning model can spend the whole cap
   thinking and return `''` with `finish_reason: 'length'`. Measured: luna burned
-  all 500 tokens on reasoning. Pair a small cap with `reasoningEffort: 'none'`.
+  all 500 tokens on reasoning. Use `none` only on a model that supports it;
+  reasoning-required models need a suitable completion cap.
 - **An unknown model id that looks like OpenAI's** (`gpt-*`, `o1`/`o3`…) resolves
   to `reasoning-tunable`, not `classic` — dated snapshots like
   `gpt-5.4-nano-2026-08-01` would otherwise get `max_tokens` and 400. Anything
@@ -158,3 +162,15 @@ Embeddings and model-list health checks are outside this observation boundary.
 Tests must inject a synthetic adapter client or mock the environment and toolkit
 together. A local `.env` must never replace a mocked facade with a real native
 transport. No usage test requires a paid endpoint or provider credentials.
+
+OpenAI-compatible completion calls have one total deadline, covering both the
+initial request and every streamed chunk. `request-deadline.ts` aborts the SDK
+request and rejects even an uncooperative iterator, without awaiting a stalled
+iterator cleanup. `ModelCallTimeoutError` (`model-call-timeout`) is a transport
+failure; `completeJson` must not treat it as a malformed-JSON correction. Unknown
+usage retains its budget reservation, received native usage remains recorded,
+and late data cannot trigger callbacks or alter finished usage receipts. The
+default is three minutes; a deliberate longer reasoning workload can configure
+the deadline without changing model options. This boundary does not add retries
+or establish a provider billing guarantee. Model listing and other provider
+adapters are outside this completion deadline.

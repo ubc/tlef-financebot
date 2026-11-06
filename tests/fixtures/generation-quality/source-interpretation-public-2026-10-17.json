@@ -1,0 +1,1111 @@
+{
+  "scope": "Exact selected source passages and saved questions from a completed local public run, not semantic model assertions or teacher acceptance. Passage selection is smaller than the captured packet; source bytes within each passage are unchanged.",
+  "archiveInputSha256": "cddf7679dafe37824afe0e119cc9f427296390ba9fa35080cd194caaade924ee",
+  "cases": [
+    {
+      "archiveCaseId": "P01",
+      "request": {
+        "qualityPolicy": "grounded-memory-v2",
+        "count": 3,
+        "type": "mcq",
+        "difficulty": "easy",
+        "kind": "conceptual",
+        "prompt": "Create independent learning tasks, not paraphrases or numerical variants. The Bank already tests that diversification reduces firm-specific risk. Stay within the source."
+      },
+      "question": {
+        "type": "mcq",
+        "stem": "An event affects all investments. Which risk category does this describe, and what does the passage say about investors diversifying across asset classes?",
+        "options": [
+          {
+            "key": "A",
+            "role": "common-misconception",
+            "text": "Market risk; diversifying across asset classes mitigates it.",
+            "explanation": "The passage lists asset-class diversification as an investor strategy, but says market-wide risk cannot be diversified away."
+          },
+          {
+            "key": "B",
+            "role": "partially-correct",
+            "text": "Firm-specific risk; diversifying across domestic stocks mitigates it.",
+            "explanation": "Domestic-stock diversification is listed for mitigating firm-specific risk, but an event affecting all investments is market risk."
+          },
+          {
+            "key": "C",
+            "role": "correct",
+            "text": "Market risk; diversifying across asset classes cannot diversify it away.",
+            "explanation": "The passage describes market risk as affecting all investments and says it cannot be diversified away."
+          },
+          {
+            "key": "D",
+            "role": "clearly-wrong",
+            "text": "Firm-specific risk; investors cannot mitigate it through diversification.",
+            "explanation": "Firm-specific risk affects an individual firm and can be reduced through diversification."
+          }
+        ],
+        "difficulty": "easy",
+        "numericKind": "conceptual",
+        "taskDescriptor": {
+          "concepts": [
+            "Distinguish firm-specific risk from market risk by scope",
+            "Identify the stated limit of diversification"
+          ],
+          "requiredInference": "Classify a risk affecting all investments as market risk and identify that diversification across asset classes does not eliminate it.",
+          "solutionPath": [
+            "Determine that an event affecting all investments is market risk.",
+            "Apply the passage's statement that market-wide risk cannot be diversified away.",
+            "Reject the claim that asset-class diversification mitigates this risk."
+          ],
+          "misconception": "Assuming that diversification across asset classes can eliminate risk affecting all investments.",
+          "targetDifficulty": "easy",
+          "passageIds": [
+            "E1a9e0714e8507d52-16-0",
+            "E1a9e0714e8507d52-15-0"
+          ],
+          "intent": "create-independent-task",
+          "achievedDifficulty": "easy"
+        }
+      },
+      "originalPacketId": "ec080a6dc7d7cc2acdf1b3e7aaad8d914a923c7153e0759b7237a7ccbd9b2c2d",
+      "originalPacketSha256": "d6f4ffa0e91a3ccf1f613ed7a1f74350869bc85377bf09abaf70eb446fcf58cc",
+      "material": {
+        "materialId": "6ad32918551406501e0578fa",
+        "role": "primary",
+        "loId": "6ad32918551406501e0578f8",
+        "loName": "Distinguish firm-specific and market risk and explain diversification.",
+        "name": "Chapter 3: The Basics of Risk.pdf",
+        "revision": 2,
+        "activeRunId": "6ad32918551406501e0578fb",
+        "contentHash": "00a30fa2eebb922446e9e0ec27ba19522b848fba201f0a51e7629549f67b08b2",
+        "chunkCount": 29,
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      },
+      "sourcePassages": [
+        {
+          "id": "E1a9e0714e8507d52-16-0",
+          "materialId": "6ad32918551406501e0578fa",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32918551406501e0578f8",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 16,
+          "start": 0,
+          "end": 775,
+          "text": "Aswath Damodaran\n\f§ Firm-specific risk can be reduced, if not eliminated, by\n  increasing the number of investments in your portfolio (i.e., by\n  being diversified). Market-wide risk cannot. This can be\n  justified on either economic or statistical grounds.\n§ On economic grounds, diversifying and holding a larger\n  portfolio eliminates firm-specific risk for two reasons-\n   § Each investment is a much smaller percentage of the portfolio,\n     muting the effect (positive or negative) on the overall portfolio.\n   § Firm-specific actions can be either positive or negative. In a large\n     portfolio, it is argued, these effects will average out to zero. (For\n     every firm, where something bad happens, there will be some other\n     firm, where something good happens.)",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E1a9e0714e8507d52-15-0",
+          "materialId": "6ad32918551406501e0578fa",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32918551406501e0578f8",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 15,
+          "start": 0,
+          "end": 820,
+          "text": "Firm-specific                                                                                 Market\n\n\n         Actions/Risk that                                                               Actions/Risk that\n         affect only one      Affects few                         Affects many           affect all investments\n         firm                 firms                               firms\n     Firm can Investing in lots Acquiring      Diversifying           Diversifying               Cannot affect\n     reduce by of projects      competitors    across sectors         across countries\n     Investors Diversifying across domestic stocks               Diversifying globally   Diversifying across\n     can                                                                                 asset classes\n     mitigate by",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E1a9e0714e8507d52-23-0",
+          "materialId": "6ad32918551406501e0578fa",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32918551406501e0578f8",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 23,
+          "start": 0,
+          "end": 903,
+          "text": "E(R)                        E(R)                        E(R)\n                                      Step 2: Differentiating between Rewarded and Unrewarded Risk\n              Risk that is specific to investment (Firm Specific)      Risk that affects all investments (Market Risk)\n              Can be diversified away in a diversified portfolio       Cannot be diversified away since most assets\n              1. each investment is a small proportion of portfolio    are affected by it.\n              2. risk averages out across investments in portfolio\n              The marginal investor is assumed to hold a “diversified” portfolio. Thus, only market risk will\n              be rewarded and priced.\n                                                       Step 3: Measuring Market Risk\n                      The CAPM                        The APM            Multi-Factor Models             Proxy Models",
+          "selection": "retrieved"
+        }
+      ],
+      "bank": [
+        {
+          "_id": "6acfa5f72dafa79794e4611f",
+          "questionId": "6acfa5f72dafa79794e4611e",
+          "version": 1,
+          "type": "true-false",
+          "stem": "Diversification can reduce firm-specific risk.",
+          "options": [
+            {
+              "key": "A",
+              "text": "True",
+              "role": "correct",
+              "explanation": "Combining investments can reduce firm-specific risk."
+            },
+            {
+              "key": "B",
+              "text": "False",
+              "role": "common-misconception",
+              "explanation": "Firm-specific risk can be diversified; market risk remains."
+            }
+          ],
+          "difficulty": "easy",
+          "sourceRefs": [],
+          "provenance": {
+            "kind": "manual"
+          },
+          "createdBy": "QUALITY-RETEST-OBSERVATIONS-e4a64b66-7909-4a8e-b10a-0c47ca56e8a0",
+          "createdAt": "2026-10-14T15:55:35.595Z",
+          "numericKind": "conceptual"
+        }
+      ],
+      "savedPeerQuestions": [
+        {
+          "type": "mcq",
+          "stem": "Why can adding many investments reduce firm-specific risk in a portfolio?",
+          "options": [
+            {
+              "key": "A",
+              "role": "partially-correct",
+              "text": "Each investment has a smaller portfolio share, so firm-specific risk is reduced; averaging firm-specific effects is not part of the explanation.",
+              "explanation": "A smaller portfolio share mutes each investment’s effect, but the source also identifies averaging positive and negative firm-specific effects."
+            },
+            {
+              "key": "B",
+              "role": "common-misconception",
+              "text": "Positive and negative firm-specific effects can average out, so diversification removes market-wide risk too.",
+              "explanation": "Averaging can reduce firm-specific risk; market-wide risk cannot be diversified away."
+            },
+            {
+              "key": "C",
+              "role": "clearly-wrong",
+              "text": "Adding investments makes every firm-specific action affect the whole portfolio more strongly.",
+              "explanation": "The source says each investment becomes a smaller percentage of the portfolio, muting its effect."
+            },
+            {
+              "key": "D",
+              "role": "correct",
+              "text": "Each investment has a smaller portfolio share, and positive and negative firm-specific effects can average out.",
+              "explanation": "Both mechanisms reduce the effect of firm-specific actions on the overall portfolio."
+            }
+          ],
+          "difficulty": "easy",
+          "numericKind": "conceptual",
+          "taskDescriptor": {
+            "concepts": [
+              "Firm-specific risk",
+              "Portfolio weights",
+              "Averaging firm-specific effects",
+              "Market-wide risk"
+            ],
+            "requiredInference": "Explain how both smaller portfolio shares and averaging positive and negative firm-specific effects reduce the effect of firm-specific actions, while distinguishing this from market-wide risk.",
+            "solutionPath": [
+              "Recognize that adding investments makes each one a smaller percentage of the portfolio.",
+              "Recognize that positive and negative firm-specific effects can average out across a large portfolio.",
+              "Conclude that these mechanisms reduce firm-specific risk, not market-wide risk."
+            ],
+            "misconception": "Thinking diversification works only by shrinking each investment’s portfolio share, or that it also removes market-wide risk.",
+            "targetDifficulty": "easy",
+            "passageIds": [
+              "E1a9e0714e8507d52-16-0"
+            ],
+            "intent": "create-independent-task",
+            "achievedDifficulty": "easy"
+          }
+        }
+      ]
+    },
+    {
+      "archiveCaseId": "P02",
+      "request": {
+        "qualityPolicy": "grounded-memory-v2",
+        "count": 3,
+        "type": "mcq",
+        "difficulty": "easy",
+        "kind": "conceptual",
+        "prompt": "Create independent learning tasks, not paraphrases or numerical variants. The Bank already tests that diversification reduces firm-specific risk. Stay within the source."
+      },
+      "question": {
+        "type": "mcq",
+        "stem": "Why can adding many investments reduce firm-specific risk in a portfolio?",
+        "options": [
+          {
+            "key": "A",
+            "role": "partially-correct",
+            "text": "Each investment has a smaller portfolio share, so firm-specific risk is reduced; averaging firm-specific effects is not part of the explanation.",
+            "explanation": "A smaller portfolio share mutes each investment’s effect, but the source also identifies averaging positive and negative firm-specific effects."
+          },
+          {
+            "key": "B",
+            "role": "common-misconception",
+            "text": "Positive and negative firm-specific effects can average out, so diversification removes market-wide risk too.",
+            "explanation": "Averaging can reduce firm-specific risk; market-wide risk cannot be diversified away."
+          },
+          {
+            "key": "C",
+            "role": "clearly-wrong",
+            "text": "Adding investments makes every firm-specific action affect the whole portfolio more strongly.",
+            "explanation": "The source says each investment becomes a smaller percentage of the portfolio, muting its effect."
+          },
+          {
+            "key": "D",
+            "role": "correct",
+            "text": "Each investment has a smaller portfolio share, and positive and negative firm-specific effects can average out.",
+            "explanation": "Both mechanisms reduce the effect of firm-specific actions on the overall portfolio."
+          }
+        ],
+        "difficulty": "easy",
+        "numericKind": "conceptual",
+        "taskDescriptor": {
+          "concepts": [
+            "Firm-specific risk",
+            "Portfolio weights",
+            "Averaging firm-specific effects",
+            "Market-wide risk"
+          ],
+          "requiredInference": "Explain how both smaller portfolio shares and averaging positive and negative firm-specific effects reduce the effect of firm-specific actions, while distinguishing this from market-wide risk.",
+          "solutionPath": [
+            "Recognize that adding investments makes each one a smaller percentage of the portfolio.",
+            "Recognize that positive and negative firm-specific effects can average out across a large portfolio.",
+            "Conclude that these mechanisms reduce firm-specific risk, not market-wide risk."
+          ],
+          "misconception": "Thinking diversification works only by shrinking each investment’s portfolio share, or that it also removes market-wide risk.",
+          "targetDifficulty": "easy",
+          "passageIds": [
+            "E1a9e0714e8507d52-16-0"
+          ],
+          "intent": "create-independent-task",
+          "achievedDifficulty": "easy"
+        }
+      },
+      "originalPacketId": "ec080a6dc7d7cc2acdf1b3e7aaad8d914a923c7153e0759b7237a7ccbd9b2c2d",
+      "originalPacketSha256": "d6f4ffa0e91a3ccf1f613ed7a1f74350869bc85377bf09abaf70eb446fcf58cc",
+      "material": {
+        "materialId": "6ad32918551406501e0578fa",
+        "role": "primary",
+        "loId": "6ad32918551406501e0578f8",
+        "loName": "Distinguish firm-specific and market risk and explain diversification.",
+        "name": "Chapter 3: The Basics of Risk.pdf",
+        "revision": 2,
+        "activeRunId": "6ad32918551406501e0578fb",
+        "contentHash": "00a30fa2eebb922446e9e0ec27ba19522b848fba201f0a51e7629549f67b08b2",
+        "chunkCount": 29,
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      },
+      "sourcePassages": [
+        {
+          "id": "E1a9e0714e8507d52-16-0",
+          "materialId": "6ad32918551406501e0578fa",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32918551406501e0578f8",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 16,
+          "start": 0,
+          "end": 775,
+          "text": "Aswath Damodaran\n\f§ Firm-specific risk can be reduced, if not eliminated, by\n  increasing the number of investments in your portfolio (i.e., by\n  being diversified). Market-wide risk cannot. This can be\n  justified on either economic or statistical grounds.\n§ On economic grounds, diversifying and holding a larger\n  portfolio eliminates firm-specific risk for two reasons-\n   § Each investment is a much smaller percentage of the portfolio,\n     muting the effect (positive or negative) on the overall portfolio.\n   § Firm-specific actions can be either positive or negative. In a large\n     portfolio, it is argued, these effects will average out to zero. (For\n     every firm, where something bad happens, there will be some other\n     firm, where something good happens.)",
+          "selection": "retrieved"
+        }
+      ],
+      "bank": [
+        {
+          "_id": "6acfa5f72dafa79794e4611f",
+          "questionId": "6acfa5f72dafa79794e4611e",
+          "version": 1,
+          "type": "true-false",
+          "stem": "Diversification can reduce firm-specific risk.",
+          "options": [
+            {
+              "key": "A",
+              "text": "True",
+              "role": "correct",
+              "explanation": "Combining investments can reduce firm-specific risk."
+            },
+            {
+              "key": "B",
+              "text": "False",
+              "role": "common-misconception",
+              "explanation": "Firm-specific risk can be diversified; market risk remains."
+            }
+          ],
+          "difficulty": "easy",
+          "sourceRefs": [],
+          "provenance": {
+            "kind": "manual"
+          },
+          "createdBy": "QUALITY-RETEST-OBSERVATIONS-e4a64b66-7909-4a8e-b10a-0c47ca56e8a0",
+          "createdAt": "2026-10-14T15:55:35.595Z",
+          "numericKind": "conceptual"
+        }
+      ],
+      "savedPeerQuestions": [
+        {
+          "type": "mcq",
+          "stem": "An event affects all investments. Which risk category does this describe, and what does the passage say about investors diversifying across asset classes?",
+          "options": [
+            {
+              "key": "A",
+              "role": "common-misconception",
+              "text": "Market risk; diversifying across asset classes mitigates it.",
+              "explanation": "The passage lists asset-class diversification as an investor strategy, but says market-wide risk cannot be diversified away."
+            },
+            {
+              "key": "B",
+              "role": "partially-correct",
+              "text": "Firm-specific risk; diversifying across domestic stocks mitigates it.",
+              "explanation": "Domestic-stock diversification is listed for mitigating firm-specific risk, but an event affecting all investments is market risk."
+            },
+            {
+              "key": "C",
+              "role": "correct",
+              "text": "Market risk; diversifying across asset classes cannot diversify it away.",
+              "explanation": "The passage describes market risk as affecting all investments and says it cannot be diversified away."
+            },
+            {
+              "key": "D",
+              "role": "clearly-wrong",
+              "text": "Firm-specific risk; investors cannot mitigate it through diversification.",
+              "explanation": "Firm-specific risk affects an individual firm and can be reduced through diversification."
+            }
+          ],
+          "difficulty": "easy",
+          "numericKind": "conceptual",
+          "taskDescriptor": {
+            "concepts": [
+              "Distinguish firm-specific risk from market risk by scope",
+              "Identify the stated limit of diversification"
+            ],
+            "requiredInference": "Classify a risk affecting all investments as market risk and identify that diversification across asset classes does not eliminate it.",
+            "solutionPath": [
+              "Determine that an event affecting all investments is market risk.",
+              "Apply the passage's statement that market-wide risk cannot be diversified away.",
+              "Reject the claim that asset-class diversification mitigates this risk."
+            ],
+            "misconception": "Assuming that diversification across asset classes can eliminate risk affecting all investments.",
+            "targetDifficulty": "easy",
+            "passageIds": [
+              "E1a9e0714e8507d52-16-0",
+              "E1a9e0714e8507d52-15-0"
+            ],
+            "intent": "create-independent-task",
+            "achievedDifficulty": "easy"
+          }
+        }
+      ]
+    },
+    {
+      "archiveCaseId": "P03",
+      "request": {
+        "qualityPolicy": "grounded-memory-v2",
+        "count": 2,
+        "type": "mcq",
+        "difficulty": "easy",
+        "kind": "calculation",
+        "prompt": "Use decimal input variations and the notation used by the source. Distinguish beta from total volatility. Compute answers from explicit formulas."
+      },
+      "question": {
+        "type": "mcq",
+        "stem": "Market Beta = {{marketBeta}} and the correlation of the sector with the market = {{correlation}}. Riskfree rate = {{riskfreeRate}}% and Risk Premium = {{riskPremium}}%. Rates are percentages, not fractional decimals. Calculate Total Beta = Market Beta / Correlation of the sector with the market, then Cost of Equity = Riskfree rate + Total Beta * Risk Premium. What is the Cost of Equity?",
+        "options": [
+          {
+            "key": "A",
+            "role": "clearly-wrong",
+            "text": "{{unscaledCost}}%",
+            "explanation": "This omits the beta multiplier on the Risk Premium."
+          },
+          {
+            "key": "B",
+            "role": "common-misconception",
+            "text": "{{marketBetaCost}}%",
+            "explanation": "This uses Market Beta directly and omits the required adjustment to Total Beta."
+          },
+          {
+            "key": "C",
+            "role": "partially-correct",
+            "text": "{{correlationCost}}%",
+            "explanation": "This applies the cost-of-equity structure but incorrectly uses correlation as beta."
+          },
+          {
+            "key": "D",
+            "role": "correct",
+            "text": "{{correctCost}}%",
+            "explanation": "Calculate Total Beta = Market Beta / correlation, then apply Cost of Equity = Riskfree rate + Total Beta * Risk Premium."
+          }
+        ],
+        "difficulty": "medium",
+        "numericKind": "numeric",
+        "paramSlots": [
+          {
+            "name": "marketBeta",
+            "values": [
+              0.8,
+              1.2
+            ]
+          },
+          {
+            "name": "correlation",
+            "values": [
+              0.5,
+              0.6
+            ]
+          },
+          {
+            "name": "riskfreeRate",
+            "values": [
+              2.5,
+              3
+            ]
+          },
+          {
+            "name": "riskPremium",
+            "values": [
+              5,
+              6
+            ]
+          }
+        ],
+        "derivedValues": [
+          {
+            "name": "correctCost",
+            "formula": "riskfreeRate+(marketBeta/correlation)*riskPremium"
+          },
+          {
+            "name": "marketBetaCost",
+            "formula": "riskfreeRate+marketBeta*riskPremium",
+            "errorModel": "Uses Market Beta unchanged instead of first calculating Total Beta."
+          },
+          {
+            "name": "correlationCost",
+            "formula": "riskfreeRate+correlation*riskPremium",
+            "errorModel": "Uses correlation itself as the beta in the cost-of-equity formula."
+          },
+          {
+            "name": "unscaledCost",
+            "formula": "riskfreeRate+riskPremium",
+            "errorModel": "Adds the Risk Premium without multiplying it by Total Beta."
+          }
+        ],
+        "taskDescriptor": {
+          "concepts": [
+            "Calculate Cost of Equity using Riskfree rate, beta, and Risk Premium.",
+            "Distinguish Market Beta from Total Beta."
+          ],
+          "requiredInference": "Infer Total Beta from Market Beta and the correlation of the sector with the market, then use Total Beta in the Cost of Equity formula.",
+          "solutionPath": [
+            "Calculate Total Beta = Market Beta / Correlation of the sector with the market.",
+            "Calculate Cost of Equity = Riskfree rate + Total Beta * Risk Premium.",
+            "Report the result as a percentage."
+          ],
+          "misconception": "Using Market Beta unchanged, or treating correlation itself as beta, instead of calculating Total Beta.",
+          "targetDifficulty": "medium",
+          "passageIds": [
+            "E0f7ee879d75e8d1c-90-0",
+            "E0f7ee879d75e8d1c-108-0",
+            "E0f7ee879d75e8d1c-89-0"
+          ],
+          "intent": "create-independent-task",
+          "achievedDifficulty": "medium"
+        }
+      },
+      "originalPacketId": "f2fbfe152b933b304f703d8020d0b08217e3d4f35949dd50831ab930a0987bdd",
+      "originalPacketSha256": "850e20a07dbcb40d2a69ab3451870737b957598c4e06c5f70c973146fc59b0b9",
+      "material": {
+        "materialId": "6ad32945551406501e0579b8",
+        "role": "primary",
+        "loId": "6ad32942551406501e057998",
+        "loName": "Calculate the cost of equity using CAPM, preserving the source notation and units.",
+        "name": "Chapter 4: Risk Measurement and Hurdle Rates.pdf",
+        "revision": 2,
+        "activeRunId": "6ad32945551406501e0579b9",
+        "contentHash": "9e4695f45caf019f37025dac7cab4775a2cfc49d2c86c516ecdece894a8df9e3",
+        "chunkCount": 114,
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      },
+      "sourcePassages": [
+        {
+          "id": "E0f7ee879d75e8d1c-90-0",
+          "materialId": "6ad32945551406501e0579b8",
+          "materialName": "Chapter 4: Risk Measurement and Hurdle Rates.pdf",
+          "role": "primary",
+          "loId": "6ad32942551406501e057998",
+          "loName": "Calculate the cost of equity using CAPM, preserving the source notation and units.",
+          "chunkIndex": 90,
+          "start": 0,
+          "end": 941,
+          "text": "§ In the Bookscape example, where the market beta is 0.8558 and\n  the median R-squared of the comparable publicly traded firms\n  is 26.00%; the correlation with the market is 50.99%.\n                 Market Beta 0.8558\n                             =         = 1.6783\n                   R squared .5099\n   § Total Cost of Equity = 2.75 + 1.6783 (5.5%) = 11.98%\n\n§ Note that the market beta and the correlation come from\n  publicly traded companies in this space.\n\n\nAswath Damodaran\n\f§ Based upon the business or businesses that your firm is in right\n  now, and its current financial leverage, estimate the bottom-up\n  unlevered beta for your firm.\n\n\n\n§ Data Source: You can get a listing of unlevered betas by\n  industry on my web site by going to updated data.\n\n\n\n\nAswath Damodaran\n\f§ The cost of capital is a composite cost to the firm of raising\n  financing to fund its projects.\n§ In addition to equity, firms can raise capital from debt.",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E0f7ee879d75e8d1c-108-0",
+          "materialId": "6ad32945551406501e0579b8",
+          "materialName": "Chapter 4: Risk Measurement and Hurdle Rates.pdf",
+          "role": "primary",
+          "loId": "6ad32942551406501e057998",
+          "loName": "Calculate the cost of equity using CAPM, preserving the source notation and units.",
+          "chunkIndex": 108,
+          "start": 0,
+          "end": 728,
+          "text": "Aswath Damodaran\n\f§ Estimate the\n   § Market value of equity at your firm and Book Value of equity\n   § Market value of debt and book value of debt (If you cannot find the\n      average maturity of your debt, use 3 years): Remember to capitalize\n      the value of operating leases and add them on to both the book\n      value and the market value of debt.\n§ Estimate the\n   § Weights for equity and debt based upon market value\n   § Weights for equity and debt based upon book value\n\n\n\n\nAswath Damodaran\n\f§ Equity\n   § Cost of Equity = Riskfree rate + Beta * Risk Premium\n                 = 2.75% + 1.0013 (5.76%) = 8.52%\n   § Market Value of Equity =            $121,878 million\n   § Equity/(Debt+Equity ) =             88.42%",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E0f7ee879d75e8d1c-89-0",
+          "materialId": "6ad32945551406501e0579b8",
+          "materialName": "Chapter 4: Risk Measurement and Hurdle Rates.pdf",
+          "role": "primary",
+          "loId": "6ad32942551406501e057998",
+          "loName": "Calculate the cost of equity using CAPM, preserving the source notation and units.",
+          "chunkIndex": 89,
+          "start": 0,
+          "end": 873,
+          "text": "20 units                         Publicly traded company\n                                                        of market                        with investors who are diversified\n                                                        risk\n                                                                    Demands a\n                                                                    cost of equity\n                                                                    that reflects only\n                                                                    market risk\n\n\nAswath Damodaran\n\f§ Adjust the beta to reflect total risk rather than market risk.\n  This adjustment is a relatively simple one, since the R squared\n  of the regression measures the proportion of the risk that is\n  market risk.\n   § Total Beta = Market Beta / Correlation of the sector with the market",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E0f7ee879d75e8d1c-88-0",
+          "materialId": "6ad32945551406501e0579b8",
+          "materialName": "Chapter 4: Risk Measurement and Hurdle Rates.pdf",
+          "role": "primary",
+          "loId": "6ad32942551406501e057998",
+          "loName": "Calculate the cost of equity using CAPM, preserving the source notation and units.",
+          "chunkIndex": 88,
+          "start": 0,
+          "end": 867,
+          "text": "80 units\n                                   Is exposed           of firm\n                                   to all the risk      specific\n                                   in the firm          risk\n      Private owner of business\n      with 100% of your weatlth\n      invested in the business\n                                                                        Market Beta measures just\n                                   Demands a                            market risk\n                                   cost of equity\n                                   that reflects this\n                                   risk\n                                                                    Eliminates firm-\n                                                                    specific risk in\n                                                                    portfolio",
+          "selection": "neighbor"
+        }
+      ],
+      "bank": [
+        {
+          "_id": "6acfa5f72dafa79794e4611f",
+          "questionId": "6acfa5f72dafa79794e4611e",
+          "version": 1,
+          "type": "true-false",
+          "stem": "Diversification can reduce firm-specific risk.",
+          "options": [
+            {
+              "key": "A",
+              "text": "True",
+              "role": "correct",
+              "explanation": "Combining investments can reduce firm-specific risk."
+            },
+            {
+              "key": "B",
+              "text": "False",
+              "role": "common-misconception",
+              "explanation": "Firm-specific risk can be diversified; market risk remains."
+            }
+          ],
+          "difficulty": "easy",
+          "sourceRefs": [],
+          "provenance": {
+            "kind": "manual"
+          },
+          "createdBy": "QUALITY-RETEST-OBSERVATIONS-e4a64b66-7909-4a8e-b10a-0c47ca56e8a0",
+          "createdAt": "2026-10-14T15:55:35.595Z",
+          "numericKind": "conceptual"
+        }
+      ],
+      "savedPeerQuestions": []
+    },
+    {
+      "archiveCaseId": "P04",
+      "request": {
+        "qualityPolicy": "grounded-memory-v2",
+        "count": 1,
+        "type": "mcq",
+        "difficulty": "hard",
+        "kind": "conceptual",
+        "prompt": "Keep the reading short. Only use this learning objective and original source. Do not invent unsupported prerequisite concepts to make the question hard."
+      },
+      "question": {
+        "type": "mcq",
+        "stem": "Which portfolio change can an investor use to mitigate firm-specific risk?",
+        "options": [
+          {
+            "key": "A",
+            "role": "clearly-wrong",
+            "text": "Diversify across countries.",
+            "explanation": "The source lists this under market-risk strategies, not as a way to mitigate firm-specific risk."
+          },
+          {
+            "key": "B",
+            "role": "correct",
+            "text": "Diversify across domestic stocks.",
+            "explanation": "The source identifies diversifying across domestic stocks as an investor strategy to mitigate firm-specific risk."
+          },
+          {
+            "key": "C",
+            "role": "partially-correct",
+            "text": "Invest in lots of projects.",
+            "explanation": "The source lists this as a way a firm can reduce firm-specific risk, not as the investor strategy asked for."
+          },
+          {
+            "key": "D",
+            "role": "common-misconception",
+            "text": "Assume diversification removes market risk.",
+            "explanation": "The source says market risk cannot be diversified away."
+          }
+        ],
+        "difficulty": "easy",
+        "numericKind": "conceptual",
+        "taskDescriptor": {
+          "concepts": [
+            "firm-specific risk",
+            "investor diversification strategy"
+          ],
+          "requiredInference": "Identify the investor strategy listed for mitigating firm-specific risk, distinguishing it from firm and market-risk strategies.",
+          "solutionPath": [
+            "Locate the investor strategy for firm-specific risk in the source.",
+            "Select the listed strategy."
+          ],
+          "misconception": "Confusing firm strategies or market-risk strategies with an investor's firm-specific-risk mitigation strategy.",
+          "targetDifficulty": "easy",
+          "passageIds": [
+            "E7ba2b63bdfcef3e2-15-0"
+          ],
+          "intent": "create-independent-task",
+          "achievedDifficulty": "easy"
+        }
+      },
+      "originalPacketId": "2ab30c4f9b10dd735cdabba04b9a47f5cf311956df6e1ba86d275036c256a2b3",
+      "originalPacketSha256": "34e9ce147e6aaf5cdf45180b4d1f726a99c7d037212a582f05629bffec0c9d3c",
+      "material": {
+        "materialId": "6ad32977551406501e057a36",
+        "role": "primary",
+        "loId": "6ad32977551406501e057a34",
+        "loName": "Distinguish firm-specific and market risk and explain diversification.",
+        "name": "Chapter 3: The Basics of Risk.pdf",
+        "revision": 2,
+        "activeRunId": "6ad32977551406501e057a37",
+        "contentHash": "f48690f914e8b4ca27ce751a4071266d3400fa40d1d45e8a08be42641279c30e",
+        "chunkCount": 29,
+        "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+        "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+      },
+      "sourcePassages": [
+        {
+          "id": "E7ba2b63bdfcef3e2-23-0",
+          "materialId": "6ad32977551406501e057a36",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32977551406501e057a34",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 23,
+          "start": 0,
+          "end": 903,
+          "text": "E(R)                        E(R)                        E(R)\n                                      Step 2: Differentiating between Rewarded and Unrewarded Risk\n              Risk that is specific to investment (Firm Specific)      Risk that affects all investments (Market Risk)\n              Can be diversified away in a diversified portfolio       Cannot be diversified away since most assets\n              1. each investment is a small proportion of portfolio    are affected by it.\n              2. risk averages out across investments in portfolio\n              The marginal investor is assumed to hold a “diversified” portfolio. Thus, only market risk will\n              be rewarded and priced.\n                                                       Step 3: Measuring Market Risk\n                      The CAPM                        The APM            Multi-Factor Models             Proxy Models",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E7ba2b63bdfcef3e2-16-0",
+          "materialId": "6ad32977551406501e057a36",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32977551406501e057a34",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 16,
+          "start": 0,
+          "end": 775,
+          "text": "Aswath Damodaran\n\f§ Firm-specific risk can be reduced, if not eliminated, by\n  increasing the number of investments in your portfolio (i.e., by\n  being diversified). Market-wide risk cannot. This can be\n  justified on either economic or statistical grounds.\n§ On economic grounds, diversifying and holding a larger\n  portfolio eliminates firm-specific risk for two reasons-\n   § Each investment is a much smaller percentage of the portfolio,\n     muting the effect (positive or negative) on the overall portfolio.\n   § Firm-specific actions can be either positive or negative. In a large\n     portfolio, it is argued, these effects will average out to zero. (For\n     every firm, where something bad happens, there will be some other\n     firm, where something good happens.)",
+          "selection": "retrieved"
+        },
+        {
+          "id": "E7ba2b63bdfcef3e2-15-0",
+          "materialId": "6ad32977551406501e057a36",
+          "materialName": "Chapter 3: The Basics of Risk.pdf",
+          "role": "primary",
+          "loId": "6ad32977551406501e057a34",
+          "loName": "Distinguish firm-specific and market risk and explain diversification.",
+          "chunkIndex": 15,
+          "start": 0,
+          "end": 820,
+          "text": "Firm-specific                                                                                 Market\n\n\n         Actions/Risk that                                                               Actions/Risk that\n         affect only one      Affects few                         Affects many           affect all investments\n         firm                 firms                               firms\n     Firm can Investing in lots Acquiring      Diversifying           Diversifying               Cannot affect\n     reduce by of projects      competitors    across sectors         across countries\n     Investors Diversifying across domestic stocks               Diversifying globally   Diversifying across\n     can                                                                                 asset classes\n     mitigate by",
+          "selection": "retrieved"
+        }
+      ],
+      "bank": [
+        {
+          "_id": "6acfa5f72dafa79794e4611f",
+          "questionId": "6acfa5f72dafa79794e4611e",
+          "version": 1,
+          "type": "true-false",
+          "stem": "Diversification can reduce firm-specific risk.",
+          "options": [
+            {
+              "key": "A",
+              "text": "True",
+              "role": "correct",
+              "explanation": "Combining investments can reduce firm-specific risk."
+            },
+            {
+              "key": "B",
+              "text": "False",
+              "role": "common-misconception",
+              "explanation": "Firm-specific risk can be diversified; market risk remains."
+            }
+          ],
+          "difficulty": "easy",
+          "sourceRefs": [],
+          "provenance": {
+            "kind": "manual"
+          },
+          "createdBy": "QUALITY-RETEST-OBSERVATIONS-e4a64b66-7909-4a8e-b10a-0c47ca56e8a0",
+          "createdAt": "2026-10-14T15:55:35.595Z",
+          "numericKind": "conceptual"
+        }
+      ],
+      "savedPeerQuestions": []
+    }
+  ],
+  "additionalRegressions": {
+    "trueFalseCorrectiveFeedback": {
+      "question": {
+        "taskDescriptor": {
+          "concepts": [
+            "firm-specific risk",
+            "market risk",
+            "diversification"
+          ],
+          "requiredInference": "Identify which type of risk diversification can reduce and which it cannot diversify away.",
+          "solutionPath": [
+            "Recall that firm-specific risk can be diversified away.",
+            "Recall that market risk cannot be diversified away.",
+            "Judge the claim as true."
+          ],
+          "misconception": "Believing diversification removes market risk, or that firm-specific risk cannot be reduced.",
+          "targetDifficulty": "easy",
+          "passageIds": [
+            "Ed6a61d534c2622ab-23-0",
+            "Ed6a61d534c2622ab-16-0"
+          ],
+          "intent": "create-variant",
+          "achievedDifficulty": "easy"
+        },
+        "stem": "An investor holds shares in several different companies. True or false: this diversification can reduce firm-specific risk, but it cannot diversify away market risk.",
+        "options": [
+          {
+            "key": "A",
+            "role": "correct",
+            "text": "True",
+            "explanation": "A diversified portfolio can reduce firm-specific risk; market risk cannot be diversified away."
+          },
+          {
+            "key": "B",
+            "role": "common-misconception",
+            "text": "False",
+            "explanation": "Diversification can reduce firm-specific risk, but it does not remove market risk."
+          }
+        ],
+        "difficulty": "easy",
+        "numericKind": "conceptual",
+        "paramSlots": [],
+        "derivedValues": [],
+        "type": "true-false"
+      },
+      "evidence": {
+        "id": "abbe5215493bee402b0c52d933e744f0b600becf81e0a44f27e922b3752701e2",
+        "schemaVersion": "source-passages-v1",
+        "policyVersion": "grounded-memory-v2",
+        "courseId": "6ad329b6551406501e057b6a",
+        "loIds": [
+          "6ad329b6551406501e057b6c"
+        ],
+        "sourceFingerprint": "b20dffa8f130e1b80fd5bf42b8fcb1f35187bbe23982e88889442d3e2d4e6d85",
+        "parsingProvenance": "unrecorded",
+        "materials": [
+          {
+            "materialId": "6ad329b6551406501e057b6e",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "name": "Chapter 3: The Basics of Risk.pdf",
+            "revision": 2,
+            "activeRunId": "6ad329b6551406501e057b6f",
+            "contentHash": "573d178217b615fa6759ae9bbc50c02efa48acaf774e78108c9dc197f66ff65a",
+            "chunkCount": 29,
+            "parserVersion": "toolkit-0.2.0:text-poppler-fallback-v1",
+            "chunkerVersion": "toolkit-0.1.0:recursive-character-1000-overlap150-v1"
+          }
+        ],
+        "passages": [
+          {
+            "id": "Ed6a61d534c2622ab-23-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 23,
+            "start": 0,
+            "end": 903,
+            "text": "E(R)                        E(R)                        E(R)\n                                      Step 2: Differentiating between Rewarded and Unrewarded Risk\n              Risk that is specific to investment (Firm Specific)      Risk that affects all investments (Market Risk)\n              Can be diversified away in a diversified portfolio       Cannot be diversified away since most assets\n              1. each investment is a small proportion of portfolio    are affected by it.\n              2. risk averages out across investments in portfolio\n              The marginal investor is assumed to hold a “diversified” portfolio. Thus, only market risk will\n              be rewarded and priced.\n                                                       Step 3: Measuring Market Risk\n                      The CAPM                        The APM            Multi-Factor Models             Proxy Models",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-16-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 16,
+            "start": 0,
+            "end": 775,
+            "text": "Aswath Damodaran\n\f§ Firm-specific risk can be reduced, if not eliminated, by\n  increasing the number of investments in your portfolio (i.e., by\n  being diversified). Market-wide risk cannot. This can be\n  justified on either economic or statistical grounds.\n§ On economic grounds, diversifying and holding a larger\n  portfolio eliminates firm-specific risk for two reasons-\n   § Each investment is a much smaller percentage of the portfolio,\n     muting the effect (positive or negative) on the overall portfolio.\n   § Firm-specific actions can be either positive or negative. In a large\n     portfolio, it is argued, these effects will average out to zero. (For\n     every firm, where something bad happens, there will be some other\n     firm, where something good happens.)",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-15-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 15,
+            "start": 0,
+            "end": 820,
+            "text": "Firm-specific                                                                                 Market\n\n\n         Actions/Risk that                                                               Actions/Risk that\n         affect only one      Affects few                         Affects many           affect all investments\n         firm                 firms                               firms\n     Firm can Investing in lots Acquiring      Diversifying           Diversifying               Cannot affect\n     reduce by of projects      competitors    across sectors         across countries\n     Investors Diversifying across domestic stocks               Diversifying globally   Diversifying across\n     can                                                                                 asset classes\n     mitigate by",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-28-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 28,
+            "start": 0,
+            "end": 737,
+            "text": "Aswath Damodaran\n\f§ You can get information on insider and institutional holdings in\n  your firm from:\n   § http://finance.yahoo.com/\n   § Enter your company’s symbol and choose profile.\n\n§ Looking at the breakdown of stockholders in your firm,\n  consider whether the marginal investor is\n   § An institutional investor\n   § An individual investor\n   § An insider\n\n§ Follow up by evaluating whether the marginal investor is likely\n  to be diversified.\n   § If yes, you are on safer ground using the risk and return models that\n     assume that only non-diversifiable risk is rewarded.\n   § If no, you will have to adapt your risk measure to bring in some or\n     all o fthe company-specific risk that you were ignoring.\n\nAswath Damodaran",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-20-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 20,
+            "start": 0,
+            "end": 853,
+            "text": "Aswath Damodaran\n\f§ The big assumptions & the follow up: Assuming\n  diversification costs nothing (in terms of transactions costs),\n  and that all assets can be traded, the limit of diversification is\n  to hold a portfolio of every single asset in the economy (in\n  proportion to market value). This portfolio is called the\n  market portfolio.\n§ The consequence: Individual investors will adjust for risk, by\n  adjusting their allocations to this market portfolio and a riskless\n  asset (such as a T-Bill):\n   Preferred risk level           Allocation decision\n   No risk                100% in T-Bills\n   Some risk              50% in T-Bills; 50% in Market Portfolio;\n   A little more risk     25% in T-Bills; 75% in Market Portfolio\n   Even more risk         100% in Market Portfolio\n   A risk hog..           Borrow money; Invest in market portfolio",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-24-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 24,
+            "start": 0,
+            "end": 972,
+            "text": "The CAPM                        The APM            Multi-Factor Models             Proxy Models\n             If there is                      If there are no            Since market risk affects   In an efficient market,\n             1. no private information        arbitrage opportunities    most or all investments,    differences in returns\n             2. no transactions cost          then the market risk of    it must come from           across long periods must\n             the optimal diversified          any asset must be          macro economic factors.     be due to market risk\n             portfolio includes every         captured by betas          Market Risk = Risk          differences. Looking for\n             traded asset. Everyone           relative to factors that   exposures of any            variables correlated with\n             will hold thismarket portfolio   affect all investments.    asset to macro              returns should then give",
+            "selection": "retrieved"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-22-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 22,
+            "start": 0,
+            "end": 724,
+            "text": "3. The model does not work well\n   - If the model is right, there should be:\n        A linear relationship between returns and betas\n        The only variable that should explain returns is betas\n   - The reality is that\n        The relationship between betas and returns is weak\n       § Other variables (size, price/book value) seem to explain differences in\n          returns better.\n\n\nAswath Damodaran\n\f                                                    Step 1: Defining Risk\n                   The risk in an investment can be measured by the variance in actual returns around an\n                   expected return\n                           Riskless Investment      Low Risk Investment            High Risk Investment",
+            "selection": "neighbor"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-17-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 17,
+            "start": 0,
+            "end": 612,
+            "text": "Aswath Damodaran\n\f§ The marginal investor in a firm is the investor who is most likely\n  to be the buyer or seller on the next trade and to influence the\n  stock price.\n   § Generally speaking, the marginal investor in a stock has to own a lot\n     of stock and also trade that stock on a regular basis.\n   § Since trading is required, the largest investor may not be the\n     marginal investor, especially if he or she is a founder/manager of\n     the firm (Larry Ellison at Oracle, Mark Zuckerberg at Facebook…)\n§ In risk and return models in finance, we start with the marginal\n  investor is well diversified.",
+            "selection": "neighbor"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-14-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 14,
+            "start": 0,
+            "end": 917,
+            "text": "Aswath Damodaran\n\f                                            Figure 3.5: A Break Down of Risk\n\n                                Competition\n                                may be stronger\n                                or weaker than                              Exchange rate\n                                anticipated                                 and Political\n                                                                            risk\n              Projects may\n              do better or                                                                         Interest rate,\n              worse than                       Entire Sector                                       Inflation &\n                                               may be affected                                     news about\n              expected                         by action                                           economy",
+            "selection": "neighbor"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-27-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 27,
+            "start": 0,
+            "end": 897,
+            "text": "Aswath Damodaran\n\f§ The CAPM, notwithstanding its many critics and limitations, has\n  survived as the default model for risk in equity valuation and\n  corporate finance.\n§ The alternative models that have been presented as better\n  models (APM, Multifactor model..) have made inroads in\n  performance evaluation but not in prospective analysis\n  because:\n   § The alternative models (which are richer) do a much better job\n     than the CAPM in explaining past returns, but their effectiveness\n     drops off when it comes to estimating expected future returns\n     (because the models tend to shift and change).\n   § The alternative models are more complicated and require more\n     information than the CAPM.\n   § For most companies, the expected returns you get with the the\n     alternative models is not different enough to be worth the extra\n     trouble of estimating four additional betas.",
+            "selection": "neighbor"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-19-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 19,
+            "start": 0,
+            "end": 161,
+            "text": "Aswath Damodaran\n\fAswath Damodaran\n\f§ In all five of the publicly traded companies that we are looking\n  at, institutions are big holders of the company’s stock.",
+            "selection": "neighbor"
+          },
+          {
+            "id": "Ed6a61d534c2622ab-21-0",
+            "materialId": "6ad329b6551406501e057b6e",
+            "materialName": "Chapter 3: The Basics of Risk.pdf",
+            "role": "primary",
+            "loId": "6ad329b6551406501e057b6c",
+            "loName": "Distinguish firm-specific and market risk and explain diversification.",
+            "chunkIndex": 21,
+            "start": 0,
+            "end": 995,
+            "text": "Aswath Damodaran\n\f§ The essence: The risk of any asset is the risk that it adds to the\n  market portfolio Statistically, this risk can be measured by how\n  much an asset moves with the market (called the covariance)\n§ The measure: Beta is a standardized measure of this\n  covariance, obtained by dividing the covariance of any asset\n  with the market by the variance of the market. It is a measure of\n  the non-diversifiable risk for any asset can be measured by the\n  covariance of its returns with returns on a market index, which\n  is defined to be the asset's beta.\n§ The result: The required return on an investment will be a\n  linear function of its beta:\n   § Expected Return = Riskfree Rate+ Beta * (Expected Return on the\n      Market Portfolio - Riskfree Rate)\n\n\n\nAswath Damodaran\n\f1. The model makes unrealistic assumptions\n2. The parameters of the model cannot be estimated\nprecisely\n   The market index used can be wrong.\n   The firm may have changed during the 'estimation' period'",
+            "selection": "neighbor"
+          }
+        ],
+        "coverage": {
+          "sourceChunks": 29,
+          "selectedChunks": 12,
+          "selectedCharacters": 9366,
+          "omittedPassages": 1,
+          "truncated": true,
+          "searchScope": "retrieved-chunks-and-immediate-neighbors",
+          "catalogChunks": 0,
+          "catalogRejectedReferences": 0,
+          "catalogUnrepresentedMaterials": [
+            "6ad329b6551406501e057b6e"
+          ]
+        },
+        "findings": [
+          {
+            "code": "evidence-budget-truncated",
+            "passageIds": [],
+            "message": "1 source passages did not fit the bounded evidence packet. Unseen passages are not evidence of support or absence."
+          }
+        ]
+      },
+      "archiveCandidateHash": "71cebdf744f90374f6a3986bc76cc154d254bdd73f0781549f04198abd21b544",
+      "archiveResultsSha256": "56473c7065ed5b4e77ca1712a2ad4658afe6413d1751cba469deb78d5403a173"
+    },
+    "capmDecimalRequirement": {
+      "question": {
+        "stem": "Use **Cost of Equity = Riskfree rate + Beta * Risk Premium**. Rates are percentages, not fractional decimals. For this calculation, Riskfree rate = {{RiskfreeRate}}%, Beta = {{Beta}}, and Risk Premium = {{RiskPremium}}%. Calculate Cost of Equity. Beta measures market risk here; do not treat it as total volatility.",
+        "options": [
+          {
+            "key": "A",
+            "role": "clearly-wrong",
+            "text": "{{TreatBetaAsTotalVolatility}}%",
+            "explanation": "Beta is the market-risk multiplier in the source formula; halving it as if it were total volatility is unsupported."
+          },
+          {
+            "key": "B",
+            "role": "correct",
+            "text": "{{CorrectCost}}%",
+            "explanation": "Substitute into the source formula: Riskfree rate + Beta * Risk Premium."
+          },
+          {
+            "key": "C",
+            "role": "partially-correct",
+            "text": "{{UseRiskPremiumOnly}}%",
+            "explanation": "This adds the Risk Premium but omits the Beta multiplier."
+          },
+          {
+            "key": "D",
+            "role": "common-misconception",
+            "text": "{{AddBetaDirectly}}%",
+            "explanation": "This adds Beta directly instead of multiplying Beta by Risk Premium."
+          }
+        ],
+        "difficulty": "easy",
+        "numericKind": "numeric",
+        "paramSlots": [
+          {
+            "name": "RiskfreeRate",
+            "values": [
+              2.5,
+              2.75,
+              3
+            ]
+          },
+          {
+            "name": "Beta",
+            "values": [
+              1.2,
+              1.4,
+              1.6
+            ]
+          },
+          {
+            "name": "RiskPremium",
+            "values": [
+              5,
+              5.5,
+              6
+            ]
+          }
+        ],
+        "derivedValues": [
+          {
+            "name": "CorrectCost",
+            "formula": "RiskfreeRate + Beta * RiskPremium"
+          },
+          {
+            "name": "AddBetaDirectly",
+            "formula": "RiskfreeRate + Beta"
+          },
+          {
+            "name": "UseRiskPremiumOnly",
+            "formula": "RiskfreeRate + RiskPremium"
+          },
+          {
+            "name": "TreatBetaAsTotalVolatility",
+            "formula": "RiskfreeRate + (Beta / 2) * RiskPremium",
+            "errorModel": "Mistakes beta for total volatility and halves it before applying the source formula."
+          }
+        ],
+        "taskDescriptor": {
+          "concepts": [
+            "CAPM cost of equity",
+            "Beta and market risk"
+          ],
+          "requiredInference": "Substitute the given Riskfree rate, Beta, and Risk Premium into the source formula and calculate Cost of Equity in percent.",
+          "solutionPath": [
+            "Use Cost of Equity = Riskfree rate + Beta * Risk Premium.",
+            "Multiply Beta by Risk Premium, then add Riskfree rate.",
+            "Report the result as a percentage."
+          ],
+          "misconception": "Adding Beta directly to Riskfree rate instead of multiplying Beta by Risk Premium.",
+          "targetDifficulty": "easy",
+          "passageIds": [
+            "E0f7ee879d75e8d1c-108-0",
+            "E0f7ee879d75e8d1c-89-0"
+          ],
+          "intent": "create-independent-task"
+        },
+        "type": "mcq"
+      },
+      "requiredChanges": [
+        "Implement the planned inference: Substitute the given riskfree rate, beta, and Risk Premium into the source formula and calculate the cost of equity, keeping the result in percent.",
+        "Use decimal input variations and the notation used by the source. Distinguish beta from total volatility. Compute answers from explicit formulas."
+      ],
+      "archiveQualityTranscriptSha256": "a76b05c77dec4e52e0856cbe140b76d9ddeb8e4bc1a2c164ef46d887215681b3"
+    }
+  }
+}

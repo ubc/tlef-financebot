@@ -9,6 +9,8 @@ import {
   CAPABILITY_PROFILES,
   KNOWN_MODELS,
   REASONING_EFFORTS,
+  defaultJsonReasoningEffort,
+  modelRequestOptions,
   capabilitiesFor,
   modelCatalogue,
   temperatureAllowed,
@@ -17,7 +19,7 @@ import {
 it('resolves the shipped models to their profiles', () => {
   expect(capabilitiesFor('gpt-5.4-nano').profile).toBe('reasoning-tunable');
   expect(capabilitiesFor('gpt-5.6-luna').profile).toBe('reasoning-fixed');
-  expect(Object.keys(KNOWN_MODELS).sort()).toEqual(['gpt-5.4-nano', 'gpt-5.6-luna', 'gpt-6-luna']);
+  expect(Object.keys(KNOWN_MODELS).sort()).toEqual(['gpt-5.4-nano', 'gpt-5.6-luna', 'gpt-6-luna', 'gpt-6.1-sol']);
 });
 
 it('falls back to classic for a non-OpenAI unknown model, so nothing regresses', () => {
@@ -128,4 +130,21 @@ it('automatically includes environment IDs without custom registration or duplic
   expect(catalogue.models.filter(model => model.id === 'gpt-6-luna')).toHaveLength(1);
   expect(catalogue.models.find(model => model.id === 'gpt-6-luna')?.profile).toBe('reasoning-fixed');
   expect(catalogue.models.filter(model => model.id === 'local/env-model')).toEqual([{ id: 'local/env-model', profile: 'classic', custom: false }]);
+});
+
+it('publishes Sol 6.1 as reasoning-required without offering invalid none or temperature controls', () => {
+  const caps = capabilitiesFor('gpt-6.1-sol');
+  expect(caps.profile).toBe('reasoning-required');
+  expect(caps.reasoningEffort).toEqual(['low', 'medium', 'high', 'xhigh']);
+  expect(caps.temperature).toBeNull();
+  expect(defaultJsonReasoningEffort('gpt-6.1-sol')).toBe('medium');
+  expect(defaultJsonReasoningEffort('gpt-6-luna')).toBe('none');
+  expect(modelCatalogue().models.find(row => row.id === 'gpt-6.1-sol')?.profile).toBe('reasoning-required');
+});
+
+it('keeps the exact selected Sol effort and output cap and refuses unsupported effort before dispatch', () => {
+  expect(modelRequestOptions({ model: 'gpt-6.1-sol', reasoningEffort: 'high', temperature: 0, maxTokens: 8000 })).toEqual({
+    model: 'gpt-6.1-sol', reasoning_effort: 'high', max_completion_tokens: 8000,
+  });
+  expect(() => modelRequestOptions({ model: 'gpt-6.1-sol', reasoningEffort: 'none' })).toThrow('model-reasoning-effort-unsupported');
 });

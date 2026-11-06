@@ -11,7 +11,6 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
-  regenerateQuestion: jest.fn(),
   MAX_SECONDARY_LOS: 2,
   PRESET_PROMPTS: [
     { label: 'Calculation question', text: 'Write a calculation question.' },
@@ -24,19 +23,21 @@ jest.mock('../../server/src/services/generation-plan.service', () => ({
   autoGenerationPlan: jest.fn(), enqueueGenerationPlan: jest.fn(), PLAN_MAX_CELLS: 120, PLAN_MAX_COUNT: 20,
 }));
 jest.mock('../../server/src/services/generation-blueprints.service', () => ({ enqueueBlueprintRun: jest.fn() }));
+jest.mock('../../server/src/services/question-generation/pipeline', () => ({ regenerateQuestionVariant: jest.fn() }));
 
 import { generationRouter } from '../../server/src/routes/generation.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import {
   enqueueGenerationRun,
   preseedingProgress,
-  regenerateQuestion,
 } from '../../server/src/services/generation.service';
+import { regenerateQuestionVariant } from '../../server/src/services/question-generation/pipeline';
 import { enqueueGenerationPlan } from '../../server/src/services/generation-plan.service';
 import { enqueueBlueprintRun } from '../../server/src/services/generation-blueprints.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
+const questionId = new ObjectId();
 
 function userFixture(courseRoles: User['courseRoles']): User {
   return {
@@ -71,53 +72,21 @@ beforeEach(() => {
   jest.mocked(enqueueGenerationRun).mockReset();
   jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
-  jest.mocked(regenerateQuestion).mockReset();
+  jest.mocked(regenerateQuestionVariant).mockReset();
   jest.mocked(enqueueGenerationPlan).mockReset();
   jest.mocked(enqueueGenerationPlan).mockResolvedValue({ runs: [] });
   jest.mocked(enqueueBlueprintRun).mockReset();
   jest.mocked(enqueueBlueprintRun).mockResolvedValue(new ObjectId());
 });
 
-describe('opt-in quality policy routes', () => {
-  it('passes an explicitly chosen policy through the single-run endpoint', async () => {
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(202);
-    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-  });
-
-  it('passes a one-run blueprint policy override without changing the saved recipe', async () => {
+describe('blueprint runs', () => {
+  it('starts a blueprint run with only the course, blueprint and actor', async () => {
     const blueprintId = new ObjectId();
     const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ blueprintId: blueprintId.toHexString(), qualityPolicy: 'baseline' });
+      .send({ blueprintId: blueprintId.toHexString() });
     expect(res.status).toBe(202);
-    expect(enqueueBlueprintRun).toHaveBeenCalledWith(courseId, blueprintId, instructor.puid, 'baseline');
+    expect(enqueueBlueprintRun).toHaveBeenCalledWith(courseId, blueprintId, instructor.puid);
     expect(enqueueGenerationRun).not.toHaveBeenCalled();
-  });
-
-  it('passes batch policy without requiring a prompt or submission identifier', async () => {
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
-      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(202);
-    expect(enqueueGenerationPlan).toHaveBeenCalledWith(courseId, expect.any(Array), instructor.puid, expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-  });
-
-  it('rejects unknown policies before either enqueue path', async () => {
-    const single = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'auto-publish' });
-    const batch = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
-      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'auto-publish' });
-    expect(single.status).toBe(400);
-    expect(batch.status).toBe(400);
-    expect(enqueueGenerationRun).not.toHaveBeenCalled();
-    expect(enqueueGenerationPlan).not.toHaveBeenCalled();
-  });
-
-  it('reports the reviewer-required conflict without accepting a pilot run', async () => {
-    jest.mocked(enqueueGenerationRun).mockRejectedValue(new Error('generation-quality-reviewer-required'));
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(409);
   });
 });
 
@@ -131,8 +100,15 @@ describe('Task 10 presets and regeneration', () => {
     expect(allowed.body).toHaveLength(4);
   });
 
+  it('regenerate passes only the prompt through and returns the variant', async () => {
+    jest.mocked(regenerateQuestionVariant).mockResolvedValue({ variant: { stem: 'S' } } as never);
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId}/questions/${questionId}/regenerate`).send({ prompt: 'Use bonds' });
+    expect(res.status).toBe(200);
+    expect(jest.mocked(regenerateQuestionVariant)).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Use bonds' }));
+  });
+
   it('regenerates through a course-scoped instructor route without saving', async () => {
-    jest.mocked(regenerateQuestion).mockResolvedValue({
+    jest.mocked(regenerateQuestionVariant).mockResolvedValue({
       variant: { stem: 'Alternative', options: [], difficulty: 'medium' },
     } as never);
 
@@ -142,12 +118,12 @@ describe('Task 10 presets and regeneration', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.variant.stem).toBe('Alternative');
-    expect(regenerateQuestion).toHaveBeenCalledWith(
-      loId,
-      'Change the scenario.',
-      'PUID-INSTR-0001',
+    expect(regenerateQuestionVariant).toHaveBeenCalledWith({
+      questionId: loId,
       courseId,
-    );
+      prompt: 'Change the scenario.',
+      byPuid: 'PUID-INSTR-0001',
+    });
   });
 
   it('rejects non-instructors and empty regeneration prompts', async () => {
@@ -160,7 +136,7 @@ describe('Task 10 presets and regeneration', () => {
       .post(`/api/courses/${courseId.toHexString()}/questions/${loId.toHexString()}/regenerate`)
       .send({ prompt: '   ' });
     expect(invalid.status).toBe(400);
-    expect(regenerateQuestion).not.toHaveBeenCalled();
+    expect(regenerateQuestionVariant).not.toHaveBeenCalled();
   });
 });
 
@@ -305,3 +281,4 @@ describe('GET /api/courses/:courseId/preseeding (IN-Q10)', () => {
     expect(preseedingProgress).toHaveBeenCalledWith(expect.any(ObjectId));
   });
 });
+

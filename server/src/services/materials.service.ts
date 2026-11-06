@@ -3,15 +3,27 @@ import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import { ObjectId, type WithId } from 'mongodb';
 import { chunkText } from '../components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../components/genai/embeddings';
-import { parseFile } from '../components/genai/document-parsing';
+import { parseFile, parseFileWithReceipt } from '../components/genai/document-parsing';
 import { deletePointsByFilter, ensureCollection, upsertPoints } from '../components/qdrant';
 import { defineJob, enqueueJob } from '../components/jobs';
-import { materialChunksCol, materialsCol } from '../components/mongodb/collections';
+import { materialChunksCol, materialsCol, materialSourceProvenanceCol } from '../components/mongodb/collections';
 import { classifyMaterial } from './classification.service';
 import { editConflict, editRevisionFilter } from './edit-revision';
+import { hashSourceChunks, MATERIAL_CHUNKER_VERSION, MATERIAL_PARSER_VERSION } from './source-readiness.service';
+import { authoringCollection, authoringCommitAvailable, withCourseAuthoringWrite } from './authoring-commit.service';
+import {
+  assertMaterialProvenanceSourceCurrent,
+  discardUnpublishedMaterialSourceProvenance,
+  materialWorkspaceProvenance,
+  prepareMaterialSourceProvenance,
+  readMaterialSourceProvenance,
+  validateMaterialChunkProvenance,
+  type MaterialWorkspaceProvenance,
+} from './material-source-provenance.service';
 import {
   createMaterialIngestRun,
   failContentRun,
@@ -23,7 +35,9 @@ import type {
   MaterialIngestResult,
   MaterialIngestStage,
   MaterialKind,
+  MaterialChunk,
 } from '../types/domain';
+import type { MaterialSourceProvenance } from '../types/source-provenance';
 
 // -----------------------------------------------------------------------------
 // Materials service (IN-S04/S05): instructor course-material upload + async RAG
@@ -134,7 +148,7 @@ function fileExtension(filename: string): string {
   return ext || filename.toLowerCase();
 }
 
-function detectUploadFormat(filename: string): UploadFormat | undefined {
+export function detectUploadFormat(filename: string): UploadFormat | undefined {
   const ext = fileExtension(filename);
   return (UPLOAD_FORMATS as readonly string[]).includes(ext) ? (ext as UploadFormat) : undefined;
 }
@@ -164,6 +178,7 @@ export async function createMaterials(
   files: UploadedFile[],
   requestedBy = 'system',
   canvasSource?: Material['canvasSource'],
+  onItem?: (index: number, material: WithId<Material>, disposition: 'created' | 'reused') => Promise<void>,
 ): Promise<WithId<Material>[]> {
   const prepared = files.map((file) => ({ file, format: detectUploadFormat(file.originalname) }));
   const invalid = prepared.find((p) => !p.format);
@@ -172,9 +187,23 @@ export async function createMaterials(
   }
 
   const materials: WithId<Material>[] = [];
-  for (const { file, format } of prepared) {
+  for (const [index, { file, format }] of prepared.entries()) {
+    let fingerprint: Material['uploadFingerprint'];
+    if (!canvasSource) {
+      const hash = createHash('sha256');
+      for await (const bytes of createReadStream(file.path)) hash.update(bytes);
+      fingerprint = { sha256: hash.digest('hex'), format: format!, active: true };
+      const reused = await findExactManualUpload(courseId, fingerprint);
+      if (reused) {
+        await reuseManualUpload(reused, file);
+        materials.push(reused);
+        await onItem?.(index, reused, 'reused');
+        continue;
+      }
+    }
     const doc: Material = {
       courseId,
+      ...(fingerprint ? { uploadFingerprint: fingerprint } : {}),
       ...(canvasSource ? { canvasSource } : {}),
       name: file.originalname,
       format: format as UploadFormat,
@@ -184,10 +213,38 @@ export async function createMaterials(
       assignments: [],
       uploadedAt: new Date(),
     };
-    const { insertedId } = await materialsCol().insertOne(doc);
-    materials.push(await attachAndEnqueueRun({ _id: insertedId, ...doc }, 'upload', requestedBy));
+    let inserted: WithId<Material>;
+    try {
+      inserted = await insertMaterialWithRun(doc, requestedBy);
+    } catch (error) {
+      if (!fingerprint || (error as { code?: unknown }).code !== 11000) throw error;
+      const winner = await findExactManualUpload(courseId, fingerprint);
+      if (!winner) throw error;
+      await reuseManualUpload(winner, file);
+      materials.push(winner);
+      await onItem?.(index, winner, 'reused');
+      continue;
+    }
+    // Link the receipt before enqueue. A crash cannot hide an admitted file;
+    // retries expose the canonical material and its independently tracked run.
+    await onItem?.(index, inserted, 'created');
+    materials.push(inserted.activeRunId ? await enqueueMaterialRun(inserted, inserted.activeRunId, 'upload') : inserted);
   }
   return materials;
+}
+
+async function findExactManualUpload(courseId: ObjectId, fingerprint: NonNullable<Material['uploadFingerprint']>): Promise<WithId<Material> | null> {
+  return materialsCol().findOne({ courseId, deletedAt: { $exists: false }, canvasSource: { $exists: false },
+    'uploadFingerprint.sha256': fingerprint.sha256, 'uploadFingerprint.format': fingerprint.format, 'uploadFingerprint.active': true });
+}
+
+async function reuseManualUpload(material: WithId<Material>, file: UploadedFile): Promise<void> {
+  if (file.originalname !== material.name) {
+    await materialsCol().updateOne({ _id: material._id, courseId: material.courseId, deletedAt: { $exists: false } }, { $addToSet: { uploadAliases: file.originalname } });
+  }
+  // Only the redundant server upload is removed. Never remove the canonical
+  // source, another course's file, or an upload whose persistence is uncertain.
+  if (file.path !== material.storagePath) await fs.rm(file.path, { force: true });
 }
 
 /** Insert a `processing` URL Material and enqueue its ingest job (IN-S04). */
@@ -206,8 +263,8 @@ export async function createUrlMaterial(
     assignments: [],
     uploadedAt: new Date(),
   };
-  const { insertedId } = await materialsCol().insertOne(doc);
-  return attachAndEnqueueRun({ _id: insertedId, ...doc }, 'upload', requestedBy);
+  const inserted = await insertMaterialWithRun(doc, requestedBy);
+  return inserted.activeRunId ? enqueueMaterialRun(inserted, inserted.activeRunId, 'upload') : inserted;
 }
 
 export async function listMaterials(courseId: ObjectId): Promise<WithId<Material>[]> {
@@ -229,19 +286,26 @@ export async function listTrashedMaterials(courseId: ObjectId): Promise<WithId<M
 export async function getMaterialWorkspaceDetail(
   courseId: ObjectId,
   materialId: ObjectId,
-): Promise<{ material: WithId<Material>; chunks: Array<{ index: number; text: string; characterCount: number }> }> {
+): Promise<{ material: WithId<Material>; chunks: Array<Pick<MaterialChunk, 'index' | 'text' | 'characterCount' | 'sourceProvenance'>>; sourceProvenance?: MaterialWorkspaceProvenance }> {
   const material = await materialsCol().findOne({ _id: materialId, courseId });
   if (!material) throw new Error('material-not-found');
   const chunks = await materialChunksCol()
     .find({ courseId, materialId })
     .sort({ index: 1 })
-    .project<{ index: number; text: string; characterCount: number }>({ _id: 0, index: 1, text: 1, characterCount: 1 })
+    .project<Pick<MaterialChunk, 'index' | 'text' | 'characterCount' | 'sourceProvenance'>>({ _id: 0, index: 1, text: 1, characterCount: 1, sourceProvenance: 1 })
     .toArray();
   const previewChunks =
     chunks.length === 0 && material.excerpt
       ? [{ index: 0, text: material.excerpt, characterCount: material.excerpt.length }]
       : chunks;
-  return { material: { ...material, kind: material.kind ?? 'other' }, chunks: previewChunks };
+  if (material.format !== 'pdf') return { material: { ...material, kind: material.kind ?? 'other' }, chunks: previewChunks };
+  const record = material.sourceManifest?.provenanceId
+    ? await readMaterialSourceProvenance(courseId, materialId, material.sourceManifest.provenanceId) : null;
+  const currentRecord = record && chunks.length === record.chunkCount && chunks.every((chunk, index) => chunk.index === index && chunk.characterCount === chunk.text.length)
+    && hashSourceChunks(chunks) === record.sourceTextHash ? record : null;
+  const safeChunks = previewChunks.map(chunk => currentRecord && validateMaterialChunkProvenance(chunk, currentRecord)
+    ? chunk : { index: chunk.index, text: chunk.text, characterCount: chunk.characterCount });
+  return { material: { ...material, kind: material.kind ?? 'other' }, chunks: safeChunks, sourceProvenance: materialWorkspaceProvenance(currentRecord, previewChunks) };
 }
 
 /** Move a material to Trash without deleting provenance, chunks, or questions.
@@ -251,11 +315,11 @@ export async function trashMaterial(
   materialId: ObjectId,
   deletedBy: string,
 ): Promise<WithId<Material>> {
-  const material = await materialsCol().findOneAndUpdate(
+  const material = await withCourseAuthoringWrite(courseId, () => authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, courseId, deletedAt: { $exists: false } },
-    { $set: { deletedAt: new Date(), deletedBy }, $inc: { revision: 1 } },
+    { $set: { deletedAt: new Date(), deletedBy, 'uploadFingerprint.active': false }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
-  );
+  ));
   if (!material) throw new Error('material-not-found');
   try {
     await deletePointsByFilter(courseCollection(courseId), {
@@ -287,15 +351,15 @@ export async function restoreMaterial(
     trigger: 'restore',
     ...(current.activeRunId ? { previousRunId: current.activeRunId } : {}),
   });
-  const restored = await materialsCol().findOneAndUpdate(
+  const restored = await withCourseAuthoringWrite(courseId, () => authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, courseId, deletedAt: current.deletedAt },
     {
       $set: { status: 'processing', activeRunId: run._id },
       $inc: { revision: 1 },
-      $unset: { deletedAt: '', deletedBy: '', error: '' },
+      $unset: { deletedAt: '', deletedBy: '', error: '', sourceManifest: '' },
     },
     { returnDocument: 'after' },
-  );
+  ));
   if (!restored) {
     await failContentRun(run._id, {
       code: 'material-restore-conflict',
@@ -323,11 +387,11 @@ export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'
     trigger: 'retry',
     ...(current.activeRunId ? { previousRunId: current.activeRunId } : {}),
   });
-  const material = await materialsCol().findOneAndUpdate(
+  const material = await withCourseAuthoringWrite(current.courseId, () => authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, status: 'failed', ...(current.activeRunId ? { activeRunId: current.activeRunId } : {}) },
-    { $set: { status: 'processing', activeRunId: run._id }, $unset: { error: '' }, $inc: { revision: 1 } },
+    { $set: { status: 'processing', activeRunId: run._id }, $unset: { error: '', sourceManifest: '' }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
-  );
+  ));
   if (!material) {
     await failContentRun(run._id, {
       code: 'material-retry-conflict',
@@ -340,49 +404,34 @@ export async function retryMaterial(materialId: ObjectId, requestedBy = 'system'
   return enqueueMaterialRun(material, run._id, 'retry');
 }
 
-async function attachAndEnqueueRun(
-  material: WithId<Material>,
-  trigger: 'upload' | 'retry' | 'restore',
+async function insertMaterialWithRun(
+  doc: Material,
   requestedBy: string,
 ): Promise<WithId<Material>> {
+  const materialId = new ObjectId();
   let run: Awaited<ReturnType<typeof createMaterialIngestRun>> | undefined;
-  let failureCode = 'content-run-create-failed';
   try {
-    run = await createMaterialIngestRun({
-      courseId: material.courseId,
-      requestedBy,
-      materialId: material._id,
-      sourceName: material.name,
-      sourceFormat: material.format,
-      trigger,
-      ...(trigger !== 'upload' && material.activeRunId ? { previousRunId: material.activeRunId } : {}),
+    return await withCourseAuthoringWrite(doc.courseId, async () => {
+      run = await createMaterialIngestRun({ courseId: doc.courseId, requestedBy, materialId,
+        sourceName: doc.name, sourceFormat: doc.format, trigger: 'upload' });
+      const material = { _id: materialId, ...doc, activeRunId: run._id, revision: 1 };
+      await authoringCollection(materialsCol()).insertOne(material);
+      return material;
     });
-    failureCode = 'material-run-link-failed';
-    const linked = await materialsCol().updateOne({ _id: material._id }, { $set: { activeRunId: run._id }, $inc: { revision: 1 } });
-    if (linked.matchedCount === 0) throw new Error('material-run-link-failed');
-    material = { ...material, revision: (material.revision ?? 0) + 1 };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const writes: Array<Promise<unknown>> = [
-      materialsCol().updateOne(
-        { _id: material._id },
-        { $set: { status: 'failed', error: message }, $inc: { revision: 1 } },
-      ),
-    ];
     if (run) {
-      writes.push(
-        failContentRun(run._id, {
-          code: failureCode,
-          message,
-          atStage: 'queued',
-          retryable: true,
-        }),
-      );
+      // Transactions roll back both records. Standalone compatibility can leave
+      // a headless run after an insert race; terminalize it and never enqueue it.
+      await Promise.resolve(failContentRun(run._id, { code: (error as { code?: number }).code === 11000 ? 'material-upload-reused' : 'material-run-link-failed', message, atStage: 'queued', retryable: true })).catch(() => undefined);
+      throw error;
     }
-    await Promise.allSettled(writes);
-    return { ...material, status: 'failed', error: message, revision: (material.revision ?? 0) + 1 };
+    // A run creation failure is visible and retryable, never a forever-processing
+    // head without a run pointer. A database insert failure still propagates.
+    const failed: WithId<Material> = { _id: materialId, ...doc, status: 'failed', error: message, revision: 1 };
+    await withCourseAuthoringWrite(doc.courseId, () => authoringCollection(materialsCol()).insertOne(failed));
+    return failed;
   }
-  return enqueueMaterialRun({ ...material, activeRunId: run._id }, run._id, trigger);
 }
 
 async function enqueueMaterialRun(
@@ -422,7 +471,7 @@ export async function assignMaterial(
   assignments: Array<{ themeId: ObjectId; loId?: ObjectId }>,
   expectedRevision?: number,
 ): Promise<WithId<Material>> {
-  const material = await materialsCol().findOneAndUpdate(
+  const write = () => authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision) },
     {
       $set: { assignments },
@@ -431,6 +480,9 @@ export async function assignMaterial(
     },
     { returnDocument: 'after' },
   );
+  const courseId = authoringCommitAvailable() ? await getMaterialCourseId(materialId) : null;
+  if (authoringCommitAvailable() && !courseId) throw new Error('material-not-found');
+  const material = courseId ? await withCourseAuthoringWrite(courseId, write) : await write();
   if (!material) throw expectedRevision !== undefined ? editConflict('Material') : new Error('material-not-found');
   return material;
 }
@@ -441,11 +493,11 @@ export async function updateMaterialKind(
   kind: MaterialKind,
   expectedRevision?: number,
 ): Promise<WithId<Material>> {
-  const material = await materialsCol().findOneAndUpdate(
+  const material = await withCourseAuthoringWrite(courseId, () => authoringCollection(materialsCol()).findOneAndUpdate(
     { _id: materialId, courseId, deletedAt: { $exists: false }, ...editRevisionFilter(expectedRevision) },
     { $set: { kind, 'automation.kind': { value: kind, confidence: 1, source: 'manual' } }, $inc: { revision: 1 } },
     { returnDocument: 'after' },
-  );
+  ));
   if (!material) throw expectedRevision !== undefined ? editConflict('Material') : new Error('material-not-found');
   return material;
 }
@@ -672,6 +724,8 @@ function materialPointId(materialId: string, chunkIndex: number): string {
  */
 export async function ingestMaterial(materialId: string, runId?: string): Promise<void> {
   let id: ObjectId | undefined;
+  let sourcePublished = false;
+  let preparedProvenance: WithId<MaterialSourceProvenance> | undefined;
   let stage: MaterialIngestStage = 'parsing';
   const result: MaterialIngestResult = {
     characterCount: 0,
@@ -688,6 +742,16 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
       if (runId) throw new Error('material-not-found');
       return;
     }
+    if (runId && (!material.activeRunId || material.activeRunId.toHexString() !== runId)) throw new Error('material-run-superseded');
+    // Replaying an indexed run must never expose its old manifest while chunks
+    // are replaced. Publish a new manifest only after embedding/indexing succeeds.
+    if (material.sourceManifest || material.status !== 'processing') {
+      const invalidated = await withCourseAuthoringWrite(material.courseId, () => authoringCollection(materialsCol()).updateOne(
+        { _id: id, deletedAt: { $exists: false }, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
+        { $set: { status: 'processing' }, $unset: { sourceManifest: '' } },
+      ));
+      if (invalidated.matchedCount === 0) throw new Error('material-run-superseded');
+    }
 
     if (runId) {
       await updateContentRun(new ObjectId(runId), {
@@ -698,7 +762,10 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
     }
 
     console.log(`[FinanceBot:RAG] started runId=${runId ?? 'direct'} materialId=${materialId} type=${material.format}`);
-    const text = await extractText(material);
+    if (material.format === 'pdf' && !material.storagePath) throw new Error('missing-storage-path');
+    const parsed = material.format === 'pdf'
+      ? await parseFileWithReceipt(material.storagePath!, 'text') : { text: await extractText(material) };
+    const text = parsed.text;
     result.characterCount = text.length;
     console.log(`[FinanceBot:RAG] parsed materialId=${materialId} chars=${text.length}`);
     const excerpt = text.slice(0, EXCERPT_MAX_CHARS);
@@ -708,23 +775,22 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
       await updateContentRun(new ObjectId(runId), { status: 'running', stage, message: 'Chunking parsed text' });
     }
     const chunks = await chunkText(text, material.name);
+    if (!chunks.length || chunks.some((chunk) => !chunk.text.trim())) throw new Error('material-source-empty');
     result.chunkCount = chunks.length;
     console.log(`[FinanceBot:RAG] chunked materialId=${materialId} chunks=${chunks.length}`);
-    await materialChunksCol().deleteMany({ materialId: id });
-    if (chunks.length > 0) {
-      const createdAt = new Date();
-      await materialChunksCol().insertMany(
-        chunks.map((chunk, index) => ({
+    const createdAt = new Date();
+    const provenance = parsed.receipt ? await prepareMaterialSourceProvenance(material, text, parsed.receipt, chunks, runId ? new ObjectId(runId) : undefined) : undefined;
+    preparedProvenance = provenance?.record;
+    const chunkDocuments = chunks.map((chunk, index) => ({
           courseId: material.courseId,
           materialId: id!,
           index,
           text: chunk.text,
           characterCount: chunk.text.length,
           metadata: chunk.metadata as Record<string, unknown>,
+          ...(provenance ? { sourceProvenance: provenance.chunks[index] } : {}),
           createdAt,
-        })),
-      );
-    }
+        }));
 
     stage = 'embedding';
     if (runId) {
@@ -736,6 +802,7 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
       });
     }
     const vectors = chunks.length > 0 ? await embed(chunks.map((chunk) => chunk.text)) : [];
+    if (vectors.length !== chunks.length || vectors.some((vector) => !Array.isArray(vector) || !vector.length || vector.some((value) => !Number.isFinite(value)))) throw new Error('material-embedding-incomplete');
     result.vectorCount = vectors.length;
     if (chunks.length > 0) {
       console.log(`[FinanceBot:RAG] embedded materialId=${materialId} vectors=${vectors.length}`);
@@ -768,20 +835,43 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
       console.log(`[FinanceBot:RAG] indexed materialId=${materialId} points=${points.length}`);
     }
 
-    const ready = await materialsCol().updateOne(
+    // Filesystem reads remain outside the short authoring transaction. Uploaded
+    // originals are immutable; pinned source access rechecks their bytes again.
+    if (preparedProvenance) await assertMaterialProvenanceSourceCurrent(material.storagePath!, preparedProvenance.receipt);
+    const ready = await withCourseAuthoringWrite(material.courseId, async () => {
+      // No external calls occur inside this short publication transaction.
+      // Standalone compatibility publishes ready last; interrupted writes remain
+      // processing and cannot ground analysis until an explicit retry completes.
+      if (authoringCommitAvailable()) {
+        const current = await authoringCollection(materialsCol()).findOne({ _id: id!, deletedAt: { $exists: false }, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) });
+        if (!current) throw new Error('material-run-superseded');
+      }
+      await authoringCollection(materialChunksCol()).deleteMany({ courseId: material.courseId, materialId: id! });
+      await authoringCollection(materialChunksCol()).insertMany(chunkDocuments);
+      if (preparedProvenance) await authoringCollection(materialSourceProvenanceCol()).insertOne(preparedProvenance);
+      return authoringCollection(materialsCol()).updateOne(
       {
         _id: id,
         deletedAt: { $exists: false },
         ...(runId ? { activeRunId: new ObjectId(runId) } : {}),
       },
-      { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}) }, $unset: { error: '' }, $inc: { revision: 1 } },
-    );
-    if (runId && ready.matchedCount === 0) {
+      { $set: { status: 'ready', ...(excerpt ? { excerpt } : {}), sourceManifest: {
+        version: 1, ...(runId ? { ingestRunId: new ObjectId(runId) } : {}),
+        ...(preparedProvenance ? { provenanceId: preparedProvenance._id } : {}),
+        sourceTextHash: hashSourceChunks(chunks.map((chunk, index) => ({ index, text: chunk.text }))),
+        chunkCount: chunks.length, indexedCount: result.indexedCount,
+        characterCount: chunks.reduce((sum, chunk) => sum + chunk.text.length, 0),
+        parserVersion: MATERIAL_PARSER_VERSION, chunkerVersion: MATERIAL_CHUNKER_VERSION, indexedAt: new Date(),
+      } }, $unset: { error: '' }, $inc: { revision: 1 } },
+      );
+    });
+    if (ready.matchedCount === 0) {
       await deletePointsByFilter(collectionName, {
         must: [{ key: 'materialId', match: { value: materialIdStr } }],
       });
       throw new Error('material-run-superseded');
     }
+    sourcePublished = ready.matchedCount > 0;
 
     stage = 'classifying';
     if (runId) {
@@ -837,12 +927,16 @@ export async function ingestMaterial(materialId: string, runId?: string): Promis
   } catch (err) {
     if (!id) return;
     const message = err instanceof Error ? err.message : String(err);
+    if (preparedProvenance && !sourcePublished) {
+      try { await discardUnpublishedMaterialSourceProvenance(preparedProvenance); }
+      catch (cleanupError) { console.warn(`[FinanceBot:RAG] provenance cleanup deferred materialId=${materialId}: ${String(cleanupError)}`); }
+    }
     if (runId && message === 'content-run-conflict') return;
     console.error(`[FinanceBot:RAG] failed materialId=${materialId}: ${message}`);
     try {
-      await materialsCol().updateOne(
+      if (!sourcePublished) await materialsCol().updateOne(
         { _id: id, ...(runId ? { activeRunId: new ObjectId(runId) } : {}) },
-        { $set: { status: 'failed', error: message }, $inc: { revision: 1 } },
+        { $set: { status: 'failed', error: message }, $unset: { sourceManifest: '' }, $inc: { revision: 1 } },
       );
       if (runId) {
         await failContentRun(

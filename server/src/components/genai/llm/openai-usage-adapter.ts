@@ -2,11 +2,13 @@ import OpenAI from 'openai';
 import { APIError } from 'ubc-genai-toolkit-core';
 import type { LLMConfig, LLMModule, LLMOptions, LLMResponse, Message } from 'ubc-genai-toolkit-llm';
 import { captureModelCallResponse } from './model-call';
+import { createRequestDeadline, DEFAULT_LLM_REQUEST_TIMEOUT_MS, ModelCallTimeoutError } from './request-deadline';
 
 type WireObject = Record<string, unknown>;
 export interface OpenAICompletionClient {
-  create(request: WireObject): Promise<unknown>;
+  create(request: WireObject, options?: { signal: AbortSignal }): Promise<unknown>;
 }
+export interface OpenAITransportPolicy { requestTimeoutMs?: number }
 const object = (value: unknown): WireObject => value && typeof value === 'object' ? value as WireObject : {};
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
 
@@ -21,12 +23,12 @@ function messagesFor(messages: Message[], options: LLMOptions): WireObject[] {
 }
 
 /** Mirrors toolkit 0.3.0 Chat requests, retaining native usage it discards. */
-export function createOpenAIUsageAdapter(config: LLMConfig, suppliedClient?: OpenAICompletionClient): Pick<LLMModule, 'sendMessage' | 'sendConversation' | 'streamConversation'> {
+export function createOpenAIUsageAdapter(config: LLMConfig, suppliedClient?: OpenAICompletionClient, policy: OpenAITransportPolicy = {}): Pick<LLMModule, 'sendMessage' | 'sendConversation' | 'streamConversation'> {
   // Deliberately retain the SDK's existing default retry policy. The observer
   // labels physical retry visibility unknown rather than claiming one bill.
   const client = suppliedClient ?? (() => {
     const sdk = new OpenAI({ apiKey: config.apiKey, ...(config.endpoint ? { baseURL: config.endpoint } : {}) });
-    return { create: (request: WireObject) => sdk.chat.completions.create(request as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming) };
+    return { create: (request: WireObject, options?: { signal: AbortSignal }) => sdk.chat.completions.create(request as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, options) };
   })();
   const provider = config.provider;
   const requestFor = (messages: Message[], options: LLMOptions, streaming: boolean): WireObject => {
@@ -48,6 +50,7 @@ export function createOpenAIUsageAdapter(config: LLMConfig, suppliedClient?: Ope
       totalTokens: typeof usage.total_tokens === 'number' ? usage.total_tokens : undefined };
   };
   function handleError(error: unknown): Error {
+    if (error instanceof ModelCallTimeoutError) return error;
     if (error instanceof Error && ['AbortError', 'APIUserAbortError'].includes(error.name)) return error;
     if (error instanceof OpenAI.APIError) return new APIError(
       provider === 'ubc-llm-sandbox' ? `UBC LLM Sandbox API Error: ${error.message}` : error.message,
@@ -56,30 +59,40 @@ export function createOpenAIUsageAdapter(config: LLMConfig, suppliedClient?: Ope
     return new APIError('Unknown error occurred while calling OpenAI API');
   }
   async function sendConversation(messages: Message[], options: LLMOptions = {}): Promise<LLMResponse> {
+    const deadline = createRequestDeadline(policy.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS);
+    let succeeded = false;
     try {
       const effective = { ...config.defaultOptions, ...options };
-      const response = object(await client.create(requestFor(messages, effective, false)));
+      const response = object(await deadline.wait(() => client.create(requestFor(messages, effective, false), { signal: deadline.signal })));
       capture(response);
       const choices = Array.isArray(response.choices) ? response.choices : [];
       const choice = object(choices[0]);
+      succeeded = true;
       return { content: text(object(choice.message).content), model: text(response.model), usage: usageFor(response.usage),
         metadata: { provider, id: response.id, created: response.created, finishReason: choice.finish_reason } };
     } catch (error) { throw handleError(error); }
+    finally { deadline.dispose(!succeeded); }
   }
   return {
     sendConversation,
     sendMessage: (message: string, options?: LLMOptions) => sendConversation([{ role: 'user', content: message }], options),
     async streamConversation(messages: Message[], callback: (chunk: string) => void, options: LLMOptions = {}): Promise<LLMResponse> {
+      const deadline = createRequestDeadline(policy.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS);
+      let iterator: AsyncIterator<unknown> | undefined;
+      let succeeded = false;
       try {
         const effective = { ...config.defaultOptions, ...options };
-        const stream = await client.create(requestFor(messages, effective, true)) as AsyncIterable<unknown>;
+        const stream = await deadline.wait(() => client.create(requestFor(messages, effective, true), { signal: deadline.signal })) as AsyncIterable<unknown>;
+        iterator = stream[Symbol.asyncIterator]();
         let content = '';
         let usage: unknown;
         let responseId: unknown;
         let actualModel: unknown;
         let finishReason: unknown;
-        for await (const event of stream) {
-          const chunk = object(event);
+        while (true) {
+          const event = await deadline.wait(() => iterator!.next());
+          if (event.done) break;
+          const chunk = object(event.value);
           capture(chunk);
           if (chunk.usage != null) usage = chunk.usage;
           if (chunk.id != null) responseId = chunk.id;
@@ -90,18 +103,28 @@ export function createOpenAIUsageAdapter(config: LLMConfig, suppliedClient?: Ope
           const delta = text(object(choice.delta).content);
           if (delta) { content += delta; callback(delta); }
         }
+        deadline.check();
+        succeeded = true;
         // Length truncation remains a successful transport response, as in the
         // original toolkit. completeJson can reject/retry its invalid content.
         return { content, model: text(actualModel) || effective.model || config.defaultModel,
           ...(usage != null ? { usage: usageFor(usage) } : {}), metadata: { provider, id: responseId, finishReason } };
       } catch (error) { throw handleError(error); }
+      finally {
+        deadline.dispose(!succeeded);
+        // A stalled iterator may also stall return(). Request cleanup without
+        // making task completion wait for a broken upstream stream again.
+        if (!succeeded && iterator?.return) {
+          try { void Promise.resolve(iterator.return()).catch(() => {}); } catch { /* Preserve the original failure. */ }
+        }
+      }
     },
   };
 }
 
-export function installOpenAIUsageAdapter(module: LLMModule, config: LLMConfig): void {
+export function installOpenAIUsageAdapter(module: LLMModule, config: LLMConfig, policy: OpenAITransportPolicy = {}): void {
   if (config.provider !== 'openai' && config.provider !== 'ubc-llm-sandbox') return;
-  const adapter = createOpenAIUsageAdapter(config);
+  const adapter = createOpenAIUsageAdapter(config, undefined, policy);
   module.sendMessage = adapter.sendMessage;
   module.sendConversation = adapter.sendConversation;
   module.streamConversation = adapter.streamConversation;

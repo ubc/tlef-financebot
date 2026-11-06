@@ -16,10 +16,28 @@ jest.mock('ubc-genai-toolkit-llm', () => ({
 
 import { completeJson, llm, withModelCallObserver, type ModelCallEvent } from '../../server/src/components/genai/llm';
 import { modelRequestOptions } from '../../server/src/components/genai/llm/model-capabilities';
+import { ModelCallTimeoutError } from '../../server/src/components/genai/llm/request-deadline';
 
 beforeEach(() => {
   sendMessage.mockReset();
   streamConversation.mockReset();
+});
+
+it.each([false, true])('does not buy a JSON correction for a transport timeout (stream=%s)', async streaming => {
+  const error = new ModelCallTimeoutError(100);
+  sendMessage.mockRejectedValue(error); streamConversation.mockRejectedValue(error);
+  await expect(completeJson('Synthetic', streaming ? { onText: () => {} } : {})).rejects.toBe(error);
+  expect(sendMessage.mock.calls.length + streamConversation.mock.calls.length).toBe(1);
+});
+
+it('uses a compatible default for reasoning-required Sol without silently replacing explicit unsupported choices', async () => {
+  sendMessage.mockResolvedValue({ content: '{"ok":true}' });
+  await expect(completeJson('prompt', { model: 'gpt-6.1-sol', maxTokens: 6000 })).resolves.toEqual({ ok: true });
+  expect(sendMessage).toHaveBeenCalledWith('prompt', expect.objectContaining({ model: 'gpt-6.1-sol', reasoning_effort: 'medium', max_completion_tokens: 6000 }));
+  expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('temperature');
+  sendMessage.mockClear();
+  await expect(completeJson('prompt', { model: 'gpt-6.1-sol', reasoningEffort: 'none' })).rejects.toThrow('model-reasoning-effort-unsupported');
+  expect(sendMessage).not.toHaveBeenCalled();
 });
 
 it('parses a plain JSON object reply', async () => {
@@ -267,4 +285,11 @@ it('still reports both attempts to the compatible usage hook', async () => {
     .mockResolvedValueOnce({ content: '{}', usage: { promptTokens: 3, completionTokens: 2 } });
   await completeJson('Synthetic', { onUsage });
   expect(onUsage.mock.calls).toEqual([[{ promptTokens: 2, completionTokens: 1 }], [{ promptTokens: 3, completionTokens: 2 }]]);
+});
+
+it('with jsonRetry: false throws on an unparseable reply without a corrective call', async () => {
+  sendMessage.mockResolvedValue({ content: 'I cannot help with that.' });
+  await expect(completeJson('prompt', { jsonRetry: false })).rejects.toThrow('llm-json-parse-failed');
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('jsonRetry');
 });

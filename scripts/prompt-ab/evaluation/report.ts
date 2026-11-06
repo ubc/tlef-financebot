@@ -4,13 +4,17 @@ type Report = ReturnType<typeof summarizeEvaluation>;
 const safe = (value: string) => value.replace(/[\\`*_{}[\]()#+.!|<>-]/g, '\\$&').replace(/\r?\n/g, ' ');
 const number = (value: number | null) => value === null ? 'Unavailable' : value.toLocaleString('en-US', { maximumFractionDigits: 3 });
 const ratio = (value: { numerator: number; denominator: number; value: number | null }) => value.value === null ? `Unavailable (${value.numerator}/${value.denominator})` : `${(value.value * 100).toFixed(1)}% (${value.numerator}/${value.denominator})`;
+const acceptance = (supply: Report['arms'][number]['supply']) => `${ratio(supply.acceptedIndependentPerRequested)}${supply.acceptanceCoverage.ratioBasis === 'recorded-lower-bound' ? ' recorded lower bound' : ''}`;
 
 export function renderEvaluationReport(report: Report): string {
-  const [baseline, pilot] = report.arms;
+  const baseline = report.arms.find(arm => arm.policy === 'baseline')!;
+  const pilot = report.arms.find(arm => arm.policy === report.comparison.pilotPolicy)!;
   const rows: Array<[string, string, string]> = [
     ['Requested independent slots', number(baseline.requestedSlots), number(pilot.requestedSlots)],
     ['Saved / withheld / failed / missing', Object.values(baseline.outcomes).join(' / '), Object.values(pilot.outcomes).join(' / ')],
     ['Teacher accepted independent (saved)', number(baseline.supply.acceptedIndependent), number(pilot.supply.acceptedIndependent)],
+    ['Teacher accepted / requested', acceptance(baseline.supply), acceptance(pilot.supply)],
+    ['Resolved supply labels (coverage)', `${baseline.supply.acceptanceCoverage.knownSlots}/${baseline.requestedSlots} (${baseline.supply.acceptanceCoverage.status})`, `${pilot.supply.acceptanceCoverage.knownSlots}/${pilot.requestedSlots} (${pilot.supply.acceptanceCoverage.status})`],
     ['Accepted after edits (included above)', number(baseline.supply.acceptedAfterEdits), number(pilot.supply.acceptedAfterEdits)],
     ['Intentional variants (saved)', number(baseline.supply.intentionalVariantsSaved), number(pilot.supply.intentionalVariantsSaved)],
     ['Provisional unmet independent slots', number(baseline.supply.provisionalUnmetIndependentSlots), number(pilot.supply.provisionalUnmetIndependentSlots)],
@@ -33,10 +37,11 @@ export function renderEvaluationReport(report: Report): string {
     '# FinanceBot quality evaluation', '',
     `Experiment: ${safe(report.experimentId)}. Origin: **${report.origin}**.`, '',
     report.origin === 'synthetic' ? '**Walkthrough only. These are synthetic fixtures, not measured product quality or teacher evidence.**' : 'Descriptive observations. Read comparison eligibility and review coverage before interpreting differences.', '',
-    '| Measure | Baseline | Source and memory pilot |', '| --- | --- | --- |', ...rows.map(row => `| ${row.join(' | ')} |`), '',
+    `| Measure | Baseline | ${report.comparison.pilotPolicy} |`, '| --- | --- | --- |', ...rows.map(row => `| ${row.join(' | ')} |`), '',
+    ...(report.comparison.otherPolicies.length ? [`Other policy arms are retained separately in JSON: ${report.comparison.otherPolicies.join(', ')}. They are excluded from this comparison.`, ''] : []),
     '## Comparison eligibility', '',
     `${report.comparison.eligiblePairs.length} eligible declared-context pairs; ${report.comparison.excludedPairs.length} excluded or missing pairs. Fully resolved teacher labels: ${report.comparison.teacherLabelsComplete ? 'yes' : 'no'}.`, '',
-    'Matching hashes check the supplied manifest; they do not attest that execution used that manifest. Missing reviews are not clean passes. Zero accepted questions makes per-accepted ratios unavailable. No winner is inferred.', '',
+    'Matching hashes check the supplied manifest; they do not attest that execution used that manifest. Missing reviews are not clean passes. Without resolved supply labels, teacher acceptance is unavailable, not zero. Partial acceptance ratios are recorded lower bounds over all requested slots. Zero accepted questions makes per-accepted ratios unavailable. No winner is inferred.', '',
     ...report.comparison.excludedPairs.map(pair => `- ${safe(pair.caseId)} / repetition ${pair.repetition}: ${pair.reasons.map(safe).join(', ')}.`), '',
     'The JSON report includes per-case results, all five issue dimensions, denominators, uncertainty, recorded measurement coverage, and descriptive deltas restricted to eligible pairs.', '',
     '## Recorded observation limits', '',

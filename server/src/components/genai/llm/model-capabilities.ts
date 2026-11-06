@@ -123,6 +123,16 @@ export const CAPABILITY_PROFILES: Readonly<Record<CapabilityProfile, ModelCapabi
     defaultEffort: 'medium',
     tokenLimitParam: 'max_completion_tokens',
   }),
+  // GPT-6.1 Sol requires reasoning. Unlike older profiles it cannot accept
+  // effort none or a temperature. Availability is verified separately from
+  // this request contract; do not silently change an explicitly chosen effort.
+  'reasoning-required': Object.freeze({
+    profile: 'reasoning-required',
+    temperature: null,
+    reasoningEffort: Object.freeze(['low', 'medium', 'high', 'xhigh'] as const),
+    defaultEffort: 'medium',
+    tokenLimitParam: 'max_completion_tokens',
+  }),
 });
 
 /** Models this codebase knows how to call. */
@@ -131,6 +141,7 @@ export const KNOWN_MODELS: Readonly<Record<string, CapabilityProfile>> = Object.
   'gpt-5.6-luna': 'reasoning-fixed',
   // Request shape based on the GPT-6 Luna API contract; gateway availability is deployment-specific.
   'gpt-6-luna': 'reasoning-fixed',
+  'gpt-6.1-sol': 'reasoning-required',
 });
 
 /**
@@ -217,11 +228,20 @@ export function temperatureAllowed(caps: ModelCapabilities, effort?: ReasoningEf
 export interface ModelRequestOptions {
   /** Model override (falls back to `LLM_DEFAULT_MODEL`). */
   model?: string;
+  capabilityProfile?: CapabilityProfile;
   /** Dropped when the effective reasoning effort is anything but `none`. */
   temperature?: number;
   maxTokens?: number;
   /** Reasoning-capable models only; dropped elsewhere. Omitted unless set. */
   reasoningEffort?: ReasoningEffort;
+}
+
+/** JSON callers historically prefer none for bounded, reproducible output.
+ * Models requiring reasoning use their declared default when effort is absent.
+ * An explicit unsupported effort is rejected, never replaced by another arm. */
+export function defaultJsonReasoningEffort(model: string | undefined, profile?: CapabilityProfile): ReasoningEffort {
+  const caps = profile ? CAPABILITY_PROFILES[profile] : capabilitiesFor(model || env.llmDefaultModel);
+  return caps.reasoningEffort && !caps.reasoningEffort.includes('none') ? caps.defaultEffort : 'none';
 }
 
 /**
@@ -251,7 +271,12 @@ export function modelRequestOptions(options: ModelRequestOptions): LLMOptions {
   // `||` not `??`: an empty-string model would otherwise pick capabilities for
   // '' while the toolkit served the request from its own defaultModel, so the
   // profile and the serving model would disagree.
-  const caps = capabilitiesFor(options.model || env.llmDefaultModel);
+  const caps = options.capabilityProfile
+    ? CAPABILITY_PROFILES[options.capabilityProfile]
+    : capabilitiesFor(options.model || env.llmDefaultModel);
+  if (caps.reasoningEffort && options.reasoningEffort && !caps.reasoningEffort.includes(options.reasoningEffort)) {
+    throw new Error(`model-reasoning-effort-unsupported:${options.model || env.llmDefaultModel}:${options.reasoningEffort}`);
+  }
   const sendOptions: LLMOptions = {
     ...(options.model ? { model: options.model } : {}),
   };

@@ -5,6 +5,10 @@ import {
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { createGenaiLogger } from '../logger';
+import { parsePdfTextNativeFirst } from './pdf-text-first';
+import { parsePdfFileWithReceipt } from './pdf-file-receipt';
+import parserPackage from 'ubc-genai-toolkit-document-parsing/package.json';
+import type { ParsedFileWithReceipt } from '../../../types/source-provenance';
 
 // Turn files (PDF, DOCX, PPTX, HTML, Markdown) into text via
 // ubc-genai-toolkit-document-parsing. First stage of the ingestion pipeline;
@@ -14,10 +18,9 @@ const logger = createGenaiLogger('genai:document-parsing');
 const parser = new DocumentParsingModule({ logger });
 
 // @opendocsg/pdf2md (used by the toolkit for PDFs) can leave its parse promise
-// pending forever for otherwise valid files. Bound that primary attempt so an
-// Agenda ingest job cannot remain locked indefinitely, then fall back to
-// Poppler's mature `pdftotext` executable. The upload route already caps files
-// at 50 MiB; keep the fallback output bounded to the same order of magnitude.
+// pending forever for otherwise valid files. Text requests prefer bounded
+// Poppler extraction; Markdown keeps the bounded toolkit-first path below.
+// The upload route caps files at 50 MiB; bound native output similarly.
 const PDF_TOOLKIT_TIMEOUT_MS = 15_000;
 const PDFTOTEXT_TIMEOUT_MS = 60_000;
 const PDFTOTEXT_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
@@ -77,6 +80,13 @@ export async function parseFile(
   if (path.extname(filePath).toLowerCase() !== '.pdf') {
     return parseWithToolkit(filePath, format);
   }
+  if (format === 'text') {
+    return parsePdfTextNativeFirst(filePath, {
+      parseNative: parsePdfWithPdftotext,
+      parseToolkit: file => parseWithToolkit(file, 'text'),
+      logger,
+    });
+  }
 
   try {
     return await withTimeout(
@@ -96,3 +106,13 @@ export async function parseFile(
 
 export { parser };
 export type { SupportedOutputFormat };
+
+/** Additive ingestion API. Non-PDF output and the legacy string facade keep
+ * their existing route; PDF receipts describe the actual selected adapter. */
+export async function parseFileWithReceipt(filePath: string, format: SupportedOutputFormat = 'text'): Promise<ParsedFileWithReceipt> {
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return { text: await parseFile(filePath, format) };
+  return parsePdfFileWithReceipt(filePath, format, { parseNative: parsePdfWithPdftotext,
+    parseToolkit: (file, output) => parseWithToolkit(file, output), parseUnbound: parseFile, toolkitVersion: parserPackage.version, logger });
+}
+
+export { buildPdfPageMap, locatePdfChunk, projectPdfChunkLocation, validatePdfPageMapIdentity } from './pdf-provenance';

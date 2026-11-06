@@ -9,6 +9,11 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
 jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
 }));
+jest.mock('../../server/src/services/admin.service', () => ({
+  getPlatformSettings: jest.fn(async () => ({ models: {
+    generator: { model: 'generator-v1' }, validator: { model: 'validator-v1' }, reviewer: { model: 'reviewer-v1' },
+  } })),
+}));
 // step-models is deliberately NOT mocked. Its persisted <-> in-memory
 // conversions are pure, and re-implementing them in a mock factory would stop
 // these tests tracking the real shapes — which is exactly how the run-record
@@ -60,22 +65,6 @@ beforeEach(() => {
 });
 
 describe('saved generation blueprints', () => {
-  it('persists, inherits, and explicitly overrides the pilot policy in a saved recipe', async () => {
-    const courseId = new ObjectId();
-    const blueprint = await createGenerationBlueprint(courseId, 'PUID-INSTR', {
-      name: 'Grounded pilot', loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
-    });
-    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
-    blueprintFindOne.mockResolvedValue(blueprint);
-    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR');
-    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR', 'baseline');
-    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'baseline' }));
-    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
-    blueprintFindOneAndUpdate.mockResolvedValue({ ...blueprint, qualityPolicy: 'baseline' });
-    await updateGenerationBlueprint(courseId, blueprint._id, { qualityPolicy: 'baseline' });
-    expect(blueprintFindOneAndUpdate).toHaveBeenCalledWith({ _id: blueprint._id, courseId }, expect.objectContaining({ $set: expect.objectContaining({ qualityPolicy: 'baseline' }) }), expect.any(Object));
-  });
   it('pins the complete recipe, selected materials, and configured models', async () => {
     const courseId = new ObjectId();
     const loId = new ObjectId();
@@ -98,19 +87,16 @@ describe('saved generation blueprints', () => {
       loId,
       count: 8,
       materialIds,
-      // A blueprint pins model IDS, not per-step parameters: it answers "which
-      // model produced this", and replaying it uses the models' own defaults.
       models: {
         embedding: 'embed-v1',
         generator: 'generator-v1',
-        validator: 'validator-v1',
         reviewer: 'reviewer-v1',
       },
+      modelSnapshot: { generator: { model: 'generator-v1' } },
     });
     expect(configuredGenerationModels()).toEqual({
       embedding: 'embed-v1',
       generator: { model: 'generator-v1' },
-      validator: { model: 'validator-v1' },
       reviewer: { model: 'reviewer-v1' },
     });
     expect(materialCountDocuments).toHaveBeenCalledWith({
@@ -185,7 +171,6 @@ describe('saved generation blueprints', () => {
       models: {
         embedding: 'embed-v1',
         generator: { model: 'generator-v1' },
-        validator: { model: 'validator-v1' },
         reviewer: { model: 'reviewer-v1' },
       },
       blueprintId,
@@ -231,27 +216,30 @@ describe('exact generation retry', () => {
     const materials = [new ObjectId()];
     jest.mocked(getCourseContentRun).mockResolvedValue({
       _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', difficulty: 'hard', hardnessMove: 'regime-change', qualityPolicy: 'grounded-memory-v1',
+      input: { loId: new ObjectId(), count: 1, type: 'mcq', difficulty: 'hard', hardnessMove: 'regime-change',
         models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
       grounding: { allowedMaterialIds: materials, retrievedChunkCount: 2, pinned },
     } as never);
     await retryGenerationRun(courseId, runId, 'PUID-INSTR');
     expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({
-      qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, groundingPinned: pinned, pinnedMaterialIds: materials,
+      retryOfRunId: runId, groundingPinned: pinned, pinnedMaterialIds: materials,
       difficulty: 'hard', hardnessMove: 'regime-change',
     }));
   });
 
-  it('retries the policy frozen in the terminal run rather than inheriting current recipe defaults', async () => {
+  it('does not forward a historical run\'s retired quality-policy or protocol fields on retry', async () => {
     const courseId = new ObjectId();
     const runId = new ObjectId();
     jest.mocked(getCourseContentRun).mockResolvedValue({
       _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
+      input: { loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v2', sourceProvenance: 'pdf-pages-v1',
+        answerabilityProtocol: 'option-answerability-v1', reviewRepairProtocol: 'frozen-review-decisions-v1',
         models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
     } as never);
     await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, count: 2 }));
+    const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
+    expect(request).toMatchObject({ retryOfRunId: runId, count: 2 });
+    for (const field of ['qualityPolicy', 'sourceProvenance', 'answerabilityProtocol', 'reviewRepairProtocol']) expect(request).not.toHaveProperty(field);
   });
   it('copies the original input, model snapshot, and grounding material ids', async () => {
     const courseId = new ObjectId();
@@ -298,7 +286,6 @@ describe('exact generation retry', () => {
       models: {
         embedding: 'old-embed',
         generator: { model: 'old-generator' },
-        validator: { model: 'old-validator' },
         reviewer: { model: 'old-reviewer' },
       },
       blueprintId,

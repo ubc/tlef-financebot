@@ -179,9 +179,11 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   const layout = el('div', { class: 'structure-layout' });
   const actionNotice = el('div', { class: 'structure-action-notice', role: 'status' });
   body.replaceChildren(pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.'), actionNotice, layout);
-  const assistant = createStructureAssistant(courseId, materials, refresh, async () => {
+  const assistant = createStructureAssistant(courseId, materials, refresh, async (notice) => {
     assistant.dispose();
     await renderStructureInner(outlet, courseId);
+    const nextNotice = outlet.querySelector<HTMLElement>('.structure-action-notice');
+    if (notice && nextNotice) nextNotice.textContent = notice;
   }, root);
 
   function findTheme(id: string): CourseTreeTheme | undefined {

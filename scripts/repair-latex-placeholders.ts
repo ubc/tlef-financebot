@@ -67,7 +67,7 @@ async function repairOne(questionId: ObjectId, apply: boolean): Promise<'repaire
       (current.derivedValues ?? []).map((derived) => derived.name),
     );
     const result = optionValues.ok
-      ? verifyQuestionNumerics({ slots: current.paramSlots ?? [], derivedValues: current.derivedValues ?? [], optionValueNames: optionValues.names, optionCurrency: optionValues.currency })
+      ? verifyQuestionNumerics({ stem, slots: current.paramSlots ?? [], derivedValues: current.derivedValues ?? [], optionValueNames: optionValues.names, optionCurrency: optionValues.currency })
       : { ok: false as const, error: optionValues.error };
     if (result.ok) verification = result.verification;
     else if (current.verification) {

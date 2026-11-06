@@ -1,6 +1,11 @@
-import type { StructureOptions, StructureDraft, StructureResult } from './structure';
-import type { GenerationQualityPolicy, GenerationQualityRunResult } from './generation-quality';
+import type { AuthoringIntent, PedagogicalTaskDescriptor } from './authoring-task';
+import type { StructureOptions, StructureDraft, StructureResult, StructureSynthesisReceipt, OutlineGroundingReceipt } from './structure';
+import type { SourceSelectionReport } from './material-upload';
+import type { AuthoringBudgetReceipt } from './authoring-budget';
 import type { ObjectId } from 'mongodb';
+import type { StructureConsolidationRunLink } from './structure-consolidation-runtime';
+import type { StructureReviewRunLink } from './structure-review';
+import type { StructureRepairRunLink } from './structure-repair';
 
 // -----------------------------------------------------------------------------
 // Shared domain types (PRD §2 Data Model). Server-side single source of truth;
@@ -146,14 +151,16 @@ export interface CapabilitySettings {
  * and what each profile means on the wire, is measured ground truth in
  * `components/genai/llm/model-capabilities` and stays there.
  */
-export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed';
+export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed' | 'reasoning-required';
 
 /** How hard a reasoning-capable model thinks before answering. */
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** The pipeline steps an admin can point at a model independently (PRD §2 / AD-07). */
-export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
+export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
 
 /**
  * One step's model and the parameters that model accepts. Which parameters are
@@ -162,6 +169,8 @@ export type PipelineStep = (typeof PIPELINE_STEPS)[number];
  */
 export interface StepModelConfig {
   model: string;
+  /** Registered request shape captured for an explicit course model. */
+  capabilityProfile?: CapabilityProfile;
   /** Environment defaults follow server restarts; only explicit overrides pin an ID. */
   modelSource?: 'environment' | 'override';
   /** Only legal while the effective reasoning effort is `none`. */
@@ -186,9 +195,15 @@ export interface PlatformSettings {
    */
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean; retryOnReject: boolean };
+  featureFlags: { layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: Date;
+}
+
+export interface GenerationModelSnapshot {
+  embedding: string;
+  generator: StepModelConfig;
+  reviewer: StepModelConfig;
 }
 
 export interface TaInvite {
@@ -203,6 +218,13 @@ export interface TaInvite {
 }
 
 export interface Course {
+  /** Durable tombstone blocks authoring during retryable permanent deletion. */
+  authoringDeletionStartedAt?: Date;
+  /** Admin-owned, with its own revision independent of course authoring. */
+  llmModelSettings?: {
+    revision: number;
+    overrides: Partial<Record<CourseModelStep, Pick<StepModelConfig, 'model' | 'capabilityProfile'>>>;
+  };
   /** Optimistic concurrency token for human authoring; legacy documents start at zero. */
   revision?: number;
   name: string;
@@ -288,13 +310,26 @@ export interface DerivedValue {
   errorModel?: string; // distractors only: the mistake this option represents
 }
 
-/** R4: a machine-checked proof that a numerical question's values are sound
- * across sampled draws. Absent means the question never serves. Cleared on
+/** R4: machine-checked arithmetic and displayed-value checks. Optional finite
+ * coverage records additional enumeration; it is not source/semantic proof.
+ * Absent means the question never serves. Cleared on
  * any edit to stem/options/paramSlots/derivedValues. */
 export interface NumericVerification {
   evaluatorVersion: number;
+  /** Displayed input precision was checked on the sampled closed-formula draws. */
+  inputDisplayVersion?: number;
   sampleSeeds: number[];
   verifiedAt: Date;
+  /** Historical absence means sampled-only verification, never an implicit grid proof. */
+  parameterCoverage?: {
+    version: 'finite-slot-grid-v1';
+    mode: 'exhaustive' | 'sampled';
+    /** Cartesian slot-entry count; repeated explicit entries are not deduplicated. */
+    totalCombinations: number | null;
+    checkedCombinations: number;
+    maxCombinations: number;
+    reason?: 'combination-limit' | 'unrepresentable-domain' | 'ambiguous-parameter-names';
+  };
 }
 
 /** Immutable snapshot: every edit creates a new version (PRD §2). */
@@ -305,6 +340,15 @@ export interface QuestionVersion {
   stem: string; // markdown + KaTeX; {{slot}} placeholders when parameterized
   options: QuestionOption[];
   difficulty: Difficulty; // pinned at version level so recalibration never rewrites history (§9.2)
+  /** Historical v2-pilot versions only (read-only); new versions never set it. */
+  authoringQuality?: {
+    policy: 'grounded-memory-v2';
+    intent: AuthoringIntent;
+    requestedDifficulty?: Difficulty;
+    achievedDifficulty: Difficulty;
+    difficultyMismatch: boolean;
+  };
+  taskDescriptor?: PedagogicalTaskDescriptor;
   paramSlots?: ParamSlot[];
   generateScript?: string; // instructor-authored generate() source (PrairieLearn convention)
   numericKind?: 'numeric' | 'conceptual'; // declaration; conceptual does not bypass detection
@@ -325,9 +369,17 @@ export interface QuestionVersion {
   /** Private recovery markers for an explicitly committed collaborative draft. */
   collaborationDraftId?: ObjectId;
   collaborationCommitId?: string;
+  /** Durable explicit regeneration adoption recovery marker. */
+  regenerationCandidateId?: ObjectId;
   createdBy: string; // puid or 'pipeline'
   createdAt: Date;
 }
+
+export interface SimilarityLink { questionId: ObjectId; score: number }
+/** Nearest active question by embedding cosine, informational only. */
+export interface QuestionSimilarity { lo: SimilarityLink | null; topic: SimilarityLink | null; model: string; computedAt: Date }
+/** One per question: the embedding of its current version's stem + correct option. */
+export interface QuestionEmbedding { _id: ObjectId; courseId: ObjectId; versionId: ObjectId; vector: number[]; model: string; createdAt: Date }
 
 /** Mutable head record; content lives in QuestionVersions. */
 export interface Question {
@@ -337,6 +389,7 @@ export interface Question {
   state: PublicationState;
   loIds: ObjectId[]; // many-to-many (IN-Q13)
   themeIds: ObjectId[];
+  similarity?: QuestionSimilarity;
   /** Additive lineage grouping; new standalone questions use their own id. */
   templateFamilyId?: ObjectId;
   labels: QuestionLabel[];
@@ -344,6 +397,8 @@ export interface Question {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    /** Concrete one-edit fixes from the checker (absent on questions checked before 2026-11). */
+    suggestions?: string[];
     /** The reviewer's honest label when it flags a difficulty mismatch. The
      * persisted `difficulty` is the instructor's TARGET (input wins over the
      * generator's self-label), so this is the only place the reviewer's
@@ -452,6 +507,24 @@ export interface PreviewStudentSession {
 }
 
 export interface Material {
+  /** Server-byte identity for active manual uploads. Never set on Canvas/URL imports. */
+  uploadFingerprint?: { sha256: string; format: string; active: boolean };
+  /** Alternate upload names; canonical metadata and instructor assignments stay intact. */
+  uploadAliases?: string[];
+  /** Published only after all chunks and their vectors have been indexed. Advisory
+   * classification and content-run finalization are independent of source readiness. */
+  sourceManifest?: {
+    version: 1;
+    provenanceId?: ObjectId;
+    ingestRunId?: ObjectId;
+    sourceTextHash: string;
+    chunkCount: number;
+    characterCount: number;
+    indexedCount: number;
+    parserVersion: string;
+    chunkerVersion: string;
+    indexedAt: Date;
+  };
   canvasSource?: { key: string; domain: string; courseId: string; fileId: string; updatedAt?: string };
   revision?: number;
   courseId: ObjectId;
@@ -513,6 +586,7 @@ export interface MaterialChunk {
   text: string;
   characterCount: number;
   metadata?: Record<string, unknown>;
+  sourceProvenance?: MaterialChunkProvenance;
   createdAt: Date;
 }
 
@@ -592,17 +666,29 @@ export interface QuestionGenerationResult {
   checks?: Array<{ item: number; check: 'answer-validation' | 'quality-review'; verdict: 'checked' | 'pass' | 'flag' | 'reject'; explanation: string; at: Date }>;
   createdQuestionIds: ObjectId[];
   failures: QuestionGenerationFailure[];
-  quality?: GenerationQualityRunResult;
+  /** Historical v1/v2 quality-pilot runs only (read-only); new runs never set it. */
+  quality?: Record<string, unknown>;
 }
 
 export interface QuestionGenerationRun extends ContentRunBase {
+  workerExecution?: { token: string; expiresAt: Date };
   /** Unverified visible draft text. Never a published or reviewable question. */
   preview?: { item: number; attempt: number; stem: string; difficulty?: string; options?: Array<{ key: string; text: string; role?: string; explanation?: string }> };
   kind: 'question-generation';
   stage: QuestionGenerationStage;
   input: {
     loId: ObjectId;
-    qualityPolicy?: GenerationQualityPolicy;
+    /** Historical quality-pilot runs only (read-only); new runs never set these. */
+    qualityPolicy?: 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2';
+    sourceProvenance?: 'pdf-pages-v1';
+    answerabilityProtocol?: 'option-answerability-v1';
+    taskDemandProtocol?: 'task-demand-v1';
+    exactBankProtocol?: 'course-exact-bank-v1';
+    taskRetrievalProtocol?: 'course-task-retrieval-v1';
+    authoringPromptProtocol?: 'compact-authoring-v1';
+    numericReviewProtocol?: 'server-rendered-numeric-review-v1';
+    exclusionReviewProtocol?: 'literal-exclusion-warrants-v1';
+    reviewRepairProtocol?: 'frozen-review-decisions-v1';
     /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
      * question must integrate. Persisted so the async job and a retry carry
      * them; the created questions are tagged to all of them (IN-Q13). */
@@ -623,9 +709,11 @@ export interface QuestionGenerationRun extends ContentRunBase {
     models: {
       embedding: string;
       generator: string;
-      validator: string;
+      /** Historical run records only; the step no longer exists. */
+      validator?: string;
       reviewer: string;
     };
+    modelSnapshot?: GenerationModelSnapshot;
   };
   grounding?: {
     allowedMaterialIds: ObjectId[];
@@ -647,6 +735,18 @@ export interface StructureGenerationRun extends ContentRunBase {
   input: StructureOptions & { materialIds: string[] };
   structurePreview?: StructureDraft;
   structureResult?: StructureResult;
+  structureSynthesisPacks?: Array<{ key: string; evidenceIds: string[]; themes: StructureResult['themes']; completedAt: Date }>;
+  structureReview?: StructureReviewRunLink;
+  structureRepair?: StructureRepairRunLink;
+  structureConsolidation?: StructureConsolidationRunLink;
+  structureDiagnostics?: {
+    synthesisInput?: StructureSynthesisReceipt;
+    outlineGrounding?: OutlineGroundingReceipt;
+    sourceSelection: SourceSelectionReport;
+    cache: { hits: number; misses: number; reusedSections: number; extractedSections: number };
+    budget: AuthoringBudgetReceipt;
+    unprocessedSections: Array<{ materialId: string; name: string; sectionId: string }>;
+  };
   result?: never;
 }
 
@@ -658,11 +758,11 @@ export interface GenerationBlueprint {
   loId: ObjectId;
   count: number;
   type: QuestionType;
-  qualityPolicy?: GenerationQualityPolicy;
   difficulty?: Difficulty;
   prompt?: string;
   materialIds?: ObjectId[];
   models: QuestionGenerationRun['input']['models'];
+  modelSnapshot?: GenerationModelSnapshot;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -891,3 +991,4 @@ export interface OperationEvent {
   input: Record<string, string | number | boolean>;
   response: Record<string, unknown>;
 }
+import type { MaterialChunkProvenance } from './source-provenance';

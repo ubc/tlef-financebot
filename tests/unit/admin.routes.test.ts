@@ -4,6 +4,8 @@ import type { User } from '../../server/src/types/domain';
 
 jest.mock('../../server/src/services/admin.service', () => ({
   getPlatformSettings: jest.fn(),
+  getAdminCourseModels: jest.fn(),
+  saveAdminCourseModels: jest.fn(),
   defaultPlatformSettings: jest.fn(),
   updatePlatformSettings: jest.fn(),
   grantPlatformInstructor: jest.fn(),
@@ -13,8 +15,10 @@ jest.mock('../../server/src/services/admin.service', () => ({
 }));
 
 import { adminRouter } from '../../server/src/routes/admin.routes';
+import { ObjectId } from 'mongodb';
 import {
   getPlatformSettings,
+  saveAdminCourseModels,
   defaultPlatformSettings,
   updatePlatformSettings,
   grantPlatformInstructor,
@@ -22,6 +26,21 @@ import {
   listAdminCourses,
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
+
+it('restricts course model settings to Admins and rejects reserved-stage overrides', async () => {
+  const courseId = new ObjectId();
+  const url = `/api/admin/courses/${courseId}/models`;
+  const body = { revision: 0, overrides: { reviewer: 'gpt-5.6-luna' } };
+  expect((await request(makeApp()).get(url)).status).toBe(401);
+  expect((await request(makeApp(userFixture(false))).put(url).send(body)).status).toBe(403);
+  const admin = makeApp(userFixture(true));
+  expect((await request(admin).put(url).send({ ...body, overrides: { masteryEvaluator: 'gpt-5.6-luna' } })).status).toBe(400);
+  jest.mocked(saveAdminCourseModels).mockResolvedValue({ revision: 1 } as never);
+  expect((await request(admin).put(url).send(body)).status).toBe(200);
+  expect(saveAdminCourseModels).toHaveBeenCalledWith(courseId, 0, body.overrides, userFixture(true).puid);
+  jest.mocked(saveAdminCourseModels).mockRejectedValueOnce(new Error('course-models-conflict'));
+  expect((await request(admin).put(url).send(body)).status).toBe(409);
+});
 
 function userFixture(isAdmin: boolean): User {
   return {
@@ -157,13 +176,12 @@ describe('Admin user-account routes', () => {
 describe('Admin model source contract', () => {
   const models = {
     generator: { model: 'local/env-model', modelSource: 'environment' as const },
-    validator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     reviewer: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     masteryEvaluator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     utility: { model: 'gpt-6-luna', modelSource: 'environment' as const },
   };
   const settings = { _id: 'platform' as const, models, costControls: { maxGenerationsPerDay: 10 },
-    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+    featureFlags: { layer2Evaluator: true },
     updatedBy: 'admin', updatedAt: new Date() };
 
   it('protects model settings from signed-out and non-Admin callers', async () => {

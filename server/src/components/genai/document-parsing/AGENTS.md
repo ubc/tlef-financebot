@@ -16,7 +16,7 @@ None.
 
 | Export | Purpose |
 | --- | --- |
-| `parseFile(filePath, format?): Promise<string>` | Parse a file on disk to text (`format`: `'text'` default or `'markdown'`). PDFs fall back to Poppler `pdftotext` if the toolkit rejects or times out. |
+| `parseFile(filePath, format?): Promise<string>` | Parse a file on disk (`format`: `'text'` default or `'markdown'`). PDF text prefers bounded Poppler extraction with toolkit fallback. PDF Markdown retains toolkit-first behavior. |
 | `parser: DocumentParsingModule` | The configured module, if you need `parse()` + metadata directly. |
 | `SupportedOutputFormat` (type) | Re-exported from the toolkit. |
 
@@ -35,12 +35,28 @@ const { content } = await parser.parse({ filePath: '/tmp/lecture.pdf' }, 'text')
 
 Supported input: `.pdf`, `.docx`, `.pptx`, `.html`/`.htm`, `.md`.
 
-PDF parsing uses the toolkit first. Because its `pdf2md` dependency can leave a
-promise pending for a valid PDF, `parseFile()` applies a 15-second limit and
-then runs `pdftotext -layout`. The host/container therefore needs Poppler's
-`pdftotext` executable installed for the fallback path. The fallback itself has
-a 60-second timeout and bounded output, and rejects image-only PDFs that contain
-no extractable text (OCR is not performed).
+PDF text requests use `pdftotext -layout` first, with a 60-second subprocess
+timeout and 50 MiB output limit. The pure `pdf-text-first.ts` helper also bounds
+the native wait. If native extraction fails, is unavailable, times out or returns
+empty text, the helper tries the toolkit for at most 15 seconds. Both results
+must be nonempty text within 50 MiB; successful source text is returned without
+trimming or normalization. If both fail, the error retains both failure reasons.
+No OCR or successful empty placeholder is provided. A promise timeout bounds the
+wait but cannot cancel arbitrary underlying toolkit work.
+
+PDF Markdown requests still use the toolkit first with a 15-second bound, then
+the existing bounded native fallback on failure. Non-PDF requests and the direct
+`parser` export retain toolkit behavior. The host/container should have Poppler
+installed; missing Poppler can recover through the toolkit for PDF text, while
+failure of both parsers remains an explicit ingest failure.
+
+New ingestion manifests use parser policy `text-poppler-first-v2`. Existing
+manifests and cached source identities are not rewritten. The file-only
+`scripts/quality-lab/audit-pdf-text-first-policy.ts` acceptance runner checks the
+complete facade against ten exact PDFs, retained raw native text and stored
+original chunks. Its timings measure parsing only, not the full ingestion,
+embedding or indexing pipeline; matching those files does not establish broader
+PDF extraction quality or pedagogical coverage.
 
 ## How files arrive (uploads)
 
@@ -64,5 +80,6 @@ deletes the temp file in a `finally`.
   `imageDescriber` (e.g. wired to the `llm` component's vision support); by
   default parsing is text-only and makes no external calls.
 - Large files can be slow/memory-heavy; parse off the request path if needed.
-- Poppler `pdftotext` is a runtime fallback dependency for PDFs; missing Poppler
-  is reported as an ingest failure rather than leaving the job in `processing`.
+- Poppler `pdftotext` is the preferred PDF text dependency and the PDF Markdown
+  fallback. If no bounded parser yields text, ingestion fails explicitly rather
+  than publishing empty original-source readiness.

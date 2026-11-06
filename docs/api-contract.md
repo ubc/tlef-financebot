@@ -212,12 +212,18 @@ failed requests retain the displayed item and any unsaved editor text for retry.
 - `GET /api/courses/:courseId/materials` → `[Material]`
 - `GET /api/courses/:courseId/materials-trash` → soft-deleted `[Material]`
 - `GET /api/courses/:courseId/materials/:materialId/workspace` →
-  `{ material, chunks: [{ index, text, characterCount }] }`; private server
+  `{ material, chunks: [{ index, text, characterCount, sourceProvenance? }], sourceProvenance? }`; private server
   `storagePath` is never serialized. Legacy ingests without persisted chunks
   expose their retained excerpt as a compatibility preview chunk.
 - `GET /api/courses/:courseId/materials/:materialId/source` → authorized inline
   original-file preview or an http(s) redirect for URL materials. File paths
   are realpath-checked under the configured upload directory.
+  An optional `?provenanceId=<ObjectId>` pins a current PDF parse receipt: the
+  course/material/manifest binding must match and original PDF bytes must match
+  the receipt's SHA-256 and length. The same opened descriptor is hashed and
+  streamed with `Cache-Control: private, no-store`. Missing, superseded or changed
+  sources refuse the pinned request. Existing unpinned previews keep their old
+  behavior. Browser `#page=N` is a physical PDF page, never a printed slide label.
 - `DELETE /api/courses/:courseId/materials/:materialId` → Material in Trash.
   This preserves chunks, questions, and provenance but excludes the source from
   retrieval and removes its Qdrant points.
@@ -232,13 +238,20 @@ failed requests retain the displayed item and any unsaved editor text for retry.
 - `POST /api/materials/:materialId/retry` → Material with a new `activeRunId` (409 when another retry already won)
 - `PUT /api/materials/:materialId/assignments { expectedRevision, assignments: [{ themeId, loId? }] }` → Material
 - `POST /api/materials/:materialId/classification { expectedRevision, action: 'accept' | 'reject' }` → Material
-- `GET /api/courses/:courseId/suggest-hierarchy` → `{ themes: [{ name, los:
+- `GET /api/courses/:courseId/suggest-hierarchy` → `{ runId, themes: [{ name, los:
   [name] }], assignments: [{ themeIndex, loIndex, materialIds }] }` (IN-S06;
-  read-only AI-suggested outline plus per-LO source mappings)
-- `POST /api/courses/:courseId/apply-suggested-hierarchy { themes: [{ name, los:
-  [{ name, materialIds }] }] }` → `{ themesCreated, losCreated,
-  materialsAssigned, assignmentsCreated }` (creates the reviewed Topic/LO
-  subset and merges its source mappings into material assignments)
+  AI-suggested outline plus per-LO source mappings and a durable source receipt;
+  no course hierarchy is saved until Apply)
+- `POST /api/courses/:courseId/apply-suggested-hierarchy { runId, themes: [{ name, los:
+  [{ name, materialIds, sourceThemeIndex, sourceLoIndex }] }] }` → `{ themesCreated, losCreated,
+  materialsAssigned, assignmentsCreated, consistency, warning? }` (creates the reviewed Topic/LO
+  subset and merges its source mappings into material assignments). `runId` must
+  identify a completed same-course structure run with a source fingerprint;
+  each selected source LO and its exact material IDs must match that run.
+  Instructor topic/LO wording may be edited. Omitted proof fields are rejected,
+  never interpreted as manual Apply. Manual hierarchy entry retains the separate
+  `POST .../outline` and Topic/LO CRUD paths. Legacy GET assignment indices become
+  Apply's `sourceThemeIndex`/`sourceLoIndex`.
 - `GET /api/courses/:courseId/content-map` → ordered Theme/LO coverage with
   assigned material summaries/kind counts, assessment-like markers,
   question counts by publication state, latest ingest/generation run status,
@@ -251,6 +264,62 @@ failed requests retain the displayed item and any unsaved editor text for retry.
   source while the material workspace endpoint returns the full chunk list.
 
 ## Materials (instructor) — implementation note (Knowledge Workspace automation)
+
+New PDF ingestion records the actual bounded parser attempts, successful engine,
+PDF/raw-text hashes and an independently checked physical page count. Native
+form-feed boundaries produce a page map only when they agree with `pdfinfo`;
+toolkit fallback, metadata failures and ambiguous exact chunk matches explicitly
+leave locations unavailable. Valid extracted text remains usable without a page
+map. The enriched parse path preserves text/chunk bytes and existing content
+hashes; it makes no additional model call.
+
+Private `materialSourceProvenance` records retain raw artifacts and full receipts.
+Their versioned tuple commitments bind every chunk index, exact text and full
+locator; altered offsets cannot become verified merely by matching page bounds.
+Bindings require a valid aggregate digest, at most 20,000 entries and an 8 MiB
+sidecar BSON bound. Missing bindings are unavailable, never silently backfilled.
+An additive manifest pointer and top-level chunk provenance publish with chunks
+inside the existing course fence after external indexing. Raw artifact paths
+never enter public DTOs. Workspace summary status is `verified | partial |
+unavailable`, with optional parser/version, hashes, physical count and reason.
+Only validated current chunk locations are returned. Trash retains history but
+cannot ground authoring; retries replace the current pointer; permanent course
+deletion removes owned sidecars and raw artifacts. File checks run outside Mongo
+transactions and assume immutable uploaded files between checks; they are not
+filesystem/database atomicity.
+
+New PDF sidecars may additionally store server-owned
+`native-page-text-observations-v1` metadata. The pure builder binds exact native
+bytes, PDF/raw/page-map hashes and ordered physical-page rows; each row records
+raw bounds, a native-text hash, a non-whitespace UTF-16 count and `blank | sparse |
+present` at the fixed 120-unit threshold. This additive feature caps at 20,000
+pages/50 MiB and does not alter the existing raw text, chunks or source hashes.
+An unavailable build or a sidecar that would exceed the existing 8 MiB BSON
+bound omits the advisory field without failing valid text ingestion.
+
+Workspace `sourceProvenance.pageTextObservations` is a safe summary with
+`version: native-page-text-observations-v1`, `interpretation: unknown` and
+`teachingCoverage: not-assessed`. `status: available` includes PDF/raw/page-map
+hashes, `observationsSha256`, `sparseThreshold: 120`, separate
+`counts: { total, blank, sparse, present }`, and exhaustive consecutive
+`ranges: [{ startPage, endPage, state }]`. `status: unavailable` includes a reason
+and no fabricated counts/ranges. These are native-text volume observations,
+not chart/table detection or verified teaching coverage; raw artifact paths are
+never exposed.
+
+Fresh server-created durable outlines explicitly persist
+`input.pageTextObservationProtocol: native-page-text-observations-v1`. Their
+completed result can add `coverage.pageTextObservations: { version:
+pdf-page-text-obligations-v1, materials: [{ materialId, materialName,
+provenanceId?, observation }] }`, using the same safe summary. A mapped passage
+does not clear an independent blank/sparse page observation. This metadata does
+not enter model prompts or change corpus fingerprints/extraction cache IDs.
+Historical absence remains absent on replay/retry; no existing source/run is
+backfilled, and unknown explicit internal selectors are refused. Original-page
+links retain the existing authorized provenance-pinned source endpoint; current
+file/receipt validation occurs on access, not merely while displaying a
+past-run count. See the October 17 page-text observations implementation note.
+
 On successful ingest the classifier infers material kind, extracts evidence-
 backed concepts, and may return multiple existing Topic/LO matches. Resolved
 matches at confidence `≥ 0.85` are auto-applied and remain instructor-editable;
@@ -334,23 +403,69 @@ material ids are rejected before hierarchy creation begins.
 - `GET /api/courses/:courseId/generation-blueprints` → newest-first saved
   recipes. `POST` creates and `PATCH /:blueprintId` updates a recipe containing
   name, LO, count, type, optional difficulty/prompt/ready material IDs, and the
-  pinned generator/validator/reviewer model snapshot.
+  pinned generator/reviewer (Checker) model snapshot.
 - `POST /api/courses/:courseId/generation-blueprints/:blueprintId/run` →
   202 `{ runId }`. The resulting run records `blueprintId`, copies the saved
   recipe, and still sends only `{ runId }` to Agenda.
 - `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
   `{ variant: { stem, options, difficulty, paramSlots?, derivedValues?,
   numericKind?, verification?, sourceRefs, agentDecision } }`.
-  Generates a transient side-by-side alternative and appends
+  Runs one generator call and one checker call and returns an unsaved
+  alternative (`agentDecision` is the checker verdict). It appends
   `{ prompt, at }` to the question's regeneration history, but does not create
   a QuestionVersion or replace current content. Replacement is an explicit
-  `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
+  `PATCH /api/questions/:questionId` after instructor review (IN-Q12). There
+  are no regeneration-candidate records and no adopt route.
+- `POST /api/courses/:courseId/question-similarity/rebuild` → `{ questions }`.
+  Instructor-only. Recomputes embeddings and `similarity` for every active
+  question in the course.
+
+### Two-call generation and similarity
+
+Each generated question costs one generator call (usage stage `generation`)
+followed by one checker call (step `reviewer`, usage stage `check`); there are
+no retries. Every checked question is saved as a Draft carrying
+`agentDecision { decision: 'pass'|'flag'|'reject', reasoning, roleAssessment,
+suggestions: string[], suggestedDifficulty? }`; a `reject` is still saved so the
+instructor can decide. Slots in one run get distinct assessment angles, and the
+generator sees up to 30 stems of active questions in the same LO plus stems
+from earlier in the same batch. Generate, plan and blueprint inputs take no
+`qualityPolicy`.
+
+Question heads expose `similarity { lo, topic, model, computedAt }` where `lo`
+and `topic` are each `{ questionId, score } | null`: the nearest active
+question (embedding cosine, informational only) sharing an LO or a topic. The embedding of stem plus correct option is stored in
+`questionEmbeddings` and refreshed after generation and after PATCH edits.
 - Numerical QuestionVersions expose `numericKind`, `paramSlots`,
   `derivedValues`, and an optional `verification { evaluatorVersion,
-  sampleSeeds, verifiedAt }`. Serving of practice/retry/preview candidates and
+  inputDisplayVersion?, sampleSeeds, verifiedAt, parameterCoverage? }`. Serving of practice/retry/preview candidates and
   assembly of new Exam Prep attempts fail closed for detected numerical
   versions without a current evaluator proof. Existing assembled exam sittings
-  retain their pinned versions and values.
+  retain their pinned versions and values. Closed-formula proofs with
+  `inputDisplayVersion: 1` additionally recompute every option from the input
+  numbers rendered by the existing stem formatter; an option must retain its
+  displayed output at the same precision. Fresh verification retains 100 sampled
+  seeds and additionally enumerates the complete Cartesian slot-entry grid when
+  it has at most 256 entries. The additive receipt is
+  `{ version: "finite-slot-grid-v1", mode: "exhaustive" | "sampled",
+  totalCombinations: number | null, checkedCombinations, maxCombinations: 256,
+  reason? }`. Exhaustive requires all entries; duplicates retain their weighting
+  and are not called distinct or PRNG-reachable. Oversized, unrepresentable or
+  ambiguous-name grids remain explicitly sampled without partial exhaustive
+  claims. Historical absence remains sampled-only; existing already-current
+  proofs are not automatically upgraded. Each actual fresh closed-formula draw performs the
+  same check and can redraw up to eight times before refusing delivery. Old
+  formula proofs lacking current input-display checks are checked in memory
+  without rewriting the version;
+  sandbox `generateScript` proofs retain their existing policy. No unit or
+  source convention is inferred by this deterministic precision check.
+  New fixed-paper items retain a private `numericDefinition` alongside frozen
+  values; neither is included in Student or pre-submit Preview payloads. New
+  live/rehearsal starts check the exact frozen instance, never a replacement
+  draw. Historical pinned Bank items resolve their original version; numerical
+  items whose definitions cannot be recovered require a recreated paper.
+  Existing active/submitted sittings resume and grade against their unchanged
+  snapshot; this admission check never regrades recorded answers.
 - `GET /api/courses/:courseId/preseeding` →
   `[{ loId, loName, approved, reviewed, unapproved, target: 5 }]`, where
   `unapproved` counts question heads in `draft`, `pending-review`, `reviewed`,
@@ -663,8 +778,33 @@ structurally excluded because every calculation reads only live collections.
   duration is last minus first attempt, not inferred study time. Sessions per
   student divides by active students. Coverage intersects recorded LO ids with
   active LOs, never exceeding 100%; Review Book activity intersects active users.
+  Totals include distinct `activeStudents`. Weekly rows include `correctAttempts`
+  when at least five submissions were recorded that week.
 - `GET /api/courses/:courseId/analytics/engagement.csv` accepts the same filters
-  and exports the same weekly rows with RFC-style escaping.
+  and exports the existing weekly activity columns with RFC-style escaping.
+- `GET /api/courses/:courseId/analytics/report.pdf?from=&to=&mode=` requires
+  `analytics.view` and returns a course-level PDF attachment with
+  `Cache-Control: private, no-store`. The dashboard supplies its selected
+  mode and exact date window. Omitted mode defaults to Topic Practice and omitted
+  dates to the past 12 weeks. Epoch means all time. Pre-epoch dates, reversed
+  ranges, and end dates more than 24 hours in the future return 400. The report
+  includes scope totals and weekly attempts, accuracy, participation, session
+  frequency and observed duration. Repeat practice counts students active in at
+  least two UTC calendar weeks. Next-week return compares the students active in
+  the earlier of the two latest complete UTC weeks with activity the following
+  week. Nonempty return and non-return groups each need five students for a rate
+  to appear. A topic section shows the active course outline
+  and, for each reportable topic, objectives attempted, submissions, accuracy and
+  unique students. Coverage uses each submission's recorded active objective.
+  The possible review topic is the lowest-accuracy visible topic below 80% with
+  at least 20 submissions and includes an objective breakdown when present.
+  Nonempty totals, weeks, topics and objectives with fewer than five
+  active students are withheld. If only one nonempty row in either breakdown is
+  below the threshold, a second eligible row in that breakdown is withheld when
+  available to protect against subtraction.
+  The PDF contains no student identifiers or individual records.
+  The first page combines the summary, latest six weekly rows, topic coverage,
+  and classroom review. Additional rows appear on continuation pages.
 - All dates are exact inclusive timestamps; invalid dates or reversed ranges
   return 400. Valid optional LO filters constrain recorded attempt LO, not every
   current tag attached to a multi-objective question.
@@ -732,12 +872,10 @@ operation writes an audit entry.
 - `GET /api/admin/capabilities?courseId=` / `PUT /api/admin/capabilities` —
   platform defaults or a separate per-course matrix, including effective-value
   source labels. TA approval and flag resolution remain hard-locked off.
-- `GET|PUT /api/admin/platform-settings` — generator, validator, reviewer, and
-  future mastery-evaluator model selectors; positive daily generation limit;
-  Reviewer Agent and Layer-2 evaluator feature flags. Turning Reviewer Agent
-  off requires `confirmQualityImpact: true`. New generated Drafts then skip the
-  reviewer call and persist a flagged decision with the disabled-reviewer
-  reason. Exceeding the daily requested-question limit returns 429.
+- `GET|PUT /api/admin/platform-settings` — generator, reviewer (Checker),
+  utility and future mastery-evaluator model selectors; positive daily
+  generation limit; Layer-2 evaluator feature flag. The checker always runs.
+  Exceeding the daily requested-question limit returns 429.
   Each step has `modelSource: environment | override`. Environment mode resolves
   the model from `LLM_MODEL_*` (falling back to `LLM_DEFAULT_MODEL`; utility uses
   the latter directly) after each server restart, preserving compatible parameters.
@@ -748,6 +886,17 @@ operation writes an audit entry.
   `environmentModels` by stage and automatically lists environment model IDs;
   no Custom model registration or provider call is needed. Provider availability
   still requires a real generation test. Existing queued model IDs remain pinned.
+- `GET|PUT /api/admin/courses/:courseId/models` — Admin-only, per-course model
+  choices for Generator, Reviewer (Checker), and Utility. GET returns
+  `revision`, sparse `overrides`, `platformModels`, `effectiveModels`, and
+  `availableModels`. PUT takes `{ revision, overrides }` and replaces the sparse
+  choices. Omitted stages inherit the platform setting, then the environment
+  where configured. Course choices keep compatible platform parameters.
+  Writes are audited and a stale revision returns 409. Reviewer and generation
+  limits are platform-wide. The reserved Mastery evaluator accepts no course
+  override. New bank and Exam Builder jobs pin the model IDs and parameters;
+  retries use the stored snapshot when available. Saved recipes retain their
+  model choices. Utility resolves the course model when work begins.
 
 ## Health
 - `GET /api/health` (public) → `{ status, mongo, qdrant }`
@@ -829,9 +978,8 @@ verdict: 'checked' | 'pass' | 'flag' | 'reject', explanation, at }]`.
 These are returned answer-check/reviewer explanations, capped at 1,600 characters
 and the latest 60 records, persisted before saving so they appear during checks.
 They contain no provider reasoning trace. Historical runs may omit them.
-Pilot generation already supplies source evidence and existing-question memory
-before writing, then rechecks similarity before saving; this does not guarantee
-uniqueness or synchronize concurrent generators.
+Generation supplies existing same-LO stems before writing; this does not
+guarantee uniqueness or synchronize concurrent generators.
 
 Question-generation run summaries and full snapshots may include
 `preview: { item: number, attempt: number, stem: string }`. `item` is zero-based;
@@ -876,13 +1024,75 @@ remains the separate route for preserving executable parameterization.
 ### Course Structure: multi-material AI outline
 
 `POST /api/courses/:courseId/structure-generation` (course Instructor only) accepts
-`{ materialIds?, topicCount?, losPerTopic?, level?, emphasis?, guidance? }` and returns
+`{ materialIds?, sourceBatchId?, sourceReplacements?, topicCount?, losPerTopic?, level?, emphasis?, guidance?, capabilityDistinctnessProtocol? }` and returns
 `202 { runId }`. Omitting counts lets the model choose topic boundaries and a
 separate objective count for each topic. `topicCount` is 1–30, `losPerTopic` 1–12;
 `level` is `auto | introductory | advanced`; `emphasis` is
 `auto | balanced | conceptual | applied`; guidance is at most 2,000 characters.
-Omitted materials select all ready, non-Trash course materials. Selected IDs must
-all resolve within the course. No Topics or LOs are created by generation.
+Omitted materials select all active, non-Trash course materials; every selected
+source must pass authoritative indexed readiness before enqueue. Pending/failed
+sources are named rather than silently excluded. `sourceBatchId` additionally
+accounts for intended files that admission never received. An explicit subset
+records exclusions. `sourceReplacements` contains pairs of earlier and replacement
+material IDs, retaining both historical records. Selected IDs must all resolve
+within the course. No Topics or LOs are created by generation.
+
+The experimental `capabilityDistinctnessProtocol: "outline-capability-distinctness-v1"`
+adds whole-proposal peer nomination to the existing independent source review,
+including small outlines that otherwise need no final organization. Historical
+absence retains the exact source-only contract; other explicit values refuse.
+At most two peers per objective carry their complete wording and exact original
+sections. Candidate learning-point definitions appear once; peer-only extracted
+point summaries remain private binding metadata, rather than extra source-review
+targets. Source support and capability comparisons remain separate receipts.
+Missing/invalid or contradictory reciprocal comparisons consume the existing
+single correction opportunity. No increased input/output/send/run allowance,
+new embedding stage or automatic extra cycle is provided. Full groups that
+cannot fit refuse explicitly; no original text or required peer is clipped.
+
+The explicit path packs shared-original groups using the same model packet
+renderer and retains a complete recursive fallback. It chooses a complete
+alternative only when initial native input plus fixed output reservations are
+smaller; a bounded search never produces a partial plan. Every selected group
+is rebuilt with its real immutable context and checked against raw, native and
+the existing JSON-correction limits. Group order may change without changing
+the final Topic/LO order or raw dispatch identity. A bounded, process-local cache
+reuses only exact deterministic plans by full input/current code identity;
+it does not supply source findings or capability judgments. Historical absent
+selectors retain the legacy path. Changed explicit packing/cache code changes
+the experimental protocol binding and cannot silently resume old checkpoints.
+
+Source-supported equivalent, uncertain or unchanged partially overlapping
+objectives remain in diagnostics and outside the selectable hierarchy. Their
+uncovered unique points remain explicit gaps. This is experimental admission,
+not a claim of exhaustive semantic deduplication or automatic consolidation.
+An internal `source-preserving-outline-consolidation-v1` core now validates
+explicit two-to-four-member replacement/lineage proposals and derives fresh
+source/comparison obligations. Its parent reader requires a matching-course
+transaction and authenticates complete production raw history plus the latest
+terminal budget, including exact failed-all-held parents. These private helpers
+have no HTTP endpoint, child worker, adoption or automatic hierarchy mutation.
+They do not authorize source-row reuse or grant fresh review credit. See
+`docs/design/question-generation-quality/OUTLINE-CONSOLIDATION-IMPLEMENTATION-2026-10-17.md`.
+Validated comparisons to a peer whose exact independent source review is
+resolved as unsupported/uncertain are separately disclosed as non-blocking:
+that peer cannot enter the selectable hierarchy. Missing peer verdicts, invalid
+quotes or comparison rows do not qualify for this exception. A supported third
+duplicate continues to block admission. Reciprocal-relation correction is
+needed only when both compared objectives are independently source-supported.
+The optional `nonBlockingSourceIneligiblePeers` disclosure uses
+`version: "resolved-source-ineligible-peers-v1"` and binds each candidate, peer,
+pair, original relation, resolved peer status, canonical source-finding hash and
+comparison hash. It is omitted when empty. Stored status strings or hashes do
+not grant this exception: continuation and Apply replay the complete canonical
+source findings and strict comparisons before recomputing the final receipt.
+The two existing outline repair modes refuse these parents before queueing;
+they cannot safely update reciprocal comparisons or retire broad objectives.
+Ordinary Apply requires a matching-course transaction, replays current sources,
+exact raw review/correction history, inherited budget and the complete finalized
+projection, and returns `capabilityReview` with reviewed/held counts. Subsequent
+teacher label edits are allowed and disclosed as `wording: "instructor-edited"`;
+the stored model comparisons do not review those later labels.
 
 The run kind is `structure-generation`, with `queued → analyzing → synthesizing →
 checking` stages, delivered by the existing course `content-runs/events` SSE route.
@@ -903,6 +1113,22 @@ retryable on startup. Completed drafts are read-only history until the existing
 `apply-suggested-hierarchy` endpoint is explicitly called with reviewed selections;
 apply preserves existing Topics/LOs and material assignments.
 
+AI Apply rechecks the run's exact original/ingest identities, intended upload
+batch, replacements and named exclusions. Source fingerprints ignore source order,
+run-local section numbers and advisory assignment/kind revisions; exact chunks,
+source names, parser/chunker identities and ingestion-run IDs remain bound.
+Original changes, reingestion, deletion/Trash and unavailable indexing return 409
+before hierarchy writes. Historical AI drafts without a source fingerprint must
+be regenerated. Material metadata revisions still guard assignment writes.
+Replica/sharded Mongo uses a short course-fenced transaction (`consistency:
+transactional`). Standalone preserves checked application with source checks
+before and after revision-guarded writes (`consistency: best-effort`) and an
+explicit warning; it cannot claim atomic concurrent source adoption. If a source
+race or uncertain error is detected after standalone writes begin, 409
+`structure-apply-conflict-after-write` says additions may remain and directs the
+instructor to inspect Course Structure before retrying. Shared hierarchy rows are
+not destructively rolled back.
+
 The analyzer reads every persisted chunk of every selected material, partitions
 long chunks with overlap, extracts grounded learning points per section, then
 synthesizes across the entire ledger. It uses neither top-k vector retrieval nor
@@ -911,14 +1137,65 @@ IDs are checked against their source. Missing chunks, changed sources and exceed
 capacity fail explicitly rather than silently omitting input. Limits are 100
 materials / 1,000,000 source characters and a 180,000-character synthesis ledger.
 Coverage refers to parsed text, not image-only content or absent syllabus topics.
-The legacy GET `suggest-hierarchy` retains its old response shape but now uses the
-same full-source analyzer.
+The legacy GET `suggest-hierarchy` uses the same full-source analyzer and adds a
+durable `runId`, so its reviewed projection can use the guarded Apply contract.
 
 Structure-generation compact run summaries also expose optional `progressMessage`
 (the latest durable stage/progress message), so the UI can show source analysis and
 reference-repair progress without fetching full event history. Full run snapshots
 retain their existing event history. Extraction uses server-numbered passage IDs;
 `structureResult.evidence[].quote` remains the exact resolved original passage.
+Additional `supportingPassages[]` remain separate original quote groups and are
+all available in the Instructor evidence review. `coverage.sourceInventory`
+retains every parsed passage's mapping or explicit disposition, exact quote and
+reason; the review exposes exclusions and unresolved originals individually.
+
+Large outlines that organize multiple synthesis packs receive an additional
+`outline-source-review` model stage before completion. Each final LO is checked
+against complete original sections resolved from its exact primary/supporting
+passage identities, rather than only the preceding generated pack summaries.
+Reviews are bounded by the actual rendered input and sixteen LOs per batch;
+an individually oversized capability fails explicitly without trimming sources.
+Review protocol `original-final-lo-review-v2` reports independent
+`sourceStatus/sourceReason` and `topicFit/topicReason` judgments. Canonical stored
+finding `status/reason` comes only from source status. Topic fit is
+`fits | misgrouped | uncertain`, remains advisory, and cannot turn source-supported
+wording into a source refusal. Findings retain its reason for instructor review.
+Source judgments are `supported | unsupported | uncertain`, with original source
+aliases and the assigned learning-point IDs actually covered.
+Positive rows must cite their own originals and cover at least one assigned
+point. Uncovered assigned points remain gaps; valid IDs are not proof of semantic
+coverage. Unsupported/uncertain wording is withheld from the selectable draft.
+New v2 findings for unsupported/uncertain rows have canonical
+`coveredEvidenceIds: []`: a withheld objective cannot authorize coverage. If the
+model nevertheless supplied known, unique assigned IDs, the server retains them
+only in `ignoredModelCoverage: { authoritative: false,
+reason: 'negative-source-verdict', evidenceIds: string[] }`. This field is
+server-computed and forbidden in model replies; it is diagnostic, never proof.
+Unknown/duplicate point IDs and foreign/duplicate source aliases still fail.
+Positive rows retain every original citation/coverage gate. Their correction
+diagnostics identify each unbacked point and its `requiredSourceIds` through
+`coverageRequirements`, rather than only reporting a generic coverage error.
+Historical receipts are not rewritten or reclassified by this normalization.
+Another supported LO may still cover the same evidence. Requested counts can
+therefore be lower. These are model judgments, not professor acceptance.
+
+`coverage.outlineGrounding` and durable
+`structureDiagnostics.outlineGrounding` include `totalObjectives`,
+`reviewedObjectives`, `supportedObjectives`, `withheldObjectives`, `complete`
+and per-LO findings bound to topic/name, original content hash, evidence/material
+identities and the reviewed source aliases. V2 adds independent `groupingIssues`;
+historical v1 receipts remain unchanged and are never reclassified from prose.
+Partial and all-withheld receipts
+remain inspectable when a later call fails or nothing is admissible. Malformed
+review identities receive at most one correction, charged to the existing run
+budget. Independently valid sibling rows persist immediately; the correction
+requests only unresolved known IDs and their exact allowed source/evidence lists.
+Foreign response identities fail explicitly, and unresolved reviews cannot
+authorize Apply. Source fingerprints are checked before and after final review. The UI
+shows retained findings on failed runs, hides their unvalidated streamed draft,
+and requires a completed durable result for Apply. Small direct-synthesis
+outlines already receive original evidence and retain their existing path.
 
 ## Course sharing and collaborative question drafts
 
@@ -1614,106 +1891,6 @@ removes the course's usage manifests and receipts. Browser refreshes re-read
 persistence rather than adding SSE token deltas; usage reads are excluded from
 successful operation-audit noise.
 
-## Source-grounding and question-memory generation pilot (2026-10-03)
-
-Public generation requests accept optional
-`qualityPolicy: "baseline" | "grounded-memory-v1"`. Absence means baseline.
-This field is accepted by `POST /api/courses/:courseId/generate`, at the top
-level of `POST /api/courses/:courseId/generation-plan`, and by generation
-recipe creation/update. A `/generate` request using a recipe may explicitly
-override its policy for that run. A normal recipe run inherits the saved
-policy. Run retry preserves the policy, explicit material-pin intent (including
-false), and instructor-selected Hard move. Reusing a batch submission ID with
-a different non-baseline policy returns the existing 409 submission conflict;
-omitted and explicit baseline are equivalent for submission identity.
-
-The Instructor/Admin guards are unchanged. The pilot requires the Reviewer
-feature to be enabled; enqueue returns 409
-`generation-quality-reviewer-required` otherwise. A later disable causes the
-queued pilot to fail explicitly before generation. The opt-in policy is stored
-in `QuestionGenerationRun.input.qualityPolicy`. Legacy runs, transient
-regeneration, and private assessment generation retain their existing behavior.
-
-Pilot runs additionally persist `result.quality`:
-
-- `policy`: `grounded-memory-v1`.
-- `evidence`: a bounded frozen packet containing original passages with stable
-  IDs/offsets, material hashes/revisions/ingest identity, scope labels, source
-  coverage, and parsing diagnostics. Qdrant text locates a matching original
-  chunk; it is not independently trusted as evidence.
-- `assessments`: one per completed source/novelty check, identified by `item`.
-  Each contains `status` (`eligible` or `withheld`), `sourceSupport`, `notation`,
-  `novelty`, bounded reasons, validated quote/citation locations, compared and
-  matched question-version identities, evidence/memory snapshot identities,
-  timestamp, and coverage limits. A bounded `candidate` diagnostic copy with
-  a content hash and `truncated` flag preserves withheld authoring output.
-
-`eligible` describes the model's assessment within the supplied context. It is
-not a proof of source entailment, global task uniqueness, numerical validity,
-or teacher acceptance. The server validates citation IDs, exact quote locations,
-and memory-reference membership independently. False distractors and false
-T/F statements are allowed when their intended corrections are supported.
-
-Candidates assessed unsupported, inconsistent, duplicate, variant, uncertain,
-or stale at the final context recheck are withheld from Draft insertion and
-recorded in the existing per-item `failures`. A partial run reports created
-Drafts separately from those shortfalls; an all-withheld run creates no Drafts.
-Operational failures before a completed assessment can have a failure without
-an assessment. Existing numerical proofs, normal reviewer decisions, Instructor
-approval, and student serving gates continue to apply.
-
-The check uses one additional structured model judgment per candidate unless
-an exact loaded-memory duplicate is detected first; the existing JSON repair
-may add one attempt. Its tokens appear in the existing ledger under
-`quality-review`. Authoring source/candidate evidence stays in the guarded run
-record and is not copied into the metadata-only usage ledger.
-
-Source and question-memory rechecks are best effort. They do not serialize
-commits with concurrent generation or instructor edits. The initial memory
-read is limited to 200 active overlapping-LO heads; the judge receives a bounded
-ranked selection, normally 12 entries. Source context covers retrieved original
-chunks and immediate neighbors within the recorded budget. Coverage fields
-describe truncation and missing versions; they never imply exhaustive search.
-See the generation-quality implementation status for exact budgets and the
-teacher-evaluation protocol.
-## Generation evaluation export (2026-10-03)
-
-`GET /api/courses/:courseId/content-runs/:runId/evaluation-export` is a
-course-Instructor/Admin read, using the existing course guard. It returns a
-`generation-evaluation-export-v1` JSON attachment named
-`generation-evaluation-<runId>.json` with `Cache-Control: no-store`. TA/Student
-access is not granted. No model calls or course-content mutations occur; the
-ordinary request audit may record the download.
-
-The response includes recorded run inputs and model IDs; one exact item-indexed
-slot for every requested question; original version-1 content bound through a
-course-owned question head and matching generated run/item provenance; recorded
-withheld candidate assessments; copied source excerpts and frozen evidence when
-retained; historical numerical verification; and safe usage rows plus an
-independent usage summary. Slot outcomes are `saved`, `withheld`, `failed`, or
-`unavailable`. Missing or ambiguous original records do not become invented
-failures, and current edited versions/preview text are never substituted.
-
-Usage rows omit actor, request/session correlation and provider-response IDs.
-The export includes no credentials or raw provider response bodies. Authoring
-question/source content is intentionally included. The response is retrospective:
-it cannot reconstruct the historical objective text, complete starting Bank/Queue,
-effective pre-run settings, or experiment isolation. Teacher labels and review
-time are never inferred from automatic review or publication status.
-
-Bounds: 100 requested slots, 1,000 exported call rows, and 100 copied source
-references / 30,000 copied source characters per saved slot. Candidate and
-evidence bounds follow the generation quality contracts. Truncation, late pending
-usage, and missing context are explicit. The usage summary retains the usage
-service's independent accounting scope and coverage limits; it is not a sum of
-only the downloaded call page. Terminal-state changes during export return 409.
-
-Errors: 404 for absent/foreign-course runs; 409 for non-generation or active runs,
-changed run snapshots, or unsupported slot/version bounds. The same-origin link
-appears in terminal **Generation steps** dialogs. Offline review and report
-formats are documented in `scripts/prompt-ab/evaluation/README.md`; those local
-tools neither invoke providers nor write to application records.
-
 ## One-time supplemental student codes (2026-10-06)
 
 Canvas Gradebook/people CSV imports are the primary enrollment path. Course
@@ -1885,3 +2062,188 @@ mandatory `?previewSessionId=<UUID>`, guarded by current course Instructor/TA
 access. They use separate expiring collections. Preview does not grant live
 Student or moderation access. No notifications are sent by these new endpoints.
 Permanent course deletion includes all new live and Preview records.
+
+## Intended source coverage and authoring memory v2 (2026-10-13)
+
+All endpoints below require the current course Instructor/Admin. Student and TA
+routes do not expose guarded authoring evidence, requirements or candidates.
+See [the implementation](design/question-generation-quality/IMPLEMENTATION-2026-10-13.md).
+
+### Upload admission and authoritative readiness
+
+- `POST /api/courses/:courseId/material-upload-batches` accepts
+  `{ requestId: UUID, files: [{ clientFileId, name, size }] }`, with 1–100 unique
+  client IDs. It returns `201` with a persisted intended receipt before multipart
+  parsing. Reusing the same request/input returns the existing receipt; changed
+  input returns `409 material-upload-manifest-conflict`.
+- `POST /api/courses/:courseId/material-upload-batches/:batchId/files` accepts
+  ordered multipart `files` matching the prepared names/sizes. Actual admission
+  retains the existing 20-file/50-MiB-per-file limits. Rejected, interrupted or
+  incomplete admission preserves every intended filename in the receipt.
+  A short owned lease prevents duplicate dispatch; replay of accepted admission
+  returns the receipt. The server hashes received bytes, not client claims.
+- `GET /api/courses/:courseId/material-upload-batches/:batchId` returns the
+  requesting actor's receipt, per-item disposition (`pending | created | reused |
+  rejected`), current readiness and requested/received/ready/rejected counts.
+  Admission lease/owner internals are omitted. No source text or raw bytes are
+  stored in this metadata receipt.
+- `POST /api/courses/:courseId/source-readiness` accepts
+  `{ sourceBatchId?, materialIds? }` and returns a `SourceSelectionReport`:
+  requested items with names/readiness/reasons, included source snapshots,
+  exclusions and aggregate `ready`. Omitted selection considers all active
+  materials. An explicit subset records unselected/failed files. This read does
+  not call a model. Structure start performs the same check and returns a named
+  `409` when the selection is not ready, before paid authoring work.
+
+Readiness requires valid current indexed originals, their ordered chunks and
+manifest/hash. It is independent of advisory classification. Exact active manual
+upload fingerprints are unique within a course; reused files preserve canonical
+metadata and assignments. Failed sources are retryable, processing sources link
+to their existing run, and Trash is never silently restored. Historical records
+are not automatically merged or assigned fabricated source identities.
+
+Structure coverage and failed `structureDiagnostics` additionally expose the
+source selection, cache hits/misses/reused/extracted sections, unprocessed
+section identities, synthesis input/group receipts and authoring budget. Every
+validated extraction row can be retained independently after a neighboring
+failure. Larger ledgers use bounded source-supported grouping then organization;
+exact original references remain in the complete evidence ledger. Mapped/unmapped
+learning-point counts do not claim exhaustive instructional coverage.
+
+New durable outline requests, including the legacy suggestion adapter, select
+the internal `synthesisProtocol: "source-condition-context-v1"`. Historical
+missing selectors retain their original synthesis rendering and pack identities;
+unknown explicit protocols fail before extraction. A synthesis receipt may carry
+`conditionContext` with version, source fingerprint, passage policy, immutable
+original references, linked/orphan counts and a digest. Conditions join only exact
+material/chunk/section/passage identities, including supporting passages. Packs
+receive their own linked conditions; final organization receives compact linked
+and orphan context. K/CP aliases are advisory context, never learning-point IDs,
+new LOs, answer keys or mapped coverage. Independent final grounding still reads
+complete original sections. Full inputs and corrections must fit the existing
+input budget; `structure-condition-context-too-large` refuses the affected call
+without silently dropping conditions. Extraction cache identities are unchanged
+by this selector alone; changed synthesis prompts require distinct pack keys.
+
+### Instructor outline wording repair workspace (2026-10-17)
+
+Both endpoints require the current course Instructor or Admin. TA/Student
+access is refused. GET performs no model or queue work and uses `Cache-Control:
+no-store`:
+
+- `GET /api/courses/:courseId/structure-generation/:runId/repair?page=1&pageSize=10`
+  returns `StructureRepairView` version `outline-wording-repair-view-v1`.
+  It resolves an original run or its linked child into `parentRunId`, explicit
+  availability/reason, remaining conservative allowance, the shared cycle,
+  paginated targets and an optional child. `pageSize` is 1–10. Target rows expose
+  original objective/topic wording, source finding, old credited IDs, globally
+  uncredited assigned IDs and exact retained point quotes. These are review
+  prompts, not proof that the curriculum omits every displayed point. Child rows
+  expose original/proposed names, fresh source findings, coverage shortfalls,
+  unknown-work status and best-effort `canApply`. Raw checkpoint/provider
+  payloads and model reasoning are excluded. A completed historical run without
+  the required checkpoint returns 200 with explicit unavailable state; it does
+  not acquire repair eligibility. Complete quote projections exceeding 2 MB
+  return unavailable without silently shortening quotes.
+- `POST /api/courses/:courseId/structure-generation/:runId/repair` accepts exactly
+  one strict shape: `{ version: 'wording-only-outline-repair-v1', targetIds }`,
+  or `{ version: 'coverage-wording-outline-repair-v1', targets: [{ id,
+  evidenceIds }] }`. There are at most two unique `L…` targets, and each coverage
+  target requests 1–8 unique `E…` points; a point cannot be requested twice.
+  Budgets, provider settings, prior credits and verdicts cannot be supplied.
+  The response is `202 { runId, parentRunId }`. The existing durable worker and
+  course SSE stream execute the child; no hierarchy is applied automatically.
+
+Both modes consume one shared cycle per original checkpoint/hash, including
+failed and stopped children. Repeating the same request recovers the same child;
+changing mode/targets cannot reset its work. Repair dispatch is limited by both
+the inherited remainder and ceilings of 10 new observable sends, 48,000 input /
+6,000 output conservative units per send and 540,000 new reserved units. These
+are admission limits, not measured provider tokens or billed cost. Queue failure
+returns 503 and leaves a failed child; source, cycle, currentness and authority
+conflicts return 409; unavailable coordinated transactions return 503. Ordinary
+validation/authentication responses remain 400 /
+401 / 403, and absent/foreign runs return 404.
+
+The client retains original draft edits and selections while the child runs or
+fails. Reload classifies parent/child identity before enabling Apply; an unknown
+or failed identity read does not treat a child as an ordinary original. Viewing
+the repaired draft is explicit, and applying it is a second action. Repaired
+`apply-suggested-hierarchy` requires a matching course transaction and rereads
+the parent/checkpoint/progress/branch, original sources, proposal, independent
+review, derived coverage assessment, budget and complete finalized result in
+that session before any hierarchy/material write. Explicit malformed repair
+links never fall back to ordinary historical Apply. Ordinary nonrepair drafts
+retain their existing compatibility behavior.
+
+Successful repaired Apply adds `repairReview: { runId, parentRunId, mode,
+wording: 'reviewed' | 'instructor-edited', teacherEditedNames }` to the existing
+receipt. Deliberate teacher label edits remain allowed, but a warning states that
+the independent review covers the stored proposal rather than subsequent text.
+Whitespace removed by ordinary Apply is not counted as a new label. Source
+indexes and material IDs remain authoritative regardless of local edits.
+
+See [the workspace implementation and evidence scope](design/question-generation-quality/OUTLINE-REPAIR-WORKSPACE-IMPLEMENTATION-2026-10-17.md).
+
+Fresh durable v2 authoring also selects server-owned `taskDemandProtocol:
+"task-demand-v1"`, preserved on run/worker/exact retry and new regeneration
+requirements. Absent historical selectors retain their stored behavior; unknown
+or non-v2 explicit selectors fail before new work. Public explicit difficulty,
+type and calculation/conceptual kind remain fixed across planning and repair.
+The existing quality call returns `taskDemand` verdict/capacity/rationale,
+missingOperation and at most three source-span IDs. Guarded server receipts add
+requested/achieved dimensions, exact citations, issue paths, requirements hash
+and passed/withheld status. Fulfillment needs original support and matching
+explicit dimensions. Actionable supported shortfalls can use one existing repair;
+insufficient/uncertain capacity stays a scoped shortfall. Persistence/adoption
+recheck the receipt against actual candidate fields and immutable requirements.
+Freeform regeneration pins intrinsic type, leaving difficulty/kind enum targets
+unset rather than treating the original as the requested outcome; teacher
+clauses/invariants still bind. No call, retry, source or token allowance increases.
+These model judgments require teacher calibration and do not prove cognitive
+difficulty or improved saved supply. See the task-demand implementation note.
+
+New public v2 runs and new durable regeneration requests additionally select
+the server-owned `answerabilityProtocol: "option-answerability-v1"` within
+authoring requirements. The selector is not a new client API parameter. Exact
+retries and same-UUID recovery retain the stored selector, including historical
+absence; baseline/v1 do not acquire this schema. The existing quality-review
+call must return all actual MCQ keys exactly once, literal option verdicts,
+bounded reasons and exact original-span references. A rejected alternative needs
+a specific source contradiction or a quoted explicit stem requirement; table
+placement alone is not an exclusivity rule. Exactly one fully correct resolved
+option must match the keyed response. T/F instead judges the whole literal stem;
+the server derives the key from actual True/False labels, including shuffled order.
+Corrective feedback is separate from literal answer truth.
+
+Guarded assessments may expose `answerability` with the server-computed protocol,
+kind, `passed | withheld` status, keyed/resolved key, diagnostic issue paths,
+and either per-option verdict/reason/exclusion/citations or whole-stem truth.
+Missing, malformed, ambiguous, uncertain or conflicting judgments cannot establish
+eligibility. The existing one response correction and one independently rechecked
+semantic repair remain bounded; no new model send or retry loop is added by this
+contract. Source, memory, numerical and teacher-constraint checks remain required.
+Historical absence is displayed as not recorded. These judgments are not formal
+proof, teacher acceptance or evidence of an improved valid saved-question yield.
+An admissible semantic repair can include bounded, source-reconstructed literal
+option hypotheses only when the stored candidate/packet/receipt still match.
+An uncertain option alone cannot authorize speculative repair. New-contract
+instruction compaction preserves complete reference/teacher inputs and existing
+native byte-estimate admission limits; an unfit correction still stops explicitly.
+
+New v2 runs and regeneration candidates persist an internal
+`sourceProvenance: "pdf-pages-v1"` selector. Existing same-request replay and
+exact retries preserve the stored selector, including its historical absence.
+Explicit selection produces `source-passages-v2`; historical absence retains
+the original v1 packet IDs and prompt bytes. Expansion retains its parent schema.
+V2 source-currentness checks additionally bind the current receipt and recompute
+exact passage locations. Citation `materialId` and `sourceLocation` are computed
+by the server, excluded from model-authored schemas, and project exact selected
+UTF-16 spans to original physical pages. Nonadjacent quotes remain separate;
+ambiguous, unrecorded or invalid locations include explicit unavailable reasons.
+`parsingProvenance` is `verified` only when all selected materials/passages have
+valid receipts/locations, `partial` when some current receipt exists but location
+coverage is incomplete, otherwise `unrecorded` (always for legacy packets).
+Location hashes are omitted from model prompt passages. A verified page location
+does not prove source entailment, extract chart values, or confer teacher approval.
+

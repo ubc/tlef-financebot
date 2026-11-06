@@ -1,5 +1,225 @@
 # AGENTS.md — tests/
 
+> **2026-11-06:** controls below that describe `qualityPolicy` / grounded-memory
+> v1-v2, regeneration candidates, the validator step or the generation evaluation
+> export refer to removed behaviour and are historical. Current generation tests:
+> `tests/unit/question-generation-{slots,existing-stems,generator-prompt,checker-prompt,candidate,pipeline}.test.ts`
+> (scripted generator/checker responses; no provider), `question-similarity.service.test.ts`
+> and `generation.routes.test.ts` (regenerate, similarity rebuild). They prove
+> mechanics, not model quality.
+
+Review-decision integrity controls retain raw negative findings through invalid
+locators and malformed neighbors, permit schema-only corrections, and refuse
+semantic flips/conflicting duplicate identities. Actual wrapper and BSON paths
+run with scripted verdicts and mocked/denied external boundaries. The latest
+combined review/outline regression is 19 suites / 881 tests; its focused counts
+overlap and must not be added. Completed-outline Apply's correction diagnostic
+replay is now covered (70 focused tests), and immutable/durable continuation
+limit coherence is covered (188 focused tests). Neither control implements
+durable consolidation or proves new real-model quality. See
+`audit-results/semantic-review-repair-2026-10-17/`.
+
+Literal-exclusion controls exercise strict source joins, independent answer-set consistency, scoped warrants/challenges, actual BSON replay, selected quality corrections, public worker/final fences and regeneration adoption. Judgments, storage/transactions and static browser APIs are scripted. Retain native overflow trials and initial compiler/mock/codec failures. Count the final combined run once; focused controls overlap. Neither passing contracts nor native fit establishes improved real-model yield. Evidence lives under audit-results/answer-exclusion-warrants-2026-10-17/.
+
+The final numeric semantic-review regression passes 19 suites / 719 tests,
+complete project typecheck and scoped lint on 19 files. Focused counts overlap
+this combined run. The repaired conceptual-cache control retains its same-input
+29/30 red and 30/30 green BSON replay before the final combined verification.
+Numeric semantic-review controls use the actual retained CAPM/P03 templates,
+real safe arithmetic, fresh finite/sample checks and actual BSON encoding with
+all provider/worker/embedding/queue boundaries denied. Integration controls
+exercise original-plus-example role/content/quality prompts, complete canonical
+stage bindings, cached-stage refusal, registered worker restoration, semantic
+repair, source expansion and public/regeneration course-fence refusal, including
+stripped selectors. Judgments and storage/transaction adapters are scripted;
+passed gates do not prove semantic recovery or actual commits. Preserve initial
+renderer overflows, the 14 legacy mock-path failures from eager snapshot work,
+compile/lint failures and their corrected reruns. File-only full native and
+nested JSON-correction measurements retain every historical cohort. No new paid
+review, saved yield or professor acceptance follows. Evidence is under
+`audit-results/numeric-semantic-review-2026-10-17/`.
+
+The consolidation foundation's current combined regression passes 21 suites /
+735 tests, full project typecheck and scoped lint on 23 files. New pure core
+controls cover explicit lineage, credit preservation, stable source aliases/IDs,
+equal-count narrowing and complete new comparison obligations. Parent controls
+use real raw parsers, receipts, finalizers and BSON with scripted findings and
+mocked Mongo/session boundaries. Preserve `root-diagnostic-red-r1` (57/58) and
+`root-diagnostic-green-r1` (58/58): these execute the same scripted fixture
+definition, not identical captured provider inputs. Fresh correction metadata
+must equal frozen synthesis plus exactly one first-failure row per logical
+review dispatch; nine mutation controls and frozen-continuation checks refuse
+unrecorded drift. Ordinary completed-result synthesis drift was subsequently
+fixed and is covered by the review/outline checkpoint noted above.
+Focused counts overlap the combined 735; no worker/provider/real-Mongo or useful
+semantic yield claim follows. Evidence lives under
+`audit-results/outline-consolidation-core-2026-10-17/`.
+
+The earlier explicit outline capability checkpoint passed 18 suites / 639 tests,
+including strict operation/source rows, reciprocal contradiction correction,
+lazy prompt reconstruction, native and whole-review allowance checks, raw-history
+replay and course-session Apply. Helper/guard focused counts overlap that run.
+The actual142LO file replay fits per-send/storage caps but fails whole-budget
+preflight. Scripted comparisons and in-memory transaction adapters do not prove
+model semantics, real Mongo execution or improved saved yield. Preserve failed
+packing versions and the first sandbox Supertest listener denial beside the
+successful scoped local-listener rerun. See the implementation note and exact
+receipts in `audit-results/outline-capability-implementation-2026-10-17/`.
+
+The source-ineligible-peer follow-up preserves eleven exact file-only inputs
+and scripted raw judgments. Six previous false holds admit only the supported
+LO; missing/invalid authority and supported duplicates still refuse. Separate
+Apply cases use the actual BSON codec and production parsers/finalizers with
+mocked transactions, including refusal after either nested authority hash is
+forged. Their focused 33 tests overlap the 639-test combined run. Preserve the
+older 614- and 636-test checkpoints as historical; no model quality or saved
+yield follows from these controls. Follow-up receipts are under
+`audit-results/outline-distinctness-peer-eligibility-2026-10-17/`.
+
+Source-overlap integration adds shared trial/final packet equality, complete
+fallback and trial-ceiling tests, plus volatile-plan cache identity, clone
+isolation, graph-order/undefined/hole distinctions and bounded retention. The
+native-V8 cache key's first two failures and a later test compiler error remain
+retained. An initial 20-suite/674-test pass preceded a discovered explicit
+empty-outline compatibility fix and is historical, not final verification.
+The final frozen-source rerun passes 20 suites / 680 tests, complete project
+typecheck and scoped lint. Five additional controls exercise the actual wrapper
+after BSON input round-trip, defensive plan copies, noncontiguous group recovery
+and Apply, original curriculum order, and swapped item/ID refusal at both
+authority boundaries. Storage and transactions remain mocked; raw judgments
+are scripted. Focused 98- and 123-test runs overlap the combined count.
+Current combined results and exact current-source snapshots live in
+`audit-results/outline-source-overlap-integration-2026-10-17/`. Actual source
+review reuse remains a separate refused prototype; its nineteen file controls
+are not model-quality evidence or additional unit-test passes.
+
+The Instructor outline repair workspace passes a combined 26-suite/737-test
+regression, complete project typecheck, scoped lint, 13 compiled static browser
+cases and 18 actual owned-Mongo groups. Focused 360-test results overlap the
+combined count. Browser APIs and all model/source judgments are scripted. The
+paired failed-child/reload case compiles the exact retained prior workbench/API
+with unchanged dependencies, then exercises identical parent/server input and
+teacher actions against before and after. Eight screenshots and exact API I/O
+are retained; scoped axe covers the repair panel, not the entire application.
+
+`playwright.outline-repair-ui.config.ts` starts a static-only loopback server on
+6170, with no SAML or application database. The separate reviewed harness in
+`audit-results/outline-repair-workspace-2026-10-17/local-mongo/` uses only a new
+owned UUID namespace on isolated 27029. It checks actual transaction sessions,
+source/receipt refusal, cross-course isolation, successful Apply and rollback;
+it denies provider/embedding/vector/job/nonlocal/process work before imports.
+Every run owner-checks cleanup. Preserve initial fixture, review-history,
+cross-realm, browser-locator and real BSON persistence failures. Actual driver
+`ignoreUndefined: false` matters in the null/absence regression. See the outline
+workspace implementation note for exact receipts and unproven semantic quality.
+
+The finite-domain numerical scope passes 32 suites/858 tests, including the
+new domain/verifier/client-summary checks plus generation, serving, variants,
+imports and examination regression. Focused runs overlap this scope. Preserve
+the old failing same-input regression and post-import source-pin discrepancy;
+the additive reconstruction captures exact pre-edit bytes before compilation
+and reproduces all 100 original draws. Tests prove bounded arithmetic/display
+checks and honest recorded scope, not model/source semantics or useful yield.
+See `FINITE-NUMERICAL-DOMAIN-2026-10-17.md` and its ignored audit directory.
+
+The October 17 authoring-headroom/supported-LO repair combined regression passes
+39 suites/1,274 tests; focused checkpoints overlap and must not be added again.
+Keep the initial sandbox Supertest listen failure and stale literal assertions.
+Six retained contexts test source/Bank/candidate/teacher preservation; the
+202-head replay uses actual pipeline/admission and explicitly scripted SDK,
+retrieval and storage adapters. Its 48 scenarios/105 raw-envelope pairs prove
+measured fit only: the nested JSON retry leaves 84/24,000 units, six historical
+input refusals remain and every scripted public flow saves zero Drafts. Pure
+and service coverage tests plus real retained E13/L4 inputs prove binding,
+credit-preservation, shortfall and durable CAS behavior with mocked storage.
+The initial synthetic illustration lost an explicit old wording capability;
+retain it beside the corrected illustration and root audit. Neither synthetic
+credit nor a passed gate proves semantic recovery. Read the new pipeline and
+supported-LO implementation notes before extending or reporting these tests.
+
+Current-course task-retrieval checks use actual local nomination/selection and
+admission modules with scripted task relations and comparisons. The final
+33-suite/1,112-pass combined result includes focused tests; do not add the
+454-test focused result again. Retain the initial 20 missing-receipt fixture
+failures and two combined stale prompt-literal failures. Seven immutable-input
+before/after controls expose older prepared-profile targets and keep raw/no-
+profile exposure separate from mandatory selection. The 24-scenario/47-capture
+headroom result fits unchanged per-call caps; five initial refusals remain
+historical, and simulated size is not provider usage. Fourteen compiled UI
+cases under `playwright.task-retrieval-ui.config.ts` intercept all APIs and
+refuse external requests. A separate owned local replica-set run passes eight
+groups, including one real commit/one stale-memory rejection, then drops its
+database; its comparisons and empty-source currentness boundary are synthetic.
+None establishes semantic duplicate recall, saved yield or teacher acceptance.
+See `COURSE-TASK-RETRIEVAL-IMPLEMENTATION-2026-10-17.md` in the quality design folder.
+
+`generation-memory.service.test.ts` and
+`generation-exact-bank-admission.test.ts` exercise the actual versioned exact
+scanner and admission assertion with in-memory collections. The 44 helper and
+46 admission tests overlap the final 29-suite/932-test combined rerun; do not
+sum those checkpoints. Preserve the initial combined 931-pass/one-Supertest-
+ECONNRESET result beside the unchanged successful rerun. Current-version,
+121/81-recency, imported/no-fingerprint, cap/incomplete, intent, replay and
+tampered-receipt controls establish mechanics, not semantic novelty. The
+simulated course-fence concurrency case is not a real Mongo transaction test.
+`audit-results/bank-memory-exact-repair-2026-10-17/` separately retains the exact
+old/new source/input replay, thirteen controls and a binding-change pair with
+zero model/embedding/network/database calls. A separate disposable real local
+replica-set run passes nine groups, including genuine competing transactions;
+its owned database is dropped. Five static intercepted UI cases pass at the
+existing generation/regeneration seams. These scopes remain separate from the
+unit and file-only denominators. See the exact-Bank coverage
+implementation note in the quality design folder.
+
+`pdf-page-text-observations.test.ts` checks exact native/map identities, blank
+pages, the fixed 120 non-whitespace UTF-16 threshold, bounded records, tampering,
+historical absence and lossless ranges; it grants no visual/semantic coverage.
+The final related 22-suite run passes 734 tests, including these 44 and the
+mapped-but-sparse service control; earlier overlapping runs are not additive.
+The ten-source production-helper replay records 599 pages/111 sparse/0 blank/
+488 present in 106 ms using retained native artifacts only, without a new ingest,
+database or provider execution. The new 17-case compiled UI suite uses
+`playwright.structure-page-text-observations.config.ts` and a static server on
+127.0.0.1:6167; every app API and external request is refused. Its synthetic
+599-page states are not the observed corpus counts. The 19-case legacy source
+review UI regression also passes. Keep the initial pre-browser bind failure and
+733-test predecessor beside final receipts. The one-page local OCR diagnostic
+has 18/21 exact specified cells with three retained literal mismatches; it is
+not production OCR admission or a general accuracy benchmark. See
+`PDF-PAGE-TEXT-OBSERVATIONS-IMPLEMENTATION-2026-10-17.md` in the quality design folder.
+
+`generation-answerability.test.ts` and the durable pipeline/replay tests use
+scripted model judgments, including exact retained P01/P04 inputs. They verify
+answer-set gating and schema compatibility, not actual semantic detection.
+`structure-source-conditions.test.ts` joins exact retained E482/E947 originals
+and rejects foreign/disjoint/stale context without giving conditions coverage
+credit. The ten-file replay is an input comparison, not a regenerated outline.
+`answerability-checks.spec.ts` uses compiled UI with intercepted read-only APIs;
+its screenshots and scoped axe scans do not establish live model quality.
+
+`verify-authoring-zero-call-guards.ts` is an explicit synthetic HTTP/Mongo harness,
+not a generation-quality test. Default execution only prepares files; live mode
+requires a fresh owned database on loopback 27029, atomic ownership, full server
+pins and throwing model/vector/embedding/job boundaries. Never reuse an old DB.
+The October 17 replica-set run passed eight groups/eighteen responses; synthetic
+auth and seeded eligibility are limitations. The 31 authoring browser cases use
+intercepted APIs, including seven recovery cases. Counts overlap focused unit
+runs; do not add them into one test denominator.
+
+PDF provenance checks have separate scopes. `audit-native-pdf-provenance.ts`
+compares the same retained ten files against the legacy facade without network
+or database work. `verify-pdf-provenance-ingest.ts` defaults to file-only
+preparation; `--execute-local once` requires a new exclusively owned
+`financebot_quality_smoke_pdf_provenance_*` database at loopback 27029 and current
+source/input pins. Its native parser, chunker, Mongo fence and material HTTP
+routes are real; embeddings/vector storage are counted deterministic substitutes,
+classification is explicitly skipped, and model/job/remote boundaries are denied.
+It does not prove multipart/Agenda admission, semantic quality or actual vector
+retrieval. Retained owned uploads and sidecars are never the original corpus.
+`material-provenance.spec.ts` uses compiled production UI with all APIs
+intercepted on a static-only server; it checks physical page9/10 links for
+Chunk21, historical/malformed bindings, literal source content and scoped axe.
+
 The testing setup. Three layers, mirroring the structure used in
 [`tlef-biocbot`](https://github.com/ubc/tlef-biocbot) but written in TypeScript:
 
@@ -203,6 +423,16 @@ duplicate-run protection and stop semantics. `scripts/verify-structure-generatio
 is an opt-in real-provider smoke using only synthetic teaching text; it cleans up
 its temporary material/chunk/run records and never reads uploaded course materials.
 
+`structure-source-coverage.spec.ts` / `playwright.structure-source-coverage.config.ts`
+exercise the compiled source-review UI through a static-only server on
+`127.0.0.1:6167`. Build the client first. The committed, content-sanitized ten-file
+fixture preserves 999 point and 1,238 passage relationships; tests cover all 951
+review records with bounded DOM, search/filter pagination, exact-context reads,
+failed diagnostics, contradictory receipts and desktop/mobile scoped axe checks.
+All APIs are intercepted, mutations are refused and external requests fail this
+fixture. It starts no app server, SAML, database or model worker. These UI results
+do not establish new model quality or complete pedagogical source coverage.
+
 `admin-diagnostics.spec.ts` / `playwright.admin-diagnostics.config.ts` use real
 local SAML and MongoDB with isolated course/question/run/attempt fixtures. They
 verify cross-user failure capture, Admin-only inspection, original-creator
@@ -266,15 +496,13 @@ grading and release isolation. Browser fixtures do not call model providers.
 full Instructor shell with intercepted APIs: all-role People, self marker, search,
 role filter, pagination, legacy redirects, global course switching, mobile dark
 layout and desktop axe scans. It does not mutate real Canvas/staging data.
-`quality-evaluation-*.test.ts` verifies the offline dataset, export adapter,
-blinded review integrity, fixed denominators, CLI files and nullable measurement
-reporting. `generation-evaluation.{service,routes}.test.ts` covers original-version
-export binding, unavailable historical slots, safe usage projection and course
-authorization. `playwright.quality-evaluation.config.ts` runs an isolated offline
+`quality-evaluation-*.test.ts` verifies the offline dataset, blinded review integrity, fixed denominators, CLI files and nullable measurement
+reporting; the server export route and its tests were removed with the 2026-11-06 simplification.
+`playwright.quality-evaluation.config.ts` runs an isolated offline
 review HTML fixture with all external requests blocked; no application server or
 provider is required. Its browser cases cover JSON download/resume, conflicts,
 stale data, triage-only content, literal hostile strings and accessible responsive
-forms. The existing workbench suite verifies the terminal evaluation download link.
+forms.
 
 
 ## Course People consolidation (2026-10-06)

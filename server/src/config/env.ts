@@ -168,12 +168,13 @@ export const env = {
   llmDefaultModel,
   llmEndpoint,
   llmApiKey,
+  // Total OpenAI-compatible completion deadline, including streamed body/retries.
+  llmRequestTimeoutMs: Number(optional('LLM_REQUEST_TIMEOUT_MS', '180000')),
 
-  // Per-pipeline-step model selection (PRD §2 / AD-07): generator, structure
-  // validator, reviewer, and mastery evaluator are independently assignable.
+  // Per-pipeline-step model selection (PRD §2 / AD-07): generator,
+  // checker (reviewer step), and mastery evaluator are independently assignable.
   // Each falls back to LLM_DEFAULT_MODEL when unset.
   llmModelGenerator: stepModel('LLM_MODEL_GENERATOR'),
-  llmModelValidator: stepModel('LLM_MODEL_VALIDATOR'),
   llmModelReviewer: stepModel('LLM_MODEL_REVIEWER'),
   llmModelMasteryEvaluator: stepModel('LLM_MODEL_MASTERY_EVALUATOR'),
 
@@ -198,6 +199,15 @@ export const env = {
   // output. Off by default so only warnings/errors from the toolkit surface,
   // keeping the app's own logs readable. See components/genai/logger.ts.
   genaiDebug: optional('GENAI_DEBUG', 'false') === 'true',
+
+  // Process-local admission limits count observed SDK sends, including JSON repairs.
+  authoringProviderConcurrency: Number(optional('AUTHORING_PROVIDER_CONCURRENCY', '4')),
+  authoringExtractionConcurrency: Number(optional('AUTHORING_EXTRACTION_CONCURRENCY', '2')),
+  authoringMaxSends: Number(optional('AUTHORING_MAX_SENDS', '256')),
+  authoringMaxInputTokens: Number(optional('AUTHORING_MAX_INPUT_TOKENS', '24000')),
+  authoringStructureMaxInputTokens: Number(optional('AUTHORING_STRUCTURE_MAX_INPUT_TOKENS', '200000')),
+  authoringMaxOutputTokens: Number(optional('AUTHORING_MAX_OUTPUT_TOKENS', '24000')),
+  authoringMaxEstimatedTokens: Number(optional('AUTHORING_MAX_ESTIMATED_TOKENS', '2000000')),
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';

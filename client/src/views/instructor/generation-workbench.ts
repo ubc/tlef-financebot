@@ -1,8 +1,8 @@
 import { attachTutorial } from '../../tutorials.js';
 import {
-  browseBank, contentRunEvaluationExportUrl, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
+  browseBank, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
   getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
-  type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type GenerationQualityPolicy, type QuestionGenerationRun, type ModelUsageSnapshot,
+  type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
@@ -11,9 +11,13 @@ import { renderRichText } from '../../render.js';
 import { rowStemText } from '../../placeholders.js';
 import { errorState, loadingState } from '../../ui.js';
 import { renderModelUsage, renderModelCalls } from '../../model-usage-ui.js';
+import { sourceCitationDetails } from './source-citations.js';
+import { answerabilityChecks } from './answerability-checks.js';
+import { exactBankChecks } from './exact-bank-checks.js';
+import { taskRetrievalChecks } from './task-retrieval-checks.js';
 
 type Tier = 'easy' | 'medium' | 'hard';
-type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; qualityPolicy?: GenerationQualityPolicy; runIds?: string[]; errors?: string[] };
+type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[]; errors?: string[] };
 const active = (run: ContentRunSummary) => run.status === 'running' || run.status === 'queued';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const stageName = (stage: string) => ({ queued: 'Waiting to start', retrieving: 'Finding source evidence', generating: 'Writing questions', validating: 'Checking answers', reviewing: 'Reviewing quality', persisting: 'Saving drafts', completed: 'Completed' })[stage] ?? stage.replace(/-/g, ' ');
@@ -49,24 +53,34 @@ function candidateDiagnostic(candidate: GenerationQualityAssessment['candidate']
 }
 
 function qualityFindings(run: QuestionGenerationRun, item?: number): HTMLElement {
-  const pilot = run.input.qualityPolicy === 'grounded-memory-v1';
+  const pilot = run.input.qualityPolicy === 'grounded-memory-v1' || run.input.qualityPolicy === 'grounded-memory-v2';
   const section = el('section', { class: 'gw-quality', 'aria-label': 'Generation quality policy' },
     el('p', { class: 'gw-quality-mode', text: pilot ? 'Sources and question memory pilot' : 'Baseline generation' }));
   if (!pilot) return section;
   const quality = run.result?.quality;
   const assessments = (quality?.assessments ?? []).filter(assessment => item === undefined || assessment.item === item);
+  if (quality?.independentRequested !== undefined) section.append(el('p', { class: 'gw-plan-note', text: `${quality.independentPlanned ?? 0}/${quality.independentRequested} independent tasks planned from the available sources. Unsupported supply remains a visible shortfall.` }));
   const withheld = assessments.filter(item => item.status === 'withheld');
   const shortfall = Math.max(0, run.input.count - (run.result?.createdQuestionIds.length ?? 0));
   if (!active(run) && shortfall) section.append(el('p', { class: 'gw-run-error', text: `${shortfall} of ${run.input.count} requested ${run.input.count === 1 ? 'question' : 'questions'} not saved.` }));
   section.append(el('p', { class: 'gw-plan-note', text: assessments.length ? `${assessments.length} assessed · ${withheld.length} withheld. Model judgments require instructor review.` : active(run) ? 'Pilot assessments will appear as checks finish.' : 'No recorded pilot assessment is available. No quality conclusion can be inferred.' }));
+  if (quality?.taskRetrieval) section.append(taskRetrievalChecks(quality, true));
   if (assessments.length) section.append(el('div', { class: 'gw-quality-withheld' }, ...assessments.map(item => el('div', {},
     el('strong', { text: `Question ${item.item + 1} · ${item.status === 'withheld' ? 'Withheld' : 'Eligible for saving'}` }),
     item.status === 'withheld' && el('p', { text: item.reasons[0] ?? 'The pilot did not find sufficient support to save this candidate.' }),
+    exactBankChecks(item),
+    taskRetrievalChecks(item),
     el('details', {}, el('summary', { text: 'Check details' }),
       el('p', { text: `Source support: ${item.sourceSupport}. Notation: ${item.notation}. Novelty: ${item.novelty}.` }),
-      ...item.reasons.slice(item.status === 'withheld' ? 1 : 0).map(reason => el('p', { text: reason }))),
+      item.achievedDifficulty && el('p', { text: `Assessed difficulty: ${item.achievedDifficulty}${item.difficultyMismatch ? ` · requested ${item.requestedDifficulty}` : ''}. Length: ${item.justifiedLength ?? 'unavailable'}.` }),
+      ...item.reasons.slice(item.status === 'withheld' ? 1 : 0).map(reason => el('p', { text: reason })),
+      sourceCitationDetails(run.courseId, item.citations), answerabilityChecks(run.courseId, item)),
     candidateDiagnostic(item.candidate)))));
   const latest = assessments[assessments.length - 1]?.coverage;
+  const budgetRows = (quality?.slotBudgets ?? []).filter(row => item === undefined || row.item === item);
+  if (budgetRows.length) section.append(el('details', {}, el('summary', { text: 'Observed call budgets' }),
+    ...budgetRows.map(row => el('p', { text: `Question ${row.item + 1}: ${row.receipt.observedSends}/${row.receipt.limits.maxSends} observed sends · input ${row.receipt.reportedInputTokens ?? 'unavailable'} · output ${row.receipt.reportedOutputTokens ?? 'unavailable'} tokens · ${row.receipt.usageCompleteness ?? 'unknown'} provider usage.` })),
+    el('p', { class: 'gw-plan-note', text: 'Provider usage can be incomplete. Estimated limits cover observed SDK sends; hidden retries and embedding costs are excluded.' })));
   if (quality?.evidence || latest) {
     const limited = quality?.evidence?.coverage.truncated || latest?.evidenceTruncated || latest?.memoryTruncated || !!latest?.missingVersions;
     const coverage = el('details', { class: 'gw-quality-coverage' }, el('summary', { text: `Source and memory coverage${limited ? ' · limited' : ''}` }));
@@ -108,8 +122,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let submission: Submission | undefined;
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Submission | null;
-      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string' &&
-        (stored.qualityPolicy === undefined || stored.qualityPolicy === 'baseline' || stored.qualityPolicy === 'grounded-memory-v1')) submission = stored;
+      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string') submission = stored;
     } catch { /* Storage may be unavailable; in-session request identity is retained. */ }
     const persist = () => { try { if (submission) localStorage.setItem(storageKey, JSON.stringify(submission)); else localStorage.removeItem(storageKey); } catch { /* Request identity is also held in memory. */ } };
     if (submission?.runIds) {
@@ -123,7 +136,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let difficulty: Tier | 'balanced' = 'balanced';
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
     let questionType: 'mcq' | 'true-false' = 'mcq';
-    let qualityPolicy: GenerationQualityPolicy = submission?.qualityPolicy ?? 'baseline';
     let bank: BankQuestion[] = [];
     let selectedQuestion = '';
     let previewRunId = '';
@@ -197,11 +209,10 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('option', { value: 'auto', text: 'Match each objective' }), el('option', { value: 'conceptual', text: 'Conceptual understanding' }), el('option', { value: 'calculation', text: 'Calculation practice' }));
       const typeSelect = el('select', { id: 'gw-type', onchange: () => { questionType = typeSelect.value as typeof questionType; updateSetup(); } },
         el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
-      const pilot = el('input', { id: 'gw-quality-pilot', type: 'checkbox', 'data-gw-focus': 'quality-pilot', 'aria-describedby': 'gw-quality-help', checked: qualityPolicy === 'grounded-memory-v1', onchange: () => { qualityPolicy = pilot.checked ? 'grounded-memory-v1' : 'baseline'; updateSetup(); } });
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
         selectedQuestion = ''; previewRunId = ''; previewKey = ''; readerRevision++;
-        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim(), ...(qualityPolicy === 'grounded-memory-v1' ? { qualityPolicy } : {}) }; persist(); await submit();
+        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
       } });
       const selections = el('div', { class: 'gw-objective-tools' }, el('button', { type: 'button', onclick: () => { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); } }, 'Select coverage gaps'),
         el('button', { type: 'button', onclick: () => { selected.clear(); updateSetup(); } }, 'Clear'));
@@ -209,9 +220,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', {}, el('span', { class: 'gw-label', text: 'Questions per objective' }), el('div', { class: 'gw-stepper' }, minus, amount, plus)),
         el('div', {}, el('span', { class: 'gw-label', text: 'Difficulty' }), tiers),
         el('div', {}, el('label', { for: 'gw-type', class: 'gw-label', text: 'Question type' }), typeSelect),
-        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect),
-        el('div', { class: 'gw-quality-setting' }, el('label', { class: 'gw-quality-toggle' }, pilot, el('span', { text: 'Sources and question memory pilot' })),
-          el('p', { id: 'gw-quality-help', class: 'gw-plan-note', text: 'Before writing, uses source passages and existing questions to guide distinct learning tasks. Before saving, checks source support, notation and similarity again. May withhold similar or unsupported drafts and use extra model calls. Similarity checks are best effort; instructor review is required.' })));
+        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect));
       mount(setup, el('aside', { class: 'gw-objectives', 'aria-label': 'Learning objectives' }, el('div', { class: 'gw-pane-title', text: 'LEARNING OBJECTIVES' }), selections, objectivesList,
         el('div', { class: 'gw-pane-foot', text: 'Existing drafts count toward coverage. You can select an objective to create additional practice.' })),
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
@@ -226,7 +235,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         const focusKey = document.activeElement?.getAttribute('data-gw-focus');
         const isLocked = locked();
         amount.value = String(count); minus.disabled = isLocked || count === 1; plus.disabled = isLocked || count === 5;
-        settings.disabled = isLocked; prompt.disabled = isLocked; pilot.checked = qualityPolicy === 'grounded-memory-v1';
+        settings.disabled = isLocked; prompt.disabled = isLocked;
         selections.querySelectorAll('button').forEach(button => { button.disabled = isLocked; });
         setup.querySelectorAll<HTMLButtonElement>('.gw-suggestions button').forEach(button => { button.disabled = isLocked; });
         mount(tiers, ...(['balanced','easy','medium','hard'] as const).map(tier => el('button', { type: 'button', 'aria-pressed': tier === difficulty, 'data-gw-focus': `tier-${tier}`, disabled: isLocked, onclick: () => { difficulty = tier; updateSetup(); } }, tier[0].toUpperCase()+tier.slice(1))));
@@ -246,7 +255,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
           el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : 'True / false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
           el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
-          el('div', { class: 'gw-fact' }, 'Quality policy', el('strong', { text: qualityPolicy === 'grounded-memory-v1' ? 'Sources and question memory pilot' : 'Baseline' })),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
           el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),
           cells().length > 120 && el('p', { text: 'Choose fewer objectives for this batch.' }));
@@ -259,7 +267,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       busy = true; updateSetup(); say('Starting your batch…');
       const current = submission;
       try {
-        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt, ...(current.qualityPolicy ? { qualityPolicy: current.qualityPolicy } : {}) });
+        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt });
         current.runIds = result.runs.flatMap(row => row.runId ? [row.runId] : []);
         current.errors = result.runs.flatMap(row => row.error ? [`${objectives.find(lo => lo._id === row.loId)?.name ?? 'Objective'}: ${generationIssue(row.error)}`] : []);
         persist();
@@ -289,7 +297,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           const [snapshot, recorded] = await Promise.all([getContentRun(courseId,run._id), getContentRunUsage(courseId,run._id).catch(() => undefined)]);
           if (!dialog.isConnected) return;
           mount(body, snapshot.kind === 'question-generation' && qualityFindings(snapshot),
-            snapshot.kind === 'question-generation' && !active(snapshot) && el('p', {}, el('a', { href: contentRunEvaluationExportUrl(courseId, snapshot._id), download: '', text: 'Download evaluation export' })),
             el('ol', {}, ...snapshot.events.map(event => el('li', {},
             el('strong', { text: stageName(event.stage) }), el('time', { text: new Date(event.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
             el('p', { text: event.message ?? `${event.status} · ${event.completedUnits} processed` })))),
@@ -387,6 +394,10 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const focusKey = document.activeElement?.getAttribute('data-gw-focus');
       const listScroll = draftList.scrollTop;
       const items = watched();
+      if (items.length && items.every(run => !active(run)) && (!notice.textContent || notice.textContent.startsWith('Your batch has started.'))) {
+        const savedCount = items.reduce((sum, run) => sum + (run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0), 0);
+        say(savedCount ? `Batch finished · ${savedCount} drafts saved for review. Inspect any shortfalls in generation activity.` : 'Batch finished · no questions saved. Inspect the recorded checks and shortfalls before trying again.');
+      }
       const streaming = items.filter((run): run is QuestionGenerationRun => run.kind === 'question-generation' && (active(run) || !bank.some(question => sourceRun(question)?._id === run._id)));
       if (!selectedQuestion && !items.some(run => run._id === previewRunId)) previewRunId = streaming[0]?._id ?? '';
       const drafts = bank.filter(question => sourceRun(question));
@@ -405,7 +416,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           else {
             stopTextReveal();
             mount(reader, el('div', { class: 'gw-waiting' }, el('h2', { text: active(preview) ? stageName(preview.stage) : preview.error?.code === 'generation-ended' ? 'Generation ended' : 'Task finished' }),
-              el('p', { text: active(preview) ? 'Question text will appear when the model returns it. Follow this task’s recorded activity on the right.' : 'Saved drafts remain in Review Queue. Select another question or start a new batch.' }), link('Open review queue →', `${base}/queue`)));
+              el('p', { text: active(preview) ? 'Question text will appear when the model returns it. Follow this task’s recorded activity on the right.' : (preview.result?.createdQuestionIds.length ?? 0) > 0 ? 'Saved drafts remain in Review Queue. Select another question or start a new batch.' : 'This task saved no questions. Inspect the source checks, diagnostic candidates and shortfall reasons on the right.' }), link('Open review queue →', `${base}/queue`)));
           }
         }
         else if (drafts[0]) void showQuestion(drafts[0]);

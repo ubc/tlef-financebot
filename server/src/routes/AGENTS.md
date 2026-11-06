@@ -1,5 +1,15 @@
 # AGENTS.md — server/src/routes
 
+`materials.routes.ts` exposes Instructor/Admin GET/POST
+`/courses/:courseId/structure-generation/:runId/repair`. GET is no-store and
+read-only, resolves linked parents/children and returns bounded exact point
+quotes. POST accepts only strict versioned wording-target or assigned-point
+selections (two objectives, eight points each), with no caller verdict, provider
+or budget authority. Both share one checkpoint cycle and the existing worker;
+neither applies hierarchy automatically. Apply revalidates repaired authority
+inside a required course transaction. Ordinary historical unavailable repair
+state is explicit 200, not guessed from a 404. See the API contract.
+
 `registration-codes.routes.ts` exposes course Instructor/Admin-only list,
 idempotent batch creation, unused-code revocation and soft record deletion.
 List queries are code-level paginated (10/25/50) with optional status filters;
@@ -76,7 +86,8 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   (including a courses-spanning bulk transition). Teaching-team reads use
   `question.review`; changes use their respective capabilities and hard-deny
   TA final approval. Child routes stash the target course in
-  `res.locals.courseId` before authorization.
+  `res.locals.courseId` before authorization. Also hosts the Instructor-only
+  `POST /courses/:courseId/question-similarity/rebuild`.
 - `materials.routes.ts` — Material upload + async RAG ingestion (IN-S04/S05):
   `POST/GET /api/courses/:courseId/materials` (multipart `files[]` or JSON
   `{ url }`), `POST /api/materials/:materialId/retry`,
@@ -90,6 +101,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   retry, ending one active generation run (`POST .../:runId/end`) or all of a
   course's (`POST .../end-active`), and one course-scoped SSE stream. Instructor-gated; the stream sends
   recent persisted state before live updates.
+- `generation.routes.ts` — Instructor-gated generate/plan and
+  `POST /courses/:courseId/questions/:questionId/regenerate` (one generator + one
+  checker call, returns an unsaved `{ variant }`; Replace is a normal PATCH).
+  No quality-policy input and no regeneration-candidate routes.
 - `generation-blueprints.routes.ts` — Instructor-gated saved generation recipe
   list/create/update/run endpoints.
 - `content-map.routes.ts` — Read-only, course-scoped hierarchy/source/question/

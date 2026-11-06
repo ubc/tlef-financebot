@@ -1,6 +1,7 @@
 import { expect, test, type Route } from '@playwright/test';
 import { ObjectId } from 'mongodb';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { AUTH_FILE } from './global-setup';
 import { connectMongo } from '../../server/src/components/mongodb';
 import {
@@ -8,10 +9,13 @@ import {
   coursesCol,
   losCol,
   materialChunksCol,
+  materialUploadBatchesCol,
   materialsCol,
   themesCol,
   usersCol,
 } from '../../server/src/components/mongodb/collections';
+import { hashSourceChunks, MATERIAL_CHUNKER_VERSION, MATERIAL_PARSER_VERSION } from '../../server/src/services/source-readiness.service';
+import { loadStructureCorpus } from '../../server/src/services/structure-generation.service';
 
 /**
  * Guided Course Preparation's materials-first journey uses the real app,
@@ -152,6 +156,7 @@ test.describe('course setup guide — materials first', () => {
     await Promise.all([
       contentRunsCol().deleteMany({ courseId: courseObjectId }),
       materialChunksCol().deleteMany({ courseId: courseObjectId }),
+      materialUploadBatchesCol().deleteMany({ courseId: courseObjectId }),
       materialsCol().deleteMany({ courseId: courseObjectId }),
       losCol().deleteMany({ courseId: courseObjectId }),
       themesCol().deleteMany({ courseId: courseObjectId }),
@@ -172,14 +177,14 @@ test.describe('course setup guide — materials first', () => {
     let uploadFailureSent = false;
     let retryRequested = false;
     let retryCompletionSent = false;
+    let sourceBatchId: ObjectId | undefined;
+    const structureRunId = new ObjectId();
+    let structureRun: Record<string, unknown> | undefined;
 
-    await page.route(`**/api/courses/${courseId}/materials`, async (route) => {
-      if (route.request().method() !== 'POST') {
-        await route.continue();
-        return;
-      }
+    await page.route(new RegExp(`/api/courses/${courseId}/material-upload-batches/[0-9a-f]{24}/files$`), async (route) => {
       uploadCalls += 1;
       await expect(route.request().headerValue('content-type')).resolves.toContain('multipart/form-data');
+      sourceBatchId = new ObjectId(new URL(route.request().url()).pathname.split('/').at(-2));
       materialId = new ObjectId();
       uploadRunId = new ObjectId();
       const uploadedAt = new Date();
@@ -194,17 +199,10 @@ test.describe('course setup guide — materials first', () => {
         assignments: [],
         uploadedAt,
       });
-      await fulfillJson(route, 201, [{
-        _id: materialId.toHexString(),
-        courseId,
-        name: MATERIAL_NAME,
-        format: 'md',
-        kind: 'lecture',
-        status: 'processing',
-        activeRunId: uploadRunId.toHexString(),
-        assignments: [],
-        uploadedAt: uploadedAt.toISOString(),
-      }]);
+      await materialUploadBatchesCol().updateOne({ _id: sourceBatchId, courseId: courseObjectId, requestedBy: facultyPuid }, { $set: { admission: 'accepted', 'items.0.materialId': materialId, 'items.0.disposition': 'created' } });
+      const receipt = await materialUploadBatchesCol().findOne({ _id: sourceBatchId, courseId: courseObjectId });
+      if (!receipt) throw new Error('The intended-file receipt must exist before multipart admission.');
+      await fulfillJson(route, 201, receipt);
     });
 
     await page.route(/\/api\/materials\/[0-9a-f]{24}\/retry$/, async (route) => {
@@ -220,7 +218,7 @@ test.describe('course setup guide — materials first', () => {
         { _id: materialId, courseId: courseObjectId },
         {
           $set: { status: 'processing', activeRunId: retryRunId, uploadedAt: updatedAt },
-          $unset: { error: '' },
+          $unset: { error: '', sourceManifest: '' },
         },
       );
       await fulfillJson(route, 200, {
@@ -334,9 +332,13 @@ test.describe('course setup guide — materials first', () => {
       });
       if (!retryCompletionSent) {
         retryCompletionSent = true;
+        const text = await readFile(FIXTURE_PATH, 'utf8');
+        const middle = Math.floor(text.length / 2);
+        const chunks = [text.slice(0, middle), text.slice(middle)].map((chunk, index) => ({ courseId: courseObjectId, materialId: materialId!, index, text: chunk, characterCount: chunk.length, createdAt: new Date() }));
+        await materialChunksCol().insertMany(chunks);
         await materialsCol().updateOne(
           { _id: materialId, courseId: courseObjectId },
-          { $set: { status: 'ready' }, $unset: { error: '' } },
+          { $set: { status: 'ready', sourceManifest: { version: 1, ingestRunId: retryRunId, sourceTextHash: hashSourceChunks(chunks), chunkCount: 2, indexedCount: 2, characterCount: text.length, parserVersion: MATERIAL_PARSER_VERSION, chunkerVersion: MATERIAL_CHUNKER_VERSION, indexedAt: new Date() } }, $unset: { error: '' } },
         );
       }
       await route.fulfill({
@@ -349,21 +351,24 @@ test.describe('course setup guide — materials first', () => {
       });
     });
 
-    await page.route(`**/api/courses/${courseId}/suggest-hierarchy`, async (route) => {
+    await page.route(`**/api/courses/${courseId}/structure-generation`, async (route) => {
       hierarchyCalls += 1;
       if (!materialId) throw new Error('Hierarchy requested before material fixture exists.');
-      await fulfillJson(route, 200, {
-        themes: [
-          { name: PROPOSED_TOPIC, los: [PROPOSED_LO, 'Estimate a project payback period'] },
-          { name: 'Exclude this suggested Topic', los: ['This LO must not be applied'] },
-        ],
-        assignments: [
-          { themeIndex: 0, loIndex: 0, materialIds: [materialId.toHexString()] },
-          { themeIndex: 0, loIndex: 1, materialIds: [materialId.toHexString()] },
-          { themeIndex: 1, loIndex: 0, materialIds: [materialId.toHexString()] },
-        ],
-      });
+      expect(route.request().postDataJSON()).toEqual({ materialIds: [materialId.toHexString()], sourceBatchId: sourceBatchId!.toHexString() });
+      const name = MATERIAL_NAME, id = materialId.toHexString();
+      const sourceCorpus = await loadStructureCorpus(courseObjectId, [id], sourceBatchId!.toHexString());
+      structureRun = { _id: structureRunId.toHexString(), kind: 'structure-generation', courseId, status: 'completed', stage: 'checking', revision: 3, input: route.request().postDataJSON(), warnings: [], completedUnits: 2,
+        structureResult: { themes: [
+          { name: PROPOSED_TOPIC, los: [{ name: PROPOSED_LO, materialIds: [id], evidenceIds: ['E1'] }, { name: 'Estimate a project payback period', materialIds: [id], evidenceIds: ['E2'] }] },
+          { name: 'Exclude this suggested Topic', los: [{ name: 'This LO must not be applied', materialIds: [id], evidenceIds: ['E2'] }] },
+        ], evidence: [], coverage: { sourceFingerprint: sourceCorpus.fingerprint, materials: [{ materialId: id, name, chunks: 2, sections: 2, mappedObjectives: 3 }], analyzedSections: 2, extractedObjectives: 3, mappedObjectives: 3, unmappedEvidenceIds: [], excludedSections: [], warnings: [], sourceSelection: sourceCorpus.sourceSelection } } };
+      // This declared fixture replaces only paid generation, while the real Apply
+      // endpoint reads the durable identity and current original-source receipt.
+      await contentRunsCol().insertOne({ ...structureRun, _id: structureRunId, courseId: courseObjectId,
+        requestedBy: facultyPuid, events: [], createdAt: new Date(), updatedAt: new Date() } as never);
+      await fulfillJson(route, 202, { runId: structureRunId.toHexString() });
     });
+    await page.route(`**/api/courses/${courseId}/content-runs/${structureRunId}`, route => fulfillJson(route, 200, structureRun));
 
     await test.step('choose the materials-first path without triggering AI', async () => {
       await page.goto(`/#/instructor/course/${courseId}`);
@@ -414,7 +419,7 @@ test.describe('course setup guide — materials first', () => {
       await guide.getByLabel('Include suggested Topic 2', { exact: true }).uncheck();
       await guide.getByRole('button', { name: 'Apply selected structure' }).click();
 
-      await expect(guide.getByRole('heading', { name: 'Plan a batch of questions' })).toBeVisible();
+      await expect(guide.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
       const themes = await themesCol().find({ courseId: courseObjectId }).toArray();
       const los = await losCol().find({ courseId: courseObjectId }).toArray();
       const material = materialId ? await materialsCol().findOne({ _id: materialId }) : null;

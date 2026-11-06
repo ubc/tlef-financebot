@@ -20,6 +20,7 @@ import {
   bulkDeleteUnserved,
   bulkTransition,
 } from '../services/questions.service';
+import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../services/question-similarity.service';
 import {
   resolveParamValues,
   substituteParams,
@@ -202,6 +203,7 @@ function withPlaceholderReport<T extends NumericGateVersion>(version: T): T & { 
 }
 
 function verifyOptionFormulas(
+  stem: string,
   options: Array<{ text: string }>,
   slots: ParamSlot[],
   derivedValues: DerivedValue[],
@@ -221,6 +223,7 @@ function verifyOptionFormulas(
   if (!optionValues.ok) return { verificationError: optionValues.error };
 
   const result = verifyQuestionNumerics({
+    stem,
     slots,
     derivedValues,
     optionValueNames: optionValues.names,
@@ -327,6 +330,7 @@ export function toBankItem(item: BankItem): {
   themeIds: BankItem['themeIds'];
   current: BankItem['current'];
   contentReady: boolean;
+  similarity?: BankItem['similarity'];
 } {
   return {
     id: item._id.toString(),
@@ -336,6 +340,7 @@ export function toBankItem(item: BankItem): {
     themeIds: item.themeIds,
     current: item.current,
     contentReady: Array.isArray(item.current.options) && typeof item.current.stem === 'string' && isServable(item.current),
+    ...(item.similarity ? { similarity: item.similarity } : {}),
   };
 }
 
@@ -405,6 +410,16 @@ questionsRouter.get(
   },
 );
 
+/** POST /api/courses/:courseId/question-similarity/rebuild -> { questions }. Instructor-only (TAs are denied question.approve). */
+questionsRouter.post(
+  '/courses/:courseId/question-similarity/rebuild',
+  validate({ params: courseIdParams }),
+  ensureCapability('question.approve'),
+  async (req, res) => {
+    res.json(await rebuildCourseSimilarity(new ObjectId(String(req.params.courseId))));
+  },
+);
+
 /** GET /api/courses/:courseId/review-queue -> prioritized list. Instructor-only. (IN-Q02) */
 questionsRouter.get(
   '/courses/:courseId/review-queue',
@@ -455,6 +470,7 @@ questionsRouter.patch(
     ) {
       const { current } = await getQuestionDetail(questionId);
       ({ verification, verificationError } = verifyOptionFormulas(
+        body.stem ?? current.stem,
         body.options ?? current.options,
         (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
         (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
@@ -484,6 +500,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
+    await refreshQuestionSimilarity(questionId);
     res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
@@ -533,6 +550,7 @@ questionsRouter.patch(
     ) {
       const { current } = await getQuestionDetail(questionId);
       ({ verification, verificationError } = verifyOptionFormulas(
+        current.stem,
         current.options,
         (body.paramSlots ?? current.paramSlots ?? []) as ParamSlot[],
         (body.derivedValues ?? current.derivedValues ?? []) as DerivedValue[],
@@ -554,6 +572,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
+    await refreshQuestionSimilarity(questionId);
     res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );

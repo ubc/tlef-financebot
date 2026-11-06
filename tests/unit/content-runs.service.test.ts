@@ -1,11 +1,14 @@
-jest.mock('../../server/src/components/mongodb/collections', () => ({ contentRunsCol: jest.fn() }));
+jest.mock('../../server/src/services/source-readiness.service', () => ({ getMaterialSourceReadiness: jest.fn() }));
+jest.mock('../../server/src/components/mongodb/collections', () => ({ contentRunsCol: jest.fn(), materialsCol: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ hasPendingJob: jest.fn() }));
 
 import { ObjectId, type WithId } from 'mongodb';
-import { contentRunsCol } from '../../server/src/components/mongodb/collections';
+import { contentRunsCol, materialsCol } from '../../server/src/components/mongodb/collections';
+import { getMaterialSourceReadiness } from '../../server/src/services/source-readiness.service';
 import { hasPendingJob } from '../../server/src/components/jobs';
 import {
   assertContentRunActive,
+  claimStructureGenerationRun,
   createMaterialIngestRun,
   createStructureGenerationRun,
   createQuestionGenerationRun,
@@ -80,6 +83,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(contentRunsCol).mockReturnValue({ insertOne, findOne, findOneAndUpdate, find } as never);
   jest.mocked(hasPendingJob).mockResolvedValue(true);
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue(null), updateOne: jest.fn(), updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }) } as never);
 });
 
 function materialRun(overrides: Partial<WithId<ContentRun>> = {}): WithId<ContentRun> {
@@ -108,14 +112,15 @@ function materialRun(overrides: Partial<WithId<ContentRun>> = {}): WithId<Conten
 }
 
 describe('content run creation', () => {
-  it('persists the selected quality policy while leaving legacy requests baseline by omission', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const baseline = await createQuestionGenerationRun(input);
-    const pilot = await createQuestionGenerationRun({ ...input, qualityPolicy: 'grounded-memory-v1' });
-    expect(baseline.input).not.toHaveProperty('qualityPolicy');
-    expect(pilot.input.qualityPolicy).toBe('grounded-memory-v1');
-    expect(await getContentRun(pilot._id)).toMatchObject({ input: { qualityPolicy: 'grounded-memory-v1' } });
+  it('records no retired quality-policy or protocol selector on a new run', async () => {
+    const run = await createQuestionGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq',
+      models: { embedding: 'embed', generator: 'gen', reviewer: 'review' } });
+    const stored = await getContentRun(run._id);
+    for (const field of ['qualityPolicy', 'sourceProvenance', 'answerabilityProtocol', 'taskDemandProtocol', 'exactBankProtocol',
+      'taskRetrievalProtocol', 'authoringPromptProtocol', 'numericReviewProtocol', 'exclusionReviewProtocol', 'reviewRepairProtocol']) {
+      expect(run.input).not.toHaveProperty(field);
+      expect(stored?.input).not.toHaveProperty(field);
+    }
   });
   it('creates distinct durable ids for identical material requests', async () => {
     const input = {
@@ -152,6 +157,35 @@ describe('content run creation', () => {
 });
 
 describe('content run compare-and-set updates', () => {
+  it('atomically gives one duplicate structure worker ownership and publishes only the winning start', async () => {
+    const run = await createStructureGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', options: { materialIds: [new ObjectId().toHexString()] } });
+    const listener = jest.fn(); const unsubscribe = subscribeToCourseContentRuns(run.courseId, listener);
+    const results = await Promise.all([claimStructureGenerationRun(run._id), claimStructureGenerationRun(run._id)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(results.filter(row => row === null)).toHaveLength(1);
+    const stored = await getContentRun(run._id);
+    expect(stored).toMatchObject({ status: 'running', revision: 1, startedAt: expect.any(Date) });
+    expect(stored!.events.filter(event => event.status === 'running')).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(findOneAndUpdate).toHaveBeenCalledWith(expect.objectContaining({ _id: run._id, kind: 'structure-generation', status: 'queued', revision: 0 }),
+      expect.anything(), { returnDocument: 'after' });
+    expect(await claimStructureGenerationRun(run._id)).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('does not claim missing, non-structure or terminal work', async () => {
+    expect(await claimStructureGenerationRun(new ObjectId())).toBeNull();
+    const material = materialRun(); docs.push(material);
+    expect(await claimStructureGenerationRun(material._id)).toBeNull();
+    for (const status of ['running', 'failed', 'completed'] as const) {
+      const run = await createStructureGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', options: { materialIds: [new ObjectId().toHexString()] } });
+      const stored = docs.find(row => row._id.equals(run._id))!; stored.status = status;
+      expect(await claimStructureGenerationRun(run._id)).toBeNull();
+    }
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('persists the snapshot/event before notifying a course subscriber', async () => {
     const run = materialRun();
     docs.push(run);
@@ -368,4 +402,25 @@ it('persists streamed previews before publishing without evicting stage history 
   await expect(updateContentRun(run._id, { stage: 'analyzing' })).rejects.toThrow('content-run-conflict');
   await endGenerationRun(run.courseId, run._id);
   await expect(updateContentRun(run._id, { structurePreview: { themes: [] } })).rejects.toThrow('content-run-conflict');
+});
+
+
+it('preserves an indexed source when only advisory classification was interrupted', async () => {
+  const run = materialRun({ status: 'running', stage: 'classifying' }); docs.push(run);
+  if (run.kind !== 'material-ingest') throw new Error('Expected material fixture.');
+  const updateOne = jest.fn();
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue({ _id: run.input.materialId, activeRunId: run._id, status: 'ready' }), updateOne, updateMany: jest.fn() } as never);
+  jest.mocked(getMaterialSourceReadiness).mockResolvedValue({ ready: true } as never);
+  await reconcileContentRuns();
+  expect(updateOne).not.toHaveBeenCalled();
+  expect((await getContentRun(run._id))?.status).toBe('failed');
+});
+
+it('enables retry for an interrupted upload without a complete indexed manifest', async () => {
+  const run = materialRun({ status: 'running', stage: 'embedding' }); docs.push(run);
+  if (run.kind !== 'material-ingest') throw new Error('Expected material fixture.');
+  const updateOne = jest.fn().mockResolvedValue({ matchedCount: 1 });
+  jest.mocked(materialsCol).mockReturnValue({ findOne: jest.fn().mockResolvedValue({ _id: run.input.materialId, activeRunId: run._id, status: 'processing' }), updateOne, updateMany: jest.fn() } as never);
+  await reconcileContentRuns();
+  expect(updateOne).toHaveBeenCalledWith(expect.objectContaining({ activeRunId: run._id, status: 'processing' }), expect.objectContaining({ $set: expect.objectContaining({ status: 'failed' }), $unset: { sourceManifest: '' } }));
 });

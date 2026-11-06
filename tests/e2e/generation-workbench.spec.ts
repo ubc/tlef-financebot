@@ -27,7 +27,7 @@ async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 're
       if (!submissions.has(body.submissionId)) submissions.set(body.submissionId, submissions.size ? `batch${submissions.size}-` : 'r');
       const result = body.cells.map((cell: Record<string, unknown>, i: number) => {
         const runId = `${submissions.get(body.submissionId)}${i}`;
-        if (!runs.some(run => run._id === runId)) runs.push({ _id: runId, courseId: 'course', kind: 'question-generation', input: { loId: cell.loId, count: cell.count, type: cell.type, ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}) }, status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: cell.count, revision: 1, createdAt: new Date().toISOString(), result: { createdQuestionIds: [], failures: [] }, events: [{ at: new Date().toISOString(), stage: 'retrieving', status: 'running', completedUnits: 0, message: 'Retrieved relevant source passages.' }] });
+        if (!runs.some(run => run._id === runId)) runs.push({ _id: runId, courseId: 'course', kind: 'question-generation', input: { loId: cell.loId, count: cell.count, type: cell.type }, status: 'queued', stage: 'queued', completedUnits: 0, totalUnits: cell.count, revision: 1, createdAt: new Date().toISOString(), result: { createdQuestionIds: [], failures: [] }, events: [{ at: new Date().toISOString(), stage: 'retrieving', status: 'running', completedUnits: 0, message: 'Retrieved relevant source passages.' }] });
         return { ...cell, runId };
       });
       if (fail) return r.abort();
@@ -304,44 +304,8 @@ test('generation usage preserves zero, unknown components and model-call metadat
   expect((await new AxeBuilder({ page }).include('.gw-timeline').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
 });
 
-test('quality pilot defaults off, reaches every plan run and freezes its recovery snapshot', async ({ page }) => {
-  const state = await fixture(page);
-  const pilot = page.getByRole('checkbox', { name: 'Sources and question memory pilot', exact: true });
-  await expect(pilot).not.toBeChecked();
-  await expect(page.getByRole('complementary', { name: 'Batch summary' })).toContainText('Baseline');
-  await pilot.check();
-  await expect(page.getByRole('complementary', { name: 'Batch summary' })).toContainText('Sources and question memory pilot');
-  state.fail(true);
-  await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  await expect(page.getByRole('button', { name: 'Recover this batch' })).toBeVisible();
-  const first = state.calls[0];
-  expect(first.qualityPolicy).toBe('grounded-memory-v1');
-  state.fail(false); await state.open();
-  await page.getByRole('button', { name: 'Create a batch', exact: true }).click();
-  await expect(pilot).toBeChecked();
-  await expect(pilot).toBeDisabled();
-  await page.getByRole('button', { name: 'Generation activity', exact: true }).click();
-  await page.getByRole('button', { name: 'Recover this batch' }).click();
-  await expect(page.locator('.gw-run')).toHaveCount(1);
-  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
-  expect(state.calls[1]).toEqual(first);
-  expect(state.runs.every(run => (run.input as { qualityPolicy: string }).qualityPolicy === 'grounded-memory-v1')).toBe(true);
-});
-
-test('quality policy reaches the single generation API without changing omitted defaults', async ({ page }) => {
-  await fixture(page);
-  const requests: Array<Record<string, unknown>> = [];
-  await page.route('**/api/courses/course/generate', route => {
-    requests.push(route.request().postDataJSON());
-    return route.fulfill({ json: { runId: 'single' } });
-  });
-  await page.evaluate(async () => {
-    const api = await import('/js/api.js');
-    await api.generateQuestions('course', { loId: 'a', count: 1, qualityPolicy: 'grounded-memory-v1' });
-    await api.generateQuestions('course', { loId: 'a', count: 1 });
-  });
-  expect(requests).toEqual([{ loId: 'a', count: 1, qualityPolicy: 'grounded-memory-v1' }, { loId: 'a', count: 1 }]);
-});
+/** Historical v1/v2 pilot runs stay readable; new runs never record a policy. */
+const historicalPilot = (run: Record<string, unknown>) => Object.assign(run.input as Record<string, unknown>, { qualityPolicy: 'grounded-memory-v1' });
 
 const pilotEvidence = {
   id: 'frozen-evidence', parsingProvenance: 'unrecorded',
@@ -356,13 +320,11 @@ const pilotAssessment = {
   candidate: { type: 'mcq', stem: 'Which input belongs in CAPM: $R_f$ or total volatility?', options: [{ key: 'A', text: '$R_f$', role: 'correct', explanation: 'The risk-free return belongs in the formula.' }, { key: 'B', text: 'Total volatility', role: 'common-misconception', explanation: 'Total volatility does not replace beta.' }], contentHash: 'diagnostic-content-hash', truncated: true },
 };
 
-test('quality pilot shows withheld reasons, requested shortfall and bounded coverage after refresh', async ({ page }) => {
+test('historical pilot run shows withheld reasons, requested shortfall and bounded coverage after refresh', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const state = await fixture(page);
-  await page.getByRole('checkbox', { name: 'Sources and question memory pilot', exact: true }).check();
-  await page.screenshot({ path: '/tmp/financebot-quality-pilot-setup-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  const run = state.runs[0];
+  const run = state.runs[0]; historicalPilot(run);
   Object.assign(run, { status: 'failed', stage: 'reviewing', revision: 2, completedUnits: 1,
     result: { createdQuestionIds: [], failures: [{ item: 0, stage: 'reviewing', code: 'quality-withheld', message: pilotAssessment.reasons[0] }], quality: { policy: 'grounded-memory-v1', assessments: [pilotAssessment], evidence: pilotEvidence } } });
   await page.evaluate(value => (window as unknown as { emitRun: (run: unknown) => void }).emitRun(value), run);
@@ -393,16 +355,15 @@ test('quality pilot shows withheld reasons, requested shortfall and bounded cove
   await page.getByRole('button', { name: 'View steps', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Sources and question memory pilot');
   await expect(page.getByRole('dialog')).toContainText(pilotAssessment.reasons[0]);
-  await expect(page.getByRole('dialog').getByRole('link', { name: 'Download evaluation export' })).toHaveAttribute('href', `/api/courses/course/content-runs/${run._id}/evaluation-export`);
+  await expect(page.getByRole('dialog').getByRole('link', { name: 'Download evaluation export' })).toHaveCount(0);
   await page.getByRole('dialog').getByText('Inspect candidate snapshot', { exact: true }).click();
   await page.screenshot({ path: '/tmp/financebot-quality-pilot-candidate-mobile.png', fullPage: true });
 });
 
-test('quality pilot source failures provide recovery guidance rather than only internal codes', async ({ page }) => {
+test('historical pilot source failures provide recovery guidance rather than only internal codes', async ({ page }) => {
   const state = await fixture(page);
-  await page.getByRole('checkbox', { name: 'Sources and question memory pilot', exact: true }).check();
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  const run = state.runs[0];
+  const run = state.runs[0]; historicalPilot(run);
   const cases = [
     ['generation-evidence-stale-retrieval', 'Reprocess the assigned material'],
     ['generation-evidence-ingest-incomplete', 'Source processing is incomplete'],
@@ -422,11 +383,10 @@ test('quality pilot source failures provide recovery guidance rather than only i
   }
 });
 
-test('quality pilot exposes persisted evidence before assessments and does not infer a verdict', async ({ page }) => {
+test('historical pilot run exposes persisted evidence before assessments and does not infer a verdict', async ({ page }) => {
   const state = await fixture(page);
-  await page.getByRole('checkbox', { name: 'Sources and question memory pilot', exact: true }).check();
   await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
-  const run = state.runs[0];
+  const run = state.runs[0]; historicalPilot(run);
   Object.assign(run, { status: 'running', stage: 'reviewing', revision: 2, result: { createdQuestionIds: [], failures: [], quality: { policy: 'grounded-memory-v1', assessments: [], evidence: pilotEvidence } } });
   await page.evaluate(value => (window as unknown as { emitRun: (run: unknown) => void }).emitRun(value), run);
   const first = page.locator('.gw-run').first();

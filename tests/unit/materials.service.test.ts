@@ -11,6 +11,7 @@
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   materialsCol: jest.fn(),
   materialChunksCol: jest.fn(),
+  materialSourceProvenanceCol: jest.fn(),
 }));
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
 jest.mock('../../server/src/components/genai/chunking', () => ({ chunkText: jest.fn() }));
@@ -18,7 +19,12 @@ jest.mock('../../server/src/components/genai/embeddings', () => ({
   embed: jest.fn(),
   getEmbeddingDimension: jest.fn(),
 }));
-jest.mock('../../server/src/components/genai/document-parsing', () => ({ parseFile: jest.fn() }));
+jest.mock('../../server/src/components/genai/document-parsing', () => ({ parseFile: jest.fn(), parseFileWithReceipt: jest.fn() }));
+jest.mock('../../server/src/services/material-source-provenance.service', () => ({
+  ...jest.requireActual('../../server/src/services/material-source-provenance.service'),
+  prepareMaterialSourceProvenance: jest.fn(), assertMaterialProvenanceSourceCurrent: jest.fn(),
+  discardUnpublishedMaterialSourceProvenance: jest.fn(), readMaterialSourceProvenance: jest.fn(),
+}));
 jest.mock('../../server/src/components/qdrant', () => ({
   ensureCollection: jest.fn(),
   upsertPoints: jest.fn(),
@@ -37,6 +43,7 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { ObjectId } from 'mongodb';
 import type { UploadedFile } from '../../server/src/services/materials.service';
@@ -55,11 +62,13 @@ import {
   inferMaterialKind,
   updateMaterialKind,
 } from '../../server/src/services/materials.service';
-import { materialChunksCol, materialsCol } from '../../server/src/components/mongodb/collections';
+import { materialChunksCol, materialsCol, materialSourceProvenanceCol } from '../../server/src/components/mongodb/collections';
 import { enqueueJob } from '../../server/src/components/jobs';
 import { chunkText } from '../../server/src/components/genai/chunking';
 import { embed, getEmbeddingDimension } from '../../server/src/components/genai/embeddings';
-import { parseFile } from '../../server/src/components/genai/document-parsing';
+import { parseFile, parseFileWithReceipt } from '../../server/src/components/genai/document-parsing';
+import { prepareMaterialSourceProvenance, assertMaterialProvenanceSourceCurrent, discardUnpublishedMaterialSourceProvenance } from '../../server/src/services/material-source-provenance.service';
+import { hashSourceChunks } from '../../server/src/services/source-readiness.service';
 import { ensureCollection, upsertPoints, deletePointsByFilter } from '../../server/src/components/qdrant';
 import { classifyMaterial } from '../../server/src/services/classification.service';
 import {
@@ -70,10 +79,15 @@ import {
 } from '../../server/src/services/content-runs.service';
 
 const insertOne = jest.fn();
+const provenanceInsertOne = jest.fn();
 const findOne = jest.fn();
 const updateOne = jest.fn();
 
-function uploadedFile(originalname: string, filePath = `/uploads/${originalname}`): UploadedFile {
+const testUploadPaths: string[] = [];
+afterEach(async () => { await Promise.all(testUploadPaths.splice(0).map((filePath) => fs.rm(filePath, { force: true }))); });
+function uploadedFile(originalname: string, filePath = path.join(os.tmpdir(), `${randomUUID()}-${originalname}`)): UploadedFile {
+  writeFileSync(filePath, originalname);
+  testUploadPaths.push(filePath);
   return { originalname, path: filePath };
 }
 
@@ -112,6 +126,12 @@ const chunkProject = jest.fn(() => ({ toArray: chunkProjectToArray }));
 const chunkFind = jest.fn(() => ({ sort: jest.fn(() => ({ project: chunkProject })) }));
 
 beforeEach(() => {
+  jest.mocked(parseFileWithReceipt).mockImplementation(async (file, format) => ({ text: await parseFile(file, format) }));
+  jest.mocked(prepareMaterialSourceProvenance).mockReset();
+  jest.mocked(assertMaterialProvenanceSourceCurrent).mockReset();
+  jest.mocked(discardUnpublishedMaterialSourceProvenance).mockReset();
+  provenanceInsertOne.mockReset(); provenanceInsertOne.mockResolvedValue({ acknowledged: true });
+  jest.mocked(materialSourceProvenanceCol).mockReturnValue({ insertOne: provenanceInsertOne } as never);
   insertOne.mockReset();
   findOne.mockReset();
   updateOne.mockReset();
@@ -187,6 +207,19 @@ describe('createMaterials — format validation (IN-S04)', () => {
 });
 
 describe('createMaterials — independent processing (IN-S04)', () => {
+  it('persists a prelinked run on the first visible head before writing a receipt or enqueueing', async () => {
+    const onItem = jest.fn().mockImplementation(async (_index, material) => {
+      expect(material.activeRunId).toBeInstanceOf(ObjectId);
+      const persisted = insertOne.mock.calls[0]![0];
+      expect(persisted._id).toEqual(material._id);
+      expect(persisted.activeRunId).toEqual(material.activeRunId);
+      expect(jest.mocked(createMaterialIngestRun).mock.calls[0]![0].materialId).toEqual(material._id);
+      expect(enqueueJob).not.toHaveBeenCalled();
+    });
+    await createMaterials(new ObjectId(), [uploadedFile('prelinked.pdf')], 'instructor', undefined, onItem);
+    expect(onItem).toHaveBeenCalledTimes(1);
+    expect(enqueueJob).toHaveBeenCalledTimes(1);
+  });
   it('inserts one processing doc and enqueues one ingest job per file', async () => {
     const courseId = new ObjectId();
     const ids = [new ObjectId(), new ObjectId(), new ObjectId()];
@@ -233,11 +266,61 @@ describe('createMaterials — independent processing (IN-S04)', () => {
 
     expect(material).toMatchObject({ status: 'failed', error: 'run storage unavailable' });
     expect(material!.activeRunId).toBeUndefined();
-    expect(updateOne).toHaveBeenLastCalledWith(
-      { _id: material!._id },
-      { $set: { status: 'failed', error: 'run storage unavailable' }, $inc: { revision: 1 } },
-    );
+    expect(insertOne).toHaveBeenLastCalledWith(expect.objectContaining({ _id: material!._id, status: 'failed', error: 'run storage unavailable' }));
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('manual upload byte identity and reuse', () => {
+  it.each(['ready', 'processing', 'failed'])('reuses a %s canonical source and preserves instructor metadata without another job', async (status) => {
+    const courseId = new ObjectId();
+    const canonicalPath = path.join(os.tmpdir(), `${randomUUID()}.pdf`);
+    writeFileSync(canonicalPath, 'same bytes');
+    testUploadPaths.push(canonicalPath);
+    const redundant = uploadedFile('renamed.pdf');
+    await fs.writeFile(redundant.path, 'same bytes');
+    const current = materialFixture(new ObjectId(), courseId, 'original.pdf', { status, storagePath: canonicalPath, kind: 'solution', assignments: [{ themeId: new ObjectId() }], activeRunId: new ObjectId() });
+    findOne.mockResolvedValue(current);
+    const receipt = jest.fn().mockResolvedValue(undefined);
+    const [result] = await createMaterials(courseId, [redundant], 'instructor', undefined, receipt);
+    expect(result).toEqual(current);
+    expect(insertOne).not.toHaveBeenCalled();
+    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(createMaterialIngestRun).not.toHaveBeenCalled();
+    expect(receipt).toHaveBeenCalledWith(0, current, 'reused');
+    expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ courseId, canvasSource: { $exists: false }, deletedAt: { $exists: false }, 'uploadFingerprint.active': true, 'uploadFingerprint.format': 'pdf', 'uploadFingerprint.sha256': expect.stringMatching(/^[a-f0-9]{64}$/) }));
+    expect(updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: current._id }), { $addToSet: { uploadAliases: 'renamed.pdf' } });
+    await expect(fs.stat(redundant.path)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.readFile(canonicalPath, 'utf8')).resolves.toBe('same bytes');
+  });
+
+  it('uses the course-local unique-index winner in a concurrent duplicate insert', async () => {
+    const courseId = new ObjectId();
+    const file = uploadedFile('chapter.pdf');
+    const winner = materialFixture(new ObjectId(), courseId, 'chapter.pdf', { activeRunId: new ObjectId() });
+    findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+    insertOne.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: 11000 }));
+    const receipt = jest.fn().mockResolvedValue(undefined);
+    await expect(createMaterials(courseId, [file], 'instructor', undefined, receipt)).resolves.toEqual([winner]);
+    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(receipt).toHaveBeenCalledWith(0, winner, 'reused');
+    await expect(fs.stat(file.path)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps different bytes and never hashes/reuses Canvas imports', async () => {
+    const courseId = new ObjectId();
+    const first = uploadedFile('chapter.pdf');
+    const second = uploadedFile('chapter.pdf');
+    await fs.writeFile(second.path, 'changed teaching text');
+    findOne.mockResolvedValue(null);
+    await createMaterials(courseId, [first, second]);
+    const hashes = insertOne.mock.calls.map(([doc]) => doc.uploadFingerprint.sha256);
+    expect(hashes[0]).not.toBe(hashes[1]);
+    const canvasSource = { key: 'canvas-key', domain: 'canvas.ubc.ca', courseId: '1', fileId: '2' };
+    findOne.mockClear();
+    await createMaterials(courseId, [{ originalname: 'canvas.pdf', path: '/nonexistent/canvas-file.pdf' }], 'instructor', canvasSource);
+    expect(findOne).not.toHaveBeenCalled();
+    expect(insertOne.mock.calls.at(-1)?.[0]).not.toHaveProperty('uploadFingerprint');
   });
 });
 
@@ -259,6 +342,82 @@ describe('createUrlMaterial (IN-S04)', () => {
 });
 
 describe('ingestMaterial — success path (IN-S04)', () => {
+  it('publishes private PDF sidecar, exact chunk locators and the manifest pointer together after external indexing', async () => {
+    const courseId = new ObjectId(), materialId = new ObjectId(), provenanceId = new ObjectId();
+    const material = materialFixture(materialId, courseId, 'notes.pdf');
+    const receipt = { version: 'synthetic-boundary-receipt' } as never;
+    const sourceProvenance = { provenanceId: provenanceId.toHexString(), locator: { status: 'unavailable', reason: 'Synthetic boundary fixture.' } } as never;
+    const record = { _id: provenanceId, courseId, materialId, receipt, rawTextStoragePath: '/private/synthetic-sidecar.txt', sourceTextHash: hashSourceChunks([{ index: 0, text: 'exact original text' }]), chunkCount: 1,
+      chunkBindings: { version: 'full-chunk-provenance-v1' as const, entries: [], sha256: 'synthetic mocked boundary, not validated provenance' }, createdAt: new Date() };
+    findOne.mockResolvedValue(material);
+    jest.mocked(parseFileWithReceipt).mockResolvedValueOnce({ text: 'exact original text', receipt });
+    jest.mocked(prepareMaterialSourceProvenance).mockResolvedValueOnce({ record, chunks: [sourceProvenance] });
+    jest.mocked(chunkText).mockResolvedValueOnce([{ text: 'exact original text', metadata: { preserved: 'toolkit metadata' } }] as never);
+    jest.mocked(embed).mockImplementationOnce(async () => {
+      expect(chunkInsertMany).not.toHaveBeenCalled(); expect(provenanceInsertOne).not.toHaveBeenCalled();
+      return [[1, 2, 3]];
+    });
+    await ingestMaterial(materialId.toHexString());
+    expect(parseFileWithReceipt).toHaveBeenCalledWith(material.storagePath, 'text');
+    expect(assertMaterialProvenanceSourceCurrent).toHaveBeenCalledWith(material.storagePath, receipt);
+    expect(provenanceInsertOne).toHaveBeenCalledWith(record);
+    expect(chunkInsertMany.mock.calls[0][0]).toEqual([expect.objectContaining({ text: 'exact original text', metadata: { preserved: 'toolkit metadata' }, sourceProvenance })]);
+    const publication = updateOne.mock.calls.find(([, update]) => update.$set?.status === 'ready')![1];
+    expect(publication.$set.sourceManifest).toMatchObject({ provenanceId, sourceTextHash: record.sourceTextHash, chunkCount: 1 });
+    expect(JSON.stringify(publication)).not.toContain('rawTextStoragePath');
+    expect(jest.mocked(upsertPoints).mock.invocationCallOrder[0]).toBeLessThan(provenanceInsertOne.mock.invocationCallOrder[0]);
+    expect(discardUnpublishedMaterialSourceProvenance).not.toHaveBeenCalled();
+  });
+
+  it.each(['embedding', 'source-recheck'])('cleans its unpublished PDF sidecar after %s failure without publishing locations', async failure => {
+    const materialId = new ObjectId(), courseId = new ObjectId();
+    const record = { _id: new ObjectId(), courseId, materialId, receipt: {}, rawTextStoragePath: '/private/synthetic-sidecar.txt', sourceTextHash: 'synthetic', chunkCount: 1, createdAt: new Date() } as never;
+    findOne.mockResolvedValue(materialFixture(materialId, courseId, 'notes.pdf'));
+    jest.mocked(parseFileWithReceipt).mockResolvedValueOnce({ text: 'source', receipt: {} as never });
+    jest.mocked(prepareMaterialSourceProvenance).mockResolvedValueOnce({ record, chunks: [{} as never] });
+    jest.mocked(chunkText).mockResolvedValueOnce([{ text: 'source', metadata: {} }] as never);
+    if (failure === 'embedding') jest.mocked(embed).mockRejectedValueOnce(new Error('embedding failed'));
+    else {
+      jest.mocked(embed).mockResolvedValueOnce([[1, 2, 3]]);
+      jest.mocked(assertMaterialProvenanceSourceCurrent).mockRejectedValueOnce(new Error('material-provenance-pdf-changed'));
+    }
+    await ingestMaterial(materialId.toHexString());
+    expect(discardUnpublishedMaterialSourceProvenance).toHaveBeenCalledWith(record);
+    expect(chunkInsertMany).not.toHaveBeenCalled(); expect(provenanceInsertOne).not.toHaveBeenCalled();
+    expect(updateOne.mock.calls.some(([, update]) => update.$set?.status === 'ready')).toBe(false);
+  });
+
+  it('publishes chunks and a validated manifest before advisory classification, without making interruption a source failure', async () => {
+    const courseId = new ObjectId(), materialId = new ObjectId(), runId = new ObjectId();
+    findOne.mockResolvedValue(materialFixture(materialId, courseId, 'notes.pdf', { activeRunId: runId }));
+    jest.mocked(parseFile).mockResolvedValue('full source');
+    jest.mocked(chunkText).mockResolvedValue([{ text: 'full source', metadata: {} }] as never);
+    jest.mocked(embed).mockResolvedValue([[1, 2, 3]]);
+    jest.mocked(classifyMaterial).mockImplementationOnce(async () => {
+      expect(chunkInsertMany).toHaveBeenCalled();
+      expect(updateOne.mock.calls.find(([, update]) => update.$set?.status === 'ready')?.[1].$set.sourceManifest).toMatchObject({ chunkCount: 1, indexedCount: 1, sourceTextHash: expect.stringMatching(/^[a-f0-9]{64}$/), ingestRunId: runId });
+      throw new Error('server restarted during classification');
+    });
+    jest.mocked(updateContentRun).mockImplementation(async (_id, update) => {
+      if (update.warning || update.status === 'completed') throw new Error('server restarted');
+      return {} as never;
+    });
+    await ingestMaterial(materialId.toHexString(), runId.toHexString());
+    expect(updateOne.mock.calls.some(([, update]) => update.$set?.status === 'failed')).toBe(false);
+    expect(failContentRun).toHaveBeenCalled();
+  });
+
+  it('withholds incomplete embedding results without publishing chunks or a ready manifest', async () => {
+    const materialId = new ObjectId();
+    findOne.mockResolvedValue(materialFixture(materialId, new ObjectId(), 'notes.pdf'));
+    jest.mocked(parseFile).mockResolvedValue('full text');
+    jest.mocked(chunkText).mockResolvedValue([{ text: 'first chunk' }, { text: 'second chunk' }] as never);
+    jest.mocked(embed).mockResolvedValue([[1, 2, 3]]);
+    await ingestMaterial(materialId.toHexString());
+    expect(chunkInsertMany).not.toHaveBeenCalled();
+    expect(upsertPoints).not.toHaveBeenCalled();
+    expect(updateOne).toHaveBeenLastCalledWith(expect.any(Object), expect.objectContaining({ $set: { status: 'failed', error: 'material-embedding-incomplete' }, $unset: { sourceManifest: '' } }));
+  });
   it('parses, chunks, embeds, and upserts into the per-course collection, then marks ready', async () => {
     const courseId = new ObjectId();
     const materialId = new ObjectId();
@@ -301,7 +460,7 @@ describe('ingestMaterial — success path (IN-S04)', () => {
       jest.mocked(upsertPoints).mock.invocationCallOrder[0]!,
     );
 
-    const [filter, update] = updateOne.mock.calls[0];
+    const [filter, update] = updateOne.mock.calls.find(([, write]) => write.$set?.status === 'ready')!;
     expect(filter).toEqual({ _id: materialId, deletedAt: { $exists: false } });
     expect(update.$set.status).toBe('ready');
     // IN-S06: the first ~2000 chars are persisted as `excerpt`, and the
@@ -388,7 +547,7 @@ describe('ingestMaterial — success path (IN-S04)', () => {
 
     expect(updateOne).toHaveBeenLastCalledWith(
       { _id: materialId, activeRunId: runId },
-      { $set: { status: 'failed', error: 'corrupt pdf with arbitrary detail' }, $inc: { revision: 1 } },
+      { $set: { status: 'failed', error: 'corrupt pdf with arbitrary detail' }, $unset: { sourceManifest: '' }, $inc: { revision: 1 } },
     );
     expect(failContentRun).toHaveBeenCalledWith(
       runId,
@@ -419,7 +578,7 @@ describe('ingestMaterial — failure isolation (IN-S04)', () => {
 
     await expect(ingestMaterial(materialId.toString())).resolves.toBeUndefined();
 
-    const [filter, update] = updateOne.mock.calls[0];
+    const [filter, update] = updateOne.mock.calls.find(([, write]) => write.$set?.status === 'failed')!;
     expect(filter).toEqual({ _id: materialId });
     expect(update.$set.status).toBe('failed');
     expect(update.$set.error).toBe('corrupt pdf');
@@ -479,7 +638,7 @@ describe('ensureMaterialsCollection — concurrent ingests for the SAME new cour
     expect(ensureCollection).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, 3);
 
     const statuses = updateOne.mock.calls.map(([, update]) => update.$set.status);
-    expect(statuses).toEqual(['ready', 'ready']);
+    expect(statuses.filter((status) => status === 'ready')).toEqual(['ready', 'ready']);
   });
 });
 
@@ -908,8 +1067,8 @@ describe('ingestMaterial — .txt direct read (ruled decision, uncovered branch)
   });
 });
 
-describe('ingestMaterial — zero chunks (clean replacement)', () => {
-  it('deletes any stale prior vectors, skips embed/upsert, and marks ready', async () => {
+describe('ingestMaterial — empty source readiness', () => {
+  it('rejects empty extracted text rather than publishing a ready source with no evidence', async () => {
     const materialId = new ObjectId();
     const courseId = new ObjectId();
     findOne.mockResolvedValue(materialFixture(materialId, courseId, 'empty.pdf'));
@@ -919,12 +1078,10 @@ describe('ingestMaterial — zero chunks (clean replacement)', () => {
     await ingestMaterial(materialId.toString());
 
     expect(embed).not.toHaveBeenCalled();
-    expect(ensureCollection).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, 3);
-    expect(deletePointsByFilter).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, {
-      must: [{ key: 'materialId', match: { value: materialId.toString() } }],
-    });
+    expect(ensureCollection).not.toHaveBeenCalled();
     expect(upsertPoints).not.toHaveBeenCalled();
-    expect(updateOne.mock.calls[0]?.[1].$set.status).toBe('ready');
+    expect(updateOne.mock.calls[0]?.[1].$set).toEqual({ status: 'failed', error: 'material-source-empty' });
+    expect(updateOne.mock.calls[0]?.[1].$unset).toEqual({ sourceManifest: '' });
   });
 });
 
@@ -1024,7 +1181,7 @@ describe('retryMaterial', () => {
     expect(result).toBe(updated);
     const [filter, update, options] = findOneAndUpdate.mock.calls[0]!;
     expect(filter).toEqual({ _id: materialId, status: 'failed' });
-    expect(update).toEqual({ $set: { status: 'processing', activeRunId: runId }, $unset: { error: '' }, $inc: { revision: 1 } });
+    expect(update).toEqual({ $set: { status: 'processing', activeRunId: runId }, $unset: { error: '', sourceManifest: '' }, $inc: { revision: 1 } });
     expect(options).toEqual({ returnDocument: 'after' });
     expect(enqueueJob).toHaveBeenCalledWith('material.ingest', { runId: runId.toString() });
   });
@@ -1088,7 +1245,7 @@ describe('knowledge workspace material lifecycle', () => {
 
     expect(findOneAndUpdate).toHaveBeenCalledWith(
       { _id: materialId, courseId, deletedAt: { $exists: false } },
-      { $set: { deletedAt: expect.any(Date), deletedBy: 'PUID-INSTR' }, $inc: { revision: 1 } },
+      { $set: { deletedAt: expect.any(Date), deletedBy: 'PUID-INSTR', 'uploadFingerprint.active': false }, $inc: { revision: 1 } },
       { returnDocument: 'after' },
     );
     expect(deletePointsByFilter).toHaveBeenCalledWith(`course-${courseId.toHexString()}`, {
@@ -1115,7 +1272,7 @@ describe('knowledge workspace material lifecycle', () => {
       { _id: materialId, courseId, deletedAt },
       {
         $set: { status: 'processing', activeRunId: runId },
-        $unset: { deletedAt: '', deletedBy: '', error: '' },
+        $unset: { deletedAt: '', deletedBy: '', error: '', sourceManifest: '' },
         $inc: { revision: 1 },
       },
       { returnDocument: 'after' },
@@ -1135,6 +1292,7 @@ describe('knowledge workspace material lifecycle', () => {
     await expect(getMaterialWorkspaceDetail(courseId, material._id)).resolves.toEqual({
       material: { ...material, kind: 'other' },
       chunks: [{ index: 0, text: 'Evidence', characterCount: 8 }],
+      sourceProvenance: { status: 'unavailable', reason: 'PDF parse provenance was not recorded or is no longer current. Physical pages are unavailable.' },
     });
   });
 });

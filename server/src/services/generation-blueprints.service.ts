@@ -1,5 +1,4 @@
 import type { ObjectId, WithId } from 'mongodb';
-import type { GenerationQualityPolicy } from '../types/generation-quality';
 import {
   generationBlueprintsCol,
   losCol,
@@ -12,10 +11,11 @@ import type {
 } from '../types/domain';
 import { getCourseContentRun } from './content-runs.service';
 import { enqueueGenerationRun } from './generation.service';
+import { getPlatformSettings } from './admin.service';
 import {
-  configuredGenerationModels,
   persistedModels,
   resolvedFromPersisted,
+  stepModelsFrom,
 } from './step-models';
 
 export interface GenerationBlueprintInput {
@@ -23,7 +23,6 @@ export interface GenerationBlueprintInput {
   loId: ObjectId;
   count: number;
   type: QuestionType;
-  qualityPolicy?: GenerationQualityPolicy;
   difficulty?: Difficulty;
   prompt?: string;
   materialIds?: ObjectId[];
@@ -70,17 +69,18 @@ export async function createGenerationBlueprint(
 ): Promise<WithId<GenerationBlueprint>> {
   await assertBlueprintScope(courseId, input);
   const now = new Date();
+  const modelSnapshot = stepModelsFrom(await getPlatformSettings(courseId));
   const doc: GenerationBlueprint = {
     courseId,
     name: input.name,
     loId: input.loId,
     count: input.count,
     type: input.type,
-    ...(input.qualityPolicy ? { qualityPolicy: input.qualityPolicy } : {}),
     ...(input.difficulty ? { difficulty: input.difficulty } : {}),
     ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
     ...(input.materialIds?.length ? { materialIds: input.materialIds } : {}),
-    models: persistedModels(configuredGenerationModels()),
+    models: persistedModels(modelSnapshot),
+    modelSnapshot,
     createdBy: byPuid,
     createdAt: now,
     updatedAt: now,
@@ -106,7 +106,6 @@ export async function updateGenerationBlueprint(
     loId: patch.loId ?? current.loId,
     count: patch.count ?? current.count,
     type: patch.type ?? current.type,
-    qualityPolicy: patch.qualityPolicy ?? current.qualityPolicy,
     difficulty: patch.difficulty ?? current.difficulty,
     prompt: patch.prompt ?? current.prompt,
     materialIds: patch.materialIds ?? current.materialIds,
@@ -123,7 +122,6 @@ export async function updateGenerationBlueprint(
           loId: next.loId,
           count: next.count,
           type: next.type,
-          ...(next.qualityPolicy ? { qualityPolicy: next.qualityPolicy } : {}),
           ...(next.difficulty ? { difficulty: next.difficulty } : {}),
           ...(next.prompt !== undefined ? { prompt: next.prompt } : {}),
           ...(next.materialIds?.length ? { materialIds: next.materialIds } : {}),
@@ -152,7 +150,6 @@ export async function enqueueBlueprintRun(
   courseId: ObjectId,
   blueprintId: ObjectId,
   byPuid: string,
-  qualityPolicy?: GenerationQualityPolicy,
 ): Promise<ObjectId> {
   const blueprint = await generationBlueprintsCol().findOne({ _id: blueprintId, courseId });
   if (!blueprint) throw new Error('generation-blueprint-not-found');
@@ -161,11 +158,10 @@ export async function enqueueBlueprintRun(
     loId: blueprint.loId,
     count: blueprint.count,
     type: blueprint.type,
-    ...(qualityPolicy ?? blueprint.qualityPolicy ? { qualityPolicy: qualityPolicy ?? blueprint.qualityPolicy } : {}),
     ...(blueprint.difficulty ? { difficulty: blueprint.difficulty } : {}),
     ...(blueprint.prompt !== undefined ? { prompt: blueprint.prompt } : {}),
     byPuid,
-    models: resolvedFromPersisted(blueprint.models),
+    models: blueprint.modelSnapshot ?? resolvedFromPersisted(blueprint.models, await getPlatformSettings()),
     blueprintId,
     ...(blueprint.materialIds ? { pinnedMaterialIds: blueprint.materialIds } : {}),
   });
@@ -188,15 +184,12 @@ export async function retryGenerationRun(
     ...(run.input.secondaryLoIds?.length ? { secondaryLoIds: run.input.secondaryLoIds } : {}),
     count: run.input.count,
     type: run.input.type,
-    ...(run.input.qualityPolicy ? { qualityPolicy: run.input.qualityPolicy } : {}),
     ...(run.input.kind ? { kind: run.input.kind } : {}),
     ...(run.input.difficulty ? { difficulty: run.input.difficulty } : {}),
     ...(run.input.hardnessMove ? { hardnessMove: run.input.hardnessMove } : {}),
     ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
     byPuid,
-    // Model ids only: enqueue persists ids, and the job recovers the admin's
-    // per-step parameters from the CURRENT settings at execution time.
-    models: resolvedFromPersisted(run.input.models),
+    models: run.input.modelSnapshot ?? resolvedFromPersisted(run.input.models, await getPlatformSettings()),
     ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
     retryOfRunId: runId,
     ...(run.grounding?.allowedMaterialIds

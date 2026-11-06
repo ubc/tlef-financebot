@@ -26,6 +26,7 @@ export default tseslint.config(
       'playwright-report*/**',
       'test-results/**',
       'artifacts/**', // Archived prototypes, screenshots and local acceptance reports.
+      'audit-results/**', // Ignored run receipts and one-off local evidence inspection.
       '.claude/worktrees/**',
     ],
   },

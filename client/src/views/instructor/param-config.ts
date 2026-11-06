@@ -19,6 +19,7 @@ import { runButtonAction } from '../../action-state.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import { attachTutorial } from '../../tutorials.js';
+import { numericVerificationSummary } from '../../numeric-verification-summary.js';
 import type { RouteParams } from '../../router.js';
 
 function navigate(path: string): void {
@@ -331,8 +332,7 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
   }
   renderDerived();
 
-  /** The single signal telling an instructor whether students can see this
-   * question: absent proof is the numeric gate's refusal condition. */
+  /** Show the saved numerical checks separately from question approval. */
   function renderVerification(result?: { verification?: unknown; verificationError?: string }): void {
     if (!result) {
       verificationSlot.replaceChildren();
@@ -349,11 +349,18 @@ async function renderParamConfigInner(outlet: HTMLElement, questionId: string, f
       );
       return;
     }
+    const summary = numericVerificationSummary(result.verification);
+    if (!summary) {
+      verificationSlot.replaceChildren(
+        el('p', { class: 'form-field__help', role: 'status', text: 'No numerical verification proof is recorded for this version.' }),
+      );
+      return;
+    }
     verificationSlot.replaceChildren(
       el(
         'div',
         { class: 'verification-banner verification-banner--ok', role: 'status' },
-        'Verified across 100 sample draws. Students can be served this question once it is approved.',
+        summary,
       ),
     );
   }

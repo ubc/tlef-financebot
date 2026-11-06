@@ -1,4 +1,9 @@
+import type { StructureConsolidationCheckpoint, StructureConsolidationDispatch, StructureConsolidationNativeAttempt } from '../../types/structure-consolidation-runtime';
 import type { CoursePeopleAccess } from '../../types/course-people';
+import type { MaterialUploadBatch } from '../../types/material-upload';
+import type { SourceEvidenceExtraction } from '../../types/source-evidence';
+import type { StructureReviewCheckpoint, StructureReviewProgress, StructureReviewAttempt } from '../../types/structure-review';
+import type { StructureRepairBranch } from '../../types/structure-repair';
 import type { ModelCallReceipt, ModelUsageSession } from '../../types/model-usage';
 import type { BuilderExam, ExamPublication, ExamCandidate, ExamBuildRun, AssessmentAttempt } from '../../types/exam-builder';
 import type { CoursePeopleImport } from '../../types/people-import';
@@ -17,6 +22,7 @@ import type {
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
   TutorialProgress,
+  QuestionEmbedding,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -70,6 +76,17 @@ export const modelCallReceiptsCol = (): Collection<ModelCallReceipt> => getDb().
 export const modelUsageSessionsCol = (): Collection<ModelUsageSession> => getDb().collection<ModelUsageSession>('modelUsageSessions');
 export const registrationCodeBatchesCol = (): Collection<CourseRegistrationCodeBatch> => getDb().collection<CourseRegistrationCodeBatch>('courseRegistrationCodeBatches');
 
+export const materialUploadBatchesCol = (): Collection<MaterialUploadBatch> => getDb().collection<MaterialUploadBatch>('materialUploadBatches');
+export const sourceEvidenceExtractionsCol = (): Collection<SourceEvidenceExtraction> => getDb().collection<SourceEvidenceExtraction>('sourceEvidenceExtractions');
+export const structureReviewCheckpointsCol = (): Collection<StructureReviewCheckpoint> => getDb().collection<StructureReviewCheckpoint>('structureReviewCheckpoints');
+export const structureReviewProgressCol = (): Collection<StructureReviewProgress> => getDb().collection<StructureReviewProgress>('structureReviewProgress');
+export const structureReviewAttemptsCol = (): Collection<StructureReviewAttempt> => getDb().collection<StructureReviewAttempt>('structureReviewAttempts');
+export const structureRepairBranchesCol = (): Collection<StructureRepairBranch> => getDb().collection<StructureRepairBranch>('structureRepairBranches');
+
+export const structureConsolidationsCol = (): Collection<StructureConsolidationCheckpoint> => getDb().collection('structureConsolidations');
+export const structureConsolidationDispatchesCol = (): Collection<StructureConsolidationDispatch> => getDb().collection('structureConsolidationDispatches');
+export const structureConsolidationNativeCol = (): Collection<StructureConsolidationNativeAttempt> => getDb().collection('structureConsolidationNative');
+
 export interface IndexSpec {
   collection: string;
   keys: IndexSpecification;
@@ -78,6 +95,19 @@ export interface IndexSpec {
 
 /** Exported for tests; applied by ensureIndexes(). */
 export const INDEX_SPECS: IndexSpec[] = [
+  { collection: 'structureConsolidations', keys: { parentCheckpointId: 1, parentCheckpointHash: 1, cycle: 1 }, options: { unique: true } },
+  { collection: 'structureConsolidations', keys: { courseId: 1, 'body.parentRunId': 1 } },
+  { collection: 'structureConsolidationDispatches', keys: { checkpointId: 1, sequence: 1 }, options: { unique: true } },
+  { collection: 'structureConsolidationDispatches', keys: { checkpointId: 1, dispatchId: 1 }, options: { unique: true } },
+  { collection: 'structureConsolidationNative', keys: { checkpointId: 1, sequence: 1 }, options: { unique: true } },
+  { collection: 'structureReviewCheckpoints', keys: { courseId: 1, runId: 1 }, options: { unique: true } },
+  { collection: 'structureReviewProgress', keys: { checkpointId: 1 }, options: { unique: true } },
+  { collection: 'structureReviewAttempts', keys: { checkpointId: 1, dispatchId: 1 }, options: { unique: true } },
+  { collection: 'contentRuns', keys: { 'structureReview.checkpointId': 1 }, options: { unique: true, name: 'one_structure_review_continuation', partialFilterExpression: { 'structureReview.parentRunId': { $exists: true } } } },
+  { collection: 'materialUploadBatches', keys: { courseId: 1, requestedBy: 1, requestId: 1 }, options: { unique: true } },
+  { collection: 'materialUploadBatches', keys: { courseId: 1, createdAt: -1 } },
+  { collection: 'sourceEvidenceExtractions', keys: { courseId: 1, cacheKey: 1 }, options: { unique: true } },
+  { collection: 'materials', keys: { courseId: 1, 'uploadFingerprint.sha256': 1, 'uploadFingerprint.format': 1 }, options: { unique: true, partialFilterExpression: { 'uploadFingerprint.active': true } } },
   { collection: 'courseRegistrationCodeBatches', keys: { 'codes.code': 1 }, options: { unique: true } },
   { collection: 'courseRegistrationCodeBatches', keys: { courseId: 1, requestId: 1 }, options: { unique: true } },
   { collection: 'courseRegistrationCodeBatches', keys: { 'codes.claimedByPuid': 1, 'codes.status': 1 } },
@@ -247,3 +277,23 @@ INDEX_SPECS.push(
   { collection: 'previewAssessmentAttempts', keys: { submittedAt: 1, deadline: 1 } },
   { collection: 'previewAssessmentAttempts', keys: { submittedAt: 1, 'window.expiresAt': 1 } },
 );
+
+// One bounded wording-only repair cycle for one exact source-reviewed proposal.
+INDEX_SPECS.push(
+  { collection: 'structureRepairBranches', keys: { 'input.parentCheckpointId': 1, 'input.parentCheckpointHash': 1, 'input.cycle': 1 }, options: { unique: true } },
+  { collection: 'structureRepairBranches', keys: { courseId: 1, runId: 1 }, options: { unique: true } },
+);
+
+// Immutable PDF parse receipts; large raw output stays in private course-owned files.
+import type { MaterialSourceProvenance } from '../../types/source-provenance';
+export const materialSourceProvenanceCol = (): Collection<MaterialSourceProvenance> => getDb().collection<MaterialSourceProvenance>('materialSourceProvenance');
+INDEX_SPECS.push(
+  { collection: 'materialSourceProvenance', keys: { courseId: 1, materialId: 1, createdAt: -1 } },
+);
+
+// Deterministic Bank coverage pages current course heads in immutable ID order.
+INDEX_SPECS.push({ collection: 'questions', keys: { courseId: 1, _id: 1 } });
+
+// Local embedding per question for informational nearest-neighbour similarity.
+export const questionEmbeddingsCol = (): Collection<QuestionEmbedding> => getDb().collection<QuestionEmbedding>('questionEmbeddings');
+INDEX_SPECS.push({ collection: 'questionEmbeddings', keys: { courseId: 1 } });

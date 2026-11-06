@@ -1,6 +1,7 @@
 import { env } from '../config/env';
 import type {
   PipelineStep,
+  GenerationModelSnapshot,
   PlatformSettings,
   QuestionGenerationRun,
   StepModelConfig,
@@ -25,7 +26,7 @@ import type {
  *
  * ⚠️ This is why the console must not pre-fill a temperature. A step config
  * spreads OVER this default (`{ temperature: DEFAULT, ...step }` in
- * `generateValidQuestion`), so persisting an explicit `0` for the generator —
+ * `generateAndCheck`), so persisting an explicit `0` for the generator —
  * which is what a pre-filled "0" box would save the moment anyone touched it —
  * silently turns batch diversity off and makes all three questions near
  * identical. Absent means "use the step's own default", and that is the only
@@ -36,18 +37,12 @@ export const STEP_TEMPERATURE_DEFAULTS: Readonly<Partial<Record<PipelineStep, nu
 });
 
 /** The three agents' models plus their per-step parameters, as used in memory. */
-export interface ResolvedStepModels {
-  embedding: string;
-  generator: StepModelConfig;
-  validator: StepModelConfig;
-  reviewer: StepModelConfig;
-}
+export type ResolvedStepModels = GenerationModelSnapshot;
 
 export function configuredGenerationModels(): ResolvedStepModels {
   return {
     embedding: env.embeddingsModel,
     generator: { model: env.llmModelGenerator },
-    validator: { model: env.llmModelValidator },
     reviewer: { model: env.llmModelReviewer },
   };
 }
@@ -57,7 +52,6 @@ export function stepModelsFrom(settings: PlatformSettings): ResolvedStepModels {
   return {
     embedding: env.embeddingsModel,
     generator: settings.models.generator,
-    validator: settings.models.validator,
     reviewer: settings.models.reviewer,
   };
 }
@@ -67,7 +61,6 @@ export function persistedModels(resolved: ResolvedStepModels): QuestionGeneratio
   return {
     embedding: resolved.embedding,
     generator: resolved.generator.model,
-    validator: resolved.validator.model,
     reviewer: resolved.reviewer.model,
   };
 }
@@ -75,7 +68,7 @@ export function persistedModels(resolved: ResolvedStepModels): QuestionGeneratio
 /**
  * Rebuild the in-memory shape from a stored run or blueprint.
  *
- * Runs record model ids only. Per-step parameters (reasoning effort,
+ * Historical runs may record model ids only. Per-step parameters (reasoning effort,
  * temperature) are recovered from the CURRENT platform settings when the
  * recorded model id matches the configured one -- see the `settings` param.
  * A run whose model has since been changed in the console runs that model
@@ -98,7 +91,6 @@ export function resolvedFromPersisted(
   return {
     embedding: models.embedding,
     generator: step(models.generator, settings?.models.generator),
-    validator: step(models.validator, settings?.models.validator),
     reviewer: step(models.reviewer, settings?.models.reviewer),
   };
 }

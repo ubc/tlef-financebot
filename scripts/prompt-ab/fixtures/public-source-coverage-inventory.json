@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "reviewStatus": "Agent-curated prospective smoke inventory; no instructor calibration or measured business improvement established.",
+  "catalogUrl": "https://pages.stern.nyu.edu/adamodar/New_Home_Page/ACF4E/appldCF4E.htm",
+  "benchmarkSources": {
+    "coldBatch": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "addition": 13
+  },
+  "units": "PDF page ordinals, not printed slide numbers.",
+  "limitations": [
+    "This is a small declared target inventory, not a claim to represent every instructional concept in 637 pages.",
+    "No teacher labels, active review minutes or performance improvement are fabricated.",
+    "Charts and formulas may lose information in text parsing; references identify manual inspection targets."
+  ],
+  "items": [
+    {
+      "id": "public-corpus-01",
+      "chapter": 2,
+      "pdfPage": 4,
+      "kind": "concept",
+      "target": "Explain the relationship between firm value, stockholder wealth and traded stock price under the stated market assumptions.",
+      "sourceTerms": [
+        "stockholder",
+        "efficient"
+      ],
+      "sourceSha256": "3a8965fca03e37ff370bd42420f6d6901fa4c466bc8faef1b1668e3cf32ddbae",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/mgtobj.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-02",
+      "chapter": 3,
+      "pdfPage": 6,
+      "kind": "concept",
+      "target": "Distinguish diversifiable return variance from the systematic risk rewarded in expected return.",
+      "sourceTerms": [
+        "variance",
+        "diversified",
+        "beta"
+      ],
+      "sourceSha256": "d769df65cae91467169ab59f11f402cb4a41a6656914aa63a6fc6f170a2cd2e8",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/risk%26ret.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-03",
+      "chapter": 3,
+      "pdfPage": 6,
+      "kind": "formula",
+      "target": "Apply the stated beta-based expected-return relation with the original risk-premium convention.",
+      "sourceTerms": [
+        "Expected Return",
+        "Riskfree",
+        "Beta"
+      ],
+      "sourceSha256": "d769df65cae91467169ab59f11f402cb4a41a6656914aa63a6fc6f170a2cd2e8",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/risk%26ret.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-04",
+      "chapter": 3,
+      "pdfPage": 13,
+      "kind": "condition",
+      "target": "Identify the marginal investor and the diversification assumptions attached to institutional or individual ownership.",
+      "sourceTerms": [
+        "Marginal Investor",
+        "diversification"
+      ],
+      "sourceSha256": "d769df65cae91467169ab59f11f402cb4a41a6656914aa63a6fc6f170a2cd2e8",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/risk%26ret.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-05",
+      "chapter": 4,
+      "pdfPage": 2,
+      "kind": "formula",
+      "target": "Identify the three CAPM inputs and preserve the market-minus-risk-free premium convention.",
+      "sourceTerms": [
+        "Riskfree Rate",
+        "Market Portfolio",
+        "beta"
+      ],
+      "sourceSha256": "c3dc67b7ab92a35bcc202d50a1f979170b99d0a2918afa77dd8193ecd2082860",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/hurdlerate.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-06",
+      "chapter": 5,
+      "pdfPage": 4,
+      "kind": "concept",
+      "target": "Use incremental cash flows and the timing of cash flows rather than accounting earnings.",
+      "sourceTerms": [
+        "incremental",
+        "earnings",
+        "earlier"
+      ],
+      "sourceSha256": "44694c2d6aef13888ac6c279ca71664c10f7f4f02ec49b94d3417730c4433dca",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/invretA.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-07",
+      "chapter": 5,
+      "pdfPage": 38,
+      "kind": "formula",
+      "target": "Distinguish the NPV and IRR acceptance rules and select the appropriate hurdle rate for firm versus equity cash flows.",
+      "sourceTerms": [
+        "Net Present Value",
+        "Internal Rate of Return",
+        "cost of equity"
+      ],
+      "sourceSha256": "44694c2d6aef13888ac6c279ca71664c10f7f4f02ec49b94d3417730c4433dca",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/invretA.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-08",
+      "chapter": 6,
+      "pdfPage": 14,
+      "kind": "concept",
+      "target": "Recognize opportunity costs, lost revenues, synergies and embedded options in project returns.",
+      "sourceTerms": [
+        "opportunity costs",
+        "synergies",
+        "options"
+      ],
+      "sourceSha256": "6f66d9b41919a1c558a41e434cd2ab544e992ac9a27b09734792c2e65627550a",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/invretB.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-09",
+      "chapter": 8,
+      "pdfPage": 19,
+      "kind": "condition",
+      "target": "State the taxes, default-risk and agency-cost assumptions under which financing mix leaves firm value and cost of capital unchanged.",
+      "sourceTerms": [
+        "no taxes",
+        "agency costs",
+        "not change"
+      ],
+      "sourceSha256": "64a1ed30497241e77741e7506ad05c3b847bffa211c7822c2dddeeb16c42f6ef",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/capstr.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-10",
+      "chapter": 9,
+      "pdfPage": 12,
+      "kind": "diagram",
+      "target": "Match debt cash-flow characteristics, maturity and currency to the financed assets; diagram details require visual confirmation.",
+      "sourceTerms": [
+        "Duration",
+        "Currency",
+        "cash flows"
+      ],
+      "sourceSha256": "e158967f0332caf34dc4d80eb640ad698ccfcb7fe648158bb1566fb664de683e",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/debtdesign.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-11",
+      "chapter": 10,
+      "pdfPage": 9,
+      "kind": "diagram",
+      "target": "Recognize that the dividend and buyback chart contains time-series composition; numerical chart readings need a source inspection.",
+      "sourceTerms": [
+        "Dividends",
+        "Buybacks",
+        "1988"
+      ],
+      "sourceSha256": "761ede92b0509f09c46a0275632271a1ff609d30ff83adf9d2a30002639e1809",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/divintro.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-12",
+      "chapter": 11,
+      "pdfPage": 7,
+      "kind": "formula",
+      "target": "Compute FCFE using stable debt-ratio funding of reinvestment and working-capital needs, using the slide notation.",
+      "sourceTerms": [
+        "Net Income",
+        "Debt Ratio",
+        "Working Capital",
+        "Free Cash"
+      ],
+      "sourceSha256": "9964b47b2d96b8383a07cf46b4cd67c40a2fe1509596b3516bcc7a9d9e760803",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/divassessment.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-13",
+      "chapter": 12,
+      "pdfPage": 31,
+      "kind": "formula",
+      "target": "Separate growth-period cash flows from terminal value and state the stable-growth restriction.",
+      "sourceTerms": [
+        "Terminal Value",
+        "Cash Flow Next Period",
+        "growth rate of the economy"
+      ],
+      "sourceSha256": "f4f790a1cedba90ed05c23f2944bafae6f050299b9c319a1b8bd5bf743e22880",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/valuation.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    },
+    {
+      "id": "public-corpus-14",
+      "chapter": 13,
+      "pdfPage": 6,
+      "kind": "notation",
+      "target": "Distinguish sample and population variance denominators and the relationship between variance and standard deviation.",
+      "sourceTerms": [
+        "variance",
+        "sample",
+        "square root"
+      ],
+      "sourceSha256": "7c1f54f3804d664888951ba777f300d79d3ce32896d720f1b749233a3a8d23b9",
+      "sourceUrl": "https://pages.stern.nyu.edu/~adamodar/pdfiles/acf4E/presentations/statisticsbasics.pdf",
+      "verification": "Full cited page text checked; CAPM page visually inspected. Diagram details remain a manual visual-review item."
+    }
+  ]
+}

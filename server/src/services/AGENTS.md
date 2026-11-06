@@ -1,5 +1,103 @@
 # AGENTS.md — server/src/services
 
+`question-generation/` is the two-call question pipeline (spec:
+`docs/superpowers/specs/2026-11-06-question-generation-pipeline-simplification-design.md`).
+`slots.ts` expands a request into slots with distinct assessment angles;
+`existing-stems.ts` loads up to 30 same-LO stems; `generator-prompt.ts` /
+`checker-prompt.ts` build the two prompts; `candidate.ts` parses and validates
+the generator output; `grounding.ts` resolves source refs; `pipeline.ts`
+orchestrates one generator call (usage stage `generation`) plus one checker call
+(step `reviewer`, usage stage `check`) per question, with `jsonRetry: false` and no
+retries. Every checked question is saved as a Draft with
+`agentDecision { decision, reasoning, roleAssessment, suggestions, suggestedDifficulty? }`;
+`regenerateQuestionVariant` returns an unsaved variant. Do not reintroduce quality
+policies, retry-on-reject or a separate validator step.
+`question-similarity.service.ts` embeds stem + correct option with fastembed into
+`questionEmbeddings`, stores `similarity { lo, topic, model, computedAt }` on each
+question head (nearest active question sharing an LO / topic), refreshes after
+generation and PATCH edits, and `rebuildCourseSimilarity` recomputes a course.
+Similarity is informational and never blocks a save.
+
+`structure-outline-consolidation` is an unreviewed proposal/obligation core with
+explicit stable IDs, predecessor lineage, source scope and old-credit duties.
+`structure-consolidation-parent.service` requires the caller's matching-course
+transaction and authenticates the latest terminal budget plus full production
+raw history, including exact failed-all-held parents. Its receipt grants no
+send, source-row reuse, child or Apply authority. Derive fresh-worker correction
+diagnostics exactly from checked raw logical failures; continuation retains
+its frozen synthesis receipt. Do not broaden ordinary completed Apply while
+fixing the failed-parent path. A separate durable child/checkpoint/worker and
+stable-ID finalization/Apply are still needed. The 735-test checkpoint is
+mechanical, with mocked storage/transactions and scripted semantic judgments.
+
+Keep `structure-outline-grounding` and `structure-outline-review` unchanged for
+the absent-selector historical contract. Fresh explicit capability reviews use
+the separate `structure-capability-*` adapters, full original/peer bindings,
+lazy stored prompts, same-attempt reciprocal correction and raw replay at
+continuation/transactional Apply. Candidate point definitions stay complete;
+private hashes/coordinates and peer internal extracted summaries are not model
+source evidence. Whole-review admission checks minimum native input/output/sends
+against the inherited allowance before its first review. Do not enable by
+default: actual142LO minimum exceeds its remaining budget. Old wording/coverage
+repair cannot consolidate new-policy parents. Scripted tests are not semantic
+or useful-yield acceptance.
+
+`structure-capability-packing` uses the shared full-packet renderer for bounded
+trial sizing, preserves a complete recursive fallback and chooses the greedy
+plan only when its complete reservation is smaller. Rebuild every final group
+with real hashes and exact native/JSON-correction measurements. Review groups
+may reorder, but final Topic/LO order and raw item/ID authority must remain exact.
+The explicit protocol hash binds the packing and plan-cache files; absence
+delegates before either path. `structure-capability-plan-cache` stores only
+pure completed plans, with exact ordered graph/input/code identity, cloned
+returns and four-entry/16M encoded-payload limits. It grants no source verdict,
+pair judgment, currentness, budget or transaction authority. A cold miss still
+computes a plan; warm CPU timings are not provider or database latency claims.
+
+A fully resolved source-ineligible peer cannot block an otherwise supported LO.
+Before this exception applies, replay every source finding through the unchanged
+legacy parser and require complete global source/comparison authority. Missing
+verdicts, invalid quotations and supported duplicates still withhold admission.
+Record exact source-finding/comparison hashes in the optional
+`resolved-source-ineligible-peers-v1` disclosure; omit it entirely when empty.
+Transactional Apply must recompute it from raw history, including after BSON
+round-trip. This removes a mechanical false hold, not a semantic model verdict.
+
+The Instructor outline-repair read projection and enqueue wrappers reuse the
+existing single-cycle engine. Safe GET rows include exact point quotes, original
+and proposed wording, findings, shortfalls and conservative allowance; they do
+not expose raw private model/checkpoint payloads. A completed child is not Apply
+authority. Repaired adoption must run inside a matching-course transaction and
+session-bound replay of parent/checkpoint/progress/branch/source, raw review
+history, old-credit preservation, budget and the full finalized result. Explicit
+malformed links cannot fall back to ordinary historical Apply. Keep intentional
+teacher edits, but return reviewed versus instructor-edited wording separately.
+See `OUTLINE-REPAIR-WORKSPACE-IMPLEMENTATION-2026-10-17.md`; scripted findings and
+UI states do not prove actual pedagogical recovery.
+
+Native PDF page-text observations are additive private-sidecar metadata. Fresh
+durable outline requests explicitly persist `native-page-text-observations-v1`;
+old absent retry/checkpoint selectors remain absent. `loadStructureCorpus`
+projects current sidecars into separate physical-page counts/ranges without
+changing chunk/raw text, source hashes, prompts, extraction IDs or corpus/cache
+fingerprints. Blank/sparse/present states at 120 non-whitespace UTF-16 units
+never classify visuals or grant teaching coverage, and mapped neighboring
+passages cannot clear them. Missing/invalid or size-omitted observations stay
+unavailable without failing otherwise valid text ingestion. Pure receipt checks
+perform no filesystem work inside authoring transactions. The ten-file replay
+is file-only, not a fresh live-ingest or generation-quality result; local OCR
+remains a separate unadmitted diagnostic. See the October 17 page-text
+observations implementation note in the quality design folder.
+
+`source-passages.ts` versions derived outline locators. New corpus receipts pin
+`line-boundary-v2`; missing historical policy resolves to `word-boundary-v1`.
+Unknown explicit policies fail rather than rebinding stored passage IDs. Cache
+keys continue to bind exact rendered prompts; policy metadata alone is excluded
+from identity. Final inventory, cache validation, catalog and resumed/repair
+work must resolve the receipt's own policy. Identical single-section prompts do
+not guarantee reuse when an enclosing batch key changes. These are structural
+source-integrity checks, not proof of table/chart interpretation.
+
 Supplemental enrollment lives in `registration-codes.service.ts`: one atomic
 Mongo batch insert per request UUID, one claimant per code through a conditional
 array update, and durable claimed-state recovery on session reload. Used codes
@@ -13,6 +111,50 @@ co-instructor invitations without guessing email from CWL. Read
 `docs/design/supplemental-enrollment/IMPLEMENTATION.md` before changing these paths.
 
 Business logic. Services sit between routes and components:
+
+Source coverage: `material-upload-batches`, `source-readiness` and
+`source-evidence-cache` own intended admission, original index integrity and
+exact source-local extraction reuse. `authoring-context` shares originals plus
+current question memory; `generation-catalog` uses cached knowledge only to
+locate original premises. `authoring-task-plan` persists independent tasks and
+immutable-version fingerprints. `authoring-execution` guards queued worker
+ownership. `authoring-commit` owns short course-fenced Mongo transactions and a
+topology audit; no model/embedding call may run inside one. V2 persistence is
+diagnostic-only without transaction support. Deletion tombstones block new
+authoring first writes. Read the October 13 generation-quality implementation
+before changing these services; never describe source traversal or valid quote
+IDs as semantic/teacher acceptance.
+
+Large final-outline review v2 separates source support from advisory topic fit.
+Only source judgments gate admission; grouping concerns stay visible without
+being relabelled as out-of-source wording. Individually valid review rows survive
+malformed neighbors; one bounded correction receives only unresolved known IDs
+and their exact allowed sources/evidence. Foreign identities and unresolved
+reviews remain explicit failures. Historical v1 receipts are never reinterpreted.
+Negative/uncertain new findings credit no coverage. Known model coverage claims
+remain only in a server-computed non-authoritative diagnostic; they cannot block
+valid siblings solely for an uncited original or become mapped points. Positive
+coverage still requires a cited own original, with precise point/source feedback
+for the existing bounded correction. Unknown/duplicate identities remain errors.
+
+`parameter-display` owns unchanged shared number rendering. Trusted numerical
+proofs/provenance are server-computed, never accepted from generator extras.
+
+`numeric-input-display` checks answers recomputed from visible inputs; admission
+proofs and every fresh draw use it. `assessment-numeric-admission` validates
+frozen private definitions or a recoverable pinned historical version before
+publication/new sittings. Never redraw/regrade historical active or submitted
+attempts, or expose private formulas through student/pre-submit Preview DTOs.
+Serving refuses after eight unsuccessful collision/precision redraws; it must
+never return an earlier known-unsafe draw. Fresh formula verification now retains
+100 samples and additionally enumerates every slot-entry tuple up to 256 total.
+Seeded and indexed draws must share exact range/value and derived arithmetic.
+`finite-slot-grid-v1` records full versus sampled scope; historical proofs are
+not upgraded, large/unsafe domains stay sampled, and entries need not be distinct
+or PRNG-reachable. A grid failure records its actual tuple, never a fake seed.
+The exact synthetic 135-entry regression catches a collision missed by the old
+70 unique sampled tuples; it is arithmetic evidence, not semantic/yield proof.
+See `FINITE-NUMERICAL-DOMAIN-2026-10-17.md` in the quality design folder.
 
 `people-import-parser.ts` parses manual Canvas CSV rosters with explicit Login ID
 and optional role/state/restriction columns. `people-import.service.ts` owns
@@ -78,7 +220,7 @@ objects directly.
   mismatches without writing, and creates only Draft question versions.
 - `option-order.service.ts` — one pure function, `shuffleOptions`: seeded
   Fisher-Yates over MCQ answer options with the keys relabelled by new position.
-  Called from `generateValidQuestion` (upstream of the validator and reviewer,
+  Called from `generateAndCheck` (upstream of the checker,
   whose prose cites options by letter) and from `createQuestion` (covering the
   import path). Callers that shuffled already pass `optionsAlreadyShuffled` so
   the order is not randomized twice.
@@ -166,7 +308,27 @@ original quote on the server), retries invalid batches in smaller sections, and 
 outline into a dedicated durable run preview. Counts default to AI choice; explicit
 counts are validated. Source/size failures never produce a silently partial outline.
 Coverage gaps and exclusions accompany the draft. `classification.suggestHierarchy`
-uses the same analyzer through its legacy read-only response shape.
+uses the same analyzer through its historical themes/assignments projection.
+
+Large organized outlines additionally review final LO wording against complete
+original sections resolved by exact primary/supporting passage identities.
+`structure-outline-grounding` validates one bound verdict per LO and retains only
+explicitly covered learning-point/material links. Unsupported/uncertain wording
+is withheld; partial and all-withheld receipts persist in run diagnostics before
+admission, including bounded schema-correction failures. Model support is not
+teacher acceptance. Do not infer pedagogical coverage from assigned IDs or
+replace source text with generated pack summaries during final review.
+
+Public outline Apply requires a completed durable run and selected source-LO
+indices; it rechecks the original/ingest fingerprint and intended batch/exclusions
+while allowing instructor wording edits. Advisory classification metadata revisions
+do not invalidate unchanged indexed originals. Replica/sharded Mongo uses the
+course transaction; standalone uses source pre/post checks plus assignment CAS,
+reports best-effort consistency, and returns an explicit conflict if writes may
+have partially completed. Internal manual application and manual hierarchy CRUD
+remain separate. The public legacy suggestion GET now retains a durable runId;
+internal actorless projection remains read-only. Review shows every exact support
+quote group and each passage disposition with its reason.
 
 Admin diagnostics lives in `admin-diagnostics.service.ts`: global, Admin-gated
 read models over request outcomes, existing change history, durable runs and
@@ -221,25 +383,6 @@ Agenda owners establish independent run scopes. Late completions update existing
 receipts only. Unknown usage is nullable; accounting errors never retry a model.
 `admin-workflow.service.ts` joins bounded operation/content-run records and
 material names, distinguishing recorded links from inferred time groupings.
-
-`generation-evidence.service.ts` resolves vector locators to original indexed
-source passages, adds immediate neighbors, hashes scoped source content, and
-rechecks material eligibility/currentness. `generation-memory.service.ts` reads
-pinned current Bank/Queue versions with bounded context and same-batch entries;
-exact fingerprints and lexical retrieval are aids, not semantic novelty proofs.
-`generation-quality.service.ts` adds an opt-in structured source/notation/task
-assessment, validates reference locations, and records bounded diagnostic output.
-The public tracked pipeline preserves `grounded-memory-v1` on runs/recipes/retry,
-withholds failed checks as visible shortfalls, and keeps existing numerical and
-approval gates. Baseline and private/transient generation retain their policies.
-Context rechecks do not provide a concurrent commit fence or teacher calibration.
-
-`generation-evaluation.service.ts` exports terminal public generation observations
-for offline review. It binds initial version-1 questions through course-owned
-heads and exact run/item provenance, uses recorded withheld snapshots, and keeps
-missing originals explicit. Safe usage rows and independent authoritative totals
-exclude actor/request/session identity. It never reconstructs historical source,
-LO, or starting-bank snapshots from current records or calls a model.
 
 
 ## Course People consolidation (2026-10-06)

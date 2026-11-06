@@ -1,4 +1,5 @@
 import { summarizeEvaluation } from '../../scripts/prompt-ab/evaluation/metrics';
+import { renderEvaluationReport } from '../../scripts/prompt-ab/evaluation/report';
 import { hashValue } from '../../scripts/prompt-ab/evaluation/schema';
 import type { EvaluationDataset, EvaluationQuestion, EvaluationRun, TeacherLabel } from '../../scripts/prompt-ab/evaluation/schema';
 import type { ResolvedReview } from '../../scripts/prompt-ab/evaluation/metrics';
@@ -45,14 +46,47 @@ function arm(data: EvaluationDataset, reviews: ResolvedReview[] = [], policy: Ev
 }
 
 describe('offline quality evaluation metrics', () => {
+  it('automatically compares baseline to v2 when it is the only pilot, preserving requested denominators', () => {
+    const data = dataset(); data.runs[1].policy = 'grounded-memory-v2'; data.runs[1].runId = 'v2-run';
+    const result = summarizeEvaluation(data, allReviews(data));
+    expect(result.comparison.pilotPolicy).toBe('grounded-memory-v2'); expect(result.comparison.eligiblePairs[0].pilotRunId).toBe('v2-run');
+    expect(result.arms.map(arm => arm.policy)).toEqual(['baseline', 'grounded-memory-v2']);
+    expect(result.comparison.pilot.requestedSlots).toBe(4); expect(renderEvaluationReport(result)).toContain('| Baseline | grounded-memory-v2 |');
+  });
+  it('requires an explicit pilot for mixed v1/v2 data and never pools usage, labels or eligible pairs', () => {
+    const data = dataset(); const v2 = structuredClone(data.runs[1]); v2.policy = 'grounded-memory-v2'; v2.runId = 'v2-run';
+    v2.usage = { ...v2.usage, inputTokens: 1000, outputTokens: 200, totalTokens: 1200 }; data.runs.push(v2);
+    expect(() => summarizeEvaluation(data, allReviews(data))).toThrow('v1 and v2 cannot be pooled');
+    const result = summarizeEvaluation(data, allReviews(data), { pilotPolicy: 'grounded-memory-v2' });
+    expect(result.arms).toHaveLength(3); expect(result.comparison.pilot.usage.totalTokens).toBe(1200);
+    expect(result.comparison.pilot.supply.acceptedIndependent).toBe(4); expect(result.comparison.pilot.requestedSlots).toBe(4);
+    expect(result.arms.find(arm => arm.policy === 'grounded-memory-v1')!.usage.totalTokens).toBe(120);
+    expect(result.comparison.eligiblePairs.map(pair => pair.pilotRunId)).toEqual(['v2-run']);
+    expect(result.comparison.otherPolicies).toEqual(['grounded-memory-v1']);
+  });
   it('keeps teacher labels absent instead of treating automatic eligibility as acceptance', () => {
     const result = summarizeEvaluation(dataset(), []);
     expect(result.arms[0].outcomes.saved).toBe(4);
     expect(result.arms[0].supply).toMatchObject({ acceptedIndependent: 0, provisionalUnmetIndependentSlots: 4, unresolvedSupplyLabels: 4 });
+    expect(result.arms[0].supply.acceptedIndependentPerRequested).toEqual({ numerator: 0, denominator: 4, value: null });
+    expect(result.arms[0].supply.acceptanceCoverage).toEqual({ knownSlots: 0, missingSlots: 4, status: 'unavailable', ratioBasis: 'unavailable' });
     expect(result.arms[0].issues.sourceScope).toMatchObject({ present: 0, absent: 0, uncertain: 0, unreviewed: 4 });
     expect(result.arms[0].reviewTime.recordedMinutes).toBeNull();
     expect(result.arms[0].usage.recordedTokensPerAcceptedIndependent).toBeNull();
     expect(result.comparison.teacherLabelsComplete).toBe(false);
+    expect(renderEvaluationReport(result)).toContain('Unavailable (0/4)');
+  });
+
+  it('keeps explicit blank teacher records unknown and reports a true zero only for resolved dispositions', () => {
+    const data = dataset();
+    const blank = data.runs[0].slots.map(slot => label('baseline', slot.item, {
+      sourceScope: null, notation: null, duplication: null, difficulty: null, answerQuality: null,
+      disposition: null, reviewMinutes: null, evidenceRefs: [], notes: '',
+    }));
+    expect(arm(data, blank).supply.acceptedIndependentPerRequested.value).toBeNull();
+    const rejected = data.runs[0].slots.map(slot => label('baseline', slot.item, { disposition: 'discarded' }));
+    expect(arm(data, rejected).supply.acceptedIndependentPerRequested).toEqual({ numerator: 0, denominator: 4, value: 0 });
+    expect(arm(data, rejected).supply.acceptanceCoverage).toEqual({ knownSlots: 4, missingSlots: 0, status: 'complete', ratioBasis: 'resolved-teacher-labels' });
   });
 
   it('uses manifest slots as fixed denominators and does not improve supply by suppressing output', () => {
@@ -64,6 +98,8 @@ describe('offline quality evaluation metrics', () => {
     const pilot = arm(data, reviews, 'grounded-memory-v1');
     expect(pilot.outcomes).toEqual({ saved: 1, withheld: 1, failed: 1, missing: 1 });
     expect(pilot.supply.acceptedIndependentPerRequested).toEqual({ numerator: 1, denominator: 4, value: 0.25 });
+    expect(pilot.supply.acceptanceCoverage).toEqual({ knownSlots: 1, missingSlots: 3, status: 'partial', ratioBasis: 'recorded-lower-bound' });
+    expect(renderEvaluationReport(summarizeEvaluation(data, reviews))).toContain('25.0% (1/4) recorded lower bound');
     expect(pilot.supply.provisionalUnmetIndependentSlots).toBe(3);
     expect(pilot.usage.totalTokens).toBe(120);
   });

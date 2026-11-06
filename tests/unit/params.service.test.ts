@@ -198,6 +198,7 @@ describe('params.service', () => {
     // X draws 1 or 2. B is the constant 2, so X=2 renders options A and B
     // identically ("2" vs "2") while X=1 is clean ("1" vs "2").
     const version = {
+      stem: '{{X}}',
       paramSlots: [{ name: 'X', min: 1, max: 2, step: 1 }],
       derivedValues: [
         { name: 'A', formula: 'X' },
@@ -238,24 +239,31 @@ describe('params.service', () => {
       warn.mockRestore();
     });
 
-    it('gives up after SERVE_DRAW_ATTEMPTS and serves the last draw anyway', async () => {
-      // A always equals B ("X" vs "X") — no reroll can fix it. Serving anyway
-      // is deliberate: never worse than the behaviour this replaces, and a
-      // question colliding on EVERY draw cannot hold a verification proof.
+    it('refuses delivery when every bounded draw has identical options', async () => {
       const hopeless = { ...version, derivedValues: [{ name: 'A', formula: 'X' }, { name: 'B', formula: 'X' }] };
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      let calls = 0;
-      const result = await drawCollisionFreeParams(hopeless, () => { calls += 1; return calls; });
-      expect(calls).toBe(SERVE_DRAW_ATTEMPTS);
-      expect(result.paramValues).toBeDefined();
-      expect(warn).toHaveBeenCalledTimes(SERVE_DRAW_ATTEMPTS);
-      warn.mockRestore();
+      const seedFn = jest.fn(() => 1);
+      try {
+        await expect(drawCollisionFreeParams(hopeless, seedFn)).rejects.toThrow('answer options display identically');
+        expect(seedFn).toHaveBeenCalledTimes(SERVE_DRAW_ATTEMPTS);
+        expect(warn).toHaveBeenCalledTimes(SERVE_DRAW_ATTEMPTS);
+      } finally { warn.mockRestore(); }
+    });
+
+    it('refuses repeated colliding seeds even when the parameter domain has a valid draw', async () => {
+      const { colliding } = await seedsFor();
+      const seedFn = jest.fn(() => colliding);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await expect(drawCollisionFreeParams(version, seedFn)).rejects.toThrow(`after ${SERVE_DRAW_ATTEMPTS} attempts`);
+        expect(seedFn).toHaveBeenCalledTimes(SERVE_DRAW_ATTEMPTS);
+      } finally { warn.mockRestore(); }
     });
 
     it('returns immediately for a conceptual question', async () => {
       const seedFn = jest.fn(() => 7);
       const result = await drawCollisionFreeParams(
-        { options: [option('A', 'Statement one'), option('B', 'Statement two')] },
+        { stem: 'Choose a statement.', options: [option('A', 'Statement one'), option('B', 'Statement two')] },
         seedFn,
       );
       expect(result.paramValues).toBeUndefined();

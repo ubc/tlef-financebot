@@ -4,6 +4,7 @@ import { ObjectId, type WithId } from 'mongodb';
 import { builderExamsCol, examCandidatesCol, examBuildRunsCol, examPublicationsCol, assessmentAttemptsCol, coursesCol, losCol, questionsCol, questionVersionsCol } from '../components/mongodb/collections';
 import type { BuilderExam, ExamSettings } from '../types/exam-builder';
 import { examError, freezeExamQuestion, QuestionVariantService } from './question-variant.service';
+import { frozenNumericalPaperProblem } from './assessment-numeric-admission.service';
 
 export async function requireExamCourse(courseId: ObjectId): Promise<void> {
   const course = await coursesCol().findOne({ _id: courseId });
@@ -164,6 +165,8 @@ export async function publishBuilderExam(courseId: ObjectId, examId: ObjectId, r
   await validateExamLos(courseId, exam.items.flatMap(i => i.loIds));
   if (await examBuildRunsCol().countDocuments({ courseId, examId, status: { $in: ['queued', 'running'] } })) examError('Finish or cancel active generation before publishing.');
   if (await assessmentAttemptsCol().countDocuments({ courseId, examId })) examError('Students have already started this exam. Duplicate it to publish another paper.');
+  const numericalProblem = await frozenNumericalPaperProblem(exam.items);
+  if (numericalProblem) examError(numericalProblem);
   for (const item of exam.items.filter(i => i.source === 'bank' || i.source === 'variant')) {
     const question = await questionsCol().findOne({ _id: new ObjectId(item.questionId!), courseId });
     const version = await questionVersionsCol().findOne({ _id: new ObjectId(item.versionId!), questionId: new ObjectId(item.questionId!) });

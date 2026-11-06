@@ -20,6 +20,8 @@ import {
   deactivateUser,
   removeRole,
   updatePlatformSettings,
+  defaultPlatformSettings,
+  normalizePlatformSettings,
   listAdminAccounts,
   listAdminCourses,
   listUsers,
@@ -212,13 +214,12 @@ describe('Phase 3 Admin essentials', () => {
     const base = {
       models: {
         generator: { model: 'gpt-5.4-nano' },
-        validator: { model: 'gpt-5.4-nano' },
         reviewer: { model: 'gpt-5.4-nano' },
         masteryEvaluator: { model: 'gpt-5.4-nano' },
         utility: { model: 'gpt-5.4-nano' },
       },
       costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+      featureFlags: { layer2Evaluator: true },
     };
     findPlatformSettings.mockResolvedValue({ _id: 'platform', ...base });
 
@@ -232,22 +233,12 @@ describe('Phase 3 Admin essentials', () => {
     expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'platform-settings.update' }));
   });
 
-  it('requires explicit quality-impact confirmation before disabling reviewer', async () => {
-    const patch = {
-      models: {
-        generator: { model: 'gpt-5.4-nano' },
-        validator: { model: 'gpt-5.4-nano' },
-        reviewer: { model: 'gpt-5.4-nano' },
-        masteryEvaluator: { model: 'gpt-5.4-nano' },
-        utility: { model: 'gpt-5.4-nano' },
-      },
-      costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { reviewerAgent: false, layer2Evaluator: true, retryOnReject: true },
-    };
-    findPlatformSettings.mockResolvedValue({ _id: 'platform', ...patch, featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true } });
-
-    await expect(updatePlatformSettings(patch, 'ADMIN')).rejects.toThrow('reviewer-disable-confirmation-required');
-    await expect(updatePlatformSettings({ ...patch, confirmQualityImpact: true }, 'ADMIN')).resolves.toMatchObject(patch);
+  it('drops a legacy validator step and removed feature flags on read', () => {
+    const legacy = { ...defaultPlatformSettings(), models: { ...defaultPlatformSettings().models, validator: { model: 'old', modelSource: 'override' } },
+      featureFlags: { reviewerAgent: false, layer2Evaluator: true, retryOnReject: true } } as never;
+    const normalized = normalizePlatformSettings(legacy);
+    expect(Object.keys(normalized.models).sort()).toEqual(['generator', 'masteryEvaluator', 'reviewer', 'utility']);
+    expect(normalized.featureFlags).toEqual({ layer2Evaluator: true });
   });
 });
 

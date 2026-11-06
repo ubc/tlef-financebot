@@ -12,6 +12,13 @@
 
 **Related research:** [Research proposal](RESEARCH-PROPOSAL.md). The research explains the current system, historical experiments, open-source references, and why the proposed mechanisms could help.
 
+**Next prioritized work (October 13, 2026):** Follow the
+[Source Coverage and Memory Plan](2026-10-13-source-coverage-and-memory-plan.md)
+for the next delivery sequence: complete multi-file inclusion, shared generation
+and regeneration context, incremental chapter evidence, distinct task planning,
+and bounded cost/performance evaluation. It builds on the completed slices below;
+its new stages remain proposed work and do not change runtime defaults.
+
 ## Global constraints
 
 - Author project files, plans, comments, UI text, and evaluation instructions in English. Preserve original course source content and teacher quotations as evidence.

@@ -29,7 +29,9 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   return data?.error ?? fallback;
 }
 
-async function request<T>(path: string, init?: RequestInit & { diagnosticTrigger?: RequestTrigger }): Promise<T> {
+type RequestInitWithTrigger = RequestInit & { diagnosticTrigger?: RequestTrigger };
+
+async function requestResponse(path: string, init?: RequestInitWithTrigger): Promise<Response> {
   let response: Response;
   const { diagnosticTrigger, ...options } = init ?? {};
   const headers = new Headers(options.headers);
@@ -49,6 +51,11 @@ async function request<T>(path: string, init?: RequestInit & { diagnosticTrigger
     if (response.status === 401) onUnauthorized?.();
     throw new ApiError(message, response.status, response.headers.get('X-Request-ID') ?? undefined);
   }
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInitWithTrigger): Promise<T> {
+  const response = await requestResponse(path, init);
   // 204 No Content (e.g. the skip/bookmark-delete endpoints) has no body to
   // parse; callers of those endpoints declare Promise<void> and never read it.
   if (response.status === 204) return undefined as T;
@@ -211,9 +218,18 @@ export function saveAdminCapabilities(
   });
 }
 
-export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
-export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed';
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
+export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
+export interface AdminCourseModels {
+  revision: number;
+  overrides: Partial<Record<CourseModelStep, string>>;
+  platformModels: Record<PipelineStep, StepModelConfig>;
+  effectiveModels: Record<PipelineStep, StepModelConfig>;
+  availableModels: string[];
+}
+export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fixed' | 'reasoning-required';
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface StepModelConfig {
@@ -253,7 +269,7 @@ export interface PlatformSettings {
   models: Record<PipelineStep, StepModelConfig>;
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean; retryOnReject: boolean };
+  featureFlags: { layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: string;
 }
@@ -261,6 +277,16 @@ export interface PlatformSettings {
 /** GET returns the settings plus the capability catalogue in one round trip. */
 export function getAdminPlatformSettings(): Promise<PlatformSettings & { catalogue: ModelCatalogue }> {
   return request<PlatformSettings & { catalogue: ModelCatalogue }>('/api/admin/platform-settings');
+}
+
+export function getAdminCourseModels(courseId: string): Promise<AdminCourseModels> {
+  return request(`/api/admin/courses/${encodeURIComponent(courseId)}/models`);
+}
+
+export function saveAdminCourseModels(courseId: string, revision: number, overrides: AdminCourseModels['overrides']): Promise<AdminCourseModels> {
+  return request(`/api/admin/courses/${encodeURIComponent(courseId)}/models`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision, overrides }),
+  });
 }
 
 /**
@@ -275,11 +301,10 @@ export function temperatureAllowed(caps: ModelCapabilities, effort?: ReasoningEf
 
 export function saveAdminPlatformSettings(
   settings: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags' | 'customModels'>,
-  confirmQualityImpact = false,
 ): Promise<PlatformSettings> {
   return request<PlatformSettings>('/api/admin/platform-settings', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...settings, confirmQualityImpact }),
+    body: JSON.stringify(settings),
   });
 }
 
@@ -1659,21 +1684,87 @@ export type MaterialKind =
 export type ContentRunKind = 'material-ingest' | 'question-generation' | 'structure-generation';
 export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 
-export type GenerationQualityPolicy = 'baseline' | 'grounded-memory-v1';
+export type GenerationQualityPolicy = 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2';
+export interface GenerationValidationFinding {
+  kind: 'source-scope' | 'actor-relation' | 'notation' | 'task-duplication' | 'answer-semantics' | 'instruction' | 'verbosity';
+  target: 'stem' | 'options' | 'parameters' | 'task';
+  status: 'defect' | 'uncertain';
+  observation: string;
+  correction: string;
+  passageIds: string[];
+  memoryEntryIds: string[];
+}
+export type SourceLocation = { version: 'pdf-source-location-v1'; offsetUnit: 'utf16-code-units' } &
+  ({ status: 'verified'; provenanceId: string; pdfSha256: string; rawTextSha256: string;
+    pageMapSha256: string; chunkTextSha256: string; chunkStart: number; chunkEnd: number;
+    rawStart: number; rawEnd: number;
+    pageSpans: Array<{ physicalPage: number; rawStart: number; rawEnd: number; chunkStart: number; chunkEnd: number }> }
+    | { status: 'unavailable'; reason: string });
+export interface GenerationExactBankReceipt {
+  protocol: 'course-exact-bank-v1'; courseId: string; excludedQuestionId?: string;
+  candidateHash: string; bindingsDigest: string;
+  status: 'complete' | 'incomplete';
+  incompleteReason?: 'head-limit' | 'deadline' | 'invalid-head' | 'missing-or-invalid-version';
+  headsScanned: number; versionsChecked: number; missingVersions: number; invalidVersions: number; invalidHeads: number;
+  unscannedHeadsLowerBound: number; headBatches: number; exactMatchCount: number;
+  matches: Array<{ entryId: string; questionId: string; versionId: string; state: PublicationState }>;
+  matchesTruncated: boolean; consistency: 'best-effort';
+}
+/** Guarded retrieval diagnostics omit query text, vectors and full Bank content. */
+export interface GenerationTaskRetrievalDiagnostic {
+  protocol: 'course-task-retrieval-v1'; rankerVersion: 'lexical-profile-v1';
+  queryHash: string; bindingsDigest: string; status: 'complete' | 'incomplete';
+  incompleteReason?: 'head-limit' | 'deadline' | 'invalid-head' | 'missing-or-invalid-version' | 'profile-limit';
+  headsScanned: number; versionsChecked: number; missingVersions: number; invalidVersions: number; invalidHeads: number;
+  missingDescriptors: number; ignoredProfiles: number; unscannedHeadsLowerBound: number;
+  nominatedIds: string[]; retainedIds: string[]; requiredComparisonIds: string[];
+}
 export interface GenerationQualityAssessment {
-  policy: 'grounded-memory-v1';
+  policy: 'grounded-memory-v1' | 'grounded-memory-v2';
   item: number;
   status: 'eligible' | 'withheld';
   sourceSupport: 'supported' | 'unsupported' | 'uncertain';
   notation: 'consistent' | 'inconsistent' | 'uncertain';
   novelty: 'independent' | 'duplicate' | 'variant' | 'uncertain';
   reasons: string[];
-  citations: Array<{ kind: 'premise' | 'solution' | 'correction'; claim: string; passageId: string; quote: string }>;
+  citations: Array<{ kind: 'premise' | 'solution' | 'correction'; claim: string; passageId: string; quote: string;
+    materialId?: string; sourceLocation?: SourceLocation }>;
   matchedEntryIds: string[];
+  exactBank?: GenerationExactBankReceipt;
+  taskRetrieval?: GenerationTaskRetrievalDiagnostic;
+  taskComparisons?: Array<{ entryId: string; sameInference: boolean; sameSolutionPath: boolean; contrast: string }>;
   comparedEntryIds?: string[];
   evidencePacketId: string;
   memoryDigest: string;
   checkedAt: string;
+  intent?: 'edit-existing' | 'create-variant' | 'create-independent-task';
+  achievedDifficulty?: Difficulty;
+  requestedDifficulty?: Difficulty;
+  difficultyMismatch?: boolean;
+  justifiedLength?: 'justified' | 'excessive' | 'uncertain';
+  instructionFollowing?: 'fulfilled' | 'unfulfilled' | 'uncertain';
+  changes?: Array<{ requirement: string; status: 'fulfilled' | 'unfulfilled' | 'uncertain'; reason: string }>;
+  missingPremises?: string[];
+  responseIssues?: Array<{ attempt: number; path: string; code: string }>;
+  findings?: GenerationValidationFinding[];
+  answerability?: {
+    protocol: 'option-answerability-v1'; exclusionProtocol?: 'literal-exclusion-warrants-v1'; status: 'passed' | 'withheld';
+    keyedOptionKey?: string; resolvedCorrectKey?: string; issues: Array<{ path: string; code: string }>;
+  } & ({ kind: 'mcq'; options: Array<{ key: string; verdict: 'fully-correct' | 'not-fully-correct' | 'undetermined'; reason: string;
+    exclusionBasis: 'none' | 'source-contradiction' | 'explicit-stem-condition' | 'incomplete-response' | 'undetermined';
+    exclusion: string; stemQuote: string; citations: GenerationQualityAssessment['citations'];
+    exclusionWarrant?: { basis: 'direct-contradiction' | 'derived-incompatibility' | 'explicit-task-restriction' | 'required-component-missing' | 'placement-only' | 'strength-only' | 'silence-only' | 'undetermined';
+      optionQuote: string; stemQuote: string; challenge: { status: 'excluded' | 'viable' | 'uncertain'; reason: string; citations: GenerationQualityAssessment['citations'] }; issues: Array<{ path: string; code: string }> } }> }
+    | { kind: 'true-false'; stemTruth: 'true' | 'false' | 'undetermined'; reason: string; citations: GenerationQualityAssessment['citations'] });
+  semanticRepair?: {
+    version: 1; strategy: 'correct-candidate' | 'replace-independent-task'; critique: string;
+    before: NonNullable<GenerationQualityAssessment['candidate']>;
+    reasonsBefore: string[]; findingsBefore: GenerationValidationFinding[];
+    outcome: 'eligible' | 'withheld' | 'no-candidate' | 'budget-stopped' | 'failed';
+    stopCode?: string;
+    after?: NonNullable<GenerationQualityAssessment['candidate']>;
+  };
+  invariants?: Array<{ requirement: string; status: 'preserved' | 'violated' | 'uncertain'; reason: string }>;
   candidate?: {
     type: QuestionType; stem: string; options: QuestionOption[];
     numericKind?: 'numeric' | 'conceptual'; paramSlots?: ParamSlotInput[]; derivedValues?: DerivedValueInput[];
@@ -1682,12 +1773,19 @@ export interface GenerationQualityAssessment {
   coverage: { evidenceTruncated: boolean; memoryTruncated: boolean; shownEntries: number; totalEntries: number; missingVersions: number; consistency: 'best-effort' };
 }
 export interface GenerationQualityRunResult {
-  policy: 'grounded-memory-v1';
+  policy: 'grounded-memory-v1' | 'grounded-memory-v2';
   assessments: GenerationQualityAssessment[];
+  /** Initial retrieval can fail before any quality assessment is recorded. */
+  taskRetrieval?: GenerationTaskRetrievalDiagnostic;
+  slotBudgets?: Array<{ item: number; receipt: AuthoringBudgetReceipt }>;
+  taskPlanId?: string;
+  independentRequested?: number;
+  independentPlanned?: number;
+  variantsCreated?: number;
   /** Coverage metadata used here; the API also returns frozen original passages. */
   evidence?: {
     id: string;
-    parsingProvenance: 'unrecorded';
+    parsingProvenance: 'unrecorded' | 'verified' | 'partial';
     coverage: { sourceChunks: number; selectedChunks: number; selectedCharacters: number; omittedPassages: number; truncated: boolean; searchScope: 'retrieved-chunks-and-immediate-neighbors' };
     findings: Array<{ code: 'evidence-budget-truncated' | 'source-text-damage'; message: string; passageIds: string[] }>;
   };
@@ -1750,7 +1848,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
     qualityPolicy?: GenerationQualityPolicy;
     blueprintId?: string;
     retryOfRunId?: string;
-    models: { embedding: string; generator: string; validator: string; reviewer: string };
+    models: { embedding: string; generator: string; /** Historical records only. */ validator?: string; reviewer: string };
   };
   grounding?: { allowedMaterialIds: string[]; retrievedChunkCount: number };
   result?: {
@@ -1762,6 +1860,9 @@ export interface QuestionGenerationRun extends ContentRunBase {
 }
 
 export interface StructureOptions {
+  capabilityDistinctnessProtocol?: 'outline-capability-distinctness-v1';
+  sourceBatchId?: string;
+  sourceReplacements?: Array<{ previousMaterialId: string; replacementMaterialId: string }>;
   materialIds?: string[];
   topicCount?: number;
   losPerTopic?: number;
@@ -1772,11 +1873,75 @@ export interface StructureOptions {
 export interface StructureDraft { themes: Array<{ name: string; los: Array<{ name: string }> }> }
 export interface StructureEvidence {
   id: string; objective: string; materialId: string; materialName: string; chunkIndex: number; quote: string;
+  sourcePassageId?: string;
+  supportingPassages?: Array<{ passageId: string; quote: string }>;
+  extraction?: 'new' | 'reused';
 }
+export interface StructureSynthesisReceipt {
+  originalLedgerCharacters: number; deduplicatedLedgerCharacters: number;
+  originalPassageReferences: number; distinctOriginalPassages: number;
+  originalLedgerInputEstimate: number; deduplicatedLedgerInputEstimate: number;
+  promptInputEstimateBefore?: number; promptInputEstimateAfter?: number;
+  packCount?: number; completedPacks?: number; organizationInputEstimate?: number;
+  reusedPacks?: number; newPacks?: number;
+  packUnmappedEvidenceIds?: string[];
+  validationFailures?: Array<{ stage: string; item?: number; attempt: number; reason: string }>;
+}
+export type PdfPageTextObservationSummary = {
+  version: 'native-page-text-observations-v1'; interpretation: 'unknown'; teachingCoverage: 'not-assessed';
+} & ({ status: 'available'; pdfSha256: string; rawTextSha256: string; pageMapSha256: string;
+  observationsSha256: string; sparseThreshold: 120;
+  counts: { total: number; blank: number; sparse: number; present: number };
+  ranges: Array<{ startPage: number; endPage: number; state: 'blank' | 'sparse' | 'present' }> }
+  | { status: 'unavailable'; reason: string });
+export interface StructurePageTextObservations {
+  version: 'pdf-page-text-obligations-v1';
+  materials: Array<{ materialId: string; materialName: string; provenanceId?: string; observation: PdfPageTextObservationSummary }>;
+}
+export interface StructureSourceInventory {
+  version: 'source-passage-inventory-v1';
+  totalPassages: number; objectiveLinkedPassages: number; mappedPassages: number;
+  targets: Array<{ materialId: string; materialName: string; chunkIndex: number; sectionId: string; passageId: string;
+    cues: Array<'formula' | 'numerical-relationship' | 'visual-relationship'>;
+    status: 'mapped' | 'unmapped-objective' | 'context' | 'non-instructional' | 'visual-review' | 'unreviewed';
+    evidenceIds: string[]; reason?: string; quote?: string }>;
+  materialsWithoutMappedObjectives: string[];
+  potentialRedundantObjectives: Array<{ first: string; second: string; sharedEvidenceIds: string[] }>;
+  redundancyAudit: { objectivesConsidered: number; totalObjectives: number; truncated: boolean };
+}
+export interface GroundingObjective {
+  id: string; themeIndex: number; loIndex: number; topic: string; name: string;
+  contentHash: string; evidenceIds: string[]; materialIds: string[]; sourceIds: string[];
+  learningPoints: Array<{ id: string; objective: string; materialId: string; sourceIds: string[] }>;
+}
+export interface OutlineGroundingFinding extends GroundingObjective {
+  status: 'supported' | 'unsupported' | 'uncertain'; reason: string; citedSourceIds: string[];
+  coveredEvidenceIds: string[];
+}
+export interface OutlineGroupingFinding extends OutlineGroundingFinding {
+  topicFit: 'fits' | 'misgrouped' | 'uncertain'; topicReason: string;
+}
+interface OutlineGroundingReceiptBase {
+  method: 'model-review-of-original-sections';
+  totalObjectives: number; reviewedObjectives: number; supportedObjectives: number; withheldObjectives: number;
+  complete: boolean;
+}
+export type OutlineGroundingReceipt = OutlineGroundingReceiptBase & (
+  | { version: 'original-final-lo-review-v1'; findings: OutlineGroundingFinding[] }
+  | { version: 'original-final-lo-review-v2'; groupingIssues: number; findings: OutlineGroupingFinding[] }
+);
 export interface StructureResult {
   themes: Array<{ name: string; los: Array<{ name: string; evidenceIds: string[]; materialIds: string[] }> }>;
   evidence: StructureEvidence[];
   coverage: {
+    sourceFingerprint?: string;
+    sourceSelection?: SourceSelectionReport;
+    cache?: { hits: number; misses: number; reusedSections: number; extractedSections: number };
+    budget?: AuthoringBudgetReceipt;
+    synthesisInput?: StructureSynthesisReceipt;
+    sourceInventory?: StructureSourceInventory;
+    pageTextObservations?: StructurePageTextObservations;
+    outlineGrounding?: OutlineGroundingReceipt;
     materials: Array<{ materialId: string; name: string; chunks: number; sections: number; mappedObjectives: number }>;
     analyzedSections: number; extractedObjectives: number; mappedObjectives: number;
     unmappedEvidenceIds: string[];
@@ -1785,13 +1950,88 @@ export interface StructureResult {
   };
 }
 export interface StructureGenerationRun extends ContentRunBase {
+  structureConsolidation?: { version: 'durable-outline-consolidation-v1'; checkpointId: string; checkpointHash: string; parentRunId: string; phase: 'proposal' | 'review'; reviewBindingHash?: string };
   progressMessage?: string;
   kind: 'structure-generation'; input: StructureOptions & { materialIds: string[] };
   structurePreview?: StructureDraft;
   structureResult?: StructureResult;
+  structureSynthesisPacks?: Array<{ key: string; evidenceIds: string[]; themes: StructureResult['themes']; completedAt: string }>;
+  structureDiagnostics?: { sourceSelection: SourceSelectionReport; cache: { hits: number; misses: number; reusedSections: number; extractedSections: number }; budget: AuthoringBudgetReceipt; synthesisInput?: StructureSynthesisReceipt; outlineGrounding?: OutlineGroundingReceipt; unprocessedSections: Array<{ materialId: string; name: string; sectionId: string }> };
   result?: never;
 }
+export interface StructureConsolidationProposal {
+  version: 'source-preserving-outline-consolidation-v1'; planHash: string;
+  replacements: Array<{ id: string; name: string; evidenceIds: string[] }>;
+  lineage: Array<{ previousId: string; successorIds: string[] }>;
+}
+export interface StructureConsolidationView {
+  version: 'durable-outline-consolidation-v1'; parentRunId: string; available: boolean; reason?: string;
+  selectedIds: string[]; candidates: Array<{ id: string; topic: string; name: string; coveredPoints: number }>;
+  checkpointId?: string; revision?: number; state?: 'proposing' | 'proposed' | 'reviewing' | 'completed' | 'failed';
+  proposalRunId?: string; reviewRunId?: string; proposal?: StructureConsolidationProposal; proposalHash?: string; proposalStatus?: 'unreviewed';
+  changes?: Array<{ id: string; before: string; after?: string }>;
+  obligations?: { points: Array<{ id: string; objective: string; sourceIds: string[] }>; originals: Array<{ alias: string; id: string; materialName: string; text: string }>; oldCredits: Array<{ evidenceId: string; previousOwnerIds: string[] }> };
+  budget?: { consumedUnits: number; remainingUnits: number; consumedSends: number; remainingSends: number; accounting: 'conservative-reservations-v1' };
+  canReview: boolean; canApply: boolean; scope: 'full-child-fresh-source-and-capability-review';
+}
+export function getStructureConsolidation(courseId: string, runId: string): Promise<StructureConsolidationView> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation/${encodeURIComponent(runId)}/consolidation`);
+}
+export function proposeStructureConsolidation(courseId: string, runId: string, selectedIds?: string[]): Promise<{ runId: string }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation/${encodeURIComponent(runId)}/consolidation/propose`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: 'durable-outline-consolidation-v1', ...(selectedIds?.length ? { selectedIds } : {}) }),
+  });
+}
+export function reviewStructureConsolidation(courseId: string, runId: string, view: StructureConsolidationView, proposal?: StructureConsolidationProposal): Promise<{ runId: string }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation/${encodeURIComponent(runId)}/consolidation/review`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: 'durable-outline-consolidation-v1', expectedRevision: view.revision, expectedProposalHash: view.proposalHash, ...(proposal ? { proposal } : {}) }),
+  });
+}
+export type StructureRepairMode = 'wording-only-outline-repair-v1' | 'coverage-wording-outline-repair-v1';
+export type StructureRepairRequest =
+  | { version: 'wording-only-outline-repair-v1'; targetIds: string[] }
+  | { version: 'coverage-wording-outline-repair-v1'; targets: Array<{ id: string; evidenceIds: string[] }> };
+export interface StructureRepairPointView {
+  id: string; objective: string; materialId: string; materialName: string; chunkIndex: number;
+  quotes: Array<{ passageId?: string; text: string }>;
+}
+export interface StructureRepairTargetView {
+  id: string; topic: string; name: string; status: 'supported' | 'unsupported' | 'uncertain';
+  mode: StructureRepairMode; reason: string;
+  preservedEvidenceIds: string[]; missingEvidenceIds: string[]; points: StructureRepairPointView[];
+}
+export interface StructureRepairChildView {
+  runId: string; parentRunId: string; mode: StructureRepairMode; status: ContentRunStatus;
+  canApply: boolean; unknownWork: boolean; error?: { code: string; message: string };
+  targets: Array<{ id: string; topic: string; before: string; after?: string;
+    proposalStatus: 'pending' | 'proposed' | 'no-repair'; proposalReason?: string;
+    finding?: { status: 'supported' | 'unsupported' | 'uncertain'; reason: string;
+      coveredEvidenceIds: string[]; citedSourceIds: string[] } }>;
+  coverageAssessment?: { status: 'passed' | 'shortfall'; targets: Array<{ id: string; status: 'covered' | 'shortfall';
+    requestedEvidenceIds: string[]; preservedEvidenceIds: string[]; missingEvidenceIds: string[]; lostEvidenceIds: string[]; reasons: string[] }> };
+}
+export interface StructureRepairView {
+  version: 'outline-wording-repair-view-v1'; requestedRunId: string; parentRunId: string; parentStatus: ContentRunStatus;
+  availability: { canStart: boolean; reason: string | null; message: string };
+  limits: { maxTargets: 2; maxPointsPerTarget: 8; maxSends: 10; maxInputUnits: 48000; maxOutputUnits: 6000; maxNewUnits: 540000 };
+  budget: { accounting: 'conservative-units-v1'; remainingSends: number; remainingUnits: number };
+  cycle: { used: boolean; childRunId?: string; childStatus?: ContentRunStatus; mode?: StructureRepairMode };
+  targets: { items: StructureRepairTargetView[]; total: number; page: number; pageSize: number };
+  child?: StructureRepairChildView;
+}
 export type ContentRunSummary = MaterialIngestRun | QuestionGenerationRun | StructureGenerationRun;
+
+/** Read-only repair choices, exact quotes and retained parent/child comparison. */
+export function getStructureRepair(courseId: string, runId: string, page = 1): Promise<StructureRepairView> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation/${encodeURIComponent(runId)}/repair?page=${page}&pageSize=10`);
+}
+
+/** Explicit bounded model work. It never applies or replaces the parent draft. */
+export function startStructureRepair(courseId: string, runId: string, input: StructureRepairRequest): Promise<{ runId: string; parentRunId: string }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation/${encodeURIComponent(runId)}/repair`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
 
 export function startStructureGeneration(courseId: string, options: StructureOptions): Promise<{ runId: string }> {
   return request(`/api/courses/${encodeURIComponent(courseId)}/structure-generation`, {
@@ -1830,11 +2070,6 @@ export function getContentRun(courseId: string, runId: string): Promise<ContentR
   return request<ContentRunSnapshot>(
     `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}`,
   );
-}
-
-/** Authenticated read-only download; the server supplies an attachment filename. */
-export function contentRunEvaluationExportUrl(courseId: string, runId: string): string {
-  return `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/evaluation-export`;
 }
 
 export interface ModelUsageTotals {
@@ -1927,9 +2162,8 @@ export interface GenerationBlueprint {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
-  models: { embedding: string; generator: string; validator: string; reviewer: string };
+  models: { embedding: string; generator: string; /** Historical records only. */ validator?: string; reviewer: string };
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -1943,7 +2177,6 @@ export interface GenerationBlueprintInput {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
 }
 
@@ -2007,11 +2240,31 @@ export interface MaterialChunk {
   index: number;
   text: string;
   characterCount: number;
+  sourceProvenance?: {
+    provenanceId: string;
+    pdfSha256: string;
+    rawTextSha256: string;
+    pageMapSha256?: string;
+    locator: { version: 'pdf-chunk-locator-v1'; chunkTextSha256: string; offsetUnit: 'utf16-code-units' } &
+      ({ status: 'verified'; rawStart: number; rawEnd: number;
+        pageSpans: Array<{ physicalPage: number; rawStart: number; rawEnd: number; chunkStart: number; chunkEnd: number }> }
+        | { status: 'unavailable'; reason: string });
+  };
 }
 
 export interface MaterialWorkspaceDetail {
   material: Material;
   chunks: MaterialChunk[];
+  sourceProvenance?: {
+    status: 'verified' | 'partial' | 'unavailable';
+    provenanceId?: string;
+    successfulEngine?: string;
+    engineVersion?: string | null;
+    pdfSha256?: string;
+    rawTextSha256?: string;
+    pageCount?: number;
+    reason?: string;
+  };
 }
 
 export function getMaterialWorkspaceDetail(courseId: string, materialId: string): Promise<MaterialWorkspaceDetail> {
@@ -2020,8 +2273,10 @@ export function getMaterialWorkspaceDetail(courseId: string, materialId: string)
   );
 }
 
-export function materialSourceUrl(courseId: string, materialId: string, channel: 'embedded-preview' | 'source-link' = 'source-link'): string {
-  return nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source`, channel);
+export function materialSourceUrl(courseId: string, materialId: string, provenanceId?: string,
+  channel: 'embedded-preview' | 'source-link' = 'source-link'): string {
+  return nativeRequestSource(`/api/courses/${encodeURIComponent(courseId)}/materials/${encodeURIComponent(materialId)}/source` +
+    (provenanceId ? `?provenanceId=${encodeURIComponent(provenanceId)}` : ''), channel);
 }
 
 export function listTrashedMaterials(courseId: string): Promise<Material[]> {
@@ -2050,6 +2305,65 @@ export function uploadMaterials(courseId: string, files: File[]): Promise<Materi
   return request<Material[]>(`/api/courses/${encodeURIComponent(courseId)}/materials`, {
     method: 'POST',
     body: form,
+  });
+}
+
+export interface MaterialUploadBatch {
+  _id: string;
+  courseId: string;
+  requestId: string;
+  admission: 'prepared' | 'uploading' | 'accepted' | 'rejected';
+  admissionError?: string;
+  revision: number;
+  createdAt: string;
+  items: Array<{ clientFileId: string; name: string; size: number; disposition: 'pending' | 'created' | 'reused' | 'rejected'; materialId?: string; error?: string; readiness?: MaterialSourceReadiness }>;
+  counts?: { requested: number; received: number; ready: number; rejected: number };
+}
+export interface SourceSnapshot {
+  materialId: string; name: string; sourceTextHash: string; chunkCount: number; characterCount: number;
+  revision?: number;
+  ingestRunId?: string; parserVersion: string; chunkerVersion: string;
+}
+export interface MaterialSourceReadiness {
+  materialId: string; name: string; ready: boolean;
+  state: 'indexed' | 'processing' | 'failed' | 'trashed' | 'missing' | 'manifest-invalid';
+  reason?: string; snapshot?: SourceSnapshot;
+  classification: 'pending' | 'completed' | 'warning' | 'unknown';
+}
+export interface SourceSelectionReport {
+  sourceBatchId?: string;
+  requested: Array<MaterialSourceReadiness & { clientFileId?: string }>;
+  included: SourceSnapshot[];
+  excluded: Array<{ name: string; materialId?: string; clientFileId?: string; reason: string }>;
+  ready: boolean;
+  replacements?: Array<{ previousMaterialId: string; previousName: string; replacementMaterialId: string; replacementName: string }>;
+}
+export interface AuthoringBudgetReceipt {
+  version: 1; estimator: string; retryVisibility: 'unknown'; limitScope: 'process';
+  observedSends: number; estimatedInputTokens: number; reservedOutputTokens: number;
+  reportedInputTokens: number | null; reportedOutputTokens: number | null;
+  usageCompleteness?: 'complete' | 'partial' | 'unknown';
+  logical?: { generatorAttempts: number; repairCycles: number; evidenceExpansions: number; limits: { generatorAttempts: number; repairCycles: number; evidenceExpansions: number } };
+  queueWaitMs: number; executionMs: number; rejectedSends: number;
+  limits: { maxSends: number; maxInputTokens: number; maxOutputTokens: number; maxEstimatedTokens: number };
+}
+
+export function prepareMaterialUploadBatch(courseId: string, files: File[], requestId: string): Promise<MaterialUploadBatch> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/material-upload-batches`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, files: files.map((file, i) => ({ clientFileId: String(i), name: file.name, size: file.size })) }),
+  });
+}
+export function uploadMaterialBatchFiles(courseId: string, batchId: string, files: File[]): Promise<MaterialUploadBatch> {
+  const form = new FormData(); files.forEach(file => form.append('files', file));
+  return request(`/api/courses/${encodeURIComponent(courseId)}/material-upload-batches/${encodeURIComponent(batchId)}/files`, { method: 'POST', body: form });
+}
+export function getMaterialUploadBatch(courseId: string, batchId: string): Promise<MaterialUploadBatch> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/material-upload-batches/${encodeURIComponent(batchId)}`);
+}
+export function getSourceReadiness(courseId: string, selection: { sourceBatchId?: string; materialIds?: string[] }): Promise<SourceSelectionReport> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/source-readiness`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(selection),
   });
 }
 
@@ -2165,6 +2479,8 @@ export function resolveClassification(materialId: string, action: 'accept' | 're
 }
 
 export interface SuggestedHierarchy {
+  /** Public legacy suggestions retain a durable identity for guarded Apply. */
+  runId?: string;
   themes: Array<{ name: string; los: string[] }>;
   assignments: Array<{
     themeIndex: number;
@@ -2173,16 +2489,18 @@ export interface SuggestedHierarchy {
   }>;
 }
 
-/** GET /api/courses/:courseId/suggest-hierarchy returns a read-only
- * AI-suggested Topic/LO outline plus source-material mappings. */
+/** GET /api/courses/:courseId/suggest-hierarchy returns a durable runId,
+ * AI-suggested Topic/LO outline and source-material mappings. Use each assignment's
+ * themeIndex/loIndex as Apply's sourceThemeIndex/sourceLoIndex. */
 export function getSuggestedHierarchy(courseId: string): Promise<SuggestedHierarchy> {
   return request<SuggestedHierarchy>(`/api/courses/${encodeURIComponent(courseId)}/suggest-hierarchy`);
 }
 
 export interface SuggestedHierarchyApplyInput {
+  runId: string;
   themes: Array<{
     name: string;
-    los: Array<{ name: string; materialIds: string[] }>;
+    los: Array<{ name: string; materialIds: string[]; sourceThemeIndex: number; sourceLoIndex: number }>;
   }>;
 }
 
@@ -2191,6 +2509,21 @@ export interface SuggestedHierarchyApplyResult {
   losCreated: number;
   materialsAssigned: number;
   assignmentsCreated: number;
+  consistency?: 'transactional' | 'best-effort';
+  warning?: string;
+  repairReview?: { runId: string; parentRunId: string; mode: StructureRepairMode;
+    wording: 'reviewed' | 'instructor-edited'; teacherEditedNames: number };
+}
+
+export function suggestedHierarchyApplyFailure(error: unknown): string {
+  const code = error instanceof Error ? error.message : '';
+  return ({
+    'structure-apply-run-required': 'This AI draft needs its saved generation run. Reopen the draft or generate again.',
+    'structure-apply-run-unavailable': 'This AI draft has no current source receipt. Generate a new draft before applying.',
+    'structure-apply-source-changed': 'An original source or its ingestion changed after this draft was generated. Generate again before applying. Your draft edits are retained.',
+    'structure-apply-source-scope-changed': 'The selected source links no longer match this saved AI draft. Reopen the draft or generate again.',
+    'structure-apply-conflict-after-write': 'A concurrent change or interrupted write prevented verified application. Some additions may have been retained. Inspect the saved course structure and sources before trying again.',
+  } as Record<string, string>)[code] ?? 'Could not apply the draft. Your edits are retained; please try again.';
 }
 
 /** Apply a reviewed AI hierarchy and automatically assign its source materials
@@ -2262,7 +2595,7 @@ export function getGenerationPlan(courseId: string): Promise<GenerationPlanRow[]
 }
 
 /** POST /api/courses/:courseId/generation-plan -> one run per cell. */
-export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string; qualityPolicy?: GenerationQualityPolicy }): Promise<GenerationPlanResult> {
+export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string }): Promise<GenerationPlanResult> {
   return request<GenerationPlanResult>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2297,7 +2630,6 @@ export interface GenerateQuestionsInput {
   type?: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
 }
 
 export interface GenerationPreset {
@@ -2321,6 +2653,25 @@ export function generateQuestions(courseId: string, input: GenerateQuestionsInpu
   });
 }
 
+export interface NumericParameterCoverage {
+  version: 'finite-slot-grid-v1';
+  mode: 'exhaustive' | 'sampled';
+  /** Entry combinations, including duplicate explicit values. */
+  totalCombinations: number | null;
+  checkedCombinations: number;
+  maxCombinations: 256;
+  reason?: 'combination-limit' | 'unrepresentable-domain' | 'ambiguous-parameter-names';
+}
+
+export interface NumericVerification {
+  evaluatorVersion: number;
+  inputDisplayVersion?: number;
+  sampleSeeds: number[];
+  verifiedAt: string;
+  /** Absent historical proofs record sampled draws only. */
+  parameterCoverage?: NumericParameterCoverage;
+}
+
 export interface RegenerationVariant {
   stem: string;
   options: QuestionOption[];
@@ -2328,12 +2679,14 @@ export interface RegenerationVariant {
   numericKind?: 'numeric' | 'conceptual';
   paramSlots?: ParamSlotInput[];
   derivedValues?: DerivedValueInput[];
-  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
+  verification?: NumericVerification;
   sourceRefs: Array<{ materialId: string; chunk?: string }>;
   agentDecision: {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    suggestions?: string[];
+    suggestedDifficulty?: 'easy' | 'medium' | 'hard';
   };
 }
 
@@ -2518,10 +2871,9 @@ export interface QuestionVersion {
   derivedValues?: Array<{ name: string; formula: string; errorModel?: string }>;
   /** The generator's declaration. It does not bypass independent detection. */
   numericKind?: 'numeric' | 'conceptual';
-  /** Machine-checked proof that the computed values are sound across sampled
-   * draws. ABSENT on a numerical question means it never serves to a student
-   * (see the numeric gate). */
-  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
+  /** Machine-checked sampled draws and, when recorded, complete bounded-grid
+   * checks. Absence on a numerical question means it cannot serve to a student. */
+  verification?: NumericVerification;
   /** Placeholders substitution can never fill — `{{NAME}}` with no matching
    * variable, or a broken `{{NAME}`. Non-empty means the version is never served.
    * Present on the question detail and edit responses. */
@@ -2540,6 +2892,14 @@ export interface QuestionVersion {
   createdAt: string;
 }
 
+/** Informational nearest-question similarity within the same LO and topic. */
+export type QuestionSimilarity = {
+  lo: { questionId: string; score: number } | null;
+  topic: { questionId: string; score: number } | null;
+  model: string;
+  computedAt: string;
+};
+
 /** A question head exactly as it comes over the wire — `id`, never `_id`. */
 export interface QuestionHead {
   id: string;
@@ -2551,7 +2911,8 @@ export interface QuestionHead {
   themeIds: string[];
   templateFamilyId?: string;
   labels: QuestionLabel[];
-  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string; suggestions?: string[]; suggestedDifficulty?: Difficulty };
+  similarity?: QuestionSimilarity;
   generationPrompt?: string;
   regenerations?: Array<{ prompt: string; at: string }>;
   internalNotes: Array<{ puid: string; text: string; at: string }>;
@@ -2573,6 +2934,7 @@ export interface BankQuestion {
   loIds: string[];
   themeIds: string[];
   current: QuestionVersion;
+  similarity?: QuestionSimilarity;
   /** One STABLE drawn sample — what a student sees — so list rows can show real
    * numbers instead of a `{{PLACEHOLDER}}` template. Absent when the server
    * declined to draw one (a `generateScript` question, whose resolution costs a
@@ -2630,6 +2992,11 @@ export function browseBank(
   return request<{ total: number; questions: BankQuestion[] }>(
     `/api/courses/${encodeURIComponent(courseId)}/questions${bankFiltersToQuery(filters)}`,
   );
+}
+
+/** POST /api/courses/:courseId/question-similarity/rebuild -> { questions }. Instructor-only. */
+export function rebuildQuestionSimilarity(courseId: string): Promise<{ questions: number }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/question-similarity/rebuild`, { method: 'POST' });
 }
 
 /** GET /api/questions/:questionId -> full head + current version + agentDecision
@@ -2757,7 +3124,7 @@ export interface DerivedValueInput {
  * every save. `verificationError` present means the question is NOT servable —
  * the numeric gate refuses a numerical question with no proof. */
 export type ParamsSaveResult = QuestionVersion & {
-  verification?: { evaluatorVersion: number; sampleSeeds: number[]; verifiedAt: string };
+  verification?: NumericVerification;
   verificationError?: string;
 };
 
@@ -3035,6 +3402,7 @@ export interface AnswerDistribution {
 export interface EngagementAnalytics {
   totals: {
     questionsAttempted: number; correctAttempts?: number;
+    activeStudents: number;
     avgSessionMinutes: number;
     sessionsPerStudent: number;
     loCoverageRate: number;
@@ -3093,6 +3461,16 @@ export function getAnswerDistribution(courseId: string, questionId: string, filt
 }
 export function getEngagementAnalytics(courseId: string, filter: AnalyticsFilter = {}): Promise<EngagementAnalytics> {
   return request(`/api/courses/${encodeURIComponent(courseId)}/analytics/engagement?${analyticsQuery(filter)}`);
+}
+
+export async function getAnalyticsReport(courseId: string, filter: AnalyticsFilter): Promise<{ pdf: Blob; filename: string }> {
+  const response = await requestResponse(`/api/courses/${encodeURIComponent(courseId)}/analytics/report.pdf?${analyticsQuery(filter)}`);
+  if (response.headers.get('Content-Type')?.split(';')[0] !== 'application/pdf') {
+    throw new Error('The server did not return a PDF report.');
+  }
+  const filename = response.headers.get('Content-Disposition')?.match(/filename="?([\w-]+\.pdf)"?/i)?.[1]
+    ?? 'financebot-analytics.pdf';
+  return { pdf: await response.blob(), filename };
 }
 
 export function getLowEngagement(courseId: string, inactiveDays = 7): Promise<AnalyticsStudent[]> {
@@ -3500,7 +3878,7 @@ export interface BuilderExam {
   activeRunIds?: string[]; publicationId?: string; publishedRevision?: number; updatedAt: string; startedAt?: string; displayTitle?: string; deletingAt?: string;
 }
 export interface BuilderRun {
-  progress?: { item: number; stage: 'retrieving' | 'generating' | 'validating' | 'reviewing' | 'saving'; preview?: { stem: string; options?: Array<{ key: string; text: string }> } };
+  progress?: { item: number; stage: 'retrieving' | 'generating' | 'reviewing' | 'saving'; preview?: { stem: string; options?: Array<{ key: string; text: string }> } };
   _id: string; status: 'planned' | 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
   interpretation: string; conflicts: string[]; prompt: string;
   cells: Array<{ id: string; loId: string; secondaryLoIds?: string[]; type: QuestionType; difficulty: Difficulty }>;

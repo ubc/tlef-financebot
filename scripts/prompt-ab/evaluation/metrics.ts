@@ -1,5 +1,5 @@
 import { DatasetSchema, hashValue, issueDimensions } from './schema';
-import type { EvaluationDataset, EvaluationRun, EvaluationSlot, IssueDimension, TeacherLabel } from './schema';
+import type { EvaluationDataset, EvaluationRun, EvaluationSlot, EvaluationPilotPolicy, IssueDimension, TeacherLabel } from './schema';
 
 type Policy = EvaluationRun['policy'];
 type EvaluationCase = EvaluationDataset['cases'][number];
@@ -137,6 +137,7 @@ function summarizeArm(policy: Policy, expected: ExpectedRun[], runs: EvaluationR
     if (disposition === 'intentional-variant') return !observation.reviewable;
     return false;
   }).length;
+  const resolvedSupply = observations.length - unresolvedSupply;
   const recordedTimes = observations.flatMap(observation => {
     const time = observation.label?.reviewMinutes;
     return typeof time === 'number' && Number.isFinite(time) && time >= 0 ? [time] : [];
@@ -179,7 +180,14 @@ function summarizeArm(policy: Policy, expected: ExpectedRun[], runs: EvaluationR
       acceptedIndependent,
       acceptedUnedited,
       acceptedAfterEdits,
-      acceptedIndependentPerRequested: rate(acceptedIndependent, observations.length),
+      acceptedIndependentPerRequested: resolvedSupply > 0 ? rate(acceptedIndependent, observations.length)
+        : { numerator: acceptedIndependent, denominator: observations.length, value: null },
+      acceptanceCoverage: {
+        knownSlots: resolvedSupply,
+        missingSlots: unresolvedSupply,
+        status: resolvedSupply === 0 ? 'unavailable' : unresolvedSupply > 0 ? 'partial' : 'complete',
+        ratioBasis: resolvedSupply === 0 ? 'unavailable' : unresolvedSupply > 0 ? 'recorded-lower-bound' : 'resolved-teacher-labels',
+      },
       intentionalVariantsSaved: saved.filter(observation => observation.reviewable && observation.label?.disposition === 'intentional-variant').length,
       teacherAcceptableWithheld: observations.filter(observation => observation.slot?.outcome === 'withheld' && independentAdoption(observation)).length,
       provisionalUnmetIndependentSlots: observations.length - acceptedIndependent,
@@ -241,9 +249,12 @@ function delta(baseline: number | null, pilot: number | null) {
 /** Summarize imported observations without invoking models or inferring labels.
  * Review ID/hash binding is validated by the importer; this layer additionally
  * prevents absent, truncated, or wrong-context content from becoming quality truth. */
-export function summarizeEvaluation(dataset: EvaluationDataset, reviews: ResolvedReview[]) {
+export function summarizeEvaluation(dataset: EvaluationDataset, reviews: ResolvedReview[], options: { pilotPolicy?: EvaluationPilotPolicy } = {}) {
   DatasetSchema.parse(dataset);
-  const policies: Policy[] = ['baseline', 'grounded-memory-v1'];
+  const observedPilots = [...new Set(dataset.runs.map(run => run.policy).filter((policy): policy is EvaluationPilotPolicy => policy !== 'baseline'))];
+  if (!options.pilotPolicy && observedPilots.length > 1) throw new Error('Multiple pilot policies are present. Choose pilotPolicy explicitly; v1 and v2 cannot be pooled.');
+  const pilotPolicy: EvaluationPilotPolicy = options.pilotPolicy ?? observedPilots[0] ?? 'grounded-memory-v1';
+  const policies: Policy[] = ['baseline', pilotPolicy, ...observedPilots.filter(policy => policy !== pilotPolicy)];
   const expected = dataset.cases.flatMap(fixture => Array.from({ length: fixture.repetitions }, (_, index) => ({ fixture, repetition: index + 1 })));
   const knownSlots = new Set(dataset.runs.flatMap(run => run.slots.map(slot => slotKey(run.runId, slot.item))));
   const labels = new Map<string, TeacherLabel>();
@@ -270,7 +281,7 @@ export function summarizeEvaluation(dataset: EvaluationDataset, reviews: Resolve
   const eligibleExpected: ExpectedRun[] = [];
   for (const item of expected) {
     const baseline = dataset.runs.find(run => run.caseId === item.fixture.caseId && run.repetition === item.repetition && run.policy === 'baseline');
-    const pilot = dataset.runs.find(run => run.caseId === item.fixture.caseId && run.repetition === item.repetition && run.policy === 'grounded-memory-v1');
+    const pilot = dataset.runs.find(run => run.caseId === item.fixture.caseId && run.repetition === item.repetition && run.policy === pilotPolicy);
     const reasons = pairExclusions(dataset, item, baseline, pilot);
     if (reasons.length) excludedPairs.push({ caseId: item.fixture.caseId, repetition: item.repetition, reasons });
     else {
@@ -279,7 +290,7 @@ export function summarizeEvaluation(dataset: EvaluationDataset, reviews: Resolve
     }
   }
   const pairedBaseline = summarizeArm('baseline', eligibleExpected, dataset.runs.filter(run => run.policy === 'baseline' && eligiblePairs.some(pair => pair.baselineRunId === run.runId)), labels, dataset.origin);
-  const pairedPilot = summarizeArm('grounded-memory-v1', eligibleExpected, dataset.runs.filter(run => run.policy === 'grounded-memory-v1' && eligiblePairs.some(pair => pair.pilotRunId === run.runId)), labels, dataset.origin);
+  const pairedPilot = summarizeArm(pilotPolicy, eligibleExpected, dataset.runs.filter(run => run.policy === pilotPolicy && eligiblePairs.some(pair => pair.pilotRunId === run.runId)), labels, dataset.origin);
   return {
     schemaVersion: 'financebot-quality-metrics-v1' as const,
     experimentId: dataset.experimentId,
@@ -294,6 +305,8 @@ export function summarizeEvaluation(dataset: EvaluationDataset, reviews: Resolve
         ? [{ runId: run.runId, caseId: run.caseId, repetition: run.repetition, policy: run.policy, run: [...run.limitations], slots }] : [];
     }),
     comparison: {
+      pilotPolicy,
+      otherPolicies: observedPilots.filter(policy => policy !== pilotPolicy),
       provenance: 'declared-frozen-metadata' as const,
       eligiblePairs,
       excludedPairs,
@@ -311,6 +324,7 @@ export function summarizeEvaluation(dataset: EvaluationDataset, reviews: Resolve
     },
     limitations: [
       ...dataset.limitations,
+      `The paired comparison is baseline versus ${pilotPolicy}. Other policies remain separate arms and never contribute to its denominators, token totals or deltas.`,
       'Comparability uses declared frozen metadata and matching hashes; it does not independently attest historical execution or isolation.',
       'Judge confusion requires a bound complete candidate and declared frozen, complete source and bank context. Retrospective, unrecorded, incomplete, or mismatched context remains unassessed; synthetic timing is accepted only for explicitly synthetic datasets.',
       'All requested slots are intended independent questions. Only saved outputs explicitly accepted or edited with duplication absent count as delivered independent supply.',
