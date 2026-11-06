@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import type {
   Difficulty,
   OptionRole,
@@ -7,6 +8,7 @@ import type {
   ParamSlot,
   DerivedValue,
   NumericVerification,
+  QuestionVersion,
 } from '../../types/domain';
 import type { PedagogicalTaskDescriptor } from '../../types/authoring-task';
 import {
@@ -196,19 +198,6 @@ export function optionShapeValid(type: QuestionType, options: unknown): boolean 
   if (!Array.isArray(options) || options.length !== expected) return false;
   const correct = options.filter((o) => o && (o as QuestionOption).role === 'correct');
   if (correct.length !== 1) return false;
-  // An MCQ must carry at least one common-misconception. This is not a style
-  // rule: decideStrategy (attempts.service.ts) applies Strategy A ONLY when the
-  // student picks a common-misconception, so an MCQ without one silently opts
-  // out of the retry gate and is Strategy B in every case. A real generation on
-  // 2026-08-14 produced correct/clearly-wrong/clearly-wrong/partially-correct
-  // and nothing noticed. True/False needs no check — assertOptionInvariants
-  // coerces its single wrong option to common-misconception by design.
-  if (type === 'mcq') {
-    const misconceptions = options.filter(
-      (o) => o && (o as QuestionOption).role === 'common-misconception',
-    );
-    if (misconceptions.length === 0) return false;
-  }
   return options.every((o) => {
     const opt = o as QuestionOption;
     return (
@@ -394,4 +383,42 @@ export function suggestedDifficultyField(value: unknown): { suggestedDifficulty?
  * sees WHY the question will not serve, right where they read the review. */
 export function withVerificationNote(reasoning: string, failure?: string): string {
   return failure ? `${reasoning}\n\nNumeric verification FAILED: ${failure}` : reasoning;
+}
+
+export interface CandidateInspection {
+  storable: boolean;
+  findings: string[];
+  numerics: ReturnType<typeof verifyGeneratedNumerics>;
+}
+
+/** Deterministic, free checks. They never cause a regeneration: a problem the
+ * instructor can fix is a finding for the checker and the instructor; only
+ * options that cannot be stored at all make the candidate unstorable. */
+export function inspectCandidate(input: {
+  type: QuestionType; kind?: QuestionKind; difficulty?: Difficulty; candidate: GeneratorOutput | null | undefined;
+}): CandidateInspection {
+  const empty = { stem: '', options: [] } as unknown as GeneratorOutput;
+  const candidate = input.candidate;
+  if (!candidate || !optionShapeValid(input.type, candidate.options) || !trueFalseShapeValid(input.type, candidate)) {
+    return { storable: false, findings: ['The options do not form a storable question.'], numerics: verifyGeneratedNumerics(candidate ?? empty) };
+  }
+  const findings: string[] = [];
+  if (!kindContractMet(input.kind, candidate)) findings.push(`The question was requested as ${input.kind} but was written as the other kind.`);
+  if (!errorModelsNameMistakes(candidate)) findings.push('A distractor formula does not name the mistake it models.');
+  if (!hardnessMoveDeclared(input.difficulty, candidate)) findings.push('A hard question did not declare its hardness move.');
+  if (input.type === 'mcq' && !candidate.options.some(o => o.role === 'common-misconception')) {
+    findings.push('No option has the role common-misconception.');
+  }
+  const numerics = verifyGeneratedNumerics(candidate);
+  if (numerics.failure) findings.push(numerics.failure);
+  return { storable: true, findings, numerics };
+}
+
+export function sourceRefsFor(chunks: RetrievedChunk[], indexes: number[] | undefined): QuestionVersion['sourceRefs'] {
+  const all = chunks.filter(chunk => chunk.materialId);
+  const cited = (indexes ?? [])
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= chunks.length)
+    .map(n => chunks[n - 1])
+    .filter(chunk => chunk.materialId);
+  return (cited.length ? cited : all).map(chunk => ({ materialId: new ObjectId(chunk.materialId), chunk: chunk.text }));
 }
