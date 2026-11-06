@@ -2,9 +2,7 @@ import { attachTutorial } from '../../tutorials.js';
 import {
   browseBank, contentRunEvaluationExportUrl, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
   getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
-  getAuthoringQualityStatus,
-  prepareQuestionMemory,
-  type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type GenerationQualityPolicy, type QuestionGenerationRun, type ModelUsageSnapshot,
+  type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
 import { el, mount } from '../../dom.js';
@@ -19,7 +17,7 @@ import { exactBankChecks } from './exact-bank-checks.js';
 import { taskRetrievalChecks } from './task-retrieval-checks.js';
 
 type Tier = 'easy' | 'medium' | 'hard';
-type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; qualityPolicy?: GenerationQualityPolicy; runIds?: string[]; errors?: string[] };
+type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[]; errors?: string[] };
 const active = (run: ContentRunSummary) => run.status === 'running' || run.status === 'queued';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const stageName = (stage: string) => ({ queued: 'Waiting to start', retrieving: 'Finding source evidence', generating: 'Writing questions', validating: 'Checking answers', reviewing: 'Reviewing quality', persisting: 'Saving drafts', completed: 'Completed' })[stage] ?? stage.replace(/-/g, ' ');
@@ -103,12 +101,11 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
   const root = el('section', { class: 'generation-workbench' });
   mount(outlet, root); mount(root, loadingState('Preparing your question workspace…'));
   try {
-    const [tree, coverage, materials, recent, queued, running, authoringStatus] = await Promise.all([
+    const [tree, coverage, materials, recent, queued, running] = await Promise.all([
       getCourseTree(courseId), getPreseeding(courseId), listMaterials(courseId),
       listContentRuns(courseId, { kind: 'question-generation', limit: 25 }),
       listContentRuns(courseId, { kind: 'question-generation', status: 'queued' }),
       listContentRuns(courseId, { kind: 'question-generation', status: 'running' }),
-      getAuthoringQualityStatus(courseId).catch(() => undefined),
     ]);
     if (!root.isConnected) return;
     const base = `#/instructor/course/${encodeURIComponent(courseId)}`;
@@ -125,8 +122,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let submission: Submission | undefined;
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Submission | null;
-      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string' &&
-        (stored.qualityPolicy === undefined || stored.qualityPolicy === 'baseline' || stored.qualityPolicy === 'grounded-memory-v1' || stored.qualityPolicy === 'grounded-memory-v2')) submission = stored;
+      if (stored && typeof stored.submissionId === 'string' && Array.isArray(stored.cells) && typeof stored.prompt === 'string') submission = stored;
     } catch { /* Storage may be unavailable; in-session request identity is retained. */ }
     const persist = () => { try { if (submission) localStorage.setItem(storageKey, JSON.stringify(submission)); else localStorage.removeItem(storageKey); } catch { /* Request identity is also held in memory. */ } };
     if (submission?.runIds) {
@@ -140,9 +136,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let difficulty: Tier | 'balanced' = 'balanced';
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
     let questionType: 'mcq' | 'true-false' = 'mcq';
-    let qualityPolicy: GenerationQualityPolicy = submission?.qualityPolicy ?? 'baseline';
-    let memoryPreparationBusy = false;
-    let memoryPreparationMessage = '';
     let bank: BankQuestion[] = [];
     let selectedQuestion = '';
     let previewRunId = '';
@@ -216,25 +209,10 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('option', { value: 'auto', text: 'Match each objective' }), el('option', { value: 'conceptual', text: 'Conceptual understanding' }), el('option', { value: 'calculation', text: 'Calculation practice' }));
       const typeSelect = el('select', { id: 'gw-type', onchange: () => { questionType = typeSelect.value as typeof questionType; updateSetup(); } },
         el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
-      const pilot = el('input', { id: 'gw-quality-pilot', type: 'checkbox', 'data-gw-focus': 'quality-pilot', 'aria-describedby': 'gw-quality-help', checked: qualityPolicy !== 'baseline', onchange: () => { qualityPolicy = pilot.checked ? pilotVersion.value as GenerationQualityPolicy : 'baseline'; updateSetup(); } });
-      const pilotVersion = el('select', { class: 'input', 'aria-label': 'Quality pilot version', onchange: () => { if (pilot.checked) qualityPolicy = pilotVersion.value as GenerationQualityPolicy; updateSetup(); } }, el('option', { value: 'grounded-memory-v1', text: 'v1 · Source and similarity checks' }), el('option', { value: 'grounded-memory-v2', text: 'v2 · Shared evidence, task memory and call budgets' }));
-      pilotVersion.value = qualityPolicy === 'grounded-memory-v2' ? qualityPolicy : 'grounded-memory-v1';
-      const prepareMemory = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: async () => {
-        if (memoryPreparationBusy || locked()) return;
-        memoryPreparationBusy = true; memoryPreparationMessage = ''; updateSetup();
-        try {
-          const result = await prepareQuestionMemory(courseId, 5);
-          memoryPreparationMessage = `${result.prepared} historical question descriptors prepared · ${result.skipped} skipped · ${result.failed} failed. Existing question content and approval are unchanged. Embedding costs are excluded from token receipts.`;
-        } catch (error) { memoryPreparationMessage = message(error); }
-        finally { memoryPreparationBusy = false; updateSetup(); }
-      } }, 'Prepare memory for up to 5 questions');
-      const memoryReceipt = el('p', { class: 'gw-plan-note', role: 'status' });
-      const memoryPreparation = el('details', {}, el('summary', { text: 'Prepare older question memory · optional' }),
-        el('p', { class: 'gw-plan-note', text: 'Uses additional model calls to prepare missing task descriptors from current Bank / Queue questions. At most five questions per click. This does not generate or approve questions.' }), prepareMemory, memoryReceipt);
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
         selectedQuestion = ''; previewRunId = ''; previewKey = ''; readerRevision++;
-        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim(), ...(qualityPolicy !== 'baseline' ? { qualityPolicy } : {}) }; persist(); await submit();
+        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
       } });
       const selections = el('div', { class: 'gw-objective-tools' }, el('button', { type: 'button', onclick: () => { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); } }, 'Select coverage gaps'),
         el('button', { type: 'button', onclick: () => { selected.clear(); updateSetup(); } }, 'Clear'));
@@ -242,9 +220,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('div', {}, el('span', { class: 'gw-label', text: 'Questions per objective' }), el('div', { class: 'gw-stepper' }, minus, amount, plus)),
         el('div', {}, el('span', { class: 'gw-label', text: 'Difficulty' }), tiers),
         el('div', {}, el('label', { for: 'gw-type', class: 'gw-label', text: 'Question type' }), typeSelect),
-        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect),
-        el('div', { class: 'gw-quality-setting' }, el('label', { class: 'gw-quality-toggle' }, pilot, el('span', { text: 'Sources and question memory pilot' })), pilotVersion,
-          el('p', { id: 'gw-quality-help', class: 'gw-plan-note', text: 'Before writing, uses source passages and existing questions to guide distinct learning tasks. Before saving, checks source support, notation and similarity again. May withhold similar or unsupported drafts and use extra model calls. Similarity checks are best effort; instructor review is required.' }), memoryPreparation));
+        el('div', {}, el('label', { for: 'gw-focus', class: 'gw-label', text: 'Practice focus' }), focusSelect));
       mount(setup, el('aside', { class: 'gw-objectives', 'aria-label': 'Learning objectives' }, el('div', { class: 'gw-pane-title', text: 'LEARNING OBJECTIVES' }), selections, objectivesList,
         el('div', { class: 'gw-pane-foot', text: 'Existing drafts count toward coverage. You can select an objective to create additional practice.' })),
         el('div', { class: 'gw-composer' }, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: 'YOUR TEACHING BRIEF' }), el('h2', { text: 'What should students practise?' }),
@@ -257,12 +233,9 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           el('footer', { class: 'gw-footer' }, el('small', { text: 'New questions are saved for your review.' }), generate)), summary);
       updateSetup = () => {
         const focusKey = document.activeElement?.getAttribute('data-gw-focus');
-        const isLocked = locked() || memoryPreparationBusy;
-        prepareMemory.disabled = isLocked; prepareMemory.textContent = memoryPreparationBusy ? 'Preparing question memory…' : 'Prepare memory for up to 5 questions';
-        prepareMemory.setAttribute('aria-busy', String(memoryPreparationBusy)); memoryReceipt.textContent = memoryPreparationMessage;
-        memoryPreparation.hidden = qualityPolicy !== 'grounded-memory-v2';
+        const isLocked = locked();
         amount.value = String(count); minus.disabled = isLocked || count === 1; plus.disabled = isLocked || count === 5;
-        settings.disabled = isLocked; prompt.disabled = isLocked; pilot.checked = qualityPolicy !== 'baseline'; pilotVersion.disabled = isLocked || !pilot.checked;
+        settings.disabled = isLocked; prompt.disabled = isLocked;
         selections.querySelectorAll('button').forEach(button => { button.disabled = isLocked; });
         setup.querySelectorAll<HTMLButtonElement>('.gw-suggestions button').forEach(button => { button.disabled = isLocked; });
         mount(tiers, ...(['balanced','easy','medium','hard'] as const).map(tier => el('button', { type: 'button', 'aria-pressed': tier === difficulty, 'data-gw-focus': `tier-${tier}`, disabled: isLocked, onclick: () => { difficulty = tier; updateSetup(); } }, tier[0].toUpperCase()+tier.slice(1))));
@@ -277,14 +250,11 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         selectionSummary.textContent = `${selected.size} ${selected.size === 1 ? 'objective' : 'objectives'} selected · ${count} ${count === 1 ? 'question' : 'questions'} each`;
         const total = count * selected.size;
         generate.textContent = isLocked ? 'Generation in progress' : `Generate ${total} ${total === 1 ? 'question' : 'questions'} →`;
-        if (!isLocked && qualityPolicy === 'grounded-memory-v2' && authoringStatus?.coordinatedSaveAvailable === false) generate.textContent = `Analyze ${total} diagnostic candidates →`;
         generate.disabled = isLocked || !total || cells().length > 120;
         const selectedSources = materials.filter(m => objectives.some(lo => selected.has(lo._id) && sourcesFor(lo).some(s => s._id === m._id)));
         mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
           el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : 'True / false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
           el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
-          el('div', { class: 'gw-fact' }, 'Quality policy', el('strong', { text: qualityPolicy === 'grounded-memory-v2' ? 'Shared evidence and task memory v2 pilot' : qualityPolicy === 'grounded-memory-v1' ? 'Sources and question memory v1 pilot' : 'Baseline' })),
-          qualityPolicy === 'grounded-memory-v2' && authoringStatus?.coordinatedSaveAvailable === false && el('p', { class: 'gw-run-error', text: 'Diagnostic mode: this server cannot safely save concurrent v2 changes. Model checks consume tokens and retain candidates, but do not add questions to the Bank / Queue.' }),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
           el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),
           cells().length > 120 && el('p', { text: 'Choose fewer objectives for this batch.' }));
@@ -297,7 +267,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       busy = true; updateSetup(); say('Starting your batch…');
       const current = submission;
       try {
-        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt, ...(current.qualityPolicy ? { qualityPolicy: current.qualityPolicy } : {}) });
+        const result = await enqueueGenerationPlan(courseId, current.cells, { submissionId: current.submissionId, prompt: current.prompt });
         current.runIds = result.runs.flatMap(row => row.runId ? [row.runId] : []);
         current.errors = result.runs.flatMap(row => row.error ? [`${objectives.find(lo => lo._id === row.loId)?.name ?? 'Objective'}: ${generationIssue(row.error)}`] : []);
         persist();

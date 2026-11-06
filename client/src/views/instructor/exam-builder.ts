@@ -187,7 +187,7 @@ export async function renderExamBuilder(outlet: HTMLElement, params: RouteParams
   }
   function renderRunArea(): void {
     const node = root.querySelector<HTMLElement>('.eb-runs'); if (!node) return;
-    const labels = { retrieving: 'Retrieving course evidence', generating: 'Writing question', validating: 'Checking answers and numerical validity', reviewing: 'Reviewing quality and alignment', saving: 'Saving candidate' };
+    const labels = { retrieving: 'Retrieving course evidence', generating: 'Writing question', reviewing: 'Reviewing quality and alignment', saving: 'Saving candidate' };
     const runs = [...detail.runs].sort((a, b) => Number(['queued', 'running'].includes(b.status)) - Number(['queued', 'running'].includes(a.status)));
     if (!runs.length) { node.innerHTML = ''; return; }
     node.innerHTML = `<p class="eb-stream-state" role="status">${connected ? 'Live updates connected' : 'Reconnecting to live updates… Saved work is preserved.'}</p>` + runs.map(run => {

@@ -84,7 +84,7 @@ export interface ExamGenerationCell {
 }
 export interface ExamGenerationProgress {
   item: number;
-  stage: 'retrieving' | 'generating' | 'validating' | 'reviewing' | 'saving';
+  stage: 'retrieving' | 'generating' | 'reviewing' | 'saving';
   preview?: { stem: string; options?: Array<{ key: string; text: string }> };
 }
 export interface ExamBuildRun {

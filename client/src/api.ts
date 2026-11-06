@@ -1667,15 +1667,6 @@ export type ContentRunKind = 'material-ingest' | 'question-generation' | 'struct
 export type ContentRunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed';
 
 export type GenerationQualityPolicy = 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2';
-export interface AuthoringQualityStatus { coordinatedSaveAvailable: boolean; pilot: boolean; teacherCalibrated: boolean; concurrencyScope?: 'process' }
-export function getAuthoringQualityStatus(courseId: string): Promise<AuthoringQualityStatus> {
-  return request(`/api/courses/${encodeURIComponent(courseId)}/authoring-quality-status`);
-}
-export function prepareQuestionMemory(courseId: string, limit = 5): Promise<{ prepared: number; skipped: number; failed: number; embeddingCostsIncluded: false }> {
-  return request(`/api/courses/${encodeURIComponent(courseId)}/question-memory/prepare`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit }),
-  });
-}
 export interface GenerationValidationFinding {
   kind: 'source-scope' | 'actor-relation' | 'notation' | 'task-duplication' | 'answer-semantics' | 'instruction' | 'verbosity';
   target: 'stem' | 'options' | 'parameters' | 'task';
@@ -1728,7 +1719,7 @@ export interface GenerationQualityAssessment {
   evidencePacketId: string;
   memoryDigest: string;
   checkedAt: string;
-  intent?: RegenerationIntent;
+  intent?: 'edit-existing' | 'create-variant' | 'create-independent-task';
   achievedDifficulty?: Difficulty;
   requestedDifficulty?: Difficulty;
   difficultyMismatch?: boolean;
@@ -2158,7 +2149,6 @@ export interface GenerationBlueprint {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
   models: { embedding: string; generator: string; validator: string; reviewer: string };
   createdBy: string;
@@ -2174,7 +2164,6 @@ export interface GenerationBlueprintInput {
   type: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
   materialIds?: string[];
 }
 
@@ -2592,7 +2581,7 @@ export function getGenerationPlan(courseId: string): Promise<GenerationPlanRow[]
 }
 
 /** POST /api/courses/:courseId/generation-plan -> one run per cell. */
-export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string; qualityPolicy?: GenerationQualityPolicy }): Promise<GenerationPlanResult> {
+export function enqueueGenerationPlan(courseId: string, cells: GenerationPlanCell[], submission?: { submissionId: string; prompt?: string }): Promise<GenerationPlanResult> {
   return request<GenerationPlanResult>(`/api/courses/${encodeURIComponent(courseId)}/generation-plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2627,7 +2616,6 @@ export interface GenerateQuestionsInput {
   type?: GenerationQuestionType;
   difficulty?: GenerationDifficulty;
   prompt?: string;
-  qualityPolicy?: GenerationQualityPolicy;
 }
 
 export interface GenerationPreset {
@@ -2702,34 +2690,6 @@ export function regenerateQuestion(
       body: JSON.stringify({ prompt }),
     },
   );
-}
-
-export type RegenerationIntent = 'edit-existing' | 'create-variant' | 'create-independent-task';
-export interface GroundedRegenerationResult {
-  candidateId: string;
-  variant?: RegenerationVariant;
-  quality?: GenerationQualityAssessment;
-  intent: RegenerationIntent;
-  status: 'preparing' | 'eligible' | 'withheld' | 'failed' | 'adopting' | 'adopted';
-  reasons: string[];
-  originalVersionId?: string;
-  budget?: AuthoringBudgetReceipt;
-}
-export function regenerateGroundedQuestion(courseId: string, questionId: string, input: {
-  prompt: string; requestId: string; intent: RegenerationIntent; expectedVersionId: string;
-  requiredChanges?: string[]; preserve?: string[];
-}): Promise<GroundedRegenerationResult> {
-  return request(`/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regenerate`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, qualityPolicy: 'grounded-memory-v2' }),
-  });
-}
-export function adoptRegenerationCandidate(courseId: string, questionId: string, candidateId: string, expectedVersionId: string): Promise<QuestionVersion> {
-  return request<{ version: QuestionVersion }>(`/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regeneration-candidates/${encodeURIComponent(candidateId)}/adopt`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersionId }),
-  }).then(response => response.version);
-}
-export function getRegenerationCandidate(courseId: string, questionId: string, candidateId: string): Promise<GroundedRegenerationResult> {
-  return request(`/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regeneration-candidates/${encodeURIComponent(candidateId)}`);
 }
 
 // --- Instructor: question import (IN-Q01) -----------------------------------
@@ -3874,7 +3834,7 @@ export interface BuilderExam {
   activeRunIds?: string[]; publicationId?: string; publishedRevision?: number; updatedAt: string; startedAt?: string; displayTitle?: string; deletingAt?: string;
 }
 export interface BuilderRun {
-  progress?: { item: number; stage: 'retrieving' | 'generating' | 'validating' | 'reviewing' | 'saving'; preview?: { stem: string; options?: Array<{ key: string; text: string }> } };
+  progress?: { item: number; stage: 'retrieving' | 'generating' | 'reviewing' | 'saving'; preview?: { stem: string; options?: Array<{ key: string; text: string }> } };
   _id: string; status: 'planned' | 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
   interpretation: string; conflicts: string[]; prompt: string;
   cells: Array<{ id: string; loId: string; secondaryLoIds?: string[]; type: QuestionType; difficulty: Difficulty }>;
