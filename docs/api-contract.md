@@ -403,17 +403,39 @@ material ids are rejected before hierarchy creation begins.
 - `GET /api/courses/:courseId/generation-blueprints` → newest-first saved
   recipes. `POST` creates and `PATCH /:blueprintId` updates a recipe containing
   name, LO, count, type, optional difficulty/prompt/ready material IDs, and the
-  pinned generator/validator/reviewer model snapshot.
+  pinned generator/reviewer (Checker) model snapshot.
 - `POST /api/courses/:courseId/generation-blueprints/:blueprintId/run` →
   202 `{ runId }`. The resulting run records `blueprintId`, copies the saved
   recipe, and still sends only `{ runId }` to Agenda.
 - `POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }` →
   `{ variant: { stem, options, difficulty, paramSlots?, derivedValues?,
   numericKind?, verification?, sourceRefs, agentDecision } }`.
-  Generates a transient side-by-side alternative and appends
+  Runs one generator call and one checker call and returns an unsaved
+  alternative (`agentDecision` is the checker verdict). It appends
   `{ prompt, at }` to the question's regeneration history, but does not create
   a QuestionVersion or replace current content. Replacement is an explicit
-  `PATCH /api/questions/:questionId` after instructor review (IN-Q12).
+  `PATCH /api/questions/:questionId` after instructor review (IN-Q12). There
+  are no regeneration-candidate records and no adopt route.
+- `POST /api/courses/:courseId/question-similarity/rebuild` → `{ questions }`.
+  Instructor-only. Recomputes embeddings and `similarity` for every active
+  question in the course.
+
+### Two-call generation and similarity
+
+Each generated question costs one generator call (usage stage `generation`)
+followed by one checker call (step `reviewer`, usage stage `check`); there are
+no retries. Every checked question is saved as a Draft carrying
+`agentDecision { decision: 'pass'|'flag'|'reject', reasoning, roleAssessment,
+suggestions: string[], suggestedDifficulty? }`; a `reject` is still saved so the
+instructor can decide. Slots in one run get distinct assessment angles, and the
+generator sees up to 30 stems of active questions in the same LO plus stems
+from earlier in the same batch. Generate, plan and blueprint inputs take no
+`qualityPolicy`.
+
+Question heads expose `similarity { lo, topic, model, computedAt }` where `lo`
+and `topic` are each `{ questionId, score } | null`: the nearest active
+question (embedding cosine, informational only) sharing an LO or a topic. The embedding of stem plus correct option is stored in
+`questionEmbeddings` and refreshed after generation and after PATCH edits.
 - Numerical QuestionVersions expose `numericKind`, `paramSlots`,
   `derivedValues`, and an optional `verification { evaluatorVersion,
   inputDisplayVersion?, sampleSeeds, verifiedAt, parameterCoverage? }`. Serving of practice/retry/preview candidates and
@@ -850,12 +872,10 @@ operation writes an audit entry.
 - `GET /api/admin/capabilities?courseId=` / `PUT /api/admin/capabilities` —
   platform defaults or a separate per-course matrix, including effective-value
   source labels. TA approval and flag resolution remain hard-locked off.
-- `GET|PUT /api/admin/platform-settings` — generator, validator, reviewer, and
-  future mastery-evaluator model selectors; positive daily generation limit;
-  Reviewer Agent and Layer-2 evaluator feature flags. Turning Reviewer Agent
-  off requires `confirmQualityImpact: true`. New generated Drafts then skip the
-  reviewer call and persist a flagged decision with the disabled-reviewer
-  reason. Exceeding the daily requested-question limit returns 429.
+- `GET|PUT /api/admin/platform-settings` — generator, reviewer (Checker),
+  utility and future mastery-evaluator model selectors; positive daily
+  generation limit; Layer-2 evaluator feature flag. The checker always runs.
+  Exceeding the daily requested-question limit returns 429.
   Each step has `modelSource: environment | override`. Environment mode resolves
   the model from `LLM_MODEL_*` (falling back to `LLM_DEFAULT_MODEL`; utility uses
   the latter directly) after each server restart, preserving compatible parameters.
@@ -867,7 +887,7 @@ operation writes an audit entry.
   no Custom model registration or provider call is needed. Provider availability
   still requires a real generation test. Existing queued model IDs remain pinned.
 - `GET|PUT /api/admin/courses/:courseId/models` — Admin-only, per-course model
-  choices for Generator, Structure validator, Reviewer, and Utility. GET returns
+  choices for Generator, Reviewer (Checker), and Utility. GET returns
   `revision`, sparse `overrides`, `platformModels`, `effectiveModels`, and
   `availableModels`. PUT takes `{ revision, overrides }` and replaces the sparse
   choices. Omitted stages inherit the platform setting, then the environment
@@ -958,9 +978,8 @@ verdict: 'checked' | 'pass' | 'flag' | 'reject', explanation, at }]`.
 These are returned answer-check/reviewer explanations, capped at 1,600 characters
 and the latest 60 records, persisted before saving so they appear during checks.
 They contain no provider reasoning trace. Historical runs may omit them.
-Pilot generation already supplies source evidence and existing-question memory
-before writing, then rechecks similarity before saving; this does not guarantee
-uniqueness or synchronize concurrent generators.
+Generation supplies existing same-LO stems before writing; this does not
+guarantee uniqueness or synchronize concurrent generators.
 
 Question-generation run summaries and full snapshots may include
 `preview: { item: number, attempt: number, stem: string }`. `item` is zero-based;
@@ -1641,106 +1660,6 @@ removes the course's usage manifests and receipts. Browser refreshes re-read
 persistence rather than adding SSE token deltas; usage reads are excluded from
 successful operation-audit noise.
 
-## Source-grounding and question-memory generation pilot (2026-10-03)
-
-Public generation requests accept optional
-`qualityPolicy: "baseline" | "grounded-memory-v1"`. Absence means baseline.
-This field is accepted by `POST /api/courses/:courseId/generate`, at the top
-level of `POST /api/courses/:courseId/generation-plan`, and by generation
-recipe creation/update. A `/generate` request using a recipe may explicitly
-override its policy for that run. A normal recipe run inherits the saved
-policy. Run retry preserves the policy, explicit material-pin intent (including
-false), and instructor-selected Hard move. Reusing a batch submission ID with
-a different non-baseline policy returns the existing 409 submission conflict;
-omitted and explicit baseline are equivalent for submission identity.
-
-The Instructor/Admin guards are unchanged. The pilot requires the Reviewer
-feature to be enabled; enqueue returns 409
-`generation-quality-reviewer-required` otherwise. A later disable causes the
-queued pilot to fail explicitly before generation. The opt-in policy is stored
-in `QuestionGenerationRun.input.qualityPolicy`. Legacy runs, transient
-regeneration, and private assessment generation retain their existing behavior.
-
-Pilot runs additionally persist `result.quality`:
-
-- `policy`: `grounded-memory-v1`.
-- `evidence`: a bounded frozen packet containing original passages with stable
-  IDs/offsets, material hashes/revisions/ingest identity, scope labels, source
-  coverage, and parsing diagnostics. Qdrant text locates a matching original
-  chunk; it is not independently trusted as evidence.
-- `assessments`: one per completed source/novelty check, identified by `item`.
-  Each contains `status` (`eligible` or `withheld`), `sourceSupport`, `notation`,
-  `novelty`, bounded reasons, validated quote/citation locations, compared and
-  matched question-version identities, evidence/memory snapshot identities,
-  timestamp, and coverage limits. A bounded `candidate` diagnostic copy with
-  a content hash and `truncated` flag preserves withheld authoring output.
-
-`eligible` describes the model's assessment within the supplied context. It is
-not a proof of source entailment, global task uniqueness, numerical validity,
-or teacher acceptance. The server validates citation IDs, exact quote locations,
-and memory-reference membership independently. False distractors and false
-T/F statements are allowed when their intended corrections are supported.
-
-Candidates assessed unsupported, inconsistent, duplicate, variant, uncertain,
-or stale at the final context recheck are withheld from Draft insertion and
-recorded in the existing per-item `failures`. A partial run reports created
-Drafts separately from those shortfalls; an all-withheld run creates no Drafts.
-Operational failures before a completed assessment can have a failure without
-an assessment. Existing numerical proofs, normal reviewer decisions, Instructor
-approval, and student serving gates continue to apply.
-
-The check uses one additional structured model judgment per candidate unless
-an exact loaded-memory duplicate is detected first; the existing JSON repair
-may add one attempt. Its tokens appear in the existing ledger under
-`quality-review`. Authoring source/candidate evidence stays in the guarded run
-record and is not copied into the metadata-only usage ledger.
-
-Source and question-memory rechecks are best effort. They do not serialize
-commits with concurrent generation or instructor edits. The initial memory
-read is limited to 200 active overlapping-LO heads; the judge receives a bounded
-ranked selection, normally 12 entries. Source context covers retrieved original
-chunks and immediate neighbors within the recorded budget. Coverage fields
-describe truncation and missing versions; they never imply exhaustive search.
-See the generation-quality implementation status for exact budgets and the
-teacher-evaluation protocol.
-## Generation evaluation export (2026-10-03)
-
-`GET /api/courses/:courseId/content-runs/:runId/evaluation-export` is a
-course-Instructor/Admin read, using the existing course guard. It returns a
-`generation-evaluation-export-v1` JSON attachment named
-`generation-evaluation-<runId>.json` with `Cache-Control: no-store`. TA/Student
-access is not granted. No model calls or course-content mutations occur; the
-ordinary request audit may record the download.
-
-The response includes recorded run inputs and model IDs; one exact item-indexed
-slot for every requested question; original version-1 content bound through a
-course-owned question head and matching generated run/item provenance; recorded
-withheld candidate assessments; copied source excerpts and frozen evidence when
-retained; historical numerical verification; and safe usage rows plus an
-independent usage summary. Slot outcomes are `saved`, `withheld`, `failed`, or
-`unavailable`. Missing or ambiguous original records do not become invented
-failures, and current edited versions/preview text are never substituted.
-
-Usage rows omit actor, request/session correlation and provider-response IDs.
-The export includes no credentials or raw provider response bodies. Authoring
-question/source content is intentionally included. The response is retrospective:
-it cannot reconstruct the historical objective text, complete starting Bank/Queue,
-effective pre-run settings, or experiment isolation. Teacher labels and review
-time are never inferred from automatic review or publication status.
-
-Bounds: 100 requested slots, 1,000 exported call rows, and 100 copied source
-references / 30,000 copied source characters per saved slot. Candidate and
-evidence bounds follow the generation quality contracts. Truncation, late pending
-usage, and missing context are explicit. The usage summary retains the usage
-service's independent accounting scope and coverage limits; it is not a sum of
-only the downloaded call page. Terminal-state changes during export return 409.
-
-Errors: 404 for absent/foreign-course runs; 409 for non-generation or active runs,
-changed run snapshots, or unsupported slot/version bounds. The same-origin link
-appears in terminal **Generation steps** dialogs. Offline review and report
-formats are documented in `scripts/prompt-ab/evaluation/README.md`; those local
-tools neither invoke providers nor write to application records.
-
 ## One-time supplemental student codes (2026-10-06)
 
 Canvas Gradebook/people CSV imports are the primary enrollment path. Course
@@ -1975,191 +1894,6 @@ input budget; `structure-condition-context-too-large` refuses the affected call
 without silently dropping conditions. Extraction cache identities are unchanged
 by this selector alone; changed synthesis prompts require distinct pack keys.
 
-### Public generation and regeneration
-
-Public generate, plan and blueprint inputs accept
-`qualityPolicy: "baseline" | "grounded-memory-v1" | "grounded-memory-v2"`.
-Absence remains baseline. Retry retains the stored policy/source/model snapshot.
-V2 requires Reviewer availability; it cannot silently fall back to baseline.
-Its terminal result includes the durable task plan, independent supply/shortfall,
-structured assessments, diagnostic candidates and per-slot budget receipts.
-Achieved difficulty is stored on new candidates; requested difficulty remains in
-the run. Numerical serving/admission proofs remain required.
-
-`POST /api/courses/:courseId/questions/:questionId/regenerate` retains the legacy
-`{ prompt }` response. V2 adds required `qualityPolicy: "grounded-memory-v2"`,
-`requestId: UUID`, `expectedVersionId`, and optional `intent`, `requiredChanges`,
-`preserve`. Intent is `edit-existing | create-variant | create-independent-task`;
-requirements/preserved constraints are at most eight nonempty strings each.
-Without explicit intent, v2 uses the legacy variant intent. Prompt length is
-1–2,000. Intent/requirements/request identity require v2.
-
-The UUID binds actor/course/question/original version and input hash. Duplicate
-dispatch returns the same candidate; changed input returns `409`. The response
-contains candidate ID/status, original version, intent, reasons, assessment,
-usage correlation and budget; only an eligible candidate offers an adoptable
-variant. Durable states are `preparing | eligible | withheld | failed | adopting
-| adopted`. A preparing request older than its processing lease becomes failed,
-with provider billing uncertainty stated. A retry cannot begin a new model job
-under the same identity.
-
-- `GET /api/courses/:courseId/questions/:questionId/regeneration-candidates/:candidateId`
-  recovers the requesting actor's retained candidate.
-- `POST .../regeneration-candidates/:candidateId/adopt` accepts only
-  `{ expectedVersionId }` and returns `{ version }`. It uses stored checks/content,
-  never client verdicts. Changed original/source/memory is rejected; eligible
-  adoption atomically saves a new version, fingerprint and receipt. Replay returns
-  the adopted version. Withheld/failed/preparing candidates are not adoptable.
-
-Known prerequisites use explicit errors: source unavailable/changed/not-ready,
-incomplete chunks/indexing, changed objectives, and changed/unavailable original
-memory return `409`. Missing/invalid original comparisons and original-memory
-scope/size failures return `422`. These are exact service-code mappings; unknown
-errors remain `500`. Existing `authoring-memory-changed` and
-`question-changed-during-regeneration` conflicts remain `409`, and ineligible or
-tampered candidates remain `422`. Same-UUID cached retrieval can return the
-retained candidate after the original changes; that read never authorizes
-adoption. A fresh request rechecks the expected version before paid work.
-The editor retains evidence and text after confirmed prerequisite failures but
-blocks replacement until explicit new generation. Unknown network/500 responses
-retain candidate replay because completion may be ambiguous.
-
-- `POST /api/courses/:courseId/question-memory/prepare` accepts strict
-  `{ limit: 1..10 }` (default five) and prepares a bounded set of older immutable
-  versions. UI requests five per explicit action. Response reports prepared,
-  skipped, failed and budget; embedding costs are excluded from LLM receipts.
-  It never generates, approves or publishes a question.
-- `GET /api/courses/:courseId/authoring-quality-status` returns
-  `{ policy: "grounded-memory-v2", pilot: true, teacherCalibrated: false,
-  coordinatedSaveAvailable, concurrencyScope: "process", providerConcurrency }`.
-  Unsupported/unavailable Mongo transaction topology permits diagnostic v2 work
-  but rejects coordinated persistence/adoption. No role or platform access changes.
-
-Shared context uses authorized current originals plus current Bank/Queue and
-relevant cross-LO memory. Summaries/vectors only locate candidates. Exact quoted
-passage validation proves location, while the model assesses source entailment,
-notation, independent inference, edit fulfillment/invariants, difficulty and
-justified length. Selected-memory omissions remain visible. One bounded in-scope
-evidence expansion is allowed; missing premises cannot widen source scope.
-
-Fresh durable v2 requests also select the server-owned
-`exactBankProtocol: "course-exact-bank-v1"`, preserved through worker dispatch,
-exact retry and new durable regeneration requirements. It is not a new client
-parameter. Historical absent selectors and same-UUID replay remain unchanged;
-unknown/incompatible explicit selectors are refused. Only independent creation
-uses the local check; edit/variant overlap, no-op and pinned-original rules stay
-in force. The check scans current active course Bank/Queue heads independently
-of the unchanged 120/80 semantic prompt window and uses projected actual version
-content, including historical/imported questions without prepared fingerprints.
-It performs no provider, embedding or backfill work.
-
-Guarded assessments may include server-computed `exactBank`: protocol/course/
-candidate hash, ordered current-head binding digest, complete/incomplete status,
-explicit incomplete reason, scan/version/invalid/missing counts, observed
-unscanned lower bound, total exact matches and at most twelve current comparator
-references. The exact fingerprint includes option explanations/roles, kind
-metadata and numerical definitions, so it is narrower than semantic or
-student-visible duplication. The 20,000-head/five-second ceilings produce
-explicit incomplete results; zero matches alone is not approval. Quality
-withholds duplicates/incomplete scans before its quality-review call, while
-earlier generation calls may already have occurred. Final public save and
-independent adoption validate the receipt and rescan inside the course fence.
-`generation-exact-bank-receipt-invalid` returns 422;
-`authoring-exact-bank-duplicate` and changed complete Bank bindings return 409;
-`authoring-exact-bank-incomplete` returns 503 while retaining the candidate for
-retry. An unfenced read or standalone diagnostic run cannot guarantee concurrent
-uniqueness. No model tokens are added, but database/CPU costs and production
-latency remain unmeasured. See
-[the exact-Bank implementation](design/question-generation-quality/EXACT-BANK-COVERAGE-2026-10-17.md).
-
-Fresh durable v2 runs and new durable regeneration also select server-owned
-`taskRetrievalProtocol: "course-task-retrieval-v1"`. This is not a browser input
-parameter. Worker restoration/exact retry preserve the recorded selector;
-historical absence and same-UUID recovery are not upgraded. Current active
-course heads are traversed in 128-head keyset pages, bounded by 20,000 heads and
-five seconds. Current/hash-bound profiles or actual-content fallback nominate
-up to 64 global entries within at most 200 retained entries. The normal new
-branch uses local lexical/profile-text ranking and requests no new embedding;
-only a known-identity retained vector for the exact same query can be reused.
-The existing prompt remains bounded to 12 entries / 12,000 characters. At most
-two full mandatory comparators include the immutable original when required;
-they must fit or produce an explicit shortfall. For independent tasks, the same
-quality call must return exactly one valid inference/path comparison per required
-ID, including independent/uncertain verdicts. Explicit edits/variants retain
-intentional-overlap/comparison semantics; common currentness bindings still
-apply. Local scores never establish duplication.
-
-Guarded assessments and initial run quality results may contain optional
-`taskRetrieval`: protocol/ranker version, query hash/current-profile binding
-digest, complete/incomplete status and explicit reason, scanned/checked/missing/
-invalid counts, descriptor/profile diagnostics and nominated/retained/required
-comparison IDs. Safe browser DTOs omit raw query, private vectors and full Bank
-content. Complete denotes bounded traversal, not semantic recall; historical
-absence supplies no counts. Retrieval refreshes for the actual canonical
-candidate and changed repair, and final course-fenced save/adoption validates
-the actual candidate/selection/comparison bindings with local current-profile
-replay. The separate normalized exact-content guard remains in force.
-`generation-task-retrieval-incomplete` returns 503 and retains candidate retry;
-recognized receipt/selection/assessment/query/scope/protocol/policy/vector
-invalid codes return 422 and block stale adoption. Existing changed-memory
-conflicts remain 409. There is no new embedding dispatch, standalone model stage
-or higher budget. Newly missing required rows can consume the existing paid
-same-candidate correction allowance, so runtime model-call counts are not
-guaranteed unchanged; database/CPU work and normal prompt tokens remain costs. See
-[the task-retrieval implementation](design/question-generation-quality/COURSE-TASK-RETRIEVAL-IMPLEMENTATION-2026-10-17.md).
-
-Fresh durable v2 authoring additionally pins internal `authoringPromptProtocol:
-"compact-authoring-v1"`. Exact run retry, queued worker restoration and same-UUID
-regeneration preserve the recorded value or historical absence. Unknown explicit
-values and non-v2 use fail before new model work. The planner groups adjacent
-identical source identities while retaining every canonical passage ID, exact
-text, order, offsets, role/LO scope and source diagnostics. Generator/quality
-compaction applies only to owned instruction prose; complete original evidence,
-teacher requirements, candidate/original content and mandatory Bank comparators
-remain authoritative. It adds no model stage, permission or budget allowance.
-Prompt fitting is checked against actual call admission, including streaming
-message-envelope overhead and correction attempts, rather than raw-text length
-alone. These mechanical checks do not establish model accuracy or valid yield.
-
-Fresh v2 public enqueue and new durable regeneration requests also pin internal
-`numericReviewProtocol: "server-rendered-numeric-review-v1"`. Historical absence,
-exact run retry and same-UUID recovery preserve their prior interpretation.
-Role, content and source-quality checks receive one bounded, freshly computed
-numeric example beside the complete unchanged template and original evidence.
-Conceptual/T-F items without a numeric template add no model-facing bytes.
-Unavailable examples are explicit, never approval or a missing-premise waiver.
-The private quality assessment stores a server-owned `numericReview` receipt;
-models cannot supply it. Cached role/content results bind full canonical
-candidate snapshots as well as fresh arithmetic receipts. Repair captures the
-candidate actually shown to those checks. Final public saves and regeneration
-adoption rederive this binding inside the course fence and refuse a stripped or
-changed protocol. Safe formula evaluation, displayed inputs, collision checks,
-source support, teacher clauses, Bank novelty and task demand remain separate
-requirements. No extra model stage, script execution or higher token/send cap is
-introduced. Available samples add normal input cost and may cause an explicit
-unchanged-limit refusal; neither the receipt nor offline scripted responses
-establish semantic recovery or useful yield. See
-[the numeric semantic-review implementation](design/question-generation-quality/NUMERIC-SEMANTIC-REVIEW-IMPLEMENTATION-2026-10-17.md).
-
-Outline repair initially added a service-only mode,
-`coverage-wording-outline-repair-v1`. `createStructureOutlineCoverageRepair`
-accepts one or two `{ id, evidenceIds }` requests against a completed original
-outline/checkpoint. Each supported target must own the requested points, and
-those points must be uncredited everywhere in the parent. Duplicate requested
-points within or across targets are refused. The server derives all old target
-credits to preserve; callers cannot supply an approval or preservation receipt.
-Proposal and ordinary independent review use the target's full own originals.
-Only selected names may change. The durable `coverageAssessment` records
-requested, preserved, missing and lost IDs, reasons and exact binding hash before
-finalization. Missing new credit, lost old credit, no repair, negative/uncertain
-review or exhausted missing target review produces a retained shortfall and no
-finalization; malformed authority remains an error. The parent is unchanged.
-Both modes share the existing single parent-checkpoint cycle, required course
-transactions, CAS, currentness and conservative native-send ceilings. There is
-no automatic Apply, higher budget or additional API-test authorization. The
-Instructor endpoints described below now expose this same engine. See
-[the supported-objective repair implementation](design/question-generation-quality/SUPPORTED-LO-COVERAGE-REPAIR-IMPLEMENTATION-2026-10-17.md).
-
 ### Instructor outline wording repair workspace (2026-10-17)
 
 Both endpoints require the current course Instructor or Admin. TA/Student
@@ -2282,110 +2016,3 @@ coverage is incomplete, otherwise `unrecorded` (always for legacy packets).
 Location hashes are omitted from model prompt passages. A verified page location
 does not prove source entailment, extract chart values, or confer teacher approval.
 
-### Coordination and observed work limits
-
-Replica/sharded deployments use short course-fenced Mongo transactions for
-final current-context checks and authoring writes; paid work stays outside.
-Expiring CAS worker ownership and durable slot/candidate identity support replay.
-First authoring record writes participate in the course fence; deletion sets a
-tombstone before external cleanup. Standalone diagnostic write cleanup is best
-effort and does not claim transactional race safety. A dispatch-to-persistence
-crash cannot guarantee exactly-once provider billing.
-
-The actual model-send hook counts initial, JSON-correction and content attempts.
-Default process admission is four concurrent provider invocations; extraction
-and independently planned v2 slots are limited to two per run. Fairness groups
-by course/actor. Per-slot limits are eight observed sends, two generator attempts,
-one repair/replan and one evidence expansion. The budget receipt includes a
-labelled UTF-8-byte conservative estimate, nullable provider input/output,
-completeness, queue/execution durations, rejected sends and logical-work counters.
-SDK-hidden physical retries, embedding/parsing costs and money charges are
-explicitly excluded. Multi-process admission requires shared coordination.
-
-Guarded authoring records retain source/candidate diagnostics separately from
-the metadata-only token ledger. Instructor/Admin existing run views expose
-appropriate receipts. Teacher acceptance/time and quality improvement remain
-unmeasured until calibrated evaluation; v2 stays opt-in.
-
-### V2 reliability repair (2026-10-14)
-
-V2 model instructions distinguish original-source `F`/`S` aliases from
-Bank/Queue `M` comparators. The model selects bounded source spans rather than
-copying quotations; the server restores exact canonical passage IDs and original
-text. Non-adjacent selected spans become separate exact contiguous quote groups,
-never a joined or rewritten quote. Unknown, duplicate, damaged or out-of-scope
-references fail. This proves location, not semantic claim entailment.
-The wire selection remains at most 16 citations with three spans each; resolved
-storage contains at most 48 exact groups of 1,600 characters each.
-
-Assessments may include additive `taskComparisons` with canonical `entryId`,
-`sameInference`, `sameSolutionPath` and bounded `contrast`. New span responses
-derive persisted matched IDs from valid comparisons where both booleans are
-true. Redundant transport match lists are ignored only in that new protocol;
-legacy copied-quote assessments retain their original consistency checks.
-An independent verdict with a true match, or a duplicate/variant verdict without
-a valid match, remains ineligible. Generator task aliases are rebound to current
-original passages before validation/storage; source aliases cannot appear as
-citation annotations in student question text.
-
-V2 public run, per-slot and durable regeneration budgets explicitly use
-`reported-usage-settlement-v1`. Successful calls with complete safe provider
-input/output counts replace only their own reserved estimates once. Pending,
-failed, cancelled or incomplete calls retain conservative reservations. Parent
-scopes charge independently, and send/input/output/logical limits remain in
-force. Baseline/v1, other authoring budgets and generic defaults remain
-`conservative-reservations-v1`.
-
-Receipt version 1 adds optional `accounting`, `admissionTokens`, `pendingSends`,
-`settledSends` and `conservativeFinishedSends`; historical absence describes the
-prior conservative mode. Cumulative `estimatedInputTokens` and
-`reservedOutputTokens` remain audit data even when completed admissions settle.
-The historical `maxEstimatedTokens` field limits the selected admission ledger,
-which mixes reported successful usage with reservations for unresolved calls in
-settlement mode. These receipts exclude hidden SDK retries and embeddings and
-do not claim a hard provider invoice ceiling.
-
-See [the repair and retest report](design/question-generation-quality/REPAIR-AND-RETEST-2026-10-14.md)
-for the distinction between full saved supply, quality-only eligibility and
-subsequent offline changes.
-
-
-### Literal exclusion warrants in opt-in authoring (2026-10-17)
-
-Fresh public v2 runs/new regeneration requests persist the server-owned
-`exclusionReviewProtocol: literal-exclusion-warrants-v1` selector. Exact retry,
-worker restore and UUID replay preserve historical absence. Selected MCQ quality
-responses replace legacy exclusion fields with a strict bounded warrant and one
-source-supported applicability challenge; the server enforces unique correctness
-only after independent literal findings. T/F and absent-selector responses keep
-their old schemas/prompts. There is no extra review stage or larger allowance.
-
-Instructor/Admin quality diagnostics add optional `answerability.exclusionProtocol`
-and per-option `exclusionWarrant` (basis, exact option/stem clause, challenge status,
-reason, validated citations and safe issues). Optional `exclusionReview` is a
-guarded bounded structured replay receipt, not a raw provider transcript. It
-binds complete source/teacher/candidate data and is rechecked at public save and
-regeneration adoption inside the existing course fence. Valid references locate
-text; they do not establish exclusion entailment or professor acceptance.
-
-See `docs/design/question-generation-quality/EXCLUSION-WARRANTS-IMPLEMENTATION-2026-10-17.md`.
-
-### Logical review correction integrity (2026-10-17)
-
-Fresh opt-in v2 runs and new regeneration UUIDs additionally select the
-server-owned `reviewRepairProtocol: frozen-review-decisions-v1`. Recorded run
-retry, worker/plan restoration and UUID replay retain their exact selector or
-historical absence. It adds no provider stage or allowance. Unknown explicit
-values and non-v2 use refuse before new work.
-
-The existing same-candidate schema correction can fill invalid/missing fields
-and repair locators; it cannot change or remove already valid raw semantic
-judgments. Optional private `reviewRepair` records before/after decision vectors,
-initial safe issues, drift and complete candidate/requirements/source bindings.
-Drift withholds and cannot drive automatic candidate rewrite. Public saving
-and regeneration adoption replay this receipt inside the course fence and
-refuse a selector change at the fresh read. This is transcript consistency,
-not source entailment, semantic acceptance or native-provider JSON-retry
-integrity. Baseline/v1 and absent historical records keep their old branches.
-
-See `docs/design/question-generation-quality/REVIEW-DECISION-INTEGRITY-2026-10-17.md`.

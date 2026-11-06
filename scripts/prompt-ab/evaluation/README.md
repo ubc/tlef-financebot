@@ -1,9 +1,11 @@
 # Offline quality evaluation
 
+> **2026-11-06:** the server `evaluation-export` route was removed with the quality policies. The offline CLI still works on previously downloaded export JSON and the synthetic demo, but no new exports can be produced.
+
 This tool connects FinanceBot's recorded generation results to blinded teacher
 review and explicit quality, supply, time, and token denominators. It does not
 call a model, connect to MongoDB, execute question code, or generate teacher
-labels. The CLI imports only local JSON files. A separate authenticated API
+labels. The CLI imports only local JSON files.
 exports existing records without generating or changing course content.
 
 ## Try the complete workflow without a provider

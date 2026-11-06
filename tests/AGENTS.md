@@ -1,5 +1,13 @@
 # AGENTS.md — tests/
 
+> **2026-11-06:** controls below that describe `qualityPolicy` / grounded-memory
+> v1-v2, regeneration candidates, the validator step or the generation evaluation
+> export refer to removed behaviour and are historical. Current generation tests:
+> `tests/unit/question-generation-{slots,existing-stems,generator-prompt,checker-prompt,candidate,pipeline}.test.ts`
+> (scripted generator/checker responses; no provider), `question-similarity.service.test.ts`
+> and `generation.routes.test.ts` (regenerate, similarity rebuild). They prove
+> mechanics, not model quality.
+
 Review-decision integrity controls retain raw negative findings through invalid
 locators and malformed neighbors, permit schema-only corrections, and refuse
 semantic flips/conflicting duplicate identities. Actual wrapper and BSON paths
@@ -480,15 +488,13 @@ grading and release isolation. Browser fixtures do not call model providers.
 full Instructor shell with intercepted APIs: all-role People, self marker, search,
 role filter, pagination, legacy redirects, global course switching, mobile dark
 layout and desktop axe scans. It does not mutate real Canvas/staging data.
-`quality-evaluation-*.test.ts` verifies the offline dataset, export adapter,
-blinded review integrity, fixed denominators, CLI files and nullable measurement
-reporting. `generation-evaluation.{service,routes}.test.ts` covers original-version
-export binding, unavailable historical slots, safe usage projection and course
-authorization. `playwright.quality-evaluation.config.ts` runs an isolated offline
+`quality-evaluation-*.test.ts` verifies the offline dataset, blinded review integrity, fixed denominators, CLI files and nullable measurement
+reporting; the server export route and its tests were removed with the 2026-11-06 simplification.
+`playwright.quality-evaluation.config.ts` runs an isolated offline
 review HTML fixture with all external requests blocked; no application server or
 provider is required. Its browser cases cover JSON download/resume, conflicts,
 stale data, triage-only content, literal hostile strings and accessible responsive
-forms. The existing workbench suite verifies the terminal evaluation download link.
+forms.
 
 
 ## Course People consolidation (2026-10-06)

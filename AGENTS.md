@@ -1,5 +1,11 @@
 # AGENTS.md — TLEF Boilerplate
 
+> **2026-11-06:** the generation-quality material below that mentions
+> `qualityPolicy`, `grounded-memory-v1/v2`, regeneration candidates, the
+> validator/reviewer-agent stages or the generation evaluation export describes
+> removed behaviour and is kept as history only. Current behaviour is in the
+> "Current state" two-call pipeline bullet.
+
 Fresh opt-in v2 authoring now pins `frozen-review-decisions-v1`. Logical schema
 correction may repair locators/fill invalid fields but cannot silently change
 or drop valid raw review judgments. Preserve valid negative rows beside invalid
@@ -386,23 +392,21 @@ commonly need:
   UBC email or an existing CWL username through a shared identity resolver.
   See `docs/design/supplemental-enrollment/IMPLEMENTATION.md`.
 
-- Terminal public generation runs expose an Instructor/Admin-only evaluation
-  download with exact initial versions, withheld diagnostics, explicit missing
-  slots, source evidence, and recorded usage. Offline tools under
-  `scripts/prompt-ab/evaluation` create blinded review files, validate teacher
-  imports, and report quality/supply/time/usage with explicit denominators.
-  Historical exports remain retrospective; synthetic demos and missing labels
-  cannot establish a measured quality improvement. No model calls occur in
-  export, review preparation, or reporting.
-
-- Public question generation offers an opt-in `grounded-memory-v1` pilot.
-  It validates original-source packets, adds current Bank/Queue and batch
-  context, and records structured source/notation/novelty assessments with
-  withheld-output shortfalls. Source snapshots and bounded diagnostic candidates
-  remain in guarded run records; token receipts remain metadata-only. Baseline
-  is the default. Rechecks are best effort, model judgments require teacher
-  calibration, and concurrent uniqueness is not guaranteed. See the quality
-  pilot API contract and generation-quality implementation status.
+- Question generation is a two-call pipeline in
+  `server/src/services/question-generation/`: per question, one generator call
+  (usage stage `generation`) then one checker call (step `reviewer`, usage stage
+  `check`), no retries. Every checked question is saved as a Draft with an
+  `agentDecision` (pass/flag/reject, reasoning, role assessment, suggestions).
+  Slots in a run get distinct assessment angles; the generator sees up to 30
+  same-LO stems plus earlier-batch stems. Each question head carries
+  `similarity` (nearest active question sharing an LO / topic, from fastembed
+  embeddings in `questionEmbeddings`), refreshed after generation and PATCH
+  edits; `POST /api/courses/:courseId/question-similarity/rebuild` recomputes a
+  course. Regenerate returns an unsaved variant; Replace saves via PATCH. The
+  v1/v2 quality policies, regeneration-candidate routes, question-memory
+  prepare, authoring-quality-status, the validator step, `reviewerAgent` /
+  `retryOnReject` flags and `LLM_MODEL_VALIDATOR` were removed. See
+  `docs/superpowers/specs/2026-11-06-question-generation-pipeline-simplification-design.md`.
 
 - LLM usage receipts now correlate synchronous requests and authoring workers
   with actors, courses, runs, stages, and JSON/content attempts. Instructor run

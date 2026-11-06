@@ -1,5 +1,7 @@
 # Frozen-input authoring quality lab
 
+> **2026-11-06:** the v1/v2 quality policies, regeneration candidates and validator step these experiments targeted were removed from the product (two-call generator + checker pipeline; see `docs/superpowers/specs/2026-11-06-question-generation-pipeline-simplification-design.md`). Treat the recorders below as historical; those that import deleted server modules no longer run.
+
 These command-line recorders run controlled experiments. The model-comparison
 and review-only runners do not save, adopt or publish questions. The separately
 declared public acceptance runner exercises real Draft persistence and explicit

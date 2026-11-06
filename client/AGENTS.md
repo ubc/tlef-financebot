@@ -14,25 +14,15 @@ The 13-case compiled static UI check uses intercepted APIs, including an actual
 retained-baseline comparison. It verifies workflow and recovery, not model
 quality, semantic coverage or paid cost.
 
-Checked regeneration handles only exact recognized 409/422 prerequisite codes as
-confirmed unusable candidates. Retain both previews, source/memory checks and
-editor text, disable Replace until explicit fresh generation, and clear only
-that question's recovery keys. Unknown network/500 failures retain same-candidate
-replay/storage because adoption may have completed. Never regenerate automatically
-to recover an adoption error. See the October 17 currentness/recovery report.
-
 The frontend. Deliberately framework-free and bundler-free: plain TypeScript
 authored as native ES modules, compiled by `tsc` and served statically.
 
-The existing authoring surfaces support intended upload receipts, all-source
-indexed readiness, explicit subsets/replacements, source cache/coverage receipts
-and the opt-in shared-memory v2 pilot. Regenerate selects Edit/Variant/Independent
-intent, retains requirements and request UUID through response loss/reload, and
-requires explicit version-checked adoption. Dirty edits and stale originals
-disable adoption. Diagnostic-only topology is disclosed before paid work.
-Optional historical-memory preparation is an explicit five-version action.
-Instructor/Admin run details retain source/task/budget checks. No new standalone
-evaluation application is required; baseline remains the default.
+Question generation: the bank shows each Draft's AI check (pass/flag/reject,
+reasoning, role assessment, suggestions) and a nearest-question similarity label
+(same LO / same topic, with the matching question). Regenerate sends a prompt to
+`POST /api/courses/:courseId/questions/:questionId/regenerate`, shows the unsaved
+variant side by side, and Replace saves it through the ordinary PATCH. There are
+no quality policies, pilot toggles, candidate recovery or adoption flows.
 
 Course Structure provides confirmed Delete topic and per-LO Delete controls
 directly in the outline, including All objectives/search topic groups. They use

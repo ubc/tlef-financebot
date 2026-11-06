@@ -86,7 +86,8 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   (including a courses-spanning bulk transition). Teaching-team reads use
   `question.review`; changes use their respective capabilities and hard-deny
   TA final approval. Child routes stash the target course in
-  `res.locals.courseId` before authorization.
+  `res.locals.courseId` before authorization. Also hosts the Instructor-only
+  `POST /courses/:courseId/question-similarity/rebuild`.
 - `materials.routes.ts` — Material upload + async RAG ingestion (IN-S04/S05):
   `POST/GET /api/courses/:courseId/materials` (multipart `files[]` or JSON
   `{ url }`), `POST /api/materials/:materialId/retry`,
@@ -100,6 +101,10 @@ HTTP routers. Each file exports an Express `Router`, mounted under `/api` in
   retry, ending one active generation run (`POST .../:runId/end`) or all of a
   course's (`POST .../end-active`), and one course-scoped SSE stream. Instructor-gated; the stream sends
   recent persisted state before live updates.
+- `generation.routes.ts` — Instructor-gated generate/plan and
+  `POST /courses/:courseId/questions/:questionId/regenerate` (one generator + one
+  checker call, returns an unsaved `{ variant }`; Replace is a normal PATCH).
+  No quality-policy input and no regeneration-candidate routes.
 - `generation-blueprints.routes.ts` — Instructor-gated saved generation recipe
   list/create/update/run endpoints.
 - `content-map.routes.ts` — Read-only, course-scoped hierarchy/source/question/

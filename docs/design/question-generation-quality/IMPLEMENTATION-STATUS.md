@@ -1,5 +1,7 @@
 # Generation Quality and Observability Implementation Status
 
+> **Superseded (2026-11-06):** question generation was replaced by a two-call generator + checker pipeline; see `docs/superpowers/specs/2026-11-06-question-generation-pipeline-simplification-design.md`. The v1/v2 quality policies described below no longer exist; this file is historical.
+
 **October 17 follow-up:** [Source-line boundaries](SOURCE-PASSAGE-LINE-BOUNDARIES-2026-10-17.md)
 repair a real table-input split while retaining historical aliases; changed batch
 identities leave warm-cache cost unmeasured. [Currentness/recovery](AUTHORING-CURRENTNESS-AND-RECOVERY-2026-10-17.md)
