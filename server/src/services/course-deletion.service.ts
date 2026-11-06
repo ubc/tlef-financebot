@@ -12,7 +12,7 @@ import type { ObjectId } from 'mongodb';
 import { cancelJobsByDataIds } from '../components/jobs';
 import {
   modelCallReceiptsCol, modelUsageSessionsCol,
-  materialUploadBatchesCol, sourceEvidenceExtractionsCol,
+  materialUploadBatchesCol, sourceEvidenceExtractionsCol, questionEmbeddingsCol,
   builderExamsCol, examPublicationsCol, examCandidatesCol, examBuildRunsCol, assessmentAttemptsCol, previewAssessmentAttemptsCol,
   attemptsCol,
   auditCol,
@@ -269,6 +269,7 @@ export async function permanentlyDeleteCourse(
     getDb().collection('regenerationCandidates').deleteMany({ courseId }),
     getDb().collection('questionPedagogicalFingerprints').deleteMany({ courseId }),
     getDb().collection('authoringTaskPlans').deleteMany({ courseId }),
+    questionEmbeddingsCol().deleteMany({ courseId }),
     structureReviewCheckpointsCol().deleteMany({ courseId }),
     structureReviewProgressCol().deleteMany({ courseId }),
     structureReviewAttemptsCol().deleteMany({ courseId }),
@@ -299,8 +300,8 @@ export async function permanentlyDeleteCourse(
     'courseInstructorShares',
     'questionDrafts', 'questionPresence',
     'builderExams', 'examPublications', 'examCandidates', 'examBuildRuns', 'assessmentAttempts', 'previewAssessmentAttempts',
-    'materialUploadBatches', 'regenerationCandidates', 'sourceEvidenceExtractions',
-    'questionPedagogicalFingerprints', 'authoringTaskPlans',
+    'materialUploadBatches', 'sourceEvidenceExtractions', 'regenerationCandidates',
+    'questionPedagogicalFingerprints', 'authoringTaskPlans', 'questionEmbeddings',
   ];
   return {
     deleted: true,

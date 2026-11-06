@@ -21,6 +21,9 @@ export function similarityText(version: { stem: string; options: Array<{ text: s
 const round = (score: number) => Math.round(score * 100) / 100;
 const shares = (a: ObjectId[], b: ObjectId[]) => a.some(x => b.some(y => x.equals(y)));
 
+const sameLink = (a: SimilarityLink | null, b: SimilarityLink | null) =>
+  a === b || (!!a && !!b && a.questionId.equals(b.questionId) && a.score === b.score);
+
 export function nearest(target: Omit<PoolEntry, 'similarity'>, pool: PoolEntry[]): { lo: SimilarityLink | null; topic: SimilarityLink | null } {
   let lo: SimilarityLink | null = null; let topic: SimilarityLink | null = null;
   for (const entry of pool) {
@@ -56,8 +59,9 @@ async function loadPool(courseId: ObjectId): Promise<PoolEntry[]> {
   });
 }
 
-/** Recompute one question's nearest neighbours and raise any neighbour whose
- * stored nearest is now less similar than this question. Informational only:
+/** Recompute one question's nearest neighbours, raise any neighbour whose
+ * stored nearest is now less similar than this question, and recompute any
+ * neighbour whose stored nearest was this question (its vector may have moved). Informational only:
  * every failure is swallowed so a save never depends on it. */
 export async function refreshQuestionSimilarity(questionId: ObjectId): Promise<void> {
   try {
@@ -69,13 +73,21 @@ export async function refreshQuestionSimilarity(questionId: ObjectId): Promise<v
     const now = new Date();
     const own = nearest(target, pool);
     await questionsCol().updateOne({ _id: questionId }, { $set: { similarity: { ...own, model: env.embeddingsModel, computedAt: now } } });
+    const updatedPool: PoolEntry[] = [...pool.filter(e => !e.questionId.equals(questionId)), target];
     for (const entry of pool) {
       if (entry.questionId.equals(questionId)) continue;
-      const score = round(cosine(vector, entry.vector));
       const current = entry.similarity?.model === env.embeddingsModel ? entry.similarity : undefined;
-      const lo = shares(entry.loIds, question.loIds) && (!current?.lo || score > current.lo.score) ? { questionId, score } : current?.lo ?? null;
-      const topic = shares(entry.themeIds, question.themeIds) && (!current?.topic || score > current.topic.score) ? { questionId, score } : current?.topic ?? null;
-      if (lo !== (current?.lo ?? null) || topic !== (current?.topic ?? null)) {
+      const pointsAtThis = !!current && (!!current.lo?.questionId.equals(questionId) || !!current.topic?.questionId.equals(questionId));
+      let lo: SimilarityLink | null; let topic: SimilarityLink | null;
+      if (pointsAtThis) {
+        // The stored nearest was this question, whose vector just changed: recompute from scratch.
+        ({ lo, topic } = nearest(entry, updatedPool));
+      } else {
+        const score = round(cosine(vector, entry.vector));
+        lo = shares(entry.loIds, question.loIds) && (!current?.lo || score > current.lo.score) ? { questionId, score } : current?.lo ?? null;
+        topic = shares(entry.themeIds, question.themeIds) && (!current?.topic || score > current.topic.score) ? { questionId, score } : current?.topic ?? null;
+      }
+      if (!sameLink(lo, current?.lo ?? null) || !sameLink(topic, current?.topic ?? null)) {
         await questionsCol().updateOne({ _id: entry.questionId }, { $set: { similarity: { lo, topic, model: env.embeddingsModel, computedAt: now } } });
       }
     }

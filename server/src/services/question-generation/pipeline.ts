@@ -133,7 +133,14 @@ export async function runQuestionGeneration(input: GenerationInput, runId: Objec
     const slots = allocateSlots({ count: input.count, kind: input.kind, type, chunkCount: grounding.chunks.length,
       seed: runId.toHexString(), hardnessMoves: assignMovesForBatch(input.difficulty, input.hardnessMove, input.count, type) });
     stage = 'generating';
-    await updateContentRun(runId, { status: 'running', stage, message: `Retrieved ${grounding.chunks.length} chunks` });
+    await updateContentRun(runId, {
+      status: 'running', stage, message: `Retrieved ${grounding.chunks.length} chunks`,
+      grounding: {
+        allowedMaterialIds: grounding.allowedMaterialIds.map(id => new ObjectId(id)),
+        retrievedChunkCount: grounding.chunks.length,
+        pinned: input.groundingPinned === true,
+      },
+    });
     const batchStems: string[] = [];
     for (const slot of slots) {
       await checkpoint();

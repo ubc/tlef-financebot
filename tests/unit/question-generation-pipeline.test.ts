@@ -167,3 +167,12 @@ describe('regenerateQuestionVariant', () => {
     expect(createQuestion).not.toHaveBeenCalled();
   });
 });
+
+it('records the grounding summary on the run after retrieval', async () => {
+  jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce({ decision: 'pass', reasoning: '', roleAssessment: '', suggestions: [] });
+  await runQuestionGeneration({ ...input, count: 1, groundingPinned: true }, runId);
+  const patch = jest.mocked(updateContentRun).mock.calls.map(c => c[1] as { grounding?: { retrievedChunkCount: number; pinned: boolean; allowedMaterialIds: ObjectId[] } }).find(p => p.grounding);
+  expect(patch!.grounding!.retrievedChunkCount).toBe(1);
+  expect(patch!.grounding!.pinned).toBe(true);
+  expect(patch!.grounding!.allowedMaterialIds.map(String)).toEqual(['65a000000000000000000001']);
+});

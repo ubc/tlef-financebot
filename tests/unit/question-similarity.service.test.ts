@@ -79,4 +79,32 @@ describe('refreshQuestionSimilarity', () => {
     expect((own!.update.$set.similarity.lo as { score: number }).score).toBe(1);
     expect((theirs!.update.$set.similarity.lo as { questionId: ObjectId }).questionId).toEqual(qid);
   });
+  it('recomputes a neighbour whose stored nearest was this question once it moved away', async () => {
+    const courseId = new ObjectId(); const qid = new ObjectId(); const vid = new ObjectId(); const other = new ObjectId(); const third = new ObjectId();
+    const updates: Array<{ filter: { _id: ObjectId }; update: { $set: { similarity: { lo: { questionId: ObjectId; score: number } | null } } } }> = [];
+    jest.mocked(questionsCol).mockReturnValue({
+      findOne: async () => ({ _id: qid, courseId, currentVersionId: vid, loIds: [lo1], themeIds: [t1], state: 'draft' }),
+      find: () => ({ toArray: async () => [
+        { _id: qid, loIds: [lo1], themeIds: [t1] },
+        { _id: other, loIds: [lo1], themeIds: [t1], similarity: { lo: { questionId: qid, score: 0.95 }, topic: { questionId: qid, score: 0.95 }, model: 'test-embed', computedAt: new Date() } },
+        { _id: third, loIds: [lo1], themeIds: [t1] },
+      ] }),
+      updateOne: jest.fn(async (filter: never, update: never) => { updates.push({ filter, update }); return { matchedCount: 1 }; }),
+    } as never);
+    jest.mocked(questionVersionsCol).mockReturnValue({ findOne: async () => ({ _id: vid, stem: 'Q', options: [{ text: 'a', role: 'correct' }] }) } as never);
+    jest.mocked(questionEmbeddingsCol).mockReturnValue({
+      findOne: async () => null,
+      updateOne: async () => ({}),
+      find: () => ({ toArray: async () => [
+        { _id: qid, vector: [1, 0], model: 'test-embed' }, // stale vector, must be replaced by the new one
+        { _id: other, vector: [1, 0], model: 'test-embed' },
+        { _id: third, vector: [0.6, 0.8], model: 'test-embed' },
+      ] }),
+    } as never);
+    jest.mocked(embedOne).mockResolvedValue([0, 1]); // edited question moved away from `other`
+    await refreshQuestionSimilarity(qid);
+    const theirs = updates.find(u => u.filter._id.equals(other));
+    expect(theirs!.update.$set.similarity.lo!.questionId).toEqual(third);
+    expect(theirs!.update.$set.similarity.lo!.score).toBe(0.6);
+  });
 });
