@@ -1960,7 +1960,7 @@ async function generateValidQuestion(
     if (qualityContext?.includes('AUTHORING POLICY: grounded-memory-v2')) currentAuthoringBudget()?.reserveLogical('generator-attempt');
     const built = qualityContext?.includes('AUTHORING POLICY: grounded-memory-v2')
       ? GENERATOR_V2_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind, secondaryLoNames, qualityContext, promptAlreadyIncluded, authoringPromptProtocol })
-      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind, secondaryLoNames, qualityContext });
+      : GENERATOR_PROMPT({ type, loName, difficulty, prompt, chunks, assignedMove, kind, secondaryLoNames });
     const withExtra = extraInstruction ? `${built}\n\n${extraInstruction}` : built;
     const candidate = await complete<GeneratorOutput>(
       lastFailure ? `${withExtra}\n\n${RETRY_FEEDBACK(lastFailure)}` : withExtra,

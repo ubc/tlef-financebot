@@ -47,6 +47,8 @@ export interface GeneratorOutput {
   options: QuestionOption[];
   difficulty?: string;
   taskDescriptor?: PedagogicalTaskDescriptor;
+  /** 1-based indexes of the rendered course-material chunks the question relies on. */
+  sourceChunkIndexes?: number[];
   /** Required at target `hard` (enforced in generateValidQuestion): one
    * sentence naming which hardness move the question applies and how. The
    * reviewer verifies the claim against the question — structure over

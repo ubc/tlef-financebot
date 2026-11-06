@@ -3,6 +3,41 @@ import { STEP_TEMPERATURE_DEFAULTS } from '../step-models';
 import type { Difficulty, QuestionKind, QuestionType } from '../../types/domain';
 import type { RetrievedChunk } from './candidate';
 import { renderChunks } from './candidate';
+import type { QuestionOption } from '../../types/domain';
+import type { AssessmentAngle } from './slots';
+
+export interface RegenerateContext {
+  original: { stem: string; options: QuestionOption[] };
+  agentDecision?: { decision: string; reasoning: string; roleAssessment?: string; suggestions?: string[] };
+  instruction: string;
+}
+
+const MAX_RENDERED_STEM = 300;
+const clip = (stem: string) => (stem.length > MAX_RENDERED_STEM ? `${stem.slice(0, MAX_RENDERED_STEM)}…` : stem);
+
+export function renderDistinctnessContext(existingStems: string[], batchStems: string[]): string {
+  if (existingStems.length === 0 && batchStems.length === 0) return '';
+  return [
+    'DISTINCTNESS. The questions below already exist for this learning objective. Do NOT test the same',
+    'inference or solution path as any of them. Changing numbers or names does not make a new question.',
+    ...(existingStems.length ? ['Existing questions:', ...existingStems.map(stem => `- ${clip(stem)}`)] : []),
+    ...(batchStems.length ? ['Written earlier in this batch:', ...batchStems.map(stem => `- ${clip(stem)}`)] : []),
+  ].join('\n');
+}
+
+function renderRegenerateContext(context: RegenerateContext): string {
+  const decision = context.agentDecision;
+  return [
+    'REWRITE TASK. Produce an improved replacement for the question below. Fix every finding listed.',
+    `Original question: ${JSON.stringify(context.original)}`,
+    ...(decision ? [
+      `Automatic check verdict: ${decision.decision}. ${decision.reasoning}`,
+      ...(decision.roleAssessment ? [`Option-role findings: ${decision.roleAssessment}`] : []),
+      ...(decision.suggestions?.length ? ['Suggested fixes:', ...decision.suggestions.map(s => `- ${s}`)] : []),
+    ] : []),
+    `Instructor request: ${context.instruction}`,
+  ].join('\n');
+}
 
 
 /** The generator runs warm so a batch (count > 1) yields DISTINCT questions —
@@ -278,14 +313,18 @@ export function GENERATOR_PROMPT(params: {
   kind?: QuestionKind;
   /** Multi-LO generation: further objectives the question must integrate. */
   secondaryLoNames?: string[];
-  /** A versioned pilot packet replaces the plain chunks, avoiding duplicate context. */
-  qualityContext?: string;
+  angle?: AssessmentAngle;
+  focusChunk?: number;
+  existingStems?: string[];
+  batchStems?: string[];
+  regenerate?: RegenerateContext;
 }): string {
   const optionCount = params.type === 'mcq' ? 4 : 2;
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
   return [
     `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
-    `for the learning objective: "${params.loName}".`,
+    `for the learning objective: "${params.loName}". The question must assess the learning objective "${params.loName}":`,
+    'a question a student could answer without that objective is wrong, however well written.',
     integrationRule(params.secondaryLoNames, params.difficulty),
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
     difficultyGuidance,
@@ -331,18 +370,17 @@ export function GENERATOR_PROMPT(params: {
     // preset's suggestion.
     params.kind === 'calculation'
       ? 'THIS QUESTION MUST BE A CALCULATION: set "numericKind": "numeric", with paramSlots '
-        + 'and derivedValues as specified below. A conceptual question is refused and '
-        + 'regenerated.'
+        + 'and derivedValues as specified below. A question of the other kind is recorded as a defect.'
       : params.kind === 'conceptual'
         ? 'THIS QUESTION MUST BE CONCEPTUAL: set "numericKind": "conceptual", with no '
           + 'paramSlots and no derivedValues — the student reasons about ideas, not '
-          + 'arithmetic. A numeric question is refused and regenerated.'
+          + 'arithmetic. A question of the other kind is recorded as a defect.'
         : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
     'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
     'Course material:',
-    params.qualityContext ?? renderChunks(params.chunks),
+    renderChunks(params.chunks),
     '',
     `Produce EXACTLY ${optionCount} options. EXACTLY ONE option has role "correct".`,
     'Every option has a per-option explanation. Assign each non-correct option one role from:',
@@ -352,7 +390,7 @@ export function GENERATOR_PROMPT(params: {
     params.type === 'mcq'
       ? 'AT LEAST ONE option MUST be "common-misconception". The practice loop offers '
         + 'its retry only when a student picks one, so a question without it silently '
-        + 'loses that behaviour. A question is rejected and regenerated without one.'
+        + 'loses that behaviour. A question without one is recorded as a defect.'
       : '',
     '',
     'DISTRACTORS ARE WRONG METHODS, NOT WRONG ARITHMETIC. A distractor must be the',
@@ -609,12 +647,12 @@ export function GENERATOR_PROMPT(params: {
     'Do not try to have both in one question.',
     '',
     'Respond with ONLY this JSON shape:',
-    '{ "stem": string, "difficulty": "easy"|"medium"|"hard",',
+    '{ "stem": string, "difficulty": "easy"|"medium"|"hard", "sourceChunkIndexes": [number],',
     '  "numericKind": "numeric"|"conceptual",',
     '  "paramSlots": [ { "name": string, "min": number, "max": number, "step": number } ],',
     '  "derivedValues": [ { "name": string, "formula": string, "errorModel": string } ],',
     '  "options": [ { "key": string, "text": string, "role": string, "explanation": string } ] }',
-    ...(params.qualityContext?.includes('AUTHORING POLICY: grounded-memory-v2') ? ['Also return taskDescriptor:{concepts:[string],requiredInference:string,solutionPath:[string],misconception:string,targetDifficulty:easy|medium|hard,passageIds:[exact source passage IDs],intent:edit-existing|create-variant|create-independent-task}. Keep it compact; describe the task actually written.'] : []),
+    '"sourceChunkIndexes" lists the [n] labels of the course-material passages the question relies on.',
     params.type === 'mcq'
       ? 'Use option keys "A","B","C","D".'
       // Measured 2026-08-22: three true/false questions at target hard came
@@ -632,6 +670,11 @@ export function GENERATOR_PROMPT(params: {
         'pattern: the claim is true or false only when two easily-confused rules are',
         'held together. Never put a computed value in an option.',
       ].join('\n'),
+    '',
+    params.angle ? `ASSESSMENT ANGLE for this question: ${params.angle.text}` : '',
+    params.focusChunk !== undefined ? `Lean primarily on material [${params.focusChunk + 1}].` : '',
+    renderDistinctnessContext(params.existingStems ?? [], params.batchStems ?? []),
+    params.regenerate ? renderRegenerateContext(params.regenerate) : '',
   ]
     .filter(Boolean)
     .join('\n');
