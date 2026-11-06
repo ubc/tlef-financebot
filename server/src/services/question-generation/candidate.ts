@@ -191,8 +191,9 @@ export function hardnessMoveDeclared(
   return typeof candidate.hardnessMove === 'string' && candidate.hardnessMove.trim().length > 0;
 }
 
-/** Structural pre-check before spending validator/reviewer calls. createQuestion
- * remains the authoritative invariant guard (defense in depth). */
+/** Structural pre-check that guards whether the options can be stored at all: a
+ * missing or non-array `options` value returns false rather than throwing.
+ * createQuestion remains the authoritative invariant guard (defense in depth). */
 export function optionShapeValid(type: QuestionType, options: unknown): boolean {
   const expected = type === 'mcq' ? 4 : 2;
   if (!Array.isArray(options) || options.length !== expected) return false;
@@ -397,10 +398,11 @@ export interface CandidateInspection {
 export function inspectCandidate(input: {
   type: QuestionType; kind?: QuestionKind; difficulty?: Difficulty; candidate: GeneratorOutput | null | undefined;
 }): CandidateInspection {
-  const empty = { stem: '', options: [] } as unknown as GeneratorOutput;
   const candidate = input.candidate;
   if (!candidate || !optionShapeValid(input.type, candidate.options) || !trueFalseShapeValid(input.type, candidate)) {
-    return { storable: false, findings: ['The options do not form a storable question.'], numerics: verifyGeneratedNumerics(candidate ?? empty) };
+    // An unstorable candidate is never saved, so its numerics are irrelevant and
+    // must not be verified: that would throw on a response with no options.
+    return { storable: false, findings: ['The options do not form a storable question.'], numerics: { fields: {} } };
   }
   const findings: string[] = [];
   if (!kindContractMet(input.kind, candidate)) findings.push(`The question was requested as ${input.kind} but was written as the other kind.`);

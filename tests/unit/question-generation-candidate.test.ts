@@ -36,6 +36,12 @@ describe('inspectCandidate', () => {
     expect(result.storable).toBe(true);
     expect(result.findings.join(' ')).toMatch(/common-misconception/);
   });
+  it('treats a response with no options as unstorable instead of throwing', () => {
+    expect(inspectCandidate({ type: 'mcq', candidate: { stem: 'bad' } as never }).storable).toBe(false);
+  });
+  it('treats non-array options as unstorable', () => {
+    expect(inspectCandidate({ type: 'mcq', candidate: { stem: 'bad', options: 'x' } as never }).storable).toBe(false);
+  });
 });
 
 describe('sourceRefsFor', () => {
