@@ -377,6 +377,12 @@ export interface QuestionVersion {
   createdAt: Date;
 }
 
+export interface SimilarityLink { questionId: ObjectId; score: number }
+/** Nearest active question by embedding cosine, informational only. */
+export interface QuestionSimilarity { lo: SimilarityLink | null; topic: SimilarityLink | null; model: string; computedAt: Date }
+/** One per question: the embedding of its current version's stem + correct option. */
+export interface QuestionEmbedding { _id: ObjectId; courseId: ObjectId; versionId: ObjectId; vector: number[]; model: string; createdAt: Date }
+
 /** Mutable head record; content lives in QuestionVersions. */
 export interface Question {
   courseId: ObjectId;
@@ -385,6 +391,7 @@ export interface Question {
   state: PublicationState;
   loIds: ObjectId[]; // many-to-many (IN-Q13)
   themeIds: ObjectId[];
+  similarity?: QuestionSimilarity;
   /** Additive lineage grouping; new standalone questions use their own id. */
   templateFamilyId?: ObjectId;
   labels: QuestionLabel[];

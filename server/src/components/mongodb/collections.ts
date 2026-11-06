@@ -23,6 +23,7 @@ import type {
   ContentRun,
   GenerationBlueprint, CapabilitySettings, TaInvite, PlatformSettings,
   TutorialProgress,
+  QuestionEmbedding,
 } from '../../types/domain';
 
 // Central, typed access to every collection (PRD §2 Data Model). Services must
@@ -298,3 +299,7 @@ INDEX_SPECS.push(
 
 // Deterministic Bank coverage pages current course heads in immutable ID order.
 INDEX_SPECS.push({ collection: 'questions', keys: { courseId: 1, _id: 1 } });
+
+// Local embedding per question for informational nearest-neighbour similarity.
+export const questionEmbeddingsCol = (): Collection<QuestionEmbedding> => getDb().collection<QuestionEmbedding>('questionEmbeddings');
+INDEX_SPECS.push({ collection: 'questionEmbeddings', keys: { courseId: 1 } });
