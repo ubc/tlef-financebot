@@ -1,9 +1,8 @@
 import { BUILTIN_REFERENCE } from '../../components/formula';
 import { STEP_TEMPERATURE_DEFAULTS } from '../step-models';
-import type { Difficulty, QuestionKind, QuestionType } from '../../types/domain';
+import type { Difficulty, QuestionKind, QuestionOption, QuestionType } from '../../types/domain';
 import type { RetrievedChunk } from './candidate';
 import { renderChunks } from './candidate';
-import type { QuestionOption } from '../../types/domain';
 import type { AssessmentAngle } from './slots';
 
 export interface RegenerateContext {
@@ -13,7 +12,10 @@ export interface RegenerateContext {
 }
 
 const MAX_RENDERED_STEM = 300;
-const clip = (stem: string) => (stem.length > MAX_RENDERED_STEM ? `${stem.slice(0, MAX_RENDERED_STEM)}…` : stem);
+const clip = (stem: string) => {
+  const flat = stem.replace(/\s+/g, ' ').trim();
+  return flat.length > MAX_RENDERED_STEM ? `${flat.slice(0, MAX_RENDERED_STEM)}…` : flat;
+};
 
 export function renderDistinctnessContext(existingStems: string[], batchStems: string[]): string {
   if (existingStems.length === 0 && batchStems.length === 0) return '';
@@ -515,7 +517,7 @@ export function GENERATOR_PROMPT(params: {
     '    represents, and its formula must genuinely implement that mistake.',
     '    Name the MISTAKE, never the role. "common-misconception" is a role, not an',
     '    errorModel — a real generation returned exactly that on every distractor',
-    '    and the question was regenerated. Write "compounded forward instead of',
+    '    and the question was flagged as defective. Write "compounded forward instead of',
     '    discounting back" or "used the coupon rate in place of the yield".',
     '    The CORRECT value MUST NOT carry an "errorModel" — it represents no mistake.',
     '    Omit the field entirely rather than describing the right answer in it.',

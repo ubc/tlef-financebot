@@ -36,7 +36,10 @@ describe('GENERATOR_PROMPT', () => {
     expect(text).toContain('Use a bond example instead.');
   });
   it('no longer threatens regeneration', () => {
-    expect(GENERATOR_PROMPT({ ...base, kind: 'calculation' })).not.toMatch(/(refused|rejected) and regenerated/i);
+    expect(GENERATOR_PROMPT({ ...base, kind: 'calculation' })).not.toMatch(/regenerat/i);
+  });
+  it('keeps a multi-line stem on one bullet line', () => {
+    expect(renderDistinctnessContext(['Line one\nline two'], [])).toContain('- Line one line two');
   });
   it('puts stable instructions before per-question context', () => {
     const text = GENERATOR_PROMPT({ ...base, existingStems: ['What is beta?'] });
