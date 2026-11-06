@@ -4,7 +4,7 @@ import type { GeneratorOutput } from '../../server/src/services/generation.servi
 import { loadPrivateAdmissionGates, structuralAdmissionIssues } from '../../scripts/quality-lab/production-admission';
 import { parseLabCandidate } from '../../scripts/quality-lab/candidate';
 
-const source = readFileSync(path.join(__dirname, '../../server/src/services/generation.service.ts'), 'utf8');
+const source = readFileSync(path.join(__dirname, '../../server/src/services/question-generation/candidate.ts'), 'utf8');
 const { gates, identities } = loadPrivateAdmissionGates(source);
 const candidate: GeneratorOutput = { stem: 'What remains after diversification?', difficulty: 'easy', numericKind: 'conceptual', paramSlots: [], derivedValues: [],
   options: [{ key: 'A', text: 'Market risk', role: 'correct', explanation: 'The source says market risk remains.' },

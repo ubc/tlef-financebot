@@ -19,7 +19,7 @@ export function loadPrivateAdmissionGates(source: string): { gates: PrivateAdmis
   const parsed = ts.createSourceFile('generation.service.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const declarations = new Map<string, string>();
   for (const statement of parsed.statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.name && (PRIVATE_GATES as readonly string[]).includes(statement.name.text)) declarations.set(statement.name.text, statement.getText(parsed));
+    if (ts.isFunctionDeclaration(statement) && statement.name && (PRIVATE_GATES as readonly string[]).includes(statement.name.text)) declarations.set(statement.name.text, statement.getText(parsed).replace(/^export\s+/, ''));
     if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) {
       if (ts.isIdentifier(declaration.name) && declaration.name.text === 'OPTION_ROLES') declarations.set('OPTION_ROLES', `const ${declaration.getText(parsed)};`);
     }
