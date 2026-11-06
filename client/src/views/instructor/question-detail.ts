@@ -44,6 +44,7 @@ import {
   type AuthoringQualityStatus,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { similarityLabel, similarityLinks } from './similarity-label.js';
 import { runButtonAction } from '../../action-state.js';
 import {
   editableVariableNames,
@@ -1209,8 +1210,20 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             statusBadge(agentDecision.decision.toUpperCase(), agentDecision.decision),
           ),
           el('p', { class: 'agent-report-block__body', text: agentDecision.reasoning }),
+          agentDecision.suggestions?.length
+            ? el('ul', { class: 'agent-report-block__body' }, ...agentDecision.suggestions.map((s) => el('li', { text: s })))
+            : false,
         )
       : el('p', { class: 'agent-report-empty', text: 'No agent report available for this question.' }),
+    detail.similarity
+      ? el(
+          'div',
+          { class: 'agent-report-block' },
+          el('div', { class: 'agent-report-block__head' }, el('span', { text: 'Similarity' })),
+          el('p', { class: 'agent-report-block__body', text: similarityLabel(detail.similarity) }),
+          similarityLinks(courseId, detail.similarity),
+        )
+      : false,
     agentDecision
       ? el(
           'div',

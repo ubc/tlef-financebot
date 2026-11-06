@@ -20,6 +20,7 @@ import {
   bulkDeleteUnserved,
   bulkTransition,
 } from '../services/questions.service';
+import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../services/question-similarity.service';
 import {
   resolveParamValues,
   substituteParams,
@@ -329,6 +330,7 @@ export function toBankItem(item: BankItem): {
   themeIds: BankItem['themeIds'];
   current: BankItem['current'];
   contentReady: boolean;
+  similarity?: BankItem['similarity'];
 } {
   return {
     id: item._id.toString(),
@@ -338,6 +340,7 @@ export function toBankItem(item: BankItem): {
     themeIds: item.themeIds,
     current: item.current,
     contentReady: Array.isArray(item.current.options) && typeof item.current.stem === 'string' && isServable(item.current),
+    ...(item.similarity ? { similarity: item.similarity } : {}),
   };
 }
 
@@ -404,6 +407,16 @@ questionsRouter.get(
       ...(q.label !== undefined ? { label: q.label } : {}),
     });
     res.json({ total, questions: await Promise.all(questions.map(toBankItemWithSample)) });
+  },
+);
+
+/** POST /api/courses/:courseId/question-similarity/rebuild -> { questions }. Instructor-only (TAs are denied question.approve). */
+questionsRouter.post(
+  '/courses/:courseId/question-similarity/rebuild',
+  validate({ params: courseIdParams }),
+  ensureCapability('question.approve'),
+  async (req, res) => {
+    res.json(await rebuildCourseSimilarity(new ObjectId(String(req.params.courseId))));
   },
 );
 
@@ -487,6 +500,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
+    await refreshQuestionSimilarity(questionId);
     res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );
@@ -558,6 +572,7 @@ questionsRouter.patch(
       },
       req.user!.puid,
     );
+    await refreshQuestionSimilarity(questionId);
     res.json({ ...withPlaceholderReport(version), ...(verificationError !== undefined ? { verificationError } : {}) });
   },
 );

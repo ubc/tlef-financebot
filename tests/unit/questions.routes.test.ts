@@ -22,6 +22,10 @@ jest.mock('../../server/src/services/questions.service', () => ({
   bulkTransition: jest.fn(),
   bulkDeleteUnserved: jest.fn(),
 }));
+jest.mock('../../server/src/services/question-similarity.service', () => ({
+  refreshQuestionSimilarity: jest.fn(),
+  rebuildCourseSimilarity: jest.fn(),
+}));
 jest.mock('../../server/src/services/capabilities.service', () => ({
   hasCapability: jest.fn(async (user: User, requestedCourseId: ObjectId) => user.courseRoles.some(
     (entry) => entry.role === 'instructor' && entry.courseId.equals(requestedCourseId),
@@ -37,6 +41,7 @@ import {
   getDistinctQuestionCourseIds,
   getQuestionDetail,
 } from '../../server/src/services/bank.service';
+import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../../server/src/services/question-similarity.service';
 import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransition, bulkDeleteUnserved } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
@@ -937,5 +942,32 @@ describe('POST /api/questions/bulk-delete (same guards as bulk-transition)', () 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ deleted: 1, skipped: [{ questionId: skippedId.toHexString(), reason: 'ever-approved' }] });
     expect(bulkDeleteUnserved).toHaveBeenCalledWith([questionId, skippedId], instructor.puid);
+  });
+});
+
+describe('question similarity wiring', () => {
+  beforeEach(() => {
+    jest.mocked(getQuestionCourseId).mockResolvedValue(courseId);
+  });
+
+  it('refreshes similarity after PATCH /questions/:id', async () => {
+    jest.mocked(editQuestion).mockResolvedValue({ _id: loadedVersionId, stem: 'Question', options: [mcqOption()] } as never);
+    const res = await request(makeApp(instructor)).patch(`/api/questions/${questionId}`)
+      .send({ expectedVersionId: loadedVersionId.toHexString(), stem: 'New stem' });
+    expect(res.status).toBe(200);
+    expect(refreshQuestionSimilarity).toHaveBeenCalledWith(questionId);
+  });
+
+  it('rebuilds course similarity for an instructor', async () => {
+    jest.mocked(rebuildCourseSimilarity).mockResolvedValue({ questions: 7 });
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId}/question-similarity/rebuild`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ questions: 7 });
+    expect(rebuildCourseSimilarity).toHaveBeenCalledWith(courseId);
+  });
+
+  it('403s a student on rebuild', async () => {
+    const res = await request(makeApp(student)).post(`/api/courses/${courseId}/question-similarity/rebuild`);
+    expect(res.status).toBe(403);
   });
 });

@@ -2683,6 +2683,7 @@ export interface RegenerationVariant {
     decision: 'pass' | 'flag' | 'reject';
     reasoning: string;
     roleAssessment: string;
+    suggestions?: string[];
   };
 }
 
@@ -2916,6 +2917,14 @@ export interface QuestionVersion {
   createdAt: string;
 }
 
+/** Informational nearest-question similarity within the same LO and topic. */
+export type QuestionSimilarity = {
+  lo: { questionId: string; score: number } | null;
+  topic: { questionId: string; score: number } | null;
+  model: string;
+  computedAt: string;
+};
+
 /** A question head exactly as it comes over the wire — `id`, never `_id`. */
 export interface QuestionHead {
   id: string;
@@ -2927,7 +2936,8 @@ export interface QuestionHead {
   themeIds: string[];
   templateFamilyId?: string;
   labels: QuestionLabel[];
-  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string };
+  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string; suggestions?: string[]; suggestedDifficulty?: Difficulty };
+  similarity?: QuestionSimilarity;
   generationPrompt?: string;
   regenerations?: Array<{ prompt: string; at: string }>;
   internalNotes: Array<{ puid: string; text: string; at: string }>;
@@ -2949,6 +2959,7 @@ export interface BankQuestion {
   loIds: string[];
   themeIds: string[];
   current: QuestionVersion;
+  similarity?: QuestionSimilarity;
   /** One STABLE drawn sample — what a student sees — so list rows can show real
    * numbers instead of a `{{PLACEHOLDER}}` template. Absent when the server
    * declined to draw one (a `generateScript` question, whose resolution costs a
@@ -3006,6 +3017,11 @@ export function browseBank(
   return request<{ total: number; questions: BankQuestion[] }>(
     `/api/courses/${encodeURIComponent(courseId)}/questions${bankFiltersToQuery(filters)}`,
   );
+}
+
+/** POST /api/courses/:courseId/question-similarity/rebuild -> { questions }. Instructor-only. */
+export function rebuildQuestionSimilarity(courseId: string): Promise<{ questions: number }> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/question-similarity/rebuild`, { method: 'POST' });
 }
 
 /** GET /api/questions/:questionId -> full head + current version + agentDecision
