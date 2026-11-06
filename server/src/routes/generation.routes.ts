@@ -1,7 +1,3 @@
-import { prepareHistoricalQuestionMemory } from '../services/authoring-task-plan.service';
-import { getPlatformSettings } from '../services/admin.service';
-import { authoringCommitAvailable } from '../services/authoring-commit.service';
-import { env } from '../config/env';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
@@ -16,10 +12,8 @@ import {
   MAX_SECONDARY_LOS,
   PRESET_PROMPTS,
   preseedingProgress,
-  regenerateQuestion,
-  adoptRegenerationCandidate,
-  getRegenerationCandidate,
 } from '../services/generation.service';
+import { regenerateQuestionVariant } from '../services/question-generation/pipeline';
 import {
   autoGenerationPlan,
   enqueueGenerationPlan,
@@ -28,7 +22,7 @@ import {
 } from '../services/generation-plan.service';
 import { enqueueBlueprintRun } from '../services/generation-blueprints.service';
 
-// Three-agent generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
+// Generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
 // course-scoped (`:courseId` in the path), so they guard exactly like
 // courses.routes.ts's course-scoped routes: `validate(params)` then
 // `ensureCourseInstructor()` (which checks authentication itself).
@@ -37,13 +31,7 @@ export const generationRouter = Router();
 const objectIdParam = z.string().regex(/^[0-9a-f]{24}$/, 'Invalid id.');
 const courseIdParams = z.object({ courseId: objectIdParam });
 const regenerationParams = z.object({ courseId: objectIdParam, questionId: objectIdParam });
-const regenerationBody = z.object({ prompt: z.string().trim().min(1).max(2000),
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional(),
-  intent: z.enum(['edit-existing', 'create-variant', 'create-independent-task']).optional(),
-  requiredChanges: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
-  preserve: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
-  requestId: z.string().uuid().optional(), expectedVersionId: objectIdParam.optional(),
-}).refine(body => !(body.intent || body.requiredChanges || body.preserve || body.requestId) || body.qualityPolicy === 'grounded-memory-v2', { message: 'Explicit authoring intent and requirements require grounded-memory-v2.' }).refine(body => body.qualityPolicy !== 'grounded-memory-v2' || (body.requestId && body.expectedVersionId), { message: 'V2 regeneration requires a requestId and original expectedVersionId.' });
+const regenerationBody = z.object({ prompt: z.string().trim().min(1).max(2000) });
 
 function ensureAnyInstructor(req: Request, res: Response, next: NextFunction): void {
   if (
@@ -67,10 +55,9 @@ generationRouter.get(
 );
 
 // Bounds: at least one question, capped so a single request can't enqueue an
-// unbounded run (each question is 3 LLM calls). Default is a small batch.
+// unbounded run (each question is 2 LLM calls). Default is a small batch.
 const DEFAULT_GENERATION_COUNT = 3;
 const generateBody = z.object({
-  qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional(),
   loId: objectIdParam.optional(),
   /** Multi-LO generation: further objectives every question must integrate.
    * Bounded by MAX_SECONDARY_LOS; the service re-validates that each exists,
@@ -113,11 +100,10 @@ generationRouter.post(
     const courseId = new ObjectId(String(req.params.courseId));
     const body = req.body as z.infer<typeof generateBody>;
     const runId = body.blueprintId
-      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid, body.qualityPolicy)
+      ? await enqueueBlueprintRun(courseId, new ObjectId(body.blueprintId), req.user!.puid)
       : await enqueueGenerationRun({
           courseId,
           loId: new ObjectId(body.loId!),
-          ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}),
           ...(body.secondaryLoIds?.length
             ? { secondaryLoIds: body.secondaryLoIds.map((id) => new ObjectId(id)) }
             : {}),
@@ -148,7 +134,7 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional(), qualityPolicy: z.enum(['baseline', 'grounded-memory-v1', 'grounded-memory-v2']).optional() });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -191,7 +177,7 @@ generationRouter.post(
           : { secondaryLoIds: undefined }),
       })),
       req.user!.puid,
-      body.submissionId || body.prompt || body.qualityPolicy ? { ...(body.submissionId ? { id: body.submissionId } : {}), prompt: body.prompt, ...(body.qualityPolicy ? { qualityPolicy: body.qualityPolicy } : {}) } : undefined,
+      body.submissionId || body.prompt ? { ...(body.submissionId ? { id: body.submissionId } : {}), prompt: body.prompt } : undefined,
     );
     res.status(202).json({
       runs: result.runs.map((run) => ({
@@ -203,8 +189,9 @@ generationRouter.post(
 
 /**
  * POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }
- * -> a transient side-by-side variant. The service records only request
- * provenance; replacing content remains an explicit PATCH to the question.
+ * -> { variant }: an UNSAVED side-by-side variant from the two-call pipeline.
+ * The service records only request provenance; the instructor's Replace saves
+ * it through the existing PATCH edit route.
  */
 generationRouter.post(
   '/courses/:courseId/questions/:questionId/regenerate',
@@ -215,51 +202,7 @@ generationRouter.post(
     const params = req.params as z.infer<typeof regenerationParams>;
     const body = req.body as z.infer<typeof regenerationBody>;
     const questionId = new ObjectId(params.questionId); const courseId = new ObjectId(params.courseId);
-    res.json(body.qualityPolicy ? await regenerateQuestion(questionId, body.prompt, req.user!.puid, courseId,
-      { ...body, ...(body.expectedVersionId ? { expectedVersionId: new ObjectId(body.expectedVersionId) } : { expectedVersionId: undefined }) })
-      : await regenerateQuestion(questionId, body.prompt, req.user!.puid, courseId));
-  },
-);
-
-generationRouter.get(
-  '/courses/:courseId/questions/:questionId/regeneration-candidates/:candidateId',
-  validate({ params: regenerationParams.extend({ candidateId: objectIdParam }) }),
-  ensureCourseInstructor(),
-  async (req, res) => {
-    res.json(await getRegenerationCandidate({ courseId: new ObjectId(String(req.params.courseId)), questionId: new ObjectId(String(req.params.questionId)),
-      candidateId: new ObjectId(String(req.params.candidateId)), byPuid: req.user!.puid }));
-  },
-);
-
-generationRouter.post(
-  '/courses/:courseId/question-memory/prepare',
-  validate({ params: courseIdParams }), ensureCourseInstructor(),
-  validate({ body: z.object({ limit: z.number().int().min(1).max(10).default(5) }).strict() }),
-  async (req, res) => {
-    const courseId = new ObjectId(String(req.params.courseId));
-    const { models } = await getPlatformSettings(courseId);
-    res.json(await prepareHistoricalQuestionMemory({ courseId, limit: req.body.limit as number, model: models.reviewer, byPuid: req.user!.puid }));
-  },
-);
-
-generationRouter.get(
-  '/courses/:courseId/authoring-quality-status',
-  validate({ params: courseIdParams }),
-  ensureCourseInstructor(),
-  (_req, res) => res.json({ policy: 'grounded-memory-v2', pilot: true, teacherCalibrated: false,
-    coordinatedSaveAvailable: authoringCommitAvailable(), concurrencyScope: 'process', providerConcurrency: env.authoringProviderConcurrency ?? 4 }),
-);
-
-/** Explicit adoption uses only the stored candidate and never trusts client flags. */
-generationRouter.post(
-  '/courses/:courseId/questions/:questionId/regeneration-candidates/:candidateId/adopt',
-  validate({ params: regenerationParams.extend({ candidateId: objectIdParam }) }),
-  ensureCourseInstructor(),
-  validate({ body: z.object({ expectedVersionId: objectIdParam }).strict() }),
-  async (req, res) => {
-    res.json(await adoptRegenerationCandidate({ courseId: new ObjectId(String(req.params.courseId)),
-      questionId: new ObjectId(String(req.params.questionId)), candidateId: new ObjectId(String(req.params.candidateId)),
-      expectedVersionId: new ObjectId(req.body.expectedVersionId as string), byPuid: req.user!.puid }));
+    res.json(await regenerateQuestionVariant({ questionId, courseId, prompt: body.prompt, byPuid: req.user!.puid }));
   },
 );
 

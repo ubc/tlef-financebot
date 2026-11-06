@@ -22,191 +22,15 @@ jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enq
 
 import {
   GENERATOR_PROMPT,
-  REVIEWER_PROMPT,
-  VALIDATOR_PROMPT,
   verifyGeneratedNumerics,
 } from '../../server/src/services/generation.service';
 import { implicitProduct, placeholderSyntaxFailure } from '../../server/src/services/numeric-verification.service';
 import { BUILTINS, BUILTIN_REFERENCE } from '../../server/src/components/formula';
 
-const reviewerPrompt = REVIEWER_PROMPT({
-  loName: 'Compute present value',
-  question: { stem: 'A firm has $10 million of debt…', options: [] },
-});
-
 const generatorPrompt = GENERATOR_PROMPT({
   type: 'mcq',
   loName: 'Compute present value',
   chunks: [],
-});
-
-describe('REVIEWER_PROMPT', () => {
-  it('no longer asks the LLM to check calculations', () => {
-    // This criterion passed BOTH production bugs, and passed the contingent-
-    // claims question on 2026-08-05 as well. Arithmetic is the evaluator's job
-    // now; asking for it here only manufactures false confidence.
-    expect(reviewerPrompt).not.toMatch(/Calculation correctness/i);
-    expect(reviewerPrompt).not.toMatch(/numbers\/formulas check out/i);
-  });
-
-  it('tells the reviewer explicitly not to evaluate arithmetic', () => {
-    expect(reviewerPrompt).toMatch(/do not attempt to evaluate any arithmetic/i);
-  });
-
-  it('asks whether the formula models the question instead', () => {
-    expect(reviewerPrompt).toMatch(/formula modelling/i);
-    expect(reviewerPrompt).toMatch(/judge the model, not the arithmetic/i);
-  });
-
-  // Criteria 7-9 added 2026-08-16. Each mirrors a gate that already decides
-  // servability and that the reviewer could not see. Measured on a fixture
-  // missing a common-misconception: named 0/4 before, 4/4 after, and a clean
-  // control still passed 4/4 — discrimination, not severity inflation.
-  // See docs/reviewer-agent-tests.md.
-  it('has NO collision-hunting criterion — that job is deterministic now', () => {
-    // Removed 2026-08-17 (Saurav's call). The verifier proves option
-    // distinctness at display precision, and drawCollisionFreeParams redraws
-    // any rare draw the sample missed — both halves of the job the criterion
-    // asked for, done by code. Asking the reviewer to hunt collisions as well
-    // is how it produced hedged "may coincide under particular combinations"
-    // rejects against proven questions. This guard keeps it from returning.
-    expect(reviewerPrompt).not.toMatch(/SLOT-RANGE DEGENERACY/);
-    expect(reviewerPrompt).toMatch(/Option COLLISIONS are not your job/i);
-    expect(reviewerPrompt).toMatch(/never reject over values that might coincide/i);
-  });
-
-  it('asks the reviewer to enforce the option contract', () => {
-    expect(reviewerPrompt).toMatch(/Option contract/i);
-    expect(reviewerPrompt).toMatch(/EXACTLY ONE/);
-  });
-
-  it('states the option contract in PLACEHOLDERS, the unit the code counts', () => {
-    // A live run on 2026-08-17 rejected a question that had EARNED a proof,
-    // because the criterion said "never a sentence with a value appended" and
-    // the reviewer read a "%" suffix as appended text.
-    // optionValueNamesForVerification counts placeholders, not characters, so a
-    // unit attached to one placeholder was always legal. The prompt must not be
-    // stricter than the gate it mirrors, or it manufactures false rejects.
-    expect(reviewerPrompt).toMatch(/\{\{WACC_PCT\}\}%/);
-    expect(reviewerPrompt).toMatch(/unit or symbol attached to it is fine/i);
-    // and the shapes that DO break it are still named
-    expect(reviewerPrompt).toMatch(/TWO placeholders/);
-    expect(reviewerPrompt).toMatch(/sentence with a number stapled on/i);
-  });
-
-  it('asks the reviewer to check the Strategy-A retry gate', () => {
-    // decideStrategy offers the retry only on a common-misconception pick, so an
-    // MCQ without one silently loses the behaviour for every student.
-    expect(reviewerPrompt).toMatch(/Retry gate/i);
-    expect(reviewerPrompt).toMatch(/common-misconception/);
-  });
-
-  it('exempts true/false from the retry gate, as optionShapeValid does', () => {
-    // Measured 2026-08-17: without this the reviewer rejected a legitimate
-    // two-option question 3/3, every time confirming the content was accurate
-    // first. optionShapeValid skips this check for true-false, and
-    // assertOptionInvariants coerces the wrong option to common-misconception —
-    // but inside createQuestion, which runs AFTER this review. The reviewer was
-    // rejecting a role set the platform was about to fix.
-    // With the exemption: 0/3 on the T/F question, still 3/3 on a real MCQ
-    // violation, so it discriminates rather than switching the criterion off.
-    expect(reviewerPrompt).toMatch(/does NOT apply to a two-option true\/false/i);
-    expect(reviewerPrompt).toMatch(/relabels its single wrong option/i);
-    // and it is still scoped to real MCQs
-    expect(reviewerPrompt).toMatch(/FOUR-OPTION multiple-choice question must carry/);
-  });
-
-  it('tells the reviewer when the verifier has already rejected the question', () => {
-    const rejected = REVIEWER_PROMPT({
-      loName: 'Compute present value',
-      question: { stem: 'x', options: [] },
-      verificationFailure: 'options PV and PV_DUP are identical (seed 1000003)',
-    });
-    expect(rejected).toMatch(/ALREADY REJECTED/);
-    expect(rejected).toMatch(/options PV and PV_DUP are identical/);
-    expect(rejected).toMatch(/cannot serve a student in this state/i);
-  });
-
-  it('omits the verifier block entirely when there is no failure', () => {
-    // A reviewer told "the verifier rejected this" about a sound question would
-    // be actively misled, so the block must be absent rather than empty.
-    expect(reviewerPrompt).not.toMatch(/ALREADY REJECTED/);
-  });
-
-  it('tells the reviewer when distinctness is PROVEN, and closes the subject', () => {
-    // The mirror of the failure hand-off. Without it a live reject opened with
-    // "the PV1 and PV2 distractors MAY coincide under particular parameter
-    // combinations" against a question the verifier had already cleared —
-    // collisions re-litigated from vibes. With the collision criterion removed
-    // (2026-08-17), the proven block no longer sets a bar for objections; it
-    // states that collisions are settled and directs the reviewer to pedagogy.
-    const proven = REVIEWER_PROMPT({
-      loName: 'Compute present value',
-      question: { stem: 'x', options: [] },
-      verificationProven: true,
-    });
-    expect(proven).toMatch(/PROVEN every option value pairwise distinct/);
-    expect(proven).toMatch(/Collisions are settled/);
-    expect(proven).toMatch(/pedagogy alone/i);
-    expect(proven).not.toMatch(/ALREADY REJECTED/);
-  });
-
-  it('a question with neither verdict gets neither verifier block', () => {
-    // Conceptual questions have no failure AND no proof; telling the reviewer
-    // either would be false.
-    expect(reviewerPrompt).not.toMatch(/PROVEN every option value/);
-  });
-
-  // Found 2026-08-16 by Saurav: criterion 2 asks whether the question is
-  // "grounded in the material" and the reviewer had never been shown any. Three
-  // questions were rejected for modelling holding-period return "incorrectly" —
-  // all three had earned verification proofs, and the objection was the
-  // reviewer's own theory of dividend reinvestment rather than a mismatch with
-  // what the course teaches.
-  it('shows the reviewer the material it is asked to judge alignment against', () => {
-    const grounded = REVIEWER_PROMPT({
-      loName: 'Compute holding period return',
-      question: { stem: 'x', options: [] },
-      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
-    });
-    expect(grounded).toMatch(/COURSE MATERIAL/);
-    expect(grounded).toMatch(/HPR is measured over one holding period/);
-  });
-
-  it('tells the reviewer to judge against the course, not a fuller treatment', () => {
-    // Without this the reviewer applies textbook finance to a course that may
-    // teach a deliberate simplification, and rejects correct-for-this-course
-    // questions for omitting terms the material never introduces.
-    const grounded = REVIEWER_PROMPT({
-      loName: 'Compute holding period return',
-      question: { stem: 'x', options: [] },
-      chunks: [{ materialId: 'm1', text: 'material' }],
-    });
-    expect(grounded).toMatch(/not against a\s+more complete model you happen to know/i);
-    expect(grounded).toMatch(/not for being simpler than the literature/i);
-  });
-
-  it('omits the material block when there is no grounding to show', () => {
-    expect(reviewerPrompt).not.toMatch(/COURSE MATERIAL/);
-  });
-
-  it('shows the validator the same material', () => {
-    const grounded = VALIDATOR_PROMPT({
-      loName: 'Compute holding period return',
-      question: { stem: 'x', options: [] },
-      chunks: [{ materialId: 'm1', text: 'HPR is measured over one holding period.' }],
-    });
-    expect(grounded).toMatch(/COURSE MATERIAL/);
-    expect(grounded).toMatch(/HPR is measured over one holding period/);
-  });
-
-  it('keeps the judgement criteria an LLM is actually good at', () => {
-    expect(reviewerPrompt).toMatch(/Factual accuracy/i);
-    expect(reviewerPrompt).toMatch(/alignment/i);
-    expect(reviewerPrompt).toMatch(/Distractor quality/i);
-    expect(reviewerPrompt).toMatch(/Clarity/i);
-    expect(reviewerPrompt).toMatch(/Difficulty calibration/i);
-  });
 });
 
 // Both blocks below pin a rule the prompt ALREADY implied and the model still
@@ -289,11 +113,6 @@ describe('GENERATOR_PROMPT', () => {
       expect(generatorPrompt).toMatch(/discounts ONE single amount/);
     });
 
-    it('tells the reviewer the same semantics, framed for judging', () => {
-      expect(reviewerPrompt).toMatch(/never against what the same names mean in Excel/);
-      expect(reviewerPrompt).toMatch(/discounts ONE single amount/);
-    });
-
     it('mentions every implemented builtin, so the manual cannot silently lag', () => {
       for (const name of Object.keys(BUILTINS)) {
         expect(BUILTIN_REFERENCE).toContain(name);
@@ -306,37 +125,6 @@ describe('GENERATOR_PROMPT', () => {
       expect(generatorPrompt).toContain('COUPON_PMT*(1-(1+YTM_PCT/100)^-16)/(YTM_PCT/100) + PV(YTM_PCT/100, 16, FACE_DEBT)');
       expect(generatorPrompt).not.toContain('PV(YTM_PCT/100, 16, FACE_DEBT*COUPON_PCT/100)');
     });
-  });
-
-  // Measured 2026-08-17: on planted role-swap fixtures the validator named the
-  // swap 2/3 while the reviewer caught it 0/3 — one run endorsed the mislabeled
-  // option as "plausible". The validator's assessment was being stored and
-  // gated on by nobody; it now reaches the reviewer, with Saurav's policy:
-  // a mislabeled role on a sound question is a FLAG the instructor can fix in
-  // one edit, never a reject — and so never burns a reject-retry.
-  it('hands the validator\'s role assessment to the reviewer, flag-not-reject', () => {
-    const withRoles = REVIEWER_PROMPT({
-      loName: 'Compute present value',
-      question: { stem: 'x', options: [] },
-      roleAssessment: 'C is mislabeled: fees are not a misconception; D is the real misconception.',
-    });
-    expect(withRoles).toMatch(/structure validator assessed each option/);
-    expect(withRoles).toMatch(/C is mislabeled: fees are not a misconception/);
-    expect(withRoles).toMatch(/FLAG the question and name the exact swap/);
-    expect(withRoles).toMatch(/do not reject over role labels alone/i);
-    // the wrong-answer-key case stays a reject — that is not a label problem
-    expect(withRoles).toMatch(/not\s+actually correct remains a reject/i);
-    // and the block is absent when no assessment is passed
-    expect(reviewerPrompt).not.toMatch(/structure validator assessed/);
-  });
-
-  it('gives the reviewer the full difficulty rubric, not just the heuristic', () => {
-    // Until 2026-08-17 the reviewer had only "a one-step substitution should
-    // not pass as medium or hard" — grading against definitions it had never
-    // seen. The generator sees its target's line; the judge needs all three.
-    expect(reviewerPrompt).toMatch(/Easy \(calculation\): one formula, one concept/);
-    expect(reviewerPrompt).toMatch(/Medium \(calculation\): one genuine rate conversion/);
-    expect(reviewerPrompt).toMatch(/Hard \(calculation\): chains MORE THAN TWO distinct concepts/);
   });
 
   it('warns about the two failure modes verification actually rejects', () => {
@@ -484,7 +272,7 @@ describe('generated numerics are verified before persisting', () => {
   // contract through the source, the same way numeric-gate.test.ts guards its
   // two integration points. The behavioural coverage of the verifier itself
   // lives in numeric-verification.test.ts.
-  const source = readFileSync('server/src/services/generation.service.ts', 'utf8');
+  const source = readFileSync('server/src/services/question-generation/pipeline.ts', 'utf8');
 
   it('does not prove a numerical question with any literal/uncomputed option', () => {
     const result = verifyGeneratedNumerics({
@@ -655,26 +443,16 @@ describe('generated numerics are verified before persisting', () => {
     });
   });
 
-  it('verifies at BOTH createQuestion call sites', () => {
-    // The second is the regeneration path — the one the 2026-08-05 tester used
-    // when they reported that regenerating still produced a wrong answer.
-    const calls = source.match(/verifyGeneratedNumerics\(/g) ?? [];
-    // one definition + first-pass, durable-run, and side-by-side regeneration
-    expect(calls.length).toBeGreaterThanOrEqual(4);
-    expect(source).toContain('verifyGeneratedNumerics(generated)');
-    expect(source).toContain('verifyGeneratedNumerics(candidate.generated)');
-  });
-
-  it('spreads the verified parameterization into both persisted questions', () => {
-    // `outcome.numerics` is the sync pipeline's binding since option B made the
-    // persisted candidate switchable (original vs post-reject retry) — the same
-    // verified fields, one level of indirection deeper.
-    const spreads = source.match(/\.\.\.(outcome\.)?numerics\.fields,/g) ?? [];
+  it('carries the verified parameterization into every saved or returned candidate', () => {
+    // generateAndCheck verifies once (inspectCandidate); the queued run, the
+    // Regenerate variant and the private assessment each spread its fields.
+    const spreads = source.match(/\.\.\.checked\.numerics\.fields,/g) ?? [];
     expect(spreads.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('records the failure reason in the reviewer reasoning both times', () => {
-    const notes = source.match(/withVerificationNote\(/g) ?? [];
-    expect(notes.length).toBeGreaterThanOrEqual(3); // definition + two call sites
+  it('records the failure reason in the check reasoning for bank drafts and Regenerate variants', () => {
+    const notes = source.match(/agentDecisionFrom\(checked\.check, checked\.numerics\.failure\)/g) ?? [];
+    expect(notes.length).toBeGreaterThanOrEqual(2);
+    expect(source).toContain('withVerificationNote(check.reasoning, numericsFailure)');
   });
 });

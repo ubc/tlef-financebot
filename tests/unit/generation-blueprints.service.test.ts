@@ -65,22 +65,6 @@ beforeEach(() => {
 });
 
 describe('saved generation blueprints', () => {
-  it('persists, inherits, and explicitly overrides the pilot policy in a saved recipe', async () => {
-    const courseId = new ObjectId();
-    const blueprint = await createGenerationBlueprint(courseId, 'PUID-INSTR', {
-      name: 'Grounded pilot', loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
-    });
-    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
-    blueprintFindOne.mockResolvedValue(blueprint);
-    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR');
-    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-    await enqueueBlueprintRun(courseId, blueprint._id, 'PUID-INSTR', 'baseline');
-    expect(enqueueGenerationRun).toHaveBeenLastCalledWith(expect.objectContaining({ qualityPolicy: 'baseline' }));
-    expect(blueprint.qualityPolicy).toBe('grounded-memory-v1');
-    blueprintFindOneAndUpdate.mockResolvedValue({ ...blueprint, qualityPolicy: 'baseline' });
-    await updateGenerationBlueprint(courseId, blueprint._id, { qualityPolicy: 'baseline' });
-    expect(blueprintFindOneAndUpdate).toHaveBeenCalledWith({ _id: blueprint._id, courseId }, expect.objectContaining({ $set: expect.objectContaining({ qualityPolicy: 'baseline' }) }), expect.any(Object));
-  });
   it('pins the complete recipe, selected materials, and configured models', async () => {
     const courseId = new ObjectId();
     const loId = new ObjectId();
@@ -235,133 +219,31 @@ describe('exact generation retry', () => {
     const materials = [new ObjectId()];
     jest.mocked(getCourseContentRun).mockResolvedValue({
       _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', difficulty: 'hard', hardnessMove: 'regime-change', qualityPolicy: 'grounded-memory-v1',
+      input: { loId: new ObjectId(), count: 1, type: 'mcq', difficulty: 'hard', hardnessMove: 'regime-change',
         models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
       grounding: { allowedMaterialIds: materials, retrievedChunkCount: 2, pinned },
     } as never);
     await retryGenerationRun(courseId, runId, 'PUID-INSTR');
     expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({
-      qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, groundingPinned: pinned, pinnedMaterialIds: materials,
+      retryOfRunId: runId, groundingPinned: pinned, pinnedMaterialIds: materials,
       difficulty: 'hard', hardnessMove: 'regime-change',
     }));
   });
 
-  it('retries the policy frozen in the terminal run rather than inheriting current recipe defaults', async () => {
+  it('does not forward a historical run\'s retired quality-policy or protocol fields on retry', async () => {
     const courseId = new ObjectId();
     const runId = new ObjectId();
     jest.mocked(getCourseContentRun).mockResolvedValue({
       _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v1',
+      input: { loId: new ObjectId(), count: 2, type: 'mcq', qualityPolicy: 'grounded-memory-v2', sourceProvenance: 'pdf-pages-v1',
+        answerabilityProtocol: 'option-answerability-v1', reviewRepairProtocol: 'frozen-review-decisions-v1',
         models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } },
     } as never);
     await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1', retryOfRunId: runId, count: 2 }));
-  });
-  it.each([undefined, 'pdf-pages-v1'] as const)('keeps the exact terminal evidence selector on retry: %s', async sourceProvenance => {
-    const courseId = new ObjectId(), runId = new ObjectId();
-    jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-        ...(sourceProvenance ? { sourceProvenance } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
     const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-    if (sourceProvenance) expect(request.sourceProvenance).toBe(sourceProvenance);
-    else expect(request).not.toHaveProperty('sourceProvenance');
+    expect(request).toMatchObject({ retryOfRunId: runId, count: 2 });
+    for (const field of ['qualityPolicy', 'sourceProvenance', 'answerabilityProtocol', 'reviewRepairProtocol']) expect(request).not.toHaveProperty(field);
   });
-  it.each([undefined, 'option-answerability-v1'] as const)('keeps the exact terminal answerability selector on retry: %s', async answerabilityProtocol => {
-    const courseId = new ObjectId(), runId = new ObjectId();
-    jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-        ...(answerabilityProtocol ? { answerabilityProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-    const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-    expect(request.answerabilityProtocol).toBe(answerabilityProtocol);
-    if (!answerabilityProtocol) expect(request).not.toHaveProperty('answerabilityProtocol');
-  });
-  it.each([undefined, 'task-demand-v1'] as const)('keeps the exact terminal task-demand selector on retry: %s', async taskDemandProtocol => {
-    const courseId = new ObjectId(), runId = new ObjectId();
-    jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-        ...(taskDemandProtocol ? { taskDemandProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-    const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-    expect(request.taskDemandProtocol).toBe(taskDemandProtocol);
-    if (!taskDemandProtocol) expect(request).not.toHaveProperty('taskDemandProtocol');
-  });
-  it.each([undefined, 'course-exact-bank-v1'] as const)('keeps the exact terminal exact-Bank selector on retry: %s', async exactBankProtocol => {
-    const courseId = new ObjectId(), runId = new ObjectId();
-    jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-      input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-        ...(exactBankProtocol ? { exactBankProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-    await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-    const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-    expect(request.exactBankProtocol).toBe(exactBankProtocol);
-    if (!exactBankProtocol) expect(request).not.toHaveProperty('exactBankProtocol');
-  });
-  it.each([undefined, 'course-task-retrieval-v1', 'unknown-protocol', '', null])(
-    'forwards the exact terminal task-retrieval selector without upgrading or hiding invalid values: %s', async taskRetrievalProtocol => {
-      const courseId = new ObjectId(), runId = new ObjectId();
-      jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-        input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-          ...(taskRetrievalProtocol !== undefined ? { taskRetrievalProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-      await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-      const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-      if (taskRetrievalProtocol === undefined) expect(request).not.toHaveProperty('taskRetrievalProtocol');
-      else expect(request).toHaveProperty('taskRetrievalProtocol', taskRetrievalProtocol);
-      expect(request.retryOfRunId).toEqual(runId);
-    },
-  );
-  it.each([undefined, 'compact-authoring-v1', 'unknown-protocol', '', null])(
-    'forwards the exact terminal authoring-prompt selector without upgrading or hiding invalid values: %s', async authoringPromptProtocol => {
-      const courseId = new ObjectId(), runId = new ObjectId();
-      jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-        input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-          ...(authoringPromptProtocol !== undefined ? { authoringPromptProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-      await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-      const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-      if (authoringPromptProtocol === undefined) expect(request).not.toHaveProperty('authoringPromptProtocol');
-      else expect(request).toHaveProperty('authoringPromptProtocol', authoringPromptProtocol);
-      expect(request.retryOfRunId).toEqual(runId);
-    },
-  );
-  it.each([undefined, 'server-rendered-numeric-review-v1', 'unknown-protocol', '', null])(
-    'forwards the exact terminal numeric-review selector without upgrading or hiding invalid values: %s', async numericReviewProtocol => {
-      const courseId = new ObjectId(), runId = new ObjectId();
-      jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-        input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-          ...(numericReviewProtocol !== undefined ? { numericReviewProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-      await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-      const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-      if (numericReviewProtocol === undefined) expect(request).not.toHaveProperty('numericReviewProtocol');
-      else expect(request).toHaveProperty('numericReviewProtocol', numericReviewProtocol);
-      expect(request.retryOfRunId).toEqual(runId);
-    },
-  );
-  it.each([undefined, 'literal-exclusion-warrants-v1', 'unknown-protocol', '', null])(
-    'forwards the exact terminal exclusion-review selector without upgrading or hiding invalid values: %s', async exclusionReviewProtocol => {
-      const courseId = new ObjectId(), runId = new ObjectId();
-      jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-        input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-          ...(exclusionReviewProtocol !== undefined ? { exclusionReviewProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-      await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-      const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-      if (exclusionReviewProtocol === undefined) expect(request).not.toHaveProperty('exclusionReviewProtocol');
-      else expect(request).toHaveProperty('exclusionReviewProtocol', exclusionReviewProtocol);
-      expect(request.retryOfRunId).toEqual(runId);
-    },
-  );
-  it.each([undefined, 'frozen-review-decisions-v1', 'unknown-protocol', '', null])(
-    'forwards the exact terminal review-repair selector without upgrading or hiding invalid values: %s', async reviewRepairProtocol => {
-      const courseId = new ObjectId(), runId = new ObjectId();
-      jest.mocked(getCourseContentRun).mockResolvedValue({ _id: runId, courseId, kind: 'question-generation', status: 'partial',
-        input: { loId: new ObjectId(), count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2',
-          ...(reviewRepairProtocol !== undefined ? { reviewRepairProtocol } : {}), models: { embedding: 'e', generator: 'g', validator: 'v', reviewer: 'r' } } } as never);
-      await retryGenerationRun(courseId, runId, 'PUID-INSTR');
-      const request = jest.mocked(enqueueGenerationRun).mock.calls[0][0];
-      if (reviewRepairProtocol === undefined) expect(request).not.toHaveProperty('reviewRepairProtocol');
-      else expect(request).toHaveProperty('reviewRepairProtocol', reviewRepairProtocol);
-      expect(request.retryOfRunId).toEqual(runId);
-    },
-  );
   it('copies the original input, model snapshot, and grounding material ids', async () => {
     const courseId = new ObjectId();
     const runId = new ObjectId();

@@ -11,9 +11,6 @@ import type { User } from '../../server/src/types/domain';
 jest.mock('../../server/src/services/generation.service', () => ({
   enqueueGenerationRun: jest.fn(),
   preseedingProgress: jest.fn(),
-  regenerateQuestion: jest.fn(),
-  adoptRegenerationCandidate: jest.fn(),
-  getRegenerationCandidate: jest.fn(),
   MAX_SECONDARY_LOS: 2,
   PRESET_PROMPTS: [
     { label: 'Calculation question', text: 'Write a calculation question.' },
@@ -26,21 +23,21 @@ jest.mock('../../server/src/services/generation-plan.service', () => ({
   autoGenerationPlan: jest.fn(), enqueueGenerationPlan: jest.fn(), PLAN_MAX_CELLS: 120, PLAN_MAX_COUNT: 20,
 }));
 jest.mock('../../server/src/services/generation-blueprints.service', () => ({ enqueueBlueprintRun: jest.fn() }));
+jest.mock('../../server/src/services/question-generation/pipeline', () => ({ regenerateQuestionVariant: jest.fn() }));
 
 import { generationRouter } from '../../server/src/routes/generation.routes';
 import { errorHandler } from '../../server/src/middleware/error-handler';
 import {
   enqueueGenerationRun,
   preseedingProgress,
-  regenerateQuestion,
-  adoptRegenerationCandidate,
-  getRegenerationCandidate,
 } from '../../server/src/services/generation.service';
+import { regenerateQuestionVariant } from '../../server/src/services/question-generation/pipeline';
 import { enqueueGenerationPlan } from '../../server/src/services/generation-plan.service';
 import { enqueueBlueprintRun } from '../../server/src/services/generation-blueprints.service';
 
 const courseId = new ObjectId();
 const loId = new ObjectId();
+const questionId = new ObjectId();
 
 function userFixture(courseRoles: User['courseRoles']): User {
   return {
@@ -75,55 +72,21 @@ beforeEach(() => {
   jest.mocked(enqueueGenerationRun).mockReset();
   jest.mocked(enqueueGenerationRun).mockResolvedValue(new ObjectId());
   jest.mocked(preseedingProgress).mockReset();
-  jest.mocked(regenerateQuestion).mockReset();
-  jest.mocked(adoptRegenerationCandidate).mockReset();
-  jest.mocked(getRegenerationCandidate).mockReset();
+  jest.mocked(regenerateQuestionVariant).mockReset();
   jest.mocked(enqueueGenerationPlan).mockReset();
   jest.mocked(enqueueGenerationPlan).mockResolvedValue({ runs: [] });
   jest.mocked(enqueueBlueprintRun).mockReset();
   jest.mocked(enqueueBlueprintRun).mockResolvedValue(new ObjectId());
 });
 
-describe('opt-in quality policy routes', () => {
-  it('passes an explicitly chosen policy through the single-run endpoint', async () => {
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(202);
-    expect(enqueueGenerationRun).toHaveBeenCalledWith(expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-  });
-
-  it('passes a one-run blueprint policy override without changing the saved recipe', async () => {
+describe('blueprint runs', () => {
+  it('starts a blueprint run with only the course, blueprint and actor', async () => {
     const blueprintId = new ObjectId();
     const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ blueprintId: blueprintId.toHexString(), qualityPolicy: 'baseline' });
+      .send({ blueprintId: blueprintId.toHexString() });
     expect(res.status).toBe(202);
-    expect(enqueueBlueprintRun).toHaveBeenCalledWith(courseId, blueprintId, instructor.puid, 'baseline');
+    expect(enqueueBlueprintRun).toHaveBeenCalledWith(courseId, blueprintId, instructor.puid);
     expect(enqueueGenerationRun).not.toHaveBeenCalled();
-  });
-
-  it('passes batch policy without requiring a prompt or submission identifier', async () => {
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
-      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(202);
-    expect(enqueueGenerationPlan).toHaveBeenCalledWith(courseId, expect.any(Array), instructor.puid, expect.objectContaining({ qualityPolicy: 'grounded-memory-v1' }));
-  });
-
-  it('rejects unknown policies before either enqueue path', async () => {
-    const single = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'auto-publish' });
-    const batch = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generation-plan`)
-      .send({ cells: [{ loId: loId.toHexString(), difficulty: 'easy', kind: 'conceptual', count: 1 }], qualityPolicy: 'auto-publish' });
-    expect(single.status).toBe(400);
-    expect(batch.status).toBe(400);
-    expect(enqueueGenerationRun).not.toHaveBeenCalled();
-    expect(enqueueGenerationPlan).not.toHaveBeenCalled();
-  });
-
-  it('reports the reviewer-required conflict without accepting a pilot run', async () => {
-    jest.mocked(enqueueGenerationRun).mockRejectedValue(new Error('generation-quality-reviewer-required'));
-    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId.toHexString()}/generate`)
-      .send({ loId: loId.toHexString(), qualityPolicy: 'grounded-memory-v1' });
-    expect(res.status).toBe(409);
   });
 });
 
@@ -137,8 +100,15 @@ describe('Task 10 presets and regeneration', () => {
     expect(allowed.body).toHaveLength(4);
   });
 
+  it('regenerate passes only the prompt through and returns the variant', async () => {
+    jest.mocked(regenerateQuestionVariant).mockResolvedValue({ variant: { stem: 'S' } } as never);
+    const res = await request(makeApp(instructor)).post(`/api/courses/${courseId}/questions/${questionId}/regenerate`).send({ prompt: 'Use bonds' });
+    expect(res.status).toBe(200);
+    expect(jest.mocked(regenerateQuestionVariant)).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Use bonds' }));
+  });
+
   it('regenerates through a course-scoped instructor route without saving', async () => {
-    jest.mocked(regenerateQuestion).mockResolvedValue({
+    jest.mocked(regenerateQuestionVariant).mockResolvedValue({
       variant: { stem: 'Alternative', options: [], difficulty: 'medium' },
     } as never);
 
@@ -148,12 +118,12 @@ describe('Task 10 presets and regeneration', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.variant.stem).toBe('Alternative');
-    expect(regenerateQuestion).toHaveBeenCalledWith(
-      loId,
-      'Change the scenario.',
-      'PUID-INSTR-0001',
+    expect(regenerateQuestionVariant).toHaveBeenCalledWith({
+      questionId: loId,
       courseId,
-    );
+      prompt: 'Change the scenario.',
+      byPuid: 'PUID-INSTR-0001',
+    });
   });
 
   it('rejects non-instructors and empty regeneration prompts', async () => {
@@ -166,7 +136,7 @@ describe('Task 10 presets and regeneration', () => {
       .post(`/api/courses/${courseId.toHexString()}/questions/${loId.toHexString()}/regenerate`)
       .send({ prompt: '   ' });
     expect(invalid.status).toBe(400);
-    expect(regenerateQuestion).not.toHaveBeenCalled();
+    expect(regenerateQuestionVariant).not.toHaveBeenCalled();
   });
 });
 
@@ -312,86 +282,3 @@ describe('GET /api/courses/:courseId/preseeding (IN-Q10)', () => {
   });
 });
 
-
-describe('stored-candidate adoption prerequisite failures', () => {
-  const questionId = new ObjectId();
-  const candidateId = new ObjectId();
-  const expectedVersionId = new ObjectId();
-  const url = `/api/courses/${courseId}/questions/${questionId}/regeneration-candidates/${candidateId}/adopt`;
-  const payload = { expectedVersionId: expectedVersionId.toHexString() };
-
-  it.each([
-    [undefined, 401], [student, 403], [userFixture([{ courseId: new ObjectId(), role: 'instructor' }]), 403],
-  ] as const)('checks course access before inspecting a candidate (%s)', async (user, status) => {
-    const response = await request(makeApp(user)).post(url).send(payload);
-    expect(response.status).toBe(status);
-    expect(adoptRegenerationCandidate).not.toHaveBeenCalled();
-  });
-
-  it('requires a version pin and rejects client-provided eligibility flags', async () => {
-    for (const body of [{}, { ...payload, eligible: true }]) {
-      const response = await request(makeApp(instructor)).post(url).send(body);
-      expect(response.status).toBe(400);
-    }
-    expect(adoptRegenerationCandidate).not.toHaveBeenCalled();
-  });
-
-  it('binds adoption to the signed-in actor and parsed course/question/version IDs', async () => {
-    jest.mocked(adoptRegenerationCandidate).mockResolvedValue({ version: { _id: new ObjectId() } } as never);
-    const response = await request(makeApp(instructor)).post(url).send(payload);
-    expect(response.status).toBe(200);
-    expect(adoptRegenerationCandidate).toHaveBeenCalledWith({ courseId, questionId, candidateId,
-      expectedVersionId, byPuid: instructor.puid });
-  });
-
-  it.each([
-    'generation-evidence-source-changed', 'generation-evidence-provenance-changed', 'generation-evidence-material-unavailable',
-    'generation-evidence-source-not-ready', 'generation-evidence-chunks-missing', 'generation-evidence-ingest-incomplete',
-    'authoring-objective-changed', 'generation-memory-original-changed', 'generation-memory-original-version-unavailable',
-    'authoring-memory-changed', 'question-changed-during-regeneration', 'authoring-exact-bank-duplicate', 'generation-task-retrieval-scope-changed',
-  ])('returns an actionable conflict for %s', async code => {
-    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
-    const response = await request(makeApp(instructor)).post(url).send(payload);
-    expect(response.status).toBe(409);
-    expect(response.body).toEqual({ error: code });
-  });
-
-  it.each([
-    'regeneration-original-comparison-required', 'authoring-original-comparison-required',
-    'authoring-original-comparison-invalid', 'generation-memory-original-scope-missing',
-    'generation-memory-required-original-missing', 'generation-memory-required-original-too-large',
-    'regeneration-candidate-not-eligible', 'generation-evidence-schema-invalid', 'generation-exact-bank-receipt-invalid',
-    'generation-task-retrieval-receipt-invalid', 'generation-task-retrieval-assessment-invalid',
-    'generation-task-retrieval-selection-invalid', 'generation-task-retrieval-query-invalid',
-    'generation-task-retrieval-scope-invalid', 'generation-task-retrieval-policy-invalid',
-    'generation-task-retrieval-protocol-invalid', 'generation-task-retrieval-vector-invalid', 'generation-task-retrieval-limits-invalid',
-  ])('keeps an unusable retained candidate unprocessable for %s', async code => {
-    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
-    const response = await request(makeApp(instructor)).post(url).send(payload);
-    expect(response.status).toBe(422);
-    expect(response.body).toEqual({ error: code });
-  });
-
-  it('keeps incomplete task retrieval retryable without claiming stale retained content', async () => {
-    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error('generation-task-retrieval-incomplete'));
-    const response = await request(makeApp(instructor)).post(url).send(payload);
-    expect(response.status).toBe(503); expect(response.body).toEqual({ error: 'generation-task-retrieval-incomplete' });
-  });
-
-  it('keeps incomplete Bank scanning retryable without claiming a stale candidate', async () => {
-    jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error('authoring-exact-bank-incomplete'));
-    const response = await request(makeApp(instructor)).post(url).send(payload);
-    expect(response.status).toBe(503); expect(response.body).toEqual({ error: 'authoring-exact-bank-incomplete' });
-  });
-
-  it.each(['unexpected-storage-failure', 'generation-evidence-invalid-scope', 'generation-evidence-source-changed-unrecognized-suffix',
-    'generation-evidence-provenance-changed-unrecognized-suffix', 'generation-evidence-schema-invalid-unrecognized-suffix'])('keeps unexpected failures at 500: %s', async code => {
-    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      jest.mocked(adoptRegenerationCandidate).mockRejectedValue(new Error(code));
-      const response = await request(makeApp(instructor)).post(url).send(payload);
-      expect(response.status).toBe(500);
-      expect(response.body).toEqual({ error: code });
-    } finally { errorLog.mockRestore(); }
-  });
-});

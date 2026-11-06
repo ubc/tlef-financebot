@@ -29,16 +29,16 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   platformSettingsCol: jest.fn(() => ({ findOne: jest.fn(async () => null) })),
   questionVersionsCol: jest.fn(),
 }));
+jest.mock('../../server/src/services/question-similarity.service', () => ({ refreshQuestionSimilarity: jest.fn(async () => undefined) }));
+jest.mock('../../server/src/services/question-generation/existing-stems', () => ({ loadExistingLoStems: jest.fn(async () => []), ACTIVE_QUESTION_STATES: [] }));
 
 import { ObjectId } from 'mongodb';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { embedOne } from '../../server/src/components/genai/embeddings';
 import { search } from '../../server/src/components/qdrant';
-import {
-  PRESET_PROMPTS,
-  regenerateQuestion,
-  runGenerationPipeline,
-} from '../../server/src/services/generation.service';
+import { PRESET_PROMPTS, type GenerationInput } from '../../server/src/services/generation.service';
+import { regenerateQuestionVariant, runQuestionGeneration } from '../../server/src/services/question-generation/pipeline';
+import { failContentRun } from '../../server/src/services/content-runs.service';
 import { createQuestion } from '../../server/src/services/questions.service';
 import {
   losCol,
@@ -48,6 +48,10 @@ import {
 } from '../../server/src/components/mongodb/collections';
 
 const courseId = new ObjectId();
+const MODELS = { embedding: 'embed-model', generator: { model: 'gen-model' }, reviewer: { model: 'rev-model' } } as never;
+/** The queued pipeline; it records failures on the run rather than throwing. */
+const runPipeline = (input: Omit<GenerationInput, 'models'>) => runQuestionGeneration({ ...input, models: MODELS }, new ObjectId());
+const check = (reasoning: string) => ({ decision: 'pass', reasoning, roleAssessment: 'roles ok', suggestions: [] });
 const questionId = new ObjectId();
 const versionId = new ObjectId();
 const loId = new ObjectId();
@@ -72,6 +76,7 @@ function options() {
 
 beforeEach(() => {
   jest.mocked(completeJson).mockReset();
+  jest.mocked(failContentRun).mockClear();
   jest.mocked(embedOne).mockReset().mockResolvedValue([0.1, 0.2]);
   jest.mocked(search).mockReset();
   jest.mocked(createQuestion).mockReset().mockResolvedValue({
@@ -156,10 +161,9 @@ describe('Task 10 custom generation', () => {
     jest
       .mocked(completeJson)
       .mockResolvedValueOnce({ stem: 'Variant', options: options(), difficulty: 'medium' })
-      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
-      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'grounded' });
+      .mockResolvedValueOnce(check('grounded'));
 
-    await runGenerationPipeline({
+    await runPipeline({
       courseId,
       loId,
       count: 1,
@@ -177,15 +181,15 @@ describe('Task 10 custom generation', () => {
   });
 
   it('rejects an unknown @mention before embedding or generation', async () => {
-    await expect(
-      runGenerationPipeline({
-        courseId,
-        loId,
-        count: 1,
-        prompt: 'Only use @not-in-this-course.pdf.',
-        byPuid: 'PUID-INSTR',
-      }),
-    ).rejects.toThrow('generation-material-mention-not-found');
+    await runPipeline({
+      courseId,
+      loId,
+      count: 1,
+      prompt: 'Only use @not-in-this-course.pdf.',
+      byPuid: 'PUID-INSTR',
+    });
+
+    expect(jest.mocked(failContentRun).mock.calls[0]?.[1]).toMatchObject({ code: 'generation-material-mention-not-found' });
 
     expect(embedOne).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
@@ -213,10 +217,9 @@ describe('Task 10 custom generation', () => {
     jest
       .mocked(completeJson)
       .mockResolvedValueOnce({ stem: 'Variant', options: options(), difficulty: 'medium' })
-      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
-      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'grounded' });
+      .mockResolvedValueOnce(check('grounded'));
 
-    await runGenerationPipeline({
+    await runPipeline({
       courseId,
       loId,
       count: 1,
@@ -245,15 +248,20 @@ describe('Task 10 custom generation', () => {
         difficulty: 'hard',
         numericKind: 'conceptual',
       })
-      .mockResolvedValueOnce({ roleAssessment: 'roles ok' })
-      .mockResolvedValueOnce({ decision: 'pass', reasoning: 'good alternative' });
+      .mockResolvedValueOnce(check('good alternative'));
 
-    const result = await regenerateQuestion(
+    const result = await regenerateQuestionVariant({
       questionId,
-      'Use @lecture-3.pdf and change the scenario.',
-      'PUID-INSTR',
       courseId,
-    );
+      prompt: 'Use @lecture-3.pdf and change the scenario.',
+      byPuid: 'PUID-INSTR',
+    });
+
+    // Two calls, no retry; the @mention restricts grounding here too.
+    expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenCalledWith('course-task-10', [0.1, 0.2], 6, {
+      must: [{ key: 'materialId', match: { any: [lectureId.toHexString()] } }],
+    });
 
     expect(result.variant).toMatchObject({
       stem: 'Alternative stem',

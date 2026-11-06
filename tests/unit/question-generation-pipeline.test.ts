@@ -11,7 +11,7 @@ jest.mock('../../server/src/services/content-runs.service', () => ({
   updateContentRun: jest.fn(async () => ({})), failContentRun: jest.fn(async () => ({})), assertContentRunActive: jest.fn(async () => undefined),
 }));
 jest.mock('../../server/src/services/generation-preview', () => ({ withGenerationPreview: (_r: unknown, _i: unknown, fn: (t: unknown) => unknown) => fn(undefined) }));
-jest.mock('../../server/src/components/mongodb/collections', () => ({ losCol: jest.fn() }));
+jest.mock('../../server/src/components/mongodb/collections', () => ({ losCol: jest.fn(), questionsCol: jest.fn(), questionVersionsCol: jest.fn() }));
 jest.mock('../../server/src/services/materials.service', () => ({ courseCollection: jest.fn(() => 'collection') }));
 
 import { ObjectId } from 'mongodb';
@@ -139,4 +139,31 @@ it('stores only the cited source chunks', async () => {
   jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce({ decision: 'pass', reasoning: '', roleAssessment: '', suggestions: [] });
   await runQuestionGeneration({ ...input, count: 1 }, runId);
   expect(jest.mocked(createQuestion).mock.calls[0][0].sourceRefs).toHaveLength(1);
+});
+
+jest.mock('../../server/src/services/admin.service', () => ({ getPlatformSettings: jest.fn(async () => ({ models: { generator: { model: 'sol-6.1' }, reviewer: { model: 'luna' } } })) }));
+
+import { regenerateQuestionVariant } from '../../server/src/services/question-generation/pipeline';
+import { questionsCol, questionVersionsCol } from '../../server/src/components/mongodb/collections';
+
+describe('regenerateQuestionVariant', () => {
+  it('makes two calls, carries the original and its agent decision, and returns an unsaved variant', async () => {
+    const qid = new ObjectId(); const vid = new ObjectId();
+    jest.mocked(questionsCol).mockReturnValue({
+      findOne: async () => ({ _id: qid, courseId, currentVersionId: vid, loIds: [loId], themeIds: [], state: 'draft',
+        agentDecision: { decision: 'reject', reasoning: 'Key wrong', roleAssessment: '', suggestions: ['Fix B'] } }),
+      updateOne: async () => ({ matchedCount: 1 }),
+    } as never);
+    jest.mocked(questionVersionsCol).mockReturnValue({ findOne: async () => ({ _id: vid, type: 'mcq', stem: 'Old stem', options: [], difficulty: 'easy' }) } as never);
+    jest.mocked(completeJson).mockResolvedValueOnce(conceptual('New stem')).mockResolvedValueOnce({ decision: 'pass', reasoning: 'ok', roleAssessment: '', suggestions: [] });
+    const { variant } = await regenerateQuestionVariant({ questionId: qid, courseId, prompt: 'Use bonds', byPuid: 'p1' });
+    const generatorPrompt = jest.mocked(completeJson).mock.calls[0][0] as string;
+    expect(generatorPrompt).toContain('Old stem');
+    expect(generatorPrompt).toContain('Key wrong');
+    expect(generatorPrompt).toContain('Fix B');
+    expect(generatorPrompt).toContain('Use bonds');
+    expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(2);
+    expect(variant.stem).toBe('New stem');
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
 });
