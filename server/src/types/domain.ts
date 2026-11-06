@@ -1,6 +1,5 @@
-import type { PedagogicalTaskDescriptor } from './authoring-task';
+import type { AuthoringIntent, PedagogicalTaskDescriptor } from './authoring-task';
 import type { StructureOptions, StructureDraft, StructureResult, StructureSynthesisReceipt, OutlineGroundingReceipt } from './structure';
-import type { GenerationQualityPolicy, GenerationQualityRunResult, AuthoringIntent } from './generation-quality';
 import type { SourceSelectionReport } from './material-upload';
 import type { AuthoringBudgetReceipt } from './authoring-budget';
 import type { ObjectId } from 'mongodb';
@@ -341,7 +340,7 @@ export interface QuestionVersion {
   stem: string; // markdown + KaTeX; {{slot}} placeholders when parameterized
   options: QuestionOption[];
   difficulty: Difficulty; // pinned at version level so recalibration never rewrites history (§9.2)
-  /** New v2 candidates store checked difficulty; historical labels are unchanged. */
+  /** Historical v2-pilot versions only (read-only); new versions never set it. */
   authoringQuality?: {
     policy: 'grounded-memory-v2';
     intent: AuthoringIntent;
@@ -667,7 +666,8 @@ export interface QuestionGenerationResult {
   checks?: Array<{ item: number; check: 'answer-validation' | 'quality-review'; verdict: 'checked' | 'pass' | 'flag' | 'reject'; explanation: string; at: Date }>;
   createdQuestionIds: ObjectId[];
   failures: QuestionGenerationFailure[];
-  quality?: GenerationQualityRunResult;
+  /** Historical v1/v2 quality-pilot runs only (read-only); new runs never set it. */
+  quality?: Record<string, unknown>;
 }
 
 export interface QuestionGenerationRun extends ContentRunBase {
@@ -678,8 +678,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
   stage: QuestionGenerationStage;
   input: {
     loId: ObjectId;
-    qualityPolicy?: GenerationQualityPolicy;
-    /** Explicit schema selector; absent historical runs preserve legacy evidence. */
+    /** Historical quality-pilot runs only (read-only); new runs never set these. */
+    qualityPolicy?: 'baseline' | 'grounded-memory-v1' | 'grounded-memory-v2';
     sourceProvenance?: 'pdf-pages-v1';
     answerabilityProtocol?: 'option-answerability-v1';
     taskDemandProtocol?: 'task-demand-v1';
@@ -687,8 +687,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
     taskRetrievalProtocol?: 'course-task-retrieval-v1';
     authoringPromptProtocol?: 'compact-authoring-v1';
     numericReviewProtocol?: 'server-rendered-numeric-review-v1';
-  exclusionReviewProtocol?: 'literal-exclusion-warrants-v1';
-  reviewRepairProtocol?: 'frozen-review-decisions-v1';
+    exclusionReviewProtocol?: 'literal-exclusion-warrants-v1';
+    reviewRepairProtocol?: 'frozen-review-decisions-v1';
     /** Multi-LO generation: up to MAX_SECONDARY_LOS further objectives every
      * question must integrate. Persisted so the async job and a retry carry
      * them; the created questions are tagged to all of them (IN-Q13). */
@@ -758,7 +758,6 @@ export interface GenerationBlueprint {
   loId: ObjectId;
   count: number;
   type: QuestionType;
-  qualityPolicy?: GenerationQualityPolicy;
   difficulty?: Difficulty;
   prompt?: string;
   materialIds?: ObjectId[];

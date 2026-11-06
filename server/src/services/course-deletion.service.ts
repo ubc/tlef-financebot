@@ -12,8 +12,7 @@ import type { ObjectId } from 'mongodb';
 import { cancelJobsByDataIds } from '../components/jobs';
 import {
   modelCallReceiptsCol, modelUsageSessionsCol,
-  materialUploadBatchesCol, regenerationCandidatesCol, sourceEvidenceExtractionsCol,
-  questionPedagogicalFingerprintsCol, authoringTaskPlansCol,
+  materialUploadBatchesCol, sourceEvidenceExtractionsCol,
   builderExamsCol, examPublicationsCol, examCandidatesCol, examBuildRunsCol, assessmentAttemptsCol, previewAssessmentAttemptsCol,
   attemptsCol,
   auditCol,
@@ -264,10 +263,12 @@ export async function permanentlyDeleteCourse(
     assessmentAttemptsCol().deleteMany({ courseId }),
     previewAssessmentAttemptsCol().deleteMany({ courseId }),
     materialUploadBatchesCol().deleteMany({ courseId }),
-    regenerationCandidatesCol().deleteMany({ courseId }),
     sourceEvidenceExtractionsCol().deleteMany({ courseId }),
-    questionPedagogicalFingerprintsCol().deleteMany({ courseId }),
-    authoringTaskPlansCol().deleteMany({ courseId }),
+    // Retired quality-pilot collections: no typed accessor remains, but stale
+    // course data is still removed with the course.
+    getDb().collection('regenerationCandidates').deleteMany({ courseId }),
+    getDb().collection('questionPedagogicalFingerprints').deleteMany({ courseId }),
+    getDb().collection('authoringTaskPlans').deleteMany({ courseId }),
     structureReviewCheckpointsCol().deleteMany({ courseId }),
     structureReviewProgressCol().deleteMany({ courseId }),
     structureReviewAttemptsCol().deleteMany({ courseId }),

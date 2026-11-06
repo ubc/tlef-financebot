@@ -112,128 +112,16 @@ function materialRun(overrides: Partial<WithId<ContentRun>> = {}): WithId<Conten
 }
 
 describe('content run creation', () => {
-  it('persists the selected quality policy while leaving legacy requests baseline by omission', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const baseline = await createQuestionGenerationRun(input);
-    const pilot = await createQuestionGenerationRun({ ...input, qualityPolicy: 'grounded-memory-v1' });
-    expect(baseline.input).not.toHaveProperty('qualityPolicy');
-    expect(pilot.input.qualityPolicy).toBe('grounded-memory-v1');
-    expect(await getContentRun(pilot._id)).toMatchObject({ input: { qualityPolicy: 'grounded-memory-v1' } });
+  it('records no retired quality-policy or protocol selector on a new run', async () => {
+    const run = await createQuestionGenerationRun({ courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq',
+      models: { embedding: 'embed', generator: 'gen', reviewer: 'review' } });
+    const stored = await getContentRun(run._id);
+    for (const field of ['qualityPolicy', 'sourceProvenance', 'answerabilityProtocol', 'taskDemandProtocol', 'exactBankProtocol',
+      'taskRetrievalProtocol', 'authoringPromptProtocol', 'numericReviewProtocol', 'exclusionReviewProtocol', 'reviewRepairProtocol']) {
+      expect(run.input).not.toHaveProperty(field);
+      expect(stored?.input).not.toHaveProperty(field);
+    }
   });
-  it('pins provenance-aware evidence without upgrading historical quality-policy-only records', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const legacy = await createQuestionGenerationRun(input);
-    const current = await createQuestionGenerationRun({ ...input, sourceProvenance: 'pdf-pages-v1' });
-    expect(legacy.input).not.toHaveProperty('sourceProvenance');
-    expect(await getContentRun(current._id)).toMatchObject({ input: { sourceProvenance: 'pdf-pages-v1' } });
-    expect(await getContentRun(legacy._id)).toMatchObject({ input: legacy.input });
-  });
-  it('pins answerability independently while preserving historical absence', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const legacy = await createQuestionGenerationRun(input);
-    const current = await createQuestionGenerationRun({ ...input, answerabilityProtocol: 'option-answerability-v1' });
-    expect(legacy.input).not.toHaveProperty('answerabilityProtocol');
-    expect((await getContentRun(current._id))?.input).toMatchObject({ answerabilityProtocol: 'option-answerability-v1' });
-  });
-  it('pins task demand independently while preserving historical absence', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const legacy = await createQuestionGenerationRun(input);
-    const current = await createQuestionGenerationRun({ ...input, taskDemandProtocol: 'task-demand-v1' });
-    expect(legacy.input).not.toHaveProperty('taskDemandProtocol');
-    expect((await getContentRun(current._id))?.input).toMatchObject({ taskDemandProtocol: 'task-demand-v1' });
-  });
-  it('pins task demand independently while preserving historical absence', async () => {
-    const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-      qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-    const legacy = await createQuestionGenerationRun(input);
-    const current = await createQuestionGenerationRun({ ...input, exactBankProtocol: 'course-exact-bank-v1' });
-    expect(legacy.input).not.toHaveProperty('exactBankProtocol');
-    expect((await getContentRun(current._id))?.input).toMatchObject({ exactBankProtocol: 'course-exact-bank-v1' });
-  });
-  it.each([undefined, 'course-task-retrieval-v1', 'unknown-protocol', '', null])(
-    'preserves the exact task-retrieval selector for downstream validation: %s', async taskRetrievalProtocol => {
-      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-      const run = await createQuestionGenerationRun({ ...input,
-        ...(taskRetrievalProtocol !== undefined ? { taskRetrievalProtocol: taskRetrievalProtocol as never } : {}) });
-      const stored = await getContentRun(run._id);
-      if (taskRetrievalProtocol === undefined) {
-        expect(run.input).not.toHaveProperty('taskRetrievalProtocol');
-        expect(stored?.input).not.toHaveProperty('taskRetrievalProtocol');
-      } else {
-        expect(run.input.taskRetrievalProtocol).toBe(taskRetrievalProtocol);
-        expect(stored?.input).toMatchObject({ taskRetrievalProtocol });
-      }
-    },
-  );
-  it.each([undefined, 'compact-authoring-v1', 'unknown-protocol', '', null])(
-    'preserves the exact authoring-prompt selector for downstream validation: %s', async authoringPromptProtocol => {
-      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-      const run = await createQuestionGenerationRun({ ...input,
-        ...(authoringPromptProtocol !== undefined ? { authoringPromptProtocol: authoringPromptProtocol as never } : {}) });
-      const stored = await getContentRun(run._id);
-      if (authoringPromptProtocol === undefined) {
-        expect(run.input).not.toHaveProperty('authoringPromptProtocol');
-        expect(stored?.input).not.toHaveProperty('authoringPromptProtocol');
-      } else {
-        expect(run.input.authoringPromptProtocol).toBe(authoringPromptProtocol);
-        expect(stored?.input).toMatchObject({ authoringPromptProtocol });
-      }
-    },
-  );
-  it.each([undefined, 'server-rendered-numeric-review-v1', 'unknown-protocol', '', null])(
-    'preserves the exact numeric-review selector for downstream validation: %s', async numericReviewProtocol => {
-      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-      const run = await createQuestionGenerationRun({ ...input,
-        ...(numericReviewProtocol !== undefined ? { numericReviewProtocol: numericReviewProtocol as never } : {}) });
-      const stored = await getContentRun(run._id);
-      if (numericReviewProtocol === undefined) {
-        expect(run.input).not.toHaveProperty('numericReviewProtocol');
-        expect(stored?.input).not.toHaveProperty('numericReviewProtocol');
-      } else {
-        expect(run.input.numericReviewProtocol).toBe(numericReviewProtocol);
-        expect(stored?.input).toMatchObject({ numericReviewProtocol });
-      }
-    },
-  );
-  it.each([undefined, 'literal-exclusion-warrants-v1', 'unknown-protocol', '', null])(
-    'preserves the exact exclusion-review selector for downstream validation: %s', async exclusionReviewProtocol => {
-      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-      const run = await createQuestionGenerationRun({ ...input,
-        ...(exclusionReviewProtocol !== undefined ? { exclusionReviewProtocol: exclusionReviewProtocol as never } : {}) });
-      const stored = await getContentRun(run._id);
-      if (exclusionReviewProtocol === undefined) {
-        expect(run.input).not.toHaveProperty('exclusionReviewProtocol');
-        expect(stored?.input).not.toHaveProperty('exclusionReviewProtocol');
-      } else {
-        expect(run.input.exclusionReviewProtocol).toBe(exclusionReviewProtocol);
-        expect(stored?.input).toMatchObject({ exclusionReviewProtocol });
-      }
-    },
-  );
-  it.each([undefined, 'frozen-review-decisions-v1', 'unknown-protocol', '', null])(
-    'preserves the exact review-repair selector for downstream validation: %s', async reviewRepairProtocol => {
-      const input = { courseId: new ObjectId(), requestedBy: 'PUID-1', loId: new ObjectId(), count: 1, type: 'mcq' as const,
-        qualityPolicy: 'grounded-memory-v2' as const, models: { embedding: 'embed', generator: 'gen', validator: 'val', reviewer: 'review' } };
-      const run = await createQuestionGenerationRun({ ...input,
-        ...(reviewRepairProtocol !== undefined ? { reviewRepairProtocol: reviewRepairProtocol as never } : {}) });
-      const stored = await getContentRun(run._id);
-      if (reviewRepairProtocol === undefined) {
-        expect(run.input).not.toHaveProperty('reviewRepairProtocol');
-        expect(stored?.input).not.toHaveProperty('reviewRepairProtocol');
-      } else {
-        expect(run.input.reviewRepairProtocol).toBe(reviewRepairProtocol);
-        expect(stored?.input).toMatchObject({ reviewRepairProtocol });
-      }
-    },
-  );
   it('creates distinct durable ids for identical material requests', async () => {
     const input = {
       courseId: new ObjectId(),

@@ -44,14 +44,13 @@ function validPatch(over: Partial<PlatformSettings['models']> = {}) {
   return {
     models: {
       generator: { model: NANO },
-      validator: { model: NANO },
       reviewer: { model: NANO },
       masteryEvaluator: { model: NANO },
       utility: { model: NANO },
       ...over,
     },
     costControls: { maxGenerationsPerDay: 10 },
-    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+    featureFlags: { layer2Evaluator: true },
   };
 }
 
@@ -118,22 +117,6 @@ describe('reading a document written by an older deploy', () => {
       featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
     } as unknown as PlatformSettings;
     expect(normalizePlatformSettings(legacy).models.utility.model).toBeTruthy();
-  });
-
-  it('defaults retryOnReject ON for a document written before the flag existed', () => {
-    // Flags added after a doc was written default ON: the cost-saving direction
-    // is an explicit opt-out, and a legacy doc must not silently disable the
-    // reject-retry mechanism.
-    const legacy = {
-      _id: 'platform',
-      models: { generator: NANO, validator: NANO, reviewer: NANO, masteryEvaluator: NANO },
-      costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { reviewerAgent: true, layer2Evaluator: false },
-    } as unknown as PlatformSettings;
-    const normalized = normalizePlatformSettings(legacy);
-    expect(normalized.featureFlags.retryOnReject).toBe(true);
-    // and the flags the doc DID carry are preserved, not overwritten
-    expect(normalized.featureFlags.layer2Evaluator).toBe(false);
   });
 
   it('leaves a current-shape document untouched', () => {

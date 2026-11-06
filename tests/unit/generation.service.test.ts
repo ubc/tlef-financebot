@@ -498,7 +498,6 @@ describe('durable generation runs (P2-0)', () => {
         models: {
           embedding: 'embed-model',
           generator: 'course-generator',
-          validator: 'val-model',
           reviewer: 'rev-model',
         },
         modelSnapshot: expect.objectContaining({ generator: { model: 'course-generator', modelSource: 'override' } }),

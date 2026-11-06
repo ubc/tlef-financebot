@@ -203,16 +203,6 @@ export async function createQuestionGenerationRun(input: {
   courseId: ObjectId;
   requestedBy: string;
   loId: ObjectId;
-  qualityPolicy?: QuestionGenerationRun['input']['qualityPolicy'];
-  sourceProvenance?: QuestionGenerationRun['input']['sourceProvenance'];
-  answerabilityProtocol?: QuestionGenerationRun['input']['answerabilityProtocol'];
-  taskDemandProtocol?: QuestionGenerationRun['input']['taskDemandProtocol'];
-  exactBankProtocol?: QuestionGenerationRun['input']['exactBankProtocol'];
-  taskRetrievalProtocol?: QuestionGenerationRun['input']['taskRetrievalProtocol'];
-  authoringPromptProtocol?: QuestionGenerationRun['input']['authoringPromptProtocol'];
-  numericReviewProtocol?: QuestionGenerationRun['input']['numericReviewProtocol'];
-  exclusionReviewProtocol?: QuestionGenerationRun['input']['exclusionReviewProtocol'];
-  reviewRepairProtocol?: QuestionGenerationRun['input']['reviewRepairProtocol'];
   secondaryLoIds?: ObjectId[];
   count: number;
   type: QuestionType;
@@ -242,15 +232,6 @@ export async function createQuestionGenerationRun(input: {
     warnings: [],
     input: {
       loId: input.loId,
-      ...(input.qualityPolicy ? { qualityPolicy: input.qualityPolicy } : {}),
-      ...(input.sourceProvenance ? { sourceProvenance: input.sourceProvenance } : {}),
-      ...(input.answerabilityProtocol ? { answerabilityProtocol: input.answerabilityProtocol } : {}),
-      ...(input.taskDemandProtocol ? { taskDemandProtocol: input.taskDemandProtocol } : {}),
-      ...(input.exactBankProtocol ? { exactBankProtocol: input.exactBankProtocol } : {}),
-      ...(input.taskRetrievalProtocol !== undefined ? { taskRetrievalProtocol: input.taskRetrievalProtocol } : {}),
-      ...(input.authoringPromptProtocol !== undefined ? { authoringPromptProtocol: input.authoringPromptProtocol } : {}),
-      ...(input.numericReviewProtocol !== undefined ? { numericReviewProtocol: input.numericReviewProtocol } : {}),
-      ...(input.exclusionReviewProtocol !== undefined ? { exclusionReviewProtocol: input.exclusionReviewProtocol } : {}), ...(input.reviewRepairProtocol !== undefined ? { reviewRepairProtocol: input.reviewRepairProtocol } : {}),
       ...(input.secondaryLoIds && input.secondaryLoIds.length > 0
         ? { secondaryLoIds: input.secondaryLoIds }
         : {}),

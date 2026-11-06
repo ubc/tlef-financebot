@@ -90,7 +90,6 @@ describe('saved generation blueprints', () => {
       models: {
         embedding: 'embed-v1',
         generator: 'generator-v1',
-        validator: 'validator-v1',
         reviewer: 'reviewer-v1',
       },
       modelSnapshot: { generator: { model: 'generator-v1' } },
@@ -98,7 +97,6 @@ describe('saved generation blueprints', () => {
     expect(configuredGenerationModels()).toEqual({
       embedding: 'embed-v1',
       generator: { model: 'generator-v1' },
-      validator: { model: 'validator-v1' },
       reviewer: { model: 'reviewer-v1' },
     });
     expect(materialCountDocuments).toHaveBeenCalledWith({
@@ -173,7 +171,6 @@ describe('saved generation blueprints', () => {
       models: {
         embedding: 'embed-v1',
         generator: { model: 'generator-v1' },
-        validator: { model: 'validator-v1' },
         reviewer: { model: 'reviewer-v1' },
       },
       blueprintId,
@@ -289,7 +286,6 @@ describe('exact generation retry', () => {
       models: {
         embedding: 'old-embed',
         generator: { model: 'old-generator' },
-        validator: { model: 'old-validator' },
         reviewer: { model: 'old-reviewer' },
       },
       blueprintId,

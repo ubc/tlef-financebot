@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { ObjectId } from 'mongodb';
 
-jest.mock('../../server/src/components/mongodb', () => ({ getDb: () => ({ collection: () => ({ deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }) }) }) }));
+const mockRetiredDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
+jest.mock('../../server/src/components/mongodb', () => ({ getDb: () => ({ collection: () => ({ deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }), deleteMany: mockRetiredDeleteMany }) }) }));
 
 jest.mock('node:fs/promises', () => ({ lstat: jest.fn(), rm: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ cancelJobsByDataIds: jest.fn() }));
@@ -9,10 +10,9 @@ jest.mock('../../server/src/components/qdrant', () => ({ deleteCollectionIfExist
 jest.mock('../../server/src/services/material-source-provenance.service', () => ({ listCourseMaterialProvenanceArtifacts: jest.fn() }));
 jest.mock('../../server/src/components/mongodb/collections', () => ({
   learningSettingsCol: jest.fn(), learningSessionsCol: jest.fn(), previewLearningSessionsCol: jest.fn(), reviewMetadataCol: jest.fn(), previewReviewMetadataCol: jest.fn(), discussionPostsCol: jest.fn(), previewDiscussionPostsCol: jest.fn(),
-  questionPedagogicalFingerprintsCol: jest.fn(), authoringTaskPlansCol: jest.fn(),
   structureReviewCheckpointsCol: jest.fn(), structureReviewProgressCol: jest.fn(), structureReviewAttemptsCol: jest.fn(),
-  structureRepairBranchesCol: jest.fn(),
-  materialUploadBatchesCol: jest.fn(), regenerationCandidatesCol: jest.fn(), sourceEvidenceExtractionsCol: jest.fn(),
+  structureRepairBranchesCol: jest.fn(), structureConsolidationsCol: jest.fn(), structureConsolidationDispatchesCol: jest.fn(), structureConsolidationNativeCol: jest.fn(),
+  materialUploadBatchesCol: jest.fn(), sourceEvidenceExtractionsCol: jest.fn(),
   coursePeopleAccessCol: jest.fn(), modelCallReceiptsCol: jest.fn(), modelUsageSessionsCol: jest.fn(), registrationCodeBatchesCol: jest.fn(),
   builderExamsCol: jest.fn(), examPublicationsCol: jest.fn(), examCandidatesCol: jest.fn(), examBuildRunsCol: jest.fn(), assessmentAttemptsCol: jest.fn(), previewAssessmentAttemptsCol: jest.fn(),
   attemptsCol: jest.fn(), auditCol: jest.fn(), capabilitySettingsCol: jest.fn(), coursePeopleImportsCol: jest.fn(),
@@ -48,10 +48,9 @@ type FakeCollection = {
 
 const accessorNames = [
   'learningSettingsCol', 'learningSessionsCol', 'previewLearningSessionsCol', 'reviewMetadataCol', 'previewReviewMetadataCol', 'discussionPostsCol', 'previewDiscussionPostsCol',
-  'questionPedagogicalFingerprintsCol', 'authoringTaskPlansCol',
   'structureReviewCheckpointsCol', 'structureReviewProgressCol', 'structureReviewAttemptsCol',
-  'structureRepairBranchesCol',
-  'materialUploadBatchesCol', 'regenerationCandidatesCol', 'sourceEvidenceExtractionsCol',
+  'structureRepairBranchesCol', 'structureConsolidationsCol', 'structureConsolidationDispatchesCol', 'structureConsolidationNativeCol',
+  'materialUploadBatchesCol', 'sourceEvidenceExtractionsCol',
   'coursePeopleAccessCol',
   'modelCallReceiptsCol', 'modelUsageSessionsCol', 'registrationCodeBatchesCol',
   'attemptsCol', 'auditCol', 'capabilitySettingsCol', 'contentRunsCol', 'coursesCol', 'coursePeopleImportsCol',
@@ -147,6 +146,10 @@ describe('permanent course deletion', () => {
     for (const name of accessorNames.filter((name) => !['coursesCol', 'usersCol'].includes(name))) {
       expect(fakes[name].deleteMany).toHaveBeenCalledTimes(1);
     }
+    // Retired quality-pilot collections (regenerationCandidates,
+    // questionPedagogicalFingerprints, authoringTaskPlans) are still cleaned.
+    expect(mockRetiredDeleteMany).toHaveBeenCalledTimes(3);
+    expect(mockRetiredDeleteMany).toHaveBeenCalledWith({ courseId });
     expect(fakes.usersCol.updateMany).toHaveBeenCalledWith(
       { courseRoles: { $elemMatch: { courseId } } },
       { $pull: { courseRoles: { courseId } } },

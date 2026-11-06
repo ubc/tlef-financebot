@@ -1830,7 +1830,7 @@ export interface QuestionGenerationRun extends ContentRunBase {
     qualityPolicy?: GenerationQualityPolicy;
     blueprintId?: string;
     retryOfRunId?: string;
-    models: { embedding: string; generator: string; validator: string; reviewer: string };
+    models: { embedding: string; generator: string; /** Historical records only. */ validator?: string; reviewer: string };
   };
   grounding?: { allowedMaterialIds: string[]; retrievedChunkCount: number };
   result?: {
@@ -2054,11 +2054,6 @@ export function getContentRun(courseId: string, runId: string): Promise<ContentR
   );
 }
 
-/** Authenticated read-only download; the server supplies an attachment filename. */
-export function contentRunEvaluationExportUrl(courseId: string, runId: string): string {
-  return `/api/courses/${encodeURIComponent(courseId)}/content-runs/${encodeURIComponent(runId)}/evaluation-export`;
-}
-
 export interface ModelUsageTotals {
   inputTokens: number | null;
   outputTokens: number | null;
@@ -2150,7 +2145,7 @@ export interface GenerationBlueprint {
   difficulty?: GenerationDifficulty;
   prompt?: string;
   materialIds?: string[];
-  models: { embedding: string; generator: string; validator: string; reviewer: string };
+  models: { embedding: string; generator: string; /** Historical records only. */ validator?: string; reviewer: string };
   createdBy: string;
   createdAt: string;
   updatedAt: string;

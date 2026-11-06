@@ -1,5 +1,4 @@
 jest.mock('../../server/src/services/model-usage.service', () => ({ listModelCalls: jest.fn() }));
-jest.mock('../../server/src/services/generation-evaluation.service', () => ({ exportGenerationEvaluation: jest.fn() }));
 import { listModelCalls } from '../../server/src/services/model-usage.service';
 import express, { type Express } from 'express';
 import request from 'supertest';

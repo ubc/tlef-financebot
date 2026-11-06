@@ -13,7 +13,6 @@ import {
 } from '../services/content-runs.service';
 import { retryGenerationRun } from '../services/generation-blueprints.service';
 import { listModelCalls } from '../services/model-usage.service';
-import { exportGenerationEvaluation } from '../services/generation-evaluation.service';
 import type { ContentRun } from '../types/domain';
 
 export const contentRunsRouter = Router();
@@ -206,12 +205,3 @@ contentRunsRouter.get(
   },
 );
 
-/** Read-only retained authoring evidence; never starts generation or labels quality. */
-contentRunsRouter.get('/courses/:courseId/content-runs/:runId/evaluation-export',
-  validate({ params: runParams }), ensureCourseInstructor(), async (req, res) => {
-    const runId = String(req.params.runId);
-    const exported = await exportGenerationEvaluation(new ObjectId(String(req.params.courseId)), new ObjectId(runId));
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Disposition', `attachment; filename="generation-evaluation-${runId}.json"`);
-    res.json(exported);
-  });

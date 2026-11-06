@@ -1,6 +1,6 @@
 import { attachTutorial } from '../../tutorials.js';
 import {
-  browseBank, contentRunEvaluationExportUrl, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
+  browseBank, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
   getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
   type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
@@ -297,7 +297,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           const [snapshot, recorded] = await Promise.all([getContentRun(courseId,run._id), getContentRunUsage(courseId,run._id).catch(() => undefined)]);
           if (!dialog.isConnected) return;
           mount(body, snapshot.kind === 'question-generation' && qualityFindings(snapshot),
-            snapshot.kind === 'question-generation' && !active(snapshot) && el('p', {}, el('a', { href: contentRunEvaluationExportUrl(courseId, snapshot._id), download: '', text: 'Download evaluation export' })),
             el('ol', {}, ...snapshot.events.map(event => el('li', {},
             el('strong', { text: stageName(event.stage) }), el('time', { text: new Date(event.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
             el('p', { text: event.message ?? `${event.status} · ${event.completedUnits} processed` })))),

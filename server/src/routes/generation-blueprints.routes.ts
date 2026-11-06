@@ -111,7 +111,6 @@ const ERROR_STATUS: Record<string, number> = {
   'lo-not-in-course': 400,
   'blueprint-material-not-ready': 400,
   'content-run-enqueue-failed': 503,
-  'generation-quality-reviewer-required': 409,
 };
 
 generationBlueprintsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

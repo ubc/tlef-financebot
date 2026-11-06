@@ -1,11 +1,9 @@
 import type { StructureConsolidationCheckpoint, StructureConsolidationDispatch, StructureConsolidationNativeAttempt } from '../../types/structure-consolidation-runtime';
 import type { CoursePeopleAccess } from '../../types/course-people';
 import type { MaterialUploadBatch } from '../../types/material-upload';
-import type { RegenerationCandidateRecord } from '../../types/regeneration';
 import type { SourceEvidenceExtraction } from '../../types/source-evidence';
 import type { StructureReviewCheckpoint, StructureReviewProgress, StructureReviewAttempt } from '../../types/structure-review';
 import type { StructureRepairBranch } from '../../types/structure-repair';
-import type { QuestionPedagogicalFingerprint, AuthoringTaskPlan } from '../../types/authoring-task';
 import type { ModelCallReceipt, ModelUsageSession } from '../../types/model-usage';
 import type { BuilderExam, ExamPublication, ExamCandidate, ExamBuildRun, AssessmentAttempt } from '../../types/exam-builder';
 import type { CoursePeopleImport } from '../../types/people-import';
@@ -77,10 +75,7 @@ export const modelUsageSessionsCol = (): Collection<ModelUsageSession> => getDb(
 export const registrationCodeBatchesCol = (): Collection<CourseRegistrationCodeBatch> => getDb().collection<CourseRegistrationCodeBatch>('courseRegistrationCodeBatches');
 
 export const materialUploadBatchesCol = (): Collection<MaterialUploadBatch> => getDb().collection<MaterialUploadBatch>('materialUploadBatches');
-export const regenerationCandidatesCol = (): Collection<RegenerationCandidateRecord> => getDb().collection<RegenerationCandidateRecord>('regenerationCandidates');
 export const sourceEvidenceExtractionsCol = (): Collection<SourceEvidenceExtraction> => getDb().collection<SourceEvidenceExtraction>('sourceEvidenceExtractions');
-export const questionPedagogicalFingerprintsCol = (): Collection<QuestionPedagogicalFingerprint> => getDb().collection<QuestionPedagogicalFingerprint>('questionPedagogicalFingerprints');
-export const authoringTaskPlansCol = (): Collection<AuthoringTaskPlan> => getDb().collection<AuthoringTaskPlan>('authoringTaskPlans');
 export const structureReviewCheckpointsCol = (): Collection<StructureReviewCheckpoint> => getDb().collection<StructureReviewCheckpoint>('structureReviewCheckpoints');
 export const structureReviewProgressCol = (): Collection<StructureReviewProgress> => getDb().collection<StructureReviewProgress>('structureReviewProgress');
 export const structureReviewAttemptsCol = (): Collection<StructureReviewAttempt> => getDb().collection<StructureReviewAttempt>('structureReviewAttempts');
@@ -109,12 +104,7 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'contentRuns', keys: { 'structureReview.checkpointId': 1 }, options: { unique: true, name: 'one_structure_review_continuation', partialFilterExpression: { 'structureReview.parentRunId': { $exists: true } } } },
   { collection: 'materialUploadBatches', keys: { courseId: 1, requestedBy: 1, requestId: 1 }, options: { unique: true } },
   { collection: 'materialUploadBatches', keys: { courseId: 1, createdAt: -1 } },
-  { collection: 'regenerationCandidates', keys: { courseId: 1, questionId: 1, requestedBy: 1, requestId: 1 }, options: { unique: true } },
-  { collection: 'regenerationCandidates', keys: { courseId: 1, createdAt: -1 } },
   { collection: 'sourceEvidenceExtractions', keys: { courseId: 1, cacheKey: 1 }, options: { unique: true } },
-  { collection: 'questionPedagogicalFingerprints', keys: { courseId: 1, questionId: 1, versionId: 1 }, options: { unique: true } },
-  { collection: 'authoringTaskPlans', keys: { courseId: 1, runId: 1 }, options: { unique: true } },
-  { collection: 'authoringTaskPlans', keys: { courseId: 1, status: 1, createdAt: -1 } },
   { collection: 'materials', keys: { courseId: 1, 'uploadFingerprint.sha256': 1, 'uploadFingerprint.format': 1 }, options: { unique: true, partialFilterExpression: { 'uploadFingerprint.active': true } } },
   { collection: 'courseRegistrationCodeBatches', keys: { 'codes.code': 1 }, options: { unique: true } },
   { collection: 'courseRegistrationCodeBatches', keys: { courseId: 1, requestId: 1 }, options: { unique: true } },
