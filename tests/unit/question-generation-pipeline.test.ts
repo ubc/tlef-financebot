@@ -18,7 +18,7 @@ import { ObjectId } from 'mongodb';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { createQuestion } from '../../server/src/services/questions.service';
 import { losCol } from '../../server/src/components/mongodb/collections';
-import { failContentRun } from '../../server/src/services/content-runs.service';
+import { failContentRun, updateContentRun } from '../../server/src/services/content-runs.service';
 import { runQuestionGeneration } from '../../server/src/services/question-generation/pipeline';
 
 const conceptual = (stem: string) => ({
@@ -39,6 +39,7 @@ beforeEach(() => {
   jest.mocked(completeJson).mockReset();
   jest.mocked(createQuestion).mockReset();
   jest.mocked(failContentRun).mockClear();
+  jest.mocked(updateContentRun).mockClear();
   jest.mocked(losCol).mockReturnValue({ findOne: async () => ({ _id: loId, courseId, name: 'Risk', themeId: new ObjectId() }) } as never);
   jest.mocked(createQuestion).mockImplementation(async () => ({ questionId: new ObjectId(), version: {} as never }));
 });
@@ -85,6 +86,53 @@ it('records a failure and makes no checker call when the options cannot be store
   expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(1);
   expect(createQuestion).not.toHaveBeenCalled();
   expect(failContentRun).toHaveBeenCalled();
+  expectRunFailure('generation-invalid-options');
+});
+
+const parseFailure = () => new Error('llm-json-parse-failed');
+const expectRunFailure = (itemCode: string) => {
+  const [, error, result] = jest.mocked(failContentRun).mock.calls[0] as unknown as [unknown, { code: string }, { failures: { code: string }[] }];
+  expect(error.code).toBe('generation-no-questions-created');
+  expect(result.failures[0].code).toBe(itemCode);
+};
+
+it('turns a generator JSON parse failure into generation-invalid-options without another call', async () => {
+  jest.mocked(completeJson).mockRejectedValueOnce(parseFailure());
+  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(1);
+  expect(createQuestion).not.toHaveBeenCalled();
+  expectRunFailure('generation-invalid-options');
+});
+
+it('saves a flagged Draft when the checker output is not parseable JSON', async () => {
+  jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockRejectedValueOnce(parseFailure());
+  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(2);
+  expect(jest.mocked(createQuestion).mock.calls[0][0].agentDecision?.decision).toBe('flag');
+});
+
+it('disables the JSON repair call on both model calls', async () => {
+  jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce({ decision: 'pass', reasoning: '', roleAssessment: '', suggestions: [] });
+  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  const calls = jest.mocked(completeJson).mock.calls;
+  expect(calls).toHaveLength(2);
+  for (const call of calls) expect(call[1]).toMatchObject({ jsonRetry: false });
+});
+
+it('stores options as already shuffled', async () => {
+  jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce({ decision: 'pass', reasoning: '', roleAssessment: '', suggestions: [] });
+  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  expect(jest.mocked(createQuestion).mock.calls[0][0]).toMatchObject({ optionsAlreadyShuffled: true });
+});
+
+it('finishes partial when one slot is unstorable and the other is fine', async () => {
+  jest.mocked(completeJson)
+    .mockResolvedValueOnce({ stem: 'bad', options: [] })
+    .mockResolvedValueOnce(conceptual('Q2')).mockResolvedValueOnce({ decision: 'pass', reasoning: '', roleAssessment: '', suggestions: [] });
+  await runQuestionGeneration(input, runId);
+  const last = jest.mocked(updateContentRun).mock.calls.at(-1)!;
+  expect(last[1]).toMatchObject({ status: 'partial' });
+  expect(failContentRun).not.toHaveBeenCalled();
 });
 
 it('stores only the cited source chunks', async () => {

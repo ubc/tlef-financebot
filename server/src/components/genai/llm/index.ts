@@ -53,6 +53,8 @@ export interface CompleteJsonOptions extends ModelRequestOptions {
   /** Optional local listener, independent of the current scoped recorder. */
   onAttempt?: ModelCallObserver;
   usageContext?: Omit<ModelUsageContext, 'jsonAttempt'>;
+  /** false = never send the corrective "not valid JSON" follow-up; a parse failure throws instead. */
+  jsonRetry?: boolean;
 }
 
 /**
@@ -143,7 +145,8 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
   await reportUsage(first.usage);
   try {
     return extractJson<T>(first.content);
-  } catch {
+  } catch (parseError) {
+    if (options.jsonRetry === false) throw parseError;
     const retry = await send(
       `${prompt}\n\nYour previous reply was not valid JSON. Respond with ONLY the JSON value — no prose, no explanation, no code fences.`,
       1,

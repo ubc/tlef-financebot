@@ -38,7 +38,9 @@ export async function generateAndCheck(input: {
   checkpoint: () => Promise<void>; item: number; onText?: (text: string) => void; preserveOptionOrder?: boolean;
 }): Promise<CheckedCandidate> {
   await input.checkpoint();
-  const raw = await completeJson<GeneratorOutput>(GENERATOR_PROMPT({
+  let raw: GeneratorOutput;
+  try {
+    raw = await completeJson<GeneratorOutput>(GENERATOR_PROMPT({
     type: input.type, loName: input.loName, difficulty: input.difficulty, prompt: input.prompt, chunks: input.chunks,
     assignedMove: input.slot.hardnessMove, kind: input.kind, secondaryLoNames: input.secondaryLoNames,
     angle: input.slot.angle, focusChunk: input.slot.focusChunk, existingStems: input.existingStems,
@@ -46,8 +48,12 @@ export async function generateAndCheck(input: {
   }), {
     temperature: GENERATOR_TEMPERATURE, ...input.models.generator,
     usageContext: { stage: 'generation', item: input.item }, beforeRequest: input.checkpoint,
-    ...(input.onText ? { onText: input.onText } : {}),
+    ...(input.onText ? { onText: input.onText } : {}), jsonRetry: false,
   });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'llm-json-parse-failed') throw new Error('generation-invalid-options', { cause: error });
+    throw error;
+  }
   const inspection = inspectCandidate({ type: input.type, kind: input.kind, difficulty: input.difficulty, candidate: raw });
   if (!inspection.storable) throw new Error('generation-invalid-options');
   const clean = sanitizeGenerated(raw);
@@ -59,7 +65,7 @@ export async function generateAndCheck(input: {
     check = parseCheckerOutput(await completeJson<unknown>(CHECKER_PROMPT({
       loName: input.loName, secondaryLoNames: input.secondaryLoNames, type: input.type, question: generated,
       chunks: input.chunks, assignedMove: input.slot.hardnessMove, findings: inspection.findings,
-    }), { ...input.models.reviewer, usageContext: { stage: 'check', item: input.item }, beforeRequest: input.checkpoint }));
+    }), { ...input.models.reviewer, usageContext: { stage: 'check', item: input.item }, beforeRequest: input.checkpoint, jsonRetry: false }));
   } catch (error) {
     if (error instanceof Error && error.message === 'content-run-conflict') throw error;
     check = uncheckedDecision(error);

@@ -286,3 +286,10 @@ it('still reports both attempts to the compatible usage hook', async () => {
   await completeJson('Synthetic', { onUsage });
   expect(onUsage.mock.calls).toEqual([[{ promptTokens: 2, completionTokens: 1 }], [{ promptTokens: 3, completionTokens: 2 }]]);
 });
+
+it('with jsonRetry: false throws on an unparseable reply without a corrective call', async () => {
+  sendMessage.mockResolvedValue({ content: 'I cannot help with that.' });
+  await expect(completeJson('prompt', { jsonRetry: false })).rejects.toThrow('llm-json-parse-failed');
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('jsonRetry');
+});
