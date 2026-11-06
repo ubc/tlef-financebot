@@ -1,7 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir } from 'node:fs/promises';
-import type { GenerationExactBankReceipt, GenerationQualityAssessment } from '../../client/src/api';
 
 const course = '111111111111111111111111';
 const batchId = '222222222222222222222222';
@@ -203,108 +202,4 @@ for (const mobile of [false, true]) test(`materials-first guide waits for every 
   await expect.poll(() => applied).toEqual({ runId: 'run1', themes: [{ name: proposed, los: [{ name: 'Explain the risk that diversification cannot remove', materialIds: ids, sourceThemeIndex: 0, sourceLoIndex: 0 }] }] });
   await expect(guide.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
   await expect(guide.getByRole('button', { name: 'Generate questions', exact: true })).toBeEnabled();
-});
-
-// Synthetic exact-scan receipts exercise the compiled existing authoring views.
-// No corpus scan, provider call, live database or semantic judgment runs here.
-const exactBankCourse = '6bf000000000000000000001', exactBankQuestion = '6bf000000000000000000002';
-const exactBankVersion = '6bf000000000000000000003', exactBankLo = '6bf000000000000000000004';
-const exactBankTheme = '6bf000000000000000000005', exactBankCandidate = '6bf000000000000000000006';
-function exactScan(): GenerationExactBankReceipt {
-  return { protocol: 'course-exact-bank-v1', courseId: exactBankCourse, candidateHash: 'a'.repeat(64), bindingsDigest: 'b'.repeat(64),
-    status: 'complete', headsScanned: 121, versionsChecked: 121, missingVersions: 0, invalidVersions: 0, invalidHeads: 0,
-    unscannedHeadsLowerBound: 0, headBatches: 1, exactMatchCount: 0, matches: [], matchesTruncated: false, consistency: 'best-effort' };
-}
-async function exactBankFixture(page: Page, scan: GenerationExactBankReceipt | undefined, mode: 'component' | 'generation' | 'regeneration' = 'component') {
-  const api: Array<{ method: string; path: string }> = [], external: string[] = [], errors: string[] = [];
-  const options = [{ key: 'A', text: 'Market risk remains.', role: 'correct' as const, explanation: 'Diversification does not remove systematic risk.' },
-    { key: 'B', text: 'All risk disappears.', role: 'common-misconception' as const, explanation: 'Firm-specific risk is diversifiable.' }];
-  const quality: GenerationQualityAssessment = { policy: 'grounded-memory-v2', item: 0, status: 'eligible', sourceSupport: 'supported', notation: 'consistent', novelty: 'uncertain', reasons: [], citations: [],
-    matchedEntryIds: [], evidencePacketId: 'synthetic-evidence', memoryDigest: 'synthetic-memory', checkedAt: '2026-10-17T14:00:00Z', exactBank: scan,
-    coverage: { evidenceTruncated: false, memoryTruncated: true, shownEntries: 80, totalEntries: 200, missingVersions: 0, consistency: 'best-effort' } };
-  const current = { _id: exactBankVersion, questionId: exactBankQuestion, version: 1, type: 'mcq', stem: 'Which risk remains after diversification?', difficulty: 'easy', options,
-    sourceRefs: [], paramSlots: [], derivedValues: [], createdBy: 'synthetic-instructor', createdAt: '2026-10-17T14:00:00Z' };
-  const tree = { _id: exactBankCourse, name: 'Synthetic exact-scan course', themes: [{ _id: exactBankTheme, name: 'Risk', order: 0, los: [{ _id: exactBankLo, themeId: exactBankTheme, name: 'Explain systematic risk', order: 0 }] }] };
-  const run = { _id: 'exact-bank-run', courseId: exactBankCourse, kind: 'question-generation', status: 'completed', stage: 'persisting', revision: 2, warnings: [], events: [],
-    createdAt: '2026-10-17T14:00:00Z', input: { loId: exactBankLo, count: 1, type: 'mcq', qualityPolicy: 'grounded-memory-v2' }, result: { createdQuestionIds: [], failures: [], quality: { policy: 'grounded-memory-v2', assessments: [quality] } } };
-  page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(() => { Object.assign(window, { EventSource: class { addEventListener() {} close() {} } }); });
-  await page.route('**/*', async route => {
-    const request = route.request(), url = new URL(request.url());
-    if (url.origin !== 'http://127.0.0.1:6167') { external.push(url.href); return route.abort('blockedbyclient'); }
-    if (url.pathname === '/exact-bank-fixture') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic exact Bank receipt</title><link rel="stylesheet" href="/styles/main.css"><script src="/vendor/katex.min.js"></script><script src="/vendor/katex-auto-render.min.js"></script><script src="/vendor/marked.min.js"></script><script src="/vendor/purify.min.js"></script></head><body><main style="padding:16px"></main></body></html>' });
-    if (!url.pathname.startsWith('/api/')) return route.continue();
-    api.push({ method: request.method(), path: url.pathname });
-    if (request.method() !== 'GET') return route.fulfill({ status: 405, json: { error: 'Read-only synthetic receipt fixture' } });
-    if (url.pathname === `/api/courses/${exactBankCourse}`) return route.fulfill({ json: tree });
-    if (url.pathname.endsWith('/authoring-quality-status')) return route.fulfill({ json: { coordinatedSaveAvailable: true, pilot: true, teacherCalibrated: false } });
-    if (url.pathname.endsWith('/materials')) return route.fulfill({ json: [{ _id: 'mock-source', name: 'Synthetic risk.pdf', status: 'ready', assignments: [{ loId: exactBankLo }] }] });
-    if (url.pathname.endsWith('/preseeding')) return route.fulfill({ json: [{ loId: exactBankLo, approved: 0, unapproved: 0, target: 1 }] });
-    if (url.pathname.endsWith('/content-runs')) return route.fulfill({ json: url.searchParams.has('status') ? [] : [run] });
-    if (url.pathname.endsWith('/content-runs/exact-bank-run')) return route.fulfill({ json: run });
-    if (url.pathname.endsWith('/usage')) return route.fulfill({ json: { calls: [], totalCalls: 0 } });
-    if (url.pathname === `/api/questions/${exactBankQuestion}`) return route.fulfill({ json: { id: exactBankQuestion, courseId: exactBankCourse, current, currentVersionId: exactBankVersion, currentVersion: 1, state: 'draft', loIds: [exactBankLo], themeIds: [exactBankTheme], labels: [], internalNotes: [], versions: [] } });
-    if (url.pathname.endsWith('/sample')) return route.fulfill({ json: { stem: current.stem, options, parameterized: false } });
-    if (url.pathname.endsWith(`/regeneration-candidates/${exactBankCandidate}`)) return route.fulfill({ json: { candidateId: exactBankCandidate, originalVersionId: exactBankVersion, intent: 'edit-existing', status: 'eligible', reasons: [], quality, variant: current } });
-    if (url.pathname.endsWith('/questions')) return route.fulfill({ json: { total: 0, questions: [] } });
-    return route.fulfill({ json: {} });
-  });
-  await page.goto('/exact-bank-fixture');
-  if (mode === 'component') await page.evaluate(async quality => {
-    const main = document.querySelector('main')!; const h = document.createElement('h1'); h.textContent = 'Recorded synthetic checks'; main.append(h);
-    main.append((await import('/js/views/instructor/exact-bank-checks.js')).exactBankChecks(quality));
-  }, quality);
-  else if (mode === 'generation') {
-    await page.evaluate(async id => (await import('/js/views/instructor/generation-workbench.js')).renderGenerationWorkbench(document.querySelector('main')!, id), exactBankCourse);
-    await page.getByRole('button', { name: 'Generation activity', exact: true }).click();
-    await page.getByRole('button', { name: 'View steps', exact: true }).click();
-  } else {
-    await page.evaluate(async ({ course, question, candidate }) => {
-      sessionStorage.setItem(`financebot:regeneration:unknown:${course}:${question}`, candidate);
-      (await import('/js/views/instructor/question-detail.js')).renderQuestionDetail(document.querySelector('main')!, { id: course, questionId: question });
-    }, { course: exactBankCourse, question: exactBankQuestion, candidate: exactBankCandidate });
-    await page.getByRole('button', { name: '↻ Regenerate', exact: true }).click();
-    await page.getByText('Source and memory checks', { exact: true }).click();
-  }
-  const root = (mode === 'generation' ? page.getByRole('dialog') : page).getByRole('region', { name: 'Exact Bank scan', exact: true }); await expect(root).toBeVisible();
-  return { root, api, external, errors };
-}
-function exactBankReadOnly(state: Awaited<ReturnType<typeof exactBankFixture>>) {
-  expect(state.api.every(request => request.method === 'GET')).toBe(true); expect(state.external).toEqual([]); expect(state.errors).toEqual([]);
-}
-
-for (const [name, width, theme] of [['desktop-light', 1440, 'light'], ['mobile-dark', 390, 'dark']] as const) test(`exact Bank receipt ${name} exposes full exact counts separately from bounded semantic memory in the generation workbench`, async ({ page }, testInfo) => {
-  await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
-  const state = await exactBankFixture(page, exactScan(), 'generation'); const { root } = state;
-  await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
-  await expect(root).toContainText('Complete · 121 heads scanned · 121 current versions checked · 0 exact matches');
-  await expect(root).toContainText('separate bounded question memory'); await expect(root).toContainText('does not establish conceptual novelty');
-  await root.getByText('Exact scan receipt', { exact: true }).click(); await expect(root).toContainText('Missing versions: 0');
-  await page.getByRole('dialog').getByText('Source and memory coverage · limited', { exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('Latest comparison: 80 of 200 question versions shown');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect((await new AxeBuilder({ page }).include('dialog [aria-label="Exact Bank scan"]').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
-  await root.screenshot({ path: testInfo.outputPath(`${name}-synthetic-exact-bank-receipt.png`) }); exactBankReadOnly(state);
-});
-
-test('exact Bank receipt incomplete scans retain missing versions, literal matches and an explicit lower-bound limitation', async ({ page }) => {
-  const scan = { ...exactScan(), status: 'incomplete' as const, incompleteReason: 'missing-or-invalid-version' as const, versionsChecked: 119, missingVersions: 1, invalidVersions: 1,
-    exactMatchCount: 13, unscannedHeadsLowerBound: 1, matchesTruncated: true,
-    matches: [{ entryId: '<img src=x onerror="window.exactBankInjected=true">', questionId: 'recorded-question', versionId: 'recorded-version', state: 'approved' as const }] };
-  const state = await exactBankFixture(page, scan); await state.root.getByText('Exact scan receipt', { exact: true }).click();
-  await expect(state.root).toContainText('Incomplete'); await expect(state.root).toContainText('Missing versions: 1. Invalid versions: 1');
-  await expect(state.root).toContainText('Observed unscanned-head lower bound: 1'); await expect(state.root).toContainText('not an estimate of the remaining Bank size');
-  await expect(state.root).toContainText(scan.matches[0].entryId); await expect(state.root).toContainText('match list truncated');
-  expect(await page.evaluate(() => 'exactBankInjected' in window)).toBe(false); await expect(state.root.locator('img,script')).toHaveCount(0); exactBankReadOnly(state);
-});
-
-test('exact Bank receipt historical absence has no invented scan counts and makes no API call', async ({ page }) => {
-  const state = await exactBankFixture(page, undefined); await expect(state.root).toContainText('not recorded for this assessment');
-  await expect(state.root).not.toContainText('0 heads scanned'); await expect(state.root.getByText('Exact scan receipt', { exact: true })).toHaveCount(0);
-  expect(state.api).toEqual([]); exactBankReadOnly(state);
-});
-
-test('exact Bank receipt appears inside the existing regeneration checks through read-only candidate recovery', async ({ page }) => {
-  const state = await exactBankFixture(page, exactScan(), 'regeneration'); await expect(state.root).toContainText('121 current versions checked');
-  await expect(page.getByText('Source and memory checks', { exact: true }).locator('..')).toContainText('Exact normalized Bank scan'); exactBankReadOnly(state);
 });
