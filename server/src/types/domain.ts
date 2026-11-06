@@ -158,9 +158,9 @@ export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fix
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** The pipeline steps an admin can point at a model independently (PRD §2 / AD-07). */
-export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
-export const COURSE_MODEL_STEPS = ['generator', 'validator', 'reviewer', 'utility'] as const;
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
 export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
 
 /**
@@ -196,7 +196,7 @@ export interface PlatformSettings {
    */
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean; retryOnReject: boolean };
+  featureFlags: { layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: Date;
 }
@@ -204,7 +204,6 @@ export interface PlatformSettings {
 export interface GenerationModelSnapshot {
   embedding: string;
   generator: StepModelConfig;
-  validator: StepModelConfig;
   reviewer: StepModelConfig;
 }
 
@@ -710,7 +709,8 @@ export interface QuestionGenerationRun extends ContentRunBase {
     models: {
       embedding: string;
       generator: string;
-      validator: string;
+      /** Historical run records only; the step no longer exists. */
+      validator?: string;
       reviewer: string;
     };
     modelSnapshot?: GenerationModelSnapshot;

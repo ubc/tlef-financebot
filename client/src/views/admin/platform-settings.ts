@@ -20,8 +20,7 @@ import { createCourseModelsPanel } from './course-models.js';
 
 const STEP_LABEL: Record<PipelineStep, string> = {
   generator: 'Generator',
-  validator: 'Structure validator',
-  reviewer: 'Reviewer',
+  reviewer: 'Checker',
   masteryEvaluator: 'Mastery evaluator',
   utility: 'Utility',
 };
@@ -34,14 +33,8 @@ const STEP_HELP: Record<PipelineStep, string> = {
     'Drafts each question from the retrieved course material. It runs warm — a higher temperature — '
     + 'so that asking for several questions at once yields genuinely different ones rather than three '
     + 'near-copies. Leave the temperature blank to keep that behaviour.',
-  validator:
-    'Checks that every option plays the role it claims: exactly one correct answer, and distractors '
-    + 'that are wrong for the reason their error model states. Wants reproducible output, so leave it '
-    + 'deterministic unless you are deliberately experimenting.',
   reviewer:
-    'Judges pedagogical quality against the five review criteria and returns pass, flag or reject. '
-    + 'This is the gate that catches problems structural checks cannot see, so it is the step where '
-    + 'spending reasoning effort is most likely to pay for itself.',
+    'Checks option roles and gives a pass / flag / reject verdict with suggested fixes. Never regenerates.',
   masteryEvaluator:
     'Not yet wired. This setting is saved and audited, but no code reads it — there is no '
     + 'mastery-evaluator model call anywhere in the pipeline today.',
@@ -178,7 +171,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       if (saved.models[step][key] !== draft.models[step][key]) result.push({ label: `${STEP_LABEL[step]} · ${key === 'reasoningEffort' ? 'reasoning effort' : key}`, before: String(saved.models[step][key] ?? 'Step default'), after: String(draft.models[step][key] ?? 'Step default') });
     }
     if (saved.costControls.maxGenerationsPerDay !== draft.costControls.maxGenerationsPerDay) result.push({ label: 'Daily question limit', before: String(saved.costControls.maxGenerationsPerDay), after: String(draft.costControls.maxGenerationsPerDay) });
-    for (const [key, label] of [['reviewerAgent', 'Reviewer Agent'], ['layer2Evaluator', 'Layer 2 Mastery Evaluator'], ['retryOnReject', 'Retry on Reviewer Reject']] as const) {
+    for (const [key, label] of [['layer2Evaluator', 'Layer 2 Mastery Evaluator']] as const) {
       if (saved.featureFlags[key] !== draft.featureFlags[key]) result.push({ label, before: saved.featureFlags[key] ? 'Enabled' : 'Disabled', after: draft.featureFlags[key] ? 'Enabled' : 'Disabled' });
     }
     for (const custom of draft.customModels ?? []) if (!saved.customModels?.some(model => model.id === custom.id && model.profile === custom.profile)) result.push({ label: `Custom model · ${custom.id}`, before: 'Not registered', after: custom.profile });
@@ -198,7 +191,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   function refreshSummary(): void {
     const limit = draft.costControls.maxGenerationsPerDay;
     metrics.replaceChildren(...[
-      ['Enabled LLM stages', draft.featureFlags.reviewerAgent ? '4' : '3', 'Mastery evaluator is reserved'], ['Reviewer', draft.featureFlags.reviewerAgent ? 'On' : 'Off', draft.featureFlags.reviewerAgent ? 'Semantic review' : 'Manual attention'],
+      ['Enabled LLM stages', '3', 'Mastery evaluator is reserved'],
       ['Daily allowance', Number.isFinite(limit) && limit > 0 ? limit.toLocaleString() : '—', 'Questions / platform'], ['Custom models', String(draft.customModels?.length ?? 0), 'Additional registrations'],
     ].map(([label, value, detail]) => el('div', { class: 'ac-metric' }, el('span', { text: label }), el('strong', { text: value }), el('small', { text: detail }))));
     const changeCount = changes().length;
@@ -223,14 +216,14 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return el('header', { class: 'ac-config-intro' }, el('div', {}, el('h2', {}, title, helpTip(title, tip)), el('p', { text: description })));
   }
   function pipelineTable(): HTMLElement {
-    return el('div', { class: 'admin-step-list ac-config-pane' }, intro('Pipeline models', 'Question generation runs Generator → Structure validator → Reviewer. Utility handles course authoring tasks separately.', PANEL_HELP.pipeline),
+    return el('div', { class: 'admin-step-list ac-config-pane' }, intro('Pipeline models', 'Question generation runs Generator → Checker: two model calls per question, no automatic retries.', PANEL_HELP.pipeline),
       el('div', { class: 'ac-table-scroll', tabindex: 0, 'aria-label': 'Pipeline models' }, el('table', { class: 'ac-table ac-pipeline-table' },
         el('thead', {}, el('tr', {}, ...['Stage', 'Model', 'Parameters', ''].map(text => el('th', { scope: 'col', text: text || 'Edit' })))),
         el('tbody', {}, ...PIPELINE_STEPS.map(step => {
           const config = draft.models[step], caps = settings.catalogue.profiles[profileOf(config.model)];
           const parameter = caps.reasoningEffort && (config.reasoningEffort ?? 'none') !== 'none' ? `Reasoning · ${config.reasoningEffort}` : caps.temperature ? `Temperature · ${config.temperature ?? settings.catalogue.stepTemperatureDefaults[step] ?? caps.temperature.default}${config.temperature === undefined ? ' default' : ''}` : 'Model defaults';
           return el('tr', { class: selected === step ? 'is-selected' : '' },
-            el('td', {}, el('button', { class: 'ac-link', type: 'button', text: STEP_LABEL[step], onclick: () => openStage(step) }), el('small', { class: 'ac-cell-secondary', text: step === 'masteryEvaluator' ? 'Reserved · not yet wired' : step === 'reviewer' && !draft.featureFlags.reviewerAgent ? 'Disabled by quality controls' : profileOf(config.model) })),
+            el('td', {}, el('button', { class: 'ac-link', type: 'button', text: STEP_LABEL[step], onclick: () => openStage(step) }), el('small', { class: 'ac-cell-secondary', text: step === 'masteryEvaluator' ? 'Reserved · not yet wired' : profileOf(config.model) })),
             el('td', {}, el('span', { class: 'mono ac-config-model-id', text: config.model }), el('small', { class: 'ac-cell-secondary', text: config.modelSource === 'environment' ? 'Environment default' : 'Admin override' })), el('td', { class: 'ac-config-parameter', text: parameter }),
             el('td', {}, el('button', { class: 'btn btn--ghost', type: 'button', text: 'Edit', 'aria-label': `Edit ${STEP_LABEL[step]}`, onclick: () => openStage(step) })),
           );
@@ -283,15 +276,12 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   function qualityControls(): HTMLElement {
     return el('div', { class: 'ac-config-pane' }, intro('Quality controls', 'Manage review stages applied to new work.', PANEL_HELP.flags),
       el('div', { class: 'ac-config-setting-list' }, ...([
-        ['reviewerAgent', 'Reviewer Agent', 'Semantic quality review for generated questions.'],
         ['layer2Evaluator', 'Layer 2 Mastery Evaluator', 'Not yet wired: this flag is saved, but no code reads it.'],
-        ['retryOnReject', 'Retry on Reviewer Reject', 'Regenerates once with the reviewer’s critique after rejection. Costs one extra generation per rejected question.'],
       ] as const).map(([key, label, description]) => {
         const toggle = el('input', { type: 'checkbox', 'aria-label': label }); toggle.checked = draft.featureFlags[key]; toggle.disabled = pending;
         toggle.onchange = () => { draft.featureFlags[key] = toggle.checked; render(); };
         return el('label', { class: 'ac-config-setting' }, el('span', {}, el('strong', { text: label }), el('small', { text: description })), toggle);
       })),
-      !draft.featureFlags.reviewerAgent ? el('p', { class: 'ac-note ac-config-warning', text: 'Reviewer disabled: generated questions skip semantic review and are flagged for manual attention. Saving this change requires confirmation.' }) : undefined,
     );
   }
   function usageControls(): HTMLElement {
@@ -335,14 +325,9 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     if (pending || !dirty() || validation().length) return;
     const reviewed = await confirmDialog({ title: `Review ${changes().length} settings changes`, message: `${changes().map(change => `${change.label}: ${change.before} → ${change.after}`).join('\n')}\n\nChanges apply to new generation and evaluation work.`, confirmLabel: 'Save settings', cancelLabel: 'Keep editing' });
     if (!reviewed || !root.isConnected) return;
-    let confirmQualityImpact = false;
-    if (saved.featureFlags.reviewerAgent && !draft.featureFlags.reviewerAgent) {
-      confirmQualityImpact = await confirmDialog({ title: 'Disable Reviewer Agent?', message: 'Generated questions will skip semantic quality review and be saved as flagged with a disabled-reviewer reason. Instructors must review them manually.', confirmLabel: 'Disable reviewer', tone: 'danger' });
-      if (!confirmQualityImpact || !root.isConnected) return;
-    }
     const payload = copy(draft); pending = true; status.textContent = 'Saving settings…'; render();
     try {
-      const response = await saveAdminPlatformSettings(payload, confirmQualityImpact);
+      const response = await saveAdminPlatformSettings(payload);
       if (!root.isConnected) return;
       settings = { ...response, catalogue: settings.catalogue }; saved = draftOf(response); draft = copy(saved);
       if (!courseModels?.dirty() && !courseModels?.pending()) courseModels = undefined;

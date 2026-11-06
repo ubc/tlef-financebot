@@ -421,14 +421,13 @@ export function defaultPlatformSettings(): PlatformSettings {
     _id: 'platform',
     models: {
       generator: { model: env.llmModelGenerator, modelSource: 'environment' },
-      validator: { model: env.llmModelValidator, modelSource: 'environment' },
       reviewer: { model: env.llmModelReviewer, modelSource: 'environment' },
       masteryEvaluator: { model: env.llmModelMasteryEvaluator, modelSource: 'environment' },
       utility: { model: env.llmDefaultModel, modelSource: 'environment' },
     },
     customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
-    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+    featureFlags: { layer2Evaluator: true },
     updatedBy: 'environment-default',
     updatedAt: new Date(0),
   };
@@ -464,9 +463,8 @@ export function normalizePlatformSettings(stored: PlatformSettings): PlatformSet
     ...stored,
     models,
     customModels: stored.customModels ?? [],
-    // Flags added after a document was written default ON — retryOnReject
-    // landed 2026-08-17, and the cost-saving direction is an explicit opt-out.
-    featureFlags: { ...fallback.featureFlags, ...stored.featureFlags },
+    // Rebuilt key by key so removed legacy flags are dropped on read.
+    featureFlags: { layer2Evaluator: stored.featureFlags?.layer2Evaluator ?? fallback.featureFlags.layer2Evaluator },
   };
 }
 
@@ -603,8 +601,7 @@ function assertStepConfigValid(step: PipelineStep, config: StepModelConfig, cust
 
 export async function updatePlatformSettings(
   patch: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags'>
-    & Partial<Pick<PlatformSettings, 'customModels'>>
-    & { confirmQualityImpact?: boolean },
+    & Partial<Pick<PlatformSettings, 'customModels'>>,
   actorPuid: string,
 ): Promise<PlatformSettings> {
   if (!Number.isInteger(patch.costControls.maxGenerationsPerDay) || patch.costControls.maxGenerationsPerDay <= 0) {
@@ -626,10 +623,6 @@ export async function updatePlatformSettings(
         : { ...config, model: defaults[step].model }
       : { ...config, modelSource: 'override' };
     assertStepConfigValid(step, models[step], customModels);
-  }
-  const current = await getPlatformSettings();
-  if (current.featureFlags.reviewerAgent && !patch.featureFlags.reviewerAgent && !patch.confirmQualityImpact) {
-    throw new Error('reviewer-disable-confirmation-required');
   }
   const updated: PlatformSettings = {
     _id: 'platform',

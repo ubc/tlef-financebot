@@ -200,9 +200,9 @@ export function saveAdminCapabilities(
   });
 }
 
-export const PIPELINE_STEPS = ['generator', 'validator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
-export const COURSE_MODEL_STEPS = ['generator', 'validator', 'reviewer', 'utility'] as const;
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
 export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
 export interface AdminCourseModels {
   revision: number;
@@ -251,7 +251,7 @@ export interface PlatformSettings {
   models: Record<PipelineStep, StepModelConfig>;
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { reviewerAgent: boolean; layer2Evaluator: boolean; retryOnReject: boolean };
+  featureFlags: { layer2Evaluator: boolean };
   updatedBy: string;
   updatedAt: string;
 }
@@ -283,11 +283,10 @@ export function temperatureAllowed(caps: ModelCapabilities, effort?: ReasoningEf
 
 export function saveAdminPlatformSettings(
   settings: Pick<PlatformSettings, 'models' | 'costControls' | 'featureFlags' | 'customModels'>,
-  confirmQualityImpact = false,
 ): Promise<PlatformSettings> {
   return request<PlatformSettings>('/api/admin/platform-settings', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...settings, confirmQualityImpact }),
+    body: JSON.stringify(settings),
   });
 }
 

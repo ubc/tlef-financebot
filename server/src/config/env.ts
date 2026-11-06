@@ -153,11 +153,10 @@ export const env = {
   // Total OpenAI-compatible completion deadline, including streamed body/retries.
   llmRequestTimeoutMs: Number(optional('LLM_REQUEST_TIMEOUT_MS', '180000')),
 
-  // Per-pipeline-step model selection (PRD §2 / AD-07): generator, structure
-  // validator, reviewer, and mastery evaluator are independently assignable.
+  // Per-pipeline-step model selection (PRD §2 / AD-07): generator,
+  // checker (reviewer step), and mastery evaluator are independently assignable.
   // Each falls back to LLM_DEFAULT_MODEL when unset.
   llmModelGenerator: stepModel('LLM_MODEL_GENERATOR'),
-  llmModelValidator: stepModel('LLM_MODEL_VALIDATOR'),
   llmModelReviewer: stepModel('LLM_MODEL_REVIEWER'),
   llmModelMasteryEvaluator: stepModel('LLM_MODEL_MASTERY_EVALUATOR'),
 

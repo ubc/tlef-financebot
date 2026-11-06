@@ -43,7 +43,6 @@ export function configuredGenerationModels(): ResolvedStepModels {
   return {
     embedding: env.embeddingsModel,
     generator: { model: env.llmModelGenerator },
-    validator: { model: env.llmModelValidator },
     reviewer: { model: env.llmModelReviewer },
   };
 }
@@ -53,7 +52,6 @@ export function stepModelsFrom(settings: PlatformSettings): ResolvedStepModels {
   return {
     embedding: env.embeddingsModel,
     generator: settings.models.generator,
-    validator: settings.models.validator,
     reviewer: settings.models.reviewer,
   };
 }
@@ -63,7 +61,6 @@ export function persistedModels(resolved: ResolvedStepModels): QuestionGeneratio
   return {
     embedding: resolved.embedding,
     generator: resolved.generator.model,
-    validator: resolved.validator.model,
     reviewer: resolved.reviewer.model,
   };
 }
@@ -94,7 +91,6 @@ export function resolvedFromPersisted(
   return {
     embedding: models.embedding,
     generator: step(models.generator, settings?.models.generator),
-    validator: step(models.validator, settings?.models.validator),
     reviewer: step(models.reviewer, settings?.models.reviewer),
   };
 }

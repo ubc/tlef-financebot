@@ -176,13 +176,12 @@ describe('Admin user-account routes', () => {
 describe('Admin model source contract', () => {
   const models = {
     generator: { model: 'local/env-model', modelSource: 'environment' as const },
-    validator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     reviewer: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     masteryEvaluator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     utility: { model: 'gpt-6-luna', modelSource: 'environment' as const },
   };
   const settings = { _id: 'platform' as const, models, costControls: { maxGenerationsPerDay: 10 },
-    featureFlags: { reviewerAgent: true, layer2Evaluator: true, retryOnReject: true },
+    featureFlags: { layer2Evaluator: true },
     updatedBy: 'admin', updatedAt: new Date() };
 
   it('protects model settings from signed-out and non-Admin callers', async () => {

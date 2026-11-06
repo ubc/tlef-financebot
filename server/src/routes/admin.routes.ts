@@ -70,7 +70,6 @@ const stepModelConfig = z.object({
 const platformSettingsBody = z.object({
   models: z.object({
     generator: stepModelConfig,
-    validator: stepModelConfig,
     reviewer: stepModelConfig,
     masteryEvaluator: stepModelConfig,
     utility: stepModelConfig,
@@ -81,20 +80,15 @@ const platformSettingsBody = z.object({
   })).optional(),
   costControls: z.object({ maxGenerationsPerDay: z.number().int().positive() }),
   featureFlags: z.object({
-    reviewerAgent: z.boolean(),
     layer2Evaluator: z.boolean(),
-    // default(true) rather than required: clients predating the flag (and any
-    // scripted caller) keep working, and the cost-saving direction is opt-OUT.
-    retryOnReject: z.boolean().default(true),
   }),
-  confirmQualityImpact: z.boolean().optional(),
 });
 const courseModelParams = z.object({ courseId: objectId });
 const modelChoice = z.string().trim().min(1).max(250).optional();
 const courseModelBody = z.object({
   revision: z.number().int().nonnegative().safe(),
   overrides: z.object({
-    generator: modelChoice, validator: modelChoice, reviewer: modelChoice, utility: modelChoice,
+    generator: modelChoice, reviewer: modelChoice, utility: modelChoice,
   }).strict(),
 });
 
@@ -274,7 +268,6 @@ const ADMIN_ERROR_STATUS: Record<string, number> = {
   'admin-cannot-deactivate-self': 409,
   'invalid-cost-controls': 400,
   'invalid-model-selector': 400,
-  'reviewer-disable-confirmation-required': 409,
 };
 
 /** Capability rejections are per-step, so they carry the step name as a suffix. */
