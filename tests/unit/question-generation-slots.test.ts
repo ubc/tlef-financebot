@@ -1,5 +1,5 @@
 import {
-  allocateSlots, angleMenu, CALCULATION_ANGLES, CONCEPTUAL_ANGLES,
+  allocateSlots, angleMenu, CALCULATION_ANGLES, CONCEPTUAL_ANGLES, itemPlan,
 } from '../../server/src/services/question-generation/slots';
 
 const base = { type: 'mcq' as const, chunkCount: 6, seed: 'run-a', hardnessMoves: [] as (string | undefined)[] };
@@ -49,5 +49,29 @@ describe('allocateSlots', () => {
   it('passes hardness moves through by item', () => {
     const slots = allocateSlots({ ...base, count: 2, kind: 'calculation', hardnessMoves: ['move-a', 'move-b'] });
     expect(slots.map(s => s.hardnessMove)).toEqual(['move-a', 'move-b']);
+  });
+});
+
+describe('itemPlan', () => {
+  const slot = allocateSlots({ ...base, count: 2, kind: 'conceptual' })[1];
+  const at = new Date('2026-11-09T10:00:00Z');
+
+  it('names the slot angle and quotes its focus chunk with collapsed whitespace', () => {
+    const chunks = [{ text: 'first' }, { materialId: 'm2', text: '  Inertia   is\n the tendency…  ', supporting: true }];
+    expect(itemPlan(slot, chunks, at)).toEqual({
+      item: 1, startedAt: at, angleId: slot.angle.id, angleLabel: slot.angle.label,
+      source: { materialId: 'm2', excerpt: 'Inertia is the tendency…', supporting: true },
+    });
+  });
+
+  it('bounds the excerpt and omits the source when the slot has no chunk', () => {
+    const long = itemPlan({ ...slot, focusChunk: 0 }, [{ text: 'x'.repeat(900) }], at);
+    expect(long.source!.excerpt).toHaveLength(601);
+    expect(long.source!.excerpt.endsWith('…')).toBe(true);
+    expect(itemPlan({ ...slot, focusChunk: undefined }, [], at).source).toBeUndefined();
+  });
+
+  it('gives every angle an instructor-facing label', () => {
+    for (const angle of [...CONCEPTUAL_ANGLES, ...CALCULATION_ANGLES]) expect(angle.label.length).toBeGreaterThan(3);
   });
 });

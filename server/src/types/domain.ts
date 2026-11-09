@@ -670,10 +670,23 @@ export interface QuestionGenerationResult {
   quality?: Record<string, unknown>;
 }
 
+export interface QuestionItemPlan {
+  item: number;
+  startedAt: Date;
+  angleId: string;
+  /** Short instructor-facing name of the assigned assessment angle. */
+  angleLabel: string;
+  /** The retrieved passage this slot leans on (bounded excerpt of course material). */
+  source?: { materialId?: string; excerpt: string; supporting?: boolean };
+}
+
 export interface QuestionGenerationRun extends ContentRunBase {
   workerExecution?: { token: string; expiresAt: Date };
   /** Unverified visible draft text. Never a published or reviewable question. */
   preview?: { item: number; attempt: number; stem: string; difficulty?: string; options?: Array<{ key: string; text: string; role?: string; explanation?: string }> };
+  /** The plan for the question being written now, set when its slot starts so
+   * the instructor sees what it will assess while the model is reasoning. */
+  currentItem?: QuestionItemPlan;
   kind: 'question-generation';
   stage: QuestionGenerationStage;
   input: {

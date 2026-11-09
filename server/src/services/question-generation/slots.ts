@@ -1,24 +1,25 @@
-import type { QuestionKind, QuestionType } from '../../types/domain';
+import type { QuestionItemPlan, QuestionKind, QuestionType } from '../../types/domain';
+import type { RetrievedChunk } from './candidate';
 
 /** One way of assessing a learning objective. Each slot in a run gets a
  * different angle so questions in one plan cell are distinct by construction. */
-export interface AssessmentAngle { id: string; text: string }
+export interface AssessmentAngle { id: string; label: string; text: string }
 
 export const CONCEPTUAL_ANGLES: readonly AssessmentAngle[] = Object.freeze([
-  { id: 'definition-discrimination', text: 'Make the student tell this concept apart from a closely related one the course also teaches.' },
-  { id: 'scenario-application', text: 'Describe a short realistic scenario and ask which principle applies or what follows from it.' },
-  { id: 'cause-effect', text: 'Ask what happens to one quantity or outcome when another changes, and why.' },
-  { id: 'misconception-diagnosis', text: 'Present a student\'s reasoning that contains a common error and ask what is wrong with it.' },
-  { id: 'compare-ideas', text: 'Ask the student to compare two related ideas, methods or outcomes from the material.' },
-  { id: 'evaluate-claim', text: 'State a claim about the concept and ask the student to judge whether and why it holds.' },
+  { id: 'definition-discrimination', label: 'Tell related concepts apart', text: 'Make the student tell this concept apart from a closely related one the course also teaches.' },
+  { id: 'scenario-application', label: 'Apply it to a scenario', text: 'Describe a short realistic scenario and ask which principle applies or what follows from it.' },
+  { id: 'cause-effect', label: 'Cause and effect', text: 'Ask what happens to one quantity or outcome when another changes, and why.' },
+  { id: 'misconception-diagnosis', label: 'Diagnose a misconception', text: 'Present a student\'s reasoning that contains a common error and ask what is wrong with it.' },
+  { id: 'compare-ideas', label: 'Compare two ideas', text: 'Ask the student to compare two related ideas, methods or outcomes from the material.' },
+  { id: 'evaluate-claim', label: 'Evaluate a claim', text: 'State a claim about the concept and ask the student to judge whether and why it holds.' },
 ]);
 
 export const CALCULATION_ANGLES: readonly AssessmentAngle[] = Object.freeze([
-  { id: 'direct-computation', text: 'Give the inputs and ask for the computed result.' },
-  { id: 'reverse-solve', text: 'Give the result and all but one input, and ask for the missing input.' },
-  { id: 'interpret-result', text: 'Have the student compute a value and choose what it implies (a decision or interpretation).' },
-  { id: 'compare-scenarios', text: 'Give two scenarios and ask which yields the higher or lower value, requiring both to be computed.' },
-  { id: 'identify-method', text: 'Ask which formula, step or setup correctly solves the described problem.' },
+  { id: 'direct-computation', label: 'Direct calculation', text: 'Give the inputs and ask for the computed result.' },
+  { id: 'reverse-solve', label: 'Solve for a missing input', text: 'Give the result and all but one input, and ask for the missing input.' },
+  { id: 'interpret-result', label: 'Calculate and interpret', text: 'Have the student compute a value and choose what it implies (a decision or interpretation).' },
+  { id: 'compare-scenarios', label: 'Compare two scenarios', text: 'Give two scenarios and ask which yields the higher or lower value, requiring both to be computed.' },
+  { id: 'identify-method', label: 'Choose the right method', text: 'Ask which formula, step or setup correctly solves the described problem.' },
 ]);
 
 export function angleMenu(kind: QuestionKind | undefined, type: QuestionType): readonly AssessmentAngle[] {
@@ -64,4 +65,22 @@ export function allocateSlots(input: {
     focusChunk: input.chunkCount > 0 ? item % input.chunkCount : undefined,
     hardnessMove: input.hardnessMoves[item],
   }));
+}
+
+const EXCERPT_CHARS = 600;
+
+/** What the instructor sees while a slot's question is being written: its
+ * angle and the start of the passage it leans on. Course text only — never
+ * model output or reasoning. */
+export function itemPlan(slot: SlotAssignment, chunks: RetrievedChunk[], startedAt = new Date()): QuestionItemPlan {
+  const chunk = slot.focusChunk === undefined ? undefined : chunks[slot.focusChunk];
+  const text = chunk?.text.replace(/\s+/g, ' ').trim() ?? '';
+  return {
+    item: slot.item, startedAt, angleId: slot.angle.id, angleLabel: slot.angle.label,
+    ...(chunk && text ? { source: {
+      ...(chunk.materialId ? { materialId: chunk.materialId } : {}),
+      excerpt: text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS).trimEnd()}…` : text,
+      ...(chunk.supporting ? { supporting: true } : {}),
+    } } : {}),
+  };
 }

@@ -137,9 +137,19 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
     let questionType: 'mcq' | 'true-false' = 'mcq';
     let bank: BankQuestion[] = [];
+    // `selectedQuestion` is set only by an explicit click. Otherwise the reader
+    // follows the live batch: `autoShown` is a saved draft displayed while its
+    // task moves on, and `previewPinned` records a click on a live task row.
     let selectedQuestion = '';
+    let autoShown = '';
+    let autoFollowing = false;
+    let previewPinned = false;
     let previewRunId = '';
     let previewKey = '';
+    let drawTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastDraw = 0;
+    let draftListKey = '';
+    let inspectorKey = '';
     let textFrame: number | undefined;
     const streamFields = new Map<HTMLElement,string>();
     const stopTextReveal = () => { if (textFrame !== undefined) cancelAnimationFrame(textFrame); textFrame = undefined; streamFields.clear(); };
@@ -211,8 +221,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
-        selectedQuestion = ''; previewRunId = ''; previewKey = ''; readerRevision++;
-        submission = { submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
+        selectedQuestion = ''; autoShown = ''; previewPinned = false; previewRunId = ''; previewKey = ''; readerRevision++;
+        submission ={ submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
       } });
       const selections = el('div', { class: 'gw-objective-tools' }, el('button', { type: 'button', onclick: () => { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); } }, 'Select coverage gaps'),
         el('button', { type: 'button', onclick: () => { selected.clear(); updateSetup(); } }, 'Clear'));
@@ -348,7 +358,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           el('span', { text: `${run.input.difficulty ?? 'Mixed difficulty'} · ${run.input.count} requested · ${run.result?.createdQuestionIds.length ?? 0} saved` }),
           el('p', { class: 'gw-task-status', role: 'status', text: run.error?.code === 'generation-ended' ? 'Ended by instructor' : run.status === 'completed' ? 'Completed' : run.status === 'partial' ? 'Partially completed' : run.status === 'failed' ? 'Failed' : stageName(run.stage) }),
           el('small', { text: `${run.status === 'queued' ? 'Waiting' : 'Elapsed'}: ${elapsed(run.startedAt ?? run.createdAt, run.completedAt)}` }),
-          active(run) && el('ol', { class: 'gw-stage-list', 'aria-label': 'Generation stages' }, ...['retrieving','generating','validating','reviewing','persisting'].map((stage,index,stages) =>
+          active(run) && el('ol', { class: 'gw-stage-list', 'aria-label': 'Generation stages' }, ...['queued','retrieving','generating'].map((stage,index,stages) =>
             el('li', { 'aria-current': stage === run.stage ? 'step' : undefined, class: index < stages.indexOf(run.stage) ? 'is-done' : '' }, stageName(stage)))),
           lastEvent && el('p', { class: 'gw-plan-note', text: lastEvent.message }),
           active(run) && run.stage === 'queued' && el('p', { class: 'gw-plan-note', text: 'Waiting for an available worker. No question text is expected yet.' }),
@@ -377,6 +387,16 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           try { const fresh = await getPreseeding(courseId); coverage.splice(0,coverage.length,...fresh); } catch { say('Could not refresh coverage. Check existing drafts before generating more.'); }
           if (!disposed) { selected.clear(); gaps().forEach(lo => selected.add(lo._id)); updateSetup(); showMode(); }
         }, text: 'Create another batch' }));
+      // Streaming text bumps the run revision several times a second; rebuild
+      // the panel only when something it shows has changed, so its buttons and
+      // scroll position stay put while a question is being written.
+      // Everything except the streaming text (and the revision it bumps).
+      const shownRun: Partial<QuestionGenerationRun> & { updatedAt?: string } = { ...run };
+      delete shownRun.preview; delete shownRun.revision; delete shownRun.updatedAt;
+      const key = JSON.stringify([shownRun, snapshot, recorded, run && usageErrors.get(run._id), selectedQuestion, item,
+        completed, total, items.filter(active).length, endingRuns.size, busy, submission, Math.floor(Date.now() / 5000)]);
+      if (key === inspectorKey) return;
+      inspectorKey = key;
       const scroll = progress.querySelector('.gw-inspector-body')?.scrollTop ?? 0;
       const previousId = progress.dataset.runId; progress.dataset.runId = run?._id ?? '';
       mount(progress, el('header', { class: 'gw-batch-progress' }, el('h3', { text: 'BATCH PROGRESS' }),
@@ -399,27 +419,53 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         say(savedCount ? `Batch finished · ${savedCount} drafts saved for review. Inspect any shortfalls in generation activity.` : 'Batch finished · no questions saved. Inspect the recorded checks and shortfalls before trying again.');
       }
       const streaming = items.filter((run): run is QuestionGenerationRun => run.kind === 'question-generation' && (active(run) || !bank.some(question => sourceRun(question)?._id === run._id)));
-      if (!selectedQuestion && !items.some(run => run._id === previewRunId)) previewRunId = streaming[0]?._id ?? '';
+      const followed = items.find(run => run._id === previewRunId);
+      // Follow the batch: when the watched task finishes, move to one that is
+      // still writing — unless the instructor picked this task themselves.
+      // A task merely queued has nothing to show, so it never steals the reader
+      // from a just-finished task's saved draft.
+      const writing = streaming.find(run => active(run) && run.stage === 'generating' && !!run.preview);
+      if (!selectedQuestion && !followed) previewRunId = (writing ?? streaming[0])?._id ?? '';
+      else if (!selectedQuestion && !previewPinned && followed && !active(followed) && writing) previewRunId = writing._id;
       const drafts = bank.filter(question => sourceRun(question));
-      mount(draftList, ...streaming.filter(run => !drafts.some(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === run._id && q.current.provenance.item === run.preview?.item)).map(run => el('button', { type: 'button', 'data-gw-focus': `preview-${run._id}`, 'aria-current': !selectedQuestion && previewRunId === run._id ? 'true' : 'false', onclick: () => { selectedQuestion = ''; previewRunId = run._id; readerRevision++; drawLive(); void refreshUsage(); } },
-        el('span', { text: `${active(run) ? stageName(run.stage) : run.error?.code === 'generation-ended' ? 'Ended' : run.status}${run.preview ? ` · question ${run.preview.item+1}` : ''}` }), el('strong', { text: run.preview?.stem || objectives.find(lo => lo._id === run.input.loId)?.name || 'Preparing question…' }), el('small', { text: active(run) ? run.preview ? 'Live draft · not yet checked' : 'Task awaiting question text' : 'Task finished · inspect details' }))), ...drafts.map((q,index) => el('button', { type: 'button', 'data-gw-focus': `question-${q.id}`, 'aria-current': q.id === selectedQuestion ? 'true' : 'false', onclick: () => { void showQuestion(q); } },
-        el('span', { text: `${String(index+1).padStart(2,'0')} · ${q.current.difficulty}` }), el('strong', { text: rowStemText(q) }), el('small', { text: q.state === 'approved' ? 'Approved' : 'Saved · ready to review' }))),
-        !drafts.length && !streaming.length && el('p', { class: 'gw-placeholder', text: items.some(active) ? 'Your first question will appear here once its checks are complete and it is saved.' : 'Saved questions from your recent generation will appear here.' }));
+      const liveRows = streaming.filter(run => !drafts.some(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === run._id && q.current.provenance.item === run.preview?.item));
+      const rowStatus = (run: QuestionGenerationRun) => `${active(run) ? stageName(run.stage) : run.error?.code === 'generation-ended' ? 'Ended' : run.status}${run.preview ? ` · question ${run.preview.item+1}` : ''}`;
+      const rowTitle = (run: QuestionGenerationRun) => objectives.find(lo => lo._id === run.input.loId)?.name || 'Preparing question…';
+      const rowNote = (run: QuestionGenerationRun) => active(run) ? run.preview?.stem ? 'Writing · not yet checked' : 'Model is thinking…' : 'Task finished · inspect details';
+      const shownId = selectedQuestion || autoShown;
+      // The list rows are clickable; rebuilding them mid-click swallows the
+      // click, so remount only when what they display actually changed.
+      const listKey = JSON.stringify([liveRows.map(run => [run._id, rowStatus(run), rowNote(run), !shownId && previewRunId === run._id]),
+        drafts.map(q => [q.id, q.state, q.current._id, q.id === shownId]), items.some(active)]);
+      if (listKey !== draftListKey) {
+        draftListKey = listKey;
+        mount(draftList, ...liveRows.map(run => el('button', { type: 'button', 'data-gw-focus': `preview-${run._id}`, 'aria-current': !shownId && previewRunId === run._id ? 'true' : 'false', onclick: () => { selectedQuestion = ''; autoShown = ''; previewPinned = true; previewRunId = run._id; previewKey = ''; readerRevision++; drawLive(); void refreshUsage(); } },
+          el('span', { text: rowStatus(run) }), el('strong', { text: rowTitle(run) }), el('small', { text: rowNote(run) }))), ...drafts.map((q,index) => el('button', { type: 'button', 'data-gw-focus': `question-${q.id}`, 'aria-current': q.id === shownId ? 'true' : 'false', onclick: () => { void showQuestion(q); } },
+          el('span', { text: `${String(index+1).padStart(2,'0')} · ${q.current.difficulty}` }), el('strong', { text: rowStemText(q) }), el('small', { text: q.state === 'approved' ? 'Approved' : 'Saved · ready to review' }))),
+          !drafts.length && !streaming.length && el('p', { class: 'gw-placeholder', text: items.some(active) ? 'Your first question will appear here once its checks are complete and it is saved.' : 'Saved questions from your recent generation will appear here.' }));
+      }
       if (!selectedQuestion) {
         const preview = items.find((run): run is QuestionGenerationRun => run.kind === 'question-generation' && run._id === previewRunId) ?? streaming[0];
         const saved = preview && (drafts.find(q => q.current.provenance?.kind === 'generated' && q.current.provenance.runId === preview._id && q.current.provenance.item === preview.preview?.item)
           ?? (!active(preview) ? drafts.find(q => sourceRun(q)?._id === preview._id) : undefined));
-        if (saved) void showQuestion(saved);
+        // The task finished but its last save has not reached `bank` yet: keep
+        // the streamed text rather than flashing an earlier draft first.
+        const savePending = !!preview && !active(preview) && !!preview.preview && previewKey.startsWith(`${preview._id}:`)
+          && (preview.result?.createdQuestionIds ?? []).some(id => !bank.some(q => q.id === id));
+        if (savePending) { /* scheduleRefresh() is already loading it */ }
+        else if (saved) { if (autoShown !== saved.id || autoFollowing !== active(preview)) void showQuestion(saved, true); }
         else if (preview) {
           previewRunId = preview._id;
           if (preview.preview && active(preview)) drawPreview(preview);
-          else {
-            stopTextReveal();
-            mount(reader, el('div', { class: 'gw-waiting' }, el('h2', { text: active(preview) ? stageName(preview.stage) : preview.error?.code === 'generation-ended' ? 'Generation ended' : 'Task finished' }),
-              el('p', { text: active(preview) ? 'Question text will appear when the model returns it. Follow this task’s recorded activity on the right.' : (preview.result?.createdQuestionIds.length ?? 0) > 0 ? 'Saved drafts remain in Review Queue. Select another question or start a new batch.' : 'This task saved no questions. Inspect the source checks, diagnostic candidates and shortfall reasons on the right.' }), link('Open review queue →', `${base}/queue`)));
+          else if (autoShown || !reader.querySelector(`.gw-waiting[data-run="${CSS.escape(preview._id)}"][data-state="${CSS.escape(`${preview.status}:${preview.stage}`)}"]`)) {
+            stopTextReveal(); autoShown = ''; previewKey = '';
+            mount(reader, el('div', { class: 'gw-waiting', 'data-run': preview._id, 'data-state': `${preview.status}:${preview.stage}` },
+              active(preview) && el('span', { class: 'gw-live-dot', 'aria-hidden': 'true' }),
+              el('h2', { text: active(preview) ? preview.stage === 'generating' ? 'The model is thinking…' : stageName(preview.stage) : preview.error?.code === 'generation-ended' ? 'Generation ended' : 'Task finished' }),
+              el('p', { text: active(preview) ? preview.stage === 'generating' ? 'It reasons before it writes, which usually takes 10–20 seconds. The question will stream in here as soon as it starts writing.' : 'Question text will appear when the model starts writing. Follow this task’s recorded activity on the right.' : (preview.result?.createdQuestionIds.length ?? 0) > 0 ? 'Saved drafts remain in Review Queue. Select another question or start a new batch.' : 'This task saved no questions. Inspect the source checks, diagnostic candidates and shortfall reasons on the right.' }), link('Open review queue →', `${base}/queue`)));
           }
         }
-        else if (drafts[0]) void showQuestion(drafts[0]);
+        else if (drafts[0] && autoShown !== drafts[0].id) void showQuestion(drafts[0], true);
       }
       if (!drafts.length && !selectedQuestion && !streaming.length) mount(reader, el('div', { class: 'gw-waiting' }, el('span', { class: items.some(active) ? 'gw-live-dot' : 'gw-empty-mark', 'aria-hidden': 'true', text: items.some(active) ? '' : '＋' }), el('h2', { text: items.some(active) ? 'Your questions are taking shape' : 'Ready for your next batch' }),
         el('p', { text: items.some(active) ? 'Follow the checks on the right. You can review completed questions while the rest of the batch runs.' : 'Choose learning objectives and a short teaching brief to begin.' }), link('Open review queue →', `${base}/queue`)));
@@ -429,20 +475,44 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       draftList.scrollTop = listScroll;
       if (focusKey) live.querySelector<HTMLElement>(`[data-gw-focus="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
     }
+    /** While the model reasons there is no text to stream; show what this
+     * question was planned to assess and the passage it draws on instead. */
+    function planCard(run: QuestionGenerationRun, plan: NonNullable<QuestionGenerationRun['currentItem']>): HTMLElement {
+      const material = plan.source?.materialId ? materials.find(m => m._id === plan.source!.materialId)?.name : undefined;
+      return el('section', { class: 'gw-item-plan', 'aria-label': 'Plan for the question being written' },
+        el('p', { class: 'gw-item-plan__approach' }, el('span', { text: 'Approach' }), el('strong', { text: plan.angleLabel })),
+        plan.source && el('figure', { class: 'gw-item-plan__source' },
+          el('figcaption', { text: `Drawing on${plan.source.supporting ? ' supporting material' : ''}${material ? ` · ${material}` : ''}` }),
+          el('blockquote', { text: plan.source.excerpt })),
+        el('p', { class: 'gw-plan-note' }, el('span', { 'data-plan-started': plan.startedAt }), ' · reasoning models usually take 10–20 seconds before text appears.'),
+        run.input.count > 1 && el('p', { class: 'gw-plan-note', text: `Question ${plan.item + 1} of ${run.input.count} in this task. Saved questions on the left are ready to review while you wait.` }));
+    }
+    function tickPlans(): void {
+      root.querySelectorAll<HTMLElement>('[data-plan-started]').forEach(node => {
+        const seconds = Math.max(0, Math.round((Date.now() - Date.parse(node.dataset.planStarted ?? '')) / 1000));
+        node.textContent = Number.isFinite(seconds) ? `Thinking for ${seconds}s` : 'Thinking';
+      });
+    }
+    const planTicker = setInterval(tickPlans, 1000);
     function drawPreview(run: QuestionGenerationRun): void {
       const preview = run.preview!;
       const key = `${run._id}:${preview.item}:${preview.attempt}`;
       if (previewKey !== key || !reader.querySelector('.gw-stream-text')) {
         stopTextReveal();
-        previewKey = key;
+        previewKey = key; autoShown = '';
         mount(reader, el('div', { class: 'gw-body' }, el('p', { class: 'gw-eyebrow', text: `LIVE DRAFT · QUESTION ${preview.item+1} · NOT YET CHECKED` }),
           el('p', { class: 'gw-plan-note', text: objectives.find(lo => lo._id === run.input.loId)?.name ?? '' }),
+          el('div', { class: 'gw-plan-slot' }),
           el('div', { class: 'gw-stream-text gw-stem', 'aria-label': 'Live question text' }),
           el('p', { class: 'gw-stream-meta gw-plan-note', hidden: true }),
           el('section', { class: 'gw-stream-options', 'aria-label': 'Live answer choices' }),
           el('p', { class: 'gw-stream-status gw-plan-note', role: 'status' })),
           el('footer', { class: 'gw-footer' }, el('small', { text: 'Draft text can change during checks. Approval becomes available after the question is saved.' })));
       }
+      const slot = reader.querySelector<HTMLElement>('.gw-plan-slot')!;
+      const plan = active(run) && !preview.stem && run.currentItem?.item === preview.item ? run.currentItem : undefined;
+      const planKey = plan ? `${plan.item}:${plan.startedAt}` : '';
+      if (slot.dataset.key !== planKey) { slot.dataset.key = planKey; mount(slot, plan && planCard(run, plan)); tickPlans(); }
       const text = reader.querySelector<HTMLElement>('.gw-stream-text')!;
       streamFields.set(text,preview.stem);
       const meta = reader.querySelector<HTMLElement>('.gw-stream-meta')!;
@@ -494,14 +564,21 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       }
       text.classList.toggle('is-writing', run.stage === 'generating');
       const status = reader.querySelector<HTMLElement>('.gw-stream-status')!;
-      const label = run.stage === 'generating' ? preview.options?.length ? 'Receiving answer choices and explanations…' : preview.stem ? 'Receiving question text…' : 'Waiting for the model to start the question…' : `${stageName(run.stage)}. This draft is not ready for approval yet.`;
+      const label = run.stage === 'generating' ? preview.options?.length ? 'Receiving answer choices and explanations…' : preview.stem ? 'Receiving question text…' : 'The model is thinking before it writes (usually 10–20 seconds)…' : `${stageName(run.stage)}. This draft is not ready for approval yet.`;
       if (status.textContent !== label) status.textContent = label;
     }
-    async function showQuestion(question: BankQuestion): Promise<void> {
+    /** `auto` shows a saved draft while the reader keeps following the batch;
+     * without it the instructor has picked this question and the reader stays. */
+    async function showQuestion(question: BankQuestion, auto = false): Promise<void> {
       stopTextReveal();
-      selectedQuestion = question.id;
+      previewKey = '';
+      if (auto) autoShown = question.id;
+      else { selectedQuestion = question.id; autoShown = ''; }
       const revision = ++readerRevision;
-      drawLive(); void refreshUsage();
+      if (!auto) { drawLive(); void refreshUsage(); } else scheduleDraw(); // re-highlight the list row
+      const run = sourceRun(question);
+      const following = !!(auto && run && active(run));
+      autoFollowing = following;
       const content = el('div', { class: 'gw-body' });
       const rich = (text: string, className: string) => { const node = el('div', { class: className }); renderRichText(node,text); return node; };
       mount(content, el('p', { class: 'gw-eyebrow', text: `${question.current.type === 'mcq' ? 'MULTIPLE CHOICE' : 'TRUE / FALSE'} · ${question.current.difficulty} · ${question.state}` }),
@@ -509,7 +586,9 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         ...((question.sample?.options ?? question.current.options) ?? []).map(option => el('div', { class: `gw-answer${question.current.options?.find(original => original.key === option.key)?.role === 'correct' ? ' is-correct' : ''}` }, el('span', { text: option.key }), el('div', {}, rich(option.text,''), question.current.options?.find(original => original.key === option.key)?.role === 'correct' && el('small', { text: 'Correct answer' }), option.explanation && rich(option.explanation,'gw-option-explanation')))),
         !question.sample && el('p', { class: 'gw-plan-note', text: 'Authoring preview. Parameterized questions may show template variables; inspect a student example in the full editor.' }));
       const assessment = el('div', { class: 'gw-assessment' }); content.append(assessment);
-      mount(reader, content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/queue?runId=${encodeURIComponent(sourceRun(question)?._id ?? '')}`, true)));
+      mount(reader, following && el('p', { class: 'gw-stream-status gw-plan-note', role: 'status' }, el('span', { class: 'gw-live-dot', 'aria-hidden': 'true' }),
+        ' Saved. The next question is being written and will appear here automatically. Click any question on the left to stay on it.'),
+        content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/queue?runId=${encodeURIComponent(run?._id ?? '')}`, true)));
       try {
         const detail = await getQuestion(question.id);
         if (disposed || revision !== readerRevision) return;
@@ -525,6 +604,16 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       try { const result = await browseBank(courseId); if (!disposed) { bank = result.questions; drawLive(); } }
       catch { if (!disposed) say('Draft previews could not refresh. Your generation is still tracked; open Review Queue or refresh this page.'); }
       finally { fetching = false; if (refreshAgain && !disposed) { refreshAgain = false; scheduleRefresh(); } }
+    }
+    function scheduleDraw(immediate = false): void {
+      if (disposed) return;
+      if (immediate && drawTimer) { clearTimeout(drawTimer); drawTimer = undefined; }
+      if (drawTimer) return;
+      drawTimer = setTimeout(() => {
+        drawTimer = undefined; lastDraw = Date.now();
+        if (disposed) return;
+        updateSetup(); if (mode === 'live') drawLive();
+      }, immediate ? 0 : Math.max(0, 400 - (Date.now() - lastDraw)));
     }
     function scheduleRefresh(): void {
       if (refreshTimer || disposed) return;
@@ -562,7 +651,13 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       if (disposed || run.kind !== 'question-generation' || run.courseId !== courseId) return;
       const previous = runs.get(run._id);
       if (previous && previous.revision >= run.revision) return;
-      runs.set(run._id,run); updateSetup(); if (mode === 'live') drawLive();
+      runs.set(run._id,run);
+      // Fast path: new text for the question already streaming in the reader is
+      // applied directly. Everything else (list, inspector, setup) is redrawn at
+      // most every 400 ms, however many tasks are streaming at once.
+      if (mode === 'live' && !selectedQuestion && run._id === previewRunId && run.kind === 'question-generation' && run.preview && active(run)
+        && previewKey === `${run._id}:${run.preview.item}:${run.preview.attempt}`) drawPreview(run);
+      scheduleDraw(!previous || active(previous) !== active(run));
       if (!active(run)) usageWindow.set(run._id, Date.now() + 60000);
       if (!previous || active(previous) && !active(run)) void refreshUsage(true);
       if (!previous || run.completedUnits !== previous.completedUnits || !active(run)) scheduleRefresh();
@@ -574,7 +669,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     const unsubscribe = subscribeContentRuns(courseId, { onSnapshot: snapshot => { if (notice.textContent?.startsWith('Live connection')) say('Live connection restored.'); snapshot.forEach(applyRun); scheduleRefresh(); }, onRun: applyRun,
       onError: () => { if (!disposed) say('Live connection interrupted. Reconnecting automatically; saved drafts and generation are preserved.'); } });
     const observer = new MutationObserver(() => {
-      if (!root.isConnected) { disposed = true; stopTextReveal(); unsubscribe(); observer.disconnect(); if (refreshTimer) clearTimeout(refreshTimer); if (usageTimer) clearTimeout(usageTimer); }
+      if (!root.isConnected) { disposed = true; stopTextReveal(); unsubscribe(); observer.disconnect(); if (refreshTimer) clearTimeout(refreshTimer); if (usageTimer) clearTimeout(usageTimer); if (drawTimer) clearTimeout(drawTimer); clearInterval(planTicker); }
     });
     observer.observe(outlet, { childList: true });
   } catch (error) {

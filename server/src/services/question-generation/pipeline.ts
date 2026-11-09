@@ -23,7 +23,7 @@ import { CHECKER_PROMPT, parseCheckerOutput, uncheckedDecision, type CheckerOutp
 import { GENERATOR_PROMPT, GENERATOR_TEMPERATURE, type RegenerateContext } from './generator-prompt';
 import { loadExistingLoStems } from './existing-stems';
 import { retrieveChunks, resolveSecondaryLos, taggedLoIds, taggedThemeIds } from './grounding';
-import { allocateSlots, type SlotAssignment } from './slots';
+import { allocateSlots, itemPlan, type SlotAssignment } from './slots';
 
 /** An unsaved candidate shown beside the original (Regenerate) or frozen into
  * an exam paper (private assessment). Nothing here is persisted as a version. */
@@ -145,7 +145,7 @@ export async function runQuestionGeneration(input: GenerationInput, runId: Objec
     for (const slot of slots) {
       await checkpoint();
       try {
-        await updateContentRun(runId, { message: `Writing and checking question ${slot.item + 1} of ${input.count}` });
+        await updateContentRun(runId, { message: `Writing and checking question ${slot.item + 1} of ${input.count}`, currentItem: itemPlan(slot, grounding.chunks) });
         const checked = await withGenerationPreview(runId, slot.item, onText => generateAndCheck({
           type, kind: input.kind, difficulty: input.difficulty, loName: lo.name, secondaryLoNames, prompt: input.prompt,
           chunks: grounding.chunks, slot, existingStems, batchStems: [...batchStems], models: input.models!, checkpoint,

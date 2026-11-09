@@ -1836,6 +1836,8 @@ export interface MaterialIngestRun extends ContentRunBase {
 
 export interface QuestionGenerationRun extends ContentRunBase {
   preview?: { item: number; attempt: number; stem: string; difficulty?: string; options?: Array<{ key: string; text: string; role?: string; explanation?: string }> };
+  /** Plan for the question being written now: its assigned angle and the course passage it leans on. */
+  currentItem?: { item: number; startedAt: string; angleId: string; angleLabel: string; source?: { materialId?: string; excerpt: string; supporting?: boolean } };
   kind: 'question-generation';
   input: {
     loId: string;

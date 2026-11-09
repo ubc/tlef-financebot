@@ -61,6 +61,7 @@ export interface ContentRunUpdate {
   structureRepair?: StructureGenerationRun['structureRepair'];
   structureConsolidation?: StructureGenerationRun['structureConsolidation'];
   preview?: QuestionGenerationRun['preview'];
+  currentItem?: QuestionGenerationRun['currentItem'];
   warning?: Omit<ContentRunWarning, 'at'>;
   error?: ContentRunError;
   eventType?: ContentRunEvent['type'];
@@ -335,6 +336,7 @@ export async function updateContentRun(runId: ObjectId, update: ContentRunUpdate
   if (update.result) set.result = update.result;
   if (update.grounding) set.grounding = update.grounding;
   if (update.preview && current.kind === 'question-generation') set.preview = update.preview;
+  if (update.currentItem && current.kind === 'question-generation') set.currentItem = update.currentItem;
   if (current.kind === 'structure-generation') {
     if (update.structureConsolidation) {
       if (Object.hasOwn(current, 'structureConsolidation') && JSON.stringify(current.structureConsolidation) !== JSON.stringify(update.structureConsolidation)) throw new Error('structure-consolidation-reference-immutable');

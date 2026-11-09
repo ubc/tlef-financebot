@@ -223,7 +223,47 @@ test('answers and explanations stream, reset on retry, and persist in the saved 
   await expect(page.getByText('Correct answer',{exact:true})).toBeVisible();
 });
 
- for (const [shortcut, prompt] of [['Concept check', 'Test conceptual understanding'], ['Apply a formula', 'Ask students to apply a formula'], ['Spot a misconception', 'Use plausible distractors']]) {
+test('the reader keeps following a task after its first question is saved, until the instructor picks a question', async ({ page }) => {
+  const state = await fixture(page);
+  await page.getByRole('button', { name: 'Generate 3 questions →' }).click();
+  await expect(page.locator('.gw-drafts > button')).toHaveCount(3);
+  const run = state.runs[0];
+  Object.assign(run, { count: 2, input: { ...(run.input as object), count: 2 }, totalUnits: 2 });
+  const emit = async () => page.evaluate(r => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(r), run);
+  Object.assign(run, { status: 'running', stage: 'generating', revision: 2 });
+  await emit();
+  await expect(page.locator('.gw-reader')).toContainText('The model is thinking…');
+  // While the model reasons, the reader shows the slot's plan and source passage instead of nothing.
+  Object.assign(run, { revision: 3, preview: { item: 0, attempt: 1, stem: '' }, currentItem: { item: 0, startedAt: new Date(Date.now() - 4000).toISOString(),
+    angleId: 'misconception-diagnosis', angleLabel: 'Diagnose a misconception', source: { materialId: 'm', excerpt: 'Inertia is the tendency of an object to resist changes in motion.' } } });
+  await emit();
+  const plan = page.locator('.gw-item-plan');
+  await expect(plan).toContainText('Diagnose a misconception');
+  await expect(plan).toContainText('Week 3 lecture notes.pdf');
+  await expect(plan).toContainText('Inertia is the tendency of an object to resist changes in motion.');
+  await expect(plan).toContainText(/Thinking for \d+s/);
+  await expect(plan).toContainText('Question 1 of 2 in this task');
+  Object.assign(run, { revision: 4, preview: { item: 0, attempt: 1, stem: 'First streamed question' } });
+  await emit(); await expect(page.locator('.gw-stream-text')).toHaveText('First streamed question');
+  await expect(plan).toHaveCount(0);
+  // Item 0 is saved while the task keeps running; the next item has not started writing yet.
+  state.questions.push({ id: 'q', state: 'draft', loIds: ['a'], themeIds: ['topic'], labels: [], current: { _id: 'v', type: 'mcq', difficulty: 'easy', stem: 'First saved question', provenance: { kind: 'generated', runId: 'r0', item: 0 }, options: [] } });
+  Object.assign(run, { revision: 6, completedUnits: 1, result: { createdQuestionIds: ['q'], failures: [] } });
+  await emit();
+  await expect(page.locator('.gw-stem').first()).toHaveText('First saved question');
+  await expect(page.locator('.gw-reader')).toContainText('The next question is being written');
+  // The next item streams into the reader without any click.
+  Object.assign(run, { revision: 7, preview: { item: 1, attempt: 1, stem: 'Second streamed question' } });
+  await emit(); await expect(page.locator('.gw-stream-text')).toHaveText('Second streamed question');
+  // An explicit click pins the saved question; later stream updates leave it in place.
+  await page.getByRole('button', { name: /First saved question/ }).click();
+  Object.assign(run, { revision: 8, preview: { item: 1, attempt: 1, stem: 'Second streamed question, continued' } });
+  await emit();
+  await expect(page.locator('.gw-stem').first()).toHaveText('First saved question');
+  await expect(page.locator('.gw-stream-text')).toHaveCount(0);
+});
+
+ for (const [shortcut, prompt] of [['Concept check','Test conceptual understanding'], ['Apply a formula', 'Ask students to apply a formula'], ['Spot a misconception', 'Use plausible distractors']]) {
    test(`shortcut ${shortcut} suggests instructions without overriding practice focus`, async ({ page }) => {
      const state = await fixture(page);
      await page.getByRole('checkbox', { name: /Combine forces/ }).check();

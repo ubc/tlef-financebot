@@ -8,7 +8,7 @@ describe('GENERATOR_PROMPT', () => {
     expect(GENERATOR_PROMPT(base)).toMatch(/must assess the learning objective "Apply CAPM"/i);
   });
   it('renders the assigned angle and chunk focus', () => {
-    const text = GENERATOR_PROMPT({ ...base, angle: { id: 'reverse-solve', text: 'Give the result and ask for the missing input.' }, focusChunk: 1 });
+    const text = GENERATOR_PROMPT({ ...base, angle: { id: 'reverse-solve', label: 'Solve for a missing input', text: 'Give the result and ask for the missing input.' }, focusChunk: 1 });
     expect(text).toContain('Give the result and ask for the missing input.');
     expect(text).toContain('Lean primarily on material [2]');
   });
