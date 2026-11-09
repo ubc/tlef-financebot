@@ -9,6 +9,15 @@
         "set PATH=C:\\Users\\Saurav\\AppData\\Local\\node-portable\\node-v24.19.0-win-x64;%PATH% && npm run dev"
       ],
       "port": 6118
+    },
+    {
+      "name": "financebot-dev-mac",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 6118
     }
   ]
 }
