@@ -102,12 +102,11 @@ const PANEL_HELP = {
     + 'so a model whose API differs from the profiles here needs a release.',
   cost:
     'A platform-wide ceiling on generated questions per day, counted across every course. It counts '
-    + 'QUESTIONS, not tokens, so it does not bound what reasoning effort costs — a reviewer at high '
-    + 'effort spends more per question without changing this number.',
+    + 'QUESTIONS, not tokens, so it does not bound what reasoning effort costs — a Generator or Checker at '
+    + 'high effort spends more per question without changing this number.',
   flags:
-    'Quality stages applied to new work. Turning the reviewer off means generated questions skip '
-    + 'semantic review entirely and arrive flagged for manual attention, which is why it asks for '
-    + 'confirmation.',
+    'Reserved switches for stages that are not part of question generation yet. The Checker always '
+    + 'runs once per question and cannot be turned off here.',
 };
 
 type SettingsDraft = Pick<PlatformSettings, 'models' | 'customModels' | 'costControls' | 'featureFlags'>;
@@ -274,7 +273,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return el('div', { class: 'form-field' }, el('div', { class: 'form-field__label-row' }, el('span', { class: 'form-field__label', text: label }), tip ? helpTip(label, tip) : undefined), control);
   }
   function qualityControls(): HTMLElement {
-    return el('div', { class: 'ac-config-pane' }, intro('Quality controls', 'Manage review stages applied to new work.', PANEL_HELP.flags),
+    return el('div', { class: 'ac-config-pane' }, intro('Quality controls', 'Reserved stages that are not yet wired into generation.', PANEL_HELP.flags),
       el('div', { class: 'ac-config-setting-list' }, ...([
         ['layer2Evaluator', 'Layer 2 Mastery Evaluator', 'Not yet wired: this flag is saved, but no code reads it.'],
       ] as const).map(([key, label, description]) => {

@@ -31,7 +31,7 @@ export function createCourseModelsPanel(labels: Record<CourseModelStep, string>)
   const detail = el('div', { hidden: true },
     el('header', { class: 'ac-config-intro ac-course-model-detail' },
       back, title, identity,
-      el('p', { text: 'Inherited stages follow Platform Settings. Reviewer availability is controlled at the platform level.' }),
+      el('p', { text: 'Inherited stages follow Platform Settings.' }),
     ), body, status,
   );
   const root = el('div', { class: 'ac-config-pane' }, catalog, detail);
