@@ -9,9 +9,9 @@ see AGENTS.md → "Project ownership and plans".
 
 ## Write a plan before you build
 
-For non-trivial work, use the superpowers **brainstorming** skill to agree a
-design (saved under `docs/superpowers/specs/`), then the **writing-plans** skill
-to turn it into a task-by-task plan saved under:
+For non-trivial work, first agree a design with the developer and save it as a
+spec under `docs/superpowers/specs/`, then turn it into a task-by-task plan
+saved under:
 
 ```
 docs/superpowers/plans/<phase>/
