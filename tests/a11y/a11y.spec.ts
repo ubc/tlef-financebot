@@ -196,6 +196,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     guideCourseId = guideCourse._id;
     const guideDates = await api.patch(`/api/courses/${guideCourseId}`, {
       data: {
+        expectedRevision: 0,
         termStart: '2026-09-08T07:00:00.000Z',
         termEnd: '2026-12-07T08:00:00.000Z',
       },
