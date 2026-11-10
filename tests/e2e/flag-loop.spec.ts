@@ -210,11 +210,11 @@ test.describe('Phase 2 flag safety loop', () => {
     const instructorContext = await browser.newContext({ storageState: AUTH_FILE });
     const instructorPage = await instructorContext.newPage();
     try {
-      await instructorPage.goto(`/#/instructor/course/${courseId}/flags`);
-      await expect(instructorPage.getByRole('heading', { name: 'Flags' })).toBeVisible();
-      await expect(instructorPage.getByText(STEM)).toBeVisible();
-      await expect(instructorPage.getByText(`"${FLAG_REASON}"`, { exact: false })).toBeVisible();
-      await expect(instructorPage.getByText('1 flag', { exact: true })).toBeVisible();
+      await instructorPage.goto(`/#/instructor/course/${courseId}/questions?tab=flags`);
+      await expect(instructorPage.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
+      await expect(instructorPage.locator('.questions-reader__stem')).toContainText(STEM);
+      await expect(instructorPage.locator('.questions-flag-card')).toContainText(FLAG_REASON);
+      await expect(instructorPage.locator('.questions-flag-card')).toContainText('1 open report');
 
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
       await expect(freshNotification(instructorPage, `A question was flagged: "${FLAG_REASON}"`)).toBeVisible();
@@ -276,16 +276,16 @@ test.describe('Phase 2 flag safety loop', () => {
       await expect(pausedServe.json()).resolves.toEqual({ error: 'no-question-available' });
 
       await instructorPage.reload();
-      await expect(instructorPage.getByText('5 flags', { exact: true })).toBeVisible();
+      await expect(instructorPage.locator('.questions-flag-card')).toContainText('5 open reports');
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
       await expect(
         freshNotification(instructorPage, 'A question was auto-paused after exceeding the flag thresholds.'),
       ).toBeVisible();
       await instructorPage.getByRole('button', { name: /Notifications/ }).click();
 
-      await instructorPage.getByRole('button', { name: 'Return to Students' }).click();
-      await instructorPage.getByRole('dialog').getByRole('button', { name: 'Return to Students' }).click();
-      await expect(instructorPage.getByText('Resolved: cleared')).toBeVisible();
+      await instructorPage.locator('.questions-flag-card').getByRole('button', { name: 'Clear the flag' }).click();
+      await instructorPage.getByRole('dialog').getByRole('button', { name: 'Clear the flag' }).click();
+      await expect(instructorPage.locator('.questions-tab', { hasText: 'Student flags' }).locator('.questions-tab__count')).toHaveText('0');
       await expect
         .poll(async () => (await questionsCol().findOne({ _id: qId }))?.state)
         .toBe('approved');

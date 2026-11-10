@@ -62,7 +62,7 @@ interface SeededInbox {
 /**
  * Two fresh notifications for the signed-in instructor: a `flag` one whose
  * `refId` points at question B's flag (so its target is
- * `…/flags?flag=<id>`), and a `daily-summary` one that acts as the control —
+ * `…/questions?tab=flags&flag=<id>`), and a `daily-summary` one that acts as the control —
  * it must survive the single dismissal, which is what distinguishes "the
  * clicked row was dismissed" from "the panel emptied itself".
  *
@@ -257,20 +257,19 @@ test.describe('notification bell — navigate, dismiss, clear all', () => {
     await expect(notifItem(page, flagBody)).toBeVisible();
     await expect(notifItem(page, summaryBody)).toBeVisible();
 
-    // 2 — clicking the flag notification goes to the flag queue and points at
-    // the flag it is about. Before the fix, rows were inert.
+    // 2 — clicking the flag notification goes to Questions → Student flags and
+    // selects the question the flag is about. Before the fix, rows were inert.
     await notifItem(page, flagBody).click();
-    await expect(page).toHaveURL(/#\/instructor\/course\/[^/]+\/flags\?flag=/);
-    await expect(page).toHaveURL(new RegExp(`#/instructor/course/${courseId}/flags\\?flag=${flagBId}$`));
+    await expect(page).toHaveURL(new RegExp(`#/instructor/course/${courseId}/questions\\?tab=flags&q=${questionBId}`));
 
-    // The queue holds two flagged questions; exactly the notified one is
-    // highlighted, so this proves routing, not just arrival.
-    await expect(page.locator('.flag-group')).toHaveCount(2);
-    const highlighted = page.locator('.flag-group--highlight');
-    await expect(highlighted).toHaveCount(1);
-    await expect(highlighted).toBeVisible();
-    await expect(highlighted).toHaveAttribute('data-question-id', questionBId);
-    await expect(highlighted).toContainText(STEM_B);
+    // The tab holds two flagged questions; exactly the notified one is
+    // selected and its report highlighted, so this proves routing, not just arrival.
+    await expect(page.locator('.questions-row')).toHaveCount(2);
+    const selected = page.locator('.questions-row.is-current');
+    await expect(selected).toHaveCount(1);
+    await expect(selected).toHaveAttribute('data-question-id', questionBId);
+    await expect(page.locator('.questions-reader__stem')).toContainText(STEM_B);
+    await expect(page.locator(`.questions-flag-card li[data-flag-id="${flagBId}"]`)).toHaveClass(/is-highlighted/);
 
     // Activating a row also closes the panel — you are now looking at the
     // thing it pointed at.

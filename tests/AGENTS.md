@@ -403,11 +403,15 @@ allowlist). It verifies real SAML identity, the six Admin pages, inspector align
 axe and logout theme restoration. It performs no directory/settings mutations;
 normal login creates or refreshes the test account. Tutorial reads are intercepted.
 
-`review-workbench.spec.ts` uses `playwright.review-workbench.config.ts` with
-intercepted course/question APIs. It covers compact queue/board/search, optional
-rejection reason and failed retry, version-pinned approval after edits, response
-races, unsaved edits, mismatched samples, keyboard and mobile dark scoped axe.
-The real pipeline specs now select a queue row and approve in the same-page reader.
+`questions-workspace.spec.ts` uses `playwright.questions-workspace.config.ts` with
+every `/api` call mocked in-page (it needs only the dev server's static client on
+6118). It covers the old-route redirects, approve/reject moving rows and counts, the
+409 "question changed" path, bulk partial failure keeping failed rows selected,
+releasing a Topic clearing the hidden-questions warning, the unpublished-course
+notice, the flag card (highlight, Correct/Archive links, Clear), paused/archived
+transitions, and 390px dark layout with scoped axe; any page error fails a test.
+It replaced `review-workbench.spec.ts` and `bank-workbench.spec.ts` (2026-11-09).
+The real pipeline specs select a row on Questions → To review and approve in the reader.
 
 `setup-journey.spec.ts` uses `playwright.setup-journey.config.ts` against the
 compiled client with intercepted course APIs. It checks server-derived progress,

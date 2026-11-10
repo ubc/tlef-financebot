@@ -258,16 +258,16 @@ test.describe('instructor pipeline', () => {
       expect(res.ok()).toBeTruthy();
     });
 
-    await test.step('approve the question from the Review Queue', async () => {
-      await page.getByRole('link', { name: 'Review Queue' }).click();
-      await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+    await test.step('approve the question from Questions → To review', async () => {
+      await page.getByRole('link', { name: 'Questions', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
 
-      const row = page.locator('.review-workbench__row', { hasText: STEM.slice(0, 30) });
+      const row = page.locator('.questions-row', { hasText: STEM.slice(0, 30) });
       await expect(row).toBeVisible();
-      await row.getByRole('button').click();
-      await expect(page.locator('.review-workbench__metadata')).toContainText('pending-review');
+      await row.locator('.questions-row__open').click();
+      await expect(page.locator('.questions-reader__meta')).toContainText('Pending Review');
 
-      await page.locator('.review-workbench__reader').getByRole('button', { name: 'Approve', exact: true }).click();
+      await page.locator('.questions-reader').getByRole('button', { name: 'Approve', exact: true }).click();
       // Approved questions leave the awaiting-review queue immediately.
       await expect(row).toHaveCount(0);
     });
@@ -335,9 +335,9 @@ test.describe('instructor pipeline', () => {
     await expect(page.getByText(/Generation queued/i)).toBeVisible();
 
     // The generated question lands asynchronously as a Draft (202 { jobId },
-    // background job) — poll the Review Queue for it rather than assume a
+    // background job) — poll Questions → To review for it rather than assume a
     // fixed delay.
-    await page.getByRole('link', { name: 'Review Queue' }).click();
+    await page.getByRole('link', { name: 'Questions', exact: true }).click();
     await expect(page.getByText('Draft').first()).toBeVisible({ timeout: 120_000 });
   });
 });

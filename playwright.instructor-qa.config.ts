@@ -4,8 +4,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: [
-    'bank-workbench.spec.ts', 'generation-workbench.spec.ts',
-    'review-workbench.spec.ts', 'setup-journey.spec.ts',
+    'questions-workspace.spec.ts', 'generation-workbench.spec.ts',
+    'setup-journey.spec.ts',
     'structure-ai.spec.ts', 'instructor-qa-regressions.spec.ts',
   ],
   workers: 1,

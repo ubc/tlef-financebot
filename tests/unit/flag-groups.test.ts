@@ -1,5 +1,5 @@
 // Pure-logic tests for flag grouping/sorting, extracted from
-// views/instructor/flags.ts so the instructor and TA flag views group
+// views/instructor/questions-flag-card.ts so the instructor and TA flag views group
 // identically. See client/src/flag-groups.ts.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -190,8 +190,8 @@ describe('latestEscalation', () => {
   });
 });
 
-describe('instructor flag queue source', () => {
-  const source = readFileSync(join(__dirname, '../../client/src/views/instructor/flags.ts'), 'utf8');
+describe('instructor flag card source', () => {
+  const source = readFileSync(join(__dirname, '../../client/src/views/instructor/questions-flag-card.ts'), 'utf8');
 
   it('renders the TA recommendation rather than silently dropping it', () => {
     expect(source).toContain('latestEscalation');

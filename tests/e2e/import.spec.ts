@@ -86,8 +86,8 @@ test.describe('question import', () => {
       }),
     ).toBe(1);
 
-    await page.getByRole('button', { name: 'Open Review Queue' }).click();
-    await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+    await page.getByRole('button', { name: 'Review imported questions' }).click();
+    await expect(page.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
 
   });
 });

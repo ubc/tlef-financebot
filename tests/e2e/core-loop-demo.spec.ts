@@ -261,16 +261,16 @@ test.describe('Phase 1 exit — core loop demo', () => {
         }
       });
 
-      await test.step('approves every question from the Review Queue', async () => {
-        await instructor.getByRole('link', { name: 'Review Queue' }).click();
-        await expect(instructor.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+      await test.step('approves every question from Questions → To review', async () => {
+        await instructor.getByRole('link', { name: 'Questions', exact: true }).click();
+        await expect(instructor.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
 
         for (const q of QUESTIONS) {
-          const row = instructor.locator('.review-workbench__row', { hasText: q.stem.slice(0, 30) });
+          const row = instructor.locator('.questions-row', { hasText: q.stem.slice(0, 30) });
           await expect(row).toBeVisible();
-          await row.getByRole('button').click();
-      await expect(instructor.locator('.review-workbench__metadata')).toContainText('pending-review');
-          await instructor.locator('.review-workbench__reader').getByRole('button', { name: 'Approve', exact: true }).click();
+          await row.locator('.questions-row__open').click();
+          await expect(instructor.locator('.questions-reader__meta')).toContainText('Pending Review');
+          await instructor.locator('.questions-reader').getByRole('button', { name: 'Approve', exact: true }).click();
           // Approved questions leave the awaiting-review queue immediately,
           // and the "N questions awaiting review" count drops with them —
           // same contract instructor-pipeline.spec.ts:201 asserts.

@@ -1,36 +1,12 @@
-// Pure-logic tests for the Review Queue's filter-tab membership/counts (I5,
-// Task 15 Task F). No DOM needed — `matchesTab`/`queueTabCounts` are plain
-// array/object logic; importing review-queue.ts also pulls in dom.ts's `el`
-// (DOM-touching) and api.ts, but merely importing doesn't execute any
-// document access, so this is safe under jest's node test environment. See
-// client/src/views/instructor/review-queue.ts.
+// Pure-logic tests for the TA review queue's decision tabs
+// (client/src/views/ta/queue-tabs.ts), moved from the retired instructor
+// review-queue tests on 2026-11-09.
 import {
   matchesTab,
-  matchesType,
   queueTabCounts,
-  runHighlightSummary,
-  QUEUE_TYPE_FILTERS,
   type QueueTab,
   type QueueTabInput,
-} from '../../client/src/views/instructor/review-queue';
-
-describe('matchesType (question-type filter)', () => {
-  const mcq = { current: { type: 'mcq' as const } };
-  const tf = { current: { type: 'true-false' as const } };
-
-  it('"all" matches both types; each specific filter matches only its own', () => {
-    expect(matchesType(mcq, 'all')).toBe(true);
-    expect(matchesType(tf, 'all')).toBe(true);
-    expect(matchesType(mcq, 'mcq')).toBe(true);
-    expect(matchesType(tf, 'mcq')).toBe(false);
-    expect(matchesType(tf, 'true-false')).toBe(true);
-    expect(matchesType(mcq, 'true-false')).toBe(false);
-  });
-
-  it('offers exactly the three filters, all first', () => {
-    expect(QUEUE_TYPE_FILTERS).toEqual(['all', 'mcq', 'true-false']);
-  });
-});
+} from '../../client/src/views/ta/queue-tabs';
 
 function item(overrides: Partial<QueueTabInput> = {}): QueueTabInput {
   return { labels: [], agentDecision: undefined, ...overrides };
@@ -112,16 +88,5 @@ describe('queueTabCounts', () => {
     for (const tab of tabs) {
       expect(counts[tab]).toBe(items.filter((i) => matchesTab(i, tab)).length);
     }
-  });
-});
-
-describe('runHighlightSummary (arrival from a generation run)', () => {
-  it('counts the run questions still in the queue and those that have left it', () => {
-    expect(runHighlightSummary(['q1', 'q2', 'q3'], ['q2', 'q9', 'q3'])).toEqual({ shown: 2, missing: 1 });
-  });
-
-  it('is all-missing when none of the run remains, and empty for a run that created nothing', () => {
-    expect(runHighlightSummary(['q1'], ['q2'])).toEqual({ shown: 0, missing: 1 });
-    expect(runHighlightSummary([], ['q2'])).toEqual({ shown: 0, missing: 0 });
   });
 });

@@ -212,11 +212,25 @@ light/dark toggle. Help & Tutorials keeps its existing content and appears once,
 beneath My Courses in Teaching tools. Landing, Student Preview and TA View use
 their own role styling. The Admin sidebar has its own collapse key.
 
-Question Bank now uses `bank-workbench.ts` for the approved collection and per-topic
-release controls. `bank-editor.ts` saves a version-pinned edit and Pending Review
-state atomically; existing full details retain history, notes and script controls.
-The general browse API stays unchanged for other consumers; the Bank requests
-Approved explicitly and uses the server content gate plus course/topic availability.
+**Questions workspace (2026-11-09).** Review Queue, Question Bank and Flags are one
+page, `views/instructor/questions.ts`, at
+`/instructor/course/:id/questions?tab=review|approved|flags|paused|archived&q=<id>`
+(plus `runId` for a generation-run highlight, `flag` from a notification and `loId`
+from the Coverage Map). `/queue`, `/bank` and `/flags` redirect to the matching tab
+(`renderLegacyQuestionsRedirect`). It reads one endpoint,
+`GET /api/courses/:courseId/question-workspace?tab=`, which returns tab counts, the
+per-Topic release summary and the tab's rows with server-decided `studentVisible` /
+`hiddenReason`; the client never derives visibility. Modules:
+`questions-model.ts` (pure: tabs, paths, filters, bulk runner — unit-tested),
+`questions-reader.ts` (reader, state-specific actions, inline edit, 409 handling),
+`questions-flag-card.ts` (open reports, Correct/Archive via question detail
+`?from=flags&flagVersionId=&intent=`, Clear, remediation + notify, resolved history),
+`questions-release.ts` (Manage releases: per-Topic Release now / Schedule / Keep
+hidden, saved with each Topic's `revision`). Release happens only here; Course
+Structure shows a read-only label. Shared labels live in `question-labels.ts`; the
+TA review queue's decision tabs live in `views/ta/queue-tabs.ts`. Styles:
+`styles/questions-workspace.css`. Question detail returns to Questions with the
+question selected and opens side-by-side regeneration for `?intent=regenerate`.
 
 Teaching Assistants now uses a compact searchable roster with native invitation
 and permission dialogs. Course Settings retains input nodes across five sections
@@ -292,10 +306,10 @@ accepted Preview exits clear the anonymous UUID, and reloads resume the same
 course session. All shell builders consume `app-shell--unified`.
 
 The instructor sidebar (`views/instructor/shell.ts`) lists only the main path
-(Dashboard, Materials ① to Question Bank ⑤), Assess & improve, and Course
-Settings. Sub-pages are reached from their parent and highlight it via `also`:
-Coverage Map from Course Structure, Import from Question Bank (its existing
-Import questions button), Canvas from
+(Dashboard, Materials ① to Questions ④), Assess & improve (Exam Builder, Student
+Analytics), and Course Settings. Sub-pages are reached from their parent and
+highlight it via `also`: Coverage Map from Course Structure, Import and question
+detail from Questions, Canvas from
 Settings. Discussion keeps its route but has no sidebar entry.
 
 Course co-authoring uses `course-sharing.ts` in the topbar Share dialog (the old
@@ -303,7 +317,7 @@ Course co-authoring uses `course-sharing.ts` in the topbar Share dialog (the old
 co-instructors can inspect members and copy the restricted course link.
 `collaborative-editor.ts` binds native fields to a vendored Yjs module, persists
 incremental shared drafts, shows presence, and explicitly saves validated versions
-back into Review Queue. It retains failed updates and commit ids, compares external
+back into Questions → To review. It retains failed updates and commit ids, compares external
 versions before rebase, and exports the original draft schema. The application
 still compiles with tsc; esbuild only packages the third-party Yjs vendor module.
 

@@ -19,13 +19,13 @@ work can resume after a context reset.
 
 ## Tasks
 
-- [ ] **1. Move shared question labels out of `bank.ts`.**
+- [x] **1. Move shared question labels out of `bank.ts`.**
   New `client/src/question-labels.ts`: `STATUS_LABEL`, `TYPE_LABEL`,
   `statusToBadgeVariant`, `heldBackTopics`. Re-point TA question-detail,
   TA review-queue, instructor question-detail, review-workbench and
   `tests/unit/question-bank-helpers.test.ts`. Done: typecheck + that test pass.
 
-- [ ] **2. `buildQuestionWorkspace` pure function + unit tests.**
+- [x] **2. `buildQuestionWorkspace` pure function + unit tests.**
   `server/src/services/question-workspace.service.ts`. Input: course
   (lifecycle via `courseLifecycle`), themes, joined questions, open-flag
   counts/latest flag time per question, review priorities, `now`. Output: the
@@ -35,21 +35,21 @@ work can resume after a context reset.
   schedule, `contentReady: false`, multi-Topic with one unreleased, unpublished
   course; flags tab includes any state; `agentVerdict` mapping; ordering per tab.
 
-- [ ] **3. Loader + `GET /api/courses/:courseId/question-workspace?tab=`.**
+- [x] **3. Loader + `GET /api/courses/:courseId/question-workspace?tab=`.**
   Loader reads course, themes (non-archived), questions joined to current
   versions (`browseBank` with `includeArchived`), `reviewQueue` priorities,
   open flags. Route in `questions.routes.ts` with `ensureCapability('question.review')`,
   rows via `toBankItemWithSample` (items for the requested tab only).
   Route tests in `questions.routes.test.ts`: 200 shape, 400 bad tab, 403 without capability.
 
-- [ ] **4. Flags `questionId` filter.** `listFlags(courseId, state?, questionId?)`,
+- [x] **4. Flags `questionId` filter.** `listFlags(courseId, state?, questionId?)`,
   `flagsQuery` gains `questionId`. Tests in `flags.service.test.ts`.
 
-- [ ] **5. Client API.** `QuestionWorkspace`, `WorkspaceRow`, `WorkspaceTab`
+- [x] **5. Client API.** `QuestionWorkspace`, `WorkspaceRow`, `WorkspaceTab`
   types; `getQuestionWorkspace(courseId, tab)`; `listCourseFlags` gains
   `questionId`. Update `docs/api-contract.md`.
 
-- [ ] **6. Page skeleton.** `views/instructor/questions.ts` (+ pure helpers in
+- [x] **6. Page skeleton.** `views/instructor/questions.ts` (+ pure helpers in
   `questions-model.ts`, unit-tested): route `/instructor/course/:id/questions`,
   URL state (`tab`, `q`, `runId`), default tab rule, header actions, release
   bar, tabs with counts, list with search + filters (Topic, LO, type,
@@ -58,36 +58,36 @@ work can resume after a context reset.
   one "Questions" item (④), Flags removed from "Assess & improve". Narrow
   layout: list then full-width reader with Back.
 
-- [ ] **7. Reader + actions + bulk.** `questions-reader.ts`: meta, stem/options
+- [x] **7. Reader + actions + bulk.** `questions-reader.ts`: meta, stem/options
   (sample for parameterized), AI check with suggestions, similarity links,
   source evidence, visibility reason, TA edits/notes. Actions per state table;
   Reject with optional reason; 409 → "question changed" + reload. Bulk bar with
   partial-failure list and kept selection. Refetch workspace after mutations.
 
-- [ ] **8. Release panel.** Row per Topic: approved count, state, Release now /
+- [x] **8. Release panel.** Row per Topic: approved count, state, Release now /
   Schedule (date) / Keep hidden; save with `expectedRevision`; errors keep
   values. Unpublished-course notice links to Dashboard.
 
-- [ ] **9. Flag card.** Extract `questions-flag-card.ts` from `flags.ts`
+- [x] **9. Flag card.** Extract `questions-flag-card.ts` from `flags.ts`
   (reasons/sources, student count, TA recommendation, Correct / Archive /
   Clear, remediation checklist, Notify with persisted state, resolved history,
   "How flags work"). Shown at top of the reader whenever open flags exist.
 
-- [ ] **10. Arrivals and header.** `runId` highlight + Clear highlight;
+- [x] **10. Arrivals and header.** `runId` highlight + Clear highlight;
   `?flag=` / `?question=` / `q` selection; Import link; Export CSV via `bankCsv`.
 
-- [ ] **11. Links.** Update `notification-target.ts` (+ its test) and instructor
+- [x] **11. Links.** Update `notification-target.ts` (+ its test) and instructor
   links in dashboard, setup-journey, generation-workbench, preseeding, import,
   settings, exam-builder, courses, tutorial-help/definitions, question-detail,
   collaborative-editor, param-config. `structure.ts` release controls become a
   read-only label + link to `?tab=approved`.
 
-- [ ] **12. E2E** `tests/e2e/questions-workspace.spec.ts` (mocked API): redirects
+- [x] **12. E2E** `tests/e2e/questions-workspace.spec.ts` (mocked API): redirects
   keep `q`; approve/reject moves row and counts; release clears warning; flag
   card correct/archive/clear + notify; bulk partial failure keeps selection;
   390px dark layout + axe.
 
-- [ ] **13. Parity + cleanup.** Walk the spec's parity checklist (mocked e2e +
+- [x] **13. Parity + cleanup.** Walk the spec's parity checklist (mocked e2e +
   browser pane on 6118, developer logs in). Then delete `review-queue.ts`,
   `review-workbench.ts`, `bank.ts`, `bank-workbench.ts`, `bank-editor.ts`,
   `flags.ts`, their CSS, `review-queue.test.ts`, `bank-workbench.spec`,

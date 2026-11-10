@@ -359,17 +359,18 @@ test.describe('Instructor student preview', () => {
     await expect(instructorPage.getByText(/Cross-tab test flag/).first()).toBeVisible();
     await instructorPage.getByRole('button', { name: /Notifications/ }).click();
 
-    await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}/flags`);
-    await expect(instructorPage.getByText('TEST · Instructor Preview')).toBeVisible();
-    await expect(instructorPage.locator('.flag-row__reason').filter({ hasText: 'Cross-tab test flag' })).toBeVisible();
-    await instructorPage.getByRole('button', { name: 'Review & edit', exact: true }).click();
+    await instructorPage.goto(`/#/instructor/course/${courseId.toHexString()}/questions?tab=flags`);
+    const flagCard = instructorPage.locator('.questions-flag-card');
+    await expect(flagCard).toContainText('TEST · Instructor preview');
+    await expect(flagCard).toContainText('Cross-tab test flag');
+    await flagCard.getByRole('link', { name: 'Correct the question' }).click();
     await expect(instructorPage.getByRole('heading', { name: 'Instructor Preview Test Flag' })).toBeVisible();
     await expect(instructorPage.getByText(/changes the real Question Bank/)).toBeVisible();
 
     const editedStem = `${APPROVED_STEM} (verified)`;
     await instructorPage.locator('.question-stem-input').fill(editedStem);
     await instructorPage.getByRole('button', { name: 'Save & Update Question Bank' }).click();
-    await expect(instructorPage).toHaveURL(new RegExp(`/flags$`));
+    await expect(instructorPage).toHaveURL(/\/questions\?tab=flags&q=/);
 
     const [storedFlag, storedQuestion, storedVersion] = await Promise.all([
       flagsCol().findOne({

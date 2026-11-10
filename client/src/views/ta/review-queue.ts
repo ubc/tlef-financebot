@@ -2,7 +2,7 @@ import { attachTutorial } from '../../tutorials.js';
 // TA Review Queue (TA-01) — the instructor review queue's layout with only
 // TA-permitted actions. Phase 3 Task 6 specified "same data as the instructor
 // queue but the payload/UI carry no approve/reject affordances"; this view is
-// that, sharing the instructor view's tab logic (`matchesTab`/`queueTabCounts`)
+// that, using the decision-tab logic in queue-tabs.ts (`matchesTab`/`queueTabCounts`)
 // and its badge/label vocabulary so the two read identically.
 //
 // Deliberately absent: Approve, Bulk Approve, and any editing control. Approve
@@ -35,7 +35,7 @@ import {
   queueTabCounts,
   type QueueTab,
   type QueueTabInput,
-} from '../instructor/review-queue.js';
+} from './queue-tabs.js';
 import { pendingSuggestionCount, topicLoLabel } from './ta-ui.js';
 
 

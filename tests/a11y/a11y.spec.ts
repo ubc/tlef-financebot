@@ -354,13 +354,13 @@ test.describe('a11y across the signed-in surfaces', () => {
       await expect(page.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
       await expectNoViolations(page, 'instructor knowledge workspace');
 
-      await page.goto(`/#/instructor/course/${courseId}/bank`);
-      await expect(page.getByRole('heading', { name: 'Question Bank' })).toBeVisible();
-      await expectNoViolations(page, 'instructor question bank');
+      await page.goto(`/#/instructor/course/${courseId}/questions?tab=approved`);
+      await expect(page.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
+      await expectNoViolations(page, 'instructor questions: approved');
 
-      await page.goto(`/#/instructor/course/${courseId}/queue`);
-      await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
-      await expectNoViolations(page, 'instructor review queue');
+      await page.goto(`/#/instructor/course/${courseId}/questions?tab=review`);
+      await expect(page.getByRole('heading', { name: 'Questions', level: 1 })).toBeVisible();
+      await expectNoViolations(page, 'instructor questions: to review');
 
       await page.goto(`/#/instructor/course/${courseId}/analytics`);
       await expect(page.getByRole('heading', { name: /analytics/i }).first()).toBeVisible();

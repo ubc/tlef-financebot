@@ -3,7 +3,7 @@
 // question-labels.ts, and question-detail.ts also pulls in dom.ts/render.ts (DOM-
 // touching), but merely importing doesn't execute document access, so this is
 // safe under jest's node test environment. See
-// client/src/api.ts (bankFiltersToQuery), client/src/views/instructor/bank.ts
+// client/src/api.ts (bankFiltersToQuery), client/src/question-labels.ts
 // (statusToBadgeVariant), client/src/views/instructor/question-detail.ts
 // (isFieldEdited).
 import { bankFiltersToQuery, type BankFilters } from '../../client/src/api';

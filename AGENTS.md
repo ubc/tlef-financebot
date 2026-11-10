@@ -374,6 +374,15 @@ commonly need:
 
 ## Current state
 
+- Instructor Questions workspace (2026-11-09, spec
+  `docs/superpowers/specs/2026-11-09-instructor-questions-workspace-design.md`):
+  Review Queue, Question Bank and Flags are one Questions page with status tabs,
+  a release bar that says when approved questions are hidden from students, and
+  per-Topic release (now the only place release is managed; Course Structure is
+  read-only). Backed by `GET /api/courses/:courseId/question-workspace`, which
+  decides student visibility on the server. Old routes redirect. See
+  `client/AGENTS.md` and `docs/api-contract.md`.
+
 - Admin request evidence now retains canonical source/socket IPs and received
   query-free paths for new unmatched 404/IP-blocked calls (4,096-character cap).
   Common server logs omit these raw fields. Historical public paths may be
