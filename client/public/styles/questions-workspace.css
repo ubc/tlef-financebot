@@ -238,9 +238,11 @@
 
 .questions-row__open {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   padding: 0;
   border: 0;
   background: none;
@@ -569,10 +571,18 @@
 
 /* --- Release panel -------------------------------------------------------- */
 
+.questions-release.app-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
 .questions-release .app-dialog__surface {
   display: grid;
   gap: 12px;
-  width: min(640px, calc(100vw - 32px));
+}
+
+.questions-release__choices .input {
+  width: auto;
+  flex: 1 1 200px;
 }
 
 .questions-release__rows {

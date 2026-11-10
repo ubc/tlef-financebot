@@ -468,10 +468,10 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   const header = pageHeader('Questions', 'Review, approve and release your course’s practice questions.');
-  header.insertBefore(el('div', { class: 'cluster questions-header__actions' },
+  header.append(el('div', { class: 'cluster questions-header__actions' },
     el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate more' }),
     el('a', { class: 'btn btn--ghost btn--sm', href: `#${coursePath}/import`, text: 'Import' }),
-    el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void exportCsv() }, 'Export CSV')), header.lastChild);
+    el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void exportCsv() }, 'Export CSV')));
 
   mount(root, header, releaseBar, tabs, highlight, messages, body);
   draw();

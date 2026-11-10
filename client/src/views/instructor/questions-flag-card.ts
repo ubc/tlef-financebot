@@ -257,7 +257,8 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
     return el('div', { class: 'questions-flag-card__group', 'data-flag-version': group.questionVersionId },
       el('div', { class: 'questions-flag-card__heading' },
         el('h3', { text: `${open.length} open report${open.length === 1 ? '' : 's'}` }),
-        escalated ? statusBadge('Escalated by TA', 'flag') : statusBadge(`${students} student${students === 1 ? '' : 's'}`, 'flag'),
+        escalated ? statusBadge('Escalated by TA', 'flag') : false,
+        students ? statusBadge(`${students} student${students === 1 ? '' : 's'}`, 'flag') : false,
         group.flags.some((flag) => flag.source === 'instructor-preview-test') ? el('span', { class: 'badge badge--muted', text: 'TEST · Instructor preview' }) : false),
       currentVersionId && currentVersionId !== group.questionVersionId
         ? el('p', { class: 'questions-flag-card__stale', text: 'The question was edited after these reports. The reader shows the current version.' })
