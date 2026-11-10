@@ -3,7 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { RegistrationCodeRow } from '../../client/src/api';
 const id = '111111111111111111111111';
 const course = { _id: id, name: 'Introduction to Physics', courseCode: 'PHYS 100', section: '222', term: '2026W', ownerPuid: 'teacher', lifecycle: 'published', feedbackStrategy: 'adaptive', autoPause: { minAttempts: 5, flagPercent: 30, flagCount: 3 }, registrationCode: 'PHYS-123', themes: [] };
-async function fixture(page: Page, view: 'settings' | 'people' | 'tas' | 'help', empty = false) {
+async function fixture(page: Page, view: 'settings' | 'people' | 'help', empty = false) {
   const writes: Array<{ path: string; body: Record<string, unknown> }> = [];
   const codes: RegistrationCodeRow[] = [];
   await page.route('**/admin-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><title>Course administration</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/people-workspace.css"></head><body><main id="app" style="padding:24px"></main></body></html>' }));
@@ -55,7 +55,6 @@ async function fixture(page: Page, view: 'settings' | 'people' | 'tas' | 'help',
     const root = document.querySelector('#app')! as HTMLElement;
     if (view === 'settings') (await import('/js/views/instructor/settings.js')).renderSettings(root, { id });
     else if (view === 'people') (await import('/js/views/instructor/people.js')).renderPeople(root, { id });
-    else if (view === 'tas') (await import('/js/views/instructor/tas.js')).renderTas(root, { id });
     else await (await import('/js/views/tutorial-help.js')).renderTutorialHelp(root, { id });
   }, { id, view });
   await expect(page.locator(view === 'people' ? '.people-workspace' : '.admin-workbench')).toBeVisible();
@@ -100,15 +99,6 @@ test('supplemental codes can be generated in a batch and revoked independently',
   expect((await new AxeBuilder({ page }).include('.admin-workbench,.people-workspace').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
   await page.screenshot({ path: 'artifacts/one-time-enrollment-2026-10-06/enrollment-mobile.png', fullPage: true });
 });
-test('TA invitation accepts CWL without converting it to an email in the browser', async ({ page }) => {
-  const writes = await fixture(page, 'tas');
-  await page.getByRole('button', { name: 'Invite a TA', exact: true }).click();
-  await page.getByLabel('TA UBC email or CWL', { exact: true }).fill('teaching.assistant');
-  await page.screenshot({ path: 'artifacts/one-time-enrollment-2026-10-06/ta-cwl-invitation.png', fullPage: true });
-  await page.getByRole('button', { name: 'Invite TA', exact: true }).click();
-  await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0].body).toEqual({ identifier: 'teaching.assistant' });
-});
 test('code pages, filters and record deletion handle larger lists and the last page', async ({ page }) => {
   await fixture(page, 'people');
   await page.getByRole('button', { name: 'Registration codes', exact: true }).click();
@@ -133,23 +123,6 @@ test('code pages, filters and record deletion handle larger lists and the last p
   await expect(page.locator('.registration-code-row')).toHaveCount(10);
   expect((await new AxeBuilder({ page }).include('.registration-codes-panel').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
 });
-test('TA permissions and invitation use course-scoped APIs; empty search recovers', async ({ page }) => {
-  const writes = await fixture(page, 'tas');
-  await page.getByRole('button', { name: 'Permissions', exact: true }).click();
-  await page.getByLabel('View analytics', { exact: true }).uncheck();
-  await page.getByRole('button', { name: 'Save permissions', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(writes[0].path).toBe(`/api/courses/${id}/tas/alex/permissions`);
-  expect(writes[0].body.permissions).toMatchObject({ 'analytics.view': false });
-  await page.getByLabel('Search teaching assistants').fill('zzzz');
-  await expect(page.getByText('No matching team members')).toBeVisible();
-  await page.getByRole('button', { name: 'Clear search' }).click();
-  await page.getByRole('button', { name: 'Invite a TA', exact: true }).click();
-  await page.getByLabel('TA UBC email').fill('new@ubc.ca');
-  await page.getByRole('button', { name: 'Invite TA', exact: true }).click();
-  await expect.poll(() => writes.length).toBe(2);
-  expect(writes[1].body).toEqual({ identifier: 'new@ubc.ca' });
-});
 test('help search, course context, reset confirmation and replay destination', async ({ page }) => {
   const writes = await fixture(page, 'help');
   await page.getByLabel('Search tutorials').fill('zzzz');
@@ -161,9 +134,9 @@ test('help search, course context, reset confirmation and replay destination', a
   await page.getByRole('button', { name: 'Start walkthrough', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/instructor/course/${id}/analytics`));
 });
-for (const view of ['tas', 'settings', 'help'] as const) test(`${view}: accessible layout, empty and responsive`, async ({ page }) => {
+for (const view of ['settings', 'help'] as const) test(`${view}: accessible layout, empty and responsive`, async ({ page }) => {
   await fixture(page, view, true);
-  await expect(page.getByRole('heading', { name: view === 'tas' ? 'Build your teaching team' : view === 'settings' ? 'General' : 'What would you like to do?', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: view === 'settings' ? 'General' : 'What would you like to do?', exact: true })).toBeVisible();
   await page.screenshot({ path: `/tmp/live-${view}.png`, fullPage: true });
   const scan = await new AxeBuilder({ page }).include('.admin-workbench,.people-workspace').withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(scan.violations).toEqual([]);

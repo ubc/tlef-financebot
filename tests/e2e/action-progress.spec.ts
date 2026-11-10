@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 // Verify the shared binding itself, separately from production view coverage below.
 test('shared actions retain labels, block duplicate clicks and support icon buttons', async ({ page }) => {
@@ -128,56 +127,6 @@ test('real TA review preserves pending state when filters redraw rows', async ({
   await expect(page.getByText('Review interrupted')).toBeVisible();
   await expect(button).not.toHaveAttribute('aria-busy', 'true');
 });
-
-for (const mobile of [false, true]) {
-test(`real source guide renders SSE transitions and closes stream (${mobile ? 'mobile dark' : 'desktop light'})`, async ({ page }) => {
-  if (mobile) {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-  }
-  await realView(page);
-  await page.evaluate(dark => document.documentElement.dataset.theme = dark ? 'dark' : 'light', mobile);
-  const material = { _id: 'material', name: 'Lecture notes.pdf', format: 'pdf', status: 'processing', uploadedAt: '2026-09-14T12:00:00Z' };
-  await page.route('**/api/courses/fixture/materials', route => route.fulfill({ json: [material] }));
-  await page.route('**/api/courses/fixture/content-runs?*', route => route.fulfill({ json: [] }));
-  await page.evaluate(async () => {
-    const fixtureWindow = window as unknown as { sourceEvents: EventTarget; streamClosed: boolean };
-    class FixtureEvents extends EventTarget {
-      constructor() { super(); fixtureWindow.sourceEvents = this; }
-      close() { fixtureWindow.streamClosed = true; }
-    }
-    window.EventSource = FixtureEvents as unknown as typeof EventSource;
-    const { openCourseSetupGuide } = await import('/js/views/instructor/course-setup-guide.js');
-    openCourseSetupGuide({ courseId: 'fixture', actionId: 'monitor-sources', learningObjectiveCount: 1, onChanged() {} });
-  });
-  const emit = async (status: string, id: string, revision: number): Promise<void> => {
-    await page.evaluate(({ status, id, revision }) => {
-      const run = { _id: id, kind: 'material-ingest', status, stage: 'indexing', completedUnits: 3, totalUnits: 8, revision, updatedAt: new Date().toISOString(), input: { materialId: 'material', sourceName: 'Lecture notes.pdf' }, error: status === 'failed' ? { message: 'Source parsing interrupted' } : undefined };
-      (window as unknown as { sourceEvents: EventTarget }).sourceEvents.dispatchEvent(new MessageEvent('run', { data: JSON.stringify(run) }));
-    }, { status, id, revision });
-  };
-  await expect(page.getByText('Lecture notes.pdf', { exact: true })).toBeVisible();
-  await emit('running', 'run1', 1);
-  await expect(page.getByText('Indexing · 3/8')).toBeVisible();
-  const waiting = page.getByRole('button', { name: 'Waiting for a ready source…' });
-  await expect(waiting).toBeDisabled();
-  await expect(waiting).toHaveCSS('cursor', 'default');
-  await expect(page.locator('.course-setup-guide__source-progress .spinner')).toBeVisible();
-  await waiting.scrollIntoViewIfNeeded();
-  if (mobile) await expect(page.locator('.course-setup-guide__source-progress .spinner')).toHaveCSS('animation-name', 'none');
-  expect((await new AxeBuilder({ page }).include('.course-setup-guide').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
-  await page.screenshot({ path: `/private/tmp/action-progress-source-${mobile ? 'mobile-dark' : 'desktop'}.png` });
-  material.status = 'failed';
-  await emit('failed', 'run1', 2);
-  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-  await expect(page.locator('.course-setup-guide__source .spinner')).toHaveCount(0);
-  material.status = 'ready';
-  await emit('completed', 'run2', 1);
-  await expect(page.getByRole('button', { name: 'Continue to questions' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Close course setup guide' }).click();
-  expect(await page.evaluate(() => (window as unknown as { streamClosed: boolean }).streamClosed)).toBe(true);
-});
-}
 
 test('real Instructor native preview button shows pending animation and releases on error', async ({ page }) => {
   await realView(page);

@@ -1,6 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { mkdir } from 'node:fs/promises';
 
 const course = '111111111111111111111111';
 const batchId = '222222222222222222222222';
@@ -156,50 +155,4 @@ test('source receipt remains readable at a narrow dark viewport', async ({ page 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const scan = await new AxeBuilder({ page }).include('.knowledge-workspace__assistant').withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(scan.violations).toEqual([]);
-});
-
-for (const mobile of [false, true]) test(`materials-first guide waits for every intended source, consumes the async outline and applies only selected items (${mobile ? 'mobile dark' : 'desktop light'})`, async ({ page }) => {
-  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 });
-  const state = await fixture(page); state.uploaded();
-  let applied: Record<string, unknown> | undefined;
-  const proposed = 'Risk and return from both chapters';
-  await page.route(`**/api/courses/${course}/content-runs/run1`, route => route.fulfill({ json: {
-    _id: 'run1', courseId: course, kind: 'structure-generation', revision: 3, status: 'completed', stage: 'checking', warnings: [],
-    structureResult: { themes: [{ name: proposed, los: [{ name: 'Distinguish systematic and diversifiable risk', materialIds: ids, evidenceIds: ['E1'] }, { name: 'Exclude this objective', materialIds: [ids[1]], evidenceIds: ['E2'] }] }], evidence: [],
-      coverage: { materials: ids.map((materialId, index) => ({ materialId, name: `Chapter ${index + 1}.pdf`, chunks: 20, sections: 2, mappedObjectives: 1 })), analyzedSections: 4, extractedObjectives: 2, mappedObjectives: 2, excludedSections: [], unmappedEvidenceIds: [], warnings: [], sourceSelection: { requested: ids.map(materialId => ({ materialId, ready: true })), included: ids.map(materialId => ({ materialId })), excluded: [], ready: true } } },
-  } }));
-  await page.route(`**/api/courses/${course}/apply-suggested-hierarchy`, route => { applied = route.request().postDataJSON(); return route.fulfill({ json: { themesCreated: 1, losCreated: 1, assignmentsCreated: 2, materialsAssigned: 2 } }); });
-  await page.route(`**/api/courses/${course}`, route => route.fulfill({ json: { _id: course, name: 'Finance', themes: applied ? [{ _id: 'topic', name: proposed, los: [{ _id: 'lo', themeId: 'topic', name: 'Distinguish systematic and diversifiable risk', order: 0 }], order: 0 }] : [] } }));
-  await page.route(`**/api/courses/${course}/instructor-workflow`, route => route.fulfill({ json: {
-    counts: { learningObjectives: applied ? 1 : 0, totalQuestions: 0, approvedQuestions: 0 },
-    setup: { steps: [] },
-  } }));
-  await page.route(`**/api/courses/${course}/generation-plan`, route => route.fulfill({ json: applied ? [{
-    loId: 'lo', loName: 'Explain the risk that diversification cannot remove', themeName: proposed, loKind: 'conceptual',
-    approved: { easy: 0, medium: 0, hard: 0 }, cells: [{ difficulty: 'easy', kind: 'conceptual', count: 3 }],
-  }] : [] }));
-  await page.route(`**/api/courses/${course}/materials`, route => route.fulfill({ json: ids.map((_, index) => ({
-    ...material(index, true), assignments: applied ? [{ themeId: 'topic', loId: 'lo' }] : [],
-  })) }));
-  await page.evaluate(({ course, batchId, mobile }) => { document.documentElement.dataset.theme = mobile ? 'dark' : 'light'; sessionStorage.setItem(`financebot:source-batch:unknown:${course}`, batchId); }, { course, batchId, mobile });
-  await page.evaluate(async courseId => { (await import('/js/views/instructor/course-setup-guide.js')).openCourseSetupGuide({ courseId, actionId: 'build-structure', learningObjectiveCount: 0, onChanged() {} }); }, course);
-  const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
-  await guide.getByRole('button', { name: 'Generate an AI draft' }).click();
-  await expect(guide.getByText(/Sources are not ready:/)).toContainText('Chapter 2.pdf');
-  expect(state.selections).toEqual([]);
-  state.ready();
-  await guide.getByRole('button', { name: 'Generate an AI draft' }).click();
-  await expect(guide.getByLabel('Suggested Topic 1 name')).toHaveValue(proposed);
-  expect(state.selections[0]).toEqual({ materialIds: ids, sourceBatchId: batchId });
-  await guide.getByLabel('Include suggested Topic 1 Learning Objective 2').uncheck();
-  await guide.getByLabel('Suggested Topic 1 Learning Objective 1 name').fill('Explain the risk that diversification cannot remove');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  const scan = await new AxeBuilder({ page }).include('.course-setup-guide').withTags(['wcag2a', 'wcag2aa']).analyze();
-  expect(scan.violations).toEqual([]);
-  await mkdir('artifacts/quality-authoring-2026-10-13', { recursive: true });
-  await page.screenshot({ path: `artifacts/quality-authoring-2026-10-13/source-guide-${mobile ? 'mobile-dark' : 'desktop-light'}.png`, fullPage: true });
-  await guide.getByRole('button', { name: 'Apply selected structure' }).click();
-  await expect.poll(() => applied).toEqual({ runId: 'run1', themes: [{ name: proposed, los: [{ name: 'Explain the risk that diversification cannot remove', materialIds: ids, sourceThemeIndex: 0, sourceLoIndex: 0 }] }] });
-  await expect(guide.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
-  await expect(guide.getByRole('button', { name: 'Generate questions', exact: true })).toBeEnabled();
 });

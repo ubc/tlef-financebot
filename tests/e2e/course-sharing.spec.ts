@@ -51,8 +51,11 @@ async function fixture(page: Page, options: { canManage?: boolean; theme?: strin
     const { openCourseSharing } = await import('/js/course-sharing.js');
     document.getElementById('share')!.addEventListener('click', () => openCourseSharing(courseId));
     if (surface === 'page') {
-      const { renderCoInstructors } = await import('/js/views/instructor/co-instructors.js');
-      renderCoInstructors(document.getElementById('fixture')!, { id: courseId });
+      // The People page hosts this panel; mount it on its own as the page used to.
+      const { createCourseSharingPanel } = await import('/js/course-sharing.js');
+      const panel = createCourseSharingPanel(courseId);
+      document.getElementById('fixture')!.append(panel.element);
+      void panel.refresh();
     }
   }, { courseId: COURSE, surface: options.surface });
   return { summary, writes, errors };
@@ -86,7 +89,7 @@ test('owner sees member and pending identities, protected ownership, and a restr
 
 test('known CWL accounts activate immediately; new UBC emails remain pending without sending email', async ({ page }) => {
   const state = await fixture(page, { surface: 'page' });
-  await expect(page.getByRole('heading', { name: 'Co-instructors', exact: true })).toBeVisible();
+  await expect(page.locator('#fixture .course-sharing__members')).toBeVisible();
   await expect(page.getByLabel('UBC email or CWL', { exact: true })).toBeVisible();
   await page.getByLabel('UBC email or CWL', { exact: true }).fill('New.Colleague@sauder.ubc.ca');
   await page.getByRole('button', { name: 'Add co-instructor', exact: true }).click();
