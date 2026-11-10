@@ -69,14 +69,12 @@ import { renderMaterials } from './views/instructor/materials.js';
 import { renderContentMap } from './views/instructor/content-map.js';
 import { renderSettings } from './views/instructor/settings.js';
 import { renderExamTemplates } from './views/instructor/exam-templates.js';
-import { renderBank } from './views/instructor/bank.js';
+import { renderLegacyQuestionsRedirect, renderQuestions } from './views/instructor/questions.js';
 import { renderQuestionDetail } from './views/instructor/question-detail.js';
 import { renderPeople } from './views/instructor/people.js';
 import { openCourseSharing } from './course-sharing.js';
 import { renderCollaborativeEditor } from './views/instructor/collaborative-editor.js';
 import { renderParamConfig } from './views/instructor/param-config.js';
-import { renderReviewQueue } from './views/instructor/review-queue.js';
-import { renderFlagQueue } from './views/instructor/flags.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
 import { renderTaReviewQueue } from './views/ta/review-queue.js';
 import { renderTaFlagTriage } from './views/ta/flag-triage.js';
@@ -170,9 +168,10 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/exam-templates', render: renderExamTemplates },
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
   { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
-  { path: '/instructor/course/:id/bank', render: renderBank },
-  { path: '/instructor/course/:id/queue', render: renderReviewQueue },
-  { path: '/instructor/course/:id/flags', render: renderFlagQueue },
+  { path: '/instructor/course/:id/questions', render: renderQuestions },
+  { path: '/instructor/course/:id/bank', render: renderLegacyQuestionsRedirect },
+  { path: '/instructor/course/:id/queue', render: renderLegacyQuestionsRedirect },
+  { path: '/instructor/course/:id/flags', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/import', render: renderImport },
   { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
   { path: '/instructor/course/:id/tas', render: renderPeople },

@@ -240,20 +240,25 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
     ]
   },
   {
-    "id": "instructor-review",
+    "id": "instructor-questions",
     "role": "instructor",
-    "label": "Review and approval",
-    "path": "queue",
+    "label": "Questions: review and release",
+    "path": "questions",
     "steps": [
       {
-        "selector": "[data-tutorial=\"review-filters\"]",
-        "title": "Focus your review queue",
-        "body": "Filter the queue to work through Draft questions. Check wording, answer correctness and learning-objective alignment."
+        "selector": "[data-tutorial=\"questions-tabs\"]",
+        "title": "One place for every question",
+        "body": "To review holds new drafts, Approved the questions you accepted, and Student flags anything students or TAs reported. Paused and Archived keep the rest."
       },
       {
-        "selector": "[data-tutorial=\"review-actions\"]",
-        "title": "Approval controls student access",
-        "body": "Instructors approve questions deliberately. Student Preview and released practice use Approved questions; TA review does not approve them."
+        "selector": "[data-tutorial=\"questions-reader\"]",
+        "title": "Decide with the evidence",
+        "body": "Read the question, the AI check and its sources, then approve, reject or edit. Approval is always a deliberate instructor decision; TA review does not approve questions."
+      },
+      {
+        "selector": "[data-tutorial=\"questions-release\"]",
+        "title": "Release by Topic",
+        "body": "Approved questions reach students only once the course is published and every Topic they are tagged to is released. This bar tells you when approved questions are still hidden."
       }
     ]
   },
@@ -354,24 +359,6 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
         "selector": "[data-tutorial=\"structure-outline\"]",
         "title": "Keep the saved outline teachable",
         "body": "Review objective wording, assigned materials and question kind. Topic release controls when its approved questions can reach students."
-      }
-    ]
-  },
-  {
-    "id": "instructor-bank",
-    "role": "instructor",
-    "label": "Question Bank and releases",
-    "path": "bank",
-    "steps": [
-      {
-        "selector": "[data-tutorial=\"bank-status\"]",
-        "title": "Separate approval from availability",
-        "body": "Approved questions can still be held by course publication, topic release or content checks. Use these views to see the exact state."
-      },
-      {
-        "selector": "[data-tutorial=\"bank-releases\"]",
-        "title": "Release by Topic",
-        "body": "Manage each Topic’s release explicitly. Releasing a Topic does not publish a draft course, and archiving preserves question history."
       }
     ]
   },
@@ -485,24 +472,6 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
         "selector": "[data-tutorial=\"people-invite\"]",
         "title": "Delegate with clear boundaries",
         "body": "Choose review, suggested-edit, analytics and flag-triage capabilities. Final question approval and flag resolution remain Instructor-only."
-      }
-    ]
-  },
-  {
-    "id": "instructor-flags",
-    "role": "instructor",
-    "label": "Student flags",
-    "path": "flags",
-    "steps": [
-      {
-        "selector": "[data-tutorial=\"flags-views\"]",
-        "title": "Separate active work from history",
-        "body": "Use status views and search to find reported questions. Preview TEST flags stay labelled and do not represent live student activity."
-      },
-      {
-        "selector": "[data-tutorial=\"flags-guidance\"]",
-        "title": "Resolve with evidence",
-        "body": "Inspect the recorded question version, student reason and TA escalation. Correctness-changing edits keep the remediation workflow explicit."
       }
     ]
   },

@@ -46,8 +46,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Course Materials', path: '/instructor/course/:id/materials', glyph: '1' },
       { label: 'Course Structure', path: '/instructor/course/:id/structure', glyph: '2', also: ['/instructor/course/:id/content-map'] },
       { label: 'Generate Questions', path: '/instructor/course/:id/preseeding', glyph: '3' },
-      { label: 'Review Queue', path: '/instructor/course/:id/queue', glyph: '4' },
-      { label: 'Question Bank', path: '/instructor/course/:id/bank', glyph: '5', also: ['/instructor/course/:id/import'] },
+      { label: 'Questions', path: '/instructor/course/:id/questions', glyph: '4', also: ['/instructor/course/:id/import', '/instructor/course/:id/bank/:questionId'] },
     ],
   },
   {
@@ -55,7 +54,6 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
     items: [
       { label: 'Exam Builder', path: '/instructor/course/:id/exam-builder', glyph: '▤' },
       { label: 'Student Analytics', path: '/instructor/course/:id/analytics', glyph: '↗' },
-      { label: 'Flags', path: '/instructor/course/:id/flags', glyph: '!' },
     ],
   },
   {
