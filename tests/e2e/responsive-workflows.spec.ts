@@ -69,6 +69,7 @@ test.describe('responsive cross-role workflows', () => {
 
     const datesResponse = await context.request.patch(`/api/courses/${courseId}`, {
       data: {
+        expectedRevision: ((await courseResponse.json()) as { revision?: number }).revision ?? 0,
         termStart: '2026-09-08T07:00:00.000Z',
         termEnd: '2026-12-07T08:00:00.000Z',
       },

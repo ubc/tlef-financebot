@@ -151,11 +151,11 @@ test.describe('Phase 2 flag safety loop', () => {
     questionVersionId = question.currentVersionId.toHexString();
 
     const pendingRes = await api.post(`/api/questions/${questionId}/transition`, {
-      data: { to: 'pending-review' },
+      data: { to: 'pending-review', expectedVersionId: questionVersionId },
     });
     expect(pendingRes.status()).toBe(200);
     const approvedRes = await api.post(`/api/questions/${questionId}/transition`, {
-      data: { to: 'approved' },
+      data: { to: 'approved', expectedVersionId: questionVersionId },
     });
     expect(approvedRes.status()).toBe(200);
 
