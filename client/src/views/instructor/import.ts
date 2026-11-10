@@ -480,9 +480,9 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
                   {
                     class: 'btn btn--ghost btn--sm',
                     type: 'button',
-                    onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/queue`),
+                    onclick: () => navigate(`/instructor/course/${encodeURIComponent(courseId)}/questions?tab=review`),
                   },
-                  'Open Review Queue',
+                  'Review imported questions',
                 ),
               ),
             );
@@ -514,7 +514,7 @@ export async function renderImport(outlet: HTMLElement, params: RouteParams): Pr
           }),
           el('div', { class: 'import-batch-assignment' }, el('label', { for: 'import-assignment', text: 'Assign this batch to' }), assignmentSelect),
           previewTable(preview.candidates, chosen, () => { confirmButton.textContent = `Import ${chosen.size} Draft${chosen.size === 1 ? '' : 's'}`; confirmButton.disabled = busy || committed || chosen.size === 0; }),
-          el('div', { class: 'import-commit-bar' }, el('span', { text: 'Selected questions will enter the Review Queue as Drafts.' }), confirmButton),
+          el('div', { class: 'import-commit-bar' }, el('span', { text: 'Selected questions will enter Questions → To review as Drafts.' }), confirmButton),
         ),
       ),
     );

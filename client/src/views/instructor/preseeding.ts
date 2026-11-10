@@ -447,8 +447,8 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
   }
 
   function queuePath(runId?: string | null): string {
-    const base = `/instructor/course/${encodeURIComponent(courseId)}/queue`;
-    return runId ? `${base}?runId=${encodeURIComponent(runId)}` : base;
+    const base = `/instructor/course/${encodeURIComponent(courseId)}/questions?tab=review`;
+    return runId ? `${base}&runId=${encodeURIComponent(runId)}` : base;
   }
 
   function openMaterials(): void {
@@ -1046,7 +1046,7 @@ async function renderPreseedingInner(outlet: HTMLElement, courseId: string): Pro
                   navigate(queuePath(activeFormRunId));
                 },
               },
-              'Go to Review Queue →',
+              'Review questions →',
             ),
           )
         : false,

@@ -13,10 +13,9 @@ export type NotificationAudience = 'instructor' | 'ta' | 'student';
  * `courseId` every course-scoped route needs, or a kind with no staff
  * surface to land on.
  *
- * Flag-ish kinds all land on the FLAG QUEUE rather than the instructor
- * question editor: the queue is where the flag reasons and the
- * Return/Edit/Archive actions live, and it exists for TAs too (the question
- * editor does not). The subject is passed as a query param for the view to
+ * Flag-ish kinds land on the flag surface rather than the question editor:
+ * for instructors the Questions workspace's Student flags tab (2026-11-09),
+ * for TAs their flag triage page. The subject is passed as a query param for the view to
  * scroll to and highlight -- `?flag=` when the ref is a flag, `?question=`
  * when it is a question. A kind whose ref is missing still routes to the
  * queue, just without a highlight; landing on the right surface beats doing
@@ -37,18 +36,22 @@ export function notificationTarget(n: AppNotification, audience: NotificationAud
   if (!n.courseId) return null;
 
   const course = encodeURIComponent(n.courseId);
-  const flags = audience === 'ta' ? `/ta/course/${course}/flags` : `/instructor/course/${course}/flags`;
-  const review = audience === 'ta' ? `/ta/course/${course}/review` : `/instructor/course/${course}/queue`;
+  // Instructors land on the Questions workspace's Student flags tab, which
+  // takes `&flag=` / `&q=`; TAs keep their own triage page (`?flag=` /
+  // `?question=`).
+  const ta = audience === 'ta';
+  const flags = ta ? `/ta/course/${course}/flags` : `/instructor/course/${course}/questions?tab=flags`;
+  const review = ta ? `/ta/course/${course}/review` : `/instructor/course/${course}/questions?tab=review`;
+  const join = ta ? '?' : '&';
   const ref = n.refId ? encodeURIComponent(n.refId) : undefined;
 
   switch (n.kind) {
     case 'flag':
     case 'flag-resolved':
-      return ref ? `${flags}?flag=${ref}` : flags;
+      return ref ? `${flags}${join}flag=${ref}` : flags;
     case 'auto-pause':
-      // refType 'question', refId = questionId (flags.service.ts checkAutoPause)
-      // -- the id the flag queue actually stamps on each group.
-      return ref ? `${flags}?question=${ref}` : flags;
+      // refType 'question', refId = questionId (flags.service.ts checkAutoPause).
+      return ref ? `${flags}${join}${ta ? 'question' : 'q'}=${ref}` : flags;
     case 'review-backlog':
       return review;
     case 'correction':

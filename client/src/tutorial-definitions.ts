@@ -417,7 +417,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"collaboration-save\"]",
         "title": "Save one reviewed version",
-        "body": "Saving validates the shared draft and creates a new question version in Review Queue. Download a copy before leaving if updates cannot be confirmed."
+        "body": "Saving validates the shared draft and creates a new question version in Questions → To review. Download a copy before leaving if updates cannot be confirmed."
       }
     ]
   },
@@ -453,7 +453,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"import-preview\"]",
         "title": "Preview before writing",
-        "body": "Inspect detected questions, assignments and rejected rows. Imported items enter Review Queue as Drafts and remain hidden from students."
+        "body": "Inspect detected questions, assignments and rejected rows. Imported items enter Questions → To review as Drafts and remain hidden from students."
       }
     ]
   },

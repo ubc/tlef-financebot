@@ -32,9 +32,9 @@ describe('course cockpit workflow destinations', () => {
     ['materials', '/materials'],
     ['content-map', '/content-map'],
     ['preseeding', '/preseeding'],
-    ['review-queue', '/queue'],
-    ['bank', '/bank'],
-    ['flags', '/flags'],
+    ['review-queue', '/questions?tab=review'],
+    ['bank', '/questions?tab=approved'],
+    ['flags', '/questions?tab=flags'],
     ['analytics', '/analytics'],
   ] as const)('maps %s to its course screen', (destination, suffix) => {
     expect(workflowActionPath(destination, 'course id')).toBe(

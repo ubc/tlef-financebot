@@ -56,9 +56,9 @@ const WORKFLOW_DESTINATIONS: Record<Exclude<InstructorWorkflowDestination, 'dash
   materials: '/instructor/course/:id/materials',
   'content-map': '/instructor/course/:id/content-map',
   preseeding: '/instructor/course/:id/preseeding',
-  'review-queue': '/instructor/course/:id/queue',
-  bank: '/instructor/course/:id/bank',
-  flags: '/instructor/course/:id/flags',
+  'review-queue': '/instructor/course/:id/questions?tab=review',
+  bank: '/instructor/course/:id/questions?tab=approved',
+  flags: '/instructor/course/:id/questions?tab=flags',
   analytics: '/instructor/course/:id/analytics',
   'student-preview': '/preview/course/:id',
 };
@@ -564,7 +564,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       'div',
       { class: 'quick-action-grid' },
       quickActionCard(courseId, 'Coverage Map', 'Find thin LOs and trace each one to sources and Approved questions', 'content-map'),
-      quickActionCard(courseId, 'Question Bank', 'Search, edit, version, and manage all questions', 'bank'),
+      quickActionCard(courseId, 'Questions', 'Review, edit, release and manage all questions', 'bank'),
       quickActionCard(courseId, 'Student Analytics', 'Explore learning, misconceptions, and engagement', 'analytics'),
       quickActionCard(
         courseId,

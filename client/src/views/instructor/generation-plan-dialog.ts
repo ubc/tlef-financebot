@@ -402,7 +402,7 @@ export function openGenerationPlanDialog(options: GenerationPlanDialogOptions): 
       el('h2', { class: 'app-dialog__title', id: 'generation-plan-title', text: 'Batch Generation' }),
       el('p', {
         class: 'app-dialog__message',
-        text: 'Auto suggests how many easy, medium and hard questions each Learning Objective needs, split into calculation and conceptual by its kind. Adjust any count, then generate. Every question enters the review queue first.',
+        text: 'Auto suggests how many easy, medium and hard questions each Learning Objective needs, split into calculation and conceptual by its kind. Adjust any count, then generate. Every question waits in Questions → To review first.',
       }),
       grid,
       status,

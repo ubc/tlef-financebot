@@ -186,7 +186,12 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   }
   if (analyticsVersionId) void loadAnalyticsVersion();
   const fromFlags = query.get('from') === 'flags';
-  const fromQueue = query.get('from') === 'queue';
+  // Every way back lands on the Questions workspace with this question
+  // selected; without a tab it opens the tab that holds the question's state.
+  const questionsBackPath = `/instructor/course/${encodeURIComponent(courseId)}/questions?${new URLSearchParams({
+    ...(fromFlags ? { tab: 'flags' } : {}),
+    q: questionId,
+  }).toString()}`;
   const flagVersionId = query.get('flagVersionId');
   let flagContext: Flag[] = [];
   if (fromFlags && flagVersionId) {
@@ -671,7 +676,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     void runButtonAction(rejectButton, async () => {
       const confirmed = await confirmDialog({
         title: 'Reject and archive this question?',
-        message: 'The question will be removed from student practice. It can later be restored to Draft from Question Bank.',
+        message: 'The question will be removed from student practice. It can later be restored to review from Questions → Archived.',
         confirmLabel: 'Reject & Archive',
         tone: 'danger',
       });
@@ -710,7 +715,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           return;
         }
       }
-      navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
+      navigate(questionsBackPath);
     });
   });
   flagArchiveButton.addEventListener('click', () => {
@@ -723,7 +728,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       });
       if (!confirmed || !await appendInternalNote()) return;
       if (!await resolveFlagContext('archive', false)) return;
-      navigate(`/instructor/course/${encodeURIComponent(courseId)}/flags`);
+      navigate(questionsBackPath);
     });
   });
   renderActionButtons();
@@ -1076,11 +1081,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   // --- Assemble --------------------------------------------------------------
 
-  const backPath = fromFlags
-    ? `/instructor/course/${encodeURIComponent(courseId)}/flags`
-    : fromQueue
-      ? `/instructor/course/${encodeURIComponent(courseId)}/queue`
-    : `/instructor/course/${encodeURIComponent(courseId)}/bank`;
+  const backPath = questionsBackPath;
   const containsTestFlags = flagContext.some((flag) => flag.source === 'instructor-preview-test');
   const containsRealFlags = flagContext.some((flag) => flag.source !== 'instructor-preview-test');
   const flagBanner = fromFlags
@@ -1121,7 +1122,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           navigate(backPath);
         },
       },
-      fromFlags ? '← Back to Flag Queue' : fromQueue ? '← Back to Review Queue' : '← Back to Question Bank',
+      '← Back to Questions',
     ),
     pageHeader('Question', ''),
     ...(detail.state !== 'archived' ? [el('a', { class: 'btn btn--instr-primary', href: `#/instructor/course/${detail.courseId}/bank/${questionId}/collaborate`, text: 'Edit together' })] : []),
@@ -1194,6 +1195,12 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   );
   updateSaveButton();
   renderInternalNotes();
+  // The Questions reader's "Regenerate side by side" lands here.
+  if (query.get('intent') === 'regenerate' && detail.state !== 'archived') {
+    regenerationOpen = true;
+    renderRegenerationPanel();
+    regenerationPanel.scrollIntoView({ block: 'start' });
+  }
   attachTutorial(body, 'instructor-question-editor', {"question-editor-content": ".question-editor", "question-editor-actions": ".question-actions"});
 }
 

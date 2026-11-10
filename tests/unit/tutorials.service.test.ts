@@ -26,7 +26,7 @@ describe('tutorial service', () => {
   it('keeps every Student micro-tutorial at 20 seconds or less', () => {
     expect(TUTORIAL_CATALOG.filter((item) => item.role === 'student')).toHaveLength(9);
     expect(TUTORIAL_CATALOG.filter((item) => String(item.role) === 'admin')).toHaveLength(6);
-    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'instructor')).toHaveLength(18);
+    expect(TUTORIAL_CATALOG.filter((item) => item.role === 'instructor')).toHaveLength(16);
     expect(TUTORIAL_CATALOG.filter((item) => item.role === 'ta')).toHaveLength(4);
     expect(new Set(TUTORIAL_CATALOG.map((item) => item.id)).size).toBe(TUTORIAL_CATALOG.length);
     expect(TUTORIAL_CATALOG.every((item) => item.estimatedSeconds <= 20)).toBe(true);

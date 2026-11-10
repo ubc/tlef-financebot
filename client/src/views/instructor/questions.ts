@@ -12,6 +12,7 @@ import {
   getCourseTree,
   getQuestion,
   getQuestionWorkspace,
+  listCourseFlags,
   transitionQuestion,
   type CourseTree,
   type PublicationState,
@@ -117,20 +118,36 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
           () => { highlightError = `Run ${runId.slice(-8)} could not be loaded, so nothing is highlighted.`; },
         )
         : Promise.resolve(),
+      // A notification names a flag, not its question: look the question up once.
+      highlightFlagId && !preferredId
+        ? listCourseFlags(courseId).then(
+          (flags) => { preferredId = flags.find((flag) => flag.id === highlightFlagId)?.questionId ?? ''; },
+          () => undefined,
+        )
+        : Promise.resolve(),
     ]);
     if (!tab) {
       tab = defaultTab(workspace.counts);
       if (tab !== firstTab) workspace = await getQuestionWorkspace(courseId, tab);
     }
+    // A selected question outside this tab (e.g. a flag that was already
+    // resolved, or an old /bank?q= link to a paused question): open its tab.
+    if (preferredId && !workspace.items.some((row) => row.id === preferredId)) {
+      const state = await getQuestion(preferredId).then((detail) => detail.state, () => null);
+      if (state && TAB_FOR_STATE[state] !== tab) {
+        tab = TAB_FOR_STATE[state];
+        workspace = await getQuestionWorkspace(courseId, tab);
+      }
+    }
   } catch (error) {
     mount(root, errorState(errorText(error), () => void renderQuestionsInner(outlet, courseId)));
     return;
   }
-  // A ?flag= arrival without ?q=: select the flagged question once rows are in.
-  let pendingFlagQuestion = !preferredId && highlightFlagId ? highlightFlagId : '';
-
   let activeTab: WorkspaceTab = tab;
-  let filters: WorkspaceFilters = { ...EMPTY_FILTERS };
+  // The Coverage Map links here with ?loId= to show one objective's questions.
+  const arrivalLo = query.get('loId') ?? '';
+  const arrivalTheme = tree.themes.find((theme) => (theme.los ?? []).some((lo) => lo._id === arrivalLo));
+  let filters: WorkspaceFilters = arrivalTheme ? { ...EMPTY_FILTERS, themeId: arrivalTheme._id, loId: arrivalLo } : { ...EMPTY_FILTERS };
   const selected = new Set<string>();
   let bulkBusy = false;
   let bulkMessage = '';
@@ -403,12 +420,6 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
 
   function drawList(): void {
     const shown = visibleRows();
-    if (pendingFlagQuestion) {
-      // ?flag= arrival: the flag's question is not known client-side, so pick the
-      // first row with open flags; the reader highlights the exact report.
-      preferredId = preferredId || shown.find((row) => row.openFlagCount > 0)?.id || '';
-      pendingFlagQuestion = '';
-    }
     const active = shown.find((row) => row.id === preferredId) ?? shown[0];
     const activeId = active?.id ?? '';
     const selectable = bulkActionsFor(activeTab).length > 0;

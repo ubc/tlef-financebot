@@ -474,15 +474,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
   function buildThemeDetail(theme: CourseTreeTheme): HTMLElement {
     const index = themes.indexOf(theme);
     const nameInput = el('input', { class: 'input', type: 'text', value: theme.name }) as HTMLInputElement;
-    const availableFromInput = el('input', {
-      class: 'input',
-      type: 'date',
-      value: theme.availableFrom ? theme.availableFrom.slice(0, 10) : '',
-    }) as HTMLInputElement;
     const errorSlot = el('div', { class: 'structure-editor-errors' });
     const release = themeAvailability(theme.availableFrom);
 
-    const applyTheme = async (patch: { name?: string; availableFrom?: string | null }): Promise<void> => {
+    const applyTheme = async (patch: { name?: string }): Promise<void> => {
       errorSlot.replaceChildren();
       try {
         const updated = await updateTheme(theme._id, patch, theme.revision ?? 0);
@@ -502,29 +497,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         errorSlot.replaceChildren(errorState('Topic name is required.'));
         return;
       }
-      // A date typed here schedules (or re-dates) the release; clearing a
-      // date that was set withdraws it; leaving it empty on an unreleased
-      // Topic changes nothing.
-      const scheduled = availableFromInput.value ? new Date(availableFromInput.value).toISOString() : undefined;
-      await applyTheme({
-        name,
-        ...(scheduled !== undefined ? { availableFrom: scheduled } : theme.availableFrom ? { availableFrom: null } : {}),
-      });
-    };
-
-    /** Manual release: stamps now, so the Topic and its questions are visible immediately. */
-    const releaseNow = async (): Promise<void> => {
-      await applyTheme({ availableFrom: new Date().toISOString() });
-    };
-
-    const withdraw = async (): Promise<void> => {
-      if (!await confirmDialog({
-        title: 'Withdraw this release?',
-        message: `"${theme.name}" and its Learning Objectives will be hidden from students again, and any question tagged to this Topic will stop being served until it is released again.`,
-        confirmLabel: 'Withdraw release',
-        tone: 'danger',
-      })) return;
-      await applyTheme({ availableFrom: null });
+      await applyTheme({ name });
     };
 
     return el(
@@ -549,26 +522,17 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         deleteButton({ type: 'theme', id: theme._id }),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Name'), nameInput),
+      // Release is managed only on the Questions page (spec 2026-11-09, D6);
+      // Structure shows the state read-only.
       el(
         'div',
         { class: `structure-release structure-release--${release.state}` },
         el('span', { class: 'structure-release__label', text: 'Release' }),
         el('span', { class: 'structure-release__state', text: release.label }),
-        release.state !== 'released'
-          ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => releaseNow() }, 'Release now')
-          : false,
-        release.state !== 'unreleased'
-          ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => withdraw() }, 'Withdraw release')
-          : false,
-      ),
-      el(
-        'div',
-        { class: 'form-field' },
-        fieldLabel(release.state === 'released' ? 'Release date' : 'Schedule release (optional)'),
-        availableFromInput,
-        el('p', {
-          class: 'form-field__help',
-          text: 'Students see this Topic, its Learning Objectives, and every question tagged to it from this date. Save to apply.',
+        el('a', {
+          class: 'btn btn--ghost btn--sm',
+          href: `#/instructor/course/${encodeURIComponent(courseId)}/questions?tab=approved`,
+          text: 'Manage releases in Questions →',
         }),
       ),
       errorSlot,

@@ -231,12 +231,12 @@ test.describe('Role experience on real SAML and MongoDB', () => {
   });
 
   test('keeps Instructor review help available after background question enrichment', async ({ page }) => {
-    await tutorialProgressCol().deleteOne({ puid: ownerPuid, role: 'instructor', tutorialId: 'instructor-review' });
+    await tutorialProgressCol().deleteOne({ puid: ownerPuid, role: 'instructor', tutorialId: 'instructor-questions' });
     await questionsCol().updateOne({ _id: new ObjectId(questionId) }, { $set: { state: 'pending-review' } });
-    await page.goto(`/#/instructor/course/${courseId}/queue`);
+    await page.goto(`/#/instructor/course/${courseId}/questions?tab=review`);
     await completeTour(page);
     await expect.poll(() => tutorialProgressCol().countDocuments({
-      puid: ownerPuid, role: 'instructor', tutorialId: 'instructor-review', status: 'completed',
+      puid: ownerPuid, role: 'instructor', tutorialId: 'instructor-questions', status: 'completed',
     })).toBe(1);
   });
 

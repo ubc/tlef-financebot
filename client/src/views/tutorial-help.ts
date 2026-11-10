@@ -93,9 +93,9 @@ async function destinationsFor(role: TutorialRole, course?: HelpCourse): Promise
   }
   if (role === 'ta') destinations['ta-courses'] = { href: '#/ta/courses' };
   if (!course) return destinations;
-  if (role === 'instructor') destinations['instructor-question-editor'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose an existing question; its tutorial begins after the editor loads.' };
-  if (role === 'instructor') destinations['instructor-collaboration'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose an existing question, then select Edit together to begin this walkthrough.' };
-  if (role === 'instructor') destinations['instructor-parameters'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/bank`, label: 'Open question bank', reason: 'Choose a parameterized question, then open Parameters to begin this walkthrough.' };
+  if (role === 'instructor') destinations['instructor-question-editor'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose an existing question; its tutorial begins after the editor loads.' };
+  if (role === 'instructor') destinations['instructor-collaboration'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose an existing question, then select Edit together to begin this walkthrough.' };
+  if (role === 'instructor') destinations['instructor-parameters'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose a parameterized question, then open Parameters to begin this walkthrough.' };
   if (role === 'ta') destinations['ta-question-review'] = { href: `#/ta/course/${encodeURIComponent(course.id)}/review`, label: 'Open review queue', reason: 'Choose an existing question; its tutorial begins after the detail loads.' };
   if (role === 'ta') {
     const permissions = await getMyCourseCapabilities(course.id);
@@ -176,7 +176,7 @@ export async function renderTutorialHelp(outlet: HTMLElement, params: RouteParam
         search,
         el('div', { class: 'admin-subhead' }, el('h3', { text: `${role[0].toUpperCase()}${role.slice(1)} tutorials` }), el('small', { text: `${availableTutorials.filter(t => t.status === 'completed').length} of ${availableTutorials.length} completed · Replay anytime` })), grid,
         role === 'instructor' && selected ? el('aside', { class: 'help-context' }, el('h3', { text: 'More course help' }),
-          ...[['structure', 'Open course structure'], ['flags', 'Open flag queue'], ['tas', 'Manage teaching team']].map(([path, label]) => el('a', { class: 'btn btn--ghost btn--sm', href: `#/instructor/course/${encodeURIComponent(selected!.id)}/${path}`, text: label }))) : false);
+          ...[['structure', 'Open course structure'], ['questions?tab=flags', 'Open student flags'], ['tas', 'Manage teaching team']].map(([path, label]) => el('a', { class: 'btn btn--ghost btn--sm', href: `#/instructor/course/${encodeURIComponent(selected!.id)}/${path}`, text: label }))) : false);
       renderCards();
     };
     const showError = (error: unknown): void => { if (fresh()) root.replaceChildren(errorState((error as Error).message, () => void render().catch(showError))); };

@@ -101,7 +101,7 @@ export async function renderCollaborativeEditor(outlet: HTMLElement, params: Rou
       pendingCommit = undefined;
       errorMessage = '';
       savedNotice.hidden = false;
-      savedNotice.textContent = 'Version saved to Review Queue. Open question details to review and approve it.';
+      savedNotice.textContent = 'Version saved to Questions → To review. Open it there to review and approve it.';
     } catch (error) {
       if (error instanceof ApiError && error.status < 500) pendingCommit = undefined;
       errorMessage = (error as Error).message;

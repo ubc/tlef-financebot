@@ -3,8 +3,10 @@ import { getSession } from './auth.js';
 import { el, mount } from './dom.js';
 import { startAnonymousPreview } from './preview-session.js';
 
-const routes = ['materials', 'structure', 'preseeding', 'queue', 'bank'];
-const labels = ['Materials', 'Objectives', 'Generate', 'Review', 'Question Bank', 'Student Preview'];
+// Review and Release both live on the Questions workspace (2026-11-09).
+const routes = ['materials', 'structure', 'preseeding', 'questions?tab=review', 'questions?tab=approved'];
+const routeSegment = (route: string): string => route.split('?')[0];
+const labels = ['Materials', 'Objectives', 'Generate', 'Review', 'Release', 'Student Preview'];
 const tasks = ['Upload course materials', 'Define your learning objectives', 'Generate your first questions', 'Review your questions', 'Release an approved topic', 'Try the student experience'];
 interface Journey { courseId: string; step: number; collapsed: boolean }
 let journey: Journey | undefined;
@@ -52,14 +54,14 @@ function details(): string[] {
     `${c.learningObjectives} objectives. Add or refine the topics students should learn.`,
     `${c.totalQuestions} questions · ${c.activeGenerationRuns} active runs. Start generation on this page.`,
     `${c.reviewQueue} awaiting review · ${c.approvedQuestions} approved. Review answers before approving.`,
-    released ? 'Approved, checked questions are ready for preview. Live access also requires a published course.' : 'Approve a question, then release its topics in Manage topic releases. Content checks must pass.',
+    released ? 'Approved, checked questions are ready for preview. Live access also requires a published course.' : 'Approve a question, then release its topics with Manage releases on the Questions page. Content checks must pass.',
     'Use the isolated Student Preview, then return through the role menu. No live student records are affected.' ];
 }
 function go(step: number): void {
   if (!journey) return;
   const nextStep = Math.max(0, Math.min(5, step));
   if (nextStep === 5) {
-    if (!released) { location.hash = `${base()}/bank`; return; }
+    if (!released) { location.hash = `${base()}/questions?tab=approved`; return; }
     startAnonymousPreview(journey.courseId);
     location.hash = `/preview/course/${encodeURIComponent(journey.courseId)}`;
   } else location.hash = `${base()}/${routes[nextStep]}`;
@@ -85,7 +87,9 @@ function draw(): void {
   const j = journey!;
   const done = completions();
   routes.forEach((route, index) => {
-    const link = Array.from(document.querySelectorAll<HTMLAnchorElement>('.nav a')).find(a => a.getAttribute('href') === `#${base()}/${route}`);
+    // Review and Release share one sidebar item; it shows the earlier step.
+    if (routes.findIndex(other => routeSegment(other) === routeSegment(route)) !== index) return;
+    const link = Array.from(document.querySelectorAll<HTMLAnchorElement>('.nav a')).find(a => a.getAttribute('href') === `#${base()}/${routeSegment(route)}`);
     if (!link) return;
     link.dataset.journeyStep = String(index);
     link.classList.toggle('journey-current', index === j.step);
@@ -154,8 +158,9 @@ async function refresh(): Promise<void> {
 function onRoute(): void {
   if (journey && path() === `/preview/course/${encodeURIComponent(journey.courseId)}`) { journey.step = 5; save(); }
   if (journey && visible()) {
-    const suffix = path().slice(base().length + 1).split('/')[0]; const index = routes.indexOf(suffix);
-    if (index >= 0) journey.step = index;
+    const suffix = path().slice(base().length + 1).split('/')[0];
+    const matches = routes.flatMap((route, index) => routeSegment(route) === suffix ? [index] : []);
+    if (matches.length && !matches.includes(journey.step)) journey.step = matches[0];
     save();
   }
   draw(); void refresh();

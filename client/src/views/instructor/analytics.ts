@@ -95,7 +95,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
       el('aside', { class: 'analytics-inspector', 'aria-label': 'Topic detail' },
         el('span', { class: 'analytics-eyebrow', text: 'TOPIC DETAIL' }), el('h2', { text: 'Learning objectives' }), focus,
         el('p', { class: 'muted', text: 'Rates require 5 attempts. No activity means no evidence, not poor performance.' }),
-        el('div', { class: 'analytics-related-links' }, ...(workspace === 'instructor' ? [link('Open Coverage Map', 'content-map')] : []), link('Review student flags', 'flags')))),
+        el('div', { class: 'analytics-related-links' }, ...(workspace === 'instructor' ? [link('Open Coverage Map', 'content-map')] : []), link('Review student flags', workspace === 'instructor' ? 'questions?tab=flags' : 'flags')))),
     section('Question answer patterns', 'analytics-question-patterns',
       el('p', { class: 'muted', text: 'Compare recorded versions within the selected activity scope. Each attempt counts once, including questions used across multiple objectives.' }),
       el('div', { class: 'analytics-controls' }, questionSearch, el('label', {}, 'Learning objective', lo)), patternList, distribution),
@@ -208,7 +208,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
         el('thead', {}, el('tr', {}, ...['Question / recorded version', 'Accuracy', 'Attempts'].map(text => el('th', { scope: 'col', text })))),
         el('tbody', {}, ...items.map(item => el('tr', { class: item.versionId === selectedVersion ? 'analytics-selected-row' : '' },
           el('td', {}, el('strong', { text: item.stem }), el('p', { text: `${item.objectiveCount > 1 ? `Across ${item.objectiveCount} learning objectives` : item.loName} · Version ${item.version ?? 'unknown'} · ${item.isCurrent ? 'Current' : 'Historical'}` }),
-            item.available ? button(`View version ${item.version ?? ''} answers`, () => { selectedVersion = item.versionId; drawPatterns(snapshot); }) : workspace === 'instructor' ? link('Review available questions', 'bank') : el('span', { text: 'Question version unavailable' })),
+            item.available ? button(`View version ${item.version ?? ''} answers`, () => { selectedVersion = item.versionId; drawPatterns(snapshot); }) : workspace === 'instructor' ? link('Review available questions', 'questions?tab=approved') : el('span', { text: 'Question version unavailable' })),
           el('td', { text: percent(item.failureRate) }), el('td', { text: String(item.attempts) })))))));
     if (!items.length) { ++distributionRevision; distribution.replaceChildren(); patternList.append(el('p', { text: query ? 'No matching questions. Try another search or select a learning objective.' : 'No question attempts in this scope. Try a wider date range.' })); return; }
     const selected = items.find(item => item.versionId === selectedVersion && item.available) ?? items.find(item => item.available);

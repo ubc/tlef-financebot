@@ -15,7 +15,7 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
     let graph: CourseKnowledgeGraph | undefined; let graphRequest = 0;
     const ready = (lo: ContentMapLo) => lo.materials.some(m => m.status === 'ready') && lo.questionCounts.approved >= 3;
     const pending = (lo: ContentMapLo) => lo.questionCounts.draft + lo.questionCounts['pending-review'] + lo.questionCounts.reviewed;
-    const destination = (path: string, loId?: string) => `#/instructor/course/${encodeURIComponent(courseId)}/${path}${loId ? '?loId=' + encodeURIComponent(loId) : ''}`;
+    const destination = (path: string, loId?: string) => `#/instructor/course/${encodeURIComponent(courseId)}/${path}${loId ? `${path.includes('?') ? '&' : '?'}loId=${encodeURIComponent(loId)}` : ''}`;
     const released = (id: string) => { const date = tree.themes.find(t => t._id === id)?.availableFrom; return !!date && Date.parse(date) <= Date.now(); };
     const actions = el('div', { class: 'coverage-switch', 'aria-label': 'Coverage view' });
     const panel = el('div');
@@ -58,7 +58,7 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
       const lo = shown.find(r => r.loId === selected)!;
       const running = lo.latestGenerationRun && ['queued', 'running'].includes(lo.latestGenerationRun.status);
       const noSource = !lo.materials.some(m => m.status === 'ready');
-      const path = noSource ? 'materials' : pending(lo) ? 'queue' : running ? 'preseeding' : ready(lo) ? 'bank' : 'preseeding';
+      const path = noSource ? 'materials' : pending(lo) ? 'questions?tab=review' : running ? 'preseeding' : ready(lo) ? 'questions?tab=approved' : 'preseeding';
       const label = noSource ? 'Review supporting materials' : pending(lo) ? 'Review questions' : running ? 'View generation' : ready(lo) ? 'View approved questions' : 'Generate questions';
       const reason = noSource ? 'Link a ready source before generating questions.' : pending(lo) ? 'Review existing questions before generating more.' : running ? 'Generation is already in progress for this objective.' : ready(lo) ? 'The coverage target is met. Release and content checks still determine student access.' : 'This objective needs more approved questions to meet the coverage target.';
       const inspector = el('aside', { class: 'coverage-inspector' }, el('small', { text: lo.topic }), el('h2', { text: lo.name }),

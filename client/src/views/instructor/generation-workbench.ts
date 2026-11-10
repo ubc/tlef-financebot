@@ -191,7 +191,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     const reader = el('article', { class: 'gw-reader', 'aria-label': 'Generated question preview' });
     const progress = el('aside', { class: 'gw-plan gw-inspector', 'aria-label': 'Generation progress' });
     mount(live, el('nav', { class: 'gw-objectives', 'aria-label': 'Generated drafts' }, el('div', { class: 'gw-pane-title', text: 'GENERATED QUESTIONS' }), draftList,
-      el('div', { class: 'gw-pane-foot' }, link('Open review queue →', `${base}/queue`))), reader, progress);
+      el('div', { class: 'gw-pane-foot' }, link('Open questions to review →', `${base}/questions?tab=review`))), reader, progress);
 
     function cells(): GenerationPlanCell[] {
       return objectives.filter(lo => selected.has(lo._id)).flatMap(lo => {
@@ -363,7 +363,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           lastEvent && el('p', { class: 'gw-plan-note', text: lastEvent.message }),
           active(run) && run.stage === 'queued' && el('p', { class: 'gw-plan-note', text: 'Waiting for an available worker. No question text is expected yet.' }),
           active(run) && run.stage !== 'queued' && el('p', { class: 'gw-plan-note', text: 'Checks may run without new question text. Activity below comes from recorded model calls.' }),
-          run.error && el('small', { class: 'gw-run-error', text: run.error.code === 'generation-ended' ? 'Saved drafts remain available in Review Queue.' : generationIssue(run.error.message, run.error.code) }),
+          run.error && el('small', { class: 'gw-run-error', text: run.error.code === 'generation-ended' ? 'Saved drafts remain available in Questions → To review.' : generationIssue(run.error.message, run.error.code) }),
           !!run.result?.checks?.length && el('section', { class: 'gw-check-results', 'aria-label': 'Returned check explanations' }, el('h3', { text: 'CHECK RESULTS' }),
             ...run.result.checks.filter(check => !question || item === undefined || check.item === item).slice(-3).map(check => el('details', { open: true },
               el('summary', { text: `Question ${check.item + 1} · ${check.check === 'answer-validation' ? 'Answer check' : 'Quality review'} · ${check.verdict}` }),
@@ -462,13 +462,13 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
             mount(reader, el('div', { class: 'gw-waiting', 'data-run': preview._id, 'data-state': `${preview.status}:${preview.stage}` },
               active(preview) && el('span', { class: 'gw-live-dot', 'aria-hidden': 'true' }),
               el('h2', { text: active(preview) ? preview.stage === 'generating' ? 'The model is thinking…' : stageName(preview.stage) : preview.error?.code === 'generation-ended' ? 'Generation ended' : 'Task finished' }),
-              el('p', { text: active(preview) ? preview.stage === 'generating' ? 'It reasons before it writes, which usually takes 10–20 seconds. The question will stream in here as soon as it starts writing.' : 'Question text will appear when the model starts writing. Follow this task’s recorded activity on the right.' : (preview.result?.createdQuestionIds.length ?? 0) > 0 ? 'Saved drafts remain in Review Queue. Select another question or start a new batch.' : 'This task saved no questions. Inspect the source checks, diagnostic candidates and shortfall reasons on the right.' }), link('Open review queue →', `${base}/queue`)));
+              el('p', { text: active(preview) ? preview.stage === 'generating' ? 'It reasons before it writes, which usually takes 10–20 seconds. The question will stream in here as soon as it starts writing.' : 'Question text will appear when the model starts writing. Follow this task’s recorded activity on the right.' : (preview.result?.createdQuestionIds.length ?? 0) > 0 ? 'Saved drafts wait in Questions → To review. Select another question or start a new batch.' : 'This task saved no questions. Inspect the source checks, diagnostic candidates and shortfall reasons on the right.' }), link('Open questions to review →', `${base}/questions?tab=review`)));
           }
         }
         else if (drafts[0] && autoShown !== drafts[0].id) void showQuestion(drafts[0], true);
       }
       if (!drafts.length && !selectedQuestion && !streaming.length) mount(reader, el('div', { class: 'gw-waiting' }, el('span', { class: items.some(active) ? 'gw-live-dot' : 'gw-empty-mark', 'aria-hidden': 'true', text: items.some(active) ? '' : '＋' }), el('h2', { text: items.some(active) ? 'Your questions are taking shape' : 'Ready for your next batch' }),
-        el('p', { text: items.some(active) ? 'Follow the checks on the right. You can review completed questions while the rest of the batch runs.' : 'Choose learning objectives and a short teaching brief to begin.' }), link('Open review queue →', `${base}/queue`)));
+        el('p', { text: items.some(active) ? 'Follow the checks on the right. You can review completed questions while the rest of the batch runs.' : 'Choose learning objectives and a short teaching brief to begin.' }), link('Open questions to review →', `${base}/questions?tab=review`)));
       const completed = items.reduce((sum,run) => sum + (run.kind === 'question-generation' ? run.result?.createdQuestionIds.length ?? 0 : 0),0);
       const total = submission ? submission.cells.reduce((sum,cell) => sum+cell.count,0) : items.reduce((sum,run) => sum+(run.totalUnits ?? (run.kind === 'question-generation' ? run.input.count : 0)),0);
       drawInspector(items, completed, total);
@@ -588,21 +588,21 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const assessment = el('div', { class: 'gw-assessment' }); content.append(assessment);
       mount(reader, following && el('p', { class: 'gw-stream-status gw-plan-note', role: 'status' }, el('span', { class: 'gw-live-dot', 'aria-hidden': 'true' }),
         ' Saved. The next question is being written and will appear here automatically. Click any question on the left to stay on it.'),
-        content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/queue?runId=${encodeURIComponent(run?._id ?? '')}`, true)));
+        content, el('footer', { class: 'gw-footer' }, el('small', { text: 'Review the answer and evidence before approving.' }), link('Review questions →', `${base}/questions?tab=review&runId=${encodeURIComponent(run?._id ?? '')}`, true)));
       try {
         const detail = await getQuestion(question.id);
         if (disposed || revision !== readerRevision) return;
-        if (detail.currentVersionId !== question.current._id) { assessment.textContent = 'This question has changed. Open Review Queue to see the current version.'; return; }
+        if (detail.currentVersionId !== question.current._id) { assessment.textContent = 'This question has changed. Open Questions to see the current version.'; return; }
         if (detail.agentDecision) mount(assessment, el('h3', { text: detail.agentDecision.decision === 'pass' ? 'AI quality check passed' : detail.agentDecision.decision === 'flag' ? 'AI flagged this question' : 'AI recommends rejection' }), rich(detail.agentDecision.reasoning,''), detail.agentDecision.roleAssessment && el('details', {}, el('summary', { text: 'Answer checks' }), rich(detail.agentDecision.roleAssessment,'')));
         else assessment.textContent = 'AI assessment is not available. Review this question yourself.';
-      } catch { if (!disposed && revision === readerRevision) assessment.textContent = 'Assessment could not load. Open Review Queue to try again.'; }
+      } catch { if (!disposed && revision === readerRevision) assessment.textContent = 'Assessment could not load. Open Questions to try again.'; }
     }
     async function refreshDrafts(): Promise<void> {
       if (disposed) return;
       if (fetching) { refreshAgain = true; return; }
       fetching = true;
       try { const result = await browseBank(courseId); if (!disposed) { bank = result.questions; drawLive(); } }
-      catch { if (!disposed) say('Draft previews could not refresh. Your generation is still tracked; open Review Queue or refresh this page.'); }
+      catch { if (!disposed) say('Draft previews could not refresh. Your generation is still tracked; open Questions or refresh this page.'); }
       finally { fetching = false; if (refreshAgain && !disposed) { refreshAgain = false; scheduleRefresh(); } }
     }
     function scheduleDraw(immediate = false): void {

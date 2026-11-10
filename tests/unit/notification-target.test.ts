@@ -26,9 +26,9 @@ describe('notificationTarget', () => {
     expect(notificationTarget(notification({ courseId: undefined }), 'instructor')).toBeNull();
   });
 
-  it('routes a flag to the instructor flag queue, highlighting the flag', () => {
+  it('routes a flag to the instructor Student flags tab, highlighting the flag', () => {
     const target = notificationTarget(notification({ kind: 'flag', refId: 'flag-9' }), 'instructor');
-    expect(target).toBe('/instructor/course/course-1/flags?flag=flag-9');
+    expect(target).toBe('/instructor/course/course-1/questions?tab=flags&flag=flag-9');
   });
 
   it('routes a flag to the TA flag queue for TAs', () => {
@@ -38,12 +38,12 @@ describe('notificationTarget', () => {
 
   it('routes flag-resolved by flag id too', () => {
     const target = notificationTarget(notification({ kind: 'flag-resolved', refId: 'flag-3' }), 'instructor');
-    expect(target).toBe('/instructor/course/course-1/flags?flag=flag-3');
+    expect(target).toBe('/instructor/course/course-1/questions?tab=flags&flag=flag-3');
   });
 
   it('routes auto-pause by question id', () => {
     const target = notificationTarget(notification({ kind: 'auto-pause', refId: 'q-7' }), 'instructor');
-    expect(target).toBe('/instructor/course/course-1/flags?question=q-7');
+    expect(target).toBe('/instructor/course/course-1/questions?tab=flags&q=q-7');
   });
 
   // Review fix (round 2): `correction`'s refId is a questionVERSION id
@@ -57,14 +57,14 @@ describe('notificationTarget', () => {
 
   it('routes review-backlog to each audience own review surface', () => {
     expect(notificationTarget(notification({ kind: 'review-backlog' }), 'instructor'))
-      .toBe('/instructor/course/course-1/queue');
+      .toBe('/instructor/course/course-1/questions?tab=review');
     expect(notificationTarget(notification({ kind: 'review-backlog' }), 'ta'))
       .toBe('/ta/course/course-1/review');
   });
 
   it('routes daily-summary to the flag queue with no highlight', () => {
     expect(notificationTarget(notification({ kind: 'daily-summary' }), 'instructor'))
-      .toBe('/instructor/course/course-1/flags');
+      .toBe('/instructor/course/course-1/questions?tab=flags');
   });
 
   it('returns null for the student-facing redirect kind', () => {
@@ -73,7 +73,7 @@ describe('notificationTarget', () => {
 
   it('still lands on the queue when the ref id is missing', () => {
     expect(notificationTarget(notification({ kind: 'flag', refId: undefined }), 'instructor'))
-      .toBe('/instructor/course/course-1/flags');
+      .toBe('/instructor/course/course-1/questions?tab=flags');
   });
 
   it('encodes ids that need escaping', () => {
@@ -81,7 +81,7 @@ describe('notificationTarget', () => {
       notification({ courseId: 'a/b', kind: 'flag', refId: 'c d' }),
       'instructor',
     );
-    expect(target).toBe('/instructor/course/a%2Fb/flags?flag=c%20d');
+    expect(target).toBe('/instructor/course/a%2Fb/questions?tab=flags&flag=c%20d');
   });
 
   it('never throws on an unknown kind', () => {
