@@ -404,9 +404,10 @@ export async function remediationReportForFlag(flagId: ObjectId): Promise<Remedi
 export async function listFlags(
   courseId: ObjectId,
   state?: FlagState,
+  questionId?: ObjectId,
 ): Promise<Array<WithId<Flag> & { question: WithId<Question> | null; currentVersion: WithId<QuestionVersion> | null }>> {
   const flags = await flagsCol()
-    .find({ courseId, ...(state !== undefined ? { state } : {}) })
+    .find({ courseId, ...(state !== undefined ? { state } : {}), ...(questionId !== undefined ? { questionId } : {}) })
     .toArray();
 
   return Promise.all(

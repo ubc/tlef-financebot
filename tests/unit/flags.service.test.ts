@@ -901,4 +901,14 @@ describe('listFlags', () => {
     expect(result[0].currentVersion).toEqual(version);
     expect(flagsFind).toHaveBeenCalledWith({ courseId });
   });
+
+  it('narrows to one question when questionId is given', async () => {
+    const courseId = new ObjectId();
+    const questionId = new ObjectId();
+    flagsFindToArray.mockResolvedValue([]);
+
+    await listFlags(courseId, undefined, questionId);
+
+    expect(flagsFind).toHaveBeenCalledWith({ courseId, questionId });
+  });
 });

@@ -26,6 +26,10 @@ jest.mock('../../server/src/services/question-similarity.service', () => ({
   refreshQuestionSimilarity: jest.fn(),
   rebuildCourseSimilarity: jest.fn(),
 }));
+jest.mock('../../server/src/services/question-workspace.service', () => ({
+  ...jest.requireActual('../../server/src/services/question-workspace.service'),
+  loadQuestionWorkspace: jest.fn(),
+}));
 jest.mock('../../server/src/services/capabilities.service', () => ({
   hasCapability: jest.fn(async (user: User, requestedCourseId: ObjectId) => user.courseRoles.some(
     (entry) => entry.role === 'instructor' && entry.courseId.equals(requestedCourseId),
@@ -42,6 +46,7 @@ import {
   getQuestionDetail,
 } from '../../server/src/services/bank.service';
 import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../../server/src/services/question-similarity.service';
+import { loadQuestionWorkspace } from '../../server/src/services/question-workspace.service';
 import { addQuestionInternalNote, editQuestion, transitionQuestion, bulkTransition, bulkDeleteUnserved } from '../../server/src/services/questions.service';
 
 const courseId = new ObjectId();
@@ -388,6 +393,53 @@ describe('GET /api/courses/:courseId/review-queue (IN-Q02)', () => {
     const res = await request(makeApp(student)).get(`/api/courses/${courseId.toHexString()}/review-queue`);
     expect(res.status).toBe(403);
     expect(reviewQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/courses/:courseId/question-workspace', () => {
+  const url = `/api/courses/${courseId.toHexString()}/question-workspace`;
+  const counts = { review: 1, approved: 0, approvedVisible: 0, approvedWaiting: 0, flags: 1, paused: 0, archived: 0 };
+  const release = { coursePublished: false, themes: [], hiddenApprovedCount: 0 };
+
+  it('403s without question.review', async () => {
+    const res = await request(makeApp(student)).get(url);
+    expect(res.status).toBe(403);
+    expect(loadQuestionWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('400s an unknown tab', async () => {
+    const res = await request(makeApp(instructor)).get(`${url}?tab=bank`);
+    expect(res.status).toBe(400);
+    expect(loadQuestionWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('defaults to the review tab and returns rows with workspace fields', async () => {
+    const versionId = new ObjectId();
+    const row = {
+      item: {
+        _id: questionId, courseId, currentVersionId: versionId, currentVersion: 1, state: 'draft', loIds: [], themeIds: [],
+        labels: [], internalNotes: [], createdAt: new Date(), updatedAt: new Date(),
+        current: { _id: versionId, questionId, version: 1, type: 'mcq', stem: 'Stem', options: [], difficulty: 'easy', sourceRefs: [], createdBy: 'p', createdAt: new Date() },
+      },
+      agentVerdict: 'flag', openFlagCount: 1, priority: 1, studentVisible: false, hiddenReason: 'not-approved',
+    };
+    jest.mocked(loadQuestionWorkspace).mockResolvedValue({ counts, release, rows: [row] } as never);
+
+    const res = await request(makeApp(instructor)).get(url);
+
+    expect(res.status).toBe(200);
+    expect(jest.mocked(loadQuestionWorkspace).mock.calls[0][1]).toBe('review');
+    expect(res.body).toMatchObject({ tab: 'review', counts, release });
+    expect(res.body.items[0]).toMatchObject({
+      id: questionId.toHexString(), state: 'draft', agentVerdict: 'flag', openFlagCount: 1, priority: 1,
+      studentVisible: false, hiddenReason: 'not-approved', contentReady: true,
+    });
+  });
+
+  it('404s an unknown course', async () => {
+    jest.mocked(loadQuestionWorkspace).mockRejectedValue(new Error('course-not-found'));
+    const res = await request(makeApp(instructor)).get(`${url}?tab=approved`);
+    expect(res.status).toBe(404);
   });
 });
 

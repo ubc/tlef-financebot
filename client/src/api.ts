@@ -3227,6 +3227,60 @@ export function getReviewQueue(courseId: string): Promise<ReviewQueueItem[]> {
   return request<ReviewQueueItem[]>(`/api/courses/${encodeURIComponent(courseId)}/review-queue`);
 }
 
+// --- Questions workspace (spec 2026-11-09) ----------------------------------
+
+export const WORKSPACE_TABS = ['review', 'approved', 'flags', 'paused', 'archived'] as const;
+export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
+
+/** Why an item is not visible to students. Decided by the server; the client
+ * only words it. */
+export type HiddenReason = 'not-approved' | 'course-unpublished' | 'topic-unreleased' | 'topic-scheduled' | 'content-not-ready';
+
+export interface WorkspaceRow extends BankQuestion {
+  agentVerdict?: 'pass' | 'flag' | 'reject';
+  openFlagCount: number;
+  /** To review only: bank.service reviewQueue() tier. */
+  priority?: number;
+  studentVisible: boolean;
+  hiddenReason?: HiddenReason;
+}
+
+export interface WorkspaceReleaseTheme {
+  themeId: string;
+  name: string;
+  order: number;
+  /** For PATCH /api/themes/:themeId's expectedRevision. */
+  revision: number;
+  availableFrom: string | null;
+  released: boolean;
+  approvedCount: number;
+}
+
+export interface QuestionWorkspace {
+  tab: WorkspaceTab;
+  counts: {
+    review: number;
+    approved: number;
+    approvedVisible: number;
+    approvedWaiting: number;
+    flags: number;
+    paused: number;
+    archived: number;
+  };
+  release: {
+    coursePublished: boolean;
+    themes: WorkspaceReleaseTheme[];
+    hiddenApprovedCount: number;
+  };
+  items: WorkspaceRow[];
+}
+
+/** GET /api/courses/:courseId/question-workspace?tab= — counts, release
+ * summary and the requested tab's rows. Requires question.review. */
+export function getQuestionWorkspace(courseId: string, tab: WorkspaceTab): Promise<QuestionWorkspace> {
+  return request<QuestionWorkspace>(`/api/courses/${encodeURIComponent(courseId)}/question-workspace?tab=${encodeURIComponent(tab)}`);
+}
+
 // --- Phase 3: Teaching Assistants ------------------------------------------
 
 export type Capability =
@@ -3590,8 +3644,11 @@ export interface Flag {
  * current version (`listFlags`). Instructor-only. `state` omitted fetches
  * every flag state for the course — flags.ts always calls it this way and
  * groups/filters open-vs-resolved client-side (see its module note). */
-export function listCourseFlags(courseId: string, state?: FlagState): Promise<Flag[]> {
-  const qs = state ? `?state=${encodeURIComponent(state)}` : '';
+export function listCourseFlags(courseId: string, state?: FlagState, questionId?: string): Promise<Flag[]> {
+  const params = new URLSearchParams();
+  if (state) params.set('state', state);
+  if (questionId) params.set('questionId', questionId);
+  const qs = params.size ? `?${params.toString()}` : '';
   return request<Flag[]>(`/api/courses/${encodeURIComponent(courseId)}/flags${qs}`);
 }
 

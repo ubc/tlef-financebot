@@ -391,6 +391,21 @@ material ids are rejected before hierarchy creation begins.
 - `POST /api/questions/bulk-transition { questionIds, to }` → `{ updated }`
 - `POST /api/questions/bulk-delete { questionIds }` → `{ deleted, skipped: [{ questionId, reason }] }` — hard-deletes never-served questions only (never approved; no attempt, exam attempt, flag or review-book reference). Anything else is skipped with `reason` ∈ `ever-approved` | `has-history` | `not-found`; archive those instead. Same course-span and instructor guards as bulk-transition.
 - `GET /api/courses/:courseId/review-queue` → prioritized list (IN-Q02)
+- `GET /api/courses/:courseId/question-workspace?tab=review|approved|flags|paused|archived`
+  (default `review`; requires `question.review`) → `{ tab, counts, release, items }`.
+  `counts`: `review` (draft, pending-review, reviewed), `approved`,
+  `approvedVisible`, `approvedWaiting`, `flags` (questions with an open or
+  escalated flag, any state), `paused`, `archived`. `release`:
+  `{ coursePublished, hiddenApprovedCount, themes: [{ themeId, name, order,
+  revision, availableFrom, released, approvedCount }] }` for active Topics.
+  `items` are the requested tab's bank rows (the browse shape incl. `sample`)
+  plus `openFlagCount`, `studentVisible`, optional `hiddenReason`
+  (`not-approved | course-unpublished | topic-unreleased | topic-scheduled |
+  content-not-ready`), `agentVerdict` (`pass | flag | reject`, absent on edited
+  versions) and, on the review tab, `priority`. `studentVisible` = approved ∧
+  course lifecycle `published` ∧ every tagged Topic released ∧ `contentReady`.
+  Ordering: review by review-queue priority; approved by Topic then LO order;
+  flags by open count then newest flag; paused/archived newest first.
 - `POST /api/courses/:courseId/generate`
   `{ loId, count?, type?, difficulty?, prompt? }` or `{ blueprintId }` →
   202 `{ runId }` — a unique durable generation run; results land as Draft
@@ -475,8 +490,8 @@ question (embedding cosine, informational only) sharing an LO or a topic. The em
 
 ## Instructor flag resolution
 
-- `GET /api/courses/:courseId/flags?state=` → flags joined with their question
-  head and current version. `source: 'instructor-preview-test'` identifies a
+- `GET /api/courses/:courseId/flags?state=&questionId=` → flags joined with their question
+  head and current version; `questionId` narrows to one question. `source: 'instructor-preview-test'` identifies a
   TEST case that does not affect student analytics or auto-pause.
 - `POST /api/flags/:flagId/resolve`
   `{ action: 'correct' | 'archive' | 'clear', correctnessAffecting?, comment? }`

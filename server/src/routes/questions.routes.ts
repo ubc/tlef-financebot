@@ -21,6 +21,7 @@ import {
   bulkTransition,
 } from '../services/questions.service';
 import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../services/question-similarity.service';
+import { isContentReady, loadQuestionWorkspace, WORKSPACE_TABS } from '../services/question-workspace.service';
 import {
   resolveParamValues,
   substituteParams,
@@ -34,7 +35,7 @@ import {
   optionValueNamesForVerification,
   verifyQuestionNumerics,
 } from '../services/numeric-verification.service';
-import { isServable, unresolvablePlaceholders, type NumericGateVersion } from '../services/numeric-gate.service';
+import { unresolvablePlaceholders, type NumericGateVersion } from '../services/numeric-gate.service';
 import type { Question, PublicationState, QuestionType, Difficulty, QuestionLabel, OptionRole, ParamSlot, DerivedValue, NumericVerification } from '../types/domain';
 
 // Question bank endpoints (IN-Q02, IN-Q05, IN-Q08) — the instructor-facing
@@ -339,7 +340,7 @@ export function toBankItem(item: BankItem): {
     loIds: item.loIds,
     themeIds: item.themeIds,
     current: item.current,
-    contentReady: Array.isArray(item.current.options) && typeof item.current.stem === 'string' && isServable(item.current),
+    contentReady: isContentReady(item.current),
     ...(item.similarity ? { similarity: item.similarity } : {}),
   };
 }
@@ -431,6 +432,35 @@ questionsRouter.get(
     res.json(await Promise.all(
       queue.map(async (item) => ({ ...(await toBankItemWithSample(item)), priority: item.priority })),
     ));
+  },
+);
+
+const workspaceQuery = z.object({ tab: z.enum(WORKSPACE_TABS).default('review') });
+
+/**
+ * GET /api/courses/:courseId/question-workspace?tab= -> { counts, release, items }.
+ * The instructor Questions page: tab counts, per-Topic release summary and
+ * the requested tab's rows. Student visibility is computed server-side
+ * (question-workspace.service.ts). Requires question.review.
+ */
+questionsRouter.get(
+  '/courses/:courseId/question-workspace',
+  validate({ params: courseIdParams }),
+  ensureCapability('question.review'),
+  validate({ query: workspaceQuery }),
+  async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const { tab } = req.query as z.infer<typeof workspaceQuery>;
+    const { counts, release, rows } = await loadQuestionWorkspace(courseId, tab);
+    const items = await Promise.all(rows.map(async (row) => ({
+      ...(await toBankItemWithSample(row.item)),
+      openFlagCount: row.openFlagCount,
+      studentVisible: row.studentVisible,
+      ...(row.hiddenReason ? { hiddenReason: row.hiddenReason } : {}),
+      ...(row.agentVerdict ? { agentVerdict: row.agentVerdict } : {}),
+      ...(row.priority !== undefined ? { priority: row.priority } : {}),
+    })));
+    res.json({ tab, counts, release, items });
   },
 );
 
@@ -752,6 +782,7 @@ const QUESTION_ERROR_STATUS: Record<string, number> = {
   'question-not-found': 404,
   'version-not-found': 404,
   'question-conflict': 409,
+  'course-not-found': 404,
 };
 
 questionsRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

@@ -31,7 +31,7 @@ const FLAG_STATES = [
   'resolved-cleared',
 ] as const satisfies readonly FlagState[];
 
-const flagsQuery = z.object({ state: z.enum(FLAG_STATES).optional() });
+const flagsQuery = z.object({ state: z.enum(FLAG_STATES).optional(), questionId: objectIdParam.optional() });
 
 const flagQuestionBody = z.object({ reason: z.string().optional() });
 
@@ -120,7 +120,7 @@ flagsRouter.post(
 
 // --- Instructor: flag-resolution queue -----------------------------------------
 
-/** GET /api/courses/:courseId/flags?state= -> flags joined with question +
+/** GET /api/courses/:courseId/flags?state=&questionId= -> flags joined with question +
  * current version. Instructor-only. */
 flagsRouter.get(
   '/courses/:courseId/flags',
@@ -129,8 +129,8 @@ flagsRouter.get(
   validate({ query: flagsQuery }),
   async (req, res) => {
     const courseId = new ObjectId(String(req.params.courseId));
-    const { state } = req.query as z.infer<typeof flagsQuery>;
-    const flags = await listFlags(courseId, state);
+    const { state, questionId } = req.query as z.infer<typeof flagsQuery>;
+    const flags = await listFlags(courseId, state, questionId !== undefined ? new ObjectId(questionId) : undefined);
     res.json(flags.map((flag) => toFlagResponse(flag)));
   },
 );
