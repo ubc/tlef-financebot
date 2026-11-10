@@ -18,7 +18,8 @@ import {
   type QuestionType,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
-import { pageHeader, statusBadge, type BadgeVariant } from '../../instructor-ui.js';
+import { pageHeader, statusBadge } from '../../instructor-ui.js';
+import { STATUS_LABEL, TYPE_LABEL, heldBackTopics, statusToBadgeVariant } from '../../question-labels.js';
 import { confirmDialog } from '../../modal.js';
 import { renderRichText } from '../../render.js';
 import { rowStemText } from '../../placeholders.js';
@@ -29,58 +30,8 @@ function navigate(path: string): void {
   window.location.hash = path;
 }
 
-/** Question status -> wireframe display label. `reviewed` reads as
- * "Pre-Approved" in the wireframe (see task-15-wireframe-reference.md's
- * "Status/badge vocabulary"), not the raw domain name. */
-export const STATUS_LABEL: Record<PublicationState, string> = {
-  draft: 'Draft',
-  'pending-review': 'Pending Review',
-  reviewed: 'Pre-Approved',
-  approved: 'Approved',
-  paused: 'Paused',
-  archived: 'Archived',
-};
-
-export const TYPE_LABEL: Record<QuestionType, string> = {
-  mcq: 'MCQ',
-  'true-false': 'True/False',
-};
-
-/** Question status -> `statusBadge` variant (instructor-ui.ts). Exported for
- * reuse by question-detail.ts's own state badge. */
-export function statusToBadgeVariant(state: PublicationState): BadgeVariant {
-  switch (state) {
-    case 'draft':
-      return 'draft';
-    case 'pending-review':
-      return 'pending';
-    case 'reviewed':
-      return 'reviewed';
-    case 'approved':
-      return 'approved';
-    case 'paused':
-      return 'paused';
-    case 'archived':
-      return 'archived';
-  }
-}
-
 function difficultyLabel(d: Difficulty): string {
   return d.charAt(0).toUpperCase() + d.slice(1);
-}
-
-/** Names of the question's tagged Topics that are not released (no date, or
- * a date still ahead — the server's theme-release.ts rule). An Approved
- * question with any such Topic is held back from students everywhere, so
- * the bank row says so next to its status. Pure, tested. */
-export function heldBackTopics(tree: CourseTree, themeIds: readonly string[], now: Date = new Date()): string[] {
-  return tree.themes
-    .filter((theme) => themeIds.includes(theme._id))
-    .filter((theme) => {
-      const date = theme.availableFrom ? new Date(theme.availableFrom) : null;
-      return !date || Number.isNaN(date.getTime()) || date > now;
-    })
-    .map((theme) => theme.name);
 }
 
 /** "Topic 1 / LO 1, LO 4" style label for a question's tagged Topics/LOs,

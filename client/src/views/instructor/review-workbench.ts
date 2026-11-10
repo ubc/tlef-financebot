@@ -5,7 +5,7 @@ import { protectUnsavedChanges } from '../../router.js';
 import { rowStemText } from '../../placeholders.js';
 import { renderRichText } from '../../render.js';
 import { errorState, loadingState } from '../../ui.js';
-import { heldBackTopics, TYPE_LABEL } from './bank.js';
+import { heldBackTopics, TYPE_LABEL } from '../../question-labels.js';
 
 interface WorkbenchOptions {
   courseId: string;

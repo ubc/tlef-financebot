@@ -43,7 +43,7 @@ import { pageHeader, statusBadge } from '../../instructor-ui.js';
 import { renderRichText } from '../../render.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
-import { STATUS_LABEL, statusToBadgeVariant } from '../instructor/bank.js';
+import { STATUS_LABEL, statusToBadgeVariant } from '../../question-labels.js';
 import { buildSuggestionPatch, topicLoLabel } from './ta-ui.js';
 
 function navigate(path: string): void {

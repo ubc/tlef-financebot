@@ -29,7 +29,7 @@ import { filterTabs, pageHeader } from '../../instructor-ui.js';
 import { renderTaQuestionDetail } from './question-detail.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
-import { TYPE_LABEL } from '../instructor/bank.js';
+import { TYPE_LABEL } from '../../question-labels.js';
 import {
   matchesTab,
   queueTabCounts,

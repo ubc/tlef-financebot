@@ -1,13 +1,13 @@
 // Pure-logic tests for the Question Bank (I7) / Question Detail (I6) helpers
 // (Task 15, Task E). No DOM needed for any of these — importing api.ts,
-// bank.ts, and question-detail.ts also pulls in dom.ts/render.ts (DOM-
+// question-labels.ts, and question-detail.ts also pulls in dom.ts/render.ts (DOM-
 // touching), but merely importing doesn't execute document access, so this is
 // safe under jest's node test environment. See
 // client/src/api.ts (bankFiltersToQuery), client/src/views/instructor/bank.ts
 // (statusToBadgeVariant), client/src/views/instructor/question-detail.ts
 // (isFieldEdited).
 import { bankFiltersToQuery, type BankFilters } from '../../client/src/api';
-import { heldBackTopics, statusToBadgeVariant } from '../../client/src/views/instructor/bank';
+import { heldBackTopics, statusToBadgeVariant } from '../../client/src/question-labels';
 import { addableLoOptions, isFieldEdited } from '../../client/src/views/instructor/question-detail';
 import type { CourseTree } from '../../client/src/api';
 

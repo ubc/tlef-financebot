@@ -50,7 +50,7 @@ import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
-import { STATUS_LABEL, TYPE_LABEL } from './bank.js';
+import { STATUS_LABEL, TYPE_LABEL } from '../../question-labels.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
