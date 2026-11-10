@@ -291,8 +291,15 @@ when a TA lacks question-review permission. Route guards run before switching;
 accepted Preview exits clear the anonymous UUID, and reloads resume the same
 course session. All shell builders consume `app-shell--unified`.
 
-Course co-authoring uses `course-sharing.ts` for both the topbar Share dialog and
-`views/instructor/co-instructors.ts`. Owners/Admins manage UBC-email invitations;
+The instructor sidebar (`views/instructor/shell.ts`) lists only the main path
+(Dashboard, Materials ① to Question Bank ⑤), Assess & improve, and Course
+Settings. Sub-pages are reached from their parent and highlight it via `also`:
+Coverage Map from Course Structure, Import from Question Bank (its existing
+Import questions button), Canvas from
+Settings. Discussion keeps its route but has no sidebar entry.
+
+Course co-authoring uses `course-sharing.ts` in the topbar Share dialog (the old
+`/co-instructors` and `/tas` routes render People). Owners/Admins manage UBC-email invitations;
 co-instructors can inspect members and copy the restricted course link.
 `collaborative-editor.ts` binds native fields to a vendored Yjs module, persists
 incremental shared drafts, shows presence, and explicitly saves validated versions

@@ -244,6 +244,8 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Minimum attempts before auto-pause applies', minAttemptsInput.id, HELP.minAttempts), minAttemptsInput),
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag percentage threshold', flagPercentInput.id, HELP.flagPercent), flagPercentInput),
         el('div', { class: 'form-field' }, fieldLabelWithHelp('Flag count threshold', flagCountInput.id, HELP.flagCount), flagCountInput))),
+    'Canvas': el('div', {}, el('p', { class: 'admin-fine', text: 'Connect your Canvas account, link this course to a Canvas course, and sync people and materials.' }),
+      el('a', { class: 'btn btn--ghost', id: 'settings-canvas-link', href: `#/instructor/course/${encodeURIComponent(courseId)}/canvas`, text: 'Open Canvas connection →' })),
     'Course lifecycle': el('div', {}, el('h3', { text: 'Archive course' }), el('p', { class: 'admin-fine', text: 'Keep course records while closing student access. You can restore the course as a draft later.' }),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => changeArchiveState(), text: course.lifecycle === 'archived' ? 'Restore as draft' : 'Archive course' }),
       el('section', { class: 'settings-danger-zone stack', 'aria-labelledby': 'settings-danger-zone-title' },
@@ -260,7 +262,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     activeSection = name;
     nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.textContent === name)));
     content.replaceChildren(el('div', { class: 'admin-subhead' }, el('h2', { text: name }), el('small', { text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''}` })), sections[name]);
-    footer.hidden = name === 'Course lifecycle' || name === 'Teaching mode';
+    footer.hidden = name === 'Course lifecycle' || name === 'Teaching mode' || name === 'Canvas';
     settingsStatusSlot.replaceChildren(); settingsErrorSlot.replaceChildren();
   }
   Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));

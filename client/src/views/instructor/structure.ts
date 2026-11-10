@@ -178,7 +178,10 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
 
   const layout = el('div', { class: 'structure-layout' });
   const actionNotice = el('div', { class: 'structure-action-notice', role: 'status' });
-  body.replaceChildren(pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.'), actionNotice, layout);
+  const header = pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.');
+  // Coverage Map lives under Course Structure rather than in the sidebar.
+  header.append(el('a', { class: 'btn btn--ghost', href: `#/instructor/course/${encodeURIComponent(courseId)}/content-map`, text: 'Coverage Map →' }));
+  body.replaceChildren(header, actionNotice, layout);
   const assistant = createStructureAssistant(courseId, materials, refresh, async (notice) => {
     assistant.dispose();
     await renderStructureInner(outlet, courseId);

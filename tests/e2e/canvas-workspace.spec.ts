@@ -50,9 +50,15 @@ test('legacy course URLs redirect to global workspace and course switching stays
   await expect(page).toHaveURL(new RegExp(`#/instructor/canvas/${SECOND}$`));
   expect(await page.evaluate(async () => {
     const { courseIdFromPath, INSTRUCTOR_NAV, isNavItemActive } = await import('/js/views/instructor/shell.js');
-    const nav = INSTRUCTOR_NAV[0].items.find((item: {label: string}) => item.label === 'Canvas connection')!;
-    return { course: courseIdFromPath(location.hash.slice(1)), active: isNavItemActive(nav, location.hash.slice(1)) };
-  })).toEqual({ course: null, active: true });
+    // Canvas is reached from Course Settings, not the sidebar: no sidebar entry
+    // claims the account-level page, and Settings owns the course-scoped one.
+    type Item = { label: string; path: string | null };
+    const items = INSTRUCTOR_NAV.flatMap((group: { items: Item[] }) => group.items);
+    const settings = items.find((item: Item) => item.label === 'Settings')!;
+    return { course: courseIdFromPath(location.hash.slice(1)), labels: items.map((item: Item) => item.label),
+      globalActive: items.filter((item: Item) => isNavItemActive(item, location.hash.slice(1))).length,
+      settingsOnCourseCanvas: isNavItemActive(settings, '/instructor/course/c1/canvas') };
+  })).toEqual(expect.objectContaining({ course: null, globalActive: 0, settingsOnCourseCanvas: true, labels: expect.not.arrayContaining(['Canvas connection']) }));
 });
 test('mobile dark people list scrolls within table and keeps filters usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -65,11 +71,11 @@ test('mobile dark people list scrolls within table and keeps filters usable', as
   await page.screenshot({ path: 'audit-results/canvas-workspace/people-mobile.png', fullPage: true });
 });
 
-test('production shell shows global Canvas navigation and hides course workspace while switching courses', async ({ page }) => {
+test('production shell keeps Canvas out of the sidebar and hides course workspace while switching courses', async ({ page }) => {
   await fixture(page);
   await page.goto(`/#/instructor/canvas/${COURSE}`);
   await expect(page.locator('.app-shell--unified')).toBeVisible();
-  await expect(page.locator('.sidebar').getByRole('link', { name: 'Canvas connection' })).toBeVisible();
+  await expect(page.locator('.sidebar').getByRole('link', { name: 'Canvas connection' })).toHaveCount(0);
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Course Dashboard' })).toBeHidden();
   await page.getByRole('tab', { name: /People/ }).click();
   await expect(page.getByText('Alex Instructor', { exact: true }).first()).toBeVisible();

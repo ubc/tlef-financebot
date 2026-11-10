@@ -19,6 +19,9 @@ export interface InstructorNavItem {
   disabled?: boolean;
   /** Compact rail glyph. The full label remains the accessible name. */
   glyph?: string;
+  /** Sub-pages reached from this item's page (not listed in the sidebar)
+   * that should highlight it, e.g. Coverage Map under Course Structure. */
+  also?: string[];
 }
 
 export interface InstructorNavGroup {
@@ -34,7 +37,6 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
   {
     label: '',
     items: [{ label: 'My Courses', path: '/instructor/courses', glyph: '▦' },
-      { label: 'Canvas connection', path: '/instructor/canvas', glyph: '↗' },
       { label: 'Help & Tutorials', path: '/instructor/help', glyph: '?' }],
   },
   {
@@ -42,28 +44,25 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
     items: [
       { label: 'Course Dashboard', path: '/instructor/course/:id', glyph: '⌂' },
       { label: 'Course Materials', path: '/instructor/course/:id/materials', glyph: '1' },
-      { label: 'Course Structure', path: '/instructor/course/:id/structure', glyph: '2' },
+      { label: 'Course Structure', path: '/instructor/course/:id/structure', glyph: '2', also: ['/instructor/course/:id/content-map'] },
       { label: 'Generate Questions', path: '/instructor/course/:id/preseeding', glyph: '3' },
       { label: 'Review Queue', path: '/instructor/course/:id/queue', glyph: '4' },
-      { label: 'Question Bank', path: '/instructor/course/:id/bank', glyph: '5' },
-      { label: 'Discussion', path: '/instructor/course/:id/discussion', glyph: 'D' },
+      { label: 'Question Bank', path: '/instructor/course/:id/bank', glyph: '5', also: ['/instructor/course/:id/import'] },
     ],
   },
   {
-    label: 'Explore & improve',
+    label: 'Assess & improve',
     items: [
-      { label: 'Coverage Map', path: '/instructor/course/:id/content-map', glyph: '◇' },
+      { label: 'Exam Builder', path: '/instructor/course/:id/exam-builder', glyph: '▤' },
       { label: 'Student Analytics', path: '/instructor/course/:id/analytics', glyph: '↗' },
       { label: 'Flags', path: '/instructor/course/:id/flags', glyph: '!' },
-      { label: 'Import', path: '/instructor/course/:id/import', glyph: '⇧' },
     ],
   },
   {
     label: 'Course Settings',
     items: [
-      { label: 'Exam Builder', path: '/instructor/course/:id/exam-builder', glyph: '▤' },
       { label: 'People', path: '/instructor/course/:id/people', glyph: '♙' },
-      { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙' },
+      { label: 'Settings', path: '/instructor/course/:id/settings', glyph: '⚙', also: ['/instructor/course/:id/canvas'] },
     ],
   },
 ];
@@ -98,6 +97,5 @@ export function resolveHref(item: InstructorNavItem, courseId: string | null): s
 /** Whether `item` is the active nav entry for the current hash `path`. */
 export function isNavItemActive(item: InstructorNavItem, path: string): boolean {
   if (item.disabled || !item.path) return false;
-  if (item.path === '/instructor/canvas') return path === item.path || path.startsWith(`${item.path}/`);
-  return matchRoute(item.path, path) !== null;
+  return matchRoute(item.path, path) !== null || (item.also ?? []).some(pattern => matchRoute(pattern, path) !== null);
 }
