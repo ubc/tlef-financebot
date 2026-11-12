@@ -198,7 +198,7 @@ export function capabilitiesForConfigured(
  * the client never hardcodes a model id or a parameter range. Environment IDs
  * are added without custom registration or calls to the provider.
  */
-export function modelCatalogue(customModels?: readonly CustomModel[], environmentModels: readonly string[] = []): {
+export function modelCatalogue(customModels?: readonly CustomModel[], environmentModels: readonly (string | undefined)[] = []): {
   models: Array<CustomModel & { custom: boolean }>;
   profiles: Record<CapabilityProfile, ModelCapabilities>;
 } {
@@ -207,7 +207,8 @@ export function modelCatalogue(customModels?: readonly CustomModel[], environmen
     .filter((entry) => !Object.hasOwn(KNOWN_MODELS, entry.id.trim()))
     .map((entry) => ({ id: entry.id.trim(), profile: entry.profile, custom: true }));
   const registered = new Set([...shipped, ...custom].map(entry => entry.id));
-  const environment = [...new Set(environmentModels.map(id => id.trim()).filter(Boolean))]
+  const environmentIds = environmentModels.map(id => typeof id === 'string' ? id.trim() : '').filter(Boolean);
+  const environment = [...new Set(environmentIds)]
     .filter(id => !registered.has(id))
     .map(id => ({ id, profile: capabilitiesFor(id).profile, custom: false }));
   return { models: [...shipped, ...custom, ...environment], profiles: CAPABILITY_PROFILES };

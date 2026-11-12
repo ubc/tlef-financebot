@@ -198,6 +198,18 @@ describe('Admin model source contract', () => {
     expect(response.body.catalogue.models).toContainEqual({ id: 'local/env-model', profile: 'classic', custom: false });
   });
 
+  it('loads platform settings when a retired step has no environment model ID', async () => {
+    const legacyModels = { ...models, validator: { model: undefined, modelSource: 'environment' } };
+    jest.mocked(getPlatformSettings).mockResolvedValue(settings);
+    jest.mocked(defaultPlatformSettings).mockReturnValue({ ...settings, models: legacyModels });
+
+    const response = await request(makeApp(userFixture(true))).get('/api/admin/platform-settings');
+
+    expect(response.status).toBe(200);
+    expect(response.body.catalogue.environmentModels).not.toHaveProperty('validator');
+    expect(response.body.catalogue.models).toContainEqual({ id: 'local/env-model', profile: 'classic', custom: false });
+  });
+
   it('preserves source markers through validation and rejects unknown source values', async () => {
     jest.mocked(updatePlatformSettings).mockResolvedValue(settings);
     const app = makeApp(userFixture(true));
