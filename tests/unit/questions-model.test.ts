@@ -13,8 +13,10 @@ import {
   parseTab,
   questionsPath,
   releaseState,
+  repairSummary,
   runBulk,
   runHighlightSummary,
+  solverSummary,
 } from '../../client/src/views/instructor/questions-model';
 import type { CourseTree, QuestionWorkspace, WorkspaceRow } from '../../client/src/api';
 
@@ -130,5 +132,22 @@ describe('bulk', () => {
 
   it('summarizes a run highlight', () => {
     expect(runHighlightSummary(['a', 'b', 'c'], ['a', 'x'])).toEqual({ shown: 1, missing: 2 });
+  });
+});
+
+describe('generation correctness copy', () => {
+  it('words an adopted, a kept and a failed repair', () => {
+    const base = { attempted: true as const, originalFindings: ['options C and D are identical'], originalDecision: 'reject' as const };
+    expect(repairSummary({ ...base, trigger: 'numeric-verification', adopted: true })).toBe('Fixed automatically: the first version was replaced because it failed a numeric check. The AI check above is for the fixed version.');
+    expect(repairSummary({ ...base, trigger: 'checker-reject', adopted: false })).toMatch(/did not improve the question/);
+    expect(repairSummary({ ...base, trigger: 'unstorable', adopted: false, error: 'timeout' })).toMatch(/fix call failed \(timeout\)/);
+    expect(repairSummary(undefined)).toBeNull();
+  });
+
+  it('lists removed parameter values', () => {
+    expect(solverSummary({ parameterSolver: { checkedCombinations: 180, removed: [{ slot: 'EARLY_CLOSE', values: [65] }] } }))
+      .toBe('Parameter values adjusted automatically so no two options show the same number: removed EARLY_CLOSE 65 (checked 180 combinations).');
+    expect(solverSummary({ parameterSolver: { checkedCombinations: 6, removed: [] } })).toBeNull();
+    expect(solverSummary(undefined)).toBeNull();
   });
 });

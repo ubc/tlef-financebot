@@ -3,6 +3,8 @@
 // docs/superpowers/specs/2026-11-09-instructor-questions-workspace-design.md
 import {
   WORKSPACE_TABS,
+  type AgentRepair,
+  type NumericVerification,
   type CourseTree,
   type Difficulty,
   type HiddenReason,
@@ -202,4 +204,28 @@ export function topicLoLabel(tree: CourseTree, loIds: readonly string[], themeId
     }
   });
   return parts.length ? parts.join('; ') : '—';
+}
+
+const REPAIR_REASON: Record<AgentRepair['trigger'], string> = {
+  unstorable: 'its options could not be stored',
+  'numeric-verification': 'it failed a numeric check',
+  'constant-value': 'a formula never changed with the inputs',
+  'checker-reject': 'the AI check rejected it',
+};
+
+/** Reader copy for the generation-time repair, or null when none ran. */
+export function repairSummary(repair: AgentRepair | undefined): string | null {
+  if (!repair?.attempted) return null;
+  const reason = REPAIR_REASON[repair.trigger];
+  if (repair.error) return `An automatic fix was attempted because ${reason}, but the fix call failed (${repair.error}). This is the original version.`;
+  if (repair.adopted) return `Fixed automatically: the first version was replaced because ${reason}. The AI check above is for the fixed version.`;
+  return `An automatic fix was tried because ${reason}, but it did not improve the question. This is the original version.`;
+}
+
+/** Reader copy for parameter values the solver removed, or null. */
+export function solverSummary(verification: Pick<NumericVerification, 'parameterSolver'> | undefined): string | null {
+  const removed = verification?.parameterSolver?.removed ?? [];
+  if (!removed.length) return null;
+  const list = removed.map((row) => `${row.slot} ${row.values.join(', ')}`).join('; ');
+  return `Parameter values adjusted automatically so no two options show the same number: removed ${list} (checked ${verification!.parameterSolver!.checkedCombinations} combinations).`;
 }

@@ -2677,6 +2677,18 @@ export interface NumericVerification {
   verifiedAt: string;
   /** Absent historical proofs record sampled draws only. */
   parameterCoverage?: NumericParameterCoverage;
+  /** Generation-time parameter solver: slot values removed so no options collide. */
+  parameterSolver?: { checkedCombinations: number; removed: Array<{ slot: string; values: number[] }> };
+}
+
+/** The one automatic repair call on a generated question (2026-11-12). */
+export interface AgentRepair {
+  attempted: true;
+  trigger: 'unstorable' | 'numeric-verification' | 'constant-value' | 'checker-reject';
+  adopted: boolean;
+  originalDecision?: 'pass' | 'flag' | 'reject';
+  originalFindings: string[];
+  error?: string;
 }
 
 export interface RegenerationVariant {
@@ -2918,7 +2930,7 @@ export interface QuestionHead {
   themeIds: string[];
   templateFamilyId?: string;
   labels: QuestionLabel[];
-  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string; suggestions?: string[]; suggestedDifficulty?: Difficulty };
+  agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string; suggestions?: string[]; suggestedDifficulty?: Difficulty; repair?: AgentRepair };
   similarity?: QuestionSimilarity;
   generationPrompt?: string;
   regenerations?: Array<{ prompt: string; at: string }>;

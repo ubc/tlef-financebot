@@ -666,3 +666,23 @@
     display: inline-flex;
   }
 }
+
+/* Generation correctness (2026-11-12): automatic repair and parameter solver notes. */
+.questions-reader__repair,
+.questions-reader__solver {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--instr-blue-bg);
+  color: var(--instr-blue-fg);
+  font-size: 0.875rem;
+}
+
+.questions-reader__repair p {
+  margin: 0;
+}
+
+.questions-reader__repair ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

@@ -21,7 +21,7 @@ import { renderRichText } from '../../render.js';
 import { protectUnsavedChanges } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
 import { createFlagCard } from './questions-flag-card.js';
-import { heldTopicNames, hiddenReasonText, objectiveNames, topicNames } from './questions-model.js';
+import { heldTopicNames, hiddenReasonText, objectiveNames, repairSummary, solverSummary, topicNames } from './questions-model.js';
 
 export interface ReaderOptions {
   courseId: string;
@@ -260,6 +260,13 @@ export function createQuestionReader(options: ReaderOptions) {
         decision ? rich(decision.reasoning) : el('p', { class: 'muted', text: current.current.provenance?.kind === 'edited' ? 'Edited after the AI check; the earlier result no longer applies.' : 'No AI check was recorded for this question.' }),
         decision?.suggestions?.length ? el('ul', { class: 'questions-reader__suggestions' }, ...decision.suggestions.map((text) => el('li', { text }))) : false,
         decision?.suggestedDifficulty ? el('p', { text: `Suggested difficulty: ${decision.suggestedDifficulty}` }) : false,
+        repairSummary(decision?.repair)
+          ? el('div', { class: 'questions-reader__repair' }, el('p', { text: repairSummary(decision?.repair)! }),
+            decision?.repair?.originalFindings.length
+              ? el('details', {}, el('summary', { text: 'What the first version got wrong' }), el('ul', {}, ...decision.repair.originalFindings.map((finding) => el('li', { text: finding }))))
+              : false)
+          : false,
+        solverSummary(current.current.verification) ? el('p', { class: 'questions-reader__solver', text: solverSummary(current.current.verification)! }) : false,
         decision?.roleAssessment ? el('details', {}, el('summary', { text: 'Answer structure' }), rich(decision.roleAssessment)) : false),
       similarity && (similarity.lo || similarity.topic)
         ? el('section', {}, el('h3', { text: 'Similar questions' }), el('ul', { class: 'questions-reader__similar' }, similarityLink('Nearest in LO', similarity.lo), similarityLink('Nearest in Topic', similarity.topic)))
