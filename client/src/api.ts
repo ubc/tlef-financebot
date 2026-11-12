@@ -1033,6 +1033,7 @@ export type InstructorWorkflowDestination =
   | 'bank'
   | 'flags'
   | 'analytics'
+  | 'release'
   | 'student-preview'
   | 'dashboard';
 
@@ -1046,8 +1047,8 @@ export interface InstructorWorkflowAction {
 }
 
 export interface InstructorWorkflowStage {
-  id: 'sources' | 'learning-objectives' | 'questions' | 'review' | 'student-preview';
-  number: 1 | 2 | 3 | 4 | 5;
+  id: 'materials' | 'structure' | 'generate' | 'review' | 'release' | 'publish';
+  number: 1 | 2 | 3 | 4 | 5 | 6;
   label: string;
   status: InstructorWorkflowStageStatus;
   detail: string;
@@ -1057,7 +1058,7 @@ export interface InstructorWorkflowStage {
 }
 
 export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowAction {
-  presentation: 'dialog' | 'workspace' | 'preview';
+  presentation: 'workspace' | 'preview';
 }
 
 export interface InstructorWorkflowSummary {
@@ -1098,6 +1099,10 @@ export interface InstructorWorkflowSummary {
   };
   setup: {
     steps: InstructorWorkflowStage[];
+    /** First stage that still needs work; `publish` once all are done. */
+    currentStage: InstructorWorkflowStage['id'];
+    /** This instructor ran an isolated Student preview recently. */
+    previewTested: boolean;
     primaryAction: InstructorWorkflowPrimaryAction;
   };
   actions: InstructorWorkflowAction[];

@@ -76,7 +76,8 @@ grant attaches to the same PUID-backed User on first SAML login.
   needs-attention | ready | complete`. Release reports Approved questions held
   by unreleased Topics (`needs-attention` when a Topic has no date,
   `in-progress` when only scheduled); Publish is `complete` once published and
-  `ready` when every launch check passes. `setup.currentStage` is the first
+  `ready` when every launch check passes. `setup.previewTested` says whether this instructor ran a
+  recent isolated Student preview. `setup.currentStage` is the first
   stage still needing work (stages 1–5 are done at `ready`/`complete`, Publish
   only at `complete`). `setup.primaryAction` is the one recommended next action
   and carries the normal action fields plus `presentation: 'workspace'|'preview'`;

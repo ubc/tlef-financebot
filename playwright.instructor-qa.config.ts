@@ -5,7 +5,6 @@ export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: [
     'questions-workspace.spec.ts', 'generation-workbench.spec.ts',
-    'setup-journey.spec.ts',
     'structure-ai.spec.ts', 'instructor-qa-regressions.spec.ts',
   ],
   workers: 1,

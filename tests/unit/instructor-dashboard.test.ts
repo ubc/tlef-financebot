@@ -36,6 +36,7 @@ describe('course cockpit workflow destinations', () => {
     ['bank', '/questions?tab=approved'],
     ['flags', '/questions?tab=flags'],
     ['analytics', '/analytics'],
+    ['release', '/questions?tab=approved'],
   ] as const)('maps %s to its course screen', (destination, suffix) => {
     expect(workflowActionPath(destination, 'course id')).toBe(
       `/instructor/course/course%20id${suffix}`,

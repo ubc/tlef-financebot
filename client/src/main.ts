@@ -7,7 +7,6 @@ import { renderWorkspaceCourses } from './views/workspace-courses.js';
 import { installClientDiagnostics } from './diagnostics.js';
 import { renderAdminOperations, renderAdminOperationDetail } from './views/admin/operations.js';
 import { renderAdminQuestions, renderAdminQuestionDetail } from './views/admin/questions.js';
-import { syncSetupJourney } from './setup-journey.js';
 import { renderTutorialHelp, renderWorkspacePreviewHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
 // shell based on GET /api/auth/me, builds the sidebar + top bar, and starts the
@@ -1112,7 +1111,6 @@ async function bootstrap(): Promise<void> {
   const session = await loadSession();
   if (generation !== bootstrapGeneration) return;
   activeSession = session;
-  syncSetupJourney();
 
   if (redirectLegacyPreview(session)) return;
 

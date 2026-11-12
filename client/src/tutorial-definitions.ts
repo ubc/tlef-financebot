@@ -194,12 +194,12 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"course-setup-path\"]",
         "title": "Follow course preparation",
-        "body": "Use Sources, Learning Objectives, Questions, Review and Student Preview to prepare your course. The guide resumes from the actual course state."
+        "body": "Follow the six stages: Materials, Structure, Generate, Review, Release and Publish. The highlighted stage is the next one that needs work."
       },
       {
         "selector": "[data-tutorial=\"course-setup-checklist\"]",
         "title": "Check before publication",
-        "body": "Review the publish checklist and try Student Preview. Preview is isolated from live student records; approval and publication are explicit actions."
+        "body": "The Publish panel holds the launch checklist and a Student preview. Preview is isolated from live student records; publishing is an explicit action."
       }
     ]
   },

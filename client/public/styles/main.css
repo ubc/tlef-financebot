@@ -3392,40 +3392,6 @@ button.quick-action--disabled { cursor: default; }
   font-size: 0.85rem;
 }
 
-/* ---- Instructor Launch Cockpit (Phase 5 workflow v2) ----------------------- */
-
-.cockpit-readiness {
-  margin-bottom: 1rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.cockpit-readiness__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.cockpit-readiness__summary .section-title,
-.cockpit-readiness__summary p {
-  margin: 0;
-}
-
-.cockpit-readiness__percent {
-  color: var(--instr-green-fg);
-  font-size: 1.4rem;
-}
-
-.cockpit-readiness__progress {
-  width: 100%;
-  height: 0.7rem;
-  accent-color: var(--instr-green-fg);
-}
-
 .workflow-actions {
   display: flex;
   flex-direction: column;
@@ -3525,22 +3491,6 @@ button.quick-action--disabled { cursor: default; }
 .workflow-action__priority--normal,
 .workflow-action__open {
   color: var(--accent);
-}
-
-.cockpit-checklist {
-  margin-top: 1rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.cockpit-checklist summary {
-  cursor: pointer;
-  font-weight: 650;
-}
-
-.cockpit-checklist .checklist {
-  margin-top: 0.85rem;
 }
 
 @media (max-width: 640px) {
@@ -7545,7 +7495,7 @@ button.quick-action--disabled { cursor: default; }
 
 .course-flow {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0;
   margin-bottom: 1rem;
   overflow: hidden;
@@ -7571,6 +7521,57 @@ button.quick-action--disabled { cursor: default; }
 
 .course-flow__step:hover {
   background: var(--surface-2);
+}
+
+/* The stage that still needs work (setup.currentStage). */
+.course-flow__step.is-current {
+  background: var(--instr-green-bg);
+  box-shadow: inset 0 -3px 0 var(--instr-green-fg);
+}
+
+/* Publish stage panel on the course Dashboard (spec 2026-11-12). */
+.publish-panel {
+  margin-top: 1rem;
+  padding: 0;
+}
+
+.publish-panel > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.8rem;
+  padding: 1rem 1.2rem;
+  cursor: pointer;
+}
+
+.publish-panel__title {
+  font-weight: 700;
+}
+
+.publish-panel__body {
+  display: grid;
+  gap: 1rem;
+  padding: 0 1.2rem 1.2rem;
+}
+
+.publish-panel__preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.publish-panel__preview p,
+.publish-panel__state {
+  margin: 0.2rem 0 0;
+}
+
+.publish-panel__body > .btn {
+  justify-self: start;
 }
 
 .course-flow__number {
@@ -7675,13 +7676,6 @@ button.quick-action--disabled { cursor: default; }
   font-weight: 750;
 }
 
-.project-panel--status .cockpit-readiness {
-  margin: 0 0 1rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
 .project-panel__snapshot-title {
   margin-bottom: 0.65rem;
   font-size: 0.92rem;
@@ -7703,10 +7697,6 @@ button.quick-action--disabled { cursor: default; }
 
 .project-panel--status .stat-tile__label {
   font-size: 0.65rem;
-}
-
-.project-panel .cockpit-checklist {
-  margin-bottom: 0;
 }
 
 .workflow-actions__next-label {
@@ -7858,7 +7848,8 @@ button.quick-action--disabled { cursor: default; }
     border-top: 1px solid var(--border);
   }
 
-  .course-flow__step:nth-child(5) {
+  .course-flow__step:nth-child(5),
+  .course-flow__step:nth-child(6) {
     border-top: 1px solid var(--border);
   }
 }
@@ -7946,7 +7937,8 @@ button.quick-action--disabled { cursor: default; }
 
   .course-flow__step + .course-flow__step,
   .course-flow__step:nth-child(4),
-  .course-flow__step:nth-child(5) {
+  .course-flow__step:nth-child(5),
+  .course-flow__step:nth-child(6) {
     border-top: 1px solid var(--border);
     border-left: 0;
   }
@@ -8606,12 +8598,8 @@ button.quick-action--disabled { cursor: default; }
 }
 
 /* The sidebar stays dark even when the Admin content theme is light. */
-.app-shell--admin .sidebar--instructor .nav__link:not(.nav__link--disabled):is(:hover, :focus, :active, .journey-current) {
+.app-shell--admin .sidebar--instructor .nav__link:not(.nav__link--disabled):is(:hover, :focus, :active) {
   color: #ffffff;
-}
-
-.app-shell--admin .sidebar--instructor .nav__link.journey-current .nav__glyph {
-  color: #183328;
 }
 
 .app-shell--admin .btn--primary,
@@ -8987,59 +8975,6 @@ button.quick-action--disabled { cursor: default; }
 .help-preview-steps{padding-left:1.2rem;margin:.25rem 0 0;display:grid;gap:.7rem}
 .help-preview-steps li{font-size:12px;line-height:1.6}
 .help-preview-steps p{margin:.2rem 0 0;color:var(--muted)}
-/* Match Review Queue's compact header and keep the question reader in view. */
-/* Reserve the measured guide height so page actions remain visible and clickable. */
-#setup-journey {
-  position: fixed;
-  inset: 0 0 0 var(--setup-sidebar-offset, 0px);
-  z-index: 90;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 20px;
-  background: transparent;
-  pointer-events: none;
-}
-body.has-setup-journey .outlet {
-  margin-bottom: 0;
-  min-height: 0;
-  padding-bottom: calc(clamp(1.25rem, 3vw, 2.25rem) + var(--setup-guide-space, 100px));
-  scroll-padding-bottom: var(--setup-guide-space, 100px);
-}
-/* The router focuses the main landmark after navigation. Its clipped default
-   outline used to appear as a blue divider directly above the floating guide. */
-body.has-setup-journey .outlet:focus { outline: none; }
-.setup-island {
-  width: 680px;
-  max-width: 100%;
-  max-height: calc(100dvh - 100px);
-  overflow: auto;
-  pointer-events: auto;
-  background: #183328;
-  color: #f4f8f2;
-  border: 1px solid #526d5d;
-  border-radius: 16px;
-  /* Keep the floating guide visually clean: the page remains visible around
-     it without a grey halo or opaque backdrop. */
-  box-shadow: none;
-  font-size: 12px;
-}
-.setup-island__top { display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid #ffffff21; }
-.setup-island__top > strong { flex:1; font-size:10px; letter-spacing:.1em; color:#d7e9bd; }
-/* Keep focus and pressed states legible independently of global button styles. */
-.setup-island button { appearance:none; background:#183328!important; color:#f0f5ed!important; border:1px solid #65816e!important; border-radius:8px; padding:8px 12px; cursor:pointer; font:inherit; white-space:nowrap; box-shadow:none!important; opacity:1!important; }
-.setup-island button:hover { background:#294a38!important; color:#fff!important; }
-.setup-island button:active { background:#365b43!important; color:#fff!important; }
-.setup-island button:focus-visible { outline:2px solid #e2efbe; outline-offset:3px; background:#294a38!important; color:#fff!important; }
-.setup-island button.setup-island__next { background:#dcebc6!important; color:#193423!important; border-color:#dcebc6!important; font-weight:650; padding:10px 14px; }
-.setup-island button.setup-island__next:hover { background:#edf6db!important; color:#193423!important; }
-.setup-island button.setup-island__next:active,
-.setup-island button.setup-island__next:focus-visible { background:#c6dda9!important; color:#142b1c!important; }
-.setup-island button:disabled,
-.setup-island button:disabled:hover,
-.setup-island button:disabled:active { background:#344d40!important; color:#cedbd1!important; border-color:#728779!important; cursor:default; }
-.setup-island__next-short { display:none; }
-.setup-island__main { display:flex; align-items:center; gap:12px; padding:16px; }
 
 /* Viewport-bound authoring workbenches. Keep page chrome stable while each
    column owns its scrolling, so primary actions stay reachable on laptops. */
@@ -9159,14 +9094,6 @@ body.has-setup-journey .outlet:focus { outline: none; }
   .gw-footer { position:static;flex:none;padding:10px 14px; }
   .gw-live { min-height:0; }
 
-  body.has-setup-journey .view--review-workbench,
-  body.has-setup-journey .generation-workbench {
-    block-size:calc(100dvh - var(--topbar-h) - clamp(2.5rem,6vw,4.5rem) - var(--setup-guide-space,100px));
-  }
-  body.has-setup-journey .outlet:has(> .view--review-workbench),
-  body.has-setup-journey .outlet:has(> .generation-workbench) {
-    padding-bottom:clamp(1.25rem,3vw,2.25rem);
-  }
 }
 /* The TA queue shares the viewport-bound review shell. Let its nested content
    consume the remaining space instead of adding a second viewport calculation. */
@@ -9223,47 +9150,9 @@ body.has-setup-journey .outlet:focus { outline: none; }
 @media (max-width:760px) {
   .review-workbench__inspector { display:block; }
 }
-.setup-island__number { flex-shrink:0; display:grid; place-items:center; width:32px; height:32px; border-radius:50%; border:1px solid #8ba180; color:#e2efc8; }
-.setup-island__copy { flex:1; min-width:0; }
-.setup-island__copy strong { font-size:13px; }
-.setup-island__copy p { font-size:11px; line-height:1.6; color:#d1ddd3; margin:6px 0 0; }
-.setup-island__track { display:flex; gap:5px; padding:0 16px 12px; }
-.setup-island__track span { height:3px; background:#526959; flex:1; border-radius:3px; }
-.setup-island__track .is-complete { background:#d0e5ad; }
-.setup-island__track .is-current { background:#fff; }
-.setup-island__map { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:12px 16px 0; }
-.setup-island__map button { text-align:left; }
-.setup-island__map button.is-current { border-color:#e2efbe!important; }
-.setup-island__alternative { padding:0 16px 12px; }
-.setup-island--small { width:auto; display:flex; gap:12px; align-items:center; padding:9px 12px; border-radius:18px; }
-.setup-island__summary { display:flex; flex-direction:column; gap:2px; min-width:0; margin-right:8px; }
-.setup-island__summary strong { font-size:12px; white-space:nowrap; }
-.setup-island__summary > span { font-size:10px; color:#cfdbcd; white-space:nowrap; }
-.setup-island button.setup-island__expand { width:32px; height:32px; padding:3px; flex-shrink:0; font-size:18px; border-color:transparent!important; }
-.nav a.journey-current { background:#ffffff1c!important; box-shadow:inset 3px 0 #d7edb9; }
-.nav a.journey-current .nav__glyph { background:#e2efc8; color:#183328; border-color:#e2efc8; }
-.nav a.journey-complete:not(.journey-current) .nav__glyph { background:#ffffff25; color:#e2efc8; }
-.nav a.journey-upcoming { outline:1px dashed #95b49e; outline-offset:-2px; }
-.journey-nav-label { font-size:9px; margin-left:auto; color:#e2efc8; }
-.app-shell.is-collapsed .journey-nav-label { display:none; }
 @media (min-width:861px) {
   body:has(.app-shell--instructor) { --setup-sidebar-offset:var(--sidebar-w); }
   body:has(.app-shell--instructor.is-collapsed) { --setup-sidebar-offset:var(--sidebar-collapsed-w); }
-}
-@media (max-width:700px) {
-  #setup-journey { padding:10px; }
-  .setup-island__main { flex-wrap:wrap; padding:13px; }
-  .setup-island__copy { flex-basis:calc(100% - 52px); }
-  .setup-island__main > .setup-island__next { margin-left:auto; }
-  .setup-island__top { padding:10px; gap:5px; }
-  .setup-island__top > strong { font-size:9px; }
-  .setup-island button { padding:8px; font-size:11px; }
-  .setup-island__map { grid-template-columns:repeat(2,1fr); }
-  .setup-island--small { gap:8px; padding:9px; }
-  .setup-island--small .setup-island__number { display:none; }
-  .setup-island--small .setup-island__summary { margin-right:0; }
-  .setup-island--small .setup-island__next-label { display:none; }
-  .setup-island--small .setup-island__next-short { display:inline; }
 }
 
 /* Course outline authoring: the same topic / objective workspace, streamed. */

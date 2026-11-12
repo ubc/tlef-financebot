@@ -328,6 +328,7 @@ describe('Instructor workflow summary', () => {
 
     expect(result.setup.steps[5]).toMatchObject({ id: 'publish', status: 'ready', detail: 'Ready to publish' });
     expect(result.setup.currentStage).toBe('publish');
+    expect(result.setup.previewTested).toBe(true);
     expect(result.setup.primaryAction).toMatchObject({ id: 'publish-course', presentation: 'workspace' });
   });
 

@@ -115,6 +115,8 @@ export interface InstructorWorkflowSummary {
     steps: InstructorWorkflowStage[];
     /** First stage that still needs work; `publish` once all are done. */
     currentStage: InstructorWorkflowStage['id'];
+    /** This instructor ran an isolated Student preview recently. */
+    previewTested: boolean;
     primaryAction: InstructorWorkflowPrimaryAction;
   };
   actions: InstructorWorkflowAction[];
@@ -584,7 +586,7 @@ export async function instructorWorkflowSummary(
       contentIssues,
       lowEngagementStudents: inactiveStudents.length,
     },
-    setup: { steps: setupSteps, currentStage, primaryAction },
+    setup: { steps: setupSteps, currentStage, previewTested, primaryAction },
     actions,
   };
 }

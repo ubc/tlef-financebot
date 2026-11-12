@@ -17,7 +17,6 @@ import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
 import { suggestedTermDates } from '../../academic-terms.js';
-import { startSetupJourney } from '../../setup-journey.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -60,6 +59,7 @@ const WORKFLOW_DESTINATIONS: Record<Exclude<InstructorWorkflowDestination, 'dash
   bank: '/instructor/course/:id/questions?tab=approved',
   flags: '/instructor/course/:id/questions?tab=flags',
   analytics: '/instructor/course/:id/analytics',
+  release: '/instructor/course/:id/questions?tab=approved',
   'student-preview': '/preview/course/:id',
 };
 
@@ -86,36 +86,9 @@ function statTiles(data: InstructorWorkflowSummary): HTMLElement {
   );
 }
 
-function readinessCard(data: InstructorWorkflowSummary): HTMLElement {
-  const { readiness } = data;
-  const progress = el('progress', {
-    class: 'cockpit-readiness__progress',
-    max: '100',
-    value: String(readiness.percent),
-    'aria-label': `Launch readiness ${readiness.percent}%`,
-  });
-  return el(
-    'section',
-    { class: 'cockpit-readiness', 'aria-labelledby': 'launch-readiness-title' },
-    el(
-      'div',
-      { class: 'cockpit-readiness__summary' },
-      el(
-        'div',
-        {},
-        el('h2', { id: 'launch-readiness-title', class: 'section-title', text: 'Launch readiness' }),
-        el('p', {
-          class: 'muted',
-          text: `${readiness.completed} of ${readiness.total} launch checks complete`,
-        }),
-      ),
-      el('strong', { class: 'cockpit-readiness__percent', text: `${readiness.percent}%` }),
-    ),
-    progress,
-  );
-}
-
-function courseFlow(data: InstructorWorkflowSummary, openBlockedPreview: () => void): HTMLElement {
+/** The six-stage main path (spec 2026-11-12). Publish has no page of its
+ * own: it opens the Publish panel on this Dashboard. */
+function courseFlow(data: InstructorWorkflowSummary, openPublishPanel: () => void): HTMLElement {
   const { course } = data;
   const statusLabel = {
     'not-started': 'Not started',
@@ -127,28 +100,20 @@ function courseFlow(data: InstructorWorkflowSummary, openBlockedPreview: () => v
   } as const;
   return el(
     'nav',
-    { class: 'course-flow', 'aria-label': 'Course authoring workflow' },
+    { class: 'course-flow', 'aria-label': 'Course progress' },
     ...data.setup.steps.map((step) => {
-      const path = workflowActionPath(step.destination, course.id)!;
-      const onClick = step.destination === 'student-preview'
-        ? (event: MouseEvent) => {
-            if (data.counts.approvedQuestions === 0) {
-              event.preventDefault();
-              openBlockedPreview();
-              return;
-            }
-            startAnonymousPreview(course.id);
-          }
-        : undefined;
+      const path = workflowActionPath(step.destination, course.id);
+      const current = step.id === data.setup.currentStage;
       return el(
         'a',
         {
-          class: `course-flow__step course-flow__step--${step.status}`,
-          href: `#${path}`,
-          onclick: onClick,
-          'aria-label': `${step.number}. ${step.label}: ${step.detail}. Status: ${step.status.replace('-', ' ')}`,
+          class: `course-flow__step course-flow__step--${step.status}${current ? ' is-current' : ''}`,
+          href: path ? `#${path}` : '#',
+          'aria-current': current ? 'step' : undefined,
+          onclick: path ? undefined : (event: MouseEvent) => { event.preventDefault(); openPublishPanel(); },
+          'aria-label': `${step.number}. ${step.label}: ${step.detail}. Status: ${statusLabel[step.status]}${current ? '. Current stage' : ''}`,
         },
-        el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: String(step.number) }),
+        el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: step.status === 'complete' || (step.status === 'ready' && step.id !== 'publish') ? '✓' : String(step.number) }),
         el(
           'span',
           { class: 'course-flow__body' },
@@ -171,7 +136,6 @@ function actionList(
   onPublish: () => void,
   onRestore: () => void,
   onConfigureDates: () => void,
-  onGuidedAction: (action: InstructorWorkflowAction) => void,
 ): HTMLElement {
   const primary = data.setup.primaryAction;
   const secondary = data.actions.filter((action) => action.id !== primary.id);
@@ -195,15 +159,11 @@ function actionList(
               onConfigureDates();
               return;
             }
-            if (isPrimary && data.setup.primaryAction.presentation === 'dialog') {
-              onGuidedAction(action);
-              return;
-            }
             const path = workflowActionPath(action.destination, data.course.id);
             if (!path) return;
             if (action.destination === 'student-preview') {
               if (data.counts.approvedQuestions === 0) {
-                onGuidedAction(action);
+                navigate(workflowActionPath('review-queue', data.course.id)!);
                 return;
               }
               startAnonymousPreview(data.course.id);
@@ -236,8 +196,6 @@ function actionList(
                 ? 'Restore →'
                 : action.id === 'configure-course'
                   ? 'Set dates →'
-                  : isPrimary && data.setup.primaryAction.presentation === 'dialog'
-                    ? 'Continue setup →'
                   : 'Open →',
           }),
         ),
@@ -454,6 +412,50 @@ function pathActionCard(title: string, subtitle: string, path: string): HTMLElem
   );
 }
 
+/** Publish stage: the launch checklist, the Student preview recommendation
+ * and the publish control, in one place (spec 2026-11-12). */
+function publishPanel(
+  data: InstructorWorkflowSummary,
+  checklist: HTMLElement,
+  onPublish: () => void,
+  onRestore: () => void,
+): HTMLElement {
+  const { course, readiness } = data;
+  const previewTested = data.setup.previewTested;
+  const canPreview = data.counts.approvedQuestions > 0;
+  const preview = el('div', { class: 'publish-panel__preview' },
+    el('div', {},
+      el('strong', { text: 'Student preview (recommended)' }),
+      el('p', { class: 'muted', text: !canPreview
+        ? 'Approve at least one question to try the student experience.'
+        : previewTested ? 'Tested recently. Preview again after larger changes.' : 'Walk through the Approved-only course before students do.' })),
+    canPreview
+      ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => {
+        startAnonymousPreview(course.id);
+        navigate(workflowActionPath('student-preview', course.id)!);
+      } }, 'Preview as student')
+      : el('a', { class: 'btn btn--ghost btn--sm', href: `#${workflowActionPath('review-queue', course.id)}`, text: 'Review questions' }));
+  const control = course.lifecycle === 'archived'
+    ? el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: onRestore }, 'Restore course')
+    : course.lifecycle === 'published'
+      ? el('p', { class: 'publish-panel__state' }, el('strong', { text: 'Published. ' }), 'Students with access can practise released questions.')
+      : el('button', {
+        class: 'btn btn--instr-primary',
+        type: 'button',
+        disabled: readiness.completed < readiness.total,
+        onclick: onPublish,
+      }, 'Publish course →');
+  return el('details', {
+    class: 'publish-panel project-panel',
+    id: 'publish-panel',
+    open: data.setup.currentStage === 'publish',
+  },
+  el('summary', {},
+    el('span', { class: 'publish-panel__title', text: '⑥ Publish' }),
+    el('span', { class: 'muted', text: `${readiness.completed} of ${readiness.total} launch checks complete` })),
+  el('div', { class: 'publish-panel__body' }, checklist, preview, control));
+}
+
 async function renderDashboardInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course cockpit…'));
   const root = el('div', { class: 'view view--course-project' }, body);
@@ -497,14 +499,6 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       openCourseDatesDialog(data, () => void renderDashboardInner(outlet, courseId));
     }
 
-    function openGuideById(actionId: string): void {
-      startSetupJourney(courseId, actionId);
-    }
-
-    function openGuide(action: InstructorWorkflowAction): void {
-      openGuideById(action.id);
-    }
-
     const header = el(
       'header',
       { class: 'project-hero' },
@@ -521,7 +515,6 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       el(
         'div',
         { class: 'project-hero__actions' },
-        el('button', { class: 'btn btn--ghost', type: 'button', text: 'Open setup guide', onclick: () => openGuideById('upload-sources') }),
         el('span', {
           class: `project-hero__status project-hero__status--${course.lifecycle}`,
           text: lifecycleBadge,
@@ -573,7 +566,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         'student-preview',
         () => {
           if (data.counts.approvedQuestions === 0) {
-            openGuideById('preview-course');
+            navigate(workflowActionPath('review-queue', courseId)!);
             return false;
           }
           startAnonymousPreview(courseId);
@@ -587,9 +580,16 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       ),
     );
 
+    const publishSection = publishPanel(data, checklist, () => void publish(), () => void restore());
+    const openPublishPanel = (): void => {
+      (publishSection as HTMLDetailsElement).open = true;
+      publishSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      publishSection.querySelector<HTMLElement>('summary')?.focus();
+    };
+
     body.replaceChildren(
       header,
-      courseFlow(data, () => openGuideById('preview-course')),
+      courseFlow(data, openPublishPanel),
       el(
         'div',
         { class: 'project-cockpit' },
@@ -603,20 +603,16 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
             ),
             el('span', { class: 'project-panel__count', text: '1', 'aria-label': 'One recommended next step' }),
           ),
-          actionList(data, () => void publish(), () => void restore(), configureDates, openGuide),
-          el('details', { class: 'cockpit-checklist' },
-            el('summary', { text: 'View launch checklist' }),
-            checklist,
-          ),
+          actionList(data, () => void publish(), () => void restore(), configureDates),
         ),
         el(
           'aside',
           { class: 'project-panel project-panel--status', 'aria-label': 'Course status' },
-          readinessCard(data),
           el('h2', { class: 'section-title project-panel__snapshot-title', text: 'Course snapshot' }),
           statTiles(data),
         ),
       ),
+      publishSection,
       el(
         'section',
         { class: 'project-explore', 'aria-labelledby': 'explore-course-title' },
@@ -629,7 +625,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         explore,
       ),
     );
-    attachTutorial(root, 'instructor-course-setup', {"course-setup-path": ".course-flow", "course-setup-checklist": ".cockpit-checklist"});
+    attachTutorial(root, 'instructor-course-setup', {"course-setup-path": ".course-flow", "course-setup-checklist": "#publish-panel"});
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderDashboardInner(outlet, courseId)));
