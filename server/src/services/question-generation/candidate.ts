@@ -19,6 +19,7 @@ import {
   placeholderSyntaxFailure,
 } from '../numeric-verification.service';
 import { HARDNESS_MOVE_MENU } from './generator-prompt';
+import { solveParameterDomain, type ConstantDerivedValue } from './parameter-solver';
 
 export const OPTION_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
   'correct',
@@ -282,6 +283,8 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
     verification?: NumericVerification;
   };
   failure?: string;
+  /** Derived values that never vary although they read a parameter. */
+  constants?: ConstantDerivedValue[];
 } {
   if (generated.numericKind !== 'numeric') {
     const fields = generated.numericKind ? { numericKind: generated.numericKind } : {};
@@ -333,19 +336,41 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
     };
   }
 
-  const result = verifyQuestionNumerics({
+  // Parameter solver (spec 2026-11-12): code, not the model, chooses the slot
+  // values. Collisions are pruned before verification, so a solvable question
+  // passes it; constants are reported for the repair call.
+  const correctOption = generated.options.find((option) => option.role === 'correct');
+  const correctName = correctOption?.text.match(/\{\{(\w+)\}\}/)?.[1];
+  const solver = solveParameterDomain({
     stem: generated.stem,
     slots: paramSlots,
+    derivedValues,
+    optionValueNames: optionValues.names,
+    optionCurrency: optionValues.currency,
+    ...(correctName ? { correctName } : {}),
+  });
+  const solvedSlots = solver.status === 'solved' ? solver.slots : paramSlots;
+  const constants = solver.status === 'skipped' ? [] : solver.constants;
+  const solvedBase = { ...base, paramSlots: solvedSlots };
+  const withConstants = constants.length ? { constants } : {};
+
+  const result = verifyQuestionNumerics({
+    stem: generated.stem,
+    slots: solvedSlots,
     derivedValues,
     optionValueNames: optionValues.names,
     optionCurrency: optionValues.currency,
   });
   if (!result.ok) {
     return {
-      fields: base,
+      fields: solvedBase,
       failure: `${result.error}${result.failingSeed !== undefined ? ` (seed ${result.failingSeed})` : ''}`,
+      ...withConstants,
     };
   }
+  const verification: NumericVerification = solver.status === 'solved' || solver.status === 'clean'
+    ? { ...result.verification, parameterSolver: solver.report }
+    : result.verification;
 
   // The solvability gate (2026-08-22, third sighting in a week: exps 27b, 28
   // and a live batch): a slot the CORRECT answer depends on that the stem
@@ -354,22 +379,21 @@ export function verifyGeneratedNumerics(generated: GeneratorOutput): {
   // only slots are exempt — error models need no solvability. Checked AFTER
   // distinctness so a colliding question reports the collision, whose retry
   // feedback is the more specific of the two.
-  const correctOption = generated.options.find((option) => option.role === 'correct');
-  const correctName = correctOption?.text.match(/\{\{(\w+)\}\}/)?.[1];
   if (correctName) {
     const missing = undisplayedInputs({
-      slots: paramSlots, derivedValues, rootName: correctName, stem: generated.stem,
+      slots: solvedSlots, derivedValues, rootName: correctName, stem: generated.stem,
     });
     if (missing.length > 0) {
       return {
-        fields: base,
+        ...withConstants,
+        fields: solvedBase,
         failure: `the correct answer depends on ${missing.map((name) => `{{${name}}}`).join(', ')} but the stem `
           + 'never displays it, so the student has no way to compute the answer — show every input the '
           + 'correct value needs in the stem',
       };
     }
   }
-  return { fields: { ...base, verification: result.verification } };
+  return { fields: { ...solvedBase, verification }, ...withConstants };
 }
 
 /** The reviewer's earned label, persisted only when it is a real difficulty —
@@ -413,6 +437,10 @@ export function inspectCandidate(input: {
   }
   const numerics = verifyGeneratedNumerics(candidate);
   if (numerics.failure) findings.push(numerics.failure);
+  for (const constant of numerics.constants ?? []) {
+    findings.push(`${constant.name} always shows ${constant.value} although its formula reads the question's parameters, `
+      + 'so it cannot be a real calculation step or a meaningful option; rewrite that formula so it varies with the inputs it names.');
+  }
   return { storable: true, findings, numerics };
 }
 

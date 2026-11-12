@@ -56,3 +56,50 @@ describe('sourceRefsFor', () => {
     expect(sourceRefsFor(chunks, undefined).map(r => r.chunk)).toEqual(['one', 'two']);
   });
 });
+
+// Q8 from the 2026-11-12 Sol trial: two distractors could both show $0, and
+// PUBLIC_PROFIT is identically zero. The solver prunes the collision; the
+// constants become findings for the repair call.
+const q8 = {
+  stem: 'Early investor buys {{SHARES}} shares at ${{EARLY_PRICE}} and sells at ${{EARLY_CLOSE}}. Another stock was ${{PUBLIC_OLD}} before a clear announcement supporting ${{PUBLIC_VALUE}}; an ordinary investor buys {{SHARES}} shares late and sells at ${{PUBLIC_VALUE}}. By how much does the early profit exceed the public profit?',
+  difficulty: 'medium', numericKind: 'numeric',
+  paramSlots: [
+    { name: 'SHARES', min: 100, max: 500, step: 100 },
+    { name: 'EARLY_PRICE', min: 40, max: 50, step: 5 },
+    { name: 'EARLY_CLOSE', min: 65, max: 75, step: 5 },
+    { name: 'PUBLIC_OLD', min: 80, max: 85, step: 5 },
+    { name: 'PUBLIC_VALUE', min: 90, max: 95, step: 5 },
+  ],
+  derivedValues: [
+    { name: 'EARLY_PROFIT', formula: 'SHARES*(EARLY_CLOSE-EARLY_PRICE)' },
+    { name: 'PUBLIC_PROFIT', formula: 'SHARES*(PUBLIC_VALUE-PUBLIC_VALUE)' },
+    { name: 'PROFIT_DIFFERENCE', formula: 'EARLY_PROFIT-PUBLIC_PROFIT' },
+    { name: 'STALE_PUBLIC_PROFIT', formula: 'SHARES*(PUBLIC_VALUE-PUBLIC_OLD)', errorModel: 'bought at the stale pre-announcement price' },
+    { name: 'STALE_PRICE_DIFFERENCE', formula: 'EARLY_PROFIT-STALE_PUBLIC_PROFIT', errorModel: 'subtracted the stale-price profit' },
+    { name: 'NO_INFORMATION_REWARD', formula: 'PUBLIC_PROFIT', errorModel: 'assumed nobody can profit while prices adjust' },
+    { name: 'REVERSED_DIFFERENCE', formula: 'PUBLIC_PROFIT-EARLY_PROFIT', errorModel: 'reversed the subtraction' },
+  ],
+  options: [
+    { key: 'A', text: '${{PROFIT_DIFFERENCE}}', role: 'correct', explanation: 'Early profit minus public profit.' },
+    { key: 'B', text: '${{REVERSED_DIFFERENCE}}', role: 'partially-correct', explanation: 'Reversed.' },
+    { key: 'C', text: '${{STALE_PRICE_DIFFERENCE}}', role: 'common-misconception', explanation: 'Stale price.' },
+    { key: 'D', text: '${{NO_INFORMATION_REWARD}}', role: 'common-misconception', explanation: 'No reward.' },
+  ],
+} as never;
+
+describe('inspectCandidate with the parameter solver', () => {
+  it('stores pruned parameter values and the solver report instead of failing Q8 on a collision', () => {
+    const result = inspectCandidate({ type: 'mcq', kind: 'calculation', candidate: q8 });
+    expect(result.numerics.failure).toBeUndefined();
+    const fields = result.numerics.fields;
+    expect(fields.paramSlots?.find((slot) => slot.name === 'EARLY_CLOSE')).toEqual({ name: 'EARLY_CLOSE', values: [70, 75] });
+    expect(fields.verification?.parameterSolver).toEqual({ checkedCombinations: 180, removed: [{ slot: 'EARLY_CLOSE', values: [65] }] });
+    expect(fields.verification?.parameterCoverage?.mode).toBe('exhaustive');
+  });
+
+  it('reports constant derived values as findings for the repair call', () => {
+    const result = inspectCandidate({ type: 'mcq', kind: 'calculation', candidate: q8 });
+    expect(result.numerics.constants?.map((c) => c.name).sort()).toEqual(['NO_INFORMATION_REWARD', 'PUBLIC_PROFIT']);
+    expect(result.findings.join(' ')).toMatch(/PUBLIC_PROFIT always shows 0 although its formula reads/);
+  });
+});

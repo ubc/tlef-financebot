@@ -330,6 +330,12 @@ export interface NumericVerification {
     maxCombinations: number;
     reason?: 'combination-limit' | 'unrepresentable-domain' | 'ambiguous-parameter-names';
   };
+  /** Generation-time parameter solver (spec 2026-11-12): slot values it removed
+   * so no combination collides. Absent when the solver did not run. */
+  parameterSolver?: {
+    checkedCombinations: number;
+    removed: Array<{ slot: string; values: number[] }>;
+  };
 }
 
 /** Immutable snapshot: every edit creates a new version (PRD §2). */
