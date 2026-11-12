@@ -182,6 +182,10 @@ test.describe('instructor pipeline', () => {
       await expect(datesDialog.getByLabel('Course ends')).toHaveValue('2026-12-07');
       await datesDialog.getByRole('button', { name: 'Save dates' }).click();
       await expect(datesDialog).toBeHidden();
+      // With dates set, the registration code is the next launch blocker; the
+      // authoring path waits under "Up next".
+      await expect(page.locator('.workflow-action--primary')).toContainText('Generate a registration code');
+      await page.getByText(/^Up next \(\d+\)$/).click();
       await expect(page.getByRole('button', { name: /Start building course knowledge/ })).toBeVisible();
     });
 
@@ -208,7 +212,7 @@ test.describe('instructor pipeline', () => {
       // A new Topic starts "Not released" (theme-release.ts); the Student
       // Preview below needs it released to show anything.
       const release = await page.request.patch(`/api/themes/${themeId}`, {
-        data: { availableFrom: '2000-01-01T00:00:00.000Z' },
+        data: { availableFrom: '2000-01-01T00:00:00.000Z', expectedRevision: (tree.themes[0] as { revision?: number }).revision ?? 0 },
       });
       expect(release.ok()).toBe(true);
       expect(loId).toBeTruthy();
@@ -284,15 +288,16 @@ test.describe('instructor pipeline', () => {
 
       await expect(page).toHaveURL(new RegExp(`#\\/preview\\/course\\/${courseId}$`));
       await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Start →', exact: true }).click();
-      await expect(page.getByText(STEM)).toBeVisible();
+      await page.getByRole('button', { name: 'Start lesson →', exact: true }).click();
+      await expect(page.getByText(STEM).first()).toBeVisible();
       // Matched by TEXT, with the key left open: createQuestion shuffles MCQ
       // options and relabels the keys, so the correct answer is no longer at
       // 'A' just because it was seeded there. `^[A-D]\s+` still pins that a key
       // prefix renders at all, which is the part of the shape worth asserting.
       await page.getByRole('button', { name: new RegExp(`^[A-D]\\s+${CORRECT_OPTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
       await page.getByRole('button', { name: 'Submit', exact: true }).click();
-      await expect(page.getByText('Correct!', { exact: true })).toBeVisible();
+      // The lesson list marks the answered question's result.
+      await expect(page.getByText('01 · correct', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Switch role, current role Student without access restrictions', exact: true }).click();
       await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
 
@@ -303,16 +308,16 @@ test.describe('instructor pipeline', () => {
     await test.step('publish the course', async () => {
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
       await expect(page.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
-      await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
+      await expect(page.locator('#publish-panel summary')).toContainText('launch checks complete');
       await expect(page.getByRole('heading', { name: 'Next actions' })).toBeVisible();
 
-      // Course Home derives the one next-best task from live state. After this
-      // fixture has dates, an LO, an Approved question, and a completed Preview,
-      // the still-unassigned uploaded source is correctly surfaced next.
+      // Course Home derives the one next-best task from live state.
       const primaryAction = page.locator('.workflow-action--primary');
       await expect(primaryAction).toHaveCount(1);
       await expect(primaryAction).toBeVisible();
-      await expect(primaryAction).toContainText('Assign course materials');
+      // No registration code has been generated in this fixture, so that launch
+      // blocker stays first; materials assignment waits under "Up next".
+      await expect(primaryAction).toContainText('Generate a registration code');
       await expect(page.getByText('NEXT STEP', { exact: true })).toBeVisible();
 
       await page.locator('.project-hero').getByRole('button', { name: 'Publish course →' }).click();

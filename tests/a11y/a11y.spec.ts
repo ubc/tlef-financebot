@@ -344,7 +344,7 @@ test.describe('a11y across the signed-in surfaces', () => {
 
       await page.goto(`/#/instructor/course/${courseId}`);
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Launch readiness' })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Course progress' })).toBeVisible();
       await expectNoViolations(page, 'instructor course dashboard');
 
       await page.goto(`/#/instructor/course/${courseId}/materials`);

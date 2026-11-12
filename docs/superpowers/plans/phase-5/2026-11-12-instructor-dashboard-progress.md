@@ -16,4 +16,4 @@
   replace the a11y guided-setup test; tutorial anchors/copy; `client/AGENTS.md`,
   `tests/AGENTS.md`, root "Current state", `docs/api-contract.md` if it documents
   the workflow summary.
-- [ ] **5. Verify.** typecheck, lint, unit; browser check on 6118; pipeline + a11y.
+- [x] **5. Verify.** typecheck, lint, unit; browser check on 6118; pipeline + a11y.
