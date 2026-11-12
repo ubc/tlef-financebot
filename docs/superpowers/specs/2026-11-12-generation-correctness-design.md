@@ -77,9 +77,9 @@ PUBLIC_OLD 80"). An instructor editing the question later edits the explicit
 `values`.
 
 For Q8 every failing combination has an early price change of 15 and a public
-price change of 15, so removing one value that makes either change 15 (for
-example `PUBLIC_OLD = 80`, leaving public changes of 5 and 10) removes the
-collision with 120 combinations left. The constant `PUBLIC_PROFIT` remains a
+price change of 15. `PUBLIC_OLD` and `PUBLIC_VALUE` have only two values each,
+so they must keep both; removing `EARLY_PRICE = 50` (early changes become
+20–35) removes the collision with 120 of 180 combinations left. The constant `PUBLIC_PROFIT` remains a
 finding and goes to the repair call.
 
 ## 2. One repair call
