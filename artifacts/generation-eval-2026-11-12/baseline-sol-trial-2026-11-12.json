@@ -1,0 +1,111 @@
+{
+  "label": "baseline-sol-trial-2026-11-12",
+  "courseId": "6af5e2ddc2eaa92d395f5bc0",
+  "runIds": [
+    "6af5e304c2eaa92d395f5be9",
+    "6af5e304c2eaa92d395f5beb",
+    "6af5e304c2eaa92d395f5bed",
+    "6af5e304c2eaa92d395f5bef"
+  ],
+  "summary": {
+    "runs": 4,
+    "saved": 8,
+    "failedItems": 0,
+    "pass": 5,
+    "flag": 2,
+    "reject": 1,
+    "numericFailures": 1,
+    "waste": 1,
+    "repairsAttempted": 0,
+    "repairsAdopted": 0,
+    "solverAdjusted": 0,
+    "tokensPerSavedQuestion": 9238,
+    "stages": {
+      "generation": {
+        "calls": 8,
+        "tokens": 55075,
+        "medianSeconds": 28.2
+      },
+      "check": {
+        "calls": 8,
+        "tokens": 18830,
+        "medianSeconds": 3.3
+      }
+    }
+  },
+  "rows": [
+    {
+      "questionId": "6af5e333c2eaa92d395f5bfb",
+      "lo": "Explain how information is transferred into financial prices",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Stocks X and Y initially trade at ${{PRICE_X}} and ${{PRICE_Y}} per share, respectively. Both prices initially reflect all available informa"
+    },
+    {
+      "questionId": "6af5e34dc2eaa92d395f5c07",
+      "lo": "Explain how information is transferred into financial prices",
+      "difficulty": "medium",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Two analysts each estimate that a stock's fair value exceeds its current market price. - **Analyst Lee** relies on an easily interpreted pub"
+    },
+    {
+      "questionId": "6af5e317c2eaa92d395f5bf1",
+      "lo": "Discuss the concept of market efficiency",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Investors value stocks using expected future cash flows and required returns. A new research tool makes private or complex information subst"
+    },
+    {
+      "questionId": "6af5e336c2eaa92d395f5bfd",
+      "lo": "Discuss the concept of market efficiency",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A research team tests two investment strategies over many repeated opportunities. A strategy using only past prices and trading volumes find"
+    },
+    {
+      "questionId": "6af5e318c2eaa92d395f5bf3",
+      "lo": "Describe how different types of information are transferred into prices",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A student compares a public announcement whose effect on firm value is clear with a public report that requires substantial analysis. The st"
+    },
+    {
+      "questionId": "6af5e350c2eaa92d395f5c0b",
+      "lo": "Describe how different types of information are transferred into prices",
+      "difficulty": "medium",
+      "decision": "reject",
+      "numericFailure": true,
+      "solverRemoved": [],
+      "stem": "Consider two independent trading scenarios. Ignore trading costs, and assume no further information arrives before either position is sold. "
+    },
+    {
+      "questionId": "6af5e328c2eaa92d395f5bf9",
+      "lo": "Illustrate how market efficiency can be empirically tested",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Two researchers test market efficiency using firms’ public earnings announcements, which provide new information about expected future cash "
+    },
+    {
+      "questionId": "6af5e34fc2eaa92d395f5c09",
+      "lo": "Illustrate how market efficiency can be empirically tested",
+      "difficulty": "medium",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A researcher claims to test market efficiency by showing that a model closely reproduces historical stock prices. The model uses past tradin"
+    }
+  ],
+  "failures": []
+}
