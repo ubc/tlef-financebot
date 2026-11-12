@@ -251,6 +251,8 @@ describe('courses routes (auth + course-instructor gating)', () => {
       },
       setup: {
         steps: [],
+        currentStage: 'publish',
+        previewTested: false,
         primaryAction: {
           id: 'preview-course',
           priority: 'normal',
