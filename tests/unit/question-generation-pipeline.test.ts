@@ -66,10 +66,10 @@ it('passes existing stems and earlier batch stems into later generator prompts',
   expect(secondPrompt).toContain('First stem');
 });
 
-it('saves a rejected question as a Draft and does not regenerate', async () => {
+it('saves a rejected question as a Draft and does not regenerate when repair is off', async () => {
   jest.mocked(completeJson)
     .mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce({ decision: 'reject', reasoning: 'Wrong key', roleAssessment: '', suggestions: ['Fix A'] });
-  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  await runQuestionGeneration({ ...input, count: 1, repair: false }, runId);
   expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(2);
   expect(jest.mocked(createQuestion).mock.calls[0][0].agentDecision).toMatchObject({ decision: 'reject', suggestions: ['Fix A'] });
 });
@@ -80,9 +80,9 @@ it('saves a flagged Draft when the checker call fails', async () => {
   expect(jest.mocked(createQuestion).mock.calls[0][0].agentDecision).toMatchObject({ decision: 'flag', reasoning: 'Automatic check unavailable: timeout' });
 });
 
-it('records a failure and makes no checker call when the options cannot be stored', async () => {
+it('records a failure and makes no checker call when the options cannot be stored (repair off)', async () => {
   jest.mocked(completeJson).mockResolvedValueOnce({ stem: 'bad', options: [] });
-  await runQuestionGeneration({ ...input, count: 1 }, runId);
+  await runQuestionGeneration({ ...input, count: 1, repair: false }, runId);
   expect(jest.mocked(completeJson)).toHaveBeenCalledTimes(1);
   expect(createQuestion).not.toHaveBeenCalled();
   expect(failContentRun).toHaveBeenCalled();
@@ -175,4 +175,98 @@ it('records the grounding summary on the run after retrieval', async () => {
   expect(patch!.grounding!.retrievedChunkCount).toBe(1);
   expect(patch!.grounding!.pinned).toBe(true);
   expect(patch!.grounding!.allowedMaterialIds.map(String)).toEqual(['65a000000000000000000001']);
+});
+
+describe('one repair call (spec 2026-11-12-generation-correctness)', () => {
+  const pass = { decision: 'pass', reasoning: 'ok', roleAssessment: 'fine', suggestions: [] };
+  const flag = { decision: 'flag', reasoning: 'label quibble', roleAssessment: '', suggestions: ['Relabel D'] };
+  const reject = { decision: 'reject', reasoning: 'Wrong key', roleAssessment: '', suggestions: ['Fix A'] };
+  const stages = () => jest.mocked(completeJson).mock.calls.map(c => (c[1] as { usageContext: { stage: string } }).usageContext.stage);
+  const saved = () => jest.mocked(createQuestion).mock.calls[0][0];
+  // Two options are the same formula: no parameter values can separate them.
+  const collidingNumeric = {
+    stem: 'A deposit of ${{P}} earns 5%. What is it worth after one year?', difficulty: 'easy', numericKind: 'numeric', sourceChunkIndexes: [1],
+    paramSlots: [{ name: 'P', min: 100, max: 500, step: 100 }],
+    derivedValues: [
+      { name: 'FV', formula: 'P*1.05' },
+      { name: 'SAME', formula: 'P*(1+0.05)', errorModel: 'rewrote the same growth' },
+      { name: 'NO_GROWTH', formula: 'P', errorModel: 'ignored the interest' },
+      { name: 'INTEREST_ONLY', formula: 'P*0.05', errorModel: 'reported only the interest' },
+    ],
+    options: [
+      { key: 'A', text: '${{FV}}', role: 'correct', explanation: 'x' },
+      { key: 'B', text: '${{SAME}}', role: 'common-misconception', explanation: 'x' },
+      { key: 'C', text: '${{NO_GROWTH}}', role: 'partially-correct', explanation: 'x' },
+      { key: 'D', text: '${{INTEREST_ONLY}}', role: 'clearly-wrong', explanation: 'x' },
+    ],
+  };
+  const fixedNumeric = {
+    ...collidingNumeric,
+    derivedValues: [collidingNumeric.derivedValues[0], { name: 'SAME', formula: 'P*1.5', errorModel: 'used 50% instead of 5%' }, ...collidingNumeric.derivedValues.slice(2)],
+  };
+
+  it('does not repair a flagged question', async () => {
+    jest.mocked(completeJson).mockResolvedValueOnce(conceptual('Q1')).mockResolvedValueOnce(flag);
+    await runQuestionGeneration({ ...input, count: 1 }, runId);
+    expect(stages()).toEqual(['generation', 'check']);
+    expect(saved().agentDecision).not.toHaveProperty('repair');
+  });
+
+  it('repairs a rejected question once and adopts the better version', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(conceptual('Original')).mockResolvedValueOnce(reject)
+      .mockResolvedValueOnce(conceptual('Repaired')).mockResolvedValueOnce(pass);
+    await runQuestionGeneration({ ...input, count: 1 }, runId);
+    expect(stages()).toEqual(['generation', 'check', 'repair', 'check']);
+    const repairPrompt = jest.mocked(completeJson).mock.calls[2][0] as string;
+    expect(repairPrompt).toContain('REWRITE TASK');
+    expect(repairPrompt).toContain('Original');
+    expect(repairPrompt).toContain('Fix only the problems listed above');
+    expect(saved().stem).toBe('Repaired');
+    expect(saved().agentDecision).toMatchObject({
+      decision: 'pass',
+      repair: { attempted: true, trigger: 'checker-reject', adopted: true, originalDecision: 'reject' },
+    });
+  });
+
+  it('repairs at most once', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(conceptual('Original')).mockResolvedValueOnce(reject)
+      .mockResolvedValueOnce(conceptual('Repaired')).mockResolvedValueOnce(reject);
+    await runQuestionGeneration({ ...input, count: 1 }, runId);
+    expect(stages()).toEqual(['generation', 'check', 'repair', 'check']);
+    expect(saved().stem).toBe('Original');
+    expect(saved().agentDecision).toMatchObject({ decision: 'reject', repair: { adopted: false } });
+  });
+
+  it('sends the exact numeric finding and adopts a repaired formula', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(collidingNumeric).mockResolvedValueOnce(pass)
+      .mockResolvedValueOnce(fixedNumeric).mockResolvedValueOnce(pass);
+    await runQuestionGeneration({ ...input, count: 1, kind: 'calculation' }, runId);
+    const repairPrompt = jest.mocked(completeJson).mock.calls[2][0] as string;
+    expect(repairPrompt).toMatch(/identical at display precision/);
+    expect(repairPrompt).toContain('Original formulas');
+    expect(saved().agentDecision).toMatchObject({ repair: { trigger: 'numeric-verification', adopted: true } });
+    expect(saved().verification).toBeDefined();
+  });
+
+  it('repairs an unstorable candidate', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce({ stem: 'bad', options: [] })
+      .mockResolvedValueOnce(conceptual('Repaired')).mockResolvedValueOnce(pass);
+    const created = await runQuestionGeneration({ ...input, count: 1 }, runId);
+    expect(created).toHaveLength(1);
+    expect(stages()).toEqual(['generation', 'repair', 'check']);
+    expect(saved().agentDecision).toMatchObject({ repair: { trigger: 'unstorable', adopted: true } });
+  });
+
+  it('keeps the original when the repair call fails', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(conceptual('Original')).mockResolvedValueOnce(reject)
+      .mockRejectedValueOnce(new Error('provider timeout'));
+    await runQuestionGeneration({ ...input, count: 1 }, runId);
+    expect(saved().stem).toBe('Original');
+    expect(saved().agentDecision).toMatchObject({ decision: 'reject', repair: { adopted: false, error: 'provider timeout' } });
+  });
 });

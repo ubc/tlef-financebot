@@ -81,6 +81,7 @@ const platformSettingsBody = z.object({
   costControls: z.object({ maxGenerationsPerDay: z.number().int().positive() }),
   featureFlags: z.object({
     layer2Evaluator: z.boolean(),
+    generationRepair: z.boolean().optional(),
   }),
 });
 const courseModelParams = z.object({ courseId: objectId });
@@ -239,10 +240,14 @@ adminRouter.put(
   '/admin/platform-settings',
   ensureAdmin(),
   validate({ body: platformSettingsBody }),
-  async (req, res) => res.json(await updatePlatformSettings(
-    req.body as z.infer<typeof platformSettingsBody>,
-    req.user!.puid,
-  )),
+  async (req, res) => {
+    const body = req.body as z.infer<typeof platformSettingsBody>;
+    // Older clients omit generationRepair; it defaults on.
+    res.json(await updatePlatformSettings({
+      ...body,
+      featureFlags: { ...body.featureFlags, generationRepair: body.featureFlags.generationRepair ?? true },
+    }, req.user!.puid));
+  },
 );
 
 adminRouter.get(

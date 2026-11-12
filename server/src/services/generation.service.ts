@@ -107,6 +107,8 @@ export interface GenerationInput {
   prompt?: string;
   byPuid: string;
   models?: ResolvedStepModels;
+  /** Platform flag generationRepair, read when the job runs. Absent means on. */
+  repair?: boolean;
   blueprintId?: ObjectId;
   retryOfRunId?: ObjectId;
   pinnedMaterialIds?: ObjectId[];
@@ -311,6 +313,7 @@ export function registerGenerationJobs(): void {
         ...(run.input.prompt !== undefined ? { prompt: run.input.prompt } : {}),
         byPuid: run.requestedBy,
         models: run.input.modelSnapshot ?? resolvedFromPersisted(run.input.models, await getPlatformSettings()),
+        repair: (await getPlatformSettings()).featureFlags.generationRepair,
         ...(run.input.blueprintId ? { blueprintId: run.input.blueprintId } : {}),
         ...(run.input.retryOfRunId ? { retryOfRunId: run.input.retryOfRunId } : {}),
         ...(run.grounding?.allowedMaterialIds

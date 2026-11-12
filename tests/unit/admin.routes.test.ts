@@ -181,7 +181,7 @@ describe('Admin model source contract', () => {
     utility: { model: 'gpt-6-luna', modelSource: 'environment' as const },
   };
   const settings = { _id: 'platform' as const, models, costControls: { maxGenerationsPerDay: 10 },
-    featureFlags: { layer2Evaluator: true },
+    featureFlags: { layer2Evaluator: true, generationRepair: true },
     updatedBy: 'admin', updatedAt: new Date() };
 
   it('protects model settings from signed-out and non-Admin callers', async () => {

@@ -644,13 +644,15 @@ describe('durable generation runs (P2-0)', () => {
     jest.mocked(completeJson)
       .mockResolvedValueOnce(generatorOutput())
       .mockResolvedValueOnce(check('pass', 'good'))
-      .mockResolvedValueOnce({ stem: 'bad', options: [] });
+      .mockResolvedValueOnce({ stem: 'bad', options: [] })
+      .mockResolvedValueOnce({ stem: 'still bad', options: [] });
     jest.mocked(createQuestion).mockResolvedValue({ questionId: createdQuestionId, version: {} } as never);
 
     await jobHandler()({ runId: run._id.toHexString() });
 
-    // No retry: two calls for the first item, one generator call for the second.
-    expect(completeJson).toHaveBeenCalledTimes(3);
+    // Two calls for the first item; the second item's unstorable output gets
+    // its one repair call (2026-11-12), which is also unstorable, so it fails.
+    expect(completeJson).toHaveBeenCalledTimes(4);
     const terminal = jest
       .mocked(updateContentRun)
       .mock.calls.map((call) => call[1])
@@ -775,13 +777,19 @@ describe('queued pipeline grounding and persistence (IN-Q05/Q10)', () => {
     expect(arg.sourceRefs).toEqual([{ materialId, chunk: 'IRR context' }]);
   });
 
-  it('still inserts a Draft when the checker REJECTS (nothing is auto-discarded or retried)', async () => {
-    jest.mocked(completeJson).mockResolvedValueOnce(generatorOutput()).mockResolvedValueOnce(check('reject', 'factually wrong'));
+  it('still inserts a Draft when the checker REJECTS and the one repair does not improve it', async () => {
+    jest.mocked(completeJson)
+      .mockResolvedValueOnce(generatorOutput()).mockResolvedValueOnce(check('reject', 'factually wrong'))
+      .mockResolvedValueOnce(generatorOutput()).mockResolvedValueOnce(check('reject', 'still wrong'));
 
     const ids = await runPipeline({ courseId, loId, count: 1, byPuid: 'PUID-INSTR' });
 
     expect(ids).toHaveLength(1);
-    expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(completeJson).toHaveBeenCalledTimes(4);
+    expect(jest.mocked(createQuestion).mock.calls[0][0].agentDecision).toMatchObject({
+      decision: 'reject', reasoning: 'factually wrong',
+      repair: { attempted: true, trigger: 'checker-reject', adopted: false, originalDecision: 'reject' },
+    });
     expect(createQuestion).toHaveBeenCalledTimes(1);
     expect(jest.mocked(createQuestion).mock.calls[0][0].agentDecision?.decision).toBe('reject');
     // createQuestion itself sets state:'draft'; the pipeline must never publish.
@@ -983,13 +991,14 @@ describe('private assessment adapter', () => {
     expect(checkpoint).toHaveBeenCalled();
   });
 
-  it('fails the slot on a numeric failure without retrying (an exam item must be servable)', async () => {
+  it('fails the slot on a numeric failure the one repair cannot fix (an exam item must be servable)', async () => {
+    const broken = { ...generatorOutput(), stem: 'A loan of {{P}} at 5%: what is the IRR?', numericKind: 'conceptual' };
     jest.mocked(completeJson)
-      .mockResolvedValueOnce({ ...generatorOutput(), stem: 'A loan of {{P}} at 5%: what is the IRR?', numericKind: 'conceptual' })
-      .mockResolvedValueOnce(check());
+      .mockResolvedValueOnce(broken).mockResolvedValueOnce(check())
+      .mockResolvedValueOnce(broken).mockResolvedValueOnce(check());
     await expect(generatePrivateAssessmentQuestion({ courseId, loId, type: 'mcq', difficulty: 'medium', checkpoint: async () => undefined }))
       .rejects.toThrow('this question is conceptual');
-    expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(completeJson).toHaveBeenCalledTimes(4);
     expect(createQuestion).not.toHaveBeenCalled();
   });
 });

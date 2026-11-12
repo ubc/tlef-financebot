@@ -170,7 +170,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       if (saved.models[step][key] !== draft.models[step][key]) result.push({ label: `${STEP_LABEL[step]} · ${key === 'reasoningEffort' ? 'reasoning effort' : key}`, before: String(saved.models[step][key] ?? 'Step default'), after: String(draft.models[step][key] ?? 'Step default') });
     }
     if (saved.costControls.maxGenerationsPerDay !== draft.costControls.maxGenerationsPerDay) result.push({ label: 'Daily question limit', before: String(saved.costControls.maxGenerationsPerDay), after: String(draft.costControls.maxGenerationsPerDay) });
-    for (const [key, label] of [['layer2Evaluator', 'Layer 2 Mastery Evaluator']] as const) {
+    for (const [key, label] of [['layer2Evaluator', 'Layer 2 Mastery Evaluator'], ['generationRepair', 'Repair failed generated questions']] as const) {
       if (saved.featureFlags[key] !== draft.featureFlags[key]) result.push({ label, before: saved.featureFlags[key] ? 'Enabled' : 'Disabled', after: draft.featureFlags[key] ? 'Enabled' : 'Disabled' });
     }
     for (const custom of draft.customModels ?? []) if (!saved.customModels?.some(model => model.id === custom.id && model.profile === custom.profile)) result.push({ label: `Custom model · ${custom.id}`, before: 'Not registered', after: custom.profile });
@@ -276,6 +276,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     return el('div', { class: 'ac-config-pane' }, intro('Quality controls', 'Reserved stages that are not yet wired into generation.', PANEL_HELP.flags),
       el('div', { class: 'ac-config-setting-list' }, ...([
         ['layer2Evaluator', 'Layer 2 Mastery Evaluator', 'Not yet wired: this flag is saved, but no code reads it.'],
+        ['generationRepair', 'Repair failed generated questions', 'When a generated question fails a numeric check or is rejected, the generator gets one call to fix exactly those problems; the better version is kept.'],
       ] as const).map(([key, label, description]) => {
         const toggle = el('input', { type: 'checkbox', 'aria-label': label }); toggle.checked = draft.featureFlags[key]; toggle.disabled = pending;
         toggle.onchange = () => { draft.featureFlags[key] = toggle.checked; render(); };

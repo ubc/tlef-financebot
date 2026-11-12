@@ -42,6 +42,7 @@ export interface RegenerationVariant {
     roleAssessment: string;
     suggestions?: string[];
     suggestedDifficulty?: Difficulty;
+    repair?: RepairRecord;
   };
 }
 
@@ -50,34 +51,64 @@ export interface CheckedCandidate {
   numerics: ReturnType<typeof verifyGeneratedNumerics>;
   check: CheckerOutput;
   sourceRefs: QuestionVersion['sourceRefs'];
+  /** Set when the one repair call ran (spec 2026-11-12-generation-correctness). */
+  repair?: RepairRecord;
 }
 
-/** Exactly two model calls: generate, then check. Nothing here retries. */
-export async function generateAndCheck(input: {
+export type RepairTrigger = 'unstorable' | 'numeric-verification' | 'constant-value' | 'checker-reject';
+
+export interface RepairRecord {
+  attempted: true;
+  trigger: RepairTrigger;
+  /** Whether the repaired candidate replaced the original. */
+  adopted: boolean;
+  originalDecision?: 'pass' | 'flag' | 'reject';
+  originalFindings: string[];
+  /** The repair call itself failed; the original was kept. */
+  error?: string;
+}
+
+interface GenerateAndCheckInput {
   type: QuestionType; kind?: QuestionKind; difficulty?: Difficulty; loName: string; secondaryLoNames: string[];
   prompt?: string; chunks: RetrievedChunk[]; slot: SlotAssignment; existingStems: string[]; batchStems: string[];
   regenerate?: RegenerateContext; models: Pick<ResolvedStepModels, 'generator' | 'reviewer'>;
   checkpoint: () => Promise<void>; item: number; onText?: (text: string) => void; preserveOptionOrder?: boolean;
-}): Promise<CheckedCandidate> {
+  /** One repair call when the candidate fails deterministic checks or is rejected. */
+  repair?: boolean;
+  /** Told before the repair call starts (live progress). */
+  onRepair?: (trigger: RepairTrigger) => Promise<void>;
+}
+
+interface Evaluated {
+  raw: GeneratorOutput;
+  inspection: ReturnType<typeof inspectCandidate>;
+  generated?: GeneratorOutput;
+  check?: CheckerOutput;
+}
+
+async function generateCandidate(input: GenerateAndCheckInput, stage: 'generation' | 'repair', regenerate?: RegenerateContext): Promise<GeneratorOutput> {
   await input.checkpoint();
-  let raw: GeneratorOutput;
   try {
-    raw = await completeJson<GeneratorOutput>(GENERATOR_PROMPT({
-    type: input.type, loName: input.loName, difficulty: input.difficulty, prompt: input.prompt, chunks: input.chunks,
-    assignedMove: input.slot.hardnessMove, kind: input.kind, secondaryLoNames: input.secondaryLoNames,
-    angle: input.slot.angle, focusChunk: input.slot.focusChunk, existingStems: input.existingStems,
-    batchStems: input.batchStems, ...(input.regenerate ? { regenerate: input.regenerate } : {}),
-  }), {
-    temperature: GENERATOR_TEMPERATURE, ...input.models.generator,
-    usageContext: { stage: 'generation', item: input.item }, beforeRequest: input.checkpoint,
-    ...(input.onText ? { onText: input.onText } : {}), jsonRetry: false,
-  });
+    return await completeJson<GeneratorOutput>(GENERATOR_PROMPT({
+      type: input.type, loName: input.loName, difficulty: input.difficulty, prompt: input.prompt, chunks: input.chunks,
+      assignedMove: input.slot.hardnessMove, kind: input.kind, secondaryLoNames: input.secondaryLoNames,
+      angle: input.slot.angle, focusChunk: input.slot.focusChunk, existingStems: input.existingStems,
+      batchStems: input.batchStems, ...(regenerate ? { regenerate } : {}),
+    }), {
+      temperature: GENERATOR_TEMPERATURE, ...input.models.generator,
+      usageContext: { stage, item: input.item }, beforeRequest: input.checkpoint,
+      ...(input.onText ? { onText: input.onText } : {}), jsonRetry: false,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === 'llm-json-parse-failed') throw new Error('generation-invalid-options', { cause: error });
     throw error;
   }
+}
+
+/** Free inspection, then the checker call for a storable candidate. */
+async function inspectAndCheck(input: GenerateAndCheckInput, raw: GeneratorOutput): Promise<Evaluated> {
   const inspection = inspectCandidate({ type: input.type, kind: input.kind, difficulty: input.difficulty, candidate: raw });
-  if (!inspection.storable) throw new Error('generation-invalid-options');
+  if (!inspection.storable) return { raw, inspection };
   const clean = sanitizeGenerated(raw);
   // Shuffled BEFORE the checker: it cites options by letter.
   const generated = input.type === 'mcq' && !input.preserveOptionOrder ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
@@ -92,11 +123,88 @@ export async function generateAndCheck(input: {
     if (error instanceof Error && error.message === 'content-run-conflict') throw error;
     check = uncheckedDecision(error);
   }
-  return { generated, numerics: inspection.numerics, check, sourceRefs: sourceRefsFor(input.chunks, raw.sourceChunkIndexes) };
+  return { raw, inspection, generated, check };
 }
 
-export function agentDecisionFrom(check: CheckerOutput, numericsFailure?: string): NonNullable<Question['agentDecision']> {
+/** Why a candidate deserves the one repair call, or undefined. A `flag` never does. */
+export function repairTrigger(evaluated: Pick<Evaluated, 'inspection' | 'check'>): RepairTrigger | undefined {
+  if (!evaluated.inspection.storable) return 'unstorable';
+  if (evaluated.inspection.numerics.failure) return 'numeric-verification';
+  if (evaluated.inspection.numerics.constants?.length) return 'constant-value';
+  if (evaluated.check?.decision === 'reject') return 'checker-reject';
+  return undefined;
+}
+
+/** storable > numerics ok (and no constants) > pass > flag > reject. */
+function candidateScore(evaluated: Pick<Evaluated, 'inspection' | 'check'>): number {
+  if (!evaluated.inspection.storable) return 0;
+  const numericsOk = !evaluated.inspection.numerics.failure && !evaluated.inspection.numerics.constants?.length;
+  const decision = evaluated.check?.decision === 'pass' ? 2 : evaluated.check?.decision === 'flag' ? 1 : 0;
+  return 1 + (numericsOk ? 10 : 0) + decision;
+}
+
+const REPAIR_LABEL: Record<RepairTrigger, string> = {
+  unstorable: 'the options could not be stored',
+  'numeric-verification': 'a numeric check failed',
+  'constant-value': 'a formula never varies',
+  'checker-reject': 'the checker rejected it',
+};
+
+const REPAIR_INSTRUCTION = 'Fix only the problems listed above. Keep the scenario, the learning objective, the difficulty and every '
+  + 'option that is not part of a listed problem. Return the complete corrected question.';
+
+function repairContext(evaluated: Evaluated): RegenerateContext {
+  const findings = evaluated.inspection.findings;
   return {
+    original: { stem: evaluated.raw.stem ?? '', options: Array.isArray(evaluated.raw.options) ? evaluated.raw.options : [] },
+    ...(evaluated.check ? { agentDecision: evaluated.check } : {}),
+    instruction: [
+      'Automatic checks found these problems:',
+      ...(findings.length ? findings.map((finding) => `- ${finding}`) : ['- The checker rejected the question (see its verdict above).']),
+      ...(evaluated.raw.paramSlots?.length ? [`Original parameters: ${JSON.stringify(evaluated.raw.paramSlots)}`] : []),
+      ...(evaluated.raw.derivedValues?.length ? [`Original formulas: ${JSON.stringify(evaluated.raw.derivedValues)}`] : []),
+      REPAIR_INSTRUCTION,
+    ].join('\n'),
+  };
+}
+
+/** Generate, inspect, check; then, at most once, repair a candidate that failed
+ * a deterministic check or was rejected, keeping whichever version is better.
+ * Two model calls, or four when repaired (spec 2026-11-12). */
+export async function generateAndCheck(input: GenerateAndCheckInput): Promise<CheckedCandidate> {
+  const first = await inspectAndCheck(input, await generateCandidate(input, 'generation', input.regenerate));
+  const trigger = input.repair ? repairTrigger(first) : undefined;
+  let chosen = first;
+  let repair: RepairRecord | undefined;
+  if (trigger) {
+    const record: RepairRecord = {
+      attempted: true, trigger, adopted: false, originalFindings: first.inspection.findings,
+      ...(first.check ? { originalDecision: first.check.decision } : {}),
+    };
+    try {
+      await input.onRepair?.(trigger);
+      const second = await inspectAndCheck(input, await generateCandidate(input, 'repair', repairContext(first)));
+      if (candidateScore(second) > candidateScore(first)) {
+        chosen = second;
+        record.adopted = true;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'content-run-conflict') throw error;
+      record.error = error instanceof Error ? error.message : String(error);
+    }
+    repair = record;
+  }
+  if (!chosen.inspection.storable || !chosen.generated || !chosen.check) throw new Error('generation-invalid-options');
+  return {
+    generated: chosen.generated, numerics: chosen.inspection.numerics, check: chosen.check,
+    sourceRefs: sourceRefsFor(input.chunks, chosen.raw.sourceChunkIndexes),
+    ...(repair ? { repair } : {}),
+  };
+}
+
+export function agentDecisionFrom(check: CheckerOutput, numericsFailure?: string, repair?: RepairRecord): NonNullable<Question['agentDecision']> {
+  return {
+    ...(repair ? { repair } : {}),
     decision: check.decision,
     reasoning: withVerificationNote(check.reasoning, numericsFailure),
     roleAssessment: check.roleAssessment,
@@ -149,7 +257,8 @@ export async function runQuestionGeneration(input: GenerationInput, runId: Objec
         const checked = await withGenerationPreview(runId, slot.item, onText => generateAndCheck({
           type, kind: input.kind, difficulty: input.difficulty, loName: lo.name, secondaryLoNames, prompt: input.prompt,
           chunks: grounding.chunks, slot, existingStems, batchStems: [...batchStems], models: input.models!, checkpoint,
-          item: slot.item, onText,
+          item: slot.item, onText, repair: input.repair !== false,
+          onRepair: async (trigger) => { await updateContentRun(runId, { message: `Fixing question ${slot.item + 1} of ${input.count}: ${REPAIR_LABEL[trigger]}` }); },
         }));
         batchStems.push(checked.generated.stem);
         const { questionId } = await createQuestion({
@@ -160,7 +269,7 @@ export async function runQuestionGeneration(input: GenerationInput, runId: Objec
           provenance: { kind: 'generated', runId, ...(input.blueprintId ? { blueprintId: input.blueprintId } : {}), item: slot.item },
           ...(input.prompt !== undefined ? { generationPrompt: input.prompt } : {}),
           ...checked.numerics.fields,
-          agentDecision: agentDecisionFrom(checked.check, checked.numerics.failure),
+          agentDecision: agentDecisionFrom(checked.check, checked.numerics.failure, checked.repair),
         });
         result.createdQuestionIds.push(questionId);
         result.checks!.push({ item: slot.item, check: 'quality-review', verdict: checked.check.decision, explanation: checked.check.reasoning.slice(0, 1600), at: new Date() });
@@ -257,6 +366,7 @@ export async function generatePrivateAssessmentQuestion(input: {
   await input.onStage?.('generating');
   const checked = await generateAndCheck({ type: input.type, difficulty: input.difficulty, loName: lo.name, secondaryLoNames,
     prompt, chunks, slot, existingStems: [], batchStems: [], models, checkpoint: input.checkpoint, item: 0,
+    repair: settings.featureFlags.generationRepair,
     ...(input.onText ? { onText: input.onText } : {}) });
   // Assessment questions must be servable: a numeric failure fails this exam
   // slot (the exam builder reports it). This is not a retry.
@@ -264,5 +374,5 @@ export async function generatePrivateAssessmentQuestion(input: {
   await input.onStage?.('reviewing');
   await input.checkpoint();
   return { stem: checked.generated.stem, options: checked.generated.options, difficulty: input.difficulty, ...checked.numerics.fields,
-    sourceRefs: checked.sourceRefs, agentDecision: agentDecisionFrom(checked.check) };
+    sourceRefs: checked.sourceRefs, agentDecision: agentDecisionFrom(checked.check, undefined, checked.repair) };
 }

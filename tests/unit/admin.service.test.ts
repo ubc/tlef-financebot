@@ -219,7 +219,7 @@ describe('Phase 3 Admin essentials', () => {
         utility: { model: 'gpt-5.4-nano' },
       },
       costControls: { maxGenerationsPerDay: 10 },
-      featureFlags: { layer2Evaluator: true },
+      featureFlags: { layer2Evaluator: true, generationRepair: true },
     };
     findPlatformSettings.mockResolvedValue({ _id: 'platform', ...base });
 
@@ -238,7 +238,7 @@ describe('Phase 3 Admin essentials', () => {
       featureFlags: { reviewerAgent: false, layer2Evaluator: true, retryOnReject: true } } as never;
     const normalized = normalizePlatformSettings(legacy);
     expect(Object.keys(normalized.models).sort()).toEqual(['generator', 'masteryEvaluator', 'reviewer', 'utility']);
-    expect(normalized.featureFlags).toEqual({ layer2Evaluator: true });
+    expect(normalized.featureFlags).toEqual({ layer2Evaluator: true, generationRepair: true });
   });
 });
 

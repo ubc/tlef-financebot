@@ -451,7 +451,7 @@ describe('generated numerics are verified before persisting', () => {
   });
 
   it('records the failure reason in the check reasoning for bank drafts and Regenerate variants', () => {
-    const notes = source.match(/agentDecisionFrom\(checked\.check, checked\.numerics\.failure\)/g) ?? [];
+    const notes = source.match(/agentDecisionFrom\(checked\.check, checked\.numerics\.failure/g) ?? [];
     expect(notes.length).toBeGreaterThanOrEqual(2);
     expect(source).toContain('withVerificationNote(check.reasoning, numericsFailure)');
   });

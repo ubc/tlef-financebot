@@ -427,7 +427,7 @@ export function defaultPlatformSettings(): PlatformSettings {
     },
     customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
-    featureFlags: { layer2Evaluator: true },
+    featureFlags: { layer2Evaluator: true, generationRepair: true },
     updatedBy: 'environment-default',
     updatedAt: new Date(0),
   };
@@ -464,7 +464,10 @@ export function normalizePlatformSettings(stored: PlatformSettings): PlatformSet
     models,
     customModels: stored.customModels ?? [],
     // Rebuilt key by key so removed legacy flags are dropped on read.
-    featureFlags: { layer2Evaluator: stored.featureFlags?.layer2Evaluator ?? fallback.featureFlags.layer2Evaluator },
+    featureFlags: {
+      layer2Evaluator: stored.featureFlags?.layer2Evaluator ?? fallback.featureFlags.layer2Evaluator,
+      generationRepair: stored.featureFlags?.generationRepair ?? fallback.featureFlags.generationRepair,
+    },
   };
 }
 

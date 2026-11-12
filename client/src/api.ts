@@ -269,7 +269,7 @@ export interface PlatformSettings {
   models: Record<PipelineStep, StepModelConfig>;
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { layer2Evaluator: boolean };
+  featureFlags: { layer2Evaluator: boolean; generationRepair: boolean };
   updatedBy: string;
   updatedAt: string;
 }

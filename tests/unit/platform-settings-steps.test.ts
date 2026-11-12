@@ -50,7 +50,7 @@ function validPatch(over: Partial<PlatformSettings['models']> = {}) {
       ...over,
     },
     costControls: { maxGenerationsPerDay: 10 },
-    featureFlags: { layer2Evaluator: true },
+    featureFlags: { layer2Evaluator: true, generationRepair: true },
   };
 }
 

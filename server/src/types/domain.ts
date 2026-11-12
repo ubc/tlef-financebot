@@ -195,7 +195,9 @@ export interface PlatformSettings {
    */
   customModels?: Array<{ id: string; profile: CapabilityProfile }>;
   costControls: { maxGenerationsPerDay: number };
-  featureFlags: { layer2Evaluator: boolean };
+  /** generationRepair (2026-11-12): one targeted repair call for generated
+   * questions that fail deterministic checks or are rejected. Default on. */
+  featureFlags: { layer2Evaluator: boolean; generationRepair: boolean };
   updatedBy: string;
   updatedAt: Date;
 }
@@ -410,6 +412,15 @@ export interface Question {
      * generator's self-label), so this is the only place the reviewer's
      * assessment survives; the queue can offer it as a one-click relabel. */
     suggestedDifficulty?: Difficulty;
+    /** The one automatic repair call (spec 2026-11-12-generation-correctness). */
+    repair?: {
+      attempted: true;
+      trigger: 'unstorable' | 'numeric-verification' | 'constant-value' | 'checker-reject';
+      adopted: boolean;
+      originalDecision?: 'pass' | 'flag' | 'reject';
+      originalFindings: string[];
+      error?: string;
+    };
   };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
   regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
