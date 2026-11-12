@@ -240,14 +240,14 @@ replay destinations. Prototype role switches are not production authorization
 controls. `playwright.course-admin.config.ts` checks these pages with isolated API
 fixtures, including light/dark accessibility and narrow layouts.
 
-Course Dashboard setup actions now start `setup-journey.ts`: a persistent bottom
-navigation island spanning the existing Materials, Structure, Generate, Review,
-Bank, and isolated Student Preview pages. Session storage retains only account-
-scoped navigation preferences; completion is read from workflow, topic release,
-and approved-question content checks. It refreshes every five seconds while the
-matching instructor course is visible, hides in other roles/courses/Preview, and
-restores when returning. Guide navigation never generates, approves, releases,
-or publishes content on its own.
+**Course Dashboard progress (2026-11-12).** `views/instructor/dashboard.ts` shows the
+server's six-stage bar (`setup.steps`: Materials, Structure, Generate, Review,
+Release, Publish) with `setup.currentStage` marked `aria-current="step"`, one
+Next step card (the server's primary action, plus "Up next"), and a Publish panel
+(`#publish-panel`: launch checklist, Student preview recommendation, publish
+control) that the Publish stage opens. The bar is the only progress guide: the
+floating `setup-journey.ts` island was removed, and primary actions open their
+workspace directly. Spec: `docs/superpowers/specs/2026-11-12-instructor-dashboard-progress-design.md`.
 
 Course Structure's `structure-ai-workbench.ts` uses the approved material-composer /
 live-draft-card layout. Empty courses open AI draft; Course outline retains the

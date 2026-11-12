@@ -162,14 +162,16 @@ test.describe('instructor pipeline', () => {
       await expect(duplicateResponse.json()).resolves.toEqual({ error: 'course-already-exists' });
     });
 
-    await test.step('keep blocked Preview inside the guide', async () => {
-      await page.getByRole('link', { name: /5\. Student preview: Waiting for Approved questions/ }).click();
-      const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
-      await expect(guide).toBeVisible();
-      await expect(guide.getByRole('heading', { name: 'Test the real student experience' })).toBeVisible();
-      await expect(guide.getByRole('button', { name: 'Approve a question before preview' })).toBeDisabled();
+    await test.step('show the six-stage progress bar for a new course', async () => {
+      const bar = page.getByRole('navigation', { name: 'Course progress' });
+      await expect(bar.getByRole('link')).toHaveCount(6);
+      await expect(bar.getByRole('link', { name: /^1\. Materials: No sources yet\..*Current stage$/ })).toHaveAttribute('aria-current', 'step');
+      await expect(bar.getByRole('link', { name: /^5\. Release: Waiting for Approved questions/ })).toBeVisible();
+      // Publish has no page of its own: it opens the Publish panel here.
+      await bar.getByRole('link', { name: /^6\. Publish:/ }).click();
+      await expect(page.locator('#publish-panel')).toHaveAttribute('open', '');
+      await expect(page.locator('#publish-panel')).toContainText('Approve at least one question to try the student experience.');
       expect(page.url()).toContain(`/#/instructor/course/${courseId}`);
-      await guide.getByRole('button', { name: 'Close course setup guide' }).click();
     });
 
     await test.step('accept the term-aware suggested dates through the first Next Action', async () => {
@@ -183,17 +185,17 @@ test.describe('instructor pipeline', () => {
       await expect(page.getByRole('button', { name: /Start building course knowledge/ })).toBeVisible();
     });
 
-    await test.step('add a Topic and Learning Objective through the next guided action', async () => {
+    await test.step('add a Topic and Learning Objective (the next action opens Course Structure)', async () => {
       await page.getByRole('button', { name: /Start building course knowledge/ }).click();
-      const guide = page.getByRole('dialog', { name: 'Prepare this course, one step at a time' });
-      await expect(guide.getByRole('heading', { name: 'How do you want to define the course?' })).toBeVisible();
-      await guide.getByRole('button', { name: /I already have Learning Objectives/ }).click();
-      await expect(guide.getByRole('heading', { name: 'Add learning objectives' })).toBeVisible();
-      await guide.getByLabel('Topic name', { exact: true }).fill(TOPIC_NAME);
-      await guide.locator('.course-setup-guide__lo-input').fill(`1. ${LO_NAME}\n- ${LO_NAME.toLowerCase()}`);
-      await guide.getByRole('button', { name: 'Save Learning Objectives' }).click();
-      await expect(guide.getByRole('heading', { name: 'Your learning objectives' })).toBeVisible();
-      await guide.getByRole('button', { name: 'Close course setup guide' }).click();
+      await expect(page).toHaveURL(new RegExp(`#/instructor/course/${courseId}/structure$`));
+      // Structure authoring itself is covered by the structure specs; seed the
+      // outline through the same API it uses.
+      const topic = await page.request.post(`/api/courses/${courseId}/themes`, { data: { name: TOPIC_NAME } });
+      expect(topic.status()).toBe(201);
+      const topicId = ((await topic.json()) as { _id: string })._id;
+      const lo = await page.request.post(`/api/themes/${topicId}/los`, { data: { name: LO_NAME } });
+      expect(lo.status()).toBe(201);
+      await page.getByRole('link', { name: 'Course Dashboard' }).click();
 
       const tree = await fetchTree(page, courseId);
       expect(tree.themes).toHaveLength(1);
@@ -203,8 +205,8 @@ test.describe('instructor pipeline', () => {
       themeId = tree.themes[0]._id;
       loId = tree.themes[0].los?.[0]._id ?? '';
       expect(themeId).toBeTruthy();
-      // The guide creates the Topic "Not released" (theme-release.ts); the
-      // Student Preview stage below needs it released to show anything.
+      // A new Topic starts "Not released" (theme-release.ts); the Student
+      // Preview below needs it released to show anything.
       const release = await page.request.patch(`/api/themes/${themeId}`, {
         data: { availableFrom: '2000-01-01T00:00:00.000Z' },
       });
@@ -254,7 +256,10 @@ test.describe('instructor pipeline', () => {
           { key: 'D', text: 'It measures accounting profit without considering cash flows.', role: 'partially-correct', explanation: 'NPV is a discounted cash-flow measure, not an accounting-profit measure.' },
         ],
       });
-      const res = await page.request.post(`/api/questions/${questionId.toString()}/transition`, { data: { to: 'pending-review' } });
+      const seeded = (await (await page.request.get(`/api/questions/${questionId.toString()}`)).json()) as { currentVersionId: string };
+      const res = await page.request.post(`/api/questions/${questionId.toString()}/transition`, {
+        data: { to: 'pending-review', expectedVersionId: seeded.currentVersionId },
+      });
       expect(res.ok()).toBeTruthy();
     });
 
@@ -274,9 +279,8 @@ test.describe('instructor pipeline', () => {
 
     await test.step('complete the real isolated Student Preview stage', async () => {
       await page.getByRole('link', { name: 'Course Dashboard' }).click();
-      const previewStep = page.getByRole('link', { name: /5\. Student preview: Ready to test/ });
-      await expect(previewStep).toBeVisible();
-      await previewStep.click();
+      await page.getByRole('navigation', { name: 'Course progress' }).getByRole('link', { name: /^6\. Publish:/ }).click();
+      await page.locator('#publish-panel').getByRole('button', { name: 'Preview as student' }).click();
 
       await expect(page).toHaveURL(new RegExp(`#\\/preview\\/course\\/${courseId}$`));
       await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
@@ -293,7 +297,7 @@ test.describe('instructor pipeline', () => {
       await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
 
       await expect(page).toHaveURL(url => url.hash === `#/instructor/course/${courseId}?workspace=instructor`);
-      await expect(page.getByRole('link', { name: /5\. Student preview: Tested recently/ })).toBeVisible();
+      await expect(page.locator('#publish-panel')).toContainText('Tested recently.');
     });
 
     await test.step('publish the course', async () => {
@@ -311,7 +315,7 @@ test.describe('instructor pipeline', () => {
       await expect(primaryAction).toContainText('Assign course materials');
       await expect(page.getByText('NEXT STEP', { exact: true })).toBeVisible();
 
-      await page.getByRole('button', { name: 'Publish Course', exact: false }).click();
+      await page.locator('.project-hero').getByRole('button', { name: 'Publish course →' }).click();
       await expect(page.locator('.page-header__subtitle')).toContainText(
         `${COURSE_CODE} · Section 101 · ${selectedTerm} · Published`,
       );

@@ -439,12 +439,7 @@ function publishPanel(
     ? el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: onRestore }, 'Restore course')
     : course.lifecycle === 'published'
       ? el('p', { class: 'publish-panel__state' }, el('strong', { text: 'Published. ' }), 'Students with access can practise released questions.')
-      : el('button', {
-        class: 'btn btn--instr-primary',
-        type: 'button',
-        disabled: readiness.completed < readiness.total,
-        onclick: onPublish,
-      }, 'Publish course →');
+      : el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: onPublish }, 'Publish course →');
   return el('details', {
     class: 'publish-panel project-panel',
     id: 'publish-panel',

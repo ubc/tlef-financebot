@@ -178,11 +178,8 @@ test.describe('a11y across the signed-in surfaces', () => {
     courseId = course._id;
     registrationCode = course.registrationCode;
 
-    // A separate empty Draft exercises the real first-run Next Action without
-    // invoking document processing or either paid AI operation. Dates are the
-    // only earlier launch blocker, so after this patch the dashboard's
-    // authoritative workflow selects `choose-authoring-path` and opens the
-    // Course Setup Guide at its LO-first / materials-first choice screen.
+    // A separate empty Draft shows the first-run Dashboard progress bar
+    // without invoking document processing or either paid AI operation.
     const guideCourse = (await (
       await api.post('/api/courses', {
         data: {
@@ -315,7 +312,7 @@ test.describe('a11y across the signed-in surfaces', () => {
     }
   });
 
-  test('guided course setup choice dialog has no WCAG A/AA violations', async ({ browser }) => {
+  test('new-course Dashboard progress bar and Publish panel have no WCAG A/AA violations', async ({ browser }) => {
     const context = await browser.newContext({ storageState: AUTH_FILE });
     const page = await context.newPage();
     try {
@@ -323,15 +320,14 @@ test.describe('a11y across the signed-in surfaces', () => {
       await page.goto(`/#/instructor/course/${guideCourseId}`);
       await expect(page.getByRole('heading', { name: GUIDE_COURSE_NAME })).toBeVisible();
 
-      // This is the actual server-derived first task, not a test-only shortcut.
-      // Scanning the open modal covers its focusable stage rail, close control,
-      // two authoring-path choices, and full-workspace escape hatch.
-      await page.getByRole('button', { name: /start building course knowledge/i }).click();
-      const guide = page.getByRole('dialog', { name: /prepare this course, one step at a time/i });
-      await expect(guide).toBeVisible();
-      await expect(guide.getByRole('button', { name: /i already have learning objectives/i })).toBeVisible();
-      await expect(guide.getByRole('button', { name: /create them from my course materials/i })).toBeVisible();
-      await expectNoViolations(page, 'guided course setup choice dialog');
+      // An empty draft course: the six-stage bar with blocked and current
+      // stages, the server-derived next step, and the opened Publish panel
+      // with its incomplete launch checklist.
+      const bar = page.getByRole('navigation', { name: 'Course progress' });
+      await expect(bar.getByRole('link')).toHaveCount(6);
+      await bar.getByRole('link', { name: /^6\. Publish:/ }).click();
+      await expect(page.locator('#publish-panel')).toHaveAttribute('open', '');
+      await expectNoViolations(page, 'new-course dashboard progress bar and publish panel');
     } finally {
       await context.close();
     }

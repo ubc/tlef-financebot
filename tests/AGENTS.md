@@ -413,10 +413,10 @@ transitions, and 390px dark layout with scoped axe; any page error fails a test.
 It replaced `review-workbench.spec.ts` and `bank-workbench.spec.ts` (2026-11-09).
 The real pipeline specs select a row on Questions → To review and approve in the reader.
 
-`setup-journey.spec.ts` uses `playwright.setup-journey.config.ts` against the
-compiled client with intercepted course APIs. It checks server-derived progress,
-release gates, navigation persistence, course/role isolation, retry, mobile width,
-and primary-button focus/pressed contrast. It makes no live course changes.
+The floating setup journey and `setup-journey.spec.ts` were removed on 2026-11-12;
+the Dashboard progress bar is covered by `instructor-workflow.service.test.ts`
+(stage rules), `instructor-pipeline.spec.ts` (bar, Publish panel, preview) and the
+a11y "new-course Dashboard progress bar" scan.
 
 `structure-ai.spec.ts` / `playwright.structure-ai.config.ts` exercise the production
 Course Structure editor with intercepted APIs and streamed snapshots: progressive

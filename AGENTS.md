@@ -374,6 +374,13 @@ commonly need:
 
 ## Current state
 
+- Instructor Dashboard progress (2026-11-12, spec
+  `docs/superpowers/specs/2026-11-12-instructor-dashboard-progress-design.md`):
+  one six-stage bar (Materials → Structure → Generate → Review → Release →
+  Publish) with the current stage highlighted, a single Next step card and a
+  Publish panel holding the launch checklist and Student preview. The floating
+  setup journey is gone.
+
 - Instructor Questions workspace (2026-11-09, spec
   `docs/superpowers/specs/2026-11-09-instructor-questions-workspace-design.md`):
   Review Queue, Question Bank and Flags are one Questions page with status tabs,
