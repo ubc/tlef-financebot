@@ -42,8 +42,10 @@ import type {
 // Generation service (PRD §9.1, IN-Q10): request validation and the queued
 // `generation.run` job. The job runs question-generation/pipeline.ts's
 // runQuestionGeneration: RETRIEVE grounding chunks once, then for each slot
-// GENERATE a question and make ONE checker call — exactly two model calls per
-// question, no automatic retries. Every result — including a checker `reject` —
+// GENERATE a question and make ONE checker call — two model calls per question.
+// Since 2026-11-12 a question that fails a deterministic check or is rejected
+// gets at most ONE repair call (plus its recheck); see pipeline.ts and spec
+// 2026-11-12-generation-correctness. Every result — including a checker `reject` —
 // is inserted via createQuestion as a **Draft** carrying its agentDecision; the
 // pipeline NEVER publishes (PRD §9.1). The instructor sees every generated
 // question in the review queue and decides.

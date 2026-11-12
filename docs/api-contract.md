@@ -442,14 +442,25 @@ material ids are rejected before hierarchy creation begins.
   Instructor-only. Recomputes embeddings and `similarity` for every active
   question in the course.
 
-### Two-call generation and similarity
+### Two-call generation, one repair, and similarity
 
 Each generated question costs one generator call (usage stage `generation`)
-followed by one checker call (step `reviewer`, usage stage `check`); there are
-no retries. Every checked question is saved as a Draft carrying
-`agentDecision { decision: 'pass'|'flag'|'reject', reasoning, roleAssessment,
-suggestions: string[], suggestedDifficulty? }`; a `reject` is still saved so the
-instructor can decide. Slots in one run get distinct assessment angles, and the
+followed by one checker call (step `reviewer`, usage stage `check`). Since
+2026-11-12, when the candidate is unstorable, fails numeric verification after
+the parameter solver, has a constant formula, or is rejected, the generator gets
+ONE repair call (usage stage `repair`, a REWRITE task carrying the exact
+findings) followed by one more `check`; the better candidate is saved. A `flag`
+never triggers it, and the platform flag `featureFlags.generationRepair`
+(default `true`) turns it off. Every checked question is saved as a Draft
+carrying `agentDecision { decision: 'pass'|'flag'|'reject', reasoning,
+roleAssessment, suggestions: string[], suggestedDifficulty?, repair? }`, where
+`repair { attempted: true, trigger: 'unstorable'|'numeric-verification'|
+'constant-value'|'checker-reject', adopted, originalDecision?, originalFindings,
+error? }` records the repair; a `reject` is still saved so the instructor can
+decide. Before verification, a parameter solver enumerates numerical questions'
+slot combinations (up to 4096), removes slot values that make options collide
+(each slot keeps ≥2 values, ≥8 combinations remain) and stores
+`verification.parameterSolver { checkedCombinations, removed: [{ slot, values }] }`. Slots in one run get distinct assessment angles, and the
 generator sees up to 30 stems of active questions in the same LO plus stems
 from earlier in the same batch. Generate, plan and blueprint inputs take no
 `qualityPolicy`.
@@ -896,7 +907,8 @@ operation writes an audit entry.
   source labels. TA approval and flag resolution remain hard-locked off.
 - `GET|PUT /api/admin/platform-settings` — generator, reviewer (Checker),
   utility and future mastery-evaluator model selectors; positive daily
-  generation limit; Layer-2 evaluator feature flag. The checker always runs.
+  generation limit; feature flags `layer2Evaluator` and `generationRepair`
+  (default true; a PUT that omits it keeps it on). The checker always runs.
   Exceeding the daily requested-question limit returns 429.
   Each step has `modelSource: environment | override`. Environment mode resolves
   the model from `LLM_MODEL_*` (falling back to `LLM_DEFAULT_MODEL`; utility uses
