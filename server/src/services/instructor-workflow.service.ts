@@ -6,6 +6,8 @@ import { getCourseTree, publishChecklist } from './courses.service';
 import { listFlags } from './flags.service';
 import { listMaterials } from './materials.service';
 import { hasRecentPreviewAttempt } from './preview.service';
+import { isContentReady } from './question-workspace.service';
+import { isThemeReleased, releasedForServing } from './theme-release';
 
 export type InstructorWorkflowPriority = 'blocking' | 'high' | 'normal';
 export type InstructorWorkflowStageStatus =
@@ -26,6 +28,7 @@ export type InstructorWorkflowDestination =
   | 'bank'
   | 'flags'
   | 'analytics'
+  | 'release'
   | 'student-preview'
   | 'dashboard';
 
@@ -42,6 +45,7 @@ export interface InstructorWorkflowAction {
     | 'seed-thin-los'
     | 'monitor-generation'
     | 'review-questions'
+    | 'release-topics'
     | 'resolve-flags'
     | 'follow-up-students'
     | 'preview-course'
@@ -55,9 +59,10 @@ export interface InstructorWorkflowAction {
   count?: number;
 }
 
+/** The six main-path stages (spec 2026-11-12-instructor-dashboard-progress). */
 export interface InstructorWorkflowStage {
-  id: 'sources' | 'learning-objectives' | 'questions' | 'review' | 'student-preview';
-  number: 1 | 2 | 3 | 4 | 5;
+  id: 'materials' | 'structure' | 'generate' | 'review' | 'release' | 'publish';
+  number: 1 | 2 | 3 | 4 | 5 | 6;
   label: string;
   status: InstructorWorkflowStageStatus;
   detail: string;
@@ -67,7 +72,7 @@ export interface InstructorWorkflowStage {
 }
 
 export interface InstructorWorkflowPrimaryAction extends InstructorWorkflowAction {
-  presentation: 'dialog' | 'workspace' | 'preview';
+  presentation: 'workspace' | 'preview';
 }
 
 export interface InstructorWorkflowSummary {
@@ -108,6 +113,8 @@ export interface InstructorWorkflowSummary {
   };
   setup: {
     steps: InstructorWorkflowStage[];
+    /** First stage that still needs work; `publish` once all are done. */
+    currentStage: InstructorWorkflowStage['id'];
     primaryAction: InstructorWorkflowPrimaryAction;
   };
   actions: InstructorWorkflowAction[];
@@ -188,6 +195,17 @@ export async function instructorWorkflowSummary(
     run.status === 'queued' || run.status === 'running',
   ).length;
   const totalQuestions = approvedBank.total + queue.length;
+
+  // Release (spec 2026-11-12): which Approved questions a Topic release still
+  // holds back, by the same rule serving and the Questions page use.
+  const now = new Date();
+  const releasedThemes = tree.themes.filter((theme) => isThemeReleased(theme, now)).length;
+  const unreleasedIds = new Set(tree.themes.filter((theme) => !isThemeReleased(theme, now)).map((theme) => theme._id.toHexString()));
+  const undatedIds = new Set(tree.themes.filter((theme) => theme.availableFrom === undefined).map((theme) => theme._id.toHexString()));
+  const heldApproved = approvedBank.questions.filter((question) => !releasedForServing(question, unreleasedIds));
+  const heldByUndated = heldApproved.filter((question) => question.themeIds.some((id) => undatedIds.has(id.toHexString()))).length;
+  const heldScheduledOnly = heldApproved.length - heldByUndated;
+  const notReadyApproved = approvedBank.questions.filter((question) => !heldApproved.includes(question) && !isContentReady(question.current)).length;
 
   const actions: InstructorWorkflowAction[] = [];
   const needsDates = !checklistOk(checklist, 'term dates');
@@ -294,6 +312,16 @@ export async function instructorWorkflowSummary(
       count: queue.length,
     });
   }
+  if (heldByUndated > 0) {
+    actions.push({
+      id: 'release-topics',
+      priority: 'high',
+      destination: 'release',
+      title: 'Release Topics to students',
+      detail: `${heldByUndated} approved question${heldByUndated === 1 ? ' is' : 's are'} hidden because a Topic is not released.`,
+      count: heldByUndated,
+    });
+  }
   if (activeFlags.length > 0) {
     actions.push({
       id: 'resolve-flags',
@@ -359,7 +387,7 @@ export async function instructorWorkflowSummary(
 
   const sourceStep: InstructorWorkflowStage = failedMaterials > 0 || materialsNeedingReview > 0
     ? {
-        id: 'sources', number: 1, label: 'Sources', status: 'needs-attention', destination: 'materials',
+        id: 'materials', number: 1, label: 'Materials', status: 'needs-attention', destination: 'materials',
         detail: failedMaterials > 0
           ? `${failedMaterials} failed`
           : `${materialsNeedingReview} mapping${materialsNeedingReview === 1 ? '' : 's'} to review`,
@@ -367,74 +395,74 @@ export async function instructorWorkflowSummary(
       }
     : processingMaterials > 0
       ? {
-          id: 'sources', number: 1, label: 'Sources', status: 'in-progress', destination: 'materials',
+          id: 'materials', number: 1, label: 'Materials', status: 'in-progress', destination: 'materials',
           detail: `${processingMaterials} processing`, count: courseMaterials.length,
         }
       : readyMaterials > 0
         ? {
-            id: 'sources', number: 1, label: 'Sources', status: 'ready', destination: 'materials',
+            id: 'materials', number: 1, label: 'Materials', status: 'ready', destination: 'materials',
             detail: `${readyMaterials} ready`, count: readyMaterials,
           }
         : {
-            id: 'sources', number: 1, label: 'Sources', status: 'not-started', destination: 'materials',
+            id: 'materials', number: 1, label: 'Materials', status: 'not-started', destination: 'materials',
             detail: 'No sources yet', count: 0,
           };
 
   const objectiveStep: InstructorWorkflowStage = los.length > 0
     ? {
-        id: 'learning-objectives', number: 2, label: 'Learning objectives',
+        id: 'structure', number: 2, label: 'Structure',
         status: contentMap.unassignedMaterials.length > 0 ? 'needs-attention' : 'ready',
         destination: 'structure', detail: `${los.length} LO${los.length === 1 ? '' : 's'}`, count: los.length,
       }
     : processingMaterials > 0
       ? {
-          id: 'learning-objectives', number: 2, label: 'Learning objectives', status: 'blocked',
-          destination: 'structure', detail: 'Waiting for sources', count: 0, blockedBy: 'sources',
+          id: 'structure', number: 2, label: 'Structure', status: 'blocked',
+          destination: 'structure', detail: 'Waiting for sources', count: 0, blockedBy: 'materials',
         }
       : readyMaterials > 0
         ? {
-            id: 'learning-objectives', number: 2, label: 'Learning objectives', status: 'needs-attention',
+            id: 'structure', number: 2, label: 'Structure', status: 'needs-attention',
             destination: 'structure', detail: 'Ready to create', count: 0,
           }
         : {
-            id: 'learning-objectives', number: 2, label: 'Learning objectives', status: 'not-started',
+            id: 'structure', number: 2, label: 'Structure', status: 'not-started',
             destination: 'structure', detail: 'Not started', count: 0,
           };
 
   const questionStep: InstructorWorkflowStage = los.length === 0
     ? {
-        id: 'questions', number: 3, label: 'Questions', status: 'blocked', destination: 'preseeding',
-        detail: 'Waiting for LOs', count: totalQuestions, blockedBy: 'learning-objectives',
+        id: 'generate', number: 3, label: 'Generate', status: 'blocked', destination: 'preseeding',
+        detail: 'Waiting for LOs', count: totalQuestions, blockedBy: 'structure',
       }
     : activeGenerationRuns > 0
       ? {
-          id: 'questions', number: 3, label: 'Questions', status: 'in-progress', destination: 'preseeding',
+          id: 'generate', number: 3, label: 'Generate', status: 'in-progress', destination: 'preseeding',
           detail: `${activeGenerationRuns} run${activeGenerationRuns === 1 ? '' : 's'} active`, count: totalQuestions,
         }
       : generationRuns.some((run) => run.errorCode !== 'generation-ended' && (run.status === 'failed' || run.status === 'partial'))
         ? {
-            id: 'questions', number: 3, label: 'Questions', status: 'needs-attention', destination: 'preseeding',
+            id: 'generate', number: 3, label: 'Generate', status: 'needs-attention', destination: 'preseeding',
             detail: 'Generation needs attention', count: totalQuestions,
           }
         : totalQuestions === 0
           ? {
-              id: 'questions', number: 3, label: 'Questions', status: 'not-started', destination: 'preseeding',
+              id: 'generate', number: 3, label: 'Generate', status: 'not-started', destination: 'preseeding',
               detail: 'Ready to generate', count: 0,
             }
           : thinLos.length > 0
             ? {
-                id: 'questions', number: 3, label: 'Questions', status: 'needs-attention', destination: 'preseeding',
+                id: 'generate', number: 3, label: 'Generate', status: 'needs-attention', destination: 'preseeding',
                 detail: `${approvedBank.total} approved · ${thinLos.length} thin`, count: totalQuestions,
               }
             : {
-                id: 'questions', number: 3, label: 'Questions', status: 'ready', destination: 'preseeding',
+                id: 'generate', number: 3, label: 'Generate', status: 'ready', destination: 'preseeding',
                 detail: `${approvedBank.total} approved`, count: totalQuestions,
               };
 
   const reviewStep: InstructorWorkflowStage = totalQuestions === 0
     ? {
         id: 'review', number: 4, label: 'Review', status: 'blocked', destination: 'review-queue',
-        detail: 'Waiting for questions', count: 0, blockedBy: 'questions',
+        detail: 'Waiting for questions', count: 0, blockedBy: 'generate',
       }
     : queue.length > 0
       ? {
@@ -446,26 +474,48 @@ export async function instructorWorkflowSummary(
           detail: 'All caught up', count: 0,
         };
 
-  const previewStep: InstructorWorkflowStage = approvedBank.total === 0
+  const releaseSummary = `${releasedThemes} of ${tree.themes.length} topic${tree.themes.length === 1 ? '' : 's'} released`;
+  const releaseStep: InstructorWorkflowStage = approvedBank.total === 0
     ? {
-        id: 'student-preview', number: 5, label: 'Student preview', status: 'blocked', destination: 'student-preview',
-        detail: 'Waiting for Approved questions', blockedBy: 'review',
+        id: 'release', number: 5, label: 'Release', status: 'blocked', destination: 'release',
+        detail: 'Waiting for Approved questions', count: 0, blockedBy: 'review',
       }
-    : previewTested
+    : heldByUndated > 0
       ? {
-          id: 'student-preview', number: 5, label: 'Student preview', status: 'complete', destination: 'student-preview',
-          detail: 'Tested recently',
+          id: 'release', number: 5, label: 'Release', status: 'needs-attention', destination: 'release',
+          detail: `${heldByUndated} hidden · ${releaseSummary}`, count: heldByUndated,
         }
-      : {
-          id: 'student-preview', number: 5, label: 'Student preview', status: 'ready', destination: 'student-preview',
-          detail: 'Ready to test',
-        };
+      : heldScheduledOnly > 0
+        ? {
+            id: 'release', number: 5, label: 'Release', status: 'in-progress', destination: 'release',
+            detail: `${heldScheduledOnly} scheduled · ${releaseSummary}`, count: heldScheduledOnly,
+          }
+        : {
+            id: 'release', number: 5, label: 'Release', status: 'ready', destination: 'release',
+            detail: notReadyApproved > 0 ? `${releaseSummary} · ${notReadyApproved} need content checks` : releaseSummary,
+            count: releasedThemes,
+          };
 
-  const setupSteps = [sourceStep, objectiveStep, questionStep, reviewStep, previewStep];
+  const publishStep: InstructorWorkflowStage = lifecycle === 'published'
+    ? { id: 'publish', number: 6, label: 'Publish', status: 'complete', destination: 'dashboard', detail: 'Published' }
+    : lifecycle === 'archived'
+      ? { id: 'publish', number: 6, label: 'Publish', status: 'needs-attention', destination: 'dashboard', detail: 'Archived · restore to continue' }
+      : completed < checklist.length
+        ? { id: 'publish', number: 6, label: 'Publish', status: 'not-started', destination: 'dashboard', detail: `${completed} of ${checklist.length} checks` }
+        : {
+            id: 'publish', number: 6, label: 'Publish', status: 'ready', destination: 'dashboard',
+            detail: previewTested ? 'Ready to publish' : 'Ready · preview recommended',
+          };
+
+  const setupSteps = [sourceStep, objectiveStep, questionStep, reviewStep, releaseStep, publishStep];
+  const stageDone = (stage: InstructorWorkflowStage): boolean => stage.id === 'publish'
+    ? stage.status === 'complete'
+    : stage.status === 'ready' || stage.status === 'complete';
+  const currentStage = setupSteps.find((stage) => !stageDone(stage))?.id ?? 'publish';
   const primaryOrder: InstructorWorkflowAction['id'][] = lifecycle === 'archived'
     ? ['restore-course']
     : lifecycle === 'published'
-      ? ['repair-content', 'assign-materials', 'monitor-generation', 'review-questions', 'seed-thin-los', 'resolve-flags', 'follow-up-students', 'monitor-course']
+      ? ['repair-content', 'assign-materials', 'monitor-generation', 'review-questions', 'release-topics', 'seed-thin-los', 'resolve-flags', 'follow-up-students', 'monitor-course']
       : [
           'configure-course',
           'configure-registration',
@@ -477,6 +527,7 @@ export async function instructorWorkflowSummary(
           'assign-materials',
           'monitor-generation',
           'review-questions',
+          'release-topics',
           'seed-thin-los',
           ...(previewTested ? [] : ['preview-course' as const]),
           'publish-course',
@@ -494,11 +545,7 @@ export async function instructorWorkflowSummary(
   };
   const primaryAction: InstructorWorkflowPrimaryAction = {
     ...primary,
-    presentation: ['configure-course', 'choose-authoring-path', 'build-structure', 'upload-sources', 'monitor-sources', 'seed-thin-los', 'monitor-generation', 'review-questions'].includes(primary.id)
-      ? 'dialog'
-      : primary.id === 'preview-course'
-        ? 'preview'
-        : 'workspace',
+    presentation: primary.id === 'preview-course' ? 'preview' : 'workspace',
   };
 
   return {
@@ -537,7 +584,7 @@ export async function instructorWorkflowSummary(
       contentIssues,
       lowEngagementStudents: inactiveStudents.length,
     },
-    setup: { steps: setupSteps, primaryAction },
+    setup: { steps: setupSteps, currentStage, primaryAction },
     actions,
   };
 }

@@ -68,14 +68,20 @@ grant attaches to the same PUID-backed User on first SAML login.
   (`materials`, `readyMaterials`, `processingMaterials`, `failedMaterials`,
   `materialsNeedingReview`, `unassignedMaterials`) and question state
   (`totalQuestions`, `approvedQuestions`, `reviewQueue`, `thinLos`,
-  `activeGenerationRuns`). `setup.steps` is the ordered five-step
-  Sources → Learning Objectives → Questions → Review → Student Preview path;
+  `activeGenerationRuns`). `setup.steps` is the ordered six-stage main path
+  (2026-11-12) with ids `materials → structure → generate → review → release →
+  publish` (labels Materials, Structure, Generate, Review, Release, Publish);
   each row has `{ id, number, label, status, detail, destination, count?,
   blockedBy? }`, where status is `not-started | blocked | in-progress |
-  needs-attention | ready | complete`. `setup.primaryAction` is the one
-  recommended next action and carries the normal action fields plus
-  `presentation: 'dialog'|'workspace'|'preview'`; `actions` remains the full
-  ordered queue. The dates let Course Home complete its blocking setup action
+  needs-attention | ready | complete`. Release reports Approved questions held
+  by unreleased Topics (`needs-attention` when a Topic has no date,
+  `in-progress` when only scheduled); Publish is `complete` once published and
+  `ready` when every launch check passes. `setup.currentStage` is the first
+  stage still needing work (stages 1–5 are done at `ready`/`complete`, Publish
+  only at `complete`). `setup.primaryAction` is the one recommended next action
+  and carries the normal action fields plus `presentation: 'workspace'|'preview'`;
+  `actions` remains the full ordered queue and may include `release-topics`
+  (destination `release`). The dates let Course Home complete its blocking setup action
   in context. All setup/action state derives from existing course, material,
   content-run, hierarchy, question/review, flag, analytics, and isolated-preview
   records and stores no parallel wizard state.

@@ -158,7 +158,7 @@ describe('Instructor workflow summary', () => {
     expect(hasRecentPreviewAttempt).toHaveBeenCalledWith(courseId, instructorPuid);
   });
 
-  it('derives the truthful five-step state and authoring-path decision for an empty course', async () => {
+  it('derives the truthful six-stage state and authoring-path decision for an empty course', async () => {
     mockEmptyCourseContent();
 
     const result = await summarize();
@@ -175,15 +175,18 @@ describe('Instructor workflow summary', () => {
     });
     expect(result.setup.steps.map(({ id, status, detail, blockedBy }) => ({ id, status, detail, blockedBy })))
       .toEqual([
-        { id: 'sources', status: 'not-started', detail: 'No sources yet', blockedBy: undefined },
-        { id: 'learning-objectives', status: 'not-started', detail: 'Not started', blockedBy: undefined },
-        { id: 'questions', status: 'blocked', detail: 'Waiting for LOs', blockedBy: 'learning-objectives' },
-        { id: 'review', status: 'blocked', detail: 'Waiting for questions', blockedBy: 'questions' },
-        { id: 'student-preview', status: 'blocked', detail: 'Waiting for Approved questions', blockedBy: 'review' },
+        { id: 'materials', status: 'not-started', detail: 'No sources yet', blockedBy: undefined },
+        { id: 'structure', status: 'not-started', detail: 'Not started', blockedBy: undefined },
+        { id: 'generate', status: 'blocked', detail: 'Waiting for LOs', blockedBy: 'structure' },
+        { id: 'review', status: 'blocked', detail: 'Waiting for questions', blockedBy: 'generate' },
+        { id: 'release', status: 'blocked', detail: 'Waiting for Approved questions', blockedBy: 'review' },
+        { id: 'publish', status: 'not-started', detail: '2 of 5 checks', blockedBy: undefined },
       ]);
+    expect(result.setup.steps.map((step) => step.label)).toEqual(['Materials', 'Structure', 'Generate', 'Review', 'Release', 'Publish']);
+    expect(result.setup.currentStage).toBe('materials');
     expect(result.setup.primaryAction).toMatchObject({
       id: 'choose-authoring-path',
-      presentation: 'dialog',
+      presentation: 'workspace',
     });
     expect(result.actions.map((action) => action.id)).toEqual(['choose-authoring-path']);
   });
@@ -200,13 +203,13 @@ describe('Instructor workflow summary', () => {
     const result = await summarize();
 
     expect(result.counts).toMatchObject({ materials: 1, processingMaterials: 1, readyMaterials: 0 });
-    expect(result.setup.steps[0]).toMatchObject({ id: 'sources', status: 'in-progress', detail: '1 processing' });
+    expect(result.setup.steps[0]).toMatchObject({ id: 'materials', status: 'in-progress', detail: '1 processing' });
     expect(result.setup.steps[1]).toMatchObject({
-      id: 'learning-objectives',
+      id: 'structure',
       status: 'blocked',
-      blockedBy: 'sources',
+      blockedBy: 'materials',
     });
-    expect(result.setup.primaryAction).toMatchObject({ id: 'monitor-sources', presentation: 'dialog' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'monitor-sources', presentation: 'workspace' });
   });
 
   it('surfaces a failed source as needing attention and makes repair primary', async () => {
@@ -221,7 +224,7 @@ describe('Instructor workflow summary', () => {
     const result = await summarize();
 
     expect(result.counts).toMatchObject({ failedMaterials: 1, contentIssues: 1 });
-    expect(result.setup.steps[0]).toMatchObject({ id: 'sources', status: 'needs-attention', detail: '1 failed' });
+    expect(result.setup.steps[0]).toMatchObject({ id: 'materials', status: 'needs-attention', detail: '1 failed' });
     expect(result.setup.primaryAction).toMatchObject({ id: 'repair-content', presentation: 'workspace' });
   });
 
@@ -236,13 +239,13 @@ describe('Instructor workflow summary', () => {
     const result = await summarize();
 
     expect(result.counts).toMatchObject({ materials: 1, readyMaterials: 1 });
-    expect(result.setup.steps[0]).toMatchObject({ id: 'sources', status: 'ready', detail: '1 ready' });
+    expect(result.setup.steps[0]).toMatchObject({ id: 'materials', status: 'ready', detail: '1 ready' });
     expect(result.setup.steps[1]).toMatchObject({
-      id: 'learning-objectives',
+      id: 'structure',
       status: 'needs-attention',
       detail: 'Ready to create',
     });
-    expect(result.setup.primaryAction).toMatchObject({ id: 'build-structure', presentation: 'dialog' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'build-structure', presentation: 'workspace' });
   });
 
   it('guides an LO-first course with no source to upload supporting material', async () => {
@@ -276,10 +279,10 @@ describe('Instructor workflow summary', () => {
 
     expect(result.setup.steps[0]).toMatchObject({ status: 'not-started', detail: 'No sources yet' });
     expect(result.setup.steps[1]).toMatchObject({ status: 'ready', detail: '1 LO' });
-    expect(result.setup.primaryAction).toMatchObject({ id: 'upload-sources', presentation: 'dialog' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'upload-sources', presentation: 'workspace' });
   });
 
-  it('keeps active generation visible as the primary in-dialog task', async () => {
+  it('keeps active generation visible as the primary task', async () => {
     const runId = new ObjectId();
     mockHealthyContent({
       approved: 0,
@@ -295,11 +298,11 @@ describe('Instructor workflow summary', () => {
 
     expect(result.counts.activeGenerationRuns).toBe(1);
     expect(result.setup.steps[2]).toMatchObject({
-      id: 'questions',
+      id: 'generate',
       status: 'in-progress',
       detail: '1 run active',
     });
-    expect(result.setup.primaryAction).toMatchObject({ id: 'monitor-generation', presentation: 'dialog' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'monitor-generation', presentation: 'workspace' });
   });
 
   it('makes a review backlog the next task and marks Review as needing attention', async () => {
@@ -315,20 +318,33 @@ describe('Instructor workflow summary', () => {
       detail: '3 waiting',
       count: 3,
     });
-    expect(result.setup.primaryAction).toMatchObject({ id: 'review-questions', presentation: 'dialog' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'review-questions', presentation: 'workspace' });
   });
 
-  it('marks a recent Preview complete and makes Publish the primary launch action', async () => {
+  it('makes Publish ready, current and primary after a recent Preview', async () => {
     jest.mocked(hasRecentPreviewAttempt).mockResolvedValue(true);
 
     const result = await summarize();
 
-    expect(result.setup.steps[4]).toMatchObject({
-      id: 'student-preview',
-      status: 'complete',
-      detail: 'Tested recently',
-    });
+    expect(result.setup.steps[5]).toMatchObject({ id: 'publish', status: 'ready', detail: 'Ready to publish' });
+    expect(result.setup.currentStage).toBe('publish');
     expect(result.setup.primaryAction).toMatchObject({ id: 'publish-course', presentation: 'workspace' });
+  });
+
+  it('recommends a Preview inside a ready Publish stage', async () => {
+    const result = await summarize();
+
+    expect(result.setup.steps[5]).toMatchObject({ id: 'publish', status: 'ready', detail: 'Ready · preview recommended' });
+    expect(result.setup.primaryAction).toMatchObject({ id: 'preview-course', presentation: 'preview' });
+  });
+
+  it('marks Publish complete for a published course', async () => {
+    mockCourse('published');
+
+    const result = await summarize();
+
+    expect(result.setup.steps[5]).toMatchObject({ id: 'publish', status: 'complete', detail: 'Published' });
+    expect(result.setup.currentStage).toBe('publish');
   });
 
   it('reduces a healthy published course to one monitoring recommendation', async () => {
@@ -361,5 +377,52 @@ describe('Instructor workflow summary', () => {
    const result = await instructorWorkflowSummary(courseId, instructorPuid);
    expect(result.counts.contentIssues).toBe(0);
    expect(result.actions.some(action => action.title === 'Repair content processing issues')).toBe(false);
-   expect(result.setup.steps.find(step => step.id === 'questions')?.status).not.toBe('needs-attention');
+   expect(result.setup.steps.find(step => step.id === 'generate')?.status).not.toBe('needs-attention');
  });
+
+describe('Release stage', () => {
+  const t1 = new ObjectId();
+  const t2 = new ObjectId();
+  function approved(themeIds: ObjectId[]) {
+    return { _id: new ObjectId(), themeIds, current: { stem: 'Stem', options: [], type: 'mcq' } };
+  }
+  function withThemes(themes: Array<{ _id: ObjectId; availableFrom?: Date }>) {
+    jest.mocked(getCourseTree).mockResolvedValue({
+      _id: courseId, name: 'Finance Fundamentals', courseCode: 'COMM 298', term: '2026W1',
+      termStart: new Date('2026-09-08T00:00:00.000Z'), termEnd: new Date('2026-12-07T23:59:59.999Z'),
+      lifecycle: 'draft', published: false,
+      themes: themes.map((theme, order) => ({ ...theme, name: `Topic ${order + 1}`, order, los: [] })),
+    } as never);
+  }
+
+  it('needs attention when a Topic with no release date hides approved questions, and adds the release action', async () => {
+    withThemes([{ _id: t1, availableFrom: new Date('2026-01-01') }, { _id: t2 }]);
+    jest.mocked(browseBank).mockResolvedValue({ total: 3, questions: [approved([t1]), approved([t2]), approved([t1, t2])] } as never);
+
+    const result = await summarize();
+
+    expect(result.setup.steps[4]).toMatchObject({ id: 'release', status: 'needs-attention', detail: '2 hidden · 1 of 2 topics released', count: 2 });
+    expect(result.setup.currentStage).toBe('release');
+    expect(result.actions).toContainEqual(expect.objectContaining({ id: 'release-topics', destination: 'release', count: 2 }));
+    expect(result.setup.primaryAction).toMatchObject({ id: 'release-topics', presentation: 'workspace' });
+  });
+
+  it('is in progress when held questions only wait on scheduled Topics', async () => {
+    withThemes([{ _id: t1, availableFrom: new Date('2099-01-01') }]);
+    jest.mocked(browseBank).mockResolvedValue({ total: 1, questions: [approved([t1])] } as never);
+
+    const result = await summarize();
+
+    expect(result.setup.steps[4]).toMatchObject({ status: 'in-progress', detail: '1 scheduled · 0 of 1 topic released' });
+    expect(result.actions.some((action) => action.id === 'release-topics')).toBe(false);
+  });
+
+  it('is ready when every approved question is released', async () => {
+    withThemes([{ _id: t1, availableFrom: new Date('2026-01-01') }]);
+    jest.mocked(browseBank).mockResolvedValue({ total: 1, questions: [approved([t1])] } as never);
+
+    const result = await summarize();
+
+    expect(result.setup.steps[4]).toMatchObject({ status: 'ready', detail: '1 of 1 topic released' });
+  });
+});
