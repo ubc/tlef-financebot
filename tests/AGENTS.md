@@ -7,6 +7,14 @@
 > (scripted generator/checker responses; no provider), `question-similarity.service.test.ts`
 > and `generation.routes.test.ts` (regenerate, similarity rebuild). They prove
 > mechanics, not model quality.
+>
+> **2026-11-12 (generation correctness):** `parameter-solver.test.ts` (Q8 from the
+> Sol trial, beta-equals-1, unsolvable and display-precision cases) and the repair
+> block of `question-generation-pipeline.test.ts` (no repair on flag, one repair
+> on reject/numeric/unstorable, better candidate kept, failed repair keeps the
+> original). Model quality is measured separately with
+> `scripts/generation-eval.ts` (real calls only with `--yes`; `--runs` analyses
+> existing runs); results go to `artifacts/generation-eval-<date>/`.
 
 Review-decision integrity controls retain raw negative findings through invalid
 locators and malformed neighbors, permit schema-only corrections, and refuse

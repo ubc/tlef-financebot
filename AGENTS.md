@@ -374,6 +374,14 @@ commonly need:
 
 ## Current state
 
+- Question generation correctness (2026-11-12, spec
+  `docs/superpowers/specs/2026-11-12-generation-correctness-design.md`): a
+  parameter solver picks slot values so no two options collide (verification
+  passes by construction), constant formulas become findings, and a failed or
+  rejected question gets one targeted repair call (platform flag
+  `generationRepair`). `scripts/generation-eval.ts` measures the effect; the Sol
+  trial baseline is in `artifacts/generation-eval-2026-11-12/`.
+
 - Instructor Dashboard progress (2026-11-12, spec
   `docs/superpowers/specs/2026-11-12-instructor-dashboard-progress-design.md`):
   one six-stage bar (Materials → Structure → Generate → Review → Release →
