@@ -1,0 +1,194 @@
+{
+  "label": "capm-after-correctness",
+  "courseId": "6af5f1d6fbafd18bc490e004",
+  "runIds": [
+    "6af5f3dee479c427c33b2611",
+    "6af5f3dee479c427c33b2612",
+    "6af5f3dee479c427c33b2613",
+    "6af5f3dee479c427c33b2614",
+    "6af5f3dee479c427c33b2615",
+    "6af5f3dee479c427c33b2616",
+    "6af5f3dee479c427c33b2617",
+    "6af5f3dee479c427c33b2618",
+    "6af5f3dee479c427c33b2619",
+    "6af5f3dee479c427c33b261a",
+    "6af5f3dee479c427c33b261b",
+    "6af5f3dee479c427c33b261c"
+  ],
+  "summary": {
+    "runs": 12,
+    "saved": 12,
+    "failedItems": 0,
+    "pass": 8,
+    "flag": 4,
+    "reject": 0,
+    "numericFailures": 0,
+    "waste": 0,
+    "repairsAttempted": 0,
+    "repairsAdopted": 0,
+    "solverAdjusted": 3,
+    "tokensPerSavedQuestion": 10648,
+    "stages": {
+      "generation": {
+        "calls": 12,
+        "tokens": 93560,
+        "medianSeconds": 28.6
+      },
+      "check": {
+        "calls": 12,
+        "tokens": 34213,
+        "medianSeconds": 3
+      }
+    }
+  },
+  "rows": [
+    {
+      "questionId": "6af5f3fefbafd18bc490e05e",
+      "lo": "Understand the concept of alpha within the CAPM framework and explain what it indicates about a stock’s pricing relative to the Security Market Line",
+      "difficulty": "easy",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Within the CAPM framework, Stock X has positive alpha and Stock Y has negative alpha. Which comparison correctly describes their positions r"
+    },
+    {
+      "questionId": "6af5f41cfbafd18bc490e066",
+      "lo": "Understand the concept of alpha within the CAPM framework and explain what it indicates about a stock’s pricing relative to the Security Market Line",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [
+        {
+          "slot": "TARGET_BETA",
+          "values": [
+            1.5999999999999999
+          ]
+        }
+      ],
+      "stem": "A benchmark stock has zero alpha, a beta of {{BENCH_BETA}}, and an annual expected return of {{BENCH_RETURN_PCT}}%. The annual risk-free rat"
+    },
+    {
+      "questionId": "6af5f419fbafd18bc490e064",
+      "lo": "Understand the concept of alpha within the CAPM framework and explain what it indicates about a stock’s pricing relative to the Security Market Line",
+      "difficulty": "hard",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [
+        {
+          "slot": "REF_BETA",
+          "values": [
+            1.2
+          ]
+        },
+        {
+          "slot": "REF_RETURN_PCT",
+          "values": [
+            10
+          ]
+        }
+      ],
+      "stem": "An analyst compares two stocks’ pricing relative to the Security Market Line (SML). The risk-free rate is {{RF_PCT}}%. A reference stock lie"
+    },
+    {
+      "questionId": "6af5f401fbafd18bc490e062",
+      "lo": "Calculate the expected return of a stock using the CAPM formula, and compare it with the market-implied return to identify pricing discrepancies",
+      "difficulty": "easy",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A stock has a beta of {{BETA}} and a market-implied expected annual return of {{STOCK_RETURN_PCT}}%. The annual risk-free rate is {{RF_PCT}}"
+    },
+    {
+      "questionId": "6af5f400fbafd18bc490e060",
+      "lo": "Calculate the expected return of a stock using the CAPM formula, and compare it with the market-implied return to identify pricing discrepancies",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A benchmark stock is fairly priced under CAPM. Its beta is {{BENCH_BETA}}, and its annual expected return is {{BENCH_RETURN_PCT}}%. The annu"
+    },
+    {
+      "questionId": "6af5f42afbafd18bc490e06a",
+      "lo": "Calculate the expected return of a stock using the CAPM formula, and compare it with the market-implied return to identify pricing discrepancies",
+      "difficulty": "hard",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [
+        {
+          "slot": "BETA_R",
+          "values": [
+            0.8
+          ]
+        },
+        {
+          "slot": "BETA_T",
+          "values": [
+            1.7999999999999998
+          ]
+        },
+        {
+          "slot": "ALPHA_T_PCT",
+          "values": [
+            -1
+          ]
+        }
+      ],
+      "stem": "Two stocks are evaluated using the same risk-free rate of {{RF_PCT}}% and the same expected market return. Stock R lies on the Security Mark"
+    },
+    {
+      "questionId": "6af5f429fbafd18bc490e068",
+      "lo": "Evaluate whether a stock is overvalued or undervalued by integrating CAPM-based valuation with dividend discount models (e.g., GGM)",
+      "difficulty": "easy",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A CAPM analysis gives a stock a required return of {{CAPM_RETURN_PCT}}%, while the risk-free rate is {{RF_PCT}}%. The stock will pay a divid"
+    },
+    {
+      "questionId": "6af5f438fbafd18bc490e06e",
+      "lo": "Evaluate whether a stock is overvalued or undervalued by integrating CAPM-based valuation with dividend discount models (e.g., GGM)",
+      "difficulty": "medium",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Two stocks, A and B, each pay an expected dividend of ${{DIVIDEND}} one year from now, with dividends growing at {{GROWTH_PCT}}% annually fo"
+    },
+    {
+      "questionId": "6af5f447fbafd18bc490e074",
+      "lo": "Evaluate whether a stock is overvalued or undervalued by integrating CAPM-based valuation with dividend discount models (e.g., GGM)",
+      "difficulty": "hard",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A company paid an annual dividend of ${{BASE_DIVIDEND}} per share at the end of {{BASE_YEAR}}. Its dividends grow at {{GROWTH_PCT}}% annuall"
+    },
+    {
+      "questionId": "6af5f42bfbafd18bc490e06c",
+      "lo": "Assess the role of investor behavior and competition in maintaining market efficiency, and discuss the practical limitations of exploiting alpha in real-world markets",
+      "difficulty": "easy",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Which statement best compares the effect of investors seeking positive alpha on market efficiency with their ability to exploit alpha opport"
+    },
+    {
+      "questionId": "6af5f439fbafd18bc490e070",
+      "lo": "Assess the role of investor behavior and competition in maintaining market efficiency, and discuss the practical limitations of exploiting alpha in real-world markets",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An investment team identifies a stock with positive alpha, but delays buying while it checks its analysis. Meanwhile, competing investors id"
+    },
+    {
+      "questionId": "6af5f445fbafd18bc490e072",
+      "lo": "Assess the role of investor behavior and competition in maintaining market efficiency, and discuss the practical limitations of exploiting alpha in real-world markets",
+      "difficulty": "hard",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An analyst identifies a stock with positive alpha under CAPM. Before her fund can trade, competing investors begin buying the stock. Assume "
+    }
+  ],
+  "failures": []
+}

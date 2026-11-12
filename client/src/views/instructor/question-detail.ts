@@ -51,6 +51,7 @@ import { errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { STATUS_LABEL, TYPE_LABEL } from '../../question-labels.js';
+import { repairSummary, solverSummary } from './questions-model.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -1023,6 +1024,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // --- AI Agent Report panel ------------------------------------------------
 
   const agentDecision = detail.agentDecision;
+  const repair = agentDecision?.repair;
+  const repairText = repairSummary(repair);
+  const solverText = solverSummary(detail.current.verification);
   const provenance = detail.current.provenance;
   const recordedOrigin = detail.versions
     .map((version) => version.provenance)
@@ -1051,6 +1055,15 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
             : false,
         )
       : el('p', { class: 'agent-report-empty', text: 'No agent report available for this question.' }),
+    repairText
+      ? el('div', { class: 'agent-report-block questions-reader__repair' },
+          el('p', { text: repairText }),
+          repair?.originalFindings.length
+            ? el('details', {}, el('summary', { text: 'What the first version got wrong' }),
+                el('ul', {}, ...repair.originalFindings.map((finding) => el('li', { text: finding }))))
+            : false)
+      : false,
+    solverText ? el('p', { class: 'questions-reader__solver', text: solverText }) : false,
     detail.similarity
       ? el(
           'div',

@@ -1,0 +1,164 @@
+{
+  "label": "after-correctness",
+  "courseId": "6af5e2ddc2eaa92d395f5bc0",
+  "runIds": [
+    "6af5f0dace6548b8779bd717",
+    "6af5f0dace6548b8779bd718",
+    "6af5f0dace6548b8779bd719",
+    "6af5f0dace6548b8779bd71a",
+    "6af5f0dace6548b8779bd71b",
+    "6af5f0dace6548b8779bd71c",
+    "6af5f0dace6548b8779bd71d",
+    "6af5f0dace6548b8779bd71e",
+    "6af5f0dace6548b8779bd71f",
+    "6af5f0dace6548b8779bd720",
+    "6af5f0dace6548b8779bd721",
+    "6af5f0dace6548b8779bd722"
+  ],
+  "summary": {
+    "runs": 12,
+    "saved": 12,
+    "failedItems": 0,
+    "pass": 5,
+    "flag": 6,
+    "reject": 1,
+    "numericFailures": 0,
+    "waste": 1,
+    "repairsAttempted": 1,
+    "repairsAdopted": 0,
+    "solverAdjusted": 0,
+    "tokensPerSavedQuestion": 10746,
+    "stages": {
+      "generation": {
+        "calls": 12,
+        "tokens": 87897,
+        "medianSeconds": 22.7
+      },
+      "check": {
+        "calls": 13,
+        "tokens": 31178,
+        "medianSeconds": 3.1
+      },
+      "repair": {
+        "calls": 1,
+        "tokens": 9878,
+        "medianSeconds": 22.4
+      }
+    }
+  },
+  "rows": [
+    {
+      "questionId": "6af5f0eafbafd18bc490dfe6",
+      "lo": "Explain how information is transferred into financial prices",
+      "difficulty": "easy",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Why does a stock price reacting to widely circulated information not, by itself, demonstrate semi-strong market efficiency?"
+    },
+    {
+      "questionId": "6af5f0f1fbafd18bc490dfea",
+      "lo": "Explain how information is transferred into financial prices",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A widely shared but fabricated report claims that a company has secured a major new customer. Its stock price rises sharply before the compa"
+    },
+    {
+      "questionId": "6af5f10dfbafd18bc490dff2",
+      "lo": "Explain how information is transferred into financial prices",
+      "difficulty": "hard",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An analyst compares two assessments of the same stock's per-share value: an estimate based on expected future cash flows and risk, and the v"
+    },
+    {
+      "questionId": "6af5f0eefbafd18bc490dfe8",
+      "lo": "Discuss the concept of market efficiency",
+      "difficulty": "easy",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "Which statement describes **market efficiency**, rather than the process of estimating a stock’s fair value?"
+    },
+    {
+      "questionId": "6af5f109fbafd18bc490dfee",
+      "lo": "Discuss the concept of market efficiency",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An analyst estimates a stock’s fair value using expected future cash flows and a required return based on risk. Her estimate exceeds the mar"
+    },
+    {
+      "questionId": "6af5f119fbafd18bc490dff4",
+      "lo": "Discuss the concept of market efficiency",
+      "difficulty": "hard",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An analyst assesses a stock using a model based on expected future cash flows and a required return. She also compares her estimate with the"
+    },
+    {
+      "questionId": "6af5f107fbafd18bc490dfec",
+      "lo": "Describe how different types of information are transferred into prices",
+      "difficulty": "easy",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A student says: “A public announcement has a clear, positive effect on a firm's value. But its stock price cannot reflect that information u"
+    },
+    {
+      "questionId": "6af5f10afbafd18bc490dff0",
+      "lo": "Describe how different types of information are transferred into prices",
+      "difficulty": "medium",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A company's clear public announcement leads many investors to revise their valuations and trade. At another company, a complex public report"
+    },
+    {
+      "questionId": "6af5f12afbafd18bc490dff8",
+      "lo": "Describe how different types of information are transferred into prices",
+      "difficulty": "hard",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "An analyst studies a complex public report that requires substantial interpretation and estimates a stock's value above its market price. Sh"
+    },
+    {
+      "questionId": "6af5f11bfbafd18bc490dff6",
+      "lo": "Illustrate how market efficiency can be empirically tested",
+      "difficulty": "easy",
+      "decision": "pass",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A student wants to empirically test weak-form market efficiency rather than simply estimate a stock’s fair value. Which study best serves th"
+    },
+    {
+      "questionId": "6af5f14dfbafd18bc490dffa",
+      "lo": "Illustrate how market efficiency can be empirically tested",
+      "difficulty": "medium",
+      "decision": "flag",
+      "numericFailure": false,
+      "solverRemoved": [],
+      "stem": "A researcher wants to test **weak-form market efficiency** using actual trading results rather than how closely a valuation model fits obser"
+    },
+    {
+      "questionId": "6af5f17ffbafd18bc490dffc",
+      "lo": "Illustrate how market efficiency can be empirically tested",
+      "difficulty": "hard",
+      "decision": "reject",
+      "numericFailure": false,
+      "repair": {
+        "trigger": "checker-reject",
+        "adopted": false
+      },
+      "solverRemoved": [],
+      "stem": "A researcher tests whether a strategy based on public company reports can consistently exploit mispricing. Across repeated one-year trials, "
+    }
+  ],
+  "failures": []
+}
