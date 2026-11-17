@@ -11,7 +11,6 @@ type ReportData = Awaited<ReturnType<typeof analyticsReportData>>;
 type Topic = ReportData['topics'][number];
 type Objective = Topic['objectiveRows'][number];
 
-const MIN_STUDENTS = 5;
 const WEEK_MS = 7 * 86_400_000;
 const LEFT = 44;
 const WIDTH = 524;
@@ -25,20 +24,6 @@ const percent = (rate: number): string => `${Math.round(rate * 100)}%`;
 const accuracy = (correct: number | undefined, attempts: number): string =>
   correct === undefined ? '-' : percent(correct / attempts);
 const reportText = (value: string): string => value.replace(/\s+/g, ' ').replace(/[^\x20-\x7e\xa0-\xff]/g, '').trim();
-
-function isPublishableSplit(count: number, total: number): boolean {
-  return total >= MIN_STUDENTS && [count, total - count].every(size => size === 0 || size >= MIN_STUDENTS);
-}
-
-function withheldRows<T extends { activeStudents: number; attempts: number }>(rows: T[]): Set<T> {
-  const hidden = new Set(rows.filter(row => row.activeStudents > 0 && row.activeStudents < MIN_STUDENTS));
-  if (hidden.size === 1) {
-    const companion = rows.reduce<T | undefined>((smallest, row) =>
-      row.activeStudents >= MIN_STUDENTS && (!smallest || row.attempts < smallest.attempts) ? row : smallest, undefined);
-    if (companion) hidden.add(companion);
-  }
-  return hidden;
-}
 
 export async function generateAnalyticsReport(courseId: ObjectId, scope: Scope): Promise<Buffer | undefined> {
   const course = await coursesCol().findOne<CourseLabel>(
@@ -59,28 +44,17 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
   const courseLine = [course.courseCode, course.name, course.section && `Section ${course.section}`, course.term]
     .map(part => part && reportText(part))
     .filter(Boolean).join('  /  ');
-  const withheld = new Set(weeks.filter(row => row.activeStudents > 0 && row.activeStudents < MIN_STUDENTS).map(row => row.week));
-  if (withheld.size === 1) {
-    // A second hidden row prevents subtraction from the report total from revealing one small week.
-    const companion = weeks.reduce<ReportData['weeks'][number] | undefined>((smallest, row) =>
-      row.activeStudents >= MIN_STUDENTS && (!smallest || row.questionsAttempted < smallest.questionsAttempted) ? row : smallest, undefined);
-    if (companion) withheld.add(companion.week);
-  }
-  const showTotals = totals.activeStudents >= MIN_STUDENTS;
   const empty = totals.questionsAttempted === 0;
   const busiestWeek = weeks.reduce<ReportData['weeks'][number] | undefined>((busiest, row) =>
-    !withheld.has(row.week) && row.questionsAttempted > (busiest?.questionsAttempted ?? 0) ? row : busiest, undefined);
+    row.questionsAttempted > (busiest?.questionsAttempted ?? 0) ? row : busiest, undefined);
   const maxAttempts = busiestWeek?.questionsAttempted ?? 1;
-  const withheldTopics = withheldRows(topics);
-  const visibleTopics = topics.filter(topic => topic.attempts > 0 && !withheldTopics.has(topic));
+  const visibleTopics = topics.filter(topic => topic.attempts > 0);
   const mostPracticed = visibleTopics.reduce<Topic | undefined>((most, topic) => !most || topic.attempts > most.attempts ? topic : most, undefined);
   const reviewTopic = visibleTopics.filter(topic => topic.attempts >= 20 && topic.correctAttempts / topic.attempts < 0.8)
     .sort((a, b) => a.correctAttempts / a.attempts - b.correctAttempts / b.attempts || b.attempts - a.attempts)[0];
   const objectives = reviewTopic?.objectiveRows ?? [];
-  const withheldObjectives = withheldRows(objectives);
-  const canShowRepeat = isPublishableSplit(repeatStudents, totals.activeStudents);
-  const canShowNextWeek = nextWeek && !withheld.has(nextWeek.baseWeek) && !withheld.has(nextWeek.followUpWeek)
-    && isPublishableSplit(nextWeek.returned, nextWeek.eligible);
+  const canShowRepeat = totals.activeStudents > 0;
+  const canShowNextWeek = nextWeek && nextWeek.eligible > 0;
   const overviewWeeks = 6;
   const overviewRows = 7;
   const weeklyPages = Math.ceil(Math.max(0, weeks.length - overviewWeeks) / 21);
@@ -112,7 +86,7 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
         ? `${repeatStudents} of ${totals.activeStudents} active students practiced in at least two weeks (${percent(repeatStudents / totals.activeStudents)}).`
         : 'A rate is unavailable for this window.'],
       ['Course coverage', topics.length
-        ? `${visibleTopics.length} of ${topics.length} topics had ${withheldTopics.size ? 'reportable ' : ''}practice.`
+        ? `${visibleTopics.length} of ${topics.length} topics had practice.`
         : 'No active topics in the course outline.'],
       ['Classroom review', reviewTopic
         ? `${accuracy(reviewTopic.correctAttempts, reviewTopic.attempts)} correct across ${number.format(reviewTopic.attempts)} attempts in ${reportText(reviewTopic.name)}.`
@@ -139,9 +113,8 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
       const width = (WIDTH - gap * 5) / 6;
       const x = LEFT + index * (width + gap);
       const y = 184;
-      const display = showTotals || empty ? value : 'Withheld';
       doc.roundedRect(x, y, width, 49, 5).fill(light);
-      print(display, x + 6, y + 5, width - 12, { size: 17, font: 'Times-Bold', color: green });
+      print(value, x + 6, y + 5, width - 12, { size: 17, font: 'Times-Bold', color: green });
       print(label, x + 6, y + 26, width - 12, { size: 7.5, height: 19, font: 'Helvetica-Bold' });
     });
   }
@@ -166,10 +139,6 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
       const start = Date.parse(row.week);
       const partial = (scope.from.getTime() > start || scope.to.getTime() < start + WEEK_MS - 1) ? '*' : '';
       print(row.week + partial, columns[0].x, textTop, columns[0].width, { size: 9 });
-      if (withheld.has(row.week)) {
-        print('Withheld to protect small groups', columns[1].x, textTop, 250, { size: 9, color: muted });
-        return;
-      }
       const values = [
         number.format(row.questionsAttempted), accuracy(row.correctAttempts, row.questionsAttempted),
         number.format(row.activeStudents), number.format(row.sessions),
@@ -210,10 +179,6 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
       if (index % 2 === 0) doc.rect(LEFT, y, width, rowHeight).fill('#F3F7F4');
       const size = compact ? 8.5 : 10;
       print(reportText(topic.name) || 'Course topic', fields[0].x, y + 4, fields[0].width, { size, height: rowHeight - 4 });
-      if (withheldTopics.has(topic)) {
-        print('Activity details withheld', fields[1].x, y + 8, LEFT + width - 6 - fields[1].x, { size, color: muted, align: 'right' });
-        return;
-      }
       const values = [`${topic.coveredObjectives} / ${topic.objectives}`, number.format(topic.attempts),
         accuracy(topic.attempts ? topic.correctAttempts : undefined, topic.attempts), number.format(topic.activeStudents)];
       values.forEach((value, i) => print(value, fields[i + 1].x, y + 8, fields[i + 1].width, { size, align: 'right' }));
@@ -243,10 +208,6 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
       if (index % 2 === 0) doc.rect(left, y, width, rowHeight).fill('#F3F7F4');
       const size = compact ? 8.5 : 10;
       print(reportText(row.name) || 'Learning objective', fields[0].x, y + 4, fields[0].width, { size, height: rowHeight - 4 });
-      if (withheldObjectives.has(row)) {
-        print('Details withheld', fields[1].x, y + 8, left + width - 6 - fields[1].x, { size, color: muted, align: 'right' });
-        return;
-      }
       const values = [number.format(row.attempts), accuracy(row.attempts ? row.correctAttempts : undefined, row.attempts),
         number.format(row.activeStudents)];
       values.forEach((value, i) => print(value, fields[i + 1].x, y + 8, fields[i + 1].width, { size, align: 'right' }));
@@ -257,24 +218,21 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
     print('How to read this report', LEFT, notesTop, WIDTH, { font: 'Helvetica-Bold' });
     const notes = section === 'overview' ? [
       '* Partial week. Weeks start Sunday UTC. Next-week return compares the two latest complete weeks.',
-      'LOs shows active learning objectives tried / listed. Accuracy includes retries. Small groups may be withheld.',
+      'LOs shows active learning objectives tried / listed. Accuracy includes retries.',
       'Sessions split after gaps over 30 minutes. Duration spans the first to last submission in a session.',
-      'Review focus is the lowest reportable topic accuracy below 80%, with at least 20 attempts.',
+      'Review focus is the lowest topic accuracy below 80%, with at least 20 attempts.',
     ] : section === 'objectives' ? [
       'Accuracy describes submitted attempts, including retries. A blank rate means no attempts were recorded.',
-      'Objective details require five active students. An additional row may be withheld to protect a small group.',
       'Use the results to choose a review topic. Changes in accuracy alone cannot establish learning gains.',
     ] : section === 'topics' ? [
       'Objectives tried counts active learning objectives with at least one submission during the selected period.',
       'Attempts are attributed to the recorded objective. Historical attempts may appear only in course and weekly totals.',
-      'Topic details require five active students. An additional row may be withheld to protect a small group.',
-      'The review card shows the lowest observed accuracy below 80% among visible topics with at least 20 attempts.',
+      'The review card shows the lowest observed accuracy below 80% among topics with at least 20 attempts.',
     ] : [
       '* Partial week. Weeks start Sunday UTC. Weekly sessions are grouped separately in each week.',
       'Accuracy is correct submissions divided by all submissions, including retries. At least five attempts are required.',
       'Sessions split after gaps over 30 minutes. Observed duration spans the first to last submission in a session.',
-      'Totals and weekly rows may be withheld to protect groups with fewer than five active students.',
-      'Next-week return uses the two latest complete weeks. Small groups may be withheld.',
+      'Next-week return uses the two latest complete weeks.',
     ];
     notes.forEach((note, index) => print(note, LEFT, notesTop + 17 + index * 12, WIDTH, { size: 8.5, color: muted }));
     doc.rect(LEFT, 754, WIDTH, 1).fill('#D5E2DA');
@@ -299,7 +257,7 @@ export function renderAnalyticsReport(course: CourseLabel, scope: Scope, { total
   weeklyTable(recentWeeks, 284, 17);
   const panelsTop = 284 + 23 + recentWeeks.length * 17 + 16;
   print('Topic coverage', LEFT, panelsTop, panelWidth, { font: 'Times-Bold', size: 17 });
-  print(mostPracticed ? `Most practiced  /  ${reportText(mostPracticed.name)}` : 'No reportable topic activity.',
+  print(mostPracticed ? `Most practiced  /  ${reportText(mostPracticed.name)}` : 'No topic activity.',
     LEFT, panelsTop + 23, panelWidth, { color: muted, size: 8.5 });
   print('Classroom review', reviewLeft, panelsTop, panelWidth, { font: 'Times-Bold', size: 17 });
   print(reviewTopic ? reportText(reviewTopic.name) : 'No topic met the review criteria.',
