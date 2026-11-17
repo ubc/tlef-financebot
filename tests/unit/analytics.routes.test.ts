@@ -9,9 +9,9 @@ jest.mock('../../server/src/components/auth', () => ({ ensureCapability: (capabi
 jest.mock('../../server/src/services/analytics-report.service', () => ({
   generateAnalyticsReport: jest.fn(async () => Buffer.from('%PDF-1.7')),
 }));
-jest.mock('../../server/src/services/analytics.service', () => ({ examScores: jest.fn(async () => ({ items: [], excludedUnscored: 0 })), failureRates: jest.fn(async () => []), questionPatterns: jest.fn(async () => ({ items: [], total: 0, limit: 20 })), answerDistributions: jest.fn(async () => ({})), engagement: jest.fn(async () => ({ weeks: [] })), csvSerialize: jest.fn(() => ''), lowEngagement: jest.fn(), searchStudents: jest.fn(), studentProfile: jest.fn() }));
+jest.mock('../../server/src/services/analytics.service', () => ({ examScores: jest.fn(async () => ({ items: [], excludedUnscored: 0 })), failureRates: jest.fn(async () => []), questionPatterns: jest.fn(async () => ({ items: [], total: 0, limit: 20 })), answerDistributions: jest.fn(async () => ({})), engagement: jest.fn(async () => ({ weeks: [] })), csvSerialize: jest.fn(() => ''), lowEngagement: jest.fn(), searchStudents: jest.fn(), studentProfile: jest.fn(), studentActivityExport: jest.fn(async () => []) }));
 import { analyticsRouter } from '../../server/src/routes/analytics.routes';
-import { failureRates, answerDistributions, questionPatterns, engagement } from '../../server/src/services/analytics.service';
+import { failureRates, answerDistributions, questionPatterns, engagement, studentActivityExport } from '../../server/src/services/analytics.service';
 import { generateAnalyticsReport } from '../../server/src/services/analytics-report.service';
 const courseId = new ObjectId().toHexString();
 const questionId = new ObjectId().toHexString();
@@ -70,4 +70,18 @@ it('restricts named exam scores and validates the date range', async () => {
   expect((await request(app).get(base + '/exam-scores').set('x-view-only', 'yes')).status).toBe(403);
   expect((await request(app).get(base + '/exam-scores')).body).toEqual({ items: [], excludedUnscored: 0 });
   expect((await request(app).get(base + '/exam-scores?from=2026-09-15&to=2026-09-01')).status).toBe(400);
+});
+
+it('downloads the per-student CSV only with individual permission, for the selected mode and range', async () => {
+  const path = `${base}/students.csv?mode=exam-prep&from=2026-08-01&to=2026-08-28`;
+  expect((await request(app).get(path).set('x-view-only', 'yes')).status).toBe(403);
+  expect((await request(app).get(path).set('x-signed-out', 'yes')).status).toBe(401);
+  expect((await request(app).get(`${base}/students.csv?mode=retry`)).status).toBe(400);
+  const response = await request(app).get(path);
+  expect(response.status).toBe(200);
+  expect(response.headers['content-type']).toMatch(/^text\/csv/);
+  expect(response.headers['content-disposition']).toMatch(/^attachment; filename="?financebot-students-exam-prep-2026-08-28\.csv"?$/);
+  expect(response.headers['cache-control']).toBe('private, no-store');
+  expect(response.text.replace(/^\uFEFF/, '').split('\r\n')[0]).toMatch(/^name,cwl,email,attempts,/);
+  expect(studentActivityExport).toHaveBeenLastCalledWith(new ObjectId(courseId), { mode: 'exam-prep', from: new Date('2026-08-01'), to: new Date('2026-08-28') });
 });

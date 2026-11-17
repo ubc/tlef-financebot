@@ -79,6 +79,9 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
     },
   });
   const csv = el('a', { class: 'btn btn--ghost btn--sm', text: 'Export weekly CSV' });
+  // One row per student (names, CWL, email): shown only with individual analytics permission.
+  const studentsCsv = el('a', { class: 'btn btn--secondary btn--sm', text: 'Export student CSV', download: '' });
+  studentsCsv.hidden = true;
   const link = (text: string, path: string): HTMLAnchorElement => el('a', { href: `${base}/${path}`, text });
   const profile = (student: { puid: string; displayName: string; uid: string }): HTMLElement => individual
     ? link(`${student.displayName} · ${student.uid}`, `student/${encodeURIComponent(student.puid)}`)
@@ -87,7 +90,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
   root.append(
     pageHeader('Student Analytics', 'Use observed activity to choose what to review and where to follow up.'),
     section('Evidence overview', 'analytics-overview',
-      el('div', { class: 'analytics-controls analytics-toolbar' }, el('div', { class: 'analytics-segmented', role: 'group', 'aria-label': 'Activity mode' }, practice, exam), el('label', {}, 'Date range', dates), button('Refresh', () => { void refresh(); void loadFollow(); }), pdf),
+      el('div', { class: 'analytics-controls analytics-toolbar' }, el('div', { class: 'analytics-segmented', role: 'group', 'aria-label': 'Activity mode' }, practice, exam), el('label', {}, 'Date range', dates), button('Refresh', () => { void refresh(); void loadFollow(); }), pdf, studentsCsv),
       el('div', { class: 'analytics-scope-line' }, scope, status), exportStatus, overview),
     el('section', { class: 'card analytics-topic-panel', 'data-tutorial': 'analytics-outcomes' },
       el('div', { class: 'analytics-topic-main' },
@@ -236,6 +239,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
     practice.setAttribute('aria-pressed', String(mode === 'topic-practice')); exam.setAttribute('aria-pressed', String(mode === 'exam-prep'));
     scope.textContent = `${mode === 'topic-practice' ? 'Topic Practice' : 'Exam Prep'} · ${days ? `Last ${days} days` : 'All time'} · ${days ? new Date(filter.from!).toLocaleDateString() : 'First recorded activity'} – ${to.toLocaleDateString()} (through ${to.toLocaleTimeString()})`;
     csv.href = `/api/courses/${encodeURIComponent(courseId)}/analytics/engagement.csv?${analyticsQuery(snapshot)}`;
+    studentsCsv.href = `/api/courses/${encodeURIComponent(courseId)}/analytics/students.csv?${analyticsQuery(snapshot)}`;
     status.textContent = 'Refreshing selected scope…'; overview.replaceChildren(); focus.replaceChildren(); outcomes.replaceChildren(el('p', { text: 'Loading outcomes…' })); weeks.replaceChildren(el('p', { text: 'Loading engagement…' }));
     patternList.replaceChildren(); distribution.replaceChildren();
     let failed = false;
@@ -296,6 +300,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
     try {
       const capabilities = await getMyCourseCapabilities(courseId); if (!alive()) return;
       individual = capabilities['analytics.individual'];
+      studentsCsv.hidden = !individual;
       if (activeTab === 'Scores') void loadScores();
       searchArea.replaceChildren(...(individual ? [el('form', { class: 'analytics-controls', onsubmit: (event: Event) => { event.preventDefault(); return searchStudents(); } }, search, el('button', { class: 'btn btn--secondary btn--sm', type: 'submit', text: 'Search' })), searchResults] : [el('p', { text: 'Individual profiles are unavailable with your course permissions.' })]));
       void loadFollow(); if (individual) void searchStudents();

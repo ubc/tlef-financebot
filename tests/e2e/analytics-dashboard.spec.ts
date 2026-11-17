@@ -68,6 +68,7 @@ test('scope, objective/version selection and CSV match; search submits with Ente
   await page.getByRole('combobox', { name: 'Outcome date range' }).selectOption('7');
   await page.getByRole('button', { name: 'Engagement', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Export weekly CSV' })).toHaveAttribute('href', /mode=exam-prep&from=.+&to=/);
+  await expect(page.getByRole('link', { name: 'Export student CSV' })).toHaveAttribute('href', new RegExp(`/api/courses/${course}/analytics/students\\.csv\\?mode=exam-prep&from=.+&to=`));
   await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Question patterns learning objective' })).toHaveValue(objective);
   await page.getByRole('button', { name: 'Students', exact: true }).click();
@@ -94,6 +95,7 @@ test('empty patterns, insufficient distribution, section retries and profile per
   await page.getByRole('button', { name: 'Students', exact: true }).click();
   await expect(page.getByText('Individual profiles are unavailable with your course permissions.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Student search' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Export student CSV' })).toHaveCount(0);
   await page.route('**/analytics/questions/**/distribution**', (route) => route.fulfill({ json: { version: 1, stem: 'Tiny sample', isCurrent: false, attempts: 3, insufficient: true, options: [{ key: 'A', text: 'Do not infer', count: 3 }] } }));
   await page.getByRole('button', { name: 'Questions', exact: true }).click();
   await page.getByRole('button', { name: 'View version 1 answers', exact: true }).click();

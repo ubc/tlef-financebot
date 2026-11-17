@@ -14,8 +14,11 @@ import {
   type AnalyticsFilter,
   lowEngagement,
   searchStudents,
+  studentActivityExport,
   studentProfile,
 } from '../services/analytics.service';
+
+const STUDENT_CSV_HEADER = 'name,cwl,email,attempts,correctAttempts,accuracy,sessions,objectivesPracticed,firstAttemptInRange,lastAttemptInRange,lastAttemptAnyMode,strugglingObjectives';
 
 export const analyticsRouter = Router();
 
@@ -123,6 +126,22 @@ analyticsRouter.get(
     }
     const filename = `financebot-analytics-${scope.mode}-${scope.to.toISOString().slice(0, 10)}.pdf`;
     res.set('Cache-Control', 'private, no-store').attachment(filename).send(report);
+  },
+);
+
+const studentsCsvQuery = rangeQuery.extend({ mode: outcomeQuery.shape.mode });
+analyticsRouter.get(
+  '/courses/:courseId/analytics/students.csv',
+  validate({ params: courseParams, query: studentsCsvQuery }),
+  ensureCapability('analytics.individual'),
+  async (req, res) => {
+    const query = req.query as unknown as z.infer<typeof studentsCsvQuery>;
+    const scope = { ...range(query), mode: query.mode };
+    const rows = await studentActivityExport(new ObjectId(String(req.params.courseId)), scope);
+    const filename = `financebot-students-${scope.mode}-${scope.to.toISOString().slice(0, 10)}.csv`;
+    // An empty roster still gets a header row so the file opens as a table.
+    const body = rows.length ? csvSerialize(rows as unknown as Array<Record<string, unknown>>) : STUDENT_CSV_HEADER;
+    res.set('Cache-Control', 'private, no-store').type('text/csv').attachment(filename).send(`\uFEFF${body}`);
   },
 );
 

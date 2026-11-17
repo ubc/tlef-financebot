@@ -371,6 +371,56 @@ export async function searchStudents(courseId: ObjectId, query: string): Promise
   }));
 }
 
+/** Spreadsheet apps execute cells that start with these characters as formulas. */
+function csvText(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+export interface StudentActivityRow {
+  name: string; cwl: string; email: string;
+  attempts: number; correctAttempts: number; accuracy: string; sessions: number; objectivesPracticed: number;
+  firstAttemptInRange: string; lastAttemptInRange: string; lastAttemptAnyMode: string; strugglingObjectives: number;
+}
+
+/**
+ * One row per enrolled student, including students with no attempts, for the
+ * selected mode and date range. Identity-bearing: analytics.individual only.
+ * Last attempt (any mode) and struggling objectives are not range-limited.
+ */
+export async function studentActivityExport(courseId: ObjectId, range: EngagementRange): Promise<StudentActivityRow[]> {
+  const students = await usersCol().find(await importedCourseRoleUserFilter(courseId, ['student'])).sort({ displayName: 1, uid: 1 }).toArray();
+  const puids = students.map(student => student.puid);
+  if (puids.length === 0) return [];
+  const [attempts, lastAny, struggles] = await Promise.all([
+    attemptsCol().find({ ...attemptFilter(courseId, range), puid: { $in: puids } }, { projection: { puid: 1, createdAt: 1, correct: 1, loId: 1 } }).toArray(),
+    attemptsCol().aggregate<{ _id: string; lastAttemptAt: Date }>([{ $match: { courseId, puid: { $in: puids } } }, { $group: { _id: '$puid', lastAttemptAt: { $max: '$createdAt' } } }]).toArray(),
+    masteryCol().aggregate<{ _id: string; count: number }>([{ $match: { courseId, puid: { $in: puids }, status: 'struggling' } }, { $group: { _id: '$puid', count: { $sum: 1 } } }]).toArray(),
+  ]);
+  const byStudent = new Map<string, typeof attempts>();
+  for (const attempt of attempts) byStudent.set(attempt.puid, [...(byStudent.get(attempt.puid) ?? []), attempt]);
+  const sessions = new Map<string, number>();
+  for (const session of clusterSessions(attempts)) sessions.set(session.puid, (sessions.get(session.puid) ?? 0) + 1);
+  const lastByPuid = new Map(lastAny.map(row => [row._id, row.lastAttemptAt]));
+  const struggling = new Map(struggles.map(row => [row._id, row.count]));
+  const iso = (date: Date | undefined): string => date ? date.toISOString() : '';
+  return students.map(student => {
+    const own = byStudent.get(student.puid) ?? [];
+    const times = own.map(attempt => attempt.createdAt.getTime());
+    const correct = own.filter(attempt => attempt.correct).length;
+    return {
+      name: csvText(student.displayName ?? ''), cwl: csvText(student.uid ?? ''), email: csvText(student.email ?? ''),
+      attempts: own.length, correctAttempts: correct,
+      accuracy: own.length ? `${Math.round((correct / own.length) * 100)}%` : '',
+      sessions: sessions.get(student.puid) ?? 0,
+      objectivesPracticed: new Set(own.flatMap(attempt => attempt.loId ? [String(attempt.loId)] : [])).size,
+      firstAttemptInRange: iso(times.length ? new Date(Math.min(...times)) : undefined),
+      lastAttemptInRange: iso(times.length ? new Date(Math.max(...times)) : undefined),
+      lastAttemptAnyMode: iso(lastByPuid.get(student.puid)),
+      strugglingObjectives: struggling.get(student.puid) ?? 0,
+    };
+  });
+}
+
 export async function studentProfile(courseId: ObjectId, puid: string): Promise<Record<string, unknown>> {
   const user = await usersCol().findOne({
     puid,

@@ -35,6 +35,7 @@ import {
   engagement,
   analyticsReportData,
   questionPatterns,
+  studentActivityExport,
 } from '../../server/src/services/analytics.service';
 
 const courseId = new ObjectId();
@@ -269,4 +270,36 @@ it('renders student history from its recorded version and saved parameters', asy
   expect(find).toHaveBeenCalledWith({ _id: { $in: [versionId] } });
   expect(result.history).toEqual([expect.objectContaining({ recordedVersion: 1, stem: 'Value 12', selectedKey: 'B', options: [expect.objectContaining({ text: '12', explanation: 'Saved 12' })] })]);
   expect(result.objectives).toEqual([expect.objectContaining({ name: 'Value', topic: 'Risk' })]);
+});
+
+it('exports one row per enrolled student for the selected range, including inactive students', async () => {
+  const from = new Date('2026-09-01T00:00:00Z'); const to = new Date('2026-09-30T00:00:00Z');
+  const lo = new ObjectId();
+  const usersFind = jest.fn(() => cursor([
+    { puid: 'a', uid: 'alice', displayName: 'Alice', email: 'a@example.com' },
+    { puid: 'b', uid: 'bob', displayName: '=HYPERLINK("x")', email: 'b@example.com' },
+  ]));
+  jest.mocked(usersCol).mockReturnValue({ find: usersFind } as never);
+  const at = (minutes: number) => new Date(from.getTime() + minutes * 60_000);
+  const find = jest.fn(() => cursor([
+    { puid: 'a', createdAt: at(0), correct: true, loId: lo },
+    { puid: 'a', createdAt: at(10), correct: false, loId: lo },
+    { puid: 'a', createdAt: at(200), correct: true, loId: new ObjectId() },
+  ]));
+  const aggregate = jest.fn(() => ({ toArray: async () => [{ _id: 'a', lastAttemptAt: at(500) }, { _id: 'b', lastAttemptAt: new Date('2026-08-01T00:00:00Z') }] }));
+  jest.mocked(attemptsCol).mockReturnValue({ find, aggregate } as never);
+  jest.mocked(masteryCol).mockReturnValue({ aggregate: jest.fn(() => ({ toArray: async () => [{ _id: 'b', count: 2 }] })) } as never);
+
+  const rows = await studentActivityExport(courseId, { from, to, mode: 'topic-practice' });
+
+  expect(find).toHaveBeenCalledWith(
+    { courseId, mode: 'topic-practice', createdAt: { $gte: from, $lte: to }, puid: { $in: ['a', 'b'] } },
+    expect.anything(),
+  );
+  expect(rows).toEqual([
+    { name: 'Alice', cwl: 'alice', email: 'a@example.com', attempts: 3, correctAttempts: 2, accuracy: '67%', sessions: 2, objectivesPracticed: 2,
+      firstAttemptInRange: at(0).toISOString(), lastAttemptInRange: at(200).toISOString(), lastAttemptAnyMode: at(500).toISOString(), strugglingObjectives: 0 },
+    { name: "'=HYPERLINK(\"x\")", cwl: 'bob', email: 'b@example.com', attempts: 0, correctAttempts: 0, accuracy: '', sessions: 0, objectivesPracticed: 0,
+      firstAttemptInRange: '', lastAttemptInRange: '', lastAttemptAnyMode: '2026-08-01T00:00:00.000Z', strugglingObjectives: 2 },
+  ]);
 });
