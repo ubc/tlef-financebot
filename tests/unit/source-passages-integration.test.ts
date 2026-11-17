@@ -72,7 +72,7 @@ it.each([LEGACY_SOURCE_PASSAGE_POLICY, SOURCE_PASSAGE_POLICY] as const)('catalog
 it('validates old/current original equality independently of the derived policy and refuses unknown policy entries', () => {
   const corpus = { sections: [], materials: [], fingerprint: 'originals', sourceSelection: selection };
   const body = { version: 'exact-outline-review-v1', courseId: new ObjectId().toHexString(), rootRunId: new ObjectId().toHexString(), corpus,
-    protocolHash: outlineGroundingProtocolHash(), baseBudget: { pendingSends: 0 }, themes: [], evidence: [], extractions: [], batches: [], reviewInputLimit: 46500 } as unknown as StructureReviewCheckpointBody;
+    protocolHash: outlineGroundingProtocolHash(), options: {}, baseBudget: { pendingSends: 0 }, themes: [], evidence: [], extractions: [], batches: [], reviewInputLimit: 46500 } as unknown as StructureReviewCheckpointBody;
   expect(() => validateStructureReviewCheckpoint(body, { ...corpus, passagePolicy: SOURCE_PASSAGE_POLICY })).not.toThrow();
   expect(() => validateStructureReviewCheckpoint({ ...body, corpus: { ...corpus, passagePolicy: 'future-unknown' as never } })).toThrow('source-passage-policy-unsupported');
   expect(() => validateStructureReviewCheckpoint(body, { ...corpus, passagePolicy: 'future-unknown' as never })).toThrow('source-passage-policy-unsupported');

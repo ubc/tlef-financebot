@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ObjectId } from 'mongodb';
 import { assessOutlineCoverageRepair, buildOutlineWordingRepairBody, createOutlineCoverageRepairPrompt,
@@ -175,7 +175,16 @@ it.each(['source', 'evidence', 'topic', 'extra-LO', 'unmarked-wording', 'unknown
   expect(() => assessOutlineCoverageRepair(body, next, findings, findings, targets, changed)).toThrow();
 });
 
-it('uses exact retained E13/L4 originals and recorded old credits without automatically treating E661/E810 as requirements', () => {
+// These two tests replay retained local audit evidence under audit-results/,
+// which is gitignored (real course material, ~11 MB), so CI never has it. They
+// run wherever that evidence exists and are skipped elsewhere.
+const repoRoot = path.resolve(__dirname, '../..');
+const withAuditEvidence = (...files: string[]) => files.every(file => existsSync(path.join(repoRoot, file))) ? it : it.skip;
+
+withAuditEvidence(
+  'audit-results/quality-lab-outline-continuation-2026-10-17/checkpoint-body.json',
+  'audit-results/quality-lab-outline-continuation-2026-10-17/live-after-fixture-reconciliation/results.json',
+)('uses exact retained E13/L4 originals and recorded old credits without automatically treating E661/E810 as requirements', () => {
   const root = path.resolve(__dirname, '../..'); const base = 'audit-results/quality-lab-outline-continuation-2026-10-17/';
   const rawBody = readFileSync(path.join(root, base, 'checkpoint-body.json'), 'utf8');
   const rawResult = readFileSync(path.join(root, base, 'live-after-fixture-reconciliation/results.json'), 'utf8');
@@ -202,7 +211,7 @@ it('uses exact retained E13/L4 originals and recorded old credits without automa
   expect(missing.status).toBe('shortfall'); expect(missing.targets[0].reasons.some(reason => reason.includes('review is missing'))).toBe(true);
 });
 
-it('preserves the historical prompt function bytes and separates the new coverage protocol identity', () => {
+withAuditEvidence('audit-results/outline-coverage-next-gap-2026-10-17/source-at-audit/server/src/services/structure-outline-repair.ts')('preserves the historical prompt function bytes and separates the new coverage protocol identity', () => {
   const root = path.resolve(__dirname, '../..'); const filename = 'server/src/services/structure-outline-repair.ts';
   const original = readFileSync(path.join(root, 'audit-results/outline-coverage-next-gap-2026-10-17/source-at-audit', filename), 'utf8');
   const current = readFileSync(path.join(root, filename), 'utf8');
