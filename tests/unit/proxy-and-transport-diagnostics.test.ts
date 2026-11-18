@@ -25,8 +25,9 @@ beforeEach(() => {
 });
 afterEach(() => { warn.mockRestore(); logError.mockRestore(); });
 
-it.each(['true', '1', '0.0.0.0/0', '::/0', 'proxy.example.org', '10.0.0.1/33', '::1/129', '127.0.0.1/8/2'])('refuses unsafe or malformed proxy trust %s', value => {
-  expect(() => parseTrustedProxyCidrs(value)).toThrow('TRUSTED_PROXY_CIDRS');
+it.each(['true', '1', '0.0.0.0/0', '::/0', 'proxy.example.org', '10.0.0.1/33', '::1/129', '127.0.0.1/8/2', 'loopback, true'])('never applies unsafe or malformed proxy trust %s, and still boots on loopback', value => {
+  expect(parseTrustedProxyCidrs(value)).toEqual(['loopback']);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('TRUSTED_PROXY_CIDRS ignored'));
 });
 it('accepts explicit addresses and preserves a conservative disable switch', () => {
   expect(parseTrustedProxyCidrs('loopback, 192.0.2.2/32, 2001:db8::1/128, loopback')).toEqual(['loopback', '192.0.2.2/32', '2001:db8::1/128']);

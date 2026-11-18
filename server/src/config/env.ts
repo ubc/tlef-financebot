@@ -74,17 +74,29 @@ function csvList(key: string): string[] {
     .filter(Boolean);
 }
 
-/** Explicit address trust only; hop counts and globally trusting headers are unsafe. */
+/**
+ * Explicit address trust only; hop counts and globally trusting headers are unsafe.
+ * An unsafe or malformed value is never applied, but it must not stop the server
+ * from booting either: a deployment whose environment still carries an older
+ * value (for example `true` or `1`) would otherwise keep serving the previous
+ * build indefinitely. Such values fall back to `loopback` (the default) with a
+ * startup warning naming the rejected entries.
+ */
 export function parseTrustedProxyCidrs(value: string): string[] {
   if (value.trim().toLowerCase() === 'false') return [];
   const ranges = value.split(',').map(part => part.trim()).filter(Boolean);
-  for (const range of ranges) {
-    if (range === 'loopback') continue;
+  const rejected = ranges.filter(range => {
+    if (range === 'loopback') return false;
     const [address, prefix, extra] = range.split('/');
     const version = isIP(address);
-    if (!version || extra !== undefined || (prefix !== undefined && (!/^\d{1,3}$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > (version === 4 ? 32 : 128)))) {
-      throw new Error('TRUSTED_PROXY_CIDRS must contain explicit IP/CIDR addresses, loopback, or false.');
-    }
+    return !version || extra !== undefined || (prefix !== undefined && (!/^\d{1,3}$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > (version === 4 ? 32 : 128)));
+  });
+  if (rejected.length > 0) {
+    console.warn(
+      `[config] TRUSTED_PROXY_CIDRS ignored (${rejected.join(', ')}): it must contain explicit IP/CIDR addresses, ` +
+        'loopback, or false. Falling back to loopback; set the actual reverse-proxy address to silence this warning.',
+    );
+    return ['loopback'];
   }
   return [...new Set(ranges)];
 }

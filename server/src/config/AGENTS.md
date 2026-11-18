@@ -18,8 +18,10 @@ Rules:
   committed.
 
 `TRUSTED_PROXY_CIDRS` accepts only literal IP/CIDRs or `loopback` (the default);
-`false` disables trust. Broad global trust, hop counts and `/0` networks refuse
-startup. Deployed layouts must specify their actual immediate proxy addresses;
+`false` disables trust. Broad global trust, hop counts, `/0` networks and other
+malformed values are never applied: the server logs a `[config]` warning and
+falls back to `loopback` rather than refusing startup (a boot failure here once
+left a deployment serving an old backend unnoticed). Deployed layouts must specify their actual immediate proxy addresses;
 do not substitute all private networks to suppress a validation warning.
 
 Currently read: core (`nodeEnv`, `port`), MongoDB (`mongodbUri`,
