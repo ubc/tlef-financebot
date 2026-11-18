@@ -37,7 +37,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   new test edits an approved question and finds it in To review.
   Fix the spec's D1 sentence, which says the server does this on its own.
 
-- [ ] **2. Shared helpers out of `question-detail.ts`.**
+- [x] **2. Shared helpers out of `question-detail.ts`.**
   Move `addableLoOptions`, `findLoContext` (exported) and `isFieldEdited` to
   `client/src/views/instructor/question-tags.ts`. `question-detail.ts` imports
   them from there; `tests/unit/question-bank-helpers.test.ts` re-points.

@@ -4,11 +4,11 @@
 // touching), but merely importing doesn't execute document access, so this is
 // safe under jest's node test environment. See
 // client/src/api.ts (bankFiltersToQuery), client/src/question-labels.ts
-// (statusToBadgeVariant), client/src/views/instructor/question-detail.ts
+// (statusToBadgeVariant), client/src/views/instructor/question-tags.ts
 // (isFieldEdited).
 import { bankFiltersToQuery, type BankFilters } from '../../client/src/api';
 import { heldBackTopics, statusToBadgeVariant } from '../../client/src/question-labels';
-import { addableLoOptions, isFieldEdited } from '../../client/src/views/instructor/question-detail';
+import { addableLoOptions, isFieldEdited } from '../../client/src/views/instructor/question-tags';
 import type { CourseTree } from '../../client/src/api';
 
 describe('addableLoOptions', () => {
