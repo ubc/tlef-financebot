@@ -83,15 +83,12 @@ test.describe('instructor sample panel', () => {
   });
 
   test('renders the worked example as maths, not as LaTeX source', async ({ page }) => {
+    // The old Question details URL redirects into the workspace reader (spec 2026-11-18 D7).
     await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
-
-    // Each answer key gets its own control even when distractors share a role.
-    const option = page.getByRole('textbox', { name: 'Option C explanation', exact: true });
-    await expect(page.locator('.option-editor')).toHaveCount(4);
-    await option.fill('Unsaved explanation for option C.');
-    await page.getByRole('button', { name: 'Student preview', exact: true }).click();
-    const sample = page.locator('.question-sample');
-    await expect(sample).toBeVisible();
+    const modes = page.getByRole('group', { name: 'Reader mode' });
+    await modes.getByRole('button', { name: 'Preview', exact: true }).click();
+    const sample = page.getByRole('region', { name: 'Student preview' });
+    await expect(sample.locator('.questions-preview__stem')).toBeVisible();
 
     // A `.katex` node can only exist if renderRichText ran on this panel.
     await expect(sample.locator('.katex').first()).toBeVisible();
@@ -99,15 +96,22 @@ test.describe('instructor sample panel', () => {
     // ...and the source is not on screen. innerText is required: KaTeX keeps
     // the original TeX in a visually-hidden MathML annotation, so a
     // textContent check matches `\frac` even on a correct render.
-    await expect(sample.locator('.question-sample__stem')).not.toContainText('\\frac', {
+    await expect(sample.locator('.questions-preview__stem')).not.toContainText('\\frac', {
       useInnerText: true,
     });
 
-    // The panel's original contract still holds: substituted, not templated.
-    await expect(sample.locator('.question-sample__stem')).not.toContainText('{{');
-    await expect(sample.locator('.question-sample__option')).toHaveCount(4);
-    await expect(sample).not.toContainText('Unsaved explanation for option C.');
-    await page.getByRole('button', { name: 'Edit question', exact: true }).click();
+    // Substituted, not templated, with every answer key shown.
+    await expect(sample.locator('.questions-preview__stem')).not.toContainText('{{');
+    await expect(sample.locator('.gw-answer')).toHaveCount(4);
+
+    // Each answer key gets its own editor even when distractors share a role,
+    // and leaving Edit with unsaved text asks before discarding it.
+    await modes.getByRole('button', { name: 'Edit', exact: true }).click();
+    const option = page.getByRole('textbox', { name: 'Explanation C', exact: true });
+    await expect(page.locator('.questions-reader__edit-option')).toHaveCount(4);
+    await option.fill('Unsaved explanation for option C.');
+    await modes.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
     await expect(option).toHaveValue('Unsaved explanation for option C.');
   });
 });

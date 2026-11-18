@@ -8,6 +8,7 @@
 // A migrated `generateScript` (import only) overrides the tables at serve
 // time and is never edited or sent from here (P3-3).
 import { ApiError, previewQuestionParams, type DerivedValueInput, type ParamPreviewResult, type ParamSlotInput, type QuestionDetail } from '../../api.js';
+import { runButtonAction } from '../../action-state.js';
 import { el, mount } from '../../dom.js';
 import { numericVerificationSummary } from '../../numeric-verification-summary.js';
 import { errorState } from '../../ui.js';
@@ -66,7 +67,6 @@ export function createQuestionParams(options: ParamsOptions) {
   let stem = '';
   let current: QuestionDetail | undefined;
   let locked = false;
-  let drawing = false;
   /** The server's reason the last save could not be verified. */
   let saveError: string | undefined;
 
@@ -86,7 +86,7 @@ export function createQuestionParams(options: ParamsOptions) {
     slots = (detail.current.paramSlots ?? []).map(slotDraft);
     derived = (detail.current.derivedValues ?? []).map((row) => ({ name: row.name, formula: row.formula, errorModel: row.errorModel ?? '' }));
     baseline = JSON.stringify(patch());
-    draws.replaceChildren();
+    mount(draws, el('p', { class: 'questions-params__help', text: 'Draw five samples to see the stem with values filled in, using the tables above as they are now.' }));
   }
 
   const changed = (): void => { options.onChange(); };
@@ -152,7 +152,7 @@ export function createQuestionParams(options: ParamsOptions) {
     const summary = numericVerificationSummary(detail.current.verification);
     return summary
       ? el('div', { class: 'questions-params__verification is-verified', role: 'status', text: summary })
-      : el('p', { class: 'questions-params__help', role: 'status', text: 'No numerical verification is recorded for this version.' });
+      : el('p', { class: 'questions-params__verification is-neutral', role: 'status', text: 'No numerical verification proof is recorded for this version.' });
   }
 
   function showDraws(result: ParamPreviewResult): void {
@@ -161,15 +161,17 @@ export function createQuestionParams(options: ParamsOptions) {
       el('ol', { class: 'questions-params__draw-list' }, ...result.draws.map((sample) => el('li', { text: sample.stem ?? JSON.stringify(sample.values) }))));
   }
 
-  async function drawSamples(): Promise<void> {
-    if (drawing || locked) return;
-    drawing = true; draw();
-    try {
-      showDraws(await previewQuestionParams(options.questionId, { ...patch(), stem }));
-    } catch (error) {
-      mount(draws, errorState(error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error)));
-    }
-    drawing = false; draw();
+  /** Uses the shared busy button (aria-busy, no duplicate requests); the
+   * result lands in `draws` without redrawing the tables. */
+  async function drawSamples(button: HTMLButtonElement): Promise<void> {
+    if (locked) return;
+    await runButtonAction(button, async () => {
+      try {
+        showDraws(await previewQuestionParams(options.questionId, { ...patch(), stem }));
+      } catch (error) {
+        mount(draws, errorState(error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error)));
+      }
+    });
   }
 
   function draw(): void {
@@ -202,13 +204,13 @@ export function createQuestionParams(options: ParamsOptions) {
       el('h3', { text: 'Verification' }),
       verification(detail),
       el('div', { class: 'questions-params__actions', 'data-tutorial': 'parameter-verification' },
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked || drawing, onclick: () => { void drawSamples(); } }, drawing ? 'Drawing…' : 'Draw five samples'),
-        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: locked || drawing, onclick: () => options.onSave(patch()) }, 'Save parameters')),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked, onclick: (event: Event) => { void drawSamples(event.currentTarget as HTMLButtonElement); } }, 'Draw five samples'),
+        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: locked, onclick: () => options.onSave(patch()) }, 'Save parameters')),
       el('p', { class: 'questions-params__help', text: returnsToReview
         ? 'Saving returns this question to To review: formulas decide which answer is correct.'
         : 'The server verifies the formulas on every save. Saving does not approve the question.' }),
       el('h3', { text: 'Sample draws' }),
-      draws.childElementCount ? draws : el('p', { class: 'questions-params__help', text: 'Draw five samples to see the stem with values filled in, using the tables above as they are now.' }));
+      draws);
   }
 
   return {

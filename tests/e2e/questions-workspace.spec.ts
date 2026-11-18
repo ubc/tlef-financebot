@@ -87,6 +87,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const themeCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const resolveCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const patchCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
+  const transitionCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const noteCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const suggestionCalls: Array<[string, string]> = [];
   let sampleCalls = 0;
@@ -238,7 +239,8 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       const question = questions.find((q) => q.id === match[1])!;
       if (match[2]) {
         const body = r.request().postDataJSON();
-        if (failIds.has(question.id)) return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
+        transitionCalls.push({ id: question.id, body });
+        if (failIds.has(question.id) || (body.expectedVersionId && body.expectedVersionId !== question.currentVersionId)) return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
         question.state = body.to;
         return r.fulfill({ json: question });
       }
@@ -277,7 +279,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     renderQuestions(document.querySelector('main')!, { id: 'course' });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls, previewCalls };
+  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls, previewCalls, transitionCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -789,4 +791,44 @@ test('390px dark Parameters keeps its tables inside the pane and passes axe', as
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const results = await new AxeBuilder({ page }).include('.questions-reader').analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+});
+
+// Moved from question-edit-concurrency.spec.ts (the Question details and
+// Parameterization pages it drove are gone).
+test('an edit that loses to a colleague keeps the draft, and the next decision pins the saved version', async ({ page }) => {
+  const mock = await setup(page, { parameterized: true });
+  await modeButton(page, 'Edit').click();
+  const stem = page.getByLabel('Question stem');
+  await stem.fill('My unsaved explanation of [F]');
+  mock.failIds.add('q1');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.questions-reader__notice')).toContainText('Your edits were not saved');
+  await expect(stem).toHaveValue('My unsaved explanation of [F]');
+  expect(mock.patchCalls[0].body).toMatchObject({ expectedVersionId: 'v1', stem: 'My unsaved explanation of {{F}}' });
+
+  mock.failIds.delete('q1');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Changes saved.');
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Question approved.');
+  expect(mock.transitionCalls).toEqual([{ id: 'q1', body: expect.objectContaining({ to: 'approved', expectedVersionId: 'v1-2' }) }]);
+});
+
+test('a parameter save that loses to a colleague keeps the values, and the next save pins the newer version', async ({ page }) => {
+  const mock = await setup(page, { parameterized: true, tab: 'review', extraHash: '&q=q1&mode=params' });
+  const params = page.getByRole('region', { name: 'Parameters' });
+  await params.getByLabel('Variable 1 minimum').fill('3');
+  mock.failIds.add('q1');
+  await params.getByRole('button', { name: 'Save parameters' }).click();
+  await expect(page.locator('.questions-reader__notice')).toContainText('Your parameter changes were not saved');
+  await expect(params.getByLabel('Variable 1 minimum')).toHaveValue('3');
+  expect(mock.patchCalls[0].body).toMatchObject({ expectedVersionId: 'v1', paramSlots: [{ name: 'F', min: 3, max: 10, step: 2 }] });
+
+  mock.failIds.delete('q1');
+  await params.getByRole('button', { name: 'Save parameters' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Parameters saved and verified.');
+  await page.getByRole('region', { name: 'Parameters' }).getByLabel('Variable 1 minimum').fill('4');
+  await page.getByRole('region', { name: 'Parameters' }).getByRole('button', { name: 'Save parameters' }).click();
+  await expect.poll(() => mock.patchCalls.length).toBe(3);
+  expect(mock.patchCalls[2].body.expectedVersionId).toBe('v1-2');
 });

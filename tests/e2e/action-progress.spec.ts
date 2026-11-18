@@ -128,17 +128,19 @@ test('real TA review preserves pending state when filters redraw rows', async ({
   await expect(button).not.toHaveAttribute('aria-busy', 'true');
 });
 
-test('real Instructor native preview button shows pending animation and releases on error', async ({ page }) => {
+test('real Instructor parameter preview button shows pending animation and releases on error', async ({ page }) => {
   await realView(page);
-  await page.route('**/api/questions/question', route => route.fulfill({ json: { courseId: 'fixture', current: { stem: 'Compute {{rate}}', paramSlots: [{ name: 'rate', min: 1, max: 5, step: 1 }], derivedValues: [] } } }));
   const pending = gate();
   let calls = 0;
   await page.route('**/api/questions/question/params/preview', async route => { calls++; await pending.promise; await route.fulfill({ status: 503, json: { error: 'Preview interrupted' } }); });
   await page.evaluate(async () => {
-    const { renderParamConfig } = await import('/js/views/instructor/param-config.js');
-    renderParamConfig(document.getElementById('fixture')!, { id: 'fixture', questionId: 'question' });
+    // The workspace reader's Parameters mode (spec 2026-11-18 D6).
+    const { createQuestionParams } = await import('/js/views/instructor/questions-params.js');
+    const params = createQuestionParams({ questionId: 'question', onSave: () => undefined, onChange: () => undefined });
+    const detail = { id: 'question', state: 'draft', current: { _id: 'v1', stem: 'Compute {{rate}}', options: [], paramSlots: [{ name: 'rate', min: 1, max: 5, step: 1 }], derivedValues: [] } };
+    document.getElementById('fixture')!.append(params.render(detail as never, false));
   });
-  const button = page.getByRole('button', { name: /Re-roll preview/ });
+  const button = page.getByRole('button', { name: 'Draw five samples' });
   await button.click();
   await visibleBusy(button);
   await button.click();

@@ -178,20 +178,18 @@ test.describe('Task 10 custom generation and regeneration', () => {
       }
     });
 
-    await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
-    await expect(page.getByText(ORIGINAL_STEM)).toBeVisible();
-    await page.getByRole('button', { name: /Regenerate/ }).click();
-    await expect(page.getByRole('heading', { name: 'Regenerate side by side' })).toBeVisible();
+    // The old "Regenerate side by side" link lands on the workspace's Compare mode (spec 2026-11-18 D7).
+    await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}?from=questions&intent=regenerate`);
+    await expect(page.getByRole('region', { name: 'Compare with a generated alternative' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Current · version 1' })).toContainText(ORIGINAL_STEM);
     await page.getByRole('button', { name: 'Generate alternative' }).click();
-    await expect(page.getByRole('heading', { name: 'Current question' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Generated variant' })).toBeVisible();
-    await expect(page.getByText(VARIANT_STEM)).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Generated alternative' })).toContainText(VARIANT_STEM);
     expect(patchRequests).toBe(0);
 
     await page.getByRole('button', { name: 'Replace with variant' }).click();
-    await expect(page.getByText(/saved explicitly as question version 2/i)).toBeVisible();
+    await expect(page.locator('.questions-notice')).toContainText('Variant saved as version 2.');
     expect(patchRequests).toBe(1);
-    await expect(page.locator('.question-stem-input')).toHaveValue(VARIANT_STEM);
+    await expect(page.locator('.questions-reader__stem')).toContainText(VARIANT_STEM);
     expect(browserErrors).toEqual([]);
   });
 });

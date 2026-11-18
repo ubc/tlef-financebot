@@ -88,78 +88,74 @@ test.describe('numeric parameterization', () => {
   });
 
   test('a broken range is rejected with a reason; fixing it earns a proof', async ({ page }) => {
+    // The old Parameterization URL redirects into the workspace's Parameters mode (spec 2026-11-18 D7).
     await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}/params`);
-    await expect(page.getByRole('heading', { name: 'Parameterization Configuration' })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/questions\\?.*q=${questionId}.*mode=params`));
+    const params = page.getByRole('region', { name: 'Parameters' });
+    await expect(params).toBeVisible();
 
     await test.step('add slots whose range lets the discount rate reach zero', async () => {
-      await page.getByRole('button', { name: '+ Add Drawn Variable' }).click();
-      await page.locator('#slot-name-0').fill('PAYMENT');
-      await page.locator('#slot-min-0').fill('100');
-      await page.locator('#slot-max-0').fill('900');
-      await page.locator('#slot-step-0').fill('100');
+      await params.getByRole('button', { name: '+ Add drawn variable' }).click();
+      await params.getByLabel('Variable 1 name').fill('PAYMENT');
+      await params.getByLabel('Variable 1 minimum').fill('100');
+      await params.getByLabel('Variable 1 maximum').fill('900');
+      await params.getByLabel('Variable 1 step').fill('100');
 
-      await page.getByRole('button', { name: '+ Add Drawn Variable' }).click();
-      await page.locator('#slot-name-1').fill('RATE_PCT');
+      await params.getByRole('button', { name: '+ Add drawn variable' }).click();
+      await params.getByLabel('Variable 2 name').fill('RATE_PCT');
       // -100% makes (1 + RATE_PCT/100) exactly zero, so PV divides by zero.
-      await page.locator('#slot-min-1').fill('-100');
-      await page.locator('#slot-max-1').fill('10');
-      await page.locator('#slot-step-1').fill('10');
+      await params.getByLabel('Variable 2 minimum').fill('-100');
+      await params.getByLabel('Variable 2 maximum').fill('10');
+      await params.getByLabel('Variable 2 step').fill('10');
     });
 
     await test.step('add the derived values', async () => {
-      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
-      await page.locator('#derived-name-0').fill('PV');
-      await page.locator('#derived-formula-0').fill('PAYMENT/(1+RATE_PCT/100)');
-
-      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
-      await page.locator('#derived-name-1').fill('PV_WRONG');
-      await page.locator('#derived-formula-1').fill('PAYMENT*(1+RATE_PCT/100)');
-      await page.locator('#derived-error-1').fill('compounded forward instead of discounting back');
-
-      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
-      await page.locator('#derived-name-2').fill('PV_TWICE');
-      await page.locator('#derived-formula-2').fill('PAYMENT/(1+RATE_PCT/100)^2');
-      await page.locator('#derived-error-2').fill('discounted for two periods instead of one');
-
-      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
-      await page.locator('#derived-name-3').fill('PV_UNDISCOUNTED');
-      await page.locator('#derived-formula-3').fill('PAYMENT');
-      await page.locator('#derived-error-3').fill('omitted discounting');
+      const rows: Array<[string, string, string]> = [
+        ['PV', 'PAYMENT/(1+RATE_PCT/100)', ''],
+        ['PV_WRONG', 'PAYMENT*(1+RATE_PCT/100)', 'compounded forward instead of discounting back'],
+        ['PV_TWICE', 'PAYMENT/(1+RATE_PCT/100)^2', 'discounted for two periods instead of one'],
+        ['PV_UNDISCOUNTED', 'PAYMENT', 'omitted discounting'],
+      ];
+      for (const [index, [name, formula, mistake]] of rows.entries()) {
+        await params.getByRole('button', { name: '+ Add computed value' }).click();
+        await params.getByLabel(`Computed value ${index + 1} name`).fill(name);
+        await params.getByLabel(`Computed value ${index + 1} formula`).fill(formula);
+        if (mistake) await params.getByLabel(`Computed value ${index + 1} mistake`).fill(mistake);
+      }
     });
 
     await test.step('saving reports the division by zero and withholds the proof', async () => {
-      await page.getByRole('button', { name: 'Save Parameterization' }).click();
-      const banner = page.locator('.verification-banner--fail');
+      await params.getByRole('button', { name: 'Save parameters' }).click();
+      const banner = page.locator('.questions-params__verification.is-failed');
       await expect(banner).toBeVisible();
       await expect(banner).toContainText(/division by zero/);
       await expect(banner).toContainText(/will not be served/i);
     });
 
     await test.step('narrowing the range to exclude -100% verifies it', async () => {
-      await page.locator('#slot-min-1').fill('4');
-      await page.locator('#slot-max-1').fill('12');
-      await page.locator('#slot-step-1').fill('2');
-      await page.getByRole('button', { name: 'Save Parameterization' }).click();
+      await params.getByLabel('Variable 2 minimum').fill('4');
+      await params.getByLabel('Variable 2 maximum').fill('12');
+      await params.getByLabel('Variable 2 step').fill('2');
+      await params.getByRole('button', { name: 'Save parameters' }).click();
 
-      await expect(page.locator('.verification-banner--ok')).toBeVisible();
-      await expect(page.locator('.verification-banner--fail')).toHaveCount(0);
+      await expect(page.locator('.questions-params__verification.is-verified')).toBeVisible();
+      await expect(page.locator('.questions-params__verification.is-failed')).toHaveCount(0);
     });
 
-    await test.step('the question detail view shows a worked example with real numbers', async () => {
-      await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
-      await page.getByRole('button', { name: 'Student preview', exact: true }).click();
-      const sample = page.locator('.question-sample');
-      await expect(sample).toBeVisible();
+    await test.step('Preview shows a worked example with real numbers', async () => {
+      await page.getByRole('group', { name: 'Reader mode' }).getByRole('button', { name: 'Preview', exact: true }).click();
+      const sample = page.getByRole('region', { name: 'Student preview' });
+      await expect(sample.locator('.questions-preview__stem')).toBeVisible();
 
-      // The stem the instructor EDITS still carries placeholders; the example
-      // below it must not — it is what a student would actually see.
-      const stemText = await sample.locator('.question-sample__stem').innerText();
+      // The stored stem carries placeholders; the preview must not — it is
+      // what a student would actually see.
+      const stemText = await sample.locator('.questions-preview__stem').innerText();
       expect(stemText).not.toContain('{{');
       expect(stemText).toMatch(/payment of \$\d/);
 
       // All four options render computed values, and they are distinct —
       // which is exactly what verification proved across 100 draws.
-      const optionTexts = await sample.locator('.question-sample__option').allInnerTexts();
+      const optionTexts = await sample.locator('.gw-answer').allInnerTexts();
       expect(optionTexts).toHaveLength(4);
       for (const text of optionTexts) expect(text).not.toContain('{{');
       const numbers = optionTexts

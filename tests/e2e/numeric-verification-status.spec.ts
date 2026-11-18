@@ -37,7 +37,7 @@ async function fixture(page: Page, verification: unknown, save?: { verification?
     if (url.origin !== ORIGIN) { external.push(url.href); return route.abort('blockedbyclient'); }
     if (url.pathname === '/numeric-verification-fixture') return route.fulfill({ contentType: 'text/html', body:
       '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<title>Numerical verification display — synthetic receipts</title><link rel="stylesheet" href="/styles/main.css">'
+      + '<title>Numerical verification display — synthetic receipts</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/styles/questions-workspace.css">'
       + '</head><body><p class="form-field__help" style="margin:16px">Synthetic intercepted API receipts. '
       + 'These screens verify display and save-state behavior, not numerical correctness or model quality.</p>'
       + '<main style="padding:16px;max-width:1120px;margin:auto"></main></body></html>' });
@@ -48,7 +48,7 @@ async function fixture(page: Page, verification: unknown, save?: { verification?
       id: QUESTION, courseId: COURSE, currentVersionId: VERSION, currentVersion: 1,
       state: 'draft', loIds: [], themeIds: [], labels: [], internalNotes: [], versions: [], current,
     } });
-    if (url.pathname === `/api/questions/${QUESTION}/params` && request.method() === 'PATCH' && save) {
+    if (url.pathname === `/api/questions/${QUESTION}` && request.method() === 'PATCH' && save) {
       const body = request.postDataJSON() as { paramSlots?: unknown; derivedValues?: unknown };
       Object.assign(saved, body.paramSlots !== undefined ? { paramSlots: body.paramSlots } : {},
         body.derivedValues !== undefined ? { derivedValues: body.derivedValues } : {});
@@ -58,12 +58,22 @@ async function fixture(page: Page, verification: unknown, save?: { verification?
     return route.fulfill({ status: 405, json: { error: 'The synthetic fixture refuses all other API operations.' } });
   });
   await page.goto('/numeric-verification-fixture');
-  await page.evaluate(async ({ course, question }) => {
-    const component = await import('/js/views/instructor/param-config.js');
-    component.renderParamConfig(document.querySelector('main')!, { id: course, questionId: question });
-  }, { course: COURSE, question: QUESTION });
-  await expect(page.getByRole('heading', { name: 'Parameterization Configuration' })).toBeVisible();
-  return { current, saved, calls, external, errors, unexpected, banner: page.locator('.param-config__verification') };
+  // The workspace reader's Parameters mode (spec 2026-11-18 D6), rendered on its
+  // own; onSave does what the reader does: PATCH, then show the saved version.
+  await page.evaluate(async ({ course, question, version }) => {
+    const { createQuestionParams } = await import('/js/views/instructor/questions-params.js');
+    const { editQuestion, getQuestion } = await import('/js/api.js');
+    const main = document.querySelector('main')!;
+    const detail = await getQuestion(question);
+    const params = createQuestionParams({ questionId: question, onChange: () => undefined, onSave: async (patch) => {
+      const saved = await editQuestion(question, { expectedVersionId: version, ...patch }) as Awaited<ReturnType<typeof editQuestion>> & { verificationError?: string };
+      params.saved(saved.verificationError);
+      main.replaceChildren(params.render({ ...detail, courseId: course, current: saved }, false));
+    } });
+    main.replaceChildren(params.render(detail, false));
+  }, { course: COURSE, question: QUESTION, version: VERSION });
+  await expect(page.getByRole('region', { name: 'Parameters' })).toBeVisible();
+  return { current, saved, calls, external, errors, unexpected, banner: page.locator('.questions-params__verification') };
 }
 
 async function retainAndCheck(state: Awaited<ReturnType<typeof fixture>>, testInfo: TestInfo, saves = 0) {
@@ -72,7 +82,7 @@ async function retainAndCheck(state: Awaited<ReturnType<typeof fixture>>, testIn
   expect(state.unexpected).toEqual([]);
   expect(state.calls.filter(call => call.method !== 'GET')).toHaveLength(saves);
   if (saves) {
-    expect(state.calls[1]).toMatchObject({ method: 'PATCH', path: `/api/questions/${QUESTION}/params`,
+    expect(state.calls[1]).toMatchObject({ method: 'PATCH', path: `/api/questions/${QUESTION}`,
       body: { expectedVersionId: VERSION } });
   }
   await mkdir(testInfo.outputDir, { recursive: true });
@@ -80,7 +90,7 @@ async function retainAndCheck(state: Awaited<ReturnType<typeof fixture>>, testIn
     if (name.endsWith('.png')) await testInfo.attach(name, { path: join(testInfo.outputDir, name), contentType: 'image/png' });
   }
   await testInfo.attach('synthetic-intercepted-input-output', { contentType: 'application/json', body: Buffer.from(JSON.stringify({
-    scope: 'Compiled parameter-config renderer and mocked responses only; no arithmetic, provider or database acceptance.',
+    scope: 'Compiled Parameters-mode renderer and mocked responses only; no arithmetic, provider or database acceptance.',
     initialVersion: state.current, syntheticSaveResponse: saves ? state.saved : null,
     interceptedRequests: state.calls, externalRequests: state.external, pageErrors: state.errors, unexpectedApis: state.unexpected,
   }, null, 2)) });
@@ -93,16 +103,16 @@ for (const [name, width, theme] of [['desktop-light', 1440, 'light'], ['mobile-d
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     await expect(state.banner).toContainText('Verified all 27 parameter-entry combinations plus 100 recorded sample draws.');
     await expect(state.banner).toContainText('Approval is still required.');
-    await expect(state.banner.locator('.verification-banner--ok')).toBeVisible();
+    await expect(state.banner).toHaveClass(/is-verified/);
     await state.banner.scrollIntoViewIfNeeded();
     const bounds = await state.banner.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect(await state.banner.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    expect((await new AxeBuilder({ page }).include('.param-config__verification').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).include('.questions-params__verification').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
     await state.banner.screenshot({ path: testInfo.outputPath(`${name}-finite-grid-banner.png`) });
-    await page.screenshot({ path: testInfo.outputPath(`${name}-parameter-config.png`), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`${name}-parameters-mode.png`), fullPage: true });
     await retainAndCheck(state, testInfo);
   });
 }
@@ -142,14 +152,14 @@ test('hostile contradictory metadata cannot claim complete coverage or execute m
 test('save response with a failing grid tuple replaces the previous success banner', async ({ page }, testInfo) => {
   const failure = 'finite parameter grid {"RF":3,"BETA":1.2,"MRP":6}: options ANSWER and DISTRACTOR are identical at display precision (both show 10.20)';
   const state = await fixture(page, exhaustive, { verificationError: failure });
-  await expect(state.banner.locator('.verification-banner--ok')).toBeVisible();
-  await page.locator('.param-slot__values').nth(1).fill('0.8, 0.9, 1.2');
-  await page.locator('#derived-formula-1').fill('RF+BETA+MRP');
-  await page.locator('#derived-error-1').fill('added beta rather than multiplying the market premium');
-  await page.getByRole('button', { name: 'Save Parameterization', exact: true }).click();
-  await expect(state.banner.locator('.verification-banner--fail')).toContainText(failure);
+  await expect(state.banner).toHaveClass(/is-verified/);
+  await page.getByLabel('Variable 2 values').fill('0.8, 0.9, 1.2');
+  await page.getByLabel('Computed value 2 formula').fill('RF+BETA+MRP');
+  await page.getByLabel('Computed value 2 mistake').fill('added beta rather than multiplying the market premium');
+  await page.getByRole('button', { name: 'Save parameters', exact: true }).click();
+  await expect(state.banner).toHaveClass(/is-failed/);
+  await expect(state.banner).toContainText(failure);
   await expect(state.banner).toContainText('Not verified — this question will not be served to students.');
-  await expect(state.banner.locator('.verification-banner--ok')).toHaveCount(0);
   expect(state.calls[1]).toMatchObject({ body: {
     paramSlots: [{ name: 'RF', values: [2, 3, 4] }, { name: 'BETA', values: [0.8, 0.9, 1.2] }, { name: 'MRP', values: [4, 5, 6] }],
     derivedValues: [{ name: 'ANSWER', formula: 'RF+BETA*MRP' }, { name: 'DISTRACTOR', formula: 'RF+BETA+MRP' }],
@@ -160,10 +170,10 @@ test('save response with a failing grid tuple replaces the previous success bann
 
 test('save response without a proof stays neutral and cannot retain prior success', async ({ page }, testInfo) => {
   const state = await fixture(page, exhaustive, {});
-  await expect(state.banner.locator('.verification-banner--ok')).toBeVisible();
-  await page.getByRole('button', { name: 'Save Parameterization', exact: true }).click();
+  await expect(state.banner).toHaveClass(/is-verified/);
+  await page.getByRole('button', { name: 'Save parameters', exact: true }).click();
   await expect(state.banner).toContainText('No numerical verification proof is recorded for this version.');
-  await expect(state.banner.locator('.verification-banner--ok,.verification-banner--fail')).toHaveCount(0);
+  await expect(state.banner).toHaveClass(/is-neutral/);
   await expect(state.banner).not.toContainText('Verified all');
   await state.banner.screenshot({ path: testInfo.outputPath('missing-proof-neutral.png') });
   await retainAndCheck(state, testInfo, 1);
