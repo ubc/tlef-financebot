@@ -47,3 +47,7 @@ tmp/pdfs/
 
 # Local exact-input/output book data may contain copyrighted source excerpts.
 artifacts/quality-lab-book-2026-10-16/private/
+
+# Python bytecode caches from scripts/
+__pycache__/
+*.pyc

@@ -64,8 +64,8 @@ test.describe('numeric parameterization', () => {
       options: [
         { key: 'A', text: '${{PV}}', role: 'correct', explanation: 'Discount one period.' },
         { key: 'B', text: '${{PV_WRONG}}', role: 'common-misconception', explanation: 'Compounded forward.' },
-        { key: 'C', text: 'Cannot be determined', role: 'clearly-wrong', explanation: 'It can.' },
-        { key: 'D', text: 'The payment itself', role: 'partially-correct', explanation: 'Ignores discounting.' },
+        { key: 'C', text: '${{PV_TWICE}}', role: 'clearly-wrong', explanation: 'Discounted two periods.' },
+        { key: 'D', text: '${{PV_UNDISCOUNTED}}', role: 'partially-correct', explanation: 'Ignores discounting.' },
       ],
     });
     questionId = created.questionId.toString();
@@ -115,6 +115,16 @@ test.describe('numeric parameterization', () => {
       await page.locator('#derived-name-1').fill('PV_WRONG');
       await page.locator('#derived-formula-1').fill('PAYMENT*(1+RATE_PCT/100)');
       await page.locator('#derived-error-1').fill('compounded forward instead of discounting back');
+
+      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
+      await page.locator('#derived-name-2').fill('PV_TWICE');
+      await page.locator('#derived-formula-2').fill('PAYMENT/(1+RATE_PCT/100)^2');
+      await page.locator('#derived-error-2').fill('discounted for two periods instead of one');
+
+      await page.getByRole('button', { name: '+ Add Computed Variable' }).click();
+      await page.locator('#derived-name-3').fill('PV_UNDISCOUNTED');
+      await page.locator('#derived-formula-3').fill('PAYMENT');
+      await page.locator('#derived-error-3').fill('omitted discounting');
     });
 
     await test.step('saving reports the division by zero and withholds the proof', async () => {
@@ -137,6 +147,7 @@ test.describe('numeric parameterization', () => {
 
     await test.step('the question detail view shows a worked example with real numbers', async () => {
       await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
+      await page.getByRole('button', { name: 'Student preview', exact: true }).click();
       const sample = page.locator('.question-sample');
       await expect(sample).toBeVisible();
 
@@ -162,7 +173,7 @@ test.describe('numeric parameterization', () => {
       const head = await questionsCol().findOne({ _id: new ObjectId(questionId) });
       const version = await questionVersionsCol().findOne({ _id: head!.currentVersionId });
       expect(version?.verification?.evaluatorVersion).toBeGreaterThan(0);
-      expect(version?.derivedValues).toHaveLength(2);
+      expect(version?.derivedValues?.map(({ name }) => name)).toEqual(['PV', 'PV_WRONG', 'PV_TWICE', 'PV_UNDISCOUNTED']);
     });
   });
 });

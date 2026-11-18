@@ -23,7 +23,6 @@ import {
 } from '../../api.js';
 import { bankCsv } from '../../bank-csv.js';
 import { el, mount } from '../../dom.js';
-import { pageHeader } from '../../instructor-ui.js';
 import { confirmDialog, textPromptDialog } from '../../modal.js';
 import { rowStemText } from '../../placeholders.js';
 import { TYPE_LABEL } from '../../question-labels.js';
@@ -154,7 +153,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   let bulkError = '';
   let notice = '';
   let loadError = '';
-  let narrowReading = false;
+  let narrowReading = !!preferredId;
 
   const releaseBar = el('section', { class: 'questions-release-bar', 'aria-label': 'Release to students' });
   const tabs = el('nav', { class: 'questions-tabs', 'aria-label': 'Question status' });
@@ -165,7 +164,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   const list = el('ul', { class: 'questions-list__rows', 'aria-label': 'Questions' });
   const empty = el('div', { class: 'questions-empty', hidden: true });
   const messages = el('div', { class: 'questions-messages' });
-  const listColumn = el('section', { class: 'questions-list', 'aria-label': 'Question list' }, toolbar, bulkBar, listHead, list, empty);
+  const listColumn = el('section', { class: 'gw-objectives questions-list', 'aria-label': 'Question list' }, toolbar, bulkBar, listHead, list, empty);
 
   const reader = createQuestionReader({
     courseId,
@@ -181,7 +180,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     onOpenRelease: (themeId) => openReleases(themeId),
     onBack: () => { narrowReading = false; body.classList.remove('is-reading'); list.querySelector<HTMLElement>('[aria-current="true"]')?.focus(); },
   });
-  const body = el('div', { class: 'questions-body' }, listColumn, reader.root);
+  const body = el('div', { class: 'gw-grid questions-body' }, listColumn, reader.root);
 
   // --- Data -----------------------------------------------------------------
 
@@ -211,7 +210,9 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     activeTab = next;
     selected.clear(); bulkMessage = ''; bulkError = '';
     preferredId = selectId;
+    narrowReading = !!selectId;
     filters = { ...filters, approvedView: 'all' };
+    listColumn.scrollTop = 0;
     mount(list, el('li', {}, loadingState('Loading…')));
     await refresh();
   }
@@ -244,12 +245,12 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   function drawReleaseBar(): void {
     const { release, counts } = workspace;
     const released = release.themes.filter((theme) => theme.released).length;
-    const manage = el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => openReleases() }, 'Manage releases');
+    const manage = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => openReleases() }, 'Manage releases');
     const warning = release.hiddenApprovedCount > 0;
     releaseBar.classList.toggle('is-warning', warning || !release.coursePublished);
     mount(releaseBar,
       el('div', { class: 'questions-release-bar__text' },
-        el('span', { class: 'questions-release-bar__step', text: '⑤ Release' }),
+        el('span', { class: 'questions-release-bar__step', text: 'Student release' }),
         !release.coursePublished
           ? el('p', { class: 'questions-release-bar__alert' },
             el('strong', { text: 'The course is not published — students see no questions. ' }),
@@ -293,27 +294,34 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function drawToolbar(): void {
+    const filtersOpen = toolbar.querySelector('details')?.open;
     const setFilter = <K extends keyof WorkspaceFilters>(key: K, value: WorkspaceFilters[K]): void => {
+      const focusLabel = document.activeElement?.getAttribute('aria-label');
       filters = { ...filters, [key]: value };
       if (key === 'themeId') filters.loId = '';
       drawList();
+      drawToolbar();
+      if (focusLabel) toolbar.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focusLabel)}"]`)?.focus();
     };
-    const search = el('input', { class: 'input', type: 'search', 'aria-label': 'Search questions', placeholder: 'Search question or learning objective…', value: filters.search,
+    const search = el('input', { class: 'input input--sm', type: 'search', 'aria-label': 'Search questions', placeholder: 'Search questions…', value: filters.search,
       oninput: (e: Event) => { filters = { ...filters, search: (e.target as HTMLInputElement).value }; drawList(); } });
     const topic = tree.themes.find((theme) => theme._id === filters.themeId);
     const loChoices = (topic ? topic.los ?? [] : tree.themes.flatMap((theme) => theme.los ?? [])).map((lo): [string, string] => [lo._id, lo.name]);
     mount(toolbar,
       search,
+      el('details', { class: 'questions-toolbar__advanced', open: filtersOpen ?? hasActiveFilters({ ...filters, search: '' }) },
+      el('summary', {}, 'Filters',
+        hasActiveFilters({ ...filters, search: '' }) ? el('span', { class: 'questions-toolbar__applied', text: 'Applied' }) : false),
       el('div', { class: 'questions-toolbar__filters' },
         activeTab === 'approved'
           ? select('Student visibility', filters.approvedView, [['all', 'All approved'], ['visible', 'Visible to students'], ['waiting', 'Waiting for release']], (v) => setFilter('approvedView', v as ApprovedView))
           : false,
-        select('Topic', filters.themeId, [['', 'All topics'], ...tree.themes.map((theme): [string, string] => [theme._id, theme.name])], (v) => { setFilter('themeId', v); drawToolbar(); }),
+        select('Topic', filters.themeId, [['', 'All topics'], ...tree.themes.map((theme): [string, string] => [theme._id, theme.name])], (v) => setFilter('themeId', v)),
         select('Learning objective', filters.loId, [['', 'All LOs'], ...loChoices], (v) => setFilter('loId', v)),
         select('Type', filters.type, [['', 'All types'], ['mcq', TYPE_LABEL.mcq], ['true-false', TYPE_LABEL['true-false']]], (v) => setFilter('type', v as WorkspaceFilters['type'])),
         select('Difficulty', filters.difficulty, [['', 'All difficulties'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']], (v) => setFilter('difficulty', v as WorkspaceFilters['difficulty'])),
         select('AI verdict', filters.verdict, [['', 'Any AI verdict'], ['pass', 'AI pass'], ['flag', 'AI flag'], ['reject', 'AI reject'], ['none', 'No AI check']], (v) => setFilter('verdict', v as VerdictFilter)),
-        hasActiveFilters(filters) ? el('button', { class: 'link-button', type: 'button', onclick: () => { filters = { ...EMPTY_FILTERS }; drawToolbar(); drawList(); } }, 'Clear filters') : false));
+        el('button', { class: 'link-button', type: 'button', onclick: () => { filters = { ...EMPTY_FILTERS }; drawToolbar(); drawList(); } }, 'Clear filters'))));
   }
 
   async function runBulkAction(action: BulkAction): Promise<void> {
@@ -372,7 +380,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       el('button', { type: 'button', class: 'questions-row__open', 'aria-current': current ? 'true' : 'false', disabled: bulkBusy,
         onclick: () => selectRow(row.id, true) },
       el('span', { class: 'questions-row__meta' },
-        `${String(index + 1).padStart(2, '0')} · ${row.current.difficulty} · ${TYPE_LABEL[row.current.type]}`,
+        `${row.current.difficulty} · ${TYPE_LABEL[row.current.type]}`,
         highlighted ? el('b', { class: 'questions-row__new', text: 'New' }) : false),
       rich(rowStemText(row), 'questions-row__stem'),
       el('span', { class: 'questions-row__tags' },
@@ -423,12 +431,12 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     const active = shown.find((row) => row.id === preferredId) ?? shown[0];
     const activeId = active?.id ?? '';
     const selectable = bulkActionsFor(activeTab).length > 0;
-    const scroll = list.scrollTop;
+    const scroll = listColumn.scrollTop;
     mount(list, ...shown.map((row, index) => rowNode(row, index, activeId, selectable)));
-    list.scrollTop = scroll;
     drawListHead();
     drawBulk();
     drawEmpty(shown);
+    listColumn.scrollTop = scroll;
     body.classList.toggle('is-empty', shown.length === 0);
     if (!reader.isLocked()) {
       reader.show(active ?? null);
@@ -467,8 +475,10 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  const header = pageHeader('Questions', 'Review, approve and release your course’s practice questions.');
-  header.append(el('div', { class: 'cluster questions-header__actions' },
+  const header = el('header', { class: 'gw-header questions-header' },
+    el('div', {}, el('h1', { text: 'Questions' }),
+      el('p', { text: 'Review, approve and release your course’s practice questions.' })),
+    el('div', { class: 'questions-header__actions' },
     el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate more' }),
     el('a', { class: 'btn btn--ghost btn--sm', href: `#${coursePath}/import`, text: 'Import' }),
     el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void exportCsv() }, 'Export CSV')));

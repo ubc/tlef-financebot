@@ -15,6 +15,7 @@ import { sourceCitationDetails } from './source-citations.js';
 import { answerabilityChecks } from './answerability-checks.js';
 import { exactBankChecks } from './exact-bank-checks.js';
 import { taskRetrievalChecks } from './task-retrieval-checks.js';
+import { authoringAnswer } from './authoring-answer.js';
 
 type Tier = 'easy' | 'medium' | 'hard';
 type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[]; errors?: string[] };
@@ -101,21 +102,28 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
   const root = el('section', { class: 'generation-workbench' });
   mount(outlet, root); mount(root, loadingState('Preparing your question workspace…'));
   try {
-    const [tree, coverage, materials, recent, queued, running] = await Promise.all([
+    const query = currentQuery();
+    const requestedRunId = query.get('runId');
+    const [tree, coverage, materials, recent, queued, running, linkedRun] = await Promise.all([
       getCourseTree(courseId), getPreseeding(courseId), listMaterials(courseId),
       listContentRuns(courseId, { kind: 'question-generation', limit: 25 }),
       listContentRuns(courseId, { kind: 'question-generation', status: 'queued' }),
       listContentRuns(courseId, { kind: 'question-generation', status: 'running' }),
+      requestedRunId ? getContentRun(courseId, requestedRunId).catch(() => null) : null,
     ]);
     if (!root.isConnected) return;
     const base = `#/instructor/course/${encodeURIComponent(courseId)}`;
     const runs = new Map([...recent, ...queued, ...running].map(run => [run._id, run]));
+    let linkedRunId = '';
+    if (linkedRun?.kind === 'question-generation') {
+      linkedRunId = linkedRun._id;
+      if ((runs.get(linkedRunId)?.revision ?? -1) < linkedRun.revision) runs.set(linkedRunId, linkedRun);
+    }
     const objectives = [...tree.themes].sort((a,b) => a.order - b.order).flatMap(theme =>
       [...(theme.los ?? [])].sort((a,b) => a.order - b.order).map(lo => ({ ...lo, topic: theme.name, themeId: theme._id })));
     const sourcesFor = (lo: CourseTreeLo) => materials.filter(material => !material.deletedAt && material.status === 'ready' && material.assignments.some(a => a.loId === lo._id || (!a.loId && a.themeId === lo.themeId)));
     const covered = (id: string) => coverage.find(row => row.loId === id);
     const gaps = () => objectives.filter(lo => sourcesFor(lo).length && (covered(lo._id)?.approved ?? 0) + (covered(lo._id)?.unapproved ?? 0) < (covered(lo._id)?.target ?? 5));
-    const query = currentQuery();
     const requested = objectives.filter(lo => sourcesFor(lo).length && (query.get('loId') === lo._id || query.get('themeId') === lo.themeId));
     const selected = new Set((requested.length ? requested : gaps()).map(lo => lo._id));
     const storageKey = `question-workbench:${getSession().user?.puid ?? 'anonymous'}:${courseId}`;
@@ -130,7 +138,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       restored.forEach(result => { if (result.status === 'fulfilled') runs.set(result.value._id, result.value); });
     }
     if (!root.isConnected) return;
-    let mode: 'setup' | 'live' = submission || [...runs.values()].some(active) ? 'live' : 'setup';
+    let mode: 'setup' | 'live' = requestedRunId || submission || [...runs.values()].some(active) ? 'live' : 'setup';
     let busy = false;
     let count = 3;
     let difficulty: Tier | 'balanced' = 'balanced';
@@ -143,8 +151,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let selectedQuestion = '';
     let autoShown = '';
     let autoFollowing = false;
-    let previewPinned = false;
-    let previewRunId = '';
+    let previewPinned = !!linkedRunId;
+    let previewRunId = linkedRunId;
     let previewKey = '';
     let drawTimer: ReturnType<typeof setTimeout> | undefined;
     let lastDraw = 0;
@@ -167,7 +175,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let usageTimer: ReturnType<typeof setTimeout> | undefined;
     const endingRuns = new Set<string>();
     const runSnapshots = new Map<string, ContentRunSnapshot>();
-    const watched = () => [...runs.values()].filter(run => run.kind === 'question-generation' && (submission?.runIds ? submission.runIds.includes(run._id) : true));
+    const watched = () => [...runs.values()].filter(run => run.kind === 'question-generation'
+      && (!submission?.runIds || submission.runIds.includes(run._id) || run._id === linkedRunId));
     const locked = () => busy || !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || active(runs.get(id)!))) || [...runs.values()].some(active);
     const link = (label: string, path: string, primary = false) => el('a', { class: primary ? 'btn btn--primary' : 'gw-link', href: path, text: label });
     const notice = el('div', { class: 'gw-notice', role: 'status', hidden: true });
@@ -221,6 +230,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
         if (locked() || !selected.size) return;
+        linkedRunId = '';
         selectedQuestion = ''; autoShown = ''; previewPinned = false; previewRunId = ''; previewKey = ''; readerRevision++;
         submission ={ submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
       } });
@@ -583,7 +593,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const rich = (text: string, className: string) => { const node = el('div', { class: className }); renderRichText(node,text); return node; };
       mount(content, el('p', { class: 'gw-eyebrow', text: `${question.current.type === 'mcq' ? 'MULTIPLE CHOICE' : 'TRUE / FALSE'} · ${question.current.difficulty} · ${question.state}` }),
         rich(rowStemText(question),'gw-stem'),
-        ...((question.sample?.options ?? question.current.options) ?? []).map(option => el('div', { class: `gw-answer${question.current.options?.find(original => original.key === option.key)?.role === 'correct' ? ' is-correct' : ''}` }, el('span', { text: option.key }), el('div', {}, rich(option.text,''), question.current.options?.find(original => original.key === option.key)?.role === 'correct' && el('small', { text: 'Correct answer' }), option.explanation && rich(option.explanation,'gw-option-explanation')))),
+        ...((question.sample?.options ?? question.current.options) ?? []).map(option =>
+          authoringAnswer(option, question.current.options?.some(original => original.key === option.key && original.role === 'correct') ?? false)),
         !question.sample && el('p', { class: 'gw-plan-note', text: 'Authoring preview. Parameterized questions may show template variables; inspect a student example in the full editor.' }));
       const assessment = el('div', { class: 'gw-assessment' }); content.append(assessment);
       mount(reader, following && el('p', { class: 'gw-stream-status gw-plan-note', role: 'status' }, el('span', { class: 'gw-live-dot', 'aria-hidden': 'true' }),
@@ -663,6 +674,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       if (!previous || run.completedUnits !== previous.completedUnits || !active(run)) scheduleRefresh();
     }
     if (objectives.some(lo => sourcesFor(lo).length)) buildSetup();
+    if (requestedRunId && !linkedRunId) say('This generation task could not be opened.');
     showMode();
     if (submission && !submission.runIds) say('A previous request needs confirmation. Recover the same batch below to avoid duplicate questions.');
     attachTutorial(root, 'instructor-generation', { 'generation-scope': '.gw-objectives', 'generation-actions': '.gw-footer' });

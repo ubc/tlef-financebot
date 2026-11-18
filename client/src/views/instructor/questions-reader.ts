@@ -21,6 +21,8 @@ import { renderRichText } from '../../render.js';
 import { protectUnsavedChanges } from '../../router.js';
 import { errorState, loadingState } from '../../ui.js';
 import { createFlagCard } from './questions-flag-card.js';
+import { authoringAnswer } from './authoring-answer.js';
+import { questionGenerationUsage } from './question-generation-usage.js';
 import { heldTopicNames, hiddenReasonText, objectiveNames, repairSummary, solverSummary, topicNames } from './questions-model.js';
 
 export interface ReaderOptions {
@@ -55,6 +57,7 @@ export function createQuestionReader(options: ReaderOptions) {
   const coursePath = `/instructor/course/${encodeURIComponent(options.courseId)}`;
   let row: WorkspaceRow | null = null;
   let detail: QuestionDetail | undefined;
+  let generationUsage: HTMLElement | false = false;
   /** One per loaded question, so redraws do not refetch its flags. */
   let flagCard: ReturnType<typeof createFlagCard> | undefined;
   let requestRevision = 0;
@@ -68,13 +71,14 @@ export function createQuestionReader(options: ReaderOptions) {
 
   async function load(target: WorkspaceRow, force = false): Promise<void> {
     if (!force && row?.id === target.id && detail) { row = target; draw(); return; }
-    row = target; detail = undefined; flagCard = undefined; editing = false; dirty = false;
+    row = target; detail = undefined; generationUsage = false; flagCard = undefined; editing = false; dirty = false;
     const revision = ++requestRevision;
     mount(content, loadingState('Loading question…'));
     try {
       const result = await getQuestion(target.id);
       if (revision !== requestRevision || !root.isConnected) return;
       detail = result;
+      generationUsage = questionGenerationUsage(result);
       flagCard = createFlagCard({
         courseId: options.courseId,
         questionId: result.id,
@@ -216,12 +220,15 @@ export function createQuestionReader(options: ReaderOptions) {
 
   function draw(): void {
     if (!detail || !row) return;
+    const readingScroll = content.querySelector('.questions-reader__scroll')?.scrollTop ?? 0;
+    const contextScroll = content.querySelector('.questions-reader__context')?.scrollTop ?? 0;
+    const stackedScroll = content.scrollTop;
     const current = detail;
     const listRow = row;
     // A stable list sample belongs to one version; never mix it with a newer answer key.
     const sample = listRow.current._id === current.current._id ? listRow.sample : undefined;
     const parameterized = !!(current.current.paramSlots?.length || current.current.generateScript || current.current.derivedValues?.length);
-    const body = el('div', { class: 'questions-reader__body' });
+    const body = el('div', { class: 'gw-body questions-reader__body' });
     let save: (() => Promise<void>) | undefined;
     body.append(
       el('div', { class: 'questions-reader__meta' },
@@ -237,14 +244,10 @@ export function createQuestionReader(options: ReaderOptions) {
         body.append(el('p', { class: 'questions-reader__warning', role: 'status', text: `Unresolved placeholders keep this question from students: ${current.current.unresolvablePlaceholders.join(', ')}. Fix them in the full details.` }));
       }
       if (parameterized) body.append(el('p', { class: 'questions-reader__sample-note', text: sample ? 'One computed sample — students may receive different values.' : 'Template preview. Open full details to draw and verify sample values.' }));
-      body.append(rich(sample?.stem ?? current.current.stem, 'questions-reader__stem'),
+      body.append(rich(sample?.stem ?? current.current.stem, 'gw-stem questions-reader__stem'),
         el('div', { class: 'questions-reader__answers' }, ...current.current.options.map((option) => {
           const drawn = sample?.options.find((value) => value.key === option.key);
-          const correct = option.role === 'correct';
-          return el('section', { class: `questions-reader__answer${correct ? ' is-correct' : ''}`, 'aria-label': `Option ${option.key}${correct ? ', correct answer' : ''}` },
-            el('span', { class: 'questions-reader__key', text: option.key }),
-            el('div', {}, correct ? el('span', { class: 'questions-reader__correct', text: 'Correct answer' }) : false,
-              rich(drawn?.text ?? option.text), rich(drawn?.explanation ?? option.explanation, 'questions-reader__explanation')));
+          return authoringAnswer(drawn ?? option, option.role === 'correct');
         })));
     }
 
@@ -255,7 +258,8 @@ export function createQuestionReader(options: ReaderOptions) {
       ? el('li', {}, el('button', { class: 'link-button', type: 'button', onclick: () => options.onOpenQuestion(link.questionId) }, `${label} · ${link.score.toFixed(2)}`))
       : false;
     const suggestions = current.suggestions ?? [];
-    const context = el('div', { class: 'questions-reader__context' },
+    const context = el('aside', { class: 'gw-plan questions-reader__context', 'aria-label': 'Review context' },
+      generationUsage,
       el('section', {}, el('h3', { text: decision ? `AI check · ${decision.decision.toUpperCase()}` : 'AI check' }),
         decision ? rich(decision.reasoning) : el('p', { class: 'muted', text: current.current.provenance?.kind === 'edited' ? 'Edited after the AI check; the earlier result no longer applies.' : 'No AI check was recorded for this question.' }),
         decision?.suggestions?.length ? el('ul', { class: 'questions-reader__suggestions' }, ...decision.suggestions.map((text) => el('li', { text }))) : false,
@@ -287,18 +291,29 @@ export function createQuestionReader(options: ReaderOptions) {
       current.internalNotes?.length ? el('details', {}, el('summary', { text: `Teaching-team notes · ${current.internalNotes.length}` }),
         ...current.internalNotes.map((note) => el('p', { text: `${note.text} — ${new Date(note.at).toLocaleDateString()}` }))) : false);
 
-    const links = el('div', { class: 'questions-reader__links' },
+    const links = el('details', { class: 'questions-reader__links' },
+      el('summary', {}, 'More actions'),
+      el('div', { class: 'questions-reader__link-menu' },
       current.state !== 'archived' ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
       REVIEW_STATES.has(current.state) ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}?from=questions&intent=regenerate`, text: 'Regenerate side by side' }) : false,
-      el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}?from=questions`, text: 'Open full details ↗' }),
-      el('button', { class: 'link-button', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload'));
+      el('button', { class: 'link-button', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload')));
 
-    mount(content,
+    const readingPane = el('div', { class: 'questions-reader__scroll' },
       el('button', { class: 'btn btn--ghost btn--sm questions-reader__back', type: 'button', onclick: options.onBack }, '← Back to list'),
       flagCard?.root ?? false,
-      body,
-      el('footer', { class: 'questions-reader__actions' }, links, el('div', { class: 'questions-reader__buttons' }, ...actionButtons(current, save))),
+      body);
+    mount(content,
+      el('div', { class: 'gw-reader questions-reader__main' },
+        readingPane,
+        el('footer', { class: 'gw-footer questions-reader__actions' },
+          el('div', { class: 'questions-reader__tools' },
+            el('a', { class: 'gw-link', href: `#${coursePath}/bank/${encodeURIComponent(current.id)}?from=questions`, text: 'Open full details ↗' }),
+            links),
+          el('div', { class: 'questions-reader__buttons' }, ...actionButtons(current, save)))),
       context);
+    readingPane.scrollTop = readingScroll;
+    context.scrollTop = contextScroll;
+    content.scrollTop = stackedScroll;
   }
 
   return {

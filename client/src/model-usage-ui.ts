@@ -1,14 +1,17 @@
 import { el } from './dom.js';
-import type { ModelCallReceipt, ModelUsageSummary } from './api.js';
+import type { ModelCallReceipt, ModelUsageSummary, ModelUsageTotals } from './api.js';
 import { tokenCount, usageCoverageLabel, usageCoverageNote } from './model-usage-format.js';
 
-export function renderModelUsage(summary: ModelUsageSummary, compact = false): HTMLElement {
-  const totals = el('dl', { class: 'mu-totals' },
-    ...([['Input tokens', summary.inputTokens], ['Output tokens', summary.outputTokens], ['Total tokens', summary.totalTokens]] as const)
+export function renderTokenTotals(counts: Pick<ModelUsageTotals, 'inputTokens' | 'outputTokens' | 'totalTokens'>, compact = false): HTMLElement {
+  return el('dl', { class: 'mu-totals' },
+    ...([['Input tokens', counts.inputTokens], ['Output tokens', counts.outputTokens], ['Total tokens', counts.totalTokens]] as const)
       .map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: tokenCount(value, compact), title: tokenCount(value) }))));
+}
+
+export function renderModelUsage(summary: ModelUsageSummary, compact = false): HTMLElement {
   const root = el('section', { class: `model-usage${compact ? ' model-usage--compact' : ''}`, 'aria-label': 'Model token usage' },
     el('h3', { text: 'Model usage' }), el('p', { class: `mu-status mu-status--${summary.status}`, text: usageCoverageLabel(summary) }),
-    totals);
+    renderTokenTotals(summary, compact));
   const notes = compact ? el('details', { class: 'mu-coverage' }, el('summary', { text: 'Usage coverage' })) : root;
   if (compact) root.append(notes);
   notes.append(el('p', { class: 'mu-note', text: usageCoverageNote(summary) }));

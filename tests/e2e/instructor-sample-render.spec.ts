@@ -59,6 +59,7 @@ test.describe('instructor sample panel', () => {
       difficulty: 'easy',
       createdBy: 'e2e-seed',
       ...fields,
+      options: fields.options.map((option) => option.role === 'correct' ? option : { ...option, role: 'common-misconception' }),
       // The fixture's own stem stays intact (other specs match on its opening
       // prose); the maths is appended so this spec has something to render.
       stem: `${fields.stem} Use ${STEM_MATH} to decide.`,
@@ -84,6 +85,11 @@ test.describe('instructor sample panel', () => {
   test('renders the worked example as maths, not as LaTeX source', async ({ page }) => {
     await page.goto(`/#/instructor/course/${courseId}/bank/${questionId}`);
 
+    // Each answer key gets its own control even when distractors share a role.
+    const option = page.getByRole('textbox', { name: 'Option C explanation', exact: true });
+    await expect(page.locator('.option-editor')).toHaveCount(4);
+    await option.fill('Unsaved explanation for option C.');
+    await page.getByRole('button', { name: 'Student preview', exact: true }).click();
     const sample = page.locator('.question-sample');
     await expect(sample).toBeVisible();
 
@@ -99,5 +105,9 @@ test.describe('instructor sample panel', () => {
 
     // The panel's original contract still holds: substituted, not templated.
     await expect(sample.locator('.question-sample__stem')).not.toContainText('{{');
+    await expect(sample.locator('.question-sample__option')).toHaveCount(4);
+    await expect(sample).not.toContainText('Unsaved explanation for option C.');
+    await page.getByRole('button', { name: 'Edit question', exact: true }).click();
+    await expect(option).toHaveValue('Unsaved explanation for option C.');
   });
 });

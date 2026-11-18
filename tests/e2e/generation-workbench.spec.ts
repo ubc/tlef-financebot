@@ -104,7 +104,7 @@ test('real run events reveal saved draft and assessment, failed units are not sa
   await expect(page.locator('.gw-stem')).toHaveText('Which direction is the net force?');
   await expect(page.locator('.gw-assessment')).toContainText('AI flagged this question');
   await expect(page.locator('.gw-live .gw-total')).toHaveText('1/ 3 saved');
-  await expect(page.getByRole('link', { name: 'Review questions →', exact: true })).toHaveAttribute('href', '#/instructor/course/course/queue?runId=r0');
+  await expect(page.getByRole('link', { name: 'Review questions →', exact: true })).toHaveAttribute('href', '#/instructor/course/course/questions?tab=review&runId=r0');
   await page.getByRole('button', { name: 'View steps', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Retrieved relevant source passages.');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
@@ -293,7 +293,7 @@ test('question type selection reaches the generation request', async ({ page }) 
    Object.assign(state.runs[0], { status: 'completed', stage: 'persisting', revision: 2, result: { createdQuestionIds: ['q'], failures: [] } });
    await page.evaluate(run => (window as unknown as { emitRun: (r: unknown) => void }).emitRun(run), state.runs[0]);
    await expect(page.locator('.gw-stem')).toHaveText('Edited generated question');
-   await expect(page.getByRole('link', { name: 'Review questions →', exact: true })).toHaveAttribute('href', '#/instructor/course/course/queue?runId=r0');
+   await expect(page.getByRole('link', { name: 'Review questions →', exact: true })).toHaveAttribute('href', '#/instructor/course/course/questions?tab=review&runId=r0');
  });
 
 const usageTotals = { inputTokens: 200, outputTokens: 50, totalTokens: 250, reasoningTokens: null, cachedInputTokens: null, cacheWriteTokens: null, observedCalls: 2, reportedCalls: 1, callsWithKnownTotal: 1, unknownCalls: 0, pendingCalls: 1 };

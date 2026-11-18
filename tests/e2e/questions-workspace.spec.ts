@@ -39,7 +39,7 @@ function makeQuestion(i: number, state: State, themeId = 'forces'): MockQuestion
   };
 }
 
-async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string } = {}) {
+async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean } = {}) {
   const questions: MockQuestion[] = [
     ...[1, 2, 3, 4].map((i) => makeQuestion(i, 'draft')),
     makeQuestion(5, 'approved'),
@@ -47,6 +47,11 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     makeQuestion(7, 'paused'),
     makeQuestion(8, 'archived'),
   ];
+  if (options.withUsage) {
+    for (const [item, question] of questions.slice(0, 2).entries()) {
+      question.current.provenance = { kind: 'generated', runId: 'r0', item };
+    }
+  }
   const themes = [
     { themeId: 'forces', name: 'Forces', order: 0, revision: 2, availableFrom: '2026-01-01T00:00:00Z' },
     { themeId: 'motion', name: 'Motion', order: 1, revision: 4, availableFrom: null as string | null },
@@ -97,6 +102,18 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     const url = new URL(r.request().url());
     const path = url.pathname;
     const method = r.request().method();
+    if (options.withUsage && path === '/api/courses/course/content-runs/r0/usage') {
+      return r.fulfill({ json: {
+        summary: { untracked: false, coverageGaps: 0 },
+        totalCalls: 4,
+        calls: [
+          { item: 0, stage: 'generation', requestedModel: 'generator', usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 } },
+          { item: 0, stage: 'check', requestedModel: 'checker', usage: { inputTokens: 50, outputTokens: 5, totalTokens: 55 } },
+          { item: 1, stage: 'generation', requestedModel: 'generator', usage: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } },
+          { item: 1, stage: 'check', requestedModel: 'checker', usage: { inputTokens: null, outputTokens: null, totalTokens: null } },
+        ],
+      } });
+    }
     if (path === '/api/courses/course/question-workspace') return r.fulfill({ json: workspace(url.searchParams.get('tab') ?? 'review') });
     if (path === '/api/courses/course') return r.fulfill({ json: { _id: 'course', lifecycle: coursePublished ? 'published' : 'draft', themes: [
       { _id: 'forces', name: 'Forces', order: 0, los: [{ _id: 'lo-net', name: 'Combine forces to find net force' }] },
@@ -276,4 +293,15 @@ test('390px dark layout stacks list and reader without horizontal scroll, and pa
   await expect(page.locator('.questions-list')).toBeVisible();
   const results = await new AxeBuilder({ page }).include('.questions-workspace').analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+});
+
+test('generation tokens belong to the selected question, including partial receipts', async ({ page }) => {
+  await setup(page, { withUsage: true });
+  const usage = page.getByRole('region', { name: 'Generation tokens' });
+  await expect(usage.locator('.mu-totals dd')).toHaveText(['150', '30', '180']);
+  await expect(usage.getByRole('link', { name: 'View generation task' }))
+    .toHaveAttribute('href', '#/instructor/course/course/preseeding?runId=r0');
+  await page.locator('[data-question-id="q2"] .questions-row__open').click();
+  await expect(usage.locator('.mu-totals dd')).toHaveText(['600', '400', '1,000']);
+  await expect(usage).toContainText('Partial usage');
 });

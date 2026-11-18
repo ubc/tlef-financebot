@@ -45,13 +45,15 @@ import {
   toStoredPlaceholders,
   unresolvedPlaceholderWarning,
 } from '../../placeholders.js';
-import { pageHeader, statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
+import { statusBadge, ROLE_LABEL } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
 import { renderRichText } from '../../render.js';
 import { currentQuery, type RouteParams } from '../../router.js';
 import { STATUS_LABEL, TYPE_LABEL } from '../../question-labels.js';
 import { repairSummary, solverSummary } from './questions-model.js';
+import { authoringAnswer } from './authoring-answer.js';
+import { questionGenerationUsage } from './question-generation-usage.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -85,13 +87,6 @@ function provenanceText(provenance: QuestionVersion['provenance']): string {
       return 'Manual authoring';
   }
 }
-
-// Canonical display order for the four option roles (I6) — Correct Answer,
-// Good Confounder, Related but Incorrect, Easy to Eliminate. A true/false
-// question only ever has 'correct' + 'common-misconception' (server coerces
-// its wrong option's role, see questions.service.ts's assertOptionInvariants)
-// so this list is filtered down to the roles actually present.
-const ROLE_ORDER: OptionRole[] = ['correct', 'common-misconception', 'partially-correct', 'clearly-wrong'];
 
 /** Instructor approval is deliberately one click, including Draft ->
  * Approved. `null` means there is no forward action. */
@@ -144,7 +139,7 @@ interface OptionDraft {
 }
 
 async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string, fallbackCourseId: string): Promise<void> {
-  const body = el('div', {}, loadingState('Loading question…'));
+  const body = el('div', { class: 'question-detail-workbench' }, loadingState('Loading question…'));
   const root = el('div', { class: 'view view--question-detail' }, body);
   mount(outlet, root);
 
@@ -247,11 +242,13 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   // print raw strings, so an instructor approving a question saw LaTeX source
   // where the student sees maths — which made it impossible to review the one
   // thing this panel exists to show, and hid bad LaTeX until a student hit it.
-  const sampleSection = el('section', { class: 'question-sample' });
+  const sampleSection = el('section', { class: 'question-sample', id: 'question-student-preview', hidden: true, 'aria-label': 'Student preview' });
+  let sampleVersionId = '';
+  let sampleRequest = 0;
 
   // Placeholders the server can never fill keep the question from being served.
   // In the editor they look like any other [NAME] variable, so say so plainly.
-  const placeholderWarningSlot = el('div', {});
+  const placeholderWarningSlot = el('div', { class: 'question-detail__placeholder-warning' });
   function renderPlaceholderWarning(problems: readonly string[] | undefined): void {
     const warning = unresolvedPlaceholderWarning(problems);
     mount(
@@ -270,64 +267,54 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   /** `div`, not `p`: marked emits block-level HTML, which a `<p>` auto-closes. */
   function sampleStem(stem: string): HTMLElement {
-    const node = el('div', { class: 'question-sample__stem' });
+    const node = el('div', { class: 'gw-stem question-sample__stem' });
     renderRichText(node, stem);
     return node;
   }
 
   function renderSample(sample: QuestionSample): void {
-    // Rendered for CONCEPTUAL questions too (2026-08-17). This used to bail
-    // when `!parameterized`, which was defensible while the panel only showed
-    // substituted numbers — but it now also renders explanations, and a
-    // conceptual question's explanation is just as full of LaTeX as a numeric
-    // one's. Bailing left half the bank with no readable view of its rationale.
     sampleSection.replaceChildren(
-      el('h3', { class: 'detail-section-title', text: 'Example — what a student sees' }),
+      el('h2', { text: 'Student preview' }),
       el('p', {
-        class: 'muted',
+        class: 'gw-lead',
         text: sample.parameterized
-          ? 'One sample draw. Each student gets different numbers; the values below are computed, not written by the model.'
-          : 'This question has no generated values, so every student sees exactly this.',
+          ? 'One computed example from the saved version. Students may receive different values.'
+          : 'Preview of the saved question and its explanations.',
       }),
       sampleStem(sample.stem),
       el(
-        'ul',
+        'div',
         { class: 'question-sample__options' },
-        ...sample.options.map((option) => {
-          const role = detail.current.options.find((o) => o.key === option.key)?.role;
-          const text = el('div', { class: 'question-sample__text' });
-          renderRichText(text, option.text);
-          // The rationale, rendered. The editor's textarea above shows its
-          // LaTeX source — necessarily, since it is being edited — and a long
-          // `\frac{...}\left(...\right)` derivation is close to unreadable that
-          // way. This is the surface an instructor judges the explanation on.
-          const explanation = el('div', { class: 'question-sample__explanation' });
-          if (option.explanation) renderRichText(explanation, option.explanation);
-          return el(
-            'li',
-            { class: `question-sample__option${role === 'correct' ? ' question-sample__option--correct' : ''}` },
-            el('span', { class: 'question-sample__key', text: option.key }),
-            text,
-            role === 'correct' ? el('span', { class: 'question-sample__badge', text: 'correct' }) : null,
-            option.explanation ? explanation : null,
-          );
-        }),
+        ...sample.options.map((option) => authoringAnswer(
+          option, baseline.options.some((saved) => saved.key === option.key && saved.role === 'correct'), 'question-sample__option',
+        )),
       ),
     );
   }
 
-  void getQuestionSample(questionId)
-    .then(renderSample)
-    .catch(() => {
-      // Best-effort: the example is an aid, not a gate. A failure just means
-      // the instructor works from the template, exactly as before.
-    });
+  async function loadSample(): Promise<void> {
+    if (sampleVersionId === expectedVersionId) return;
+    const request = ++sampleRequest;
+    const version = expectedVersionId;
+    mount(sampleSection, loadingState('Loading student preview…'));
+    try {
+      const sample = await getQuestionSample(questionId);
+      if (request !== sampleRequest || version !== expectedVersionId || !root.isConnected) return;
+      sampleVersionId = version;
+      renderSample(sample);
+    } catch {
+      if (request === sampleRequest && version === expectedVersionId) {
+        mount(sampleSection, errorState('The student preview could not load.', () => void loadSample()));
+      }
+    }
+  }
   let draftStem = baseline.stem;
   let draftDifficulty: Difficulty = baseline.difficulty;
 
   const pendingSuggestions = detail.suggestions?.filter((suggestion) => suggestion.status === 'pending') ?? [];
 
-  const errorSlot = el('div', {});
+  const errorSlot = el('div', { class: 'question-detail__error' });
+  const editStatus = el('span', { class: 'muted', role: 'status' });
   const flagUpdateButton = el(
     'button',
     { class: 'btn btn--instr-primary', type: 'button', disabled: 'disabled' },
@@ -350,6 +337,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     );
     const anyEdited = isFieldEdited(draftStem, baseline.stem) || isFieldEdited(draftDifficulty, baseline.difficulty) || optionsChanged;
     saveButton.disabled = !anyEdited;
+    const statusText = anyEdited ? 'Unsaved changes' : '';
+    if (editStatus.textContent !== statusText) editStatus.textContent = statusText;
     root.querySelectorAll<HTMLButtonElement>('[data-regen-requires-saved]').forEach(button => {
       button.disabled = anyEdited || button.dataset.regenLocked === 'true';
     });
@@ -385,7 +374,7 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
 
   const suggestionPanel = el(
     'section',
-    { class: 'card stack' },
+    { class: 'question-detail__suggestions stack' },
     el('h3', { text: 'TA suggested edits' }),
     ...(pendingSuggestions.length
       ? pendingSuggestions.map((suggestion) => {
@@ -438,50 +427,47 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       : [el('p', { class: 'muted', text: 'No pending TA suggestions.' })]),
   );
 
-  const optionInputs: Array<{ role: OptionRole; textInput: HTMLInputElement; explInput: HTMLTextAreaElement }> = [];
-  const displayRoles = ROLE_ORDER.filter((role) => draftOptions.some((o) => o.role === role));
+  const optionInputs = new Map<string, { card: HTMLElement; label: HTMLElement; textInput: HTMLTextAreaElement; explInput: HTMLTextAreaElement }>();
 
   const optionsSection = el(
     'div',
     { class: 'option-editors' },
-    ...displayRoles.map((role) => {
-      const draft = draftOptions.find((o) => o.role === role)!;
-      const baselineIndex = baseline.options.findIndex((o) => o.role === role);
+    ...[...draftOptions].sort((a, b) => a.key.localeCompare(b.key)).map((draft) => {
+      const label = el('span', { class: 'option-editor__role-label', text: ROLE_LABEL[draft.role] });
 
-      const textInput = el('input', {
-        class: 'input option-editor__text',
-        type: 'text',
-        'aria-label': `${ROLE_LABEL[role]} option text`,
-        value: draft.text,
+      const textInput = el('textarea', {
+        class: 'input input--area option-editor__text',
+        rows: '2',
+        'aria-label': `Option ${draft.key} text`,
+        text: draft.text,
         oninput: (e: Event) => {
-          draft.text = (e.target as HTMLInputElement).value;
-          textInput.classList.toggle('edited', isFieldEdited(draft.text, baseline.options[baselineIndex]?.text));
+          draft.text = (e.target as HTMLTextAreaElement).value;
+          textInput.classList.toggle('edited', isFieldEdited(draft.text, baseline.options.find((option) => option.key === draft.key)?.text));
           updateSaveButton();
         },
-      }) as HTMLInputElement;
+      });
 
       const explInput = el('textarea', {
         class: 'input input--area option-editor__explanation',
-        'aria-label': `${ROLE_LABEL[role]} explanation`,
-        rows: '2',
+        'aria-label': `Option ${draft.key} explanation`,
+        rows: '3',
         text: draft.explanation,
         oninput: (e: Event) => {
           draft.explanation = (e.target as HTMLTextAreaElement).value;
-          explInput.classList.toggle('edited', isFieldEdited(draft.explanation, baseline.options[baselineIndex]?.explanation));
+          explInput.classList.toggle('edited', isFieldEdited(draft.explanation, baseline.options.find((option) => option.key === draft.key)?.explanation));
           updateSaveButton();
         },
       }) as HTMLTextAreaElement;
 
-      optionInputs.push({ role, textInput, explInput });
-
-      return el(
-        'div',
-        { class: 'option-editor' },
-        el('span', { class: 'option-editor__role-label', text: `${draft.key}. ${ROLE_LABEL[role]}` }),
+      const card = el(
+        'section',
+        { class: `option-editor${draft.role === 'correct' ? ' is-correct' : ''}`, 'aria-label': `Option ${draft.key}` },
+        el('header', { class: 'option-editor__heading' }, el('strong', { text: draft.key }), label),
         textInput,
-        el('label', { class: 'option-editor__explanation-label', text: 'Explanation' }),
-        explInput,
+        el('label', { class: 'option-editor__explanation-label' }, 'Explanation', explInput),
       );
+      optionInputs.set(draft.key, { card, label, textInput, explInput });
+      return card;
     }),
   );
 
@@ -492,11 +478,11 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     // display form, so convert on the way in.
     baseline.stem = toDisplay(saved.stem);
     baseline.difficulty = saved.difficulty;
-    baseline.options = saved.options.map((option) => ({
-      ...option,
-      text: toDisplay(option.text),
-      explanation: toDisplay(option.explanation),
-    }));
+    const savedOptions = new Map(saved.options.map((option) => [option.key, option]));
+    baseline.options = draftOptions.map((draft) => {
+      const option = savedOptions.get(draft.key) ?? draft;
+      return { ...option, text: toDisplay(option.text), explanation: toDisplay(option.explanation) };
+    });
     draftStem = toDisplay(saved.stem);
     draftDifficulty = saved.difficulty;
 
@@ -504,19 +490,19 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     stemTextarea.classList.remove('edited');
     difficultySelect.value = draftDifficulty;
     difficultySelect.classList.remove('edited');
-    for (const input of optionInputs) {
-      const savedOption = saved.options.find((option) => option.role === input.role);
-      const draft = draftOptions.find((option) => option.role === input.role);
-      if (savedOption && draft) {
-        draft.text = savedOption.text;
-        draft.explanation = savedOption.explanation;
-        input.textInput.value = savedOption.text;
-        input.textInput.classList.remove('edited');
-        input.explInput.value = savedOption.explanation;
-        input.explInput.classList.remove('edited');
-      }
+    for (const [index, draft] of draftOptions.entries()) {
+      const option = baseline.options[index];
+      const input = optionInputs.get(draft.key)!;
+      Object.assign(draft, option);
+      input.textInput.value = option.text;
+      input.textInput.classList.remove('edited');
+      input.explInput.value = option.explanation;
+      input.explInput.classList.remove('edited');
+      input.label.textContent = ROLE_LABEL[option.role];
+      input.card.classList.toggle('is-correct', option.role === 'correct');
     }
     updateSaveButton();
+    if (!sampleSection.hidden) void loadSample();
   }
 
   async function save(): Promise<{ ok: boolean; changed: boolean }> {
@@ -739,9 +725,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
   const regenerateButton = el(
     'button',
     { class: 'btn btn--ghost', type: 'button' },
-    '↻ Regenerate',
+    'Regenerate',
   ) as HTMLButtonElement;
-  const regenerationPanel = el('section', {});
+  const regenerationPanel = el('section', { class: 'question-detail__regeneration' });
   const regenerationPrompt = el('textarea', {
     class: 'input input--area',
     rows: '3',
@@ -940,6 +926,8 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
     regenerationError = null;
     regenerationMessage = null;
     renderRegenerationPanel();
+    showEditor();
+    regenerationPanel.scrollIntoView({ block: 'start' });
   });
 
   // --- Topics & LOs chips ----------------------------------------------------
@@ -1036,9 +1024,9 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       ? `${provenanceText(provenance)} · Original: ${provenanceText(recordedOrigin)}`
       : provenanceText(provenance);
   const agentPanel = el(
-    'div',
-    { class: 'agent-report-panel' },
-    el('h2', { class: 'agent-report-panel__title', text: 'AI Agent Report' }),
+    'section',
+    { class: 'agent-report-panel', 'aria-label': 'AI check' },
+    el('h2', { class: 'agent-report-panel__title', text: 'AI check' }),
     agentDecision
       ? el(
           'div',
@@ -1046,7 +1034,6 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
           el(
             'div',
             { class: 'agent-report-block__head' },
-            el('span', { text: 'Reviewer Agent' }),
             statusBadge(agentDecision.decision.toUpperCase(), agentDecision.decision),
           ),
           el('p', { class: 'agent-report-block__body', text: agentDecision.reasoning }),
@@ -1075,16 +1062,16 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       : false,
     agentDecision
       ? el(
-          'div',
+          'details',
           { class: 'agent-report-block' },
-          el('div', { class: 'agent-report-block__head' }, el('span', { text: 'Structure Validator' })),
+          el('summary', { class: 'agent-report-block__head', text: 'Answer structure' }),
           el('p', { class: 'agent-report-block__body', text: agentDecision.roleAssessment }),
         )
       : false,
     el(
-      'div',
+      'details',
       { class: 'agent-report-block' },
-      el('div', { class: 'agent-report-block__head' }, el('span', { text: 'Origin & family' })),
+      el('summary', { class: 'agent-report-block__head', text: 'Origin & family' }),
       el('p', { class: 'agent-report-block__body', text: provenanceLabel }),
       detail.templateFamilyId
         ? el('p', { class: 'agent-report-block__body mono', text: `Family ${detail.templateFamilyId}` })
@@ -1124,6 +1111,46 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       )
     : false;
 
+  const editor = el('div', { class: 'question-editor', id: 'question-detail-fields' },
+    placeholderWarningSlot,
+    el('label', { class: 'question-detail__stem-label' },
+      el('span', { text: 'Question stem' }), stemTextarea),
+    el('section', { 'aria-labelledby': 'question-detail-options' },
+      el('h2', { id: 'question-detail-options', text: 'Answer options' }), optionsSection),
+    el('details', { class: 'question-detail__team', open: fromFlags || pendingSuggestions.length > 0 },
+      el('summary', { text: pendingSuggestions.length ? `Teaching team · ${pendingSuggestions.length} pending` : 'Teaching team' }),
+      pendingSuggestions.length ? suggestionPanel : false,
+      el('section', { class: 'question-notes' },
+        el('label', { class: 'question-detail__stem-label' },
+          el('span', { text: 'Internal review comment' }), internalNoteInput),
+        addInternalNoteButton, notesList)),
+    fromFlags ? el('section', { class: 'question-student-reply' },
+      el('label', { class: 'question-detail__stem-label' },
+        el('span', { text: 'Reply to flagging students' }), studentReplyInput),
+      el('p', { class: 'muted', text: containsRealFlags
+        ? 'Optional. This text is sent to students whose flags are resolved.'
+        : 'This is a Test Flag, so no message will be sent to a real student.' })) : false,
+    regenerationPanel);
+
+  function showEditor(): void {
+    editor.hidden = false;
+    sampleSection.hidden = true;
+    editorTab.setAttribute('aria-pressed', 'true');
+    previewTab.setAttribute('aria-pressed', 'false');
+  }
+
+  const editorTab = el('button', { type: 'button', 'aria-pressed': 'true', 'aria-controls': editor.id, onclick: showEditor }, 'Edit question');
+  const previewTab = el('button', {
+    type: 'button', 'aria-pressed': 'false', 'aria-controls': sampleSection.id,
+    onclick: () => {
+      editor.hidden = true;
+      sampleSection.hidden = false;
+      editorTab.setAttribute('aria-pressed', 'false');
+      previewTab.setAttribute('aria-pressed', 'true');
+      void loadSample();
+    },
+  }, 'Student preview');
+
   body.replaceChildren(
     el(
       'a',
@@ -1137,73 +1164,46 @@ async function renderQuestionDetailInner(outlet: HTMLElement, questionId: string
       },
       '← Back to Questions',
     ),
-    pageHeader('Question', ''),
-    ...(detail.state !== 'archived' ? [el('a', { class: 'btn btn--instr-primary', href: `#/instructor/course/${detail.courseId}/bank/${questionId}/collaborate`, text: 'Edit together' })] : []),
+    el('header', { class: 'gw-header question-detail__header' },
+      el('div', {}, el('h1', { text: 'Question details' }), metaLabel),
+      el('div', { class: 'questions-header__actions' },
+        detail.state !== 'archived'
+          ? el('a', { class: 'btn btn--ghost btn--sm', href: `#/instructor/course/${detail.courseId}/bank/${questionId}/collaborate`, text: 'Edit together' })
+          : false,
+        regenerateButton,
+        el('a', { class: 'btn btn--ghost btn--sm',
+          href: `#/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(questionId)}/params`,
+          text: 'Parameters' }))),
     ...(analyticsVersionId ? [analyticsNotice] : []),
     ...(flagBanner ? [flagBanner] : []),
     el(
       'div',
-      { class: 'question-detail-layout' },
+      { class: 'gw-grid question-detail__grid' },
       el(
         'div',
-        { class: 'question-editor' },
-        el('div', { class: 'question-meta-row' }, metaLabel, el('span', {}, el('label', { text: 'Difficulty: ' }), difficultySelect)),
-        placeholderWarningSlot,
-        el('h3', { class: 'detail-section-title', text: 'Topics & LOs' }),
-        chipsContainer,
-        el('h3', { class: 'detail-section-title', text: 'Question Stem' }),
-        stemTextarea,
-        sampleSection,
-        optionsSection,
-        suggestionPanel,
+        { class: 'question-detail__main' },
+        el('div', { class: 'question-detail__mode' },
+          el('div', { class: 'gw-tabs', role: 'group', 'aria-label': 'Question detail view' }, editorTab, previewTab)),
+        el('div', { class: 'gw-body question-detail__body' }, editor, sampleSection),
+      ),
+      el('aside', { class: 'gw-plan question-detail__inspector', 'aria-label': 'Question review and settings' },
+        questionGenerationUsage(detail),
+        agentPanel,
+        el('section', { class: 'question-detail__settings' },
+          el('h2', { text: 'Question settings' }),
+          el('label', { class: 'question-detail__stem-label' }, el('span', { text: 'Difficulty' }), difficultySelect),
+          el('h3', { text: 'Topics & LOs' }), chipsContainer)),
+      el('div', { class: 'question-detail__footer' },
         errorSlot,
         el(
-          'section',
-          { class: 'question-notes' },
-          el('h3', { class: 'detail-section-title', text: 'Internal review comment' }),
-          el('p', { class: 'muted', text: 'Optional. Visible only to instructors and TAs.' }),
-          internalNoteInput,
-          addInternalNoteButton,
-          notesList,
-        ),
-        fromFlags
-          ? el(
-              'section',
-              { class: 'question-student-reply' },
-              el('h3', { class: 'detail-section-title', text: 'Reply to flagging student(s)' }),
-              el('p', {
-                class: 'muted',
-                text: containsRealFlags
-                  ? 'Optional. This text is sent to students whose flags are resolved.'
-                  : 'This is a Test Flag, so no message will be sent to a real student.',
-              }),
-              studentReplyInput,
-            )
-          : false,
-        el(
-          'div',
-          { class: 'question-actions' },
-          fromFlags ? flagUpdateButton : approveButton,
+          'footer',
+          { class: 'gw-footer question-actions' },
+          el('div', { class: 'question-detail__decision' },
           fromFlags ? flagArchiveButton : rejectButton,
-          !fromFlags ? restoreButton : false,
-          regenerateButton,
-          el(
-            'a',
-            {
-              class: 'btn btn--ghost',
-              href: `#/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(questionId)}/params`,
-              onclick: (e: Event) => {
-                e.preventDefault();
-                navigate(`/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(questionId)}/params`);
-              },
-            },
-            '⚙ Parameters',
-          ),
-        ),
-        regenerationPanel,
-        !fromFlags ? el('div', { class: 'question-save-row' }, saveButton) : false,
-      ),
-      agentPanel,
+          !fromFlags ? restoreButton : false),
+          el('div', { class: 'question-detail__save' }, editStatus,
+            !fromFlags ? saveButton : false,
+            fromFlags ? flagUpdateButton : approveButton))),
     ),
   );
   updateSaveButton();
