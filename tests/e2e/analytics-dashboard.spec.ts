@@ -60,7 +60,7 @@ test('scope, objective/version selection and CSV match; search submits with Ente
   await page.getByRole('button', { name: 'View version 1 answers', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Version 1 · Historical content' })).toBeVisible();
   await expect(page.getByText('A. Recorded old answer · correct · 6 (100%)')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Review question (recorded version 1)' })).toHaveAttribute('href', new RegExp(`analyticsVersionId=${historical}`));
+  await expect(page.getByRole('link', { name: 'Review question (recorded version 1)' })).toHaveAttribute('href', new RegExp(`/questions\\?q=${question}&analyticsVersionId=${historical}$`));
   const request = page.waitForRequest((req) => req.url().includes('failure-rates') && req.url().includes('mode=exam-prep'));
   await page.getByRole('button', { name: 'Exam Prep', exact: true }).click(); await request;
   await page.getByRole('button', { name: 'Topics', exact: true }).click();
@@ -167,36 +167,4 @@ test('sort cannot restore previous-scope evidence while a refresh is pending or 
   await expect(page.getByText('New scope unavailable')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Risk', exact: true })).toHaveCount(0);
   await expect(sort).toBeDisabled();
-});
-
-test('historical review distinguishes transient errors and retries without resetting the editor', async ({ page }) => {
-  await fixture(page);
-  await page.route(`**/api/questions/${question}`, (route) => route.fulfill({ json: {
-    id: question, courseId: course, currentVersionId: current, currentVersion: 2, state: 'draft', loIds: [], themeIds: [], labels: [], internalNotes: [], versions: [],
-    current: { _id: current, questionId: question, version: 2, type: 'mcq', stem: 'Current editable stem', difficulty: 'easy', options: [], sourceRefs: [], createdBy: 'teacher', createdAt: '2026-09-01' },
-  } }));
-  await page.route(`**/api/courses/${course}`, (route) => route.fulfill({ json: { id: course, name: 'Analytics fixture', themes: [] } }));
-  let calls = 0;
-  await page.route('**/analytics/questions/**/distribution**', (route) => {
-    calls += 1;
-    return calls === 1 ? route.fulfill({ status: 503, json: { error: 'Historical service interrupted' } })
-      : route.fulfill({ json: { version: 1, isCurrent: false, stem: 'Historical recovered stem', options: [] } });
-  });
-  await page.evaluate(async ({ id, questionId, versionId }) => {
-    location.hash = `/instructor/course/${id}/bank/${questionId}?analyticsVersionId=${versionId}`;
-    (await import('/js/views/instructor/question-detail.js')).renderQuestionDetail(document.querySelector('#app')!, { id, questionId });
-  }, { id: course, questionId: question, versionId: historical });
-  const notice = page.getByRole('region', { name: 'Recorded analytics version' });
-  await expect(notice.getByText(/Historical service interrupted/)).toBeVisible();
-  const editor = page.getByRole('textbox', { name: 'Question stem', exact: true });
-  await editor.fill('Unsaved local edit');
-  await notice.getByRole('button', { name: 'Try again' }).click();
-  await expect(notice.getByText('Historical recovered stem', { exact: true })).toBeVisible();
-  await expect(editor).toHaveValue('Unsaved local edit');
-  await page.route('**/analytics/questions/**/distribution**', (route) => route.fulfill({ status: 404, json: { error: 'question-version-not-found' } }));
-  await page.evaluate(async ({ id, questionId }) => {
-    (await import('/js/views/instructor/question-detail.js')).renderQuestionDetail(document.querySelector('#app')!, { id, questionId });
-  }, { id: course, questionId: question });
-  await expect(notice.getByText('The requested recorded version was not found or its identifier is invalid.')).toBeVisible();
-  await expect(notice.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 });

@@ -337,20 +337,15 @@ test.describe('Instructor student preview', () => {
 
     await page.goto(`/#/instructor/course/${courseId.toHexString()}`);
     await page.getByRole('button', { name: /Preview as Student/i }).click();
-    await page.getByRole('button', { name: 'Start →', exact: true }).click();
-    await expect(page.getByText(APPROVED_STEM)).toBeVisible();
+    await page.getByRole('button', { name: 'Start lesson →', exact: true }).click();
+    await expect(page.getByText(APPROVED_STEM).first()).toBeVisible();
 
-    await page.getByRole('button', { name: /Flag this question/i }).click();
-    await page.getByRole('textbox', { name: /Why are you flagging/i })
-      .fill('Cross-tab test flag');
-    // No opt-in step: the checkbox is gone and Preview always TEST-queues, so
-    // the cross-tab broadcast below has to happen off the plain Send flag
-    // click. Assert the control's absence — a re-introduced checkbox defaulting
-    // to unchecked would otherwise make this test silently stop covering the
-    // broadcast.
-    await expect(page.locator('.practice-card').getByRole('checkbox')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Send flag', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Flagged');
+    // The learning workspace reports through "Report a problem"; Preview
+    // always TEST-queues the report and broadcasts it to the other tab.
+    await page.getByRole('button', { name: 'Report a problem', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Describe the problem' }).fill('Cross-tab test flag');
+    await page.getByRole('button', { name: 'Submit report', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // BroadcastChannel invalidates the other tab immediately; this assertion
     // intentionally completes well inside the 30-second polling fallback.
@@ -363,14 +358,17 @@ test.describe('Instructor student preview', () => {
     const flagCard = instructorPage.locator('.questions-flag-card');
     await expect(flagCard).toContainText('TEST · Instructor preview');
     await expect(flagCard).toContainText('Cross-tab test flag');
-    await flagCard.getByRole('link', { name: 'Correct the question' }).click();
-    await expect(instructorPage.getByRole('heading', { name: 'Instructor Preview Test Flag' })).toBeVisible();
-    await expect(instructorPage.getByText(/changes the real Question Bank/)).toBeVisible();
+    // The correction happens in the workspace reader (spec 2026-11-18 D4).
+    await flagCard.getByRole('button', { name: 'Correct the question' }).click();
+    const fix = instructorPage.getByRole('region', { name: 'Fixing flagged reports' });
+    await expect(fix).toContainText('TEST · Instructor preview');
+    await expect(fix).toContainText('This is a test flag, so no student gets a message.');
+    await expect(instructorPage.locator('.questions-reader__warning')).toContainText('Students get the corrected question as soon as you save.');
 
     const editedStem = `${APPROVED_STEM} (verified)`;
-    await instructorPage.locator('.question-stem-input').fill(editedStem);
-    await instructorPage.getByRole('button', { name: 'Save & Update Question Bank' }).click();
-    await expect(instructorPage).toHaveURL(/\/questions\?tab=flags&q=/);
+    await instructorPage.getByLabel('Question stem').fill(editedStem);
+    await instructorPage.getByRole('button', { name: 'Save and resolve' }).click();
+    await expect(instructorPage.locator('.questions-notice')).toContainText('Question corrected. 1 report resolved.');
 
     const [storedFlag, storedQuestion, storedVersion] = await Promise.all([
       flagsCol().findOne({

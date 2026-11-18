@@ -40,7 +40,7 @@ function makeQuestion(i: number, state: State, themeId = 'forces'): MockQuestion
   };
 }
 
-async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean; testFlag?: boolean } = {}) {
+async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean; testFlag?: boolean; distributionFailures?: number } = {}) {
   const questions: MockQuestion[] = [
     ...[1, 2, 3, 4].map((i) => makeQuestion(i, 'draft')),
     makeQuestion(5, 'approved'),
@@ -91,6 +91,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const suggestionCalls: Array<[string, string]> = [];
   let sampleCalls = 0;
   const notifyCalls: string[] = [];
+  let distributionFailures = options.distributionFailures ?? 0;
   const regenerateCalls: Array<Record<string, unknown>> = [];
 
   const released = (themeId: string): boolean => {
@@ -187,7 +188,8 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     }
     const distribution = path.match(/^\/api\/courses\/course\/analytics\/questions\/(q\d+)\/distribution$/);
     if (distribution) {
-      if (url.searchParams.get('versionId') !== 'v0') return r.fulfill({ status: 404, json: { error: 'not-found' } });
+      if (url.searchParams.get('versionId') !== 'v0') return r.fulfill({ status: 404, json: { error: 'question-version-not-found' } });
+      if (distributionFailures > 0) { distributionFailures--; return r.fulfill({ status: 503, json: { error: 'Historical service interrupted' } }); }
       return r.fulfill({ json: { questionId: distribution[1], versionId: 'v0', version: 1, stem: 'An older wording of the question.', isCurrent: false, attempts: 12, insufficient: false, misconceptionHighlight: false,
         options: [{ key: 'A', text: 'Old option', role: 'correct', count: 12, pct: 1 }] } });
     }
@@ -691,4 +693,22 @@ test('390px dark Compare stacks the versions and passes axe', async ({ page }) =
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const results = await new AxeBuilder({ page }).include('.questions-reader').analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+});
+
+test('the recorded-version notice retries a transient error without touching an open edit, and says when a version is unknown', async ({ page }) => {
+  await setup(page, { tab: 'approved', extraHash: '&q=q5&analyticsVersionId=v0', distributionFailures: 1 });
+  const notice = page.getByRole('region', { name: 'Recorded analytics version' });
+  await expect(notice).toContainText('Historical service interrupted');
+  await modeButton(page, 'Edit').click();
+  await page.getByLabel('Question stem').fill('Unsaved local edit');
+  await notice.getByRole('button', { name: 'Try again' }).click();
+  await expect(notice).toContainText('Recorded analytics version 1');
+  await expect(page.getByLabel('Question stem')).toHaveValue('Unsaved local edit');
+});
+
+test('an unknown recorded version is reported without a retry', async ({ page }) => {
+  await setup(page, { tab: 'approved', extraHash: '&q=q5&analyticsVersionId=nope' });
+  const notice = page.getByRole('region', { name: 'Recorded analytics version' });
+  await expect(notice).toContainText('The requested recorded version was not found.');
+  await expect(notice.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 });
