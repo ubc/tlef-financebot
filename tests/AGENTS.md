@@ -486,15 +486,9 @@ saved-role forgery, refresh persistence, course/session isolation, common cards,
 sidebar sizing/colors, black course actions, and mobile light/dark accessibility.
 No live grants, enrollment, or student activity are changed by these fixtures.
 
-`playwright.collaboration.config.ts` uses real faculty and ta SAML sessions and an
-isolated temporary course. It tests sharing without platform privilege, concurrent
-same-field/different-field CRDT edits, offline retries, a deliberately lost commit
-response, version comparison/rebase, presence, mobile/dark axe and live revocation.
-It cleans course, question, draft, share, presence and scoped role fixtures. No
-email or provider generation occurs. `question-collaboration.service/routes` unit
-tests cover durable CAS, replay, interrupted-save recovery, schema retention,
-state races and revoked/transient SSE behavior. `playwright.course-sharing.config.ts`
-uses intercepted APIs for dialog/page sharing. `playwright.question-edit-concurrency.config.ts` covers legacy editor conflicts and draft-schema export.
+`playwright.course-sharing.config.ts`
+uses intercepted APIs for dialog/page sharing. Editor and parameter conflicts are
+covered in `questions-workspace.spec.ts` (`playwright.questions-workspace.config.ts`).
 
 `playwright.exam-builder.config.ts` runs the compiled production Builder and
 Assessment pages with intercepted APIs on a static localhost:6118 server. It

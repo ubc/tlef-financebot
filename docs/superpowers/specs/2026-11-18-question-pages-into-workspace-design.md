@@ -1,7 +1,7 @@
 # Question Pages Into the Questions Workspace — Design
 
 Date: 2026-11-18
-Status: agreed
+Status: implemented (phases 1–3, 2026-11-18)
 
 ## Why
 

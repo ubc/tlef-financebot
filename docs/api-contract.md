@@ -373,7 +373,10 @@ material ids are rejected before hierarchy creation begins.
   `verification` on success or `verificationError` on failure. Numerical
   questions must display exactly one computed derived value in every option;
   all displayed option values are checked across the stored sample seeds.
-  Saves independently of approval state (IN-Q09, Task 5).
+  Saves independently of approval state (IN-Q09, Task 5). The workspace's
+  Parameters mode does not use this route: it saves `paramSlots` and
+  `derivedValues` through `PATCH /api/questions/:questionId` (same verification),
+  with `submitForReview: true` for approved or paused questions.
 - `GET /api/questions/:questionId/sample` → `{ seed, stem, options,
   parameterized }`, one read-only rendering produced by the same resolver used
   for student serving.
@@ -1231,7 +1234,7 @@ shows retained findings on failed runs, hides their unvalidated streamed draft,
 and requires a completed durable result for Apply. Small direct-synthesis
 outlines already receive original evidence and retain their existing path.
 
-## Course sharing and collaborative question drafts
+## Course sharing
 
 Course sharing requires a real Instructor role in the course, or Admin. Only
 its owner/Admin can manage members. Sharing never grants platform-wide course
@@ -1249,46 +1252,13 @@ PUID after activation. No email delivery is performed.
   accepted for compatibility.
 - `DELETE /api/courses/:courseId/instructor-invitations/:invitationId` → summary.
 - `DELETE /api/courses/:courseId/instructors/:puid` → summary; owner removal409.
-  Revocation removes share-derived access on the next authenticated request,
-  including already-open collaborative streams. Other course roles are retained.
+  Revocation removes share-derived access on the next authenticated request.
+  Other course roles are retained.
 
-Below, `D` is `/api/courses/:courseId/questions/:questionId/draft`. These routes
-require real Instructor/Admin authoring capability, reject archived resources,
-validate both resource ids together, and re-read permissions for every request
-and stream tick. Teaching-role previews do not confer permissions.
-
-- `GET D` → snapshot `{ state, revision, baseVersionId, currentVersionId,
-  questionType, optionKeys, conflict, committing, updatedAt, collaborators }`.
-  `state` is a base64 Yjs document; ordered `optionKeys` and `questionType` come
-  from its persisted base version, even after an external schema change.
-- `POST D/updates { update }` → snapshot. Base64 incremental Yjs updates merge
-  under a Mongo compare-and-set and are safe to retry after a lost response.
-  Inputs are bounded to90000 base64 characters and durable state to2MB.
-- `GET D/events` → authenticated SSE `snapshot` events from durable state.
-  Streams re-read at one-second intervals across processes. Auth/lifecycle
-  failures send `unavailable` then close; transient failures reconnect normally.
-- `PUT D/presence { clientId: UUID, field }` →204. Identity/name come from the
-  session; presence expires after30 seconds, with ten-second browser heartbeats.
-- `DELETE D/presence/:clientId` →204; only that session user's presence is removed.
-- `POST D/commit { expectedRevision, requestId: UUID }` → `{ versionId }`.
-  Saves one validated immutable version and moves it to Pending Review. Numeric
-  answers are verified against the stored formulas; shared drafts never approve
-  or publish themselves. A short persisted lease protects the submitted snapshot.
-  Private version journal markers recover interrupted head/draft updates; retries
-  use the same request id. Existing attempts retain their original versions.
-- `POST D/rebase { expectedRevision, expectedVersionId }` → snapshot. After an
-  explicit side-by-side comparison, retains the shared content against the newly
-  confirmed saved baseline. Both revisions must match. Different question types
-  or option keys require manual merge in the full editor; download preserves all
-  original draft fields. No automatic overwrite or destructive reset occurs.
-
-The browser's `Edit together` action is available from Bank, Review and question
-details. Text uses shared CRDT fields; difficulty/answer-role choices use shared
-map values and are validated together at commit. Unsynced changes remain in the
-open tab with retry, download and leave protection. This is not a promise of
-browser-crash/offline-disk recovery or simultaneous binary-file editing. Course,
-Theme, LO and material forms use revision conflicts rather than text merging;
-explicit roster/lifecycle actions retain their existing action contracts.
+The shared question drafts ("Edit together", `/api/courses/:courseId/questions/:questionId/draft`)
+were removed on 2026-11-18 (spec `2026-11-18-question-pages-into-workspace-design.md`
+D5). Course deletion still removes a course's leftover `questionDrafts` and
+`questionPresence` documents.
 
 ## Exam Builder v2 (fixed midterm/final papers)
 

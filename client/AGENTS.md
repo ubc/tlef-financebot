@@ -223,7 +223,8 @@ per-Topic release summary and the tab's rows with server-decided `studentVisible
 `hiddenReason`; the client never derives visibility. Modules:
 `questions-model.ts` (pure: tabs, paths, filters, bulk runner — unit-tested),
 `questions-reader.ts` (reader, state-specific actions, 409 handling; middle-pane
-modes Read / Edit / Preview / Compare in the URL as `mode=edit|preview|compare`,
+modes Read / Edit / Preview / Compare / Parameters in the URL as
+`mode=edit|preview|compare|params`,
 plus `flagVersionId` for a flag fix and `analyticsVersionId` from Student Analytics; Edit converts
 `{{NAME}}` to `[NAME]` and back via `placeholders.ts` and sends `submitForReview`
 for approved/paused questions), `questions-inspector.ts` (Review / Settings / Team
@@ -238,13 +239,17 @@ are; Archive and Clear resolve in the card; remediation panel; resolved history)
 `questions-compare.ts` (Compare mode, To review only: regenerate an alternative,
 compare side by side, Replace with variant; the inspector collapses while open),
 `questions-analytics-notice.ts` (recorded version for `analyticsVersionId` links
-from Student Analytics),
+from Student Analytics), `questions-params.ts` (Parameters mode for parameterized
+questions: drawn-variable and computed-value tables, five sample draws of the
+drafts, verification; saved through the generic question PATCH, returning an
+approved or paused question to review),
 `questions-release.ts` (Manage releases: per-Topic Release now / Schedule / Keep
 hidden, saved with each Topic's `revision`). Release happens only here; Course
 Structure shows a read-only label. Shared labels live in `question-labels.ts`; the
 TA review queue's decision tabs live in `views/ta/queue-tabs.ts`. Styles:
-`styles/questions-workspace.css`. Question detail still exists (phase 3 removes it) and returns to Questions with
-the question selected.
+`styles/questions-workspace.css`. Question details, Parameterization Configuration and Edit together are gone;
+`/bank/:questionId` (with its `intent`s), `/params` and `/collaborate` redirect to
+the matching question, tab and mode (`legacyQuestionsPath`).
 
 Teaching Assistants now uses a compact searchable roster with native invitation
 and permission dialogs. Course Settings retains input nodes across five sections
@@ -329,11 +334,7 @@ Settings. Discussion keeps its route but has no sidebar entry.
 Course co-authoring uses `course-sharing.ts` in the topbar Share dialog (the old
 `/co-instructors` and `/tas` routes render People). Owners/Admins manage UBC-email invitations;
 co-instructors can inspect members and copy the restricted course link.
-`collaborative-editor.ts` binds native fields to a vendored Yjs module, persists
-incremental shared drafts, shows presence, and explicitly saves validated versions
-back into Questions → To review. It retains failed updates and commit ids, compares external
-versions before rebase, and exports the original draft schema. The application
-still compiles with tsc; esbuild only packages the third-party Yjs vendor module.
+(Edit together — shared Yjs drafts — was removed on 2026-11-18.)
 
 Exam Builder v2 uses `views/instructor/exam-builder.ts` and the scoped
 `styles/exam-builder.css`. Course bank selection and private generation feed a

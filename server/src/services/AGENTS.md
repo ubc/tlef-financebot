@@ -337,12 +337,10 @@ redacted telemetry; `operation-context.ts` carries request IDs into run creation
 Read-only reproduction uses the existing parameter evaluator and pinned versions;
 it must not silently substitute fresh parameters for missing attempt evidence.
 
-`question-collaboration.service.ts` owns durable question drafts and expiring
-presence. Fresh course/capability checks apply to reads, writes and SSE ticks;
-Mongo revision CAS merges Yjs updates across processes. Explicit commits validate
-content, create immutable Pending Review versions, and journal the commit id on
-the version so interrupted head/draft updates can recover without duplicate
-versions. Normal question editing requires version pins and tag snapshots.
+Question editing requires version pins and tag snapshots; `submitForReview`
+returns an approved or paused question to Pending Review. (Shared Yjs drafts —
+`question-collaboration.service.ts` — were removed on 2026-11-18; old versions
+keep their optional `collaborationDraftId` / `collaborationCommitId` markers.)
 
 ### Exam Builder v2
 

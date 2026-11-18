@@ -15,7 +15,7 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
 ## Decisions made while planning
 
 - **P3-1 Saving parameters of an approved or paused question returns it to
-  review** (pending the developer's confirmation). Formulas decide which value
+  review** (confirmed by the developer, 2026-11-18). Formulas decide which value
   is correct, so this is a content edit like Edit (phase 1). Parameters
   therefore saves through the generic `PATCH /api/questions/:id` (which
   already accepts `paramSlots`, `derivedValues`, `numericKind`, verifies them
@@ -41,7 +41,7 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
 
 ## Tasks
 
-- [ ] **1. Parameters mode.** New `questions-params.ts`, one instance per
+- [x] **1. Parameters mode.** New `questions-params.ts`, one instance per
   loaded question, adapted from `param-config.ts`:
   - Stem with `[NAME]` chips; slot rows (name, description, min, max, step or
     a values list, "found in stem" / "not in stem"); computed rows (name,
@@ -60,10 +60,10 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
     `parseMode` gain `params`; the inspector collapses.
   - Remove the "Parameters" link from More actions.
 
-- [ ] **2. Review tab: Origin & family (P3-4).** A collapsed `<details>` in the
+- [x] **2. Review tab: Origin & family (P3-4).** A collapsed `<details>` in the
   Review panel after Source evidence.
 
-- [ ] **3. Old URLs redirect (D7).** `legacyQuestionsPath` handles
+- [x] **3. Old URLs redirect (D7).** `legacyQuestionsPath` handles
   `/instructor/course/:id/bank/:questionId`, `…/params` and `…/collaborate`:
 
   | Old URL | New |
@@ -80,18 +80,18 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
   needs `questionId` from the path). Without `tab` the workspace already opens
   the tab that holds the question. Unit tests for every row.
 
-- [ ] **4. In-app links.** Exam builder "Open question details" and import
+- [x] **4. In-app links.** Exam builder "Open question details" and import
   results link to `questionsPath(courseId, { q })`. `shell.ts` drops the
   `bank/:questionId` entry from the Questions item's `also` list.
   `similarity-label.ts` goes with Question details (its only user).
 
-- [ ] **5. Tutorials.** `instructor-question-editor` attaches when Edit mode
+- [x] **5. Tutorials.** `instructor-question-editor` attaches when Edit mode
   opens (selectors on the editor and the Edit footer);
   `instructor-parameters` attaches when Parameters opens. Both definitions get
   `path: "questions"`; `tutorial-help.ts` reasons say "open Edit" / "open
   Parameters". `instructor-collaboration` is removed (task 7).
 
-- [ ] **6. Delete Question details and Parameterization Configuration.**
+- [x] **6. Delete Question details and Parameterization Configuration.**
   `question-detail.ts`, `param-config.ts`, `similarity-label.ts`; their
   routes; their CSS in `main.css` and `questions-workspace.css`
   (`.question-detail*`, `.param-config*`, `.param-slots`, `.vardef*`,
@@ -100,7 +100,7 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
   only after `grep` shows no other user, e.g. TA views or the new Parameters
   mode). Remove "Open full details" from More actions.
 
-- [ ] **7. Remove Edit together (D5, P3-5).** As listed in the spec:
+- [x] **7. Remove Edit together (D5, P3-5).** As listed in the spec:
   client page, API module, CSS and `<link>`, route, tutorial
   (`tutorial-definitions.ts`, `tutorial-help.ts`, `tutorials.service.ts`);
   server routes and mount, service, `types/collaboration.ts`, collection
@@ -112,11 +112,11 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
   (More actions then holds only Reload — make it a plain **Reload** button).
   `npm run typecheck`, `npm test` and `npm run lint` pass.
 
-- [ ] **8. Styles.** Parameters tables in the wide reader (horizontal scroll
+- [x] **8. Styles.** Parameters tables in the wide reader (horizontal scroll
   inside the table only at narrow widths), verification banners, draws list.
   Light/dark and 390px.
 
-- [ ] **9. Mocked e2e (`questions-workspace.spec.ts`).**
+- [x] **9. Mocked e2e (`questions-workspace.spec.ts`).**
   - Parameters offered only for a parameterized question; `mode=params`
     opens it; the inspector collapses.
   - Edit a range and a formula → Draw five samples sends the drafts → Save →
@@ -128,7 +128,7 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
   - Origin & family in the Review tab.
   - 390px dark axe with Parameters open.
 
-- [ ] **10. Migrate the specs that drove the deleted pages.**
+- [x] **10. Migrate the specs that drove the deleted pages.**
   - Mocked: `action-progress` (param preview busy state),
     `numeric-verification-status` (verification banner on save),
     `question-edit-concurrency` (409 on edit and on parameters),
@@ -137,8 +137,30 @@ app links to `/bank/:questionId`; `yjs` is no longer a dependency.
     `custom-generation` — run against the local stack and record results here.
   - Delete `question-collaboration.spec.ts` (task 7).
 
-- [ ] **11. Docs.** `docs/api-contract.md` (remove the collaborative drafts
+- [x] **11. Docs.** `docs/api-contract.md` (remove the collaborative drafts
   section; note that the UI saves parameters through `PATCH
   /api/questions/:id`), `client/AGENTS.md`, `server/src/routes/AGENTS.md`,
   `server/src/services/AGENTS.md`, `tests/AGENTS.md`, AGENTS.md "Current
   state", the spec's status ("implemented"), and tick this checklist.
+
+## Notes from implementation
+
+- The `questionDraftsCol` / `questionPresenceCol` accessors stay (typed as
+  `{ courseId }`) so course deletion keeps removing leftovers; their indexes
+  and `types/collaboration.ts` are gone.
+- **Draw five samples** uses the shared `runButtonAction` busy state (aria-busy,
+  no duplicate requests), so `action-progress.spec.ts` keeps its original check.
+- `question-edit-concurrency.spec.ts` and its config are removed; its draft- and
+  parameter-retention cases are in `questions-workspace.spec.ts`. The LO
+  conflict case was already covered by the Settings test.
+- `similarity-label.test.ts` went with `similarity-label.ts`; the reader shows
+  similarity through its own links.
+- Full stack, run 2026-11-18: `numeric-parameterization` and
+  `instructor-sample-render` pass (both open the old URLs and follow the
+  redirects). `custom-generation` fails before reaching the workspace — its
+  Generate page step expects a "Question Bank Coverage" heading the page no
+  longer has; with that half removed (temporary copy) the Compare half passes.
+- `action-progress` "real workspace keeps generation pending…" and several
+  `assessment-*` / `exam-builder` quota tests fail on this branch; none of them
+  touch code changed here (verified with `git diff` against `main`), and the
+  assessment and quota failures also occur on `main`.

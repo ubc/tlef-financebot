@@ -145,10 +145,8 @@ the "Protecting routes" section of `components/auth/AGENTS.md`.
   resolves an explicit version against the course-owned question.
 
 `course-sharing.routes.ts` exposes owner/Admin-managed invitations and members.
-`question-collaboration.routes.ts` exposes authenticated course/question-scoped
-shared snapshots, updates, presence, SSE, commit and explicit comparison/rebase.
-Permanent access/lifecycle failures end streams; transient failures reconnect.
-See the detailed wire contracts in `docs/api-contract.md`.
+See the detailed wire contracts in `docs/api-contract.md`. (The shared-draft
+`question-collaboration` routes were removed on 2026-11-18.)
 
 `exam-builder.routes.ts` exposes the private fixed-paper builder to course
 Instructor/Admin only. Student assessment routes use enrollment guards plus
