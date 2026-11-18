@@ -59,19 +59,30 @@ export function openReleasePanel(release: QuestionWorkspace['release'], onSaved:
 
   function rowNode(row: RowState): HTMLElement {
     const name = `release-${row.theme.themeId}`;
+    const nameId = `${name}-name`;
+    // The date field only shows (and is only editable) while Schedule is chosen.
+    const syncDate = (): void => {
+      const scheduling = row.choice === 'schedule';
+      row.date.hidden = !scheduling;
+      row.date.disabled = busy || !scheduling;
+    };
     const choice = (value: Choice, label: string): HTMLElement => {
       const radio = el('input', { type: 'radio', name, value, checked: row.choice === value }) as HTMLInputElement;
-      radio.addEventListener('change', () => { row.choice = value; row.date.disabled = value !== 'schedule'; });
+      radio.addEventListener('change', () => { row.choice = value; syncDate(); });
       row.radios.push(radio);
       return el('label', { class: 'questions-release__choice' }, radio, el('span', { text: label }));
     };
-    row.date.disabled = row.choice !== 'schedule';
+    syncDate();
     const state = releaseState(row.theme);
-    return el('fieldset', { class: `questions-release__row is-${state}`, 'data-theme-id': row.theme.themeId },
-      el('legend', {}, el('strong', { text: row.theme.name })),
-      el('p', { class: 'questions-release__meta', text: `${row.theme.approvedCount} approved · ${releaseStateText(row.theme)}` }),
+    return el('div', { class: `questions-release__row is-${state}`, role: 'radiogroup', 'aria-labelledby': nameId, 'data-theme-id': row.theme.themeId },
+      el('div', { class: 'questions-release__topic' },
+        el('strong', { id: nameId, class: 'questions-release__name', text: row.theme.name }),
+        el('span', { class: 'questions-release__meta' },
+          `${row.theme.approvedCount} approved`,
+          el('span', { class: `questions-release__state is-${state}`, text: releaseStateText(row.theme) }))),
       el('div', { class: 'questions-release__choices' },
-        choice('now', 'Release now'), choice('schedule', 'Schedule'), row.date, choice('hold', 'Keep hidden')));
+        choice('now', 'Release now'), choice('schedule', 'Schedule'), choice('hold', 'Keep hidden')),
+      row.date);
   }
 
   const save = el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button' }, 'Save releases') as HTMLButtonElement;
@@ -123,8 +134,8 @@ export function openReleasePanel(release: QuestionWorkspace['release'], onSaved:
   });
 
   dialog.append(el('div', { class: 'app-dialog__surface' },
-    el('h2', { id: 'questions-release-title', text: 'Manage releases' }),
-    el('p', { class: 'muted', text: release.coursePublished
+    el('h2', { id: 'questions-release-title', class: 'questions-release__title', text: 'Manage releases' }),
+    el('p', { class: 'questions-release__intro', text: release.coursePublished
       ? 'Students practise approved questions once every Topic the question is tagged to is released.'
       : 'The course is not published, so students see no questions yet. You can still prepare Topic releases.' }),
     rows.length

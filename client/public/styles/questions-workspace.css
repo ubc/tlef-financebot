@@ -420,7 +420,15 @@
 
 .questions-reader__scroll > .questions-flag-card:not([hidden]) { margin: 16px 18px 0; }
 
-.questions-reader__body.gw-body { padding: 18px 20px; }
+/* main.css makes every .gw-body its own scroller with overscroll containment
+   (for the Generation Workbench). Here .questions-reader__scroll is the
+   scroller, so a nested contained scroller would swallow mouse-wheel input. */
+.questions-reader__body.gw-body {
+  padding: 18px 20px;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+}
 
 .questions-reader__meta {
   display: flex;
@@ -799,64 +807,159 @@
 }
 
 /* --- Release panel -------------------------------------------------------- */
+/* The dialog lives on <body>, outside .questions-workspace, so it sets its own
+   compact type scale instead of inheriting the page's 16px default. */
 
 .questions-release.app-dialog {
-  width: min(640px, calc(100vw - 32px));
+  width: min(600px, calc(100vw - 32px));
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .questions-release .app-dialog__surface {
   display: grid;
-  gap: 12px;
+  gap: 14px;
+  padding: 20px 22px 18px;
+  border-top-width: 3px;
 }
 
-.questions-release__choices .input {
-  width: auto;
-  flex: 1 1 200px;
+.questions-release__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.questions-release__intro {
+  margin: -8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .questions-release__rows {
-  display: grid;
-  gap: 10px;
-  max-height: 60vh;
+  max-height: min(60vh, 520px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .questions-release__row {
   display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
 }
 
-.questions-release__row.is-hidden {
-  border-color: var(--warn);
+.questions-release__row:last-child { border-bottom: 0; }
+
+.questions-release__topic {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.questions-release__name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .questions-release__meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.questions-release__choices {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 4px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.questions-release__state {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 550;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.questions-release__state.is-released { background: var(--instr-green-bg); color: var(--instr-green-fg); }
+.questions-release__state.is-scheduled { background: var(--instr-blue-bg); color: var(--instr-blue-fg); }
+.questions-release__state.is-hidden { background: var(--instr-amber-bg); color: var(--instr-amber-fg); }
+
+/* Segmented control: each option is a real radio stretched invisibly over its
+   label, so clicks, keyboard arrows and labels all behave natively. */
+.questions-release__choices {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-2);
 }
 
 .questions-release__choice {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
 }
+
+.questions-release__choice input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.questions-release__choice:hover { color: var(--text); }
+
+.questions-release__choice:has(input:checked) {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.questions-release__choice:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.questions-release__choice:has(input:disabled) { cursor: default; opacity: 0.6; }
+
+.questions-release__row > .input {
+  grid-column: 2;
+  justify-self: end;
+  width: auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.questions-release__row > .input[hidden] { display: none; }
 
 .questions-release__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  padding-top: 2px;
+}
+
+@media (max-width: 560px) {
+  .questions-release__row { grid-template-columns: minmax(0, 1fr); }
+  .questions-release__row > .input { grid-column: 1; justify-self: start; }
 }
 
 /* Generation correctness (2026-11-12): automatic repair and parameter solver notes. */

@@ -188,6 +188,19 @@ test('old routes redirect to the matching tab and keep the selection', async ({ 
   }
 });
 
+test('the mouse wheel scrolls the reader pane, not a nested contained scroller', async ({ page }) => {
+  await setup(page);
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 1:');
+  // A contained, non-scrollable .gw-body inside the reader swallowed wheel input.
+  const body = page.locator('.questions-reader__body');
+  expect(await body.evaluate((node) => getComputedStyle(node).overflowY)).toBe('visible');
+  const scroller = page.locator('.questions-reader__scroll');
+  await scroller.evaluate((node) => { (node.querySelector('.questions-reader__body') as HTMLElement).style.paddingBottom = '2000px'; });
+  await scroller.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+});
+
 test('defaults to To review, approves and rejects, and moves counts', async ({ page }) => {
   const mock = await setup(page);
   await expect(page.locator('.questions-tab.is-active')).toContainText('To review');
@@ -235,7 +248,9 @@ test('releasing a Topic clears the hidden-questions warning', async ({ page }) =
   await expect(page.locator('.questions-reader__visibility').first()).toBeVisible();
   await page.getByRole('button', { name: 'Manage releases' }).first().click();
   const row = page.locator('.questions-release__row', { hasText: 'Motion' });
-  await expect(row).toContainText('1 approved · Hidden');
+  await expect(row).toContainText('1 approved');
+  await expect(row.locator('.questions-release__state')).toHaveText('Hidden');
+  await expect(row.locator('input[type="datetime-local"]')).toBeHidden();
   await row.getByLabel('Release now').check();
   await page.getByRole('button', { name: 'Save releases' }).click();
   await expect(page.locator('.questions-notice')).toContainText('Release settings saved for 1 topic.');
