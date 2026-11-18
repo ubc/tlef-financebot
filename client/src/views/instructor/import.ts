@@ -298,7 +298,7 @@ function scriptMigrationCard(courseId: string, tree: CourseTree): HTMLElement {
                 type: 'button',
                 onclick: () =>
                   navigate(
-                    `/instructor/course/${encodeURIComponent(courseId)}/bank/${encodeURIComponent(result.questionId!)}`,
+                    `/instructor/course/${encodeURIComponent(courseId)}/questions?q=${encodeURIComponent(result.questionId!)}`,
                   ),
               },
               'Open Draft question',

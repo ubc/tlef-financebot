@@ -93,7 +93,7 @@ async function destinationsFor(role: TutorialRole, course?: HelpCourse): Promise
   }
   if (role === 'ta') destinations['ta-courses'] = { href: '#/ta/courses' };
   if (!course) return destinations;
-  if (role === 'instructor') destinations['instructor-question-editor'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose an existing question; its tutorial begins after the editor loads.' };
+  if (role === 'instructor') destinations['instructor-question-editor'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose an existing question, then select Edit to begin this walkthrough.' };
   if (role === 'instructor') destinations['instructor-collaboration'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose an existing question, then select Edit together to begin this walkthrough.' };
   if (role === 'instructor') destinations['instructor-parameters'] = { href: `#/instructor/course/${encodeURIComponent(course.id)}/questions?tab=approved`, label: 'Open Questions', reason: 'Choose a parameterized question, then open Parameters to begin this walkthrough.' };
   if (role === 'ta') destinations['ta-question-review'] = { href: `#/ta/course/${encodeURIComponent(course.id)}/review`, label: 'Open review queue', reason: 'Choose an existing question; its tutorial begins after the detail loads.' };

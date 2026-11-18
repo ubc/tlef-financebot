@@ -522,7 +522,8 @@ export function renderQuestions(outlet: HTMLElement, params: RouteParams): void 
   void renderQuestionsInner(outlet, params.id);
 }
 
-/** `/queue`, `/bank` and `/flags` now live on the Questions page. */
+/** `/queue`, `/bank`, `/flags` and the old question pages (`/bank/:questionId`,
+ * `/params`, `/collaborate`) now live on the Questions page. */
 export function renderLegacyQuestionsRedirect(_outlet: HTMLElement, params: RouteParams): void {
   const path = window.location.hash.replace(/^#/, '').split('?')[0];
   const target = legacyQuestionsPath(path, currentQuery()) ?? questionsPath(params.id);

@@ -266,7 +266,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
     "id": "instructor-question-editor",
     "role": "instructor",
     "label": "Question editing",
-    "path": "bank",
+    "path": "questions",
     "steps": [
       {
         "selector": "[data-tutorial=\"question-editor-content\"]",
@@ -425,7 +425,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
     "id": "instructor-parameters",
     "role": "instructor",
     "label": "Parameterized questions",
-    "path": "bank",
+    "path": "questions",
     "steps": [
       {
         "selector": "[data-tutorial=\"parameter-definitions\"]",

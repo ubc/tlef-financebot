@@ -70,8 +70,22 @@ describe('tabs and paths', () => {
     expect(legacyQuestionsPath('/instructor/course/c1/bank', q('q=abc'))).toBe('/instructor/course/c1/questions?tab=approved&q=abc');
     expect(legacyQuestionsPath('/instructor/course/c1/flags', q('question=abc'))).toBe('/instructor/course/c1/questions?tab=flags&q=abc');
     expect(legacyQuestionsPath('/instructor/course/c1/flags', q('flag=f1'))).toBe('/instructor/course/c1/questions?tab=flags&flag=f1');
-    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q(''))).toBeNull();
     expect(legacyQuestionsPath('/ta/course/c1/bank', q(''))).toBeNull();
+    expect(legacyQuestionsPath('/ta/course/c1/bank/abc', q(''))).toBeNull();
+  });
+
+  it('redirects the old question pages to the workspace reader (spec D7)', () => {
+    const q = (s: string) => new URLSearchParams(s);
+    const base = '/instructor/course/c1/questions';
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q(''))).toBe(`${base}?q=abc`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q('from=questions'))).toBe(`${base}?q=abc`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q('from=questions&intent=regenerate'))).toBe(`${base}?q=abc&mode=compare`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q('from=flags&flagVersionId=v1&intent=edit'))).toBe(`${base}?tab=flags&q=abc&mode=edit&flagVersionId=v1`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q('from=flags&flagVersionId=v1&intent=archive'))).toBe(`${base}?tab=flags&q=abc`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc', q('analyticsVersionId=v0'))).toBe(`${base}?q=abc&analyticsVersionId=v0`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc/params', q(''))).toBe(`${base}?q=abc&mode=params`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc/collaborate', q(''))).toBe(`${base}?q=abc`);
+    expect(legacyQuestionsPath('/instructor/course/c1/bank/abc/other', q(''))).toBeNull();
   });
 });
 

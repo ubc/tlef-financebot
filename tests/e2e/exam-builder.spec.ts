@@ -254,7 +254,7 @@ test('large topic bank paginates, preserves selection and shows verification blo
   await expect(page.locator('.eb-bank-row')).toHaveCount(15);
   await expect(page.getByText('Needs verification', { exact: true })).toBeVisible();
   await expect(page.locator('.eb-bank-row').first().getByRole('button', { name: '+ Add', exact: true })).toBeDisabled();
-  await expect(page.locator('.eb-bank-row').first().getByRole('link', { name: 'Open question details' })).toHaveAttribute('href', `#/instructor/course/${courseId}/bank/${rows[0].id}`);
+  await expect(page.locator('.eb-bank-row').first().getByRole('link', { name: 'Open question details' })).toHaveAttribute('href', `#/instructor/course/${courseId}/questions?q=${rows[0].id}`);
   await page.getByRole('checkbox', { name: `Select question ${rows[1].id}` }).check();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('Page 2 of 3', { exact: true })).toBeVisible();

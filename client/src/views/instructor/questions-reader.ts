@@ -31,6 +31,7 @@ import { editableVariableNames, toDisplayPlaceholders, toStoredPlaceholders, unr
 import { STATUS_LABEL, TYPE_LABEL, statusToBadgeVariant } from '../../question-labels.js';
 import { renderRichText } from '../../render.js';
 import { protectUnsavedChanges } from '../../router.js';
+import { attachTutorial } from '../../tutorials.js';
 import { errorState, loadingState } from '../../ui.js';
 import { createFlagCard } from './questions-flag-card.js';
 import { authoringAnswer } from './authoring-answer.js';
@@ -128,6 +129,8 @@ export function createQuestionReader(options: ReaderOptions) {
   let dirty = false;
   /** Kept while moving between questions. */
   let inspectorTab: InspectorTab = 'review';
+  /** The question and mode a mode tutorial was last offered for. */
+  let tutorialOffered = '';
   const rejectionDrafts = new Map<string, string>();
   protectUnsavedChanges(root, () => dirty || (mode === 'params' && !!params?.isDirty()), () => confirmDialog({ title: 'Discard unsaved changes?', message: 'Your saved question will be kept.', confirmLabel: 'Discard changes' }));
 
@@ -686,7 +689,7 @@ export function createQuestionReader(options: ReaderOptions) {
     // A stable list sample belongs to one version; never mix it with a newer answer key.
     const sample = listRow.current._id === current.current._id ? listRow.sample : undefined;
     const parameterized = !!(current.current.paramSlots?.length || current.current.generateScript || current.current.derivedValues?.length);
-    const body = el('div', { class: 'gw-body questions-reader__body' },
+    const body = el('div', { class: 'gw-body questions-reader__body', 'data-tutorial': mode === 'edit' ? 'question-editor-content' : false },
       el('div', { class: 'questions-reader__meta' },
         statusBadge(STATUS_LABEL[current.state], statusToBadgeVariant(current.state)),
         el('span', { text: `${TYPE_LABEL[current.current.type]} · ${current.current.difficulty} · Version ${current.currentVersion}` })),
@@ -750,11 +753,17 @@ export function createQuestionReader(options: ReaderOptions) {
         readingPane,
         el('footer', { class: 'gw-footer questions-reader__actions' },
           el('div', { class: 'questions-reader__tools' }, links),
-          el('div', { class: 'questions-reader__buttons' }, ...actionButtons(current)))),
+          el('div', { class: 'questions-reader__buttons', 'data-tutorial': mode === 'edit' ? 'question-editor-actions' : false }, ...actionButtons(current)))),
       wide ? false : context);
     readingPane.scrollTop = readingScroll;
     context.scrollTop = contextScroll;
     content.scrollTop = stackedScroll;
+    // The editing and parameters walk-throughs start when their mode opens
+    // (their anchors are data-tutorial attributes, so redraws keep them).
+    const tutorial = mode === 'edit' ? 'instructor-question-editor' : mode === 'params' ? 'instructor-parameters' : '';
+    const offer = tutorial ? `${current.id}:${mode}` : '';
+    if (offer && offer !== tutorialOffered) attachTutorial(root, tutorial, {});
+    tutorialOffered = offer;
   }
 
   return {

@@ -69,11 +69,8 @@ import { renderContentMap } from './views/instructor/content-map.js';
 import { renderSettings } from './views/instructor/settings.js';
 import { renderExamTemplates } from './views/instructor/exam-templates.js';
 import { renderLegacyQuestionsRedirect, renderQuestions } from './views/instructor/questions.js';
-import { renderQuestionDetail } from './views/instructor/question-detail.js';
 import { renderPeople } from './views/instructor/people.js';
 import { openCourseSharing } from './course-sharing.js';
-import { renderCollaborativeEditor } from './views/instructor/collaborative-editor.js';
-import { renderParamConfig } from './views/instructor/param-config.js';
 import { renderPreseeding } from './views/instructor/preseeding.js';
 import { renderTaReviewQueue } from './views/ta/review-queue.js';
 import { renderTaFlagTriage } from './views/ta/flag-triage.js';
@@ -161,12 +158,12 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/discussion', render: renderDiscussion },
   { path: '/instructor/course/:id/co-instructors', render: renderPeople },
   { path: '/instructor/course/:id/people', render: renderPeople },
-  { path: '/instructor/course/:id/bank/:questionId/collaborate', render: renderCollaborativeEditor },
+  { path: '/instructor/course/:id/bank/:questionId/collaborate', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/exam-builder/:examId', render: renderExamBuilder },
   { path: '/instructor/course/:id/exam-builder', render: renderExamBuilder },
   { path: '/instructor/course/:id/exam-templates', render: renderExamTemplates },
-  { path: '/instructor/course/:id/bank/:questionId/params', render: renderParamConfig },
-  { path: '/instructor/course/:id/bank/:questionId', render: renderQuestionDetail },
+  { path: '/instructor/course/:id/bank/:questionId/params', render: renderLegacyQuestionsRedirect },
+  { path: '/instructor/course/:id/bank/:questionId', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/questions', render: renderQuestions },
   { path: '/instructor/course/:id/bank', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/queue', render: renderLegacyQuestionsRedirect },

@@ -68,11 +68,32 @@ export function questionsPath(courseId: string, params: QuestionsPathParams = {}
 }
 
 /**
- * Where an old Review Queue / Question Bank / Flags URL now lives. Keeps the
- * selection (`q`, or the Flags page's `?question=`), the run highlight and a
- * notification's `?flag=`. `null` for anything that is not one of those pages.
+ * Where an old Review Queue / Question Bank / Flags URL, or an old question
+ * page (Question details, Parameterization Configuration, Edit together —
+ * spec 2026-11-18 D7), now lives. Keeps the selection (`q`, the Flags page's
+ * `?question=`, or the question in the path), the run highlight, a
+ * notification's `?flag=`, and maps a question page's `intent` to a reader
+ * mode. `null` for anything that is not one of those pages.
  */
 export function legacyQuestionsPath(path: string, query: URLSearchParams): string | null {
+  const page = /^\/instructor\/course\/([^/]+)\/bank\/([^/]+)(\/params|\/collaborate)?$/.exec(path);
+  if (page) {
+    const courseId = decodeURIComponent(page[1]);
+    const q = decodeURIComponent(page[2]);
+    if (page[3] === '/params') return questionsPath(courseId, { q, mode: 'params' });
+    if (page[3] === '/collaborate') return questionsPath(courseId, { q });
+    const intent = query.get('intent');
+    if (query.get('from') === 'flags') {
+      return questionsPath(courseId, intent === 'edit'
+        ? { tab: 'flags', q, mode: 'edit', flagVersionId: query.get('flagVersionId') ?? undefined }
+        : { tab: 'flags', q });
+    }
+    return questionsPath(courseId, {
+      q,
+      ...(intent === 'regenerate' ? { mode: 'compare' as const } : {}),
+      analyticsVersionId: query.get('analyticsVersionId') ?? undefined,
+    });
+  }
   const match = /^\/instructor\/course\/([^/]+)\/(queue|bank|flags)$/.exec(path);
   if (!match) return null;
   const courseId = decodeURIComponent(match[1]);

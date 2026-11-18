@@ -183,7 +183,7 @@ export function createQuestionParams(options: ParamsOptions) {
         : false,
       el('h3', { text: 'Question stem' }),
       stemWithChips(),
-      el('h3', { text: 'Drawn variables' }),
+      el('h3', { text: 'Drawn variables', 'data-tutorial': 'parameter-definitions' }),
       el('p', { class: 'questions-params__help', text: 'Each student gets values drawn from these ranges (or from an explicit list of values).' }),
       el('div', { class: 'questions-params__table-wrap' },
         el('table', { class: 'questions-params__table' },
@@ -199,7 +199,7 @@ export function createQuestionParams(options: ParamsOptions) {
       el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked, onclick: () => { derived.push({ name: '', formula: '', errorModel: '' }); changed(); draw(); } }, '+ Add computed value'),
       el('h3', { text: 'Verification' }),
       verification(detail),
-      el('div', { class: 'questions-params__actions' },
+      el('div', { class: 'questions-params__actions', 'data-tutorial': 'parameter-verification' },
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked || drawing, onclick: () => { void drawSamples(); } }, drawing ? 'Drawing…' : 'Draw five samples'),
         el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: locked || drawing, onclick: () => options.onSave(patch()) }, 'Save parameters')),
       el('p', { class: 'questions-params__help', text: returnsToReview
