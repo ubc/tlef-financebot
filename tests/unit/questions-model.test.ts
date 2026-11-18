@@ -46,10 +46,18 @@ describe('tabs and paths', () => {
     expect(questionsPath('c1', { tab: 'approved', mode: 'edit' })).toBe('/instructor/course/c1/questions?tab=approved');
   });
 
+  it('writes the flag version only with Edit and the analytics version only with a question', () => {
+    expect(questionsPath('c1', { tab: 'flags', q: 'q1', mode: 'edit', flagVersionId: 'v1' })).toBe('/instructor/course/c1/questions?tab=flags&q=q1&mode=edit&flagVersionId=v1');
+    expect(questionsPath('c1', { tab: 'flags', q: 'q1', mode: 'preview', flagVersionId: 'v1' })).toBe('/instructor/course/c1/questions?tab=flags&q=q1&mode=preview');
+    expect(questionsPath('c1', { q: 'q1', analyticsVersionId: 'v0' })).toBe('/instructor/course/c1/questions?q=q1&analyticsVersionId=v0');
+    expect(questionsPath('c1', { tab: 'review', analyticsVersionId: 'v0' })).toBe('/instructor/course/c1/questions?tab=review');
+  });
+
   it('parses the reader mode, falling back to Read', () => {
     expect(parseMode('edit')).toBe('edit');
     expect(parseMode('preview')).toBe('preview');
-    expect(parseMode('compare')).toBe('read');
+    expect(parseMode('compare')).toBe('compare');
+    expect(parseMode('params')).toBe('read');
     expect(parseMode(null)).toBe('read');
   });
 

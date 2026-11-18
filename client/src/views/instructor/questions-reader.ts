@@ -9,10 +9,14 @@ import {
   ApiError,
   editQuestion,
   getQuestion,
+  notifyRemediation,
+  resolveFlag,
   resolveTaQuestionSuggestion,
   transitionQuestion,
   type CourseTree,
   type Difficulty,
+  type Flag,
+  type RegenerationVariant,
   type OptionRole,
   type PublicationState,
   type QuestionDetail,
@@ -35,6 +39,8 @@ import { isFieldEdited } from './question-tags.js';
 import { inspector, type InspectorTab } from './questions-inspector.js';
 import { heldTopicNames, hiddenReasonText, objectiveNames, repairSummary, solverSummary, topicNames, type ReaderMode } from './questions-model.js';
 import { createQuestionPreview } from './questions-preview.js';
+import { createQuestionCompare } from './questions-compare.js';
+import { createAnalyticsNotice } from './questions-analytics-notice.js';
 import { settingsPanel } from './questions-settings.js';
 import { pendingSuggestions, teamPanel } from './questions-team.js';
 
@@ -51,11 +57,21 @@ export interface ReaderOptions {
   onBack: () => void;
   isBatchBusy: () => boolean;
   highlightFlagId?: string;
-  /** The mode from the URL, applied to the first question loaded. */
-  initialMode?: ReaderMode;
-  /** The mode changed (the workspace writes it to the URL). */
-  onModeChange?: (mode: ReaderMode) => void;
+  /** Reader state from the URL, applied when `questionId` is the first
+   * question loaded. */
+  initialState?: { questionId: string; mode: ReaderMode; flagVersionId?: string; analyticsVersionId?: string };
+  /** Mode, flag fix or analytics version changed (the workspace writes `urlState()` to the URL). */
+  onStateChange?: () => void;
 }
+
+/** A flagged version being corrected in Edit mode (spec D4). */
+interface FlagFix {
+  versionId: string;
+  flags: Flag[];
+  reply: string;
+}
+
+const isTestFlag = (flag: Flag): boolean => flag.source === 'instructor-preview-test';
 
 const errorText = (error: unknown): string => error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
 
@@ -95,10 +111,16 @@ export function createQuestionReader(options: ReaderOptions) {
   /** One per loaded question, so redraws do not refetch its flags. */
   let flagCard: ReturnType<typeof createFlagCard> | undefined;
   let preview: ReturnType<typeof createQuestionPreview> | undefined;
+  let compare: ReturnType<typeof createQuestionCompare> | undefined;
+  let analyticsNotice: ReturnType<typeof createAnalyticsNotice> | undefined;
   let requestRevision = 0;
   let busy = false;
   let mode: ReaderMode = 'read';
-  let pendingMode: ReaderMode | undefined = options.initialMode;
+  /** URL state not yet applied: waits for its question to load. */
+  let pending = options.initialState;
+  let flagFix: FlagFix | null = null;
+  /** `flagVersionId` from the URL, waiting for the flag card's flags. */
+  let pendingFlagVersionId: string | undefined;
   let draft: EditDraft | null = null;
   let baseline: EditDraft | null = null;
   let dirty = false;
@@ -108,44 +130,82 @@ export function createQuestionReader(options: ReaderOptions) {
   protectUnsavedChanges(root, () => dirty, () => confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' }));
 
   const locked = (): boolean => busy || options.isBatchBusy();
+  const notifyState = (): void => options.onStateChange?.();
 
-  /** Sets the mode without asking; Edit starts from the loaded version. */
-  function applyMode(next: ReaderMode): void {
-    if (next === 'edit' && detail?.state === 'archived') next = 'read';
-    const changed = next !== mode;
+  /** Which modes the loaded question offers (Compare: To review only, P2-4). */
+  function allowedMode(next: ReaderMode): ReaderMode {
+    if (next === 'edit' && detail?.state === 'archived') return 'read';
+    if (next === 'compare' && detail && !REVIEW_STATES.has(detail.state)) return 'read';
+    return next;
+  }
+
+  /** Sets the mode without asking; Edit starts from the loaded version.
+   * Leaving Edit drops a flag fix; leaving Compare drops its alternative. */
+  function applyMode(next: ReaderMode, fix: FlagFix | null = null): void {
+    next = allowedMode(next);
+    const changed = next !== mode || fix?.versionId !== flagFix?.versionId;
+    if (mode === 'compare' && next !== 'compare') compare?.clear();
     mode = next;
+    flagFix = mode === 'edit' ? fix : null;
     if (mode === 'edit' && detail) {
       if (!draft) { baseline = displayDraft(detail); draft = displayDraft(detail); }
     } else {
       draft = null; baseline = null;
     }
     dirty = false;
-    if (changed) options.onModeChange?.(mode);
+    if (changed) notifyState();
   }
 
-  async function confirmDiscard(): Promise<boolean> {
-    return !dirty || confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' });
+  async function confirmLeave(): Promise<boolean> {
+    if (dirty && !await confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' })) return false;
+    if (mode === 'compare' && compare?.hasVariant() && !await confirmDialog({ title: 'Discard the generated alternative?', message: 'The current question stays as it is. Generating again makes a new alternative.', confirmLabel: 'Discard alternative' })) return false;
+    return true;
   }
 
-  async function setMode(next: ReaderMode): Promise<void> {
-    if (next === mode || locked()) return;
-    if (!await confirmDiscard()) return;
-    applyMode(next);
+  async function setMode(next: ReaderMode, fix: FlagFix | null = null): Promise<void> {
+    if ((next === mode && fix?.versionId === flagFix?.versionId) || locked()) return;
+    if (!await confirmLeave()) return;
+    applyMode(next, fix);
     draw();
     if (mode === 'edit') root.querySelector<HTMLTextAreaElement>('.questions-reader__edit-stem textarea')?.focus();
+  }
+
+  /** "Correct the question" on the flag card. */
+  function startFlagFix(fix: { versionId: string; flags: Flag[] }): void {
+    if (!fix.flags.length) return;
+    void setMode('edit', { ...fix, reply: '' }).then(() => {
+      if (mode === 'edit' && flagFix) root.querySelector('.questions-flagfix')?.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   async function load(target: WorkspaceRow, force = false): Promise<void> {
     if (!force && row?.id === target.id && detail) { row = target; draw(); return; }
     const sameQuestion = row?.id === target.id;
     row = target; detail = undefined; generationUsage = false; flagCard = undefined;
-    if (!sameQuestion) preview = createQuestionPreview(target.id);
-    // A new question opens in Read (or the URL's mode, once); a reload of the
-    // same one keeps Read or Preview but always leaves Edit.
-    const nextMode: ReaderMode = !sameQuestion ? pendingMode ?? 'read' : mode === 'edit' ? 'read' : mode;
-    pendingMode = undefined;
-    draft = null; baseline = null; dirty = false;
-    if (mode !== nextMode) { mode = nextMode; options.onModeChange?.(mode); }
+    if (!sameQuestion) {
+      preview = createQuestionPreview(target.id);
+      compare = createQuestionCompare({
+        courseId: options.courseId,
+        questionId: target.id,
+        onBusy: (generating) => { busy = generating; draw(); },
+        onReplace: (variant) => { void replaceWithVariant(variant); },
+      });
+      analyticsNotice = undefined;
+    }
+    // A new question opens in Read, or in the URL's state when it is the URL's
+    // question; a reload of the same one keeps Read, Preview or Compare but
+    // always leaves Edit.
+    const initial = !sameQuestion && pending?.questionId === target.id ? pending : undefined;
+    if (!sameQuestion) pending = undefined;
+    const nextMode: ReaderMode = initial ? initial.mode : !sameQuestion ? 'read' : mode === 'edit' ? 'read' : mode;
+    pendingFlagVersionId = initial?.mode === 'edit' ? initial.flagVersionId : undefined;
+    if (initial?.analyticsVersionId) {
+      analyticsNotice = createAnalyticsNotice(options.courseId, target.id, initial.analyticsVersionId, () => { analyticsNotice = undefined; notifyState(); draw(); });
+    }
+    if (mode === 'compare' && nextMode !== 'compare') compare?.clear();
+    draft = null; baseline = null; dirty = false; flagFix = null;
+    mode = nextMode;
+    notifyState();
     const revision = ++requestRevision;
     mount(content, loadingState('Loading question…'));
     try {
@@ -158,9 +218,21 @@ export function createQuestionReader(options: ReaderOptions) {
         questionId: result.id,
         highlightFlagId: options.highlightFlagId,
         onChanged: () => { void options.onMutated('Flag resolved.', result.id); },
+        onCorrect: startFlagFix,
       });
-      void flagCard.load();
+      const card = flagCard;
+      void card.load().then(() => {
+        // A flag fix from the URL needs the card's flags for that version.
+        const versionId = pendingFlagVersionId;
+        pendingFlagVersionId = undefined;
+        if (!versionId || card !== flagCard || mode !== 'edit' || dirty) return;
+        const flags = card.openFlagsFor(versionId);
+        if (flags.length) { applyMode('edit', { versionId, flags, reply: '' }); draw(); }
+      });
+      const wanted = mode;
+      mode = allowedMode(mode);
       if (mode === 'edit') applyMode('edit');
+      if (wanted !== mode) notifyState();
       draw();
     } catch (error) {
       if (revision === requestRevision && root.isConnected) mount(content, errorState(errorText(error), () => { void load(target, true); }));
@@ -264,12 +336,53 @@ export function createQuestionReader(options: ReaderOptions) {
       el('label', {}, 'Explanation',
         el('textarea', { class: 'input', rows: '2', 'aria-label': `Explanation ${option.key}`, disabled: busy, oninput: (e: Event) => { option.explanation = (e.target as HTMLTextAreaElement).value; markDirty(); } }, option.explanation))));
     const variables = editableVariableNames(current.current);
+    const warning = flagFix
+      // P2-1: a flag correction fixes a question students already have.
+      ? (current.state === 'approved' || current.state === 'paused' ? 'Students get the corrected question as soon as you save.' : '')
+      : returnsToReview(current.state) ? 'Saving returns this question to To review: it leaves student practice until you approve it again.' : '';
     return [
-      returnsToReview(current.state) ? el('p', { class: 'questions-reader__warning', text: 'Saving returns this question to To review: it leaves student practice until you approve it again.' }) : el('span'),
+      flagFix ? flagFixNode(flagFix) : el('span'),
+      warning ? el('p', { class: 'questions-reader__warning', text: warning }) : el('span'),
       variables.length ? el('p', { class: 'questions-reader__sample-note', text: `Variables appear as [NAME] (${variables.map((name) => `[${name}]`).join(', ')}). Keep them to keep the computed values.` }) : el('span'),
       el('label', { class: 'questions-reader__edit-stem' }, 'Question stem', stem),
       ...fields,
     ];
+  }
+
+  function flagFixNode(fix: FlagFix): HTMLElement {
+    const count = fix.flags.length;
+    const onlyTests = fix.flags.every(isTestFlag);
+    const reply = el('textarea', { class: 'input', id: 'questions-flagfix-reply', rows: '2', disabled: busy, placeholder: 'Optional. Sent to each student who flagged this question.' }, fix.reply) as HTMLTextAreaElement;
+    reply.addEventListener('input', () => { fix.reply = reply.value; });
+    return el('section', { class: 'questions-flagfix', 'aria-label': 'Fixing flagged reports' },
+      el('p', { class: 'questions-flagfix__title' },
+        el('strong', { text: `Fixing ${count} report${count === 1 ? '' : 's'}` }),
+        fix.flags.some(isTestFlag) ? el('span', { class: 'badge badge--muted', text: 'TEST · Instructor preview' }) : false),
+      el('p', { class: 'questions-flagfix__help', text: 'Save and resolve saves your correction, resolves these reports and notifies the students who flagged it.' }),
+      el('label', { class: 'questions-settings__label', for: reply.id, text: 'Reply to flagging students' }),
+      reply,
+      onlyTests ? el('p', { class: 'questions-flagfix__help', text: 'This is a test flag, so no student gets a message.' }) : false);
+  }
+
+  /** Resolves the fixed reports and notifies real flaggers (P2-2). Returns
+   * what happened, or the step that failed. */
+  async function resolveFix(fix: FlagFix): Promise<{ resolved: number; notified: number; failure?: string }> {
+    let resolved = 0;
+    for (const flag of fix.flags) {
+      try {
+        await resolveFlag(flag.id, 'correct', true, fix.reply.trim() || undefined);
+        resolved++;
+      } catch (error) {
+        return { resolved, notified: 0, failure: `resolving the reports failed after ${resolved} of ${fix.flags.length}: ${errorText(error)}` };
+      }
+    }
+    const anchor = fix.flags.find((flag) => !isTestFlag(flag));
+    if (!anchor) return { resolved, notified: 0 };
+    try {
+      return { resolved, notified: (await notifyRemediation(anchor.id)).notified };
+    } catch (error) {
+      return { resolved, notified: 0, failure: `notifying the affected students failed: ${errorText(error)}` };
+    }
   }
 
   async function saveEdit(): Promise<void> {
@@ -284,7 +397,12 @@ export function createQuestionReader(options: ReaderOptions) {
     if (isFieldEdited(edit.options, before.options)) {
       patch.options = edit.options.map((option) => ({ ...option, text: stored(option.text), explanation: stored(option.explanation) }));
     }
-    if (!patch.stem && !patch.options) { applyMode('read'); draw(); return; }
+    const fix = flagFix;
+    if (!patch.stem && !patch.options) {
+      if (fix) { status.textContent = 'Edit the question before resolving the reports.'; return; }
+      applyMode('read'); draw(); return;
+    }
+    if (fix) { await saveFlagFix(current, patch, fix); return; }
     const backToReview = returnsToReview(current.state);
     busy = true; status.textContent = ''; draw();
     try {
@@ -300,6 +418,63 @@ export function createQuestionReader(options: ReaderOptions) {
       status.textContent = error instanceof ApiError && error.status === 409
         ? 'This question changed since you opened it. Your edits were not saved; copy anything you need, then reload.'
         : `${errorText(error)} Your edits were not saved.`;
+    } finally {
+      busy = false;
+      if (root.isConnected && detail) draw();
+    }
+  }
+
+  async function saveFlagFix(current: QuestionDetail, patch: { stem?: string; options?: Array<{ key: string; role: OptionRole; text: string; explanation: string }> }, fix: FlagFix): Promise<void> {
+    busy = true; status.textContent = ''; draw();
+    try {
+      // P2-1: no submitForReview — the corrected question stays with students.
+      await editQuestion(current.id, { ...patch, expectedVersionId: current.currentVersionId });
+    } catch (error) {
+      busy = false;
+      status.textContent = error instanceof ApiError && error.status === 409
+        ? 'This question changed since you opened it. Your edits were not saved and the reports are still open; copy anything you need, then reload.'
+        : `${errorText(error)} Your edits were not saved and the reports are still open.`;
+      if (root.isConnected && detail) draw();
+      return;
+    }
+    const result = await resolveFix(fix);
+    busy = false;
+    applyMode('read');
+    const reports = `${result.resolved} report${result.resolved === 1 ? '' : 's'} resolved`;
+    const message = result.failure
+      ? `The question was saved, but ${result.failure}. Check the flag card for what is still open.`
+      : `Question corrected. ${reports}${fix.flags.some((flag) => !isTestFlag(flag)) ? `; ${result.notified} student${result.notified === 1 ? '' : 's'} notified` : ''}.`;
+    await options.onMutated(message, current.id);
+    if (row?.id === current.id) await load(row, true);
+    if (root.isConnected && detail) draw();
+  }
+
+  // --- Compare mode ----------------------------------------------------------
+
+  async function replaceWithVariant(variant: RegenerationVariant): Promise<void> {
+    if (!detail || locked()) return;
+    const current = detail;
+    busy = true; status.textContent = ''; draw();
+    try {
+      // P2-5: the fields Question details saves. Compare is To review only, so no submitForReview.
+      const saved = await editQuestion(current.id, {
+        expectedVersionId: current.currentVersionId,
+        stem: variant.stem,
+        options: variant.options,
+        difficulty: variant.difficulty,
+        ...(variant.paramSlots !== undefined ? { paramSlots: variant.paramSlots } : {}),
+        ...(variant.derivedValues !== undefined ? { derivedValues: variant.derivedValues } : {}),
+        ...(variant.numericKind !== undefined ? { numericKind: variant.numericKind } : {}),
+      });
+      busy = false;
+      applyMode('read');
+      await options.onMutated(`Variant saved as version ${saved.version}.`, current.id);
+      if (row?.id === current.id) await load(row, true);
+    } catch (error) {
+      busy = false;
+      status.textContent = error instanceof ApiError && error.status === 409
+        ? 'This question changed since you opened it. The alternative is kept here — reload the question before replacing it.'
+        : `${errorText(error)} The current question was not changed.`;
     } finally {
       busy = false;
       if (root.isConnected && detail) draw();
@@ -378,7 +553,7 @@ export function createQuestionReader(options: ReaderOptions) {
     if (mode === 'edit') {
       return [
         btn('Cancel editing', () => { void setMode('read'); }),
-        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled, onclick: () => { void saveEdit(); } }, busy ? 'Saving…' : 'Save changes'),
+        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled, onclick: () => { void saveEdit(); } }, busy ? 'Saving…' : flagFix ? 'Save and resolve' : 'Save changes'),
       ];
     }
     if (REVIEW_STATES.has(current.state)) {
@@ -405,7 +580,8 @@ export function createQuestionReader(options: ReaderOptions) {
     return el('div', { class: 'questions-mode', role: 'group', 'aria-label': 'Reader mode' },
       option('read', 'Read'),
       current.state !== 'archived' ? option('edit', 'Edit') : false,
-      option('preview', 'Preview'));
+      option('preview', 'Preview'),
+      REVIEW_STATES.has(current.state) ? option('compare', 'Compare') : false);
   }
 
   function placeholderWarning(current: QuestionDetail): HTMLElement | false {
@@ -470,6 +646,8 @@ export function createQuestionReader(options: ReaderOptions) {
       placeholderWarning(current));
     if (mode === 'edit' && draft) {
       body.append(...editorNodes(current, draft));
+    } else if (mode === 'compare' && compare) {
+      body.append(compare.render(current, locked()));
     } else if (mode === 'preview' && preview) {
       body.append(preview.render(current.current._id, new Set(current.current.options.filter((option) => option.role === 'correct').map((option) => option.key))));
     } else {
@@ -500,7 +678,6 @@ export function createQuestionReader(options: ReaderOptions) {
     const links = el('details', { class: 'questions-reader__links' },
       el('summary', {}, 'More actions'),
       el('div', { class: 'questions-reader__link-menu' },
-        REVIEW_STATES.has(current.state) ? el('a', { href: `${fullDetails}&intent=regenerate`, text: 'Regenerate side by side' }) : false,
         // Until phase 3 moves it into the reader (spec D6), only for parameterized questions.
         parameterized ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/params`, text: 'Parameters' }) : false,
         current.state !== 'archived' ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
@@ -513,15 +690,20 @@ export function createQuestionReader(options: ReaderOptions) {
       // headings are hidden, so the reader names its own level.
       el('h2', { class: 'sr-only', text: 'Selected question' }),
       flagCard?.root ?? false,
+      analyticsNotice?.root ?? false,
       modeControl(current),
       body);
+    // D8: Compare takes the inspector's column; the inspector returns on the
+    // tab it showed before.
+    const wide = mode === 'compare';
+    content.classList.toggle('is-wide', wide);
     mount(content,
       el('div', { class: 'gw-reader questions-reader__main' },
         readingPane,
         el('footer', { class: 'gw-footer questions-reader__actions' },
           el('div', { class: 'questions-reader__tools' }, links),
           el('div', { class: 'questions-reader__buttons' }, ...actionButtons(current)))),
-      context);
+      wide ? false : context);
     readingPane.scrollTop = readingScroll;
     context.scrollTop = contextScroll;
     content.scrollTop = stackedScroll;
@@ -531,8 +713,9 @@ export function createQuestionReader(options: ReaderOptions) {
     root,
     show(target: WorkspaceRow | null, force = false): void {
       if (!target) {
-        ++requestRevision; row = null; detail = undefined; draft = null; baseline = null; dirty = false;
-        if (mode !== 'read') { mode = 'read'; options.onModeChange?.(mode); }
+        ++requestRevision; row = null; detail = undefined; draft = null; baseline = null; dirty = false; flagFix = null; analyticsNotice = undefined;
+        content.classList.remove('is-wide');
+        if (mode !== 'read') { mode = 'read'; notifyState(); }
         content.replaceChildren();
         return;
       }
@@ -540,9 +723,14 @@ export function createQuestionReader(options: ReaderOptions) {
       void load(target, force);
     },
     currentId: (): string | null => row?.id ?? null,
-    /** The mode to write to the URL (the URL's own mode until a question loads). */
-    mode: (): ReaderMode => pendingMode ?? mode,
-    isLocked: (): boolean => busy || dirty,
+    /** The reader's part of the workspace URL, for the current question. */
+    urlState: (): { mode: ReaderMode; flagVersionId?: string; analyticsVersionId?: string } => ({
+      mode,
+      ...(flagFix ? { flagVersionId: flagFix.versionId } : pendingFlagVersionId ? { flagVersionId: pendingFlagVersionId } : {}),
+      ...(analyticsNotice ? { analyticsVersionId: analyticsNotice.versionId } : {}),
+    }),
+    /** Unsaved edits, an unsaved alternative, or a write in progress. */
+    isLocked: (): boolean => busy || dirty || (mode === 'compare' && !!compare?.hasVariant()),
     setNotice(message: string): void { status.textContent = message; },
   };
 }

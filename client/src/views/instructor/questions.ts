@@ -99,7 +99,13 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   let preferredId = query.get('q') ?? '';
   const runId = query.get('runId') ?? '';
   const highlightFlagId = query.get('flag') ?? undefined;
-  const initialMode = parseMode(query.get('mode'));
+  // The reader state in the URL belongs to the question named by `q` only.
+  const initialReaderState = {
+    questionId: query.get('q') ?? '',
+    mode: parseMode(query.get('mode')),
+    flagVersionId: query.get('flagVersionId') ?? undefined,
+    analyticsVersionId: query.get('analyticsVersionId') ?? undefined,
+  };
 
   let tree: CourseTree;
   let workspace: QuestionWorkspace;
@@ -173,10 +179,10 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     tree,
     release: () => workspace.release,
     highlightFlagId,
-    initialMode,
-    onModeChange: () => {
+    initialState: initialReaderState,
+    onStateChange: () => {
       const q = reader.currentId() ?? preferredId;
-      replaceUrl(questionsPath(courseId, { tab: activeTab, q: q || undefined, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
+      replaceUrl(readerPath(q || undefined));
     },
     isBatchBusy: () => bulkBusy,
     onMutated: async (message, questionId) => {
@@ -188,6 +194,10 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     onBack: () => { narrowReading = false; body.classList.remove('is-reading'); list.querySelector<HTMLElement>('[aria-current="true"]')?.focus(); },
   });
   const body = el('div', { class: 'gw-grid questions-body' }, listColumn, reader.root);
+  /** The workspace URL for question `q`, with the reader's own state for it. */
+  function readerPath(q: string | undefined): string {
+    return questionsPath(courseId, { tab: activeTab, q, runId: highlightIds ? runId : undefined, ...(q && q === reader.currentId() ? reader.urlState() : {}) });
+  }
 
   // --- Data -----------------------------------------------------------------
 
@@ -289,7 +299,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       `Highlighting ${plural(shown, 'question')} from this generation run.${missing ? ` ${missing} already left the review list.` : ''} `,
       el('button', { class: 'link-button', type: 'button', onclick: () => {
         highlightIds = null;
-        replaceUrl(questionsPath(courseId, { tab: activeTab, q: reader.currentId() ?? undefined, mode: reader.mode() }));
+        replaceUrl(questionsPath(courseId, { tab: activeTab, q: reader.currentId() ?? undefined, ...reader.urlState() }));
         draw();
       } }, 'Clear highlight')));
   }
@@ -449,7 +459,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       reader.show(active ?? null);
       if (activeId && activeId !== preferredId) {
         preferredId = activeId;
-        replaceUrl(questionsPath(courseId, { tab: activeTab, q: activeId, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
+        replaceUrl(readerPath(activeId));
       }
     }
     if (!active) { narrowReading = false; body.classList.remove('is-reading'); }
@@ -469,7 +479,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     drawToolbar();
     drawMessages();
     drawList();
-    replaceUrl(questionsPath(courseId, { tab: activeTab, q: preferredId || undefined, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
+    replaceUrl(readerPath(preferredId || undefined));
   }
 
   async function exportCsv(): Promise<void> {

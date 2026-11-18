@@ -194,7 +194,7 @@ export function renderAnalytics(outlet: HTMLElement, params: RouteParams, worksp
         ...(!result.insufficient ? result.options.map((option) => el('div', { class: 'analytics-outcome' },
           el('p', { text: `${option.key}. ${option.text} · ${option.role.replace(/-/g, ' ')} · ${option.count} (${Math.round((option.pct ?? 0) * 100)}%)` }),
           el('div', { class: 'analytics-bar', 'aria-hidden': 'true' }, el('span', { style: `width:${Math.round((option.pct ?? 0) * 100)}%` })))) : []),
-        ...(workspace === 'instructor' ? [link(`Review question (recorded version ${result.version})`, `bank/${encodeURIComponent(item.questionId)}?analyticsVersionId=${encodeURIComponent(item.versionId)}`)] : []),
+        ...(workspace === 'instructor' ? [link(`Review question (recorded version ${result.version})`, `questions?${new URLSearchParams({ q: item.questionId, analyticsVersionId: item.versionId }).toString()}`)] : []),
       );
       const evidence = [...distribution.children];
       const questionDetail = el('div', { class: 'analytics-recorded-question' }, ...evidence.slice(0, 3));

@@ -40,7 +40,7 @@ function makeQuestion(i: number, state: State, themeId = 'forces'): MockQuestion
   };
 }
 
-async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean } = {}) {
+async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean; testFlag?: boolean } = {}) {
   const questions: MockQuestion[] = [
     ...[1, 2, 3, 4].map((i) => makeQuestion(i, 'draft')),
     makeQuestion(5, 'approved'),
@@ -79,6 +79,9 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     { id: 'f1', courseId: 'course', questionId: 'q5', questionVersionId: 'v5', puid: 'student-a', source: 'student', reason: 'Option B looks wrong to me.', state: 'open', createdAt: '2026-11-05T10:00:00Z' },
     { id: 'f2', courseId: 'course', questionId: 'q5', questionVersionId: 'v5', puid: 'student-b', source: 'student', reason: 'Units missing.', state: 'open', createdAt: '2026-11-06T10:00:00Z' },
   ];
+  if (options.testFlag) {
+    flags.push({ id: 'f3', courseId: 'course', questionId: 'q6', questionVersionId: 'v6', puid: 'instructor', source: 'instructor-preview-test', reason: 'Testing the flag loop.', state: 'open', createdAt: '2026-11-07T10:00:00Z' });
+  }
   const coursePublished = options.coursePublished ?? true;
   const failIds = new Set<string>();
   const themeCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
@@ -87,6 +90,8 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const noteCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const suggestionCalls: Array<[string, string]> = [];
   let sampleCalls = 0;
+  const notifyCalls: string[] = [];
+  const regenerateCalls: Array<Record<string, unknown>> = [];
 
   const released = (themeId: string): boolean => {
     const theme = themes.find((t) => t.themeId === themeId);
@@ -151,9 +156,40 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       const body = r.request().postDataJSON();
       resolveCalls.push({ id: resolve[1], body });
       const flag = flags.find((f) => f.id === resolve[1])!;
+      // Mirrors flags.service resolveFlag: archive archives the question once; correct un-pauses.
+      const flagged = questions.find((q) => q.id === flag.questionId)!;
+      if (body.action === 'archive' && flagged.state !== 'archived') flagged.state = 'archived';
+      if (body.action === 'correct' && flagged.state === 'paused') flagged.state = 'approved';
       flag.state = `resolved-${body.action === 'clear' ? 'cleared' : body.action}`;
       flag.resolution = { action: body.action, puid: 'me', at: new Date().toISOString(), comment: body.comment };
       return r.fulfill({ json: flag });
+    }
+    const notify = path.match(/^\/api\/flags\/(f\d+)\/remediation\/notify$/);
+    if (notify) {
+      notifyCalls.push(notify[1]);
+      for (const f of flags) if (f.resolution) f.resolution.notifiedCount = 2;
+      return r.fulfill({ json: { notified: 2 } });
+    }
+    if (/^\/api\/flags\/f\d+\/remediation$/.test(path)) {
+      return r.fulfill({ json: { affectedAttempts: 3, affectedStudents: [{ puid: 'student-a' }, { puid: 'student-b' }], examAttempts: 0, reviewBookEntries: 1 } });
+    }
+    const regenerate = path.match(/^\/api\/courses\/course\/questions\/(q\d+)\/regenerate$/);
+    if (regenerate) {
+      regenerateCalls.push(r.request().postDataJSON());
+      return r.fulfill({ json: { variant: {
+        stem: 'A sled is pushed with 4 N one way and 3 N the other. What is the net force?', difficulty: 'medium', sourceRefs: [],
+        options: [
+          { key: 'A', text: '7 N', role: 'clearly-wrong', explanation: 'Added the magnitudes.' },
+          { key: 'B', text: '1 N', role: 'correct', explanation: 'Opposite forces subtract.' },
+        ],
+        agentDecision: { decision: 'pass', reasoning: 'The alternative is correct and distinct.', roleAssessment: 'Fine.', suggestions: ['Name the direction.'] },
+      } } });
+    }
+    const distribution = path.match(/^\/api\/courses\/course\/analytics\/questions\/(q\d+)\/distribution$/);
+    if (distribution) {
+      if (url.searchParams.get('versionId') !== 'v0') return r.fulfill({ status: 404, json: { error: 'not-found' } });
+      return r.fulfill({ json: { questionId: distribution[1], versionId: 'v0', version: 1, stem: 'An older wording of the question.', isCurrent: false, attempts: 12, insufficient: false, misconceptionHighlight: false,
+        options: [{ key: 'A', text: 'Old option', role: 'correct', count: 12, pct: 1 }] } });
     }
     const theme = path.match(/^\/api\/themes\/(\w+)$/);
     if (theme && method === 'PATCH') {
@@ -231,7 +267,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     renderQuestions(document.querySelector('main')!, { id: 'course' });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls };
+  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -357,8 +393,8 @@ test('the flag card shows reports and clears the flag', async ({ page }) => {
   await expect(card).toContainText('2 students');
   await expect(card).toContainText('Option B looks wrong to me.');
   await expect(card.locator('li.is-highlighted')).toContainText('Units missing.');
-  await expect(card.getByRole('link', { name: 'Correct the question' })).toHaveAttribute('href', /bank\/q5\?from=flags&flagVersionId=v5&intent=edit/);
-  await expect(card.getByRole('link', { name: 'Archive the question' })).toHaveAttribute('href', /intent=archive/);
+  await expect(card.getByRole('button', { name: 'Correct the question' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Archive the question' })).toBeVisible();
   await card.getByRole('button', { name: 'Clear the flag' }).click();
   await page.getByLabel('Reply to the flagging student(s) (optional)').fill('The question is correct.');
   await page.getByRole('button', { name: 'Clear the flag' }).last().click();
@@ -543,4 +579,116 @@ test('inspector tabs move with the arrow keys and stay chosen across questions',
   await page.locator('[data-question-id="q2"] .questions-row__open').click();
   await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
   await expect(page.getByRole('tab', { name: /Team/ })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('correcting a flagged question resolves the reports and notifies the students', async ({ page }) => {
+  const mock = await setup(page, { tab: 'flags' });
+  const card = page.locator('.questions-flag-card');
+  await card.getByRole('button', { name: 'Correct the question' }).click();
+  await expect(modeButton(page, 'Edit')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('mode=edit&flagVersionId=v5');
+  const fix = page.getByRole('region', { name: 'Fixing flagged reports' });
+  await expect(fix).toContainText('Fixing 2 reports');
+  await expect(page.locator('.questions-reader__warning')).toContainText('Students get the corrected question as soon as you save.');
+
+  await page.getByRole('button', { name: 'Save and resolve' }).click();
+  await expect(page.locator('.questions-reader__notice')).toContainText('Edit the question before resolving the reports.');
+  expect(mock.patchCalls).toEqual([]);
+
+  await page.getByLabel('Option B', { exact: true }).fill('The vector sum of the forces.');
+  await fix.getByLabel('Reply to flagging students').fill('Thanks — the wording is fixed.');
+  await page.getByRole('button', { name: 'Save and resolve' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Question corrected. 2 reports resolved; 2 students notified.');
+  // P2-1: the correction stays live.
+  expect(mock.patchCalls[0].body.submitForReview).toBeUndefined();
+  expect(mock.questions[4].state).toBe('approved');
+  expect(mock.resolveCalls.map((c) => [c.id, c.body.action, c.body.correctnessAffecting, c.body.comment])).toEqual([
+    ['f1', 'correct', true, 'Thanks — the wording is fixed.'],
+    ['f2', 'correct', true, 'Thanks — the wording is fixed.'],
+  ]);
+  expect(mock.notifyCalls).toEqual(['f1']);
+  await expect(tabCount(page, 'Student flags')).toHaveText('0');
+});
+
+test('a test flag is resolved without notifying anyone, and a flag fix opens from its URL', async ({ page }) => {
+  const mock = await setup(page, { tab: 'flags', testFlag: true, extraHash: '&q=q6&mode=edit&flagVersionId=v6' });
+  const fix = page.getByRole('region', { name: 'Fixing flagged reports' });
+  await expect(fix).toContainText('Fixing 1 report');
+  await expect(fix).toContainText('TEST · Instructor preview');
+  await expect(fix).toContainText('This is a test flag, so no student gets a message.');
+  await page.getByLabel('Question stem').fill('Question 6: Two opposite forces act on one object. What is the net force on it?');
+  await page.getByRole('button', { name: 'Save and resolve' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Question corrected. 1 report resolved.');
+  expect(mock.resolveCalls.map((c) => [c.id, c.body.action])).toEqual([['f3', 'correct']]);
+  expect(mock.notifyCalls).toEqual([]);
+});
+
+test('archiving from the flag card resolves the reports and archives the question', async ({ page }) => {
+  const mock = await setup(page, { tab: 'flags' });
+  await page.locator('.questions-flag-card').getByRole('button', { name: 'Archive the question' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Reply to the flagging student(s) (optional)').fill('We removed this question.');
+  await dialog.getByRole('button', { name: 'Archive the question' }).click();
+  await expect(tabCount(page, 'Archived')).toHaveText('2');
+  expect(mock.resolveCalls.map((c) => [c.id, c.body.action, c.body.comment])).toEqual([
+    ['f1', 'archive', 'We removed this question.'], ['f2', 'archive', 'We removed this question.'],
+  ]);
+  expect(mock.questions[4].state).toBe('archived');
+});
+
+test('Compare generates an alternative beside the current version and replaces it', async ({ page }) => {
+  const mock = await setup(page);
+  await expect(page.locator('.questions-reader__context')).toBeVisible();
+  await modeButton(page, 'Compare').click();
+  await expect(page.locator('.questions-reader__context')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('mode=compare');
+  await page.getByRole('button', { name: 'Generate alternative' }).click();
+  const alternative = page.getByRole('article', { name: 'Generated alternative' });
+  await expect(alternative).toContainText('A sled is pushed');
+  await expect(page.getByRole('article', { name: 'Current · version 1' })).toContainText('Question 1:');
+  await expect(page.getByRole('region', { name: 'Check of the generated alternative' })).toContainText('Name the direction.');
+  expect(mock.regenerateCalls).toEqual([{ prompt: expect.stringContaining('distinct alternative') }]);
+
+  // Leaving with an unsaved alternative asks first.
+  await modeButton(page, 'Read').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+  await expect(modeButton(page, 'Compare')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: 'Replace with variant' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Variant saved as version 2.');
+  expect(mock.patchCalls[0].body).toEqual(expect.objectContaining({ expectedVersionId: 'v1', difficulty: 'medium', stem: expect.stringContaining('A sled is pushed') }));
+  await expect(modeButton(page, 'Read')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.questions-reader__context')).toBeVisible();
+});
+
+test('Compare is offered only for questions in To review', async ({ page }) => {
+  await setup(page, { tab: 'approved' });
+  await expect(modeButton(page, 'Preview')).toBeVisible();
+  await expect(modeButton(page, 'Compare')).toHaveCount(0);
+});
+
+test('a question opened from Student Analytics shows its recorded version until dismissed', async ({ page }) => {
+  await setup(page, { tab: 'approved', extraHash: '&q=q5&analyticsVersionId=v0' });
+  const notice = page.getByRole('region', { name: 'Recorded analytics version' });
+  await expect(notice).toContainText('Recorded analytics version 1');
+  await expect(notice).toContainText('Historical content');
+  await notice.getByText('What students saw in version 1').click();
+  await expect(notice).toContainText('An older wording of the question.');
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('analyticsVersionId=v0');
+  await notice.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(notice).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => location.hash)).not.toContain('analyticsVersionId');
+});
+
+test('390px dark Compare stacks the versions and passes axe', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page);
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await page.locator('.questions-row__open').first().click();
+  await modeButton(page, 'Compare').click();
+  await page.getByRole('button', { name: 'Generate alternative' }).click();
+  await expect(page.getByRole('article', { name: 'Generated alternative' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const results = await new AxeBuilder({ page }).include('.questions-reader').analyze();
+  expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 });

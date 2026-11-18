@@ -34,13 +34,25 @@ export function defaultTab(counts: QuestionWorkspace['counts']): WorkspaceTab {
 
 /** The reader's middle-pane mode (spec D2). Read is the default and is
  * never written to the URL. */
-export type ReaderMode = 'read' | 'edit' | 'preview';
+export type ReaderMode = 'read' | 'edit' | 'preview' | 'compare';
 
 export function parseMode(value: string | null): ReaderMode {
-  return value === 'edit' || value === 'preview' ? value : 'read';
+  return value === 'edit' || value === 'preview' || value === 'compare' ? value : 'read';
 }
 
-export function questionsPath(courseId: string, params: { tab?: WorkspaceTab; q?: string; runId?: string; flag?: string; mode?: ReaderMode } = {}): string {
+export interface QuestionsPathParams {
+  tab?: WorkspaceTab;
+  q?: string;
+  runId?: string;
+  flag?: string;
+  mode?: ReaderMode;
+  /** The flagged version being fixed in Edit mode (spec D4). */
+  flagVersionId?: string;
+  /** A recorded version opened from Student Analytics. */
+  analyticsVersionId?: string;
+}
+
+export function questionsPath(courseId: string, params: QuestionsPathParams = {}): string {
   const query = new URLSearchParams();
   if (params.tab) query.set('tab', params.tab);
   if (params.q) query.set('q', params.q);
@@ -48,6 +60,8 @@ export function questionsPath(courseId: string, params: { tab?: WorkspaceTab; q?
   if (params.flag) query.set('flag', params.flag);
   // A mode belongs to the selected question, so it is only written with one.
   if (params.q && params.mode && params.mode !== 'read') query.set('mode', params.mode);
+  if (params.q && params.mode === 'edit' && params.flagVersionId) query.set('flagVersionId', params.flagVersionId);
+  if (params.q && params.analyticsVersionId) query.set('analyticsVersionId', params.analyticsVersionId);
   const qs = query.toString();
   return `/instructor/course/${encodeURIComponent(courseId)}/questions${qs ? `?${qs}` : ''}`;
 }

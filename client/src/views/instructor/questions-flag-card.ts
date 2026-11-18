@@ -4,12 +4,10 @@
 // Flags page (views/instructor/flags.ts), keeping its resolution rules:
 //
 // - Flags are grouped by the version they were raised against
-//   (flag-groups.ts). Correct / Archive open the question editor with
-//   `?from=flags&flagVersionId=&intent=`, which resolves the group on save.
-//   Clear resolves every open flag in the group here.
-// - Archiving a group with several open flags succeeds for the first and then
-//   fails `invalid-transition:archived->archived`; that is translated into
-//   "use Clear for the rest".
+//   (flag-groups.ts). Correct hands the group to the reader, which opens Edit
+//   with a reply field and resolves the group on "Save and resolve"
+//   (spec 2026-11-18 D4). Archive and Clear resolve every open flag in the
+//   group here; the server archives the question on the first `archive`.
 // - A correctness-affecting resolution shows the remediation checklist and
 //   "Notify affected students". The notified marker is persisted on the
 //   flags by the server, so a reload never re-arms the button.
@@ -100,7 +98,7 @@ export function flagsHelp(): HTMLElement {
     el('ol', {},
       el('li', { text: 'Students and TAs report problems with a question; reports are grouped by the version they saw.' }),
       el('li', { text: 'Read the question and the reports, then correct it, archive it, or clear the flag to keep it as is.' }),
-      el('li', { text: 'If a correction changes which answer is right, tick “affects correctness” in the editor: the remediation checklist then lets you notify affected students.' })),
+      el('li', { text: 'Correcting the question resolves its reports and notifies the students who flagged it. Instructor preview test flags never notify anyone.' })),
     el('p', { class: 'muted', text: 'AI generation checks are separate from student flags. A question is paused automatically once enough students flag it.' }));
 }
 
@@ -111,11 +109,13 @@ export interface FlagCardOptions {
   onChanged: () => void;
   /** Flag id from a notification click, highlighted when present. */
   highlightFlagId?: string;
+  /** "Correct the question": the reader opens Edit for this group's open flags. */
+  onCorrect: (fix: { versionId: string; flags: Flag[] }) => void;
 }
 
 /** Fetches and renders the selected question's flags. `root` is empty when
  * the question has never been flagged. */
-export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; load: () => Promise<void> } {
+export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; load: () => Promise<void>; openFlagsFor: (versionId: string) => Flag[] } {
   const root = el('section', { class: 'questions-flag-card', 'aria-label': 'Student flags', hidden: true });
   let flags: Flag[] = [];
   let actionError: string | null = null;
@@ -125,12 +125,6 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
   const notifyErrors = new Map<string, string>();
   const reportErrors = new Map<string, string>();
   const reportAttempted = new Set<string>();
-
-  const editorPath = (group: FlagGroup, intent?: 'edit' | 'archive'): string => {
-    const base = `/instructor/course/${encodeURIComponent(options.courseId)}/bank/${encodeURIComponent(group.questionId)}`;
-    if (!intent) return base;
-    return `${base}?${new URLSearchParams({ from: 'flags', flagVersionId: group.questionVersionId, intent }).toString()}`;
-  };
 
   function recordRemediation(group: FlagGroup, report: RemediationReport | undefined): void {
     if (!report) return;
@@ -161,11 +155,7 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
         resolvedCount++;
       } catch (error) {
         const raw = errorText(error);
-        if (action === 'archive' && raw === 'invalid-transition:archived->archived') {
-          const remaining = targets.length - resolvedCount;
-          return { ok: false, remediation, error: `${resolvedCount} of ${targets.length} flag${targets.length === 1 ? '' : 's'} resolved; the question was already archived. Use Clear to close the remaining flag${remaining === 1 ? '' : 's'}.` };
-        }
-        return { ok: false, error: raw, remediation };
+        return { ok: false, error: resolvedCount ? `${resolvedCount} of ${targets.length} reports resolved, then: ${raw}` : raw, remediation };
       }
     }
     return { ok: true, remediation };
@@ -184,6 +174,26 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
     busy = true; actionError = null; draw();
     const result = await resolveGroup(group, 'clear', comment);
     if (!result.ok) actionError = result.error ?? 'The flag could not be cleared.';
+    recordRemediation(group, result.remediation);
+    busy = false;
+    await load();
+    options.onChanged();
+  }
+
+  async function handleArchive(group: FlagGroup): Promise<void> {
+    if (busy) return;
+    const comment = await textPromptDialog({
+      title: 'Archive the question?',
+      message: 'The open reports will be resolved and the question removed from student practice. You can restore it from the Archived tab.',
+      fieldLabel: 'Reply to the flagging student(s) (optional)',
+      placeholder: 'Explain why the question is being withdrawn.',
+      confirmLabel: 'Archive the question',
+      tone: 'danger',
+    });
+    if (comment === null) return;
+    busy = true; actionError = null; draw();
+    const result = await resolveGroup(group, 'archive', comment);
+    if (!result.ok) actionError = result.error ?? 'The question could not be archived.';
     recordRemediation(group, result.remediation);
     busy = false;
     await load();
@@ -270,8 +280,8 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
         : escalated ? el('p', { class: 'questions-flag-card__escalation' }, el('strong', { text: 'Escalated by a TA — no recommendation recorded' })) : false,
       reportList(open),
       el('div', { class: 'questions-flag-card__actions' },
-        el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${editorPath(group, 'edit')}`, text: 'Correct the question' }),
-        el('a', { class: 'btn btn--ghost btn--sm', href: `#${editorPath(group, 'archive')}`, text: 'Archive the question' }),
+        el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: busy, onclick: () => options.onCorrect({ versionId: group.questionVersionId, flags: open }) }, 'Correct the question'),
+        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => handleArchive(group) }, 'Archive the question'),
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => handleClear(group) }, busy ? 'Clearing…' : 'Clear the flag')),
       remediationPanel(group));
   }
@@ -313,5 +323,11 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
     draw();
   }
 
-  return { root, load };
+  /** The open (or escalated) flags raised against `versionId`. */
+  function openFlagsFor(versionId: string): Flag[] {
+    const group = groupFlags(flags).find((candidate) => candidate.questionVersionId === versionId);
+    return group ? openFlags(group) : [];
+  }
+
+  return { root, load, openFlagsFor };
 }
