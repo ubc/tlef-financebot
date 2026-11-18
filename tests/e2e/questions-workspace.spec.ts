@@ -10,6 +10,7 @@ interface MockQuestion {
   themeIds: string[]; loIds: string[]; labels: string[]; internalNotes: Array<{ text: string; at: string; puid: string }>;
   versions: unknown[]; agentDecision?: { decision: 'pass' | 'flag' | 'reject'; reasoning: string; roleAssessment: string; suggestions?: string[] };
   current: Record<string, unknown> & { _id: string; stem: string };
+  suggestions?: Array<{ id: string; puid: string; patch: Record<string, unknown>; status: string; at: string }>;
   createdAt: string; updatedAt: string;
 }
 interface MockFlag {
@@ -39,7 +40,7 @@ function makeQuestion(i: number, state: State, themeId = 'forces'): MockQuestion
   };
 }
 
-async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean } = {}) {
+async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean } = {}) {
   const questions: MockQuestion[] = [
     ...[1, 2, 3, 4].map((i) => makeQuestion(i, 'draft')),
     makeQuestion(5, 'approved'),
@@ -51,6 +52,24 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     for (const [item, question] of questions.slice(0, 2).entries()) {
       question.current.provenance = { kind: 'generated', runId: 'r0', item };
     }
+  }
+  if (options.parameterized) {
+    // q1 becomes a calculation: a drawn input and a derived answer.
+    Object.assign(questions[0].current, {
+      stem: 'A force of {{F}} N acts on 2 kg. What is the acceleration?',
+      paramSlots: [{ name: 'F', min: 2, max: 10, step: 2 }],
+      derivedValues: [{ name: 'A', formula: 'F/2' }, { name: 'A_WRONG', formula: 'F*2', errorModel: 'multiplied instead of divided' }],
+      options: [
+        { key: 'A', text: '{{A_WRONG}} m/s²', role: 'clearly-wrong', explanation: 'Multiplied by the mass.' },
+        { key: 'B', text: '{{A}} m/s²', role: 'correct', explanation: 'a = F/m.' },
+      ],
+    });
+  }
+  if (options.suggestions) {
+    questions[0].suggestions = [
+      { id: 's1', puid: 'ta-one', status: 'pending', at: '2026-11-10T10:00:00Z', patch: { stem: 'Question 1: Two opposite forces act on one cart. What is the net force?' } },
+      { id: 's2', puid: 'ta-two', status: 'pending', at: '2026-11-11T10:00:00Z', patch: { difficulty: 'hard' } },
+    ];
   }
   const themes = [
     { themeId: 'forces', name: 'Forces', order: 0, revision: 2, availableFrom: '2026-01-01T00:00:00Z' },
@@ -65,6 +84,9 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const themeCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const resolveCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const patchCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
+  const noteCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
+  const suggestionCalls: Array<[string, string]> = [];
+  let sampleCalls = 0;
 
   const released = (themeId: string): boolean => {
     const theme = themes.find((t) => t.themeId === themeId);
@@ -142,6 +164,30 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       target.availableFrom = body.availableFrom; target.revision++;
       return r.fulfill({ json: { _id: target.themeId, name: target.name, order: target.order, revision: target.revision, availableFrom: target.availableFrom ?? undefined } });
     }
+    const sample = path.match(/^\/api\/questions\/(q\d+)\/sample$/);
+    if (sample) {
+      const question = questions.find((q) => q.id === sample[1])!;
+      sampleCalls++;
+      const parameterized = !!question.current.paramSlots;
+      const fill = (text: string) => text.replace('{{F}}', String(2 * sampleCalls)).replace('{{A_WRONG}}', String(4 * sampleCalls)).replace('{{A}}', String(sampleCalls));
+      const current = question.current as unknown as { stem: string; options: Array<{ key: string; text: string; explanation: string }> };
+      return r.fulfill({ json: { stem: fill(current.stem), options: current.options.map((o) => ({ key: o.key, text: fill(o.text), explanation: o.explanation })), parameterized } });
+    }
+    const notes = path.match(/^\/api\/questions\/(q\d+)\/internal-notes$/);
+    if (notes && method === 'POST') {
+      const body = r.request().postDataJSON();
+      noteCalls.push({ id: notes[1], body });
+      return r.fulfill({ json: { puid: 'me', text: body.text, at: '2026-11-18T12:00:00Z' } });
+    }
+    const suggestion = path.match(/^\/api\/questions\/(q\d+)\/suggestions\/(s\d+)\/(accept|discard)$/);
+    if (suggestion) {
+      const question = questions.find((q) => q.id === suggestion[1])!;
+      const target = question.suggestions!.find((item) => item.id === suggestion[2])!;
+      suggestionCalls.push([target.id, suggestion[3]]);
+      target.status = suggestion[3] === 'accept' ? 'accepted' : 'discarded';
+      if (suggestion[3] === 'accept') Object.assign(question.current, target.patch);
+      return r.fulfill({ status: 204, body: '' });
+    }
     const match = path.match(/^\/api\/questions\/(q\d+)(\/transition)?$/);
     if (match) {
       const question = questions.find((q) => q.id === match[1])!;
@@ -185,7 +231,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     renderQuestions(document.querySelector('main')!, { id: 'course' });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls };
+  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -341,6 +387,13 @@ test('390px dark layout stacks list and reader without horizontal scroll, and pa
   await expect(page.locator('.questions-reader')).toBeVisible();
   await expect(page.locator('.questions-list')).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  for (const tab of ['Settings', 'Team', 'Review']) {
+    await page.getByRole('tab', { name: tab }).click();
+    await expect(page.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    const tabResults = await new AxeBuilder({ page }).include('.questions-reader').analyze();
+    expect(tabResults.violations.map((v) => `${tab} ${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  }
   await page.getByRole('button', { name: '← Back to list' }).click();
   await expect(page.locator('.questions-list')).toBeVisible();
   const results = await new AxeBuilder({ page }).include('.questions-workspace').analyze();
@@ -356,4 +409,138 @@ test('generation tokens belong to the selected question, including partial recei
   await page.locator('[data-question-id="q2"] .questions-row__open').click();
   await expect(usage.locator('.mu-totals dd')).toHaveText(['600', '400', '1,000']);
   await expect(usage).toContainText('Partial usage');
+});
+
+const modeButton = (page: Page, name: string) => page.getByRole('group', { name: 'Reader mode' }).getByRole('button', { name, exact: true });
+
+test('reader modes: leaving Edit asks first, Preview is kept in the URL, another question opens in Read', async ({ page }) => {
+  const mock = await setup(page, { tab: 'review', extraHash: '&q=q2&mode=preview' });
+  await expect(modeButton(page, 'Preview')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.questions-preview')).toContainText('Question 2:');
+  await expect(page.locator('.questions-preview__draw')).toHaveCount(0);
+
+  await modeButton(page, 'Edit').click();
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('mode=edit');
+  await page.getByLabel('Question stem').fill('Question 2: changed');
+  await modeButton(page, 'Read').click();
+  await expect(page.getByRole('dialog')).toContainText('Discard unsaved edits?');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+  await expect(modeButton(page, 'Edit')).toHaveAttribute('aria-pressed', 'true');
+  await modeButton(page, 'Read').click();
+  await page.getByRole('button', { name: 'Discard edits' }).click();
+  await expect(modeButton(page, 'Read')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.questions-reader__stem')).toContainText('Two opposite forces');
+  expect(mock.patchCalls).toEqual([]);
+
+  await modeButton(page, 'Preview').click();
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('mode=preview');
+  await page.locator('[data-question-id="q3"] .questions-row__open').click();
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 3:');
+  await expect(modeButton(page, 'Read')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => location.hash)).not.toContain('mode=');
+});
+
+test('a parameterized question is edited as [NAME], saved as {{NAME}}, and previewed with fresh draws', async ({ page }) => {
+  const mock = await setup(page, { parameterized: true });
+  await expect(page.locator('.questions-reader__sample-note')).toContainText('Template');
+  await modeButton(page, 'Edit').click();
+  await expect(page.getByLabel('Question stem')).toHaveValue('A force of [F] N acts on 2 kg. What is the acceleration?');
+  await expect(page.getByLabel('Option B', { exact: true })).toHaveValue('[A] m/s²');
+  await page.getByLabel('Question stem').fill('A force of [F] N acts on a 2 kg cart. What is the acceleration?');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Changes saved.');
+  expect(mock.patchCalls[0].body).toEqual(expect.objectContaining({ stem: 'A force of {{F}} N acts on a 2 kg cart. What is the acceleration?' }));
+  // Options were not touched, so they are not sent.
+  expect(mock.patchCalls[0].body.options).toBeUndefined();
+  expect(mock.patchCalls[0].body.submitForReview).toBeUndefined();
+
+  await modeButton(page, 'Preview').click();
+  const preview = page.locator('.questions-preview');
+  await expect(preview).toContainText('A force of 2 N acts on a 2 kg cart.');
+  await expect(preview).toContainText('Students may receive different values.');
+  await preview.getByRole('button', { name: 'Draw another sample' }).click();
+  await expect(preview).toContainText('A force of 4 N acts on a 2 kg cart.');
+  expect(mock.sampleCalls()).toBe(2);
+});
+
+test('Settings changes difficulty and LOs, reports a stale tag set, and waits while editing', async ({ page }) => {
+  const mock = await setup(page);
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  const settings = page.getByRole('tabpanel');
+  await settings.getByLabel('Difficulty').selectOption('hard');
+  await settings.getByRole('button', { name: 'Save difficulty' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Difficulty set to hard.');
+  expect(mock.patchCalls[0]).toEqual({ id: 'q1', body: { difficulty: 'hard', expectedVersionId: 'v1' } });
+  await expect(page.locator('.questions-reader__meta')).toContainText('hard');
+  await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+
+  await settings.getByLabel('Add a learning objective').selectOption({ label: 'Topic 2 › LO 1: Describe motion' });
+  await settings.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Learning objectives updated.');
+  expect(mock.patchCalls[1].body).toEqual({
+    expectedVersionId: 'v1-2', expectedTags: { loIds: ['lo-net'], themeIds: ['forces'] },
+    loIds: ['lo-net', 'lo-motion'], themeIds: ['forces', 'motion'],
+  });
+  await expect(settings).toContainText('Forces, Motion');
+
+  await settings.getByRole('button', { name: 'Remove Topic 1 › LO 1: Combine forces to find net force' }).click();
+  await expect.poll(() => mock.patchCalls.length).toBe(3);
+  expect(mock.patchCalls[2].body).toEqual(expect.objectContaining({ loIds: ['lo-motion'] }));
+  expect(mock.patchCalls[2].body.themeIds).toBeUndefined();
+  const removeMotion = page.getByRole('tabpanel').getByRole('button', { name: 'Remove Topic 2 › LO 1: Describe motion' });
+  await expect(page.locator('.questions-settings__chip')).toHaveText(['Topic 2 › LO 1: Describe motion×']);
+  await expect(removeMotion).toBeEnabled();
+
+  // Someone else retags the question: the next save is refused and the question reloads.
+  mock.questions[0].loIds = ['lo-net'];
+  await removeMotion.click();
+  await expect(page.locator('.questions-reader__notice')).toContainText('This question changed since you opened it');
+  await expect(page.locator('.questions-settings__chip')).toHaveText(['Topic 1 › LO 1: Combine forces to find net force×']);
+
+  await modeButton(page, 'Edit').click();
+  await expect(page.getByRole('tabpanel')).toContainText('Finish or cancel editing first.');
+  await expect(page.getByRole('tabpanel').getByLabel('Difficulty')).toBeDisabled();
+});
+
+test('Team shows TA suggestions and internal comments', async ({ page }) => {
+  const mock = await setup(page, { suggestions: true });
+  const team = page.getByRole('tab', { name: /Team/ });
+  await expect(team.locator('.questions-inspector__count')).toContainText('2');
+  await team.click();
+  const panel = page.getByRole('tabpanel');
+  await expect(panel).toContainText('ta-one');
+  await expect(panel).toContainText('Difficulty: hard (set it in Settings)');
+
+  await panel.locator('.questions-team__card', { hasText: 'ta-one' }).getByRole('button', { name: 'Load into editor' }).click();
+  await expect(modeButton(page, 'Edit')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Question stem')).toHaveValue('Question 1: Two opposite forces act on one cart. What is the net force?');
+  // A difficulty-only suggestion has nothing for the text editor.
+  await expect(panel.locator('.questions-team__card', { hasText: 'ta-two' }).getByRole('button', { name: 'Load into editor' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel editing' }).click();
+  await page.getByRole('button', { name: 'Discard edits' }).click();
+
+  await panel.locator('.questions-team__card', { hasText: 'ta-one' }).getByRole('button', { name: 'Accept exactly' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('TA suggestion accepted.');
+  await page.getByRole('tabpanel').locator('.questions-team__card', { hasText: 'ta-two' }).getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('No pending TA suggestions.');
+  expect(mock.suggestionCalls).toEqual([['s1', 'accept'], ['s2', 'discard']]);
+  await expect(page.getByRole('tab', { name: /Team/ }).locator('.questions-inspector__count')).toHaveCount(0);
+
+  await page.getByRole('tabpanel').getByLabel('Add a comment').fill('Check the units with the TA.');
+  await page.getByRole('tabpanel').getByRole('button', { name: 'Add comment' }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('Check the units with the TA.');
+  expect(mock.noteCalls).toEqual([{ id: 'q1', body: { text: 'Check the units with the TA.' } }]);
+});
+
+test('inspector tabs move with the arrow keys and stay chosen across questions', async ({ page }) => {
+  await setup(page);
+  await page.getByRole('tab', { name: 'Review' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('tab', { name: /Team/ })).toHaveAttribute('aria-selected', 'true');
+  await page.locator('[data-question-id="q2"] .questions-row__open').click();
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
+  await expect(page.getByRole('tab', { name: /Team/ })).toHaveAttribute('aria-selected', 'true');
 });

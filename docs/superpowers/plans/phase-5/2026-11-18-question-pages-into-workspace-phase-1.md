@@ -43,7 +43,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   them from there; `tests/unit/question-bank-helpers.test.ts` re-points.
   Done: typecheck and that test pass.
 
-- [ ] **3. Reader modes and the mode control.**
+- [x] **3. Reader modes and the mode control.**
   `questions-reader.ts`: replace the `editing` flag with
   `mode: 'read' | 'edit' | 'preview'`. A segmented control at the top of the
   reading pane (buttons with `aria-pressed`, one row, wraps at narrow widths):
@@ -58,7 +58,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   - Unit tests in `questions-model.test.ts` for `questionsPath` with `mode` and
     a `parseMode` helper (unknown → read).
 
-- [ ] **4. Edit mode does what Question details' editor does.**
+- [x] **4. Edit mode does what Question details' editor does.**
   - Placeholders: edit in display form and save in stored form with
     `editableVariableNames`, `toDisplayPlaceholders`, `toStoredPlaceholders`
     (`placeholders.ts`), so a parameterized question is edited as `[NAME]` and
@@ -72,7 +72,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   - A **Load into editor** call from the Team tab (task 7) opens Edit with the
     suggestion's stem and options filled in and marked unsaved.
 
-- [ ] **5. Inspector tabs.**
+- [x] **5. Inspector tabs.**
   New `questions-inspector.ts`: the `aside` gets a tablist (`role="tablist"`,
   arrow keys move between tabs, `aria-controls`) with **Review**, **Settings**,
   **Team**, and the tab panel scrolls. The chosen tab is kept while moving
@@ -82,7 +82,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   similar questions, source evidence, student visibility. The TA suggestions
   and teaching-team notes blocks move to Team.
 
-- [ ] **6. Settings tab.** New `questions-settings.ts`:
+- [x] **6. Settings tab.** New `questions-settings.ts`:
   - **Difficulty**: a select plus **Save difficulty**. Saves
     `{ difficulty, expectedVersionId }` (+ `submitForReview` per task 1), with
     the same returns-to-review note as Edit for approved/paused questions.
@@ -98,7 +98,7 @@ flag-card links still work; they are moved in phases 2 and 3.
   - After a save: `onMutated` refetches the workspace (list rows show the new
     difficulty and tags).
 
-- [ ] **7. Team tab.** New `questions-team.ts`:
+- [x] **7. Team tab.** New `questions-team.ts`:
   - **TA suggested edits**: one card per pending suggestion — who and when, a
     readable summary of the patch (stem, options by key, difficulty, LOs by
     name), and **Load into editor** (task 4; a difficulty or LO change in the
@@ -110,7 +110,7 @@ flag-card links still work; they are moved in phases 2 and 3.
     a reload.
   - Empty states: "No pending TA suggestions." / "No internal comments yet."
 
-- [ ] **8. Preview mode.** New `questions-preview.ts`: fetches
+- [x] **8. Preview mode.** New `questions-preview.ts`: fetches
   `getQuestionSample` for the current version and renders the student view
   (rich stem, options with explanations via `authoringAnswer`, correct option
   marked) with the line "One computed example from the saved version. Students
@@ -119,19 +119,19 @@ flag-card links still work; they are moved in phases 2 and 3.
   responses (request counter), as Question details does. Loading and error
   (retry) states.
 
-- [ ] **9. Links and leftovers.** Remove the TA-suggestion "Open full details"
+- [x] **9. Links and leftovers.** Remove the TA-suggestion "Open full details"
   link (Team replaces it). Move the footer "Open full details ↗" into
   **More actions** (still needed for Compare, Parameters and Edit together
   until phases 2–3). The **Parameters** header button on Question details is
   untouched in this phase.
 
-- [ ] **10. Styles.** `questions-workspace.css`: mode control (matches the
+- [x] **10. Styles.** `questions-workspace.css`: mode control (matches the
   release panel's segmented control), inspector tablist and panels, Settings
   form and LO chips, Team cards, Preview. Check light/dark and the 390px stack
   (inspector under the reader, tabs and mode control wrap, no horizontal
   scroll).
 
-- [ ] **11. E2E.** `questions-workspace.spec.ts`, mocked API (add handlers for
+- [x] **11. E2E.** `questions-workspace.spec.ts`, mocked API (add handlers for
   `/sample`, `/internal-notes`, `/suggestions/:id/accept|discard`, and tag /
   difficulty PATCHes):
   - Edit an approved question → it moves to To review (task 1).
@@ -147,5 +147,18 @@ flag-card links still work; they are moved in phases 2 and 3.
   - Update existing tests that clicked the footer **Edit** button.
   - The 390px dark axe test runs with each inspector tab open.
 
-- [ ] **12. Docs.** `client/AGENTS.md` (reader modes, inspector modules),
+- [x] **12. Docs.** `client/AGENTS.md` (reader modes, inspector modules),
   AGENTS.md "Current state", and tick this checklist. No API contract changes.
+
+## Notes from implementation
+
+- **More actions** also links to the Parameters page, for parameterized
+  questions only, until phase 3 moves it into the reader.
+- The reader only blocks switching questions when Edit has unsaved changes
+  (`isLocked` = busy or dirty), not merely because Edit is open.
+- The reading pane has a visually hidden `h2` ("Selected question") so the flag
+  card's and inspector's `h3`s keep a valid heading order when the list is
+  hidden at narrow widths (axe `heading-order`).
+- Other e2e specs that drive the reader (`instructor-pipeline`, `core-loop-demo`,
+  `flag-loop`) only use Approve and the stem, which are unchanged; they need the
+  full stack and were not run.

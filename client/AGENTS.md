@@ -222,7 +222,14 @@ from the Coverage Map). `/queue`, `/bank` and `/flags` redirect to the matching 
 per-Topic release summary and the tab's rows with server-decided `studentVisible` /
 `hiddenReason`; the client never derives visibility. Modules:
 `questions-model.ts` (pure: tabs, paths, filters, bulk runner — unit-tested),
-`questions-reader.ts` (reader, state-specific actions, inline edit, 409 handling),
+`questions-reader.ts` (reader, state-specific actions, 409 handling; middle-pane
+modes Read / Edit / Preview in the URL as `mode=edit|preview`; Edit converts
+`{{NAME}}` to `[NAME]` and back via `placeholders.ts` and sends `submitForReview`
+for approved/paused questions), `questions-inspector.ts` (Review / Settings / Team
+tabs), `questions-settings.ts` (difficulty, Topics & LOs with `expectedTags`),
+`questions-team.ts` (TA suggested edits, internal comments), `questions-preview.ts`
+(student preview from `GET /api/questions/:id/sample`), `question-tags.ts` (LO
+helpers shared with Question details),
 `questions-flag-card.ts` (open reports, Correct/Archive via question detail
 `?from=flags&flagVersionId=&intent=`, Clear, remediation + notify, resolved history),
 `questions-release.ts` (Manage releases: per-Topic Release now / Schedule / Keep

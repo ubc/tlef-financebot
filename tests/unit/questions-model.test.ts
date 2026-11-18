@@ -11,6 +11,7 @@ import {
   hiddenReasonText,
   legacyQuestionsPath,
   parseTab,
+  parseMode,
   questionsPath,
   releaseState,
   repairSummary,
@@ -37,6 +38,19 @@ describe('tabs and paths', () => {
   it('builds the Questions path with only the set params', () => {
     expect(questionsPath('c1')).toBe('/instructor/course/c1/questions');
     expect(questionsPath('c1', { tab: 'review', runId: 'r9' })).toBe('/instructor/course/c1/questions?tab=review&runId=r9');
+  });
+
+  it('writes the reader mode only with a selected question and never for Read', () => {
+    expect(questionsPath('c1', { tab: 'approved', q: 'q1', mode: 'preview' })).toBe('/instructor/course/c1/questions?tab=approved&q=q1&mode=preview');
+    expect(questionsPath('c1', { tab: 'approved', q: 'q1', mode: 'read' })).toBe('/instructor/course/c1/questions?tab=approved&q=q1');
+    expect(questionsPath('c1', { tab: 'approved', mode: 'edit' })).toBe('/instructor/course/c1/questions?tab=approved');
+  });
+
+  it('parses the reader mode, falling back to Read', () => {
+    expect(parseMode('edit')).toBe('edit');
+    expect(parseMode('preview')).toBe('preview');
+    expect(parseMode('compare')).toBe('read');
+    expect(parseMode(null)).toBe('read');
   });
 
   it('redirects the old pages to their tab and keeps the selection', () => {

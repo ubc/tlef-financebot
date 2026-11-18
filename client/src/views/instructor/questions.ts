@@ -40,6 +40,7 @@ import {
   legacyQuestionsPath,
   objectiveNames,
   parseTab,
+  parseMode,
   questionsPath,
   runBulk,
   runHighlightSummary,
@@ -98,6 +99,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   let preferredId = query.get('q') ?? '';
   const runId = query.get('runId') ?? '';
   const highlightFlagId = query.get('flag') ?? undefined;
+  const initialMode = parseMode(query.get('mode'));
 
   let tree: CourseTree;
   let workspace: QuestionWorkspace;
@@ -171,6 +173,11 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     tree,
     release: () => workspace.release,
     highlightFlagId,
+    initialMode,
+    onModeChange: () => {
+      const q = reader.currentId() ?? preferredId;
+      replaceUrl(questionsPath(courseId, { tab: activeTab, q: q || undefined, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
+    },
     isBatchBusy: () => bulkBusy,
     onMutated: async (message, questionId) => {
       notice = message;
@@ -282,7 +289,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       `Highlighting ${plural(shown, 'question')} from this generation run.${missing ? ` ${missing} already left the review list.` : ''} `,
       el('button', { class: 'link-button', type: 'button', onclick: () => {
         highlightIds = null;
-        replaceUrl(questionsPath(courseId, { tab: activeTab, q: reader.currentId() ?? undefined }));
+        replaceUrl(questionsPath(courseId, { tab: activeTab, q: reader.currentId() ?? undefined, mode: reader.mode() }));
         draw();
       } }, 'Clear highlight')));
   }
@@ -442,7 +449,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       reader.show(active ?? null);
       if (activeId && activeId !== preferredId) {
         preferredId = activeId;
-        replaceUrl(questionsPath(courseId, { tab: activeTab, q: activeId, runId: highlightIds ? runId : undefined }));
+        replaceUrl(questionsPath(courseId, { tab: activeTab, q: activeId, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
       }
     }
     if (!active) { narrowReading = false; body.classList.remove('is-reading'); }
@@ -462,7 +469,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     drawToolbar();
     drawMessages();
     drawList();
-    replaceUrl(questionsPath(courseId, { tab: activeTab, q: preferredId || undefined, runId: highlightIds ? runId : undefined }));
+    replaceUrl(questionsPath(courseId, { tab: activeTab, q: preferredId || undefined, runId: highlightIds ? runId : undefined, mode: reader.mode() }));
   }
 
   async function exportCsv(): Promise<void> {

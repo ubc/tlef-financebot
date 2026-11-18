@@ -32,12 +32,22 @@ export function defaultTab(counts: QuestionWorkspace['counts']): WorkspaceTab {
   return counts.review > 0 ? 'review' : 'approved';
 }
 
-export function questionsPath(courseId: string, params: { tab?: WorkspaceTab; q?: string; runId?: string; flag?: string } = {}): string {
+/** The reader's middle-pane mode (spec D2). Read is the default and is
+ * never written to the URL. */
+export type ReaderMode = 'read' | 'edit' | 'preview';
+
+export function parseMode(value: string | null): ReaderMode {
+  return value === 'edit' || value === 'preview' ? value : 'read';
+}
+
+export function questionsPath(courseId: string, params: { tab?: WorkspaceTab; q?: string; runId?: string; flag?: string; mode?: ReaderMode } = {}): string {
   const query = new URLSearchParams();
   if (params.tab) query.set('tab', params.tab);
   if (params.q) query.set('q', params.q);
   if (params.runId) query.set('runId', params.runId);
   if (params.flag) query.set('flag', params.flag);
+  // A mode belongs to the selected question, so it is only written with one.
+  if (params.q && params.mode && params.mode !== 'read') query.set('mode', params.mode);
   const qs = query.toString();
   return `/instructor/course/${encodeURIComponent(courseId)}/questions${qs ? `?${qs}` : ''}`;
 }
