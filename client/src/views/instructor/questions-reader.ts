@@ -727,11 +727,7 @@ export function createQuestionReader(options: ReaderOptions) {
     const context = el('aside', { class: 'gw-plan questions-reader__context', 'aria-label': 'Question inspector' },
       inspector({ active: inspectorTab, teamCount: pendingSuggestions(current).length, panel, onSelect: selectInspectorTab }));
 
-    const links = el('details', { class: 'questions-reader__links' },
-      el('summary', {}, 'More actions'),
-      el('div', { class: 'questions-reader__link-menu' },
-        current.state !== 'archived' ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
-        el('button', { class: 'link-button', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload')));
+    const reload = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload');
 
     const readingPane = el('div', { class: 'questions-reader__scroll' },
       el('button', { class: 'btn btn--ghost btn--sm questions-reader__back', type: 'button', onclick: options.onBack }, '← Back to list'),
@@ -750,7 +746,7 @@ export function createQuestionReader(options: ReaderOptions) {
       el('div', { class: 'gw-reader questions-reader__main' },
         readingPane,
         el('footer', { class: 'gw-footer questions-reader__actions' },
-          el('div', { class: 'questions-reader__tools' }, links),
+          el('div', { class: 'questions-reader__tools' }, reload),
           el('div', { class: 'questions-reader__buttons', 'data-tutorial': mode === 'edit' ? 'question-editor-actions' : false }, ...actionButtons(current)))),
       wide ? false : context);
     readingPane.scrollTop = readingScroll;

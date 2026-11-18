@@ -28,7 +28,6 @@ import { classesRouter } from './routes/classes.routes';
 import { coursesRouter } from './routes/courses.routes';
 import { questionsRouter } from './routes/questions.routes';
 import { courseSharingRouter } from './routes/course-sharing.routes';
-import { questionCollaborationRouter } from './routes/question-collaboration.routes';
 import { enrollmentRouter } from './routes/enrollment.routes';
 import { registrationCodesRouter } from './routes/registration-codes.routes';
 import { practiceRouter } from './routes/practice.routes';
@@ -99,7 +98,6 @@ export function createApp(): Express {
   app.use('/api', coursesRouter); // Courses/Hierarchy/Roster (IN-S01/S02/S03, IN-L06) — instructor authoring surface.
   app.use('/api', questionsRouter); // Question bank browse/filter, review queue, editing, transitions (IN-Q02/Q05/Q08).
   app.use('/api', courseSharingRouter);
-  app.use('/api', questionCollaborationRouter);
   app.use('/api', enrollmentRouter); // Authenticated supplemental enrollment.
   app.use('/api', registrationCodesRouter);
   app.use('/api', canvasRouter); // Canvas OAuth, linked courses, roster sync and file import.

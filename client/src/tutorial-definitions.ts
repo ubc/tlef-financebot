@@ -399,29 +399,6 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
     ]
   },
   {
-    "id": "instructor-collaboration",
-    "role": "instructor",
-    "label": "Edit a question together",
-    "path": "bank",
-    "steps": [
-      {
-        "selector": "[data-tutorial=\"collaboration-presence\"]",
-        "title": "See who is editing",
-        "body": "Presence and connection status show the active shared draft. Concurrent field edits merge into this draft without changing the saved question."
-      },
-      {
-        "selector": "[data-tutorial=\"collaboration-editor\"]",
-        "title": "Work in the shared draft",
-        "body": "Edit the stem, answers and explanations together. If the saved question changes elsewhere, compare versions before continuing."
-      },
-      {
-        "selector": "[data-tutorial=\"collaboration-save\"]",
-        "title": "Save one reviewed version",
-        "body": "Saving validates the shared draft and creates a new question version in Questions → To review. Download a copy before leaving if updates cannot be confirmed."
-      }
-    ]
-  },
-  {
     "id": "instructor-parameters",
     "role": "instructor",
     "label": "Parameterized questions",

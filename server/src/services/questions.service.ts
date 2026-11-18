@@ -197,8 +197,6 @@ export async function editQuestion(
     expectedState?: PublicationState;
     expectedTags?: { loIds: ObjectId[]; themeIds: ObjectId[] };
     submitForReview?: boolean;
-    collaborationDraftId?: ObjectId;
-    collaborationCommitId?: string;
     regenerationCandidateId?: ObjectId;
     authoringQuality?: QuestionVersion['authoringQuality'];
     taskDescriptor?: QuestionVersion['taskDescriptor'];
@@ -208,18 +206,12 @@ export async function editQuestion(
   const question = await authoringCollection(questionsCol()).findOne({ _id: questionId });
   if (!question) throw new Error('question-not-found');
   if (authoringCommitAvailable() && !currentAuthoringSession()) return withCourseAuthoringWrite(question.courseId, () => editQuestion(questionId, patch, byPuid));
-  const sharedCommit = Boolean(patch.collaborationDraftId && patch.collaborationCommitId);
 
   if (patch.expectedVersionId && !question.currentVersionId.equals(patch.expectedVersionId)) throw new Error('question-conflict');
   if (patch.expectedState !== undefined && question.state !== patch.expectedState) throw new Error('question-conflict');
   if (patch.expectedTags && (JSON.stringify(question.loIds) !== JSON.stringify(patch.expectedTags.loIds)
     || JSON.stringify(question.themeIds) !== JSON.stringify(patch.expectedTags.themeIds))) throw new Error('question-conflict');
-  if (patch.submitForReview) {
-    const reviewable = sharedCommit
-      ? patch.expectedState !== undefined && question.state !== 'archived'
-      : ['approved', 'paused'].includes(question.state);
-    if (!patch.expectedVersionId || !reviewable) throw new Error('question-conflict');
-  }
+  if (patch.submitForReview && (!patch.expectedVersionId || !['approved', 'paused'].includes(question.state))) throw new Error('question-conflict');
   if (patch.sourceRefs !== undefined) {
     const ids = [...new Map(patch.sourceRefs.map(ref => [ref.materialId.toHexString(), ref.materialId])).values()];
     if (ids.length && await authoringCollection(materialsCol()).countDocuments({ _id: { $in: ids }, courseId: question.courseId }) !== ids.length) throw new Error('invalid-options:source-outside-course');
@@ -303,7 +295,7 @@ export async function editQuestion(
     createdBy: byPuid,
     createdAt: now,
   };
-  // A later ordinary edit must never inherit another commit's recovery marker.
+  // Historical shared-draft markers (Edit together, removed) are never inherited.
   delete next.collaborationDraftId;
   delete next.collaborationCommitId;
   delete next.regenerationCandidateId;
@@ -312,10 +304,6 @@ export async function editQuestion(
   if (patch.taskDescriptor) next.taskDescriptor = patch.taskDescriptor;
   if (patch.regenerationCandidateId) next.regenerationCandidateId = patch.regenerationCandidateId;
   if (patch.authoringQuality) next.authoringQuality = patch.authoringQuality;
-  if (patch.collaborationDraftId && patch.collaborationCommitId) {
-    next.collaborationDraftId = patch.collaborationDraftId;
-    next.collaborationCommitId = patch.collaborationCommitId;
-  }
 
   // R4: a verification proof belongs to the exact content it was computed
   // over. `next` spreads the PREVIOUS version, so without this the old proof
@@ -345,13 +333,6 @@ export async function editQuestion(
   );
 
   if (result.matchedCount !== 1) {
-    if (sharedCommit) {
-      // A shared-draft recovery may have published this immutable version
-      // between insertOne and our head CAS. Version numbers are unique per
-      // question, so a head at this number (or later) includes this commit.
-      const recovered = await authoringCollection(questionsCol()).findOne({ _id: questionId });
-      if (recovered && recovered.currentVersion >= next.version) return { _id: insertedId, ...next };
-    }
     await authoringCollection(questionVersionsCol()).deleteMany({ _id: insertedId });
     throw new Error('question-conflict');
   }

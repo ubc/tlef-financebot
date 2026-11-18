@@ -11,7 +11,6 @@ import type { CourseRegistrationCodeBatch } from '../../types/registration-code'
 import type { OperationEvent } from '../../types/domain';
 import type { IpBlockEntry } from '../../types/ip-block';
 import type { CourseInstructorShare } from '../../types/course-sharing';
-import type { QuestionDraft, QuestionPresence } from '../../types/collaboration';
 import type { Collection, Document, ObjectId, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
@@ -69,8 +68,10 @@ export const courseInstructorSharesCol = (): Collection<CourseInstructorShare> =
   getDb().collection<CourseInstructorShare>('courseInstructorShares');
 export const coursePeopleImportsCol = (): Collection<CoursePeopleImport> =>
   getDb().collection<CoursePeopleImport>('coursePeopleImports');
-export const questionDraftsCol = (): Collection<QuestionDraft> => getDb().collection<QuestionDraft>('questionDrafts');
-export const questionPresenceCol = (): Collection<QuestionPresence> => getDb().collection<QuestionPresence>('questionPresence');
+// Legacy "Edit together" data (removed 2026-11-18, spec D5). Nothing writes it;
+// course deletion still removes a course's leftovers.
+export const questionDraftsCol = (): Collection<{ courseId: ObjectId }> => getDb().collection<{ courseId: ObjectId }>('questionDrafts');
+export const questionPresenceCol = (): Collection<{ courseId: ObjectId }> => getDb().collection<{ courseId: ObjectId }>('questionPresence');
 
 export const modelCallReceiptsCol = (): Collection<ModelCallReceipt> => getDb().collection<ModelCallReceipt>('modelCallReceipts');
 export const modelUsageSessionsCol = (): Collection<ModelUsageSession> => getDb().collection<ModelUsageSession>('modelUsageSessions');
@@ -119,9 +120,6 @@ export const INDEX_SPECS: IndexSpec[] = [
   { collection: 'modelUsageSessions', keys: { operationId: 1 } },
   { collection: 'modelUsageSessions', keys: { 'actor.puid': 1, startedAt: -1 } },
   { collection: 'coursePeopleImports', keys: { 'members.puid': 1 } },
-  { collection: 'questionDrafts', keys: { questionId: 1 }, options: { unique: true } },
-  { collection: 'questionPresence', keys: { questionId: 1, clientId: 1, puid: 1 }, options: { unique: true } },
-  { collection: 'questionPresence', keys: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
   { collection: 'courseInstructorShares', keys: { courseId: 1, email: 1 }, options: { unique: true } },
   { collection: 'courseInstructorShares', keys: { status: 1, recipientPuid: 1 } },
   { collection: 'courseInstructorShares', keys: { status: 1, email: 1 } },

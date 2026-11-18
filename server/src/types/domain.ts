@@ -374,7 +374,8 @@ export interface QuestionVersion {
   // the whole version chain is the union of editedFields over every version
   // from v2 up to this one.
   editedFields?: string[];
-  /** Private recovery markers for an explicitly committed collaborative draft. */
+  /** Historical: recovery markers of a committed Edit together draft (feature
+   * removed 2026-11-18). Kept so old versions still type-check; never written. */
   collaborationDraftId?: ObjectId;
   collaborationCommitId?: string;
   /** Durable explicit regeneration adoption recovery marker. */

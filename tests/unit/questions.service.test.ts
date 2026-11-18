@@ -357,55 +357,24 @@ describe('editQuestion (IN-Q03)', () => {
     expect(questionsUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('persists recovery markers only on the version created by that shared commit', async () => {
-    const collaborationDraftId = new ObjectId();
-    const collaborationCommitId = 'commit-request';
-    const saved = await editQuestion(questionId, { stem: 'Shared edit', collaborationDraftId, collaborationCommitId }, 'instructor');
-    expect(saved).toMatchObject({ collaborationDraftId, collaborationCommitId });
-    versionsFindOne.mockResolvedValue({ ...currentVersion, collaborationDraftId, collaborationCommitId });
+  it('never carries a historical Edit together recovery marker into a new version', async () => {
+    versionsFindOne.mockResolvedValue({ ...currentVersion, collaborationDraftId: new ObjectId(), collaborationCommitId: 'old-commit' });
     const ordinary = await editQuestion(questionId, { stem: 'Ordinary edit' }, 'instructor');
     expect(ordinary.collaborationDraftId).toBeUndefined();
     expect(ordinary.collaborationCommitId).toBeUndefined();
   });
 
-  it.each(['draft', 'pending-review', 'reviewed', 'approved', 'paused'] as const)('submits a private shared commit from %s to review with its expected state', async state => {
+  it.each(['draft', 'pending-review', 'reviewed', 'archived'] as const)('refuses submitForReview from %s (only approved or paused questions return to review)', async state => {
     questionsFindOne.mockResolvedValue({ ...questionHead, state });
-    const result = await editQuestion(questionId, { stem: 'Shared edit', expectedVersionId: versionId, expectedState: state,
-      submitForReview: true, collaborationDraftId: new ObjectId(), collaborationCommitId: 'shared-submit',
-    }, 'instructor');
-    expect(questionsUpdateOne).toHaveBeenCalledWith({ _id: questionId, currentVersionId: versionId, state },
-      expect.objectContaining({ $set: expect.objectContaining({ state: 'pending-review', currentVersionId: result._id }) }));
-  });
-
-  it('never restores an archived question through private shared submission', async () => {
-    questionsFindOne.mockResolvedValue({ ...questionHead, state: 'archived' });
-    await expect(editQuestion(questionId, { stem: 'Shared edit', expectedVersionId: versionId, expectedState: 'archived',
-      submitForReview: true, collaborationDraftId: new ObjectId(), collaborationCommitId: 'archived-submit',
-    }, 'instructor')).rejects.toThrow('question-conflict');
+    await expect(editQuestion(questionId, { stem: 'Edit', expectedVersionId: versionId, submitForReview: true }, 'instructor')).rejects.toThrow('question-conflict');
     expect(versionsInsertOne).not.toHaveBeenCalled();
   });
 
-  it.each([2, 3])('retains the shared version when recovery advanced the head to version %s before its CAS', async currentVersion => {
-    const insertedId = new ObjectId();
-    versionsInsertOne.mockResolvedValue({ insertedId });
-    questionsUpdateOne.mockResolvedValue({ matchedCount: 0 });
-    questionsFindOne.mockResolvedValueOnce(questionHead).mockResolvedValueOnce({ ...questionHead,
-      currentVersion, currentVersionId: currentVersion === 2 ? insertedId : new ObjectId(), state: 'pending-review' });
-    await expect(editQuestion(questionId, { stem: 'Shared edit', expectedVersionId: versionId, expectedState: 'draft',
-      submitForReview: true, collaborationDraftId: new ObjectId(), collaborationCommitId: 'recovered-submit',
-    }, 'instructor')).resolves.toMatchObject({ _id: insertedId, version: 2 });
-    expect(versionsDeleteMany).not.toHaveBeenCalled();
-  });
-
-  it('cleans up a shared version when the head CAS loses to a state change without recovery', async () => {
-    const insertedId = new ObjectId();
-    versionsInsertOne.mockResolvedValue({ insertedId });
-    questionsUpdateOne.mockResolvedValue({ matchedCount: 0 });
-    questionsFindOne.mockResolvedValueOnce(questionHead).mockResolvedValueOnce({ ...questionHead, state: 'archived' });
-    await expect(editQuestion(questionId, { stem: 'Shared edit', expectedVersionId: versionId, expectedState: 'draft',
-      submitForReview: true, collaborationDraftId: new ObjectId(), collaborationCommitId: 'lost-submit',
-    }, 'instructor')).rejects.toThrow('question-conflict');
-    expect(versionsDeleteMany).toHaveBeenCalledWith({ _id: insertedId });
+  it.each(['approved', 'paused'] as const)('returns an edited %s question to review', async state => {
+    questionsFindOne.mockResolvedValue({ ...questionHead, state });
+    const result = await editQuestion(questionId, { stem: 'Edit', expectedVersionId: versionId, submitForReview: true }, 'instructor');
+    expect(questionsUpdateOne).toHaveBeenCalledWith({ _id: questionId, currentVersionId: versionId, state },
+      expect.objectContaining({ $set: expect.objectContaining({ state: 'pending-review', currentVersionId: result._id }) }));
   });
 
   it('rejects a stale tag snapshot before replacing another colleague\'s tags', async () => {

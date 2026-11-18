@@ -76,7 +76,6 @@
     "ubc-genai-toolkit-document-parsing": "0.2.0",
     "ubc-genai-toolkit-embeddings": "0.1.1",
     "ubc-genai-toolkit-llm": "0.3.0",
-    "yjs": "^13.6.32",
     "zod": "^3.25.76"
   },
   "devDependencies": {
