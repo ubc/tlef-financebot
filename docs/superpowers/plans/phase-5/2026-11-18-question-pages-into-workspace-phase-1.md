@@ -27,7 +27,7 @@ flag-card links still work; they are moved in phases 2 and 3.
 
 ## Tasks
 
-- [ ] **1. Edits of approved and paused questions return them to review.**
+- [x] **1. Edits of approved and paused questions return them to review.**
   `questions-reader.ts` `editor().save` sends `submitForReview: true` when the
   state is `approved` or `paused` (the server accepts it only in those states).
   Same for the difficulty save in task 5. Question details is left as is (it

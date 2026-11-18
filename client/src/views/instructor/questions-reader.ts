@@ -176,7 +176,8 @@ export function createQuestionReader(options: ReaderOptions) {
       busy = true;
       root.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>('button, textarea').forEach((control) => { control.disabled = true; });
       try {
-        await editQuestion(current.id, { stem: stem.value, options: draftOptions, expectedVersionId: current.currentVersionId });
+        // The server returns an approved or paused question to review only when asked.
+        await editQuestion(current.id, { stem: stem.value, options: draftOptions, expectedVersionId: current.currentVersionId, ...(returnsToReview ? { submitForReview: true } : {}) });
         dirty = false; editing = false; busy = false;
         await options.onMutated(returnsToReview ? 'Changes saved. The question is back in To review.' : 'Changes saved. Review the updated question before approving.', current.id);
         if (row?.id === current.id) await load(row, true);

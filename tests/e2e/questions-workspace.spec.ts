@@ -64,6 +64,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const failIds = new Set<string>();
   const themeCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const resolveCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
+  const patchCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
 
   const released = (themeId: string): boolean => {
     const theme = themes.find((t) => t.themeId === themeId);
@@ -150,6 +151,28 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
         question.state = body.to;
         return r.fulfill({ json: question });
       }
+      if (method === 'PATCH') {
+        // Mirrors questions.service editQuestion: content keys make a new
+        // version, tags only move the head, and only submitForReview changes state.
+        const body = r.request().postDataJSON();
+        patchCalls.push({ id: question.id, body });
+        if (failIds.has(question.id) || body.expectedVersionId !== question.currentVersionId
+          || (body.expectedTags && (JSON.stringify(body.expectedTags.loIds) !== JSON.stringify(question.loIds) || JSON.stringify(body.expectedTags.themeIds) !== JSON.stringify(question.themeIds)))) {
+          return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
+        }
+        if (body.submitForReview && !['approved', 'paused'].includes(question.state)) return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
+        const content = ['stem', 'options', 'difficulty'].filter((key) => body[key] !== undefined);
+        if (content.length) {
+          question.currentVersion += 1;
+          question.currentVersionId = `${question.currentVersionId}-${question.currentVersion}`;
+          question.current = { ...question.current, ...Object.fromEntries(content.map((key) => [key, body[key]])), _id: question.currentVersionId, version: question.currentVersion };
+          delete question.agentDecision;
+        }
+        if (body.loIds) question.loIds = body.loIds;
+        if (body.themeIds) question.themeIds = body.themeIds;
+        if (body.submitForReview) question.state = 'pending-review';
+        return r.fulfill({ json: question.current });
+      }
       return r.fulfill({ json: question });
     }
     return r.fulfill({ json: {} });
@@ -162,7 +185,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     renderQuestions(document.querySelector('main')!, { id: 'course' });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls };
+  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -228,6 +251,20 @@ test('a stale version says the question changed and reloads it', async ({ page }
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(page.locator('.questions-reader__notice')).toContainText('This question changed since you opened it');
   expect(mock.questions[0].state).toBe('draft');
+});
+
+test('editing an approved question sends it back to To review', async ({ page }) => {
+  const mock = await setup(page, { tab: 'approved' });
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 5:');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.locator('.questions-reader__warning')).toContainText('Saving returns this question to To review');
+  await page.getByLabel('Question stem').fill('Question 5: Two opposite forces act on a cart. What is the net force?');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('The question is back in To review.');
+  expect(mock.patchCalls).toEqual([{ id: 'q5', body: expect.objectContaining({ expectedVersionId: 'v5', submitForReview: true }) }]);
+  expect(mock.questions[4].state).toBe('pending-review');
+  await expect(tabCount(page, 'Approved')).toHaveText('1');
+  await expect(tabCount(page, 'To review')).toHaveText('5');
 });
 
 test('bulk partial failure lists the failures and keeps them selected', async ({ page }) => {
