@@ -1144,10 +1144,6 @@ input.input[type='datetime-local']::-webkit-calendar-picker-indicator:hover {
   max-width: none;
 }
 
-.view--question-detail {
-  max-width: 1180px;
-}
-
 @keyframes rise {
   from {
     opacity: 0;
@@ -5104,26 +5100,6 @@ button.quick-action--disabled { cursor: default; }
   color: var(--text);
 }
 
-.question-detail-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 0.9fr);
-  gap: 1.5rem;
-  align-items: start;
-}
-
-@media (max-width: 900px) {
-  .question-detail-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.question-editor {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 0.5rem;
-}
-
 .question-meta-row {
   display: flex;
   align-items: center;
@@ -5134,24 +5110,10 @@ button.quick-action--disabled { cursor: default; }
   margin-bottom: 0.5rem;
 }
 
-.question-meta__label {
-  color: var(--muted);
-  font-weight: 600;
-}
-
 .question-meta-row label {
   color: var(--muted);
   font-size: 0.85rem;
   margin-right: 0.4rem;
-}
-
-.question-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  min-width: 0;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 
 .lo-chip {
@@ -5179,65 +5141,6 @@ button.quick-action--disabled { cursor: default; }
   color: var(--down);
 }
 
-.lo-chip-add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  flex: 1 1 100%;
-  min-width: 0;
-  gap: 0.4rem;
-}
-
-.lo-chip-add__select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.lo-chip-add .btn {
-  white-space: nowrap;
-}
-
-.option-editors {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  margin: 1rem 0;
-}
-
-.option-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.option-editor__role-label {
-  align-self: flex-start;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  background: var(--instr-gray-bg);
-  color: var(--instr-gray-fg);
-  font-size: 0.72rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.option-editor__explanation-label {
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.option-editor__explanation {
-  min-height: 3rem;
-}
-
-.question-actions {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-
 .question-save-row {
   margin-top: 0.5rem;
 }
@@ -5250,61 +5153,12 @@ button.quick-action--disabled { cursor: default; }
   background: color-mix(in srgb, var(--warn) 10%, var(--surface-2)) !important;
 }
 
-.agent-report-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 1rem;
-}
-
-.agent-report-panel__title {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.agent-report-block {
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.agent-report-block__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.4rem;
-  font-weight: 650;
-  font-size: 0.85rem;
-}
-
-.agent-report-block__body {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.agent-report-empty {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
 @media (max-width: 600px) {
   .question-meta-row {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .lo-chip-add {
-    grid-template-columns: 1fr;
-  }
-
-  .question-actions {
-    flex-wrap: wrap;
-  }
 }
 
 /* ---- Review Queue (I5) ------------------------------------------------------- */
@@ -5598,36 +5452,9 @@ button.quick-action--disabled { cursor: default; }
   background: color-mix(in srgb, var(--warn) 9%, var(--surface));
 }
 
-.flag-editor-banner__title {
-  margin: 0 0 0.45rem;
-  font-size: 1rem;
-}
-
 .flag-editor-banner p {
   margin: 0.35rem 0 0;
   line-height: 1.45;
-}
-
-.flag-editor-banner__reason {
-  padding-top: 0.45rem;
-  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-}
-
-.question-notes,
-.question-student-reply {
-  margin-top: 1.15rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.question-notes__list {
-  display: grid;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.question-notes > .btn {
-  margin-top: 0.55rem;
 }
 
 .question-note {
@@ -6820,123 +6647,14 @@ button.quick-action--disabled { cursor: default; }
   }
 }
 
-/* Variable Definitions table on the parameterization panel (design spec
-   2026-08-05). One table for both drawn slots and computed values, so an
-   instructor reads every number a student can see in one place. Column order
-   matches the header in param-config.ts. */
-.vardef__head,
-.vardef__row {
-  display: grid;
-  grid-template-columns:
-    minmax(0, 1.1fr) minmax(0, 1.7fr)
-    minmax(0, 0.6fr) minmax(0, 0.6fr) minmax(0, 1.9fr) minmax(0, 0.7fr) auto;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.35rem 0;
-}
-
-.vardef__head {
-  font-size: 0.8rem;
-  font-weight: 650;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-
-.vardef__row {
-  border-bottom: 1px solid var(--border);
-}
-
-/* The variable as it appears in the stem. `[NAME]` reads far better than the
-   stored `{{NAME}}`; the storage format is unchanged. */
-.slot-chip {
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.vardef__var {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  align-items: flex-start;
-}
-
-.vardef__warn {
-  font-size: 0.7rem;
-  color: var(--warn);
-}
-
-.vardef__na {
-  display: flex;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.vardef__type {
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.verification-banner {
-  padding: 0.65rem 0.85rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.verification-banner--ok {
-  background: var(--ok-bg);
-  color: var(--ok-fg);
-}
-
-.verification-banner--fail {
-  background: var(--err-bg);
-  color: var(--err-fg);
-}
-
-@media (max-width: 900px) {
-  .vardef__head {
-    display: none;
-  }
-
-  .vardef__row {
-    grid-template-columns: 1fr;
-    padding: 0.6rem 0;
-  }
-}
-
-/* Worked example on the question detail view: what a STUDENT sees, rendered
-   from one server-side sample draw. The editor above it shows the raw
-   {{placeholder}} template, which is right for editing and unreadable for
-   judging the question. */
-.question-sample {
-  margin: 1rem 0;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-
-.question-sample__stem {
-  margin: 0.5rem 0 0.75rem;
-  line-height: 1.55;
-}
-
 /* Stem and option text are rendered markdown, so they arrive wrapped in block
    elements. Collapse the outer margins so the panel keeps the tight spacing it
    had when these were plain strings. */
-.question-sample__stem > :first-child,
 .question-sample__text > :first-child,
 .question-sample__explanation > :first-child {
   margin-top: 0;
 }
 
-.question-sample__stem > :last-child,
 .question-sample__text > :last-child,
 .question-sample__explanation > :last-child {
   margin-bottom: 0;
@@ -6944,17 +6662,6 @@ button.quick-action--disabled { cursor: default; }
 
 .question-sample__text {
   min-width: 0;
-}
-
-.question-sample__options {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  /* Roomier than the 0.4rem this had when options were one line each: rows now
-     carry a rendered explanation, so adjacent options need visible separation. */
-  gap: 0.75rem;
 }
 
 .question-sample__option {
@@ -6996,64 +6703,6 @@ button.quick-action--disabled { cursor: default; }
   border-radius: var(--radius-sm);
   background: var(--ok-bg);
   color: var(--ok-fg);
-}
-
-/* Parameterization page layout. These class names were referenced in the
-   markup but never had any CSS, so every block sat flush against the next —
-   the add-variable buttons, the verification banner and the preview controls
-   ran together as one undifferentiated stack. Spacing is applied per block
-   rather than as a flex `gap` on the container, because the table header and
-   its two row groups (drawn, then computed) must stay tight against each
-   other to read as a single table. */
-.param-config-layout > .detail-section-title {
-  margin: 1.75rem 0 0.5rem;
-}
-
-.param-config-layout > .detail-section-title:first-child {
-  margin-top: 0;
-}
-
-.param-config-layout > .form-field__help {
-  margin: 0 0 0.75rem;
-}
-
-.param-config__stem {
-  margin: 0;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  line-height: 1.8;
-}
-
-/* Clear of the table above and the banner below. */
-.param-config__add {
-  margin-top: 1rem;
-}
-
-.param-config__verification:not(:empty),
-.param-config__error:not(:empty) {
-  margin-top: 1.25rem;
-}
-
-.param-config-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 1.5rem;
-}
-
-.param-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.param-preview__warnings {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--warn);
-  font-size: 0.85rem;
 }
 
 /* =============================================================================

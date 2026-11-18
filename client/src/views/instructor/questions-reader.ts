@@ -727,12 +727,10 @@ export function createQuestionReader(options: ReaderOptions) {
     const context = el('aside', { class: 'gw-plan questions-reader__context', 'aria-label': 'Question inspector' },
       inspector({ active: inspectorTab, teamCount: pendingSuggestions(current).length, panel, onSelect: selectInspectorTab }));
 
-    const fullDetails = `#${coursePath}/bank/${encodeURIComponent(current.id)}?from=questions`;
     const links = el('details', { class: 'questions-reader__links' },
       el('summary', {}, 'More actions'),
       el('div', { class: 'questions-reader__link-menu' },
         current.state !== 'archived' ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
-        el('a', { href: fullDetails, text: 'Open full details ↗' }),
         el('button', { class: 'link-button', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload')));
 
     const readingPane = el('div', { class: 'questions-reader__scroll' },
