@@ -400,11 +400,13 @@ commonly need:
 - Question pages into the workspace (2026-11-18, spec
   `docs/superpowers/specs/2026-11-18-question-pages-into-workspace-design.md`,
   plan `docs/superpowers/plans/phase-5/2026-11-18-question-pages-into-workspace-phase-1.md`):
-  phase 1 done — the reader has Read / Edit / Preview modes and the inspector
-  has Review / Settings (difficulty, Topics & LOs) / Team (TA suggestions,
-  internal comments) tabs. Editing an approved or paused question now returns
-  it to review. Phases 2 (flags, Compare) and 3 (Parameters, redirects,
-  removing Question details, Parameters and Edit together) are next.
+  phases 1–2 done — the reader has Read / Edit / Preview / Compare modes and
+  the inspector has Review / Settings (difficulty, Topics & LOs) / Team (TA
+  suggestions, internal comments) tabs. Editing an approved or paused question
+  returns it to review; correcting it from a flag keeps it live, resolves the
+  reports and notifies real flaggers. Student Analytics opens the workspace.
+  Phase 3 (Parameters, redirects, removing Question details, Parameters and
+  Edit together) is next.
 
 - Admin request evidence now retains canonical source/socket IPs and received
   query-free paths for new unmatched 404/IP-blocked calls (4,096-character cap).

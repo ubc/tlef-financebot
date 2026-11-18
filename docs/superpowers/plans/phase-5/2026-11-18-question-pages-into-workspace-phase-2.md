@@ -39,14 +39,14 @@ similarity links move in phase 3 with the redirects).
 
 ## Tasks
 
-- [ ] **1. URL state.** `questionsPath` gains `flagVersionId` (written only
+- [x] **1. URL state.** `questionsPath` gains `flagVersionId` (written only
   with `mode=edit`) and `analyticsVersionId` (written only with `q`).
   `ReaderMode` gains `'compare'`; `parseMode` accepts it. `questions.ts` reads
   both ids on load and passes them to the reader (`initialFlagVersionId`,
   `analyticsVersionId`); selecting another question drops them. Unit tests in
   `questions-model.test.ts`.
 
-- [ ] **2. Flag fix in Edit mode (D4).**
+- [x] **2. Flag fix in Edit mode (D4).**
   - `createFlagCard` gains `onCorrect(group)`. **Correct the question**
     becomes a button that calls it; the reader enters Edit with a flag context
     `{ versionId, flags }` (the group's open flags). The URL gets
@@ -67,13 +67,13 @@ similarity links move in phase 3 with the redirects).
     and let the flag card show what is still open.
   - Selecting another question or leaving Edit drops the flag context.
 
-- [ ] **3. Archive and Clear in the flag card (P2-3).** **Archive the
+- [x] **3. Archive and Clear in the flag card (P2-3).** **Archive the
   question** becomes a button: `textPromptDialog` ("Archive the question?",
   reply field, danger tone) → `resolveGroup(group, 'archive', reply)` →
   `onChanged`. Remove `editorPath` and the `archived->archived` handling;
   update the module comment. Clear is unchanged.
 
-- [ ] **4. Compare mode (D2, D8).** New `questions-compare.ts`, one instance
+- [x] **4. Compare mode (D2, D8).** New `questions-compare.ts`, one instance
   per loaded question (like the preview):
   - Shown as a mode option for To review states only (P2-4). The More actions
     "Regenerate side by side" link goes.
@@ -93,7 +93,7 @@ similarity links move in phase 3 with the redirects).
     is open; the aside is hidden and the reading pane takes its column. It
     comes back on the tab it showed when leaving Compare.
 
-- [ ] **5. Recorded analytics version notice.** When the reader opens with
+- [x] **5. Recorded analytics version notice.** When the reader opens with
   `analyticsVersionId`, a notice above the mode control loads
   `getAnswerDistribution(courseId, questionId, { versionId })` and shows
   "Recorded analytics version N · Current content" or "· Historical content —
@@ -101,16 +101,16 @@ similarity links move in phase 3 with the redirects).
   a `<details>`. 404/400 → "The requested recorded version was not found."
   Other errors → retry. **Dismiss** removes it and the URL parameter.
 
-- [ ] **6. Links.** `analytics.ts` "Review question (recorded version N)" →
+- [x] **6. Links.** `analytics.ts` "Review question (recorded version N)" →
   `questionsPath(courseId, { q, analyticsVersionId })` (the workspace opens the
   tab that holds the question). Question details keeps working for its other
   entry points until phase 3.
 
-- [ ] **7. Styles.** Flag Edit header and reply field, Compare prompt and
+- [x] **7. Styles.** Flag Edit header and reply field, Compare prompt and
   two-column comparison (one column ≤ 820px container), `is-wide` reader,
   analytics notice. Light/dark and 390px.
 
-- [ ] **8. E2E (mocked, `questions-workspace.spec.ts`).** Mock handlers for
+- [x] **8. E2E (mocked, `questions-workspace.spec.ts`).** Mock handlers for
   `POST /api/courses/:id/questions/:qid/regenerate`,
   `POST /api/flags/:id/remediation/notify`, the resolve body's
   `correctnessAffecting`, and `GET …/analytics/questions/:qid/distribution`.
@@ -129,12 +129,31 @@ similarity links move in phase 3 with the redirects).
   - Update the flag-card test that checked the old `href`s.
   - 390px dark axe check with Compare open.
 
-- [ ] **9. Full-stack specs that drove Question details for these flows.**
+- [x] **9. Full-stack specs that drove Question details for these flows.**
   `instructor-preview.spec.ts` (test flag → Correct → "Save & Update Question
   Bank") moves to the workspace's Save and resolve. `analytics-dashboard.spec.ts`
   checks the new link and opens the workspace URL instead of `/bank/:id`.
   Run both against the local stack and record the result here. (`flag-loop`
   only checks the reader's stem and is not affected.)
 
-- [ ] **10. Docs.** `client/AGENTS.md` (flag fix, Compare, analytics notice,
+- [x] **10. Docs.** `client/AGENTS.md` (flag fix, Compare, analytics notice,
   new URL parameters), AGENTS.md "Current state", tick this checklist.
+
+## Notes from implementation
+
+- `analytics-dashboard.spec.ts` drove Question details' recorded-version
+  notice; those retry / not-found checks now live in
+  `questions-workspace.spec.ts` against the workspace notice, and the analytics
+  spec checks the new `questions?q=&analyticsVersionId=` link. 10/10 pass.
+- `instructor-preview.spec.ts` (full stack, run 2026-11-18): the test-flag test
+  now corrects through Save and resolve and passes. Its student half was stale
+  (the learning workspace reports through "Report a problem" and starts with
+  "Start lesson →"), so those steps were updated too. The other test in the file,
+  "uses the full student shell…", fails before reaching any workspace code: it
+  expects an "Exam Prep" sidebar link that the unified course sidebar no longer
+  has. Not changed here.
+- Compare labels each option region with its column ("Generated alternative,
+  Option A") so the two columns' regions stay unique (axe `landmark-unique`).
+- A flag fix opened from the URL waits for the flag card to load, then rebuilds
+  the context from that version's open flags; with none open, Edit opens
+  without a flag context.

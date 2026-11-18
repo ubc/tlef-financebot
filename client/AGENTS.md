@@ -223,21 +223,28 @@ per-Topic release summary and the tab's rows with server-decided `studentVisible
 `hiddenReason`; the client never derives visibility. Modules:
 `questions-model.ts` (pure: tabs, paths, filters, bulk runner — unit-tested),
 `questions-reader.ts` (reader, state-specific actions, 409 handling; middle-pane
-modes Read / Edit / Preview in the URL as `mode=edit|preview`; Edit converts
+modes Read / Edit / Preview / Compare in the URL as `mode=edit|preview|compare`,
+plus `flagVersionId` for a flag fix and `analyticsVersionId` from Student Analytics; Edit converts
 `{{NAME}}` to `[NAME]` and back via `placeholders.ts` and sends `submitForReview`
 for approved/paused questions), `questions-inspector.ts` (Review / Settings / Team
 tabs), `questions-settings.ts` (difficulty, Topics & LOs with `expectedTags`),
 `questions-team.ts` (TA suggested edits, internal comments), `questions-preview.ts`
 (student preview from `GET /api/questions/:id/sample`), `question-tags.ts` (LO
 helpers shared with Question details),
-`questions-flag-card.ts` (open reports, Correct/Archive via question detail
-`?from=flags&flagVersionId=&intent=`, Clear, remediation + notify, resolved history),
+`questions-flag-card.ts` (open reports; Correct hands the group to the reader,
+which opens Edit with a reply field and **Save and resolve** — the correction stays
+live, the reports resolve `correct`, real flaggers are notified, test flags never
+are; Archive and Clear resolve in the card; remediation panel; resolved history),
+`questions-compare.ts` (Compare mode, To review only: regenerate an alternative,
+compare side by side, Replace with variant; the inspector collapses while open),
+`questions-analytics-notice.ts` (recorded version for `analyticsVersionId` links
+from Student Analytics),
 `questions-release.ts` (Manage releases: per-Topic Release now / Schedule / Keep
 hidden, saved with each Topic's `revision`). Release happens only here; Course
 Structure shows a read-only label. Shared labels live in `question-labels.ts`; the
 TA review queue's decision tabs live in `views/ta/queue-tabs.ts`. Styles:
-`styles/questions-workspace.css`. Question detail returns to Questions with the
-question selected and opens side-by-side regeneration for `?intent=regenerate`.
+`styles/questions-workspace.css`. Question detail still exists (phase 3 removes it) and returns to Questions with
+the question selected.
 
 Teaching Assistants now uses a compact searchable roster with native invitation
 and permission dialogs. Course Settings retains input nodes across five sections
