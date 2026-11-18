@@ -128,6 +128,8 @@ export function createQuestionParams(options: ParamsOptions) {
         onclick: () => { derived.splice(index, 1); changed(); draw(); } }, 'Remove')));
   }
 
+  const removeHeader = (): HTMLElement => el('th', { scope: 'col' }, el('span', { class: 'sr-only', text: 'Remove' }));
+
   function stemWithChips(): HTMLElement {
     const parts: Array<string | HTMLElement> = [];
     let last = 0;
@@ -187,14 +189,14 @@ export function createQuestionParams(options: ParamsOptions) {
       el('p', { class: 'questions-params__help', text: 'Each student gets values drawn from these ranges (or from an explicit list of values).' }),
       el('div', { class: 'questions-params__table-wrap' },
         el('table', { class: 'questions-params__table' },
-          el('thead', {}, el('tr', {}, ...['Name', 'Description', 'Min', 'Max', 'Step', 'Values', ''].map((text) => el('th', { scope: 'col', text })))),
+          el('thead', {}, el('tr', {}, ...['Name', 'Description', 'Min', 'Max', 'Step', 'Values'].map((text) => el('th', { scope: 'col', text })), removeHeader())),
           el('tbody', {}, ...slots.map((slot, index) => slotRow(slot, index, referenced))))),
       el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked, onclick: () => { slots.push({ name: '', description: '', min: '', max: '', step: '', values: '' }); changed(); draw(); } }, '+ Add drawn variable'),
       el('h3', { text: 'Computed values' }),
       el('p', { class: 'questions-params__help', text: 'The correct answer and every distractor are computed from the drawn variables, in order; a later formula may use an earlier name.' }),
       el('div', { class: 'questions-params__table-wrap' },
         el('table', { class: 'questions-params__table' },
-          el('thead', {}, el('tr', {}, ...['Name', 'Formula', 'Mistake (distractors)', ''].map((text) => el('th', { scope: 'col', text })))),
+          el('thead', {}, el('tr', {}, ...['Name', 'Formula', 'Mistake (distractors)'].map((text) => el('th', { scope: 'col', text })), removeHeader())),
           el('tbody', {}, ...derived.map(derivedRow)))),
       el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: locked, onclick: () => { derived.push({ name: '', formula: '', errorModel: '' }); changed(); draw(); } }, '+ Add computed value'),
       el('h3', { text: 'Verification' }),

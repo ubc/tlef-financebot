@@ -40,7 +40,7 @@ function makeQuestion(i: number, state: State, themeId = 'forces'): MockQuestion
   };
 }
 
-async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean; testFlag?: boolean; distributionFailures?: number } = {}) {
+async function setup(page: Page, options: { coursePublished?: boolean; tab?: string; extraHash?: string; withUsage?: boolean; parameterized?: boolean; suggestions?: boolean; testFlag?: boolean; distributionFailures?: number; verificationError?: string } = {}) {
   const questions: MockQuestion[] = [
     ...[1, 2, 3, 4].map((i) => makeQuestion(i, 'draft')),
     makeQuestion(5, 'approved'),
@@ -54,8 +54,8 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     }
   }
   if (options.parameterized) {
-    // q1 becomes a calculation: a drawn input and a derived answer.
-    Object.assign(questions[0].current, {
+    // q1 (draft) and q5 (approved) become calculations: a drawn input and a derived answer.
+    for (const index of [0, 4]) Object.assign(questions[index].current, {
       stem: 'A force of {{F}} N acts on 2 kg. What is the acceleration?',
       paramSlots: [{ name: 'F', min: 2, max: 10, step: 2 }],
       derivedValues: [{ name: 'A', formula: 'F/2' }, { name: 'A_WRONG', formula: 'F*2', errorModel: 'multiplied instead of divided' }],
@@ -90,6 +90,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   const noteCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const suggestionCalls: Array<[string, string]> = [];
   let sampleCalls = 0;
+  const previewCalls: Array<Record<string, unknown>> = [];
   const notifyCalls: string[] = [];
   let distributionFailures = options.distributionFailures ?? 0;
   const regenerateCalls: Array<Record<string, unknown>> = [];
@@ -211,6 +212,12 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       const current = question.current as unknown as { stem: string; options: Array<{ key: string; text: string; explanation: string }> };
       return r.fulfill({ json: { stem: fill(current.stem), options: current.options.map((o) => ({ key: o.key, text: fill(o.text), explanation: o.explanation })), parameterized } });
     }
+    if (/^\/api\/questions\/q\d+\/params\/preview$/.test(path)) {
+      const body = r.request().postDataJSON();
+      previewCalls.push(body);
+      const slot = (body.paramSlots as Array<{ name: string; min: number }>)[0];
+      return r.fulfill({ json: { warnings: [], draws: [1, 2, 3, 4, 5].map((i) => ({ seed: i, values: { F: slot.min * i }, stem: `A force of ${slot.min * i} N acts on 2 kg. What is the acceleration?` })) } });
+    }
     const notes = path.match(/^\/api\/questions\/(q\d+)\/internal-notes$/);
     if (notes && method === 'POST') {
       const body = r.request().postDataJSON();
@@ -245,7 +252,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
           return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
         }
         if (body.submitForReview && !['approved', 'paused'].includes(question.state)) return r.fulfill({ status: 409, json: { error: 'question-conflict' } });
-        const content = ['stem', 'options', 'difficulty'].filter((key) => body[key] !== undefined);
+        const content = ['stem', 'options', 'difficulty', 'paramSlots', 'derivedValues'].filter((key) => body[key] !== undefined);
         if (content.length) {
           question.currentVersion += 1;
           question.currentVersionId = `${question.currentVersionId}-${question.currentVersion}`;
@@ -255,7 +262,8 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
         if (body.loIds) question.loIds = body.loIds;
         if (body.themeIds) question.themeIds = body.themeIds;
         if (body.submitForReview) question.state = 'pending-review';
-        return r.fulfill({ json: question.current });
+        const unverified = body.derivedValues !== undefined && options.verificationError;
+        return r.fulfill({ json: { ...question.current, ...(unverified ? { verificationError: options.verificationError } : {}) } });
       }
       return r.fulfill({ json: question });
     }
@@ -269,7 +277,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     renderQuestions(document.querySelector('main')!, { id: 'course' });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls };
+  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls, previewCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -285,6 +293,9 @@ test('old routes redirect to the matching tab and keep the selection', async ({ 
     ['/instructor/course/course/bank?q=q5', '/instructor/course/course/questions?tab=approved&q=q5'],
     ['/instructor/course/course/queue?runId=r1', '/instructor/course/course/questions?tab=review&runId=r1'],
     ['/instructor/course/course/flags?question=q5', '/instructor/course/course/questions?tab=flags&q=q5'],
+    ['/instructor/course/course/bank/q5/params', '/instructor/course/course/questions?q=q5&mode=params'],
+    ['/instructor/course/course/bank/q5?from=flags&flagVersionId=v5&intent=edit', '/instructor/course/course/questions?tab=flags&q=q5&mode=edit&flagVersionId=v5'],
+    ['/instructor/course/course/bank/q1?from=questions&intent=regenerate', '/instructor/course/course/questions?q=q1&mode=compare'],
   ]) {
     await page.goto(`/redirect-fixture#${from}`);
     await page.evaluate(async () => {
@@ -711,4 +722,71 @@ test('an unknown recorded version is reported without a retry', async ({ page })
   const notice = page.getByRole('region', { name: 'Recorded analytics version' });
   await expect(notice).toContainText('The requested recorded version was not found.');
   await expect(notice.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+});
+
+test('Parameters edits the tables, draws samples of the drafts, and an approved question returns to review on save', async ({ page }) => {
+  const mock = await setup(page, { parameterized: true, tab: 'approved', extraHash: '&q=q5&mode=params' });
+  await expect(modeButton(page, 'Parameters')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.questions-reader__context')).toHaveCount(0);
+  const params = page.getByRole('region', { name: 'Parameters' });
+  await expect(params.locator('.questions-params__chip')).toHaveText(['[F]']);
+  await expect(params.getByLabel('Variable 1 name')).toHaveValue('F');
+  await expect(params.locator('.questions-params__status').first()).toHaveText('in stem');
+
+  await params.getByLabel('Variable 1 minimum').fill('4');
+  await params.getByLabel('Computed value 2 formula').fill('F*3');
+  await params.getByRole('button', { name: 'Draw five samples' }).click();
+  await expect(params.locator('.questions-params__draw-list li')).toHaveCount(5);
+  await expect(params.locator('.questions-params__draw-list li').first()).toHaveText('A force of 4 N acts on 2 kg. What is the acceleration?');
+  expect(mock.previewCalls[0]).toEqual(expect.objectContaining({ paramSlots: [{ name: 'F', min: 4, max: 10, step: 2 }] }));
+
+  // Leaving with unsaved parameters asks first.
+  await modeButton(page, 'Read').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+  await expect(modeButton(page, 'Parameters')).toHaveAttribute('aria-pressed', 'true');
+
+  await expect(params).toContainText('Saving returns this question to To review');
+  await params.getByRole('button', { name: 'Save parameters' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Parameters saved and verified. The question is back in To review.');
+  expect(mock.patchCalls[0].body).toEqual({
+    expectedVersionId: 'v5', submitForReview: true,
+    paramSlots: [{ name: 'F', min: 4, max: 10, step: 2 }],
+    derivedValues: [{ name: 'A', formula: 'F/2' }, { name: 'A_WRONG', formula: 'F*3', errorModel: 'multiplied instead of divided' }],
+  });
+  expect(mock.questions[4].state).toBe('pending-review');
+});
+
+test('a parameter save that fails verification says the question will not be served', async ({ page }) => {
+  await setup(page, { parameterized: true, verificationError: 'Options B and A show the same value.' });
+  await modeButton(page, 'Parameters').click();
+  const params = page.getByRole('region', { name: 'Parameters' });
+  await params.getByLabel('Computed value 1 formula').fill('F/4');
+  await params.getByRole('button', { name: 'Save parameters' }).click();
+  await expect(page.locator('.questions-notice')).toContainText('Parameters saved, but they could not be verified');
+  await expect(params.locator('.questions-params__verification')).toContainText('Not verified — this question will not be served to students. Options B and A show the same value.');
+});
+
+test('Parameters is offered only for a parameterized question', async ({ page }) => {
+  await setup(page, { tab: 'review', extraHash: '&q=q1&mode=params' });
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 1:');
+  await expect(modeButton(page, 'Read')).toHaveAttribute('aria-pressed', 'true');
+  await expect(modeButton(page, 'Parameters')).toHaveCount(0);
+});
+
+test('the Review tab shows where the question came from', async ({ page }) => {
+  await setup(page, { withUsage: true });
+  await page.getByRole('tabpanel').getByText('Origin & family').click();
+  await expect(page.getByRole('tabpanel')).toContainText('Generated · run r0 · item 1');
+});
+
+test('390px dark Parameters keeps its tables inside the pane and passes axe', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page, { parameterized: true });
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await page.locator('.questions-row__open').first().click();
+  await modeButton(page, 'Parameters').click();
+  await expect(page.getByRole('region', { name: 'Parameters' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const results = await new AxeBuilder({ page }).include('.questions-reader').analyze();
+  expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 });
