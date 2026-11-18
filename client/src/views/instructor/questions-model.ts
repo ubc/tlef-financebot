@@ -9,6 +9,7 @@ import {
   type Difficulty,
   type HiddenReason,
   type QuestionType,
+  type QuestionVersion,
   type QuestionWorkspace,
   type WorkspaceReleaseTheme,
   type WorkspaceRow,
@@ -34,10 +35,10 @@ export function defaultTab(counts: QuestionWorkspace['counts']): WorkspaceTab {
 
 /** The reader's middle-pane mode (spec D2). Read is the default and is
  * never written to the URL. */
-export type ReaderMode = 'read' | 'edit' | 'preview' | 'compare';
+export type ReaderMode = 'read' | 'edit' | 'preview' | 'compare' | 'params';
 
 export function parseMode(value: string | null): ReaderMode {
-  return value === 'edit' || value === 'preview' || value === 'compare' ? value : 'read';
+  return value === 'edit' || value === 'preview' || value === 'compare' || value === 'params' ? value : 'read';
 }
 
 export interface QuestionsPathParams {
@@ -252,4 +253,27 @@ export function solverSummary(verification: Pick<NumericVerification, 'parameter
   if (!removed.length) return null;
   const list = removed.map((row) => `${row.slot} ${row.values.join(', ')}`).join('; ');
   return `Parameter values adjusted automatically so no two options show the same number: removed ${list} (checked ${verification!.parameterSolver!.checkedCombinations} combinations).`;
+}
+
+/** "Origin & family" in the Review tab: where this version came from. */
+export function provenanceText(provenance: QuestionVersion['provenance']): string {
+  if (!provenance) return 'Legacy question · provenance not recorded';
+  switch (provenance.kind) {
+    case 'generated':
+      return `Generated · run ${provenance.runId.slice(-8)} · item ${provenance.item + 1}${provenance.blueprintId ? ` · blueprint ${provenance.blueprintId.slice(-8)}` : ''}`;
+    case 'imported':
+      return `Imported from ${provenance.sourceName ?? provenance.format.toUpperCase()} · item ${provenance.item + 1}`;
+    case 'script-migration':
+      return `Parameterized script migration${provenance.sourceName ? ` · ${provenance.sourceName}` : ''}`;
+    case 'edited':
+      return `Edited from version ${provenance.parentVersionId.slice(-8)}`;
+    case 'manual':
+      return 'Manual authoring';
+  }
+}
+
+/** The current version's origin; an edited version also names the original. */
+export function originText(current: QuestionVersion['provenance'], versions: ReadonlyArray<{ provenance?: QuestionVersion['provenance'] }>): string {
+  const original = versions.map((version) => version.provenance).find((candidate) => candidate?.kind !== 'edited');
+  return current?.kind === 'edited' && original ? `${provenanceText(current)} · Original: ${provenanceText(original)}` : provenanceText(current);
 }

@@ -37,10 +37,11 @@ import { authoringAnswer } from './authoring-answer.js';
 import { questionGenerationUsage } from './question-generation-usage.js';
 import { isFieldEdited } from './question-tags.js';
 import { inspector, type InspectorTab } from './questions-inspector.js';
-import { heldTopicNames, hiddenReasonText, objectiveNames, repairSummary, solverSummary, topicNames, type ReaderMode } from './questions-model.js';
+import { heldTopicNames, hiddenReasonText, objectiveNames, originText, repairSummary, solverSummary, topicNames, type ReaderMode } from './questions-model.js';
 import { createQuestionPreview } from './questions-preview.js';
 import { createQuestionCompare } from './questions-compare.js';
 import { createAnalyticsNotice } from './questions-analytics-notice.js';
+import { createQuestionParams, isParameterized, type ParamsPatch } from './questions-params.js';
 import { settingsPanel } from './questions-settings.js';
 import { pendingSuggestions, teamPanel } from './questions-team.js';
 
@@ -112,6 +113,7 @@ export function createQuestionReader(options: ReaderOptions) {
   let flagCard: ReturnType<typeof createFlagCard> | undefined;
   let preview: ReturnType<typeof createQuestionPreview> | undefined;
   let compare: ReturnType<typeof createQuestionCompare> | undefined;
+  let params: ReturnType<typeof createQuestionParams> | undefined;
   let analyticsNotice: ReturnType<typeof createAnalyticsNotice> | undefined;
   let requestRevision = 0;
   let busy = false;
@@ -127,7 +129,7 @@ export function createQuestionReader(options: ReaderOptions) {
   /** Kept while moving between questions. */
   let inspectorTab: InspectorTab = 'review';
   const rejectionDrafts = new Map<string, string>();
-  protectUnsavedChanges(root, () => dirty, () => confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' }));
+  protectUnsavedChanges(root, () => dirty || (mode === 'params' && !!params?.isDirty()), () => confirmDialog({ title: 'Discard unsaved changes?', message: 'Your saved question will be kept.', confirmLabel: 'Discard changes' }));
 
   const locked = (): boolean => busy || options.isBatchBusy();
   const notifyState = (): void => options.onStateChange?.();
@@ -136,6 +138,8 @@ export function createQuestionReader(options: ReaderOptions) {
   function allowedMode(next: ReaderMode): ReaderMode {
     if (next === 'edit' && detail?.state === 'archived') return 'read';
     if (next === 'compare' && detail && !REVIEW_STATES.has(detail.state)) return 'read';
+    // P3-2: parameterized questions only, and not archived ones (like Edit).
+    if (next === 'params' && detail && (detail.state === 'archived' || !isParameterized(detail.current))) return 'read';
     return next;
   }
 
@@ -145,6 +149,7 @@ export function createQuestionReader(options: ReaderOptions) {
     next = allowedMode(next);
     const changed = next !== mode || fix?.versionId !== flagFix?.versionId;
     if (mode === 'compare' && next !== 'compare') compare?.clear();
+    if (mode === 'params' && next !== 'params') params?.discard();
     mode = next;
     flagFix = mode === 'edit' ? fix : null;
     if (mode === 'edit' && detail) {
@@ -159,6 +164,7 @@ export function createQuestionReader(options: ReaderOptions) {
   async function confirmLeave(): Promise<boolean> {
     if (dirty && !await confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' })) return false;
     if (mode === 'compare' && compare?.hasVariant() && !await confirmDialog({ title: 'Discard the generated alternative?', message: 'The current question stays as it is. Generating again makes a new alternative.', confirmLabel: 'Discard alternative' })) return false;
+    if (mode === 'params' && params?.isDirty() && !await confirmDialog({ title: 'Discard parameter changes?', message: 'The saved parameters are kept.', confirmLabel: 'Discard changes' })) return false;
     return true;
   }
 
@@ -190,6 +196,7 @@ export function createQuestionReader(options: ReaderOptions) {
         onBusy: (generating) => { busy = generating; draw(); },
         onReplace: (variant) => { void replaceWithVariant(variant); },
       });
+      params = createQuestionParams({ questionId: target.id, onSave: (patch) => { void saveParams(patch); }, onChange: () => undefined });
       analyticsNotice = undefined;
     }
     // A new question opens in Read, or in the URL's state when it is the URL's
@@ -203,6 +210,7 @@ export function createQuestionReader(options: ReaderOptions) {
       analyticsNotice = createAnalyticsNotice(options.courseId, target.id, initial.analyticsVersionId, () => { analyticsNotice = undefined; notifyState(); draw(); });
     }
     if (mode === 'compare' && nextMode !== 'compare') compare?.clear();
+    if (mode === 'params' && nextMode !== 'params') params?.discard();
     draft = null; baseline = null; dirty = false; flagFix = null;
     mode = nextMode;
     notifyState();
@@ -481,6 +489,41 @@ export function createQuestionReader(options: ReaderOptions) {
     }
   }
 
+  // --- Parameters mode -------------------------------------------------------
+
+  async function saveParams(patch: ParamsPatch): Promise<void> {
+    if (!detail || locked()) return;
+    const current = detail;
+    const backToReview = returnsToReview(current.state);
+    busy = true; status.textContent = ''; draw();
+    try {
+      // P3-1: formulas decide the correct answer, so an approved or paused
+      // question returns to review. The generic PATCH verifies like /params.
+      const saved = await editQuestion(current.id, {
+        expectedVersionId: current.currentVersionId,
+        paramSlots: patch.paramSlots,
+        derivedValues: patch.derivedValues,
+        ...(backToReview ? { submitForReview: true } : {}),
+      }) as Awaited<ReturnType<typeof editQuestion>> & { verificationError?: string };
+      busy = false;
+      params?.saved(saved.verificationError);
+      const message = saved.verificationError
+        ? 'Parameters saved, but they could not be verified: the question will not be served to students until they are.'
+        : backToReview ? 'Parameters saved and verified. The question is back in To review.' : 'Parameters saved and verified.';
+      await options.onMutated(message, current.id);
+      if (row?.id === current.id) await load(row, true);
+    } catch (error) {
+      busy = false;
+      // Keep the drafts on screen so nothing typed is lost.
+      status.textContent = error instanceof ApiError && error.status === 409
+        ? 'This question changed since you opened it. Your parameter changes were not saved; copy anything you need, then reload.'
+        : `${errorText(error)} Your parameter changes were not saved.`;
+    } finally {
+      busy = false;
+      if (root.isConnected && detail) draw();
+    }
+  }
+
   // --- Settings and Team -----------------------------------------------------
 
   function saveDifficulty(difficulty: Difficulty): void {
@@ -581,7 +624,8 @@ export function createQuestionReader(options: ReaderOptions) {
       option('read', 'Read'),
       current.state !== 'archived' ? option('edit', 'Edit') : false,
       option('preview', 'Preview'),
-      REVIEW_STATES.has(current.state) ? option('compare', 'Compare') : false);
+      REVIEW_STATES.has(current.state) ? option('compare', 'Compare') : false,
+      allowedMode('params') === 'params' ? option('params', 'Parameters') : false);
   }
 
   function placeholderWarning(current: QuestionDetail): HTMLElement | false {
@@ -620,6 +664,10 @@ export function createQuestionReader(options: ReaderOptions) {
           ? current.current.sourceRefs.map((ref, index) => el('div', {}, el('strong', { text: `Reference ${index + 1}` }), ref.chunk ? rich(ref.chunk) : el('p', { class: 'muted', text: 'No excerpt recorded.' })))
           : [el('p', { class: 'muted', text: 'No source references recorded.' })]),
         el('a', { href: `#${coursePath}/materials`, text: 'Open course materials ↗' })),
+      // P3-4: the last piece of Question details.
+      el('details', { class: 'questions-reader__origin' }, el('summary', { text: 'Origin & family' }),
+        el('p', { text: originText(current.current.provenance, current.versions) }),
+        current.templateFamilyId ? el('p', { class: 'mono', text: `Family ${current.templateFamilyId}` }) : false),
       el('section', { class: `questions-reader__visibility${listRow.studentVisible ? ' is-visible' : ''}` },
         el('h3', { text: 'Student visibility' }),
         el('p', { text: hiddenReasonText(listRow.hiddenReason, held) }),
@@ -646,6 +694,8 @@ export function createQuestionReader(options: ReaderOptions) {
       placeholderWarning(current));
     if (mode === 'edit' && draft) {
       body.append(...editorNodes(current, draft));
+    } else if (mode === 'params' && params) {
+      body.append(params.render(current, locked()));
     } else if (mode === 'compare' && compare) {
       body.append(compare.render(current, locked()));
     } else if (mode === 'preview' && preview) {
@@ -678,8 +728,6 @@ export function createQuestionReader(options: ReaderOptions) {
     const links = el('details', { class: 'questions-reader__links' },
       el('summary', {}, 'More actions'),
       el('div', { class: 'questions-reader__link-menu' },
-        // Until phase 3 moves it into the reader (spec D6), only for parameterized questions.
-        parameterized ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/params`, text: 'Parameters' }) : false,
         current.state !== 'archived' ? el('a', { href: `#${coursePath}/bank/${encodeURIComponent(current.id)}/collaborate`, text: 'Edit together' }) : false,
         el('a', { href: fullDetails, text: 'Open full details ↗' }),
         el('button', { class: 'link-button', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload')));
@@ -695,7 +743,7 @@ export function createQuestionReader(options: ReaderOptions) {
       body);
     // D8: Compare takes the inspector's column; the inspector returns on the
     // tab it showed before.
-    const wide = mode === 'compare';
+    const wide = mode === 'compare' || mode === 'params';
     content.classList.toggle('is-wide', wide);
     mount(content,
       el('div', { class: 'gw-reader questions-reader__main' },
@@ -730,7 +778,7 @@ export function createQuestionReader(options: ReaderOptions) {
       ...(analyticsNotice ? { analyticsVersionId: analyticsNotice.versionId } : {}),
     }),
     /** Unsaved edits, an unsaved alternative, or a write in progress. */
-    isLocked: (): boolean => busy || dirty || (mode === 'compare' && !!compare?.hasVariant()),
+    isLocked: (): boolean => busy || dirty || (mode === 'compare' && !!compare?.hasVariant()) || (mode === 'params' && !!params?.isDirty()),
     setNotice(message: string): void { status.textContent = message; },
   };
 }

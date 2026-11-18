@@ -503,6 +503,28 @@
 .questions-compare__check { margin-block-start: 12px; font-size: 12.5px; }
 .questions-compare__check ul { margin: 6px 0 0; padding-inline-start: 18px; }
 
+/* Parameters mode (spec D6): wide tables in the collapsed-inspector reader. */
+.questions-params h3 { margin: 18px 0 6px; font-size: 13px; }
+.questions-params__help { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.questions-params__stem { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); font-size: 13.5px; line-height: 1.6; }
+.questions-params__chip { padding: 1px 5px; border-radius: 4px; background: var(--instr-amber-bg); color: var(--instr-amber-fg); font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
+.questions-params__table-wrap { overflow-x: auto; margin-block-end: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.questions-params__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.questions-params__table th { padding: 6px 8px; border-block-end: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-weight: 600; text-align: start; white-space: nowrap; }
+.questions-params__table td { padding: 5px 6px; border-block-end: 1px solid var(--border); vertical-align: top; }
+.questions-params__table tr:last-child td { border-block-end: 0; }
+.questions-params__table .input { width: 100%; min-width: 64px; min-height: 28px; padding: 3px 7px; font-size: 12px; }
+.questions-params__table td:first-child .input { min-width: 110px; }
+.questions-params__status { display: block; margin-block-start: 2px; color: var(--muted); font-size: 11px; }
+.questions-params__status.is-missing { color: var(--instr-amber-fg); }
+.questions-params__verification { padding: 8px 10px; border-radius: 6px; font-size: 12px; }
+.questions-params__verification.is-verified { background: var(--instr-green-bg); color: var(--instr-green-fg); }
+.questions-params__verification.is-failed { background: var(--instr-amber-bg); color: var(--instr-amber-fg); }
+.questions-params__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 12px; }
+.questions-params__warnings { margin: 0 0 6px; padding-inline-start: 18px; color: var(--instr-amber-fg); font-size: 12px; }
+.questions-params__draw-list { margin: 0; padding-inline-start: 22px; font-size: 12.5px; line-height: 1.55; }
+.questions-params__draw-list li + li { margin-block-start: 4px; }
+
 /* Flag correction header in Edit (spec D4). */
 .questions-flagfix {
   margin-block: 10px 6px;

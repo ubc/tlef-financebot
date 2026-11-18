@@ -11,7 +11,9 @@ import {
   hiddenReasonText,
   legacyQuestionsPath,
   parseTab,
+  originText,
   parseMode,
+  provenanceText,
   questionsPath,
   releaseState,
   repairSummary,
@@ -57,7 +59,8 @@ describe('tabs and paths', () => {
     expect(parseMode('edit')).toBe('edit');
     expect(parseMode('preview')).toBe('preview');
     expect(parseMode('compare')).toBe('compare');
-    expect(parseMode('params')).toBe('read');
+    expect(parseMode('params')).toBe('params');
+    expect(parseMode('collaborate')).toBe('read');
     expect(parseMode(null)).toBe('read');
   });
 
@@ -171,5 +174,14 @@ describe('generation correctness copy', () => {
       .toBe('Parameter values adjusted automatically so no two options show the same number: removed EARLY_CLOSE 65 (checked 180 combinations).');
     expect(solverSummary({ parameterSolver: { checkedCombinations: 6, removed: [] } })).toBeNull();
     expect(solverSummary(undefined)).toBeNull();
+  });
+
+  it('describes where a version came from, naming the original of an edit', () => {
+    expect(provenanceText(undefined)).toBe('Legacy question · provenance not recorded');
+    expect(provenanceText({ kind: 'generated', runId: 'run0000012345678', item: 2 })).toBe('Generated · run 12345678 · item 3');
+    expect(provenanceText({ kind: 'imported', format: 'csv', item: 0 })).toBe('Imported from CSV · item 1');
+    const edited = { kind: 'edited' as const, parentVersionId: 'v00000000abcdefgh' };
+    expect(originText(edited, [{ provenance: { kind: 'manual' } }, { provenance: edited }])).toBe('Edited from version abcdefgh · Original: Manual authoring');
+    expect(originText({ kind: 'manual' }, [])).toBe('Manual authoring');
   });
 });

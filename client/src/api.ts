@@ -3211,7 +3211,7 @@ export interface ParamPreviewResult {
  * Instructor-only. */
 export function previewQuestionParams(
   questionId: string,
-  candidate: { paramSlots?: ParamSlotInput[]; generateScript?: string; stem?: string },
+  candidate: { paramSlots?: ParamSlotInput[]; derivedValues?: DerivedValueInput[]; generateScript?: string; stem?: string },
 ): Promise<ParamPreviewResult> {
   return request<ParamPreviewResult>(`/api/questions/${encodeURIComponent(questionId)}/params/preview`, {
     method: 'POST',
