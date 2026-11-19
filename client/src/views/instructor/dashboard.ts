@@ -4,7 +4,6 @@ import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError,
   getInstructorWorkflow,
-  restoreCourse,
   updateCourse,
   type InstructorWorkflowAction,
   type InstructorWorkflowDestination,
@@ -12,7 +11,7 @@ import {
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { setButtonBusy } from '../../action-state.js';
-import { checklistRow, statTile } from '../../instructor-ui.js';
+import { statTile } from '../../instructor-ui.js';
 import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
@@ -33,6 +32,9 @@ export function checklistActionFor(label: string): ChecklistAction | undefined {
   const normalized = label.toLocaleLowerCase();
   if (normalized.includes('term date')) {
     return { text: 'Set dates', path: '/instructor/course/:id/settings', command: 'configure-dates' };
+  }
+  if (normalized.startsWith('every topic released')) {
+    return { text: 'Manage topic releases', path: '/instructor/course/:id/publish' };
   }
   if (normalized.includes('theme') || normalized.includes('topic')) {
     return { text: 'Add Topic', path: '/instructor/course/:id/structure' };
@@ -59,7 +61,7 @@ const WORKFLOW_DESTINATIONS: Record<Exclude<InstructorWorkflowDestination, 'dash
   bank: '/instructor/course/:id/questions?tab=approved',
   flags: '/instructor/course/:id/questions?tab=flags',
   analytics: '/instructor/course/:id/analytics',
-  release: '/instructor/course/:id/questions?tab=approved',
+  release: '/instructor/course/:id/publish?section=release',
   'student-preview': '/preview/course/:id',
 };
 
@@ -86,9 +88,7 @@ function statTiles(data: InstructorWorkflowSummary): HTMLElement {
   );
 }
 
-/** The six-stage main path (spec 2026-11-12). Publish has no page of its
- * own: it opens the Publish panel on this Dashboard. */
-function courseFlow(data: InstructorWorkflowSummary, openPublishPanel: () => void): HTMLElement {
+function courseFlow(data: InstructorWorkflowSummary, publishPath: string): HTMLElement {
   const { course } = data;
   const statusLabel = {
     'not-started': 'Not started',
@@ -102,15 +102,14 @@ function courseFlow(data: InstructorWorkflowSummary, openPublishPanel: () => voi
     'nav',
     { class: 'course-flow', 'aria-label': 'Course progress' },
     ...data.setup.steps.map((step) => {
-      const path = workflowActionPath(step.destination, course.id);
+      const path = workflowActionPath(step.destination, course.id) ?? publishPath;
       const current = step.id === data.setup.currentStage;
       return el(
         'a',
         {
           class: `course-flow__step course-flow__step--${step.status}${current ? ' is-current' : ''}`,
-          href: path ? `#${path}` : '#',
+          href: `#${path}`,
           'aria-current': current ? 'step' : undefined,
-          onclick: path ? undefined : (event: MouseEvent) => { event.preventDefault(); openPublishPanel(); },
           'aria-label': `${step.number}. ${step.label}: ${step.detail}. Status: ${statusLabel[step.status]}${current ? '. Current stage' : ''}`,
         },
         el('span', { class: 'course-flow__number', 'aria-hidden': 'true', text: step.status === 'complete' || (step.status === 'ready' && step.id !== 'publish') ? '✓' : String(step.number) }),
@@ -133,8 +132,7 @@ function priorityLabel(action: InstructorWorkflowAction): string {
 
 function actionList(
   data: InstructorWorkflowSummary,
-  onPublish: () => void,
-  onRestore: () => void,
+  publishPath: string,
   onConfigureDates: () => void,
 ): HTMLElement {
   const primary = data.setup.primaryAction;
@@ -147,12 +145,8 @@ function actionList(
           class: `workflow-action workflow-action--${action.priority}${isPrimary ? ' workflow-action--primary' : ''}`,
           type: 'button',
           onclick: () => {
-            if (action.id === 'publish-course') {
-              onPublish();
-              return;
-            }
-            if (action.id === 'restore-course') {
-              onRestore();
+            if (action.id === 'publish-course' || action.id === 'restore-course') {
+              navigate(publishPath);
               return;
             }
             if (action.id === 'configure-course') {
@@ -190,13 +184,11 @@ function actionList(
           el('span', { class: `workflow-action__priority workflow-action__priority--${action.priority}`, text: priorityLabel(action) }),
           el('span', {
             class: 'workflow-action__open',
-            text: action.id === 'publish-course'
-              ? 'Publish →'
-              : action.id === 'restore-course'
-                ? 'Restore →'
-                : action.id === 'configure-course'
-                  ? 'Set dates →'
-                  : 'Open →',
+            text: action.id === 'publish-course' || action.id === 'restore-course'
+              ? 'Open publishing →'
+              : action.id === 'configure-course'
+                ? 'Set dates →'
+                : 'Open →',
           }),
         ),
       );
@@ -223,10 +215,9 @@ function dateOnly(value?: string): string {
   return value?.slice(0, 10) ?? '';
 }
 
-/** Dashboard-local setup dialog: complete the blocking date task without
- * losing course-home context. Native date values also open their picker near
+/** Set dates in the current workspace. Native date values open their picker near
  * the prefilled term instead of today's month. */
-function openCourseDatesDialog(
+export function openCourseDatesDialog(
   data: InstructorWorkflowSummary,
   onSaved: () => void,
 ): void {
@@ -412,45 +403,6 @@ function pathActionCard(title: string, subtitle: string, path: string): HTMLElem
   );
 }
 
-/** Publish stage: the launch checklist, the Student preview recommendation
- * and the publish control, in one place (spec 2026-11-12). */
-function publishPanel(
-  data: InstructorWorkflowSummary,
-  checklist: HTMLElement,
-  onPublish: () => void,
-  onRestore: () => void,
-): HTMLElement {
-  const { course, readiness } = data;
-  const previewTested = data.setup.previewTested;
-  const canPreview = data.counts.approvedQuestions > 0;
-  const preview = el('div', { class: 'publish-panel__preview' },
-    el('div', {},
-      el('strong', { text: 'Student preview (recommended)' }),
-      el('p', { class: 'muted', text: !canPreview
-        ? 'Approve at least one question to try the student experience.'
-        : previewTested ? 'Tested recently. Preview again after larger changes.' : 'Walk through the Approved-only course before students do.' })),
-    canPreview
-      ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => {
-        startAnonymousPreview(course.id);
-        navigate(workflowActionPath('student-preview', course.id)!);
-      } }, 'Preview as student')
-      : el('a', { class: 'btn btn--ghost btn--sm', href: `#${workflowActionPath('review-queue', course.id)}`, text: 'Review questions' }));
-  const control = course.lifecycle === 'archived'
-    ? el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: onRestore }, 'Restore course')
-    : course.lifecycle === 'published'
-      ? el('p', { class: 'publish-panel__state' }, el('strong', { text: 'Published. ' }), 'Students with access can practise released questions.')
-      : el('button', { class: 'btn btn--instr-primary', type: 'button', onclick: onPublish }, 'Publish course →');
-  return el('details', {
-    class: 'publish-panel project-panel',
-    id: 'publish-panel',
-    open: data.setup.currentStage === 'publish',
-  },
-  el('summary', {},
-    el('span', { class: 'publish-panel__title', text: '⑥ Publish' }),
-    el('span', { class: 'muted', text: `${readiness.completed} of ${readiness.total} launch checks complete` })),
-  el('div', { class: 'publish-panel__body' }, checklist, preview, control));
-}
-
 async function renderDashboardInner(outlet: HTMLElement, courseId: string): Promise<void> {
   const body = el('div', {}, loadingState('Loading course cockpit…'));
   const root = el('div', { class: 'view view--course-project' }, body);
@@ -470,25 +422,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         ? 'Published'
         : 'Draft';
 
-    async function publish(): Promise<void> {
-      try {
-        await updateCourse(courseId, { published: course.lifecycle !== 'published' }, course.revision ?? 0);
-        await renderDashboardInner(outlet, courseId);
-      } catch (error) {
-        const message = error instanceof ApiError ? error.message : (error as Error).message;
-        body.append(errorState(message));
-      }
-    }
-
-    async function restore(): Promise<void> {
-      try {
-        await restoreCourse(courseId);
-        await renderDashboardInner(outlet, courseId);
-      } catch (error) {
-        const message = error instanceof ApiError ? error.message : (error as Error).message;
-        body.append(errorState(message));
-      }
-    }
+    const publishPath = `/instructor/course/${encodeURIComponent(courseId)}/publish?section=publish`;
 
     function configureDates(): void {
       openCourseDatesDialog(data, () => void renderDashboardInner(outlet, courseId));
@@ -514,45 +448,19 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
           class: `project-hero__status project-hero__status--${course.lifecycle}`,
           text: lifecycleBadge,
         }),
-        course.lifecycle === 'archived'
-          ? false
-          : el(
-              'button',
-              {
-                class: 'btn btn--instr-primary',
-                type: 'button',
-                onclick: () => publish(),
-              },
-              course.lifecycle === 'published' ? 'Return to draft' : 'Publish course →',
-            ),
+        el('a', {
+          class: 'btn btn--instr-primary',
+          href: `#${publishPath}`,
+          text: course.lifecycle === 'draft' ? 'Review launch checklist →' : 'Manage publication →',
+        }),
       ),
-    );
-
-    const checklist = el(
-      'div',
-      { class: 'checklist' },
-      ...data.readiness.checklist.map((item) => {
-        const action = item.ok ? undefined : checklistActionFor(item.item);
-        return checklistRow(
-          item.item,
-          item.ok,
-          action
-            ? {
-                text: action.text,
-                onClick: action.command === 'configure-dates'
-                  ? configureDates
-                  : () => navigate(action.path.replace(':id', encodeURIComponent(courseId))),
-              }
-            : undefined,
-        );
-      }),
     );
 
     const explore = el(
       'div',
       { class: 'quick-action-grid' },
       quickActionCard(courseId, 'Coverage Map', 'Find thin LOs and trace each one to sources and Approved questions', 'content-map'),
-      quickActionCard(courseId, 'Questions', 'Review, edit, release and manage all questions', 'bank'),
+      quickActionCard(courseId, 'Questions', 'Review, edit and manage all questions', 'bank'),
       quickActionCard(courseId, 'Student Analytics', 'Explore learning, misconceptions, and engagement', 'analytics'),
       quickActionCard(
         courseId,
@@ -575,16 +483,9 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
       ),
     );
 
-    const publishSection = publishPanel(data, checklist, () => void publish(), () => void restore());
-    const openPublishPanel = (): void => {
-      (publishSection as HTMLDetailsElement).open = true;
-      publishSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      publishSection.querySelector<HTMLElement>('summary')?.focus();
-    };
-
     body.replaceChildren(
       header,
-      courseFlow(data, openPublishPanel),
+      courseFlow(data, publishPath),
       el(
         'div',
         { class: 'project-cockpit' },
@@ -598,7 +499,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
             ),
             el('span', { class: 'project-panel__count', text: '1', 'aria-label': 'One recommended next step' }),
           ),
-          actionList(data, () => void publish(), () => void restore(), configureDates),
+          actionList(data, publishPath, configureDates),
         ),
         el(
           'aside',
@@ -607,7 +508,6 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
           statTiles(data),
         ),
       ),
-      publishSection,
       el(
         'section',
         { class: 'project-explore', 'aria-labelledby': 'explore-course-title' },
@@ -620,7 +520,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
         explore,
       ),
     );
-    attachTutorial(root, 'instructor-course-setup', {"course-setup-path": ".course-flow", "course-setup-checklist": "#publish-panel"});
+    attachTutorial(root, 'instructor-course-setup', {"course-setup-path": ".course-flow", "course-setup-checklist": ".course-flow__step:last-child"});
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
     body.replaceChildren(errorState(message, () => void renderDashboardInner(outlet, courseId)));

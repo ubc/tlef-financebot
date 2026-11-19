@@ -243,10 +243,11 @@ from Student Analytics), `questions-params.ts` (Parameters mode for parameterize
 questions: drawn-variable and computed-value tables, five sample draws of the
 drafts, verification; saved through the generic question PATCH, returning an
 approved or paused question to review),
-`questions-release.ts` (Manage releases: per-Topic Release now / Schedule / Keep
-hidden, saved with each Topic's `revision`). Release happens only here; Course
-Structure shows a read-only label. Shared labels live in `question-labels.ts`; the
-TA review queue's decision tabs live in `views/ta/queue-tabs.ts`. Styles:
+`questions-release.ts` (per-Topic Release now / Schedule / Keep hidden, saved
+with each Topic's `revision`) renders inside Release & Publish. Questions and
+Course Structure link to that workspace from their visibility summaries. Shared
+labels live in `question-labels.ts`. The TA review queue's decision tabs live in
+`views/ta/queue-tabs.ts`. Styles:
 `styles/questions-workspace.css`. Question details, Parameterization Configuration and Edit together are gone;
 `/bank/:questionId` (with its `intent`s), `/params` and `/collaborate` redirect to
 the matching question, tab and mode (`legacyQuestionsPath`).
@@ -262,11 +263,11 @@ fixtures, including light/dark accessibility and narrow layouts.
 **Course Dashboard progress (2026-11-12).** `views/instructor/dashboard.ts` shows the
 server's six-stage bar (`setup.steps`: Materials, Structure, Generate, Review,
 Release, Publish) with `setup.currentStage` marked `aria-current="step"`, one
-Next step card (the server's primary action, plus "Up next"), and a Publish panel
-(`#publish-panel`: launch checklist, Student preview recommendation, publish
-control) that the Publish stage opens. The bar is the only progress guide: the
-floating `setup-journey.ts` island was removed, and primary actions open their
-workspace directly. Spec: `docs/superpowers/specs/2026-11-12-instructor-dashboard-progress-design.md`.
+Next step card (the server's primary action, plus "Up next"). The Release and
+Publish stages open their respective sections of `course-publication.ts`, also
+reachable from the **5–6 Release & Publish** sidebar entry. This workspace contains
+the launch checklist, Student preview, lifecycle controls and Topic schedules.
+Spec: `docs/superpowers/specs/2026-11-12-instructor-dashboard-progress-design.md`.
 
 Course Structure's `structure-ai-workbench.ts` uses the approved material-composer /
 live-draft-card layout. Empty courses open AI draft; Course outline retains the
@@ -325,9 +326,9 @@ accepted Preview exits clear the anonymous UUID, and reloads resume the same
 course session. All shell builders consume `app-shell--unified`.
 
 The instructor sidebar (`views/instructor/shell.ts`) lists only the main path
-(Dashboard, Materials ① to Questions ④), Assess & improve (Exam Builder, Student
-Analytics), and Course Settings. Sub-pages are reached from their parent and
-highlight it via `also`: Coverage Map from Course Structure, Import and question
+(Dashboard, Materials ① to Questions ④, and Release & Publish 5–6), Assess &
+improve (Exam Builder, Student Analytics), and Course Settings. Sub-pages are
+reached from their parent and highlight it via `also`: Coverage Map from Course Structure, Import and question
 detail from Questions, Canvas from
 Settings. Discussion keeps its route but has no sidebar entry.
 

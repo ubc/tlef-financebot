@@ -321,13 +321,12 @@ test.describe('a11y across the signed-in surfaces', () => {
       await expect(page.getByRole('heading', { name: GUIDE_COURSE_NAME })).toBeVisible();
 
       // An empty draft course: the six-stage bar with blocked and current
-      // stages, the server-derived next step, and the opened Publish panel
-      // with its incomplete launch checklist.
+      // stages, followed by the publication workspace and launch checklist.
       const bar = page.getByRole('navigation', { name: 'Course progress' });
       await expect(bar.getByRole('link')).toHaveCount(6);
       await bar.getByRole('link', { name: /^6\. Publish:/ }).click();
-      await expect(page.locator('#publish-panel')).toHaveAttribute('open', '');
-      await expectNoViolations(page, 'new-course dashboard progress bar and publish panel');
+      await expect(page.getByRole('heading', { name: 'Launch checklist' })).toBeVisible();
+      await expectNoViolations(page, 'release and publish workspace');
     } finally {
       await context.close();
     }

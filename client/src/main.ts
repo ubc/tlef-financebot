@@ -63,6 +63,7 @@ import { practiceContextPanel } from './student-ui.js';
 import { getPracticeActions, onPracticeActionsChange } from './practice-actions.js';
 import { renderCourses, renderCreateCourse } from './views/instructor/courses.js';
 import { renderDashboard } from './views/instructor/dashboard.js';
+import { renderCoursePublication } from './views/instructor/course-publication.js';
 import { renderStructure } from './views/instructor/structure.js';
 import { renderMaterials } from './views/instructor/materials.js';
 import { renderContentMap } from './views/instructor/content-map.js';
@@ -165,6 +166,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/bank/:questionId/params', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/bank/:questionId', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/questions', render: renderQuestions },
+  { path: '/instructor/course/:id/publish', render: renderCoursePublication },
   { path: '/instructor/course/:id/bank', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/queue', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/flags', render: renderLegacyQuestionsRedirect },
@@ -504,6 +506,9 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
     sections.push({ element: section, courseScoped });
     if (group.label) section.append(el('p', { class: 'nav__group', text: group.label }));
     for (const item of group.items) {
+      const glyph = item.glyph ?? '·';
+      const step = /^\d(?:–\d)?$/.test(glyph);
+      const glyphClass = step ? `nav__glyph nav__glyph--step${glyph.length > 1 ? ' nav__glyph--range' : ''}` : 'nav__glyph';
       const link = el(
         'a',
         {
@@ -524,9 +529,9 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
           title: item.label,
         },
         el('span', {
-          class: `nav__glyph${/^\d$/.test(item.glyph ?? '') ? ' nav__glyph--step' : ''}`,
+          class: glyphClass,
           'aria-hidden': 'true',
-          text: item.glyph ?? '·',
+          text: glyph,
         }),
         el('span', { class: 'nav__text', text: item.label }),
       ) as HTMLAnchorElement;

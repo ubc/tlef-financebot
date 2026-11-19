@@ -1,8 +1,3 @@
-// "Manage releases" panel for the Questions workspace: one row per Topic with
-// its approved count and current state, and the choice Release now /
-// Schedule / Keep hidden. Saving PATCHes each changed Topic with its
-// `revision` (a stale revision is a 409 the panel reports). This replaces the
-// old bank dialog and Course Structure's release controls (spec D6).
 import { ApiError, updateTheme, type QuestionWorkspace, type WorkspaceReleaseTheme } from '../../api.js';
 import { el } from '../../dom.js';
 import { errorState } from '../../ui.js';
@@ -25,7 +20,7 @@ interface RowState {
   theme: WorkspaceReleaseTheme;
   choice: Choice;
   date: HTMLInputElement;
-  radios: HTMLInputElement[];
+  status: HTMLElement;
 }
 
 /** The PATCH value for a row, or `undefined` when nothing changed. Throws a
@@ -34,27 +29,26 @@ function patchFor(row: RowState, now: Date): string | null | undefined {
   const state = releaseState(row.theme);
   if (row.choice === 'hold') return state === 'hidden' ? undefined : null;
   if (row.choice === 'now') return state === 'released' ? undefined : now.toISOString();
+  if (state === 'scheduled' && row.date.value === toLocalInput(row.theme.availableFrom)) return undefined;
   const parsed = new Date(row.date.value);
   if (!row.date.value || !Number.isFinite(parsed.getTime()) || parsed.getTime() <= now.getTime()) {
     throw new Error(`Choose a future date and time for ${row.theme.name}.`);
   }
-  if (state === 'scheduled' && row.theme.availableFrom && new Date(row.theme.availableFrom).getTime() === parsed.getTime()) return undefined;
   return parsed.toISOString();
 }
 
-/** Opens the panel as a modal dialog. `onSaved` runs after at least one
- * Topic was saved (the caller refetches the workspace). `focusThemeId`
- * scrolls a Topic into view (e.g. from the reader's "Release Topic"). */
-export function openReleasePanel(release: QuestionWorkspace['release'], onSaved: (message: string) => void, focusThemeId?: string): void {
-  const opener = document.activeElement as HTMLElement | null;
-  const dialog = el('dialog', { class: 'app-dialog questions-release', 'aria-labelledby': 'questions-release-title' }) as HTMLDialogElement;
+export function createTopicReleaseEditor(
+  release: QuestionWorkspace['release'],
+  onSaved: () => Promise<void>,
+  onSaving: (busy: boolean) => void,
+): HTMLFieldSetElement {
   let busy = false;
-  const close = (): void => { if (busy) return; dialog.close(); dialog.remove(); opener?.focus(); };
+  const notice = el('p', { role: 'status', class: 'muted' });
   const errors = el('div', { role: 'alert' });
 
   const rows: RowState[] = release.themes.map((theme) => {
     const date = el('input', { class: 'input', type: 'datetime-local', 'aria-label': `Release date for ${theme.name}`, value: toLocalInput(theme.availableFrom) }) as HTMLInputElement;
-    return { theme, choice: initialChoice(releaseState(theme)), date, radios: [] };
+    return { theme, choice: initialChoice(releaseState(theme)), date, status: el('span') };
   });
 
   function rowNode(row: RowState): HTMLElement {
@@ -64,37 +58,37 @@ export function openReleasePanel(release: QuestionWorkspace['release'], onSaved:
     const syncDate = (): void => {
       const scheduling = row.choice === 'schedule';
       row.date.hidden = !scheduling;
-      row.date.disabled = busy || !scheduling;
+      row.date.disabled = !scheduling;
     };
     const choice = (value: Choice, label: string): HTMLElement => {
       const radio = el('input', { type: 'radio', name, value, checked: row.choice === value }) as HTMLInputElement;
       radio.addEventListener('change', () => { row.choice = value; syncDate(); });
-      row.radios.push(radio);
       return el('label', { class: 'questions-release__choice' }, radio, el('span', { text: label }));
     };
     syncDate();
-    const state = releaseState(row.theme);
-    return el('div', { class: `questions-release__row is-${state}`, role: 'radiogroup', 'aria-labelledby': nameId, 'data-theme-id': row.theme.themeId },
+    updateStatus(row);
+    return el('div', { class: 'questions-release__row', 'data-theme-id': row.theme.themeId },
       el('div', { class: 'questions-release__topic' },
         el('strong', { id: nameId, class: 'questions-release__name', text: row.theme.name }),
         el('span', { class: 'questions-release__meta' },
           `${row.theme.approvedCount} approved`,
-          el('span', { class: `questions-release__state is-${state}`, text: releaseStateText(row.theme) }))),
-      el('div', { class: 'questions-release__choices' },
+          row.status)),
+      el('div', { class: 'questions-release__choices', role: 'radiogroup', 'aria-labelledby': nameId },
         choice('now', 'Release now'), choice('schedule', 'Schedule'), choice('hold', 'Keep hidden')),
       row.date);
   }
 
-  const save = el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button' }, 'Save releases') as HTMLButtonElement;
-  const cancel = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: close }, 'Cancel') as HTMLButtonElement;
-  const setDisabled = (disabled: boolean): void => {
-    save.disabled = disabled; cancel.disabled = disabled;
-    for (const row of rows) { row.radios.forEach((radio) => { radio.disabled = disabled; }); row.date.disabled = disabled || row.choice !== 'schedule'; }
-  };
+  function updateStatus(row: RowState): void {
+    row.status.className = `questions-release__state is-${releaseState(row.theme)}`;
+    row.status.textContent = releaseStateText(row.theme);
+  }
 
+  const save = el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button' }, 'Save releases') as HTMLButtonElement;
+  const fields = el('fieldset', { class: 'topic-release-editor', 'aria-label': 'Topic release settings' }) as HTMLFieldSetElement;
   save.addEventListener('click', async () => {
     if (busy) return;
     errors.replaceChildren();
+    notice.textContent = '';
     const now = new Date();
     let changes: Array<{ row: RowState; availableFrom: string | null }>;
     try {
@@ -106,14 +100,21 @@ export function openReleasePanel(release: QuestionWorkspace['release'], onSaved:
       errors.replaceChildren(errorState((error as Error).message));
       return;
     }
-    if (!changes.length) { close(); return; }
-    busy = true; setDisabled(true); save.textContent = 'Saving…';
+    if (!changes.length) {
+      notice.textContent = 'Release settings are up to date.';
+      return;
+    }
+    busy = true;
+    fields.disabled = true;
+    onSaving(true);
+    save.textContent = 'Saving…';
     const failures: string[] = [];
     let saved = 0;
     for (const { row, availableFrom } of changes) {
       try {
         const theme = await updateTheme(row.theme.themeId, { availableFrom }, row.theme.revision);
         row.theme = { ...row.theme, revision: theme.revision ?? row.theme.revision + 1, availableFrom, released: availableFrom !== null && new Date(availableFrom) <= new Date() };
+        updateStatus(row);
         saved++;
       } catch (error) {
         const message = error instanceof ApiError && error.status === 409
@@ -122,33 +123,29 @@ export function openReleasePanel(release: QuestionWorkspace['release'], onSaved:
         failures.push(`${row.theme.name}: ${message}`);
       }
     }
-    busy = false; setDisabled(false); save.textContent = 'Save releases';
     if (failures.length) {
-      // Keep the panel open with the chosen values so nothing is lost.
-      errors.replaceChildren(errorState(`${saved ? `Saved ${saved} topic${saved === 1 ? '' : 's'}. ` : ''}Not saved: ${failures.join(' · ')}`));
-      if (saved) onSaved(`Release settings saved for ${saved} topic${saved === 1 ? '' : 's'}.`);
-      return;
+      errors.replaceChildren(errorState(`Could not save: ${failures.join(' · ')}`));
     }
-    close();
-    onSaved(`Release settings saved for ${saved} topic${saved === 1 ? '' : 's'}.`);
+    if (saved) {
+      notice.textContent = `Release settings saved for ${saved} topic${saved === 1 ? '' : 's'}.`;
+    }
+    try {
+      if (saved) await onSaved();
+    } finally {
+      busy = false;
+      fields.disabled = false;
+      onSaving(false);
+      save.textContent = 'Save releases';
+    }
   });
 
-  dialog.append(el('div', { class: 'app-dialog__surface' },
-    el('h2', { id: 'questions-release-title', class: 'questions-release__title', text: 'Manage releases' }),
-    el('p', { class: 'questions-release__intro', text: release.coursePublished
-      ? 'Students practise approved questions once every Topic the question is tagged to is released.'
-      : 'The course is not published, so students see no questions yet. You can still prepare Topic releases.' }),
+  fields.append(
     rows.length
       ? el('div', { class: 'questions-release__rows' }, ...rows.map(rowNode))
-      : el('p', { text: 'This course has no Topics yet. Add them in Course Structure.' }),
+      : el('p', { text: 'Add Topics in Course Structure to set their release dates.' }),
     errors,
-    el('footer', { class: 'questions-release__actions' }, cancel, rows.length ? save : false)));
-  dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
-  document.body.append(dialog);
-  dialog.showModal();
-  if (focusThemeId) {
-    const target = dialog.querySelector<HTMLElement>(`[data-theme-id="${CSS.escape(focusThemeId)}"]`);
-    target?.scrollIntoView({ block: 'center' });
-    target?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus();
-  }
+    notice,
+  );
+  if (rows.length) fields.append(el('footer', { class: 'questions-release__actions' }, save));
+  return fields;
 }

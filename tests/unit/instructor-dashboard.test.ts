@@ -3,6 +3,7 @@ import { checklistActionFor, workflowActionPath } from '../../client/src/views/i
 describe('course dashboard checklist actions', () => {
   it.each([
     ['Term dates set', 'Set dates', '/settings'],
+    ['Every Topic released (not yet: Motion)', 'Manage topic releases', '/publish'],
     ['At least one Theme', 'Add Topic', '/structure'],
     ['At least one Learning Objective', 'Add LO', '/structure'],
     ['Registration code generated', 'Open Settings', '/settings'],
@@ -36,7 +37,7 @@ describe('course cockpit workflow destinations', () => {
     ['bank', '/questions?tab=approved'],
     ['flags', '/questions?tab=flags'],
     ['analytics', '/analytics'],
-    ['release', '/questions?tab=approved'],
+    ['release', '/publish?section=release'],
   ] as const)('maps %s to its course screen', (destination, suffix) => {
     expect(workflowActionPath(destination, 'course id')).toBe(
       `/instructor/course/course%20id${suffix}`,

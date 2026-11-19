@@ -82,7 +82,9 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   if (options.testFlag) {
     flags.push({ id: 'f3', courseId: 'course', questionId: 'q6', questionVersionId: 'v6', puid: 'instructor', source: 'instructor-preview-test', reason: 'Testing the flag loop.', state: 'open', createdAt: '2026-11-07T10:00:00Z' });
   }
-  const coursePublished = options.coursePublished ?? true;
+  let coursePublished = options.coursePublished ?? true;
+  let courseRevision = 2;
+  const publishCalls: Array<Record<string, unknown>> = [];
   const failIds = new Set<string>();
   const themeCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
   const resolveCalls: Array<{ id: string; body: Record<string, unknown> }> = [];
@@ -146,6 +148,29 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       } });
     }
     if (path === '/api/courses/course/question-workspace') return r.fulfill({ json: workspace(url.searchParams.get('tab') ?? 'review') });
+    if (path === '/api/courses/course/instructor-workflow') {
+      const allReleased = themes.every((t) => released(t.themeId));
+      const objectives = 'Combine forces to find net force, Describe motion with and without acceleration.';
+      const checklist = [
+        { item: 'Term dates set', ok: true },
+        { item: 'At least one Theme', ok: true },
+        { item: 'At least one Learning Objective', ok: true },
+        { item: `Every LO has ≥3 Approved questions (thin: ${objectives})`, ok: false },
+        { item: allReleased ? 'Every Topic released' : 'Every Topic released (not yet: Motion)', ok: allReleased },
+      ];
+      return r.fulfill({ json: {
+        course: { id: 'course', name: 'Physics', lifecycle: coursePublished ? 'published' : 'draft', revision: courseRevision },
+        readiness: { checklist, total: checklist.length, completed: checklist.filter((item) => item.ok).length },
+        counts: { approvedQuestions: workspace('approved').counts.approved, thinLos: 2 },
+        setup: { previewTested: false },
+      } });
+    }
+    if (path === '/api/courses/course' && method === 'PATCH') {
+      const body = r.request().postDataJSON();
+      publishCalls.push(body);
+      coursePublished = body.published;
+      return r.fulfill({ json: { lifecycle: coursePublished ? 'published' : 'draft', revision: ++courseRevision } });
+    }
     if (path === '/api/courses/course') return r.fulfill({ json: { _id: 'course', lifecycle: coursePublished ? 'published' : 'draft', themes: [
       { _id: 'forces', name: 'Forces', order: 0, los: [{ _id: 'lo-net', name: 'Combine forces to find net force' }] },
       { _id: 'motion', name: 'Motion', order: 1, los: [{ _id: 'lo-motion', name: 'Describe motion' }] },
@@ -276,10 +301,19 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
   await page.goto(`/questions-fixture${hash}`);
   await page.evaluate(async () => {
     const { renderQuestions } = await import('/js/views/instructor/questions.js');
-    renderQuestions(document.querySelector('main')!, { id: 'course' });
+    const { startRouter } = await import('/js/router.js');
+    const { renderCoursePublication } = await import('/js/views/instructor/course-publication.js');
+    startRouter({
+      routes: [
+        { path: '/instructor/course/:id/questions', render: renderQuestions },
+        { path: '/instructor/course/:id/publish', render: renderCoursePublication },
+      ],
+      outlet: document.querySelector('main')!,
+      fallback: '/instructor/course/course/questions',
+    });
   });
   await expect(page.locator('.questions-tabs')).toBeVisible();
-  return { questions, themes, flags, failIds, themeCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls, previewCalls, transitionCalls };
+  return { questions, themes, flags, failIds, themeCalls, publishCalls, resolveCalls, patchCalls, noteCalls, suggestionCalls, sampleCalls: () => sampleCalls, notifyCalls, regenerateCalls, previewCalls, transitionCalls };
 }
 
 // Any uncaught page error fails the test that produced it.
@@ -380,24 +414,39 @@ test('releasing a Topic clears the hidden-questions warning', async ({ page }) =
   const mock = await setup(page, { tab: 'approved' });
   await expect(page.locator('.questions-release-bar')).toContainText('1 approved question is not visible to students yet.');
   await expect(page.locator('.questions-reader__visibility').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Manage releases' }).first().click();
+  await page.locator('.questions-release-bar').getByRole('link', { name: 'Manage releases' }).click();
+  await expect(page.getByRole('heading', { name: 'Release & Publish' })).toBeVisible();
+  await expect(page.getByText('3 of 5 launch checks complete')).toBeVisible();
   const row = page.locator('.questions-release__row', { hasText: 'Motion' });
   await expect(row).toContainText('1 approved');
   await expect(row.locator('.questions-release__state')).toHaveText('Hidden');
   await expect(row.locator('input[type="datetime-local"]')).toBeHidden();
   await row.getByLabel('Release now').check();
   await page.getByRole('button', { name: 'Save releases' }).click();
-  await expect(page.locator('.questions-notice')).toContainText('Release settings saved for 1 topic.');
+  await expect(page.getByRole('status').filter({ hasText: 'Release settings saved for 1 topic.' })).toBeVisible();
+  await expect(page.getByText('4 of 5 launch checks complete')).toBeVisible();
+  await page.goBack();
   await expect(page.locator('.questions-release-bar')).toContainText('All 2 approved questions are visible to students.');
   expect(mock.themeCalls).toEqual([{ id: 'motion', body: expect.objectContaining({ expectedRevision: 4 }) }]);
 });
 
-test('an unpublished course says so first and links to the Dashboard', async ({ page }) => {
-  await setup(page, { coursePublished: false, tab: 'approved' });
+test('publishing keeps launch details compact and updates course visibility', async ({ page }) => {
+  const mock = await setup(page, { coursePublished: false, tab: 'approved' });
   const bar = page.locator('.questions-release-bar');
   await expect(bar).toContainText('The course is not published — students see no questions.');
-  await expect(bar.getByRole('link', { name: 'Publish from the Dashboard →' })).toHaveAttribute('href', '#/instructor/course/course');
   await expect(page.locator('.questions-reader__visibility')).toContainText('the course is not published');
+  await bar.getByRole('link', { name: 'Open publishing checklist →' }).click();
+  const details = page.getByText('Combine forces to find net force, Describe motion with and without acceleration.', { exact: true });
+  await expect(details).toBeHidden();
+  await page.getByText('2 learning objectives have fewer than 3 approved questions').click();
+  await expect(details).toBeVisible();
+  await page.getByRole('button', { name: 'Publish course', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Return to draft' })).toBeVisible();
+  expect(mock.publishCalls).toEqual([{ published: true, expectedRevision: 2 }]);
+  expect(mock.themeCalls).toEqual([]);
+  await page.getByRole('button', { name: 'Return to draft' }).click();
+  await expect(page.getByRole('button', { name: 'Publish course', exact: true })).toBeVisible();
+  expect(mock.publishCalls.at(-1)).toEqual({ published: false, expectedRevision: 3 });
 });
 
 test('the flag card shows reports and clears the flag', async ({ page }) => {

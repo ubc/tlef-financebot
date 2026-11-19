@@ -6820,6 +6820,11 @@ button.quick-action--disabled { cursor: default; }
   font-size: 0.67rem;
 }
 
+.nav__glyph--range {
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+
 .course-context {
   margin: 0.15rem 0 0.55rem;
   padding: 0.65rem;
@@ -7178,49 +7183,168 @@ button.quick-action--disabled { cursor: default; }
   box-shadow: inset 0 -3px 0 var(--instr-green-fg);
 }
 
-/* Publish stage panel on the course Dashboard (spec 2026-11-12). */
-.publish-panel {
-  margin-top: 1rem;
-  padding: 0;
+/* Course release and publication */
+.course-publication {
+  display: grid;
+  gap: 1.25rem;
 }
 
-.publish-panel > summary {
+.course-publication__header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem 0.8rem;
-  padding: 1rem 1.2rem;
-  cursor: pointer;
+  gap: 0.75rem;
 }
 
-.publish-panel__title {
+.course-publication__header h1 {
+  font-size: clamp(1.6rem, 1.25rem + 1vw, 2.1rem);
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.course-publication__header p {
+  margin: 0.25rem 0 0;
+}
+
+.course-publication__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.course-publication .project-panel {
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  min-width: 0;
+}
+
+.course-publication .section-title {
+  margin: 0;
+}
+
+.course-publication__progress {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.825rem;
+}
+
+.course-publication__progress progress {
+  width: 100%;
+  height: 0.45rem;
+  appearance: none;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--surface-2);
+  color: var(--instr-green-fg);
+  overflow: hidden;
+}
+
+.course-publication__progress progress::-webkit-progress-bar { background: var(--surface-2); }
+.course-publication__progress progress::-webkit-progress-value { background: var(--instr-green-fg); }
+.course-publication__progress progress::-moz-progress-bar { background: var(--instr-green-fg); }
+
+.course-publication__checks {
+  list-style: none;
+  padding: 0;
+  margin: 0.85rem 0 0;
+}
+
+.course-publication__check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.65rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.course-publication__check:last-child { padding-bottom: 0; }
+
+.course-publication__mark {
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  color: var(--instr-amber-fg);
+  background: var(--instr-amber-bg);
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
-.publish-panel__body {
+.course-publication__check.is-complete .course-publication__mark {
+  color: var(--instr-green-fg);
+  background: var(--instr-green-bg);
+}
+
+.course-publication__check-copy {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.course-publication__check .btn {
+  min-height: 1.65rem;
+  white-space: normal;
+}
+
+.course-publication .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+.course-publication__details {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.course-publication__details > summary { cursor: pointer; }
+
+.course-publication__details > p {
+  margin: 0.45rem 0 0;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.course-publication__controls {
   display: grid;
-  gap: 1rem;
-  padding: 0 1.2rem 1.2rem;
-}
-
-.publish-panel__preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  justify-items: start;
   gap: 0.75rem;
-  padding: 0.8rem 1rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
 }
 
-.publish-panel__preview p,
-.publish-panel__state {
-  margin: 0.2rem 0 0;
+.course-publication__controls p,
+.course-publication__intro {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
-.publish-panel__body > .btn {
-  justify-self: start;
+.course-publication [role='alert']:empty { display: none; }
+
+.course-publication__preview {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.course-publication__preview h3 { margin: 0; font-size: 0.9rem; }
+.course-publication__preview .btn { margin-top: 0.6rem; }
+.course-publication__release { scroll-margin-top: 1rem; }
+
+@media (max-width: 1050px) {
+  .course-publication__grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 540px) {
+  .course-publication__check { grid-template-columns: auto minmax(0, 1fr); }
+  .course-publication__check .btn { grid-column: 2; justify-self: start; }
 }
 
 .course-flow__number {

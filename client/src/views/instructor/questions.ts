@@ -52,7 +52,6 @@ import {
   type WorkspaceFilters,
 } from './questions-model.js';
 import { createQuestionReader } from './questions-reader.js';
-import { openReleasePanel } from './questions-release.js';
 
 const errorText = (error: unknown): string => error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -247,10 +246,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function openReleases(themeId?: string): void {
-    openReleasePanel(workspace.release, (message) => {
-      notice = message;
-      void refresh(reader.currentId() ?? undefined);
-    }, themeId);
+    window.location.hash = `${coursePath}/publish${themeId ? `?topic=${encodeURIComponent(themeId)}` : '?section=release'}`;
   }
 
   function visibleRows(): WorkspaceRow[] {
@@ -262,7 +258,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   function drawReleaseBar(): void {
     const { release, counts } = workspace;
     const released = release.themes.filter((theme) => theme.released).length;
-    const manage = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => openReleases() }, 'Manage releases');
+    const manage = el('a', { class: 'btn btn--ghost btn--sm', href: `#${coursePath}/publish?section=release` }, 'Manage releases');
     const warning = release.hiddenApprovedCount > 0;
     releaseBar.classList.toggle('is-warning', warning || !release.coursePublished);
     mount(releaseBar,
@@ -271,7 +267,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
         !release.coursePublished
           ? el('p', { class: 'questions-release-bar__alert' },
             el('strong', { text: 'The course is not published — students see no questions. ' }),
-            el('a', { href: `#${coursePath}`, text: 'Publish from the Dashboard →' }))
+            el('a', { href: `#${coursePath}/publish?section=publish`, text: 'Open publishing checklist →' }))
           : false,
         warning
           ? el('p', { class: 'questions-release-bar__alert' }, el('strong', { text: `${plural(release.hiddenApprovedCount, 'approved question')} ${release.hiddenApprovedCount === 1 ? 'is' : 'are'} not visible to students yet.` }))

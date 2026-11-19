@@ -879,36 +879,19 @@
   padding-left: 20px;
 }
 
-/* --- Release panel -------------------------------------------------------- */
-/* The dialog lives on <body>, outside .questions-workspace, so it sets its own
-   compact type scale instead of inheriting the page's 16px default. */
-
-.questions-release.app-dialog {
-  width: min(600px, calc(100vw - 32px));
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.questions-release .app-dialog__surface {
+/* Topic release editor */
+.topic-release-editor {
   display: grid;
-  gap: 14px;
-  padding: 20px 22px 18px;
-  border-top-width: 3px;
+  gap: 0.65rem;
+  min-inline-size: 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  border: 0;
+  container-type: inline-size;
 }
 
-.questions-release__title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.2px;
-}
-
-.questions-release__intro {
-  margin: -8px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
+.topic-release-editor > p { margin: 0; font-size: 0.875rem; }
+.topic-release-editor > p:empty { display: none; }
 
 .questions-release__rows {
   max-height: min(60vh, 520px);
@@ -1030,9 +1013,11 @@
   padding-top: 2px;
 }
 
-@media (max-width: 560px) {
+@container (max-width: 480px) {
   .questions-release__row { grid-template-columns: minmax(0, 1fr); }
   .questions-release__row > .input { grid-column: 1; justify-self: start; }
+  .questions-release__choices { justify-self: start; flex-wrap: wrap; }
+  .questions-release__choice { padding-inline: 0.4rem; }
 }
 
 /* Generation correctness (2026-11-12): automatic repair and parameter solver notes. */

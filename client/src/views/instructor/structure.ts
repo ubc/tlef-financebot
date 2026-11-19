@@ -522,8 +522,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         deleteButton({ type: 'theme', id: theme._id }),
       ),
       el('div', { class: 'form-field' }, fieldLabel('Name'), nameInput),
-      // Release is managed only on the Questions page (spec 2026-11-09, D6);
-      // Structure shows the state read-only.
+      // Structure shows the release state read-only.
       el(
         'div',
         { class: `structure-release structure-release--${release.state}` },
@@ -531,8 +530,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         el('span', { class: 'structure-release__state', text: release.label }),
         el('a', {
           class: 'btn btn--ghost btn--sm',
-          href: `#/instructor/course/${encodeURIComponent(courseId)}/questions?tab=approved`,
-          text: 'Manage releases in Questions →',
+          href: `#/instructor/course/${encodeURIComponent(courseId)}/publish?topic=${encodeURIComponent(theme._id)}`,
+          text: 'Manage topic release →',
         }),
       ),
       errorSlot,

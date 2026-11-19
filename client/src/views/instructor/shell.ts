@@ -47,6 +47,7 @@ export const INSTRUCTOR_NAV: InstructorNavGroup[] = [
       { label: 'Course Structure', path: '/instructor/course/:id/structure', glyph: '2', also: ['/instructor/course/:id/content-map'] },
       { label: 'Generate Questions', path: '/instructor/course/:id/preseeding', glyph: '3' },
       { label: 'Questions', path: '/instructor/course/:id/questions', glyph: '4', also: ['/instructor/course/:id/import'] },
+      { label: 'Release & Publish', path: '/instructor/course/:id/publish', glyph: '5–6' },
     ],
   },
   {

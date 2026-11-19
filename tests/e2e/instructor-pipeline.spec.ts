@@ -167,11 +167,11 @@ test.describe('instructor pipeline', () => {
       await expect(bar.getByRole('link')).toHaveCount(6);
       await expect(bar.getByRole('link', { name: /^1\. Materials: No sources yet\..*Current stage$/ })).toHaveAttribute('aria-current', 'step');
       await expect(bar.getByRole('link', { name: /^5\. Release: Waiting for Approved questions/ })).toBeVisible();
-      // Publish has no page of its own: it opens the Publish panel here.
       await bar.getByRole('link', { name: /^6\. Publish:/ }).click();
-      await expect(page.locator('#publish-panel')).toHaveAttribute('open', '');
-      await expect(page.locator('#publish-panel')).toContainText('Approve at least one question to try the student experience.');
-      expect(page.url()).toContain(`/#/instructor/course/${courseId}`);
+      await expect(page.getByRole('heading', { name: 'Launch checklist' })).toBeVisible();
+      await expect(page.getByText('Approve at least one question to try the student experience.')).toBeVisible();
+      await expect(page).toHaveURL(url => url.hash === `#/instructor/course/${courseId}/publish?section=publish`);
+      await page.getByRole('link', { name: 'Course Dashboard' }).click();
     });
 
     await test.step('accept the term-aware suggested dates through the first Next Action', async () => {
@@ -284,7 +284,7 @@ test.describe('instructor pipeline', () => {
     await test.step('complete the real isolated Student Preview stage', async () => {
       await page.getByRole('link', { name: 'Course Dashboard' }).click();
       await page.getByRole('navigation', { name: 'Course progress' }).getByRole('link', { name: /^6\. Publish:/ }).click();
-      await page.locator('#publish-panel').getByRole('button', { name: 'Preview as student' }).click();
+      await page.getByRole('button', { name: 'Preview as student' }).click();
 
       await expect(page).toHaveURL(new RegExp(`#\\/preview\\/course\\/${courseId}$`));
       await expect(page.getByText('PREVIEW MODE', { exact: true })).toBeVisible();
@@ -302,13 +302,11 @@ test.describe('instructor pipeline', () => {
       await page.getByRole('navigation', { name: 'Switch role', exact: true }).getByRole('link', { name: 'Back to Instructor', exact: true }).click();
 
       await expect(page).toHaveURL(url => url.hash === `#/instructor/course/${courseId}?workspace=instructor`);
-      await expect(page.locator('#publish-panel')).toContainText('Tested recently.');
     });
 
     await test.step('publish the course', async () => {
       await expect(page.getByRole('heading', { name: COURSE_NAME })).toBeVisible();
       await expect(page.locator('.page-header__subtitle')).toContainText('Sandbox (not yet published)');
-      await expect(page.locator('#publish-panel summary')).toContainText('launch checks complete');
       await expect(page.getByRole('heading', { name: 'Next actions' })).toBeVisible();
 
       // Course Home derives the one next-best task from live state.
@@ -320,7 +318,11 @@ test.describe('instructor pipeline', () => {
       await expect(primaryAction).toContainText('Generate a registration code');
       await expect(page.getByText('NEXT STEP', { exact: true })).toBeVisible();
 
-      await page.locator('.project-hero').getByRole('button', { name: 'Publish course →' }).click();
+      await page.getByRole('link', { name: 'Review launch checklist →' }).click();
+      await expect(page.getByText('Tested recently.')).toBeVisible();
+      await page.getByRole('button', { name: 'Publish course', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Return to draft' })).toBeVisible();
+      await page.getByRole('link', { name: 'Course Dashboard' }).click();
       await expect(page.locator('.page-header__subtitle')).toContainText(
         `${COURSE_CODE} · Section 101 · ${selectedTerm} · Published`,
       );

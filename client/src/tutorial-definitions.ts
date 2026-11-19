@@ -199,7 +199,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"course-setup-checklist\"]",
         "title": "Check before publication",
-        "body": "The Publish panel holds the launch checklist and a Student preview. Preview is isolated from live student records; publishing is an explicit action."
+        "body": "Open Release & Publish to manage Topic releases, check launch readiness and preview as a Student. Preview is isolated from live student records; publishing is an explicit action."
       }
     ]
   },

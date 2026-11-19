@@ -676,7 +676,7 @@ export function createQuestionReader(options: ReaderOptions) {
         el('p', { text: hiddenReasonText(listRow.hiddenReason, held) }),
         listRow.hiddenReason === 'topic-unreleased' || listRow.hiddenReason === 'topic-scheduled'
           ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => options.onOpenRelease(options.release().themes.find((theme) => current.themeIds.includes(theme.themeId) && !theme.released)?.themeId) }, 'Manage releases')
-          : listRow.hiddenReason === 'course-unpublished' ? el('a', { href: `#${coursePath}`, text: 'Publish from the Dashboard →' }) : false));
+          : listRow.hiddenReason === 'course-unpublished' ? el('a', { href: `#${coursePath}/publish?section=publish`, text: 'Open publishing checklist →' }) : false));
   }
 
   function draw(redraw: { resetInspectorScroll?: boolean } = {}): void {
