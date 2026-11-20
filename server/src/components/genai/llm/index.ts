@@ -55,6 +55,20 @@ export interface CompleteJsonOptions extends ModelRequestOptions {
   usageContext?: Omit<ModelUsageContext, 'jsonAttempt'>;
   /** false = never send the corrective "not valid JSON" follow-up; a parse failure throws instead. */
   jsonRetry?: boolean;
+  /** Routes calls that share a long fixed prefix (put it in `systemPrompt`) to
+   * the same provider cache. Sent only where `promptCacheOptions` allows it. */
+  promptCacheKey?: string;
+}
+
+/**
+ * `prompt_cache_key` for the official OpenAI API only. The toolkit passes
+ * unknown options straight through, so another provider (Ollama, Anthropic, the
+ * UBC Sandbox) or an OpenAI-compatible gateway behind LLM_ENDPOINT would receive
+ * a parameter it may reject. OpenAI still caches an identical prefix without the
+ * key; the key only improves routing to the same cache.
+ */
+export function promptCacheOptions(key: string | undefined, target: { provider: string; endpoint?: string } = { provider: config.provider, endpoint: config.endpoint }): { prompt_cache_key?: string } {
+  return key && target.provider === 'openai' && !target.endpoint ? { prompt_cache_key: key.slice(0, 64) } : {};
 }
 
 /**
@@ -114,6 +128,7 @@ export async function completeJson<T>(prompt: string, options: CompleteJsonOptio
       reasoningEffort: options.reasoningEffort ?? defaultJsonReasoningEffort(options.model, options.capabilityProfile) }),
     responseFormat: 'json',
     ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+    ...promptCacheOptions(options.promptCacheKey),
   };
 
   const send = async (text: string, jsonAttempt: number) => {

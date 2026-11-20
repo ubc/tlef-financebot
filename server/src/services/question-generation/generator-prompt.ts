@@ -304,7 +304,7 @@ export function HARDNESS_MOVE_ASSIGNMENT(move: string): string {
   ].join('\n');
 }
 
-export function GENERATOR_PROMPT(params: {
+export interface GeneratorPromptParams {
   type: QuestionType;
   loName: string;
   difficulty?: Difficulty;
@@ -322,29 +322,38 @@ export function GENERATOR_PROMPT(params: {
   existingStems?: string[];
   batchStems?: string[];
   regenerate?: RegenerateContext;
-}): string {
-  const optionCount = params.type === 'mcq' ? 4 : 2;
+}
+
+/** Provider prompt-cache routing key for the generator's fixed rules. */
+export const generatorPromptCacheKey = (type: QuestionType): string => `financebot-generator-${type}-v1`;
+
+/**
+ * The generator prompt as a fixed system prompt plus a per-question task.
+ * Providers cache only an identical prefix (OpenAI: 1,024 tokens or more), so
+ * everything that varies between calls — the objective, difficulty, hardness
+ * move, material, angle, earlier stems — lives in `task`, and `system` depends
+ * on the question type alone. Measured 2026-11-20: ~4.5k of a ~6.2k-token
+ * generation call is these fixed rules, and only 4% of it was being cached
+ * while the objective name was the prompt's first line.
+ */
+export function GENERATOR_PROMPT_PARTS(params: GeneratorPromptParams): { system: string; task: string } {
+  return { system: generatorSystemPrompt(params.type), task: generatorTask(params) };
+}
+
+/** The generator prompt as one string (system, then task). */
+export function GENERATOR_PROMPT(params: GeneratorPromptParams): string {
+  const { system, task } = GENERATOR_PROMPT_PARTS(params);
+  return `${system}\n\n${task}`;
+}
+
+function generatorTask(params: GeneratorPromptParams): string {
   const difficultyGuidance = params.difficulty ? DIFFICULTY_RUBRIC[params.difficulty] : '';
   return [
-    `You are an expert finance instructor writing ONE ${params.type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
-    `for the learning objective: "${params.loName}". The question must assess the learning objective "${params.loName}":`,
-    'a question a student could answer without that objective is wrong, however well written.',
+    'TASK',
+    `Learning objective: "${params.loName}". The question must assess the learning objective "${params.loName}".`,
     integrationRule(params.secondaryLoNames, params.difficulty),
     params.difficulty ? `Target difficulty: ${params.difficulty}.` : '',
     difficultyGuidance,
-    // Measured 2026-08-16: TWELVE OF TWELVE generated questions came back
-    // labelled `medium` while the reviewer judged every one of them a one-step
-    // substitution. The rule above already said that is too easy — the model was
-    // not breaking it so much as echoing the target back as a label. So the fix
-    // is not restating the standard, it is asking for a self-assessment.
-    'The "difficulty" you RETURN must describe the question you actually wrote, not the',
-    'target you were given. Grade your own question honestly: if the stem supplies the',
-    'formula and the student performs one substitution, that is "easy" however large the',
-    'arithmetic looks. If your question comes out easier than the target, prefer to make',
-    'it genuinely harder — require choosing between two approaches, or a step the stem',
-    'does not hand over — and only if you cannot, return the honest lower label. A',
-    'mislabelled question is worse than an easy one: it is served to students as',
-    'evidence of a mastery they have not shown.',
     // With an assignment the seven-entry catalog is dead weight (the server
     // chose) and an invitation to blend; the compact framing keeps the two
     // things the catalog block also carried — the hardness principle and the
@@ -374,7 +383,7 @@ export function GENERATOR_PROMPT(params: {
     // preset's suggestion.
     params.kind === 'calculation'
       ? 'THIS QUESTION MUST BE A CALCULATION: set "numericKind": "numeric", with paramSlots '
-        + 'and derivedValues as specified below. A question of the other kind is recorded as a defect.'
+        + 'and derivedValues as specified above. A question of the other kind is recorded as a defect.'
       : params.kind === 'conceptual'
         ? 'THIS QUESTION MUST BE CONCEPTUAL: set "numericKind": "conceptual", with no '
           + 'paramSlots and no derivedValues — the student reasons about ideas, not '
@@ -382,17 +391,48 @@ export function GENERATOR_PROMPT(params: {
         : '',
     params.prompt ? `Additional instruction from the instructor: ${params.prompt}` : '',
     '',
-    'Ground the question ONLY in the course material below. Do not introduce facts not supported by it.',
-    REFERENCE_DATA_LINE,
     'Course material:',
     renderChunks(params.chunks),
+    '',
+    params.angle ? `ASSESSMENT ANGLE for this question: ${params.angle.text}` : '',
+    params.focusChunk !== undefined ? `Lean primarily on material [${params.focusChunk + 1}].` : '',
+    (params.existingStems?.length || params.batchStems?.length || params.regenerate) ? REFERENCE_DATA_LINE : '',
+    renderDistinctnessContext(params.existingStems ?? [], params.batchStems ?? []),
+    params.regenerate ? renderRegenerateContext(params.regenerate) : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function generatorSystemPrompt(type: QuestionType): string {
+  const optionCount = type === 'mcq' ? 4 : 2;
+  return [
+    `You are an expert finance instructor writing ONE ${type === 'mcq' ? 'multiple-choice' : 'true/false'} practice question`,
+    'for the learning objective named in the TASK at the end. The question must assess that learning objective:',
+    'a question a student could answer without that objective is wrong, however well written.',
+    'The TASK also gives the target difficulty and the course material.',
+    // Measured 2026-08-16: TWELVE OF TWELVE generated questions came back
+    // labelled `medium` while the reviewer judged every one of them a one-step
+    // substitution. The difficulty rubric already said that is too easy — the model was
+    // not breaking it so much as echoing the target back as a label. So the fix
+    // is not restating the standard, it is asking for a self-assessment.
+    'The "difficulty" you RETURN must describe the question you actually wrote, not the',
+    'target you were given. Grade your own question honestly: if the stem supplies the',
+    'formula and the student performs one substitution, that is "easy" however large the',
+    'arithmetic looks. If your question comes out easier than the target, prefer to make',
+    'it genuinely harder — require choosing between two approaches, or a step the stem',
+    'does not hand over — and only if you cannot, return the honest lower label. A',
+    'mislabelled question is worse than an easy one: it is served to students as',
+    'evidence of a mastery they have not shown.',
+    'Ground the question ONLY in the course material given in the TASK. Do not introduce facts not supported by it.',
+    REFERENCE_DATA_LINE,
     '',
     `Produce EXACTLY ${optionCount} options. EXACTLY ONE option has role "correct".`,
     'Every option has a per-option explanation. Assign each non-correct option one role from:',
     '  - "common-misconception": a plausible error a student commonly makes',
     '  - "partially-correct": right idea, incomplete or misapplied',
     '  - "clearly-wrong": obviously incorrect to a prepared student',
-    params.type === 'mcq'
+    type === 'mcq'
       ? 'AT LEAST ONE option MUST be "common-misconception". The practice loop offers '
         + 'its retry only when a student picks one, so a question without it silently '
         + 'loses that behaviour. A question without one is recorded as a defect.'
@@ -658,7 +698,7 @@ export function GENERATOR_PROMPT(params: {
     '  "derivedValues": [ { "name": string, "formula": string, "errorModel": string } ],',
     '  "options": [ { "key": string, "text": string, "role": string, "explanation": string } ] }',
     '"sourceChunkIndexes" lists the [n] labels of the course-material passages the question relies on.',
-    params.type === 'mcq'
+    type === 'mcq'
       ? 'Use option keys "A","B","C","D".'
       // Measured 2026-08-22: three true/false questions at target hard came
       // back as TWO-OPTION NUMERIC questions — options "${{S}}" / "${{S_WRONG}}"
@@ -675,12 +715,6 @@ export function GENERATOR_PROMPT(params: {
         'pattern: the claim is true or false only when two easily-confused rules are',
         'held together. Never put a computed value in an option.',
       ].join('\n'),
-    '',
-    params.angle ? `ASSESSMENT ANGLE for this question: ${params.angle.text}` : '',
-    params.focusChunk !== undefined ? `Lean primarily on material [${params.focusChunk + 1}].` : '',
-    (params.existingStems?.length || params.batchStems?.length || params.regenerate) ? REFERENCE_DATA_LINE : '',
-    renderDistinctnessContext(params.existingStems ?? [], params.batchStems ?? []),
-    params.regenerate ? renderRegenerateContext(params.regenerate) : '',
   ]
     .filter(Boolean)
     .join('\n');

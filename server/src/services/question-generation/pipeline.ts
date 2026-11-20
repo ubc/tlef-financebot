@@ -19,8 +19,8 @@ import {
   assignMovesForBatch, inspectCandidate, normalizeDifficulty, sanitizeGenerated, sourceRefsFor,
   withVerificationNote, type GeneratorOutput, type RetrievedChunk, type verifyGeneratedNumerics,
 } from './candidate';
-import { CHECKER_PROMPT, parseCheckerOutput, uncheckedDecision, type CheckerOutput } from './checker-prompt';
-import { GENERATOR_PROMPT, GENERATOR_TEMPERATURE, type RegenerateContext } from './generator-prompt';
+import { CHECKER_PROMPT_CACHE_KEY, CHECKER_PROMPT_PARTS, parseCheckerOutput, uncheckedDecision, type CheckerOutput } from './checker-prompt';
+import { GENERATOR_PROMPT_PARTS, GENERATOR_TEMPERATURE, generatorPromptCacheKey, type RegenerateContext } from './generator-prompt';
 import { loadExistingLoStems } from './existing-stems';
 import { retrieveChunks, resolveSecondaryLos, taggedLoIds, taggedThemeIds } from './grounding';
 import { allocateSlots, itemPlan, type SlotAssignment } from './slots';
@@ -89,13 +89,15 @@ interface Evaluated {
 async function generateCandidate(input: GenerateAndCheckInput, stage: 'generation' | 'repair', regenerate?: RegenerateContext): Promise<GeneratorOutput> {
   await input.checkpoint();
   try {
-    return await completeJson<GeneratorOutput>(GENERATOR_PROMPT({
+    const { system, task } = GENERATOR_PROMPT_PARTS({
       type: input.type, loName: input.loName, difficulty: input.difficulty, prompt: input.prompt, chunks: input.chunks,
       assignedMove: input.slot.hardnessMove, kind: input.kind, secondaryLoNames: input.secondaryLoNames,
       angle: input.slot.angle, focusChunk: input.slot.focusChunk, existingStems: input.existingStems,
       batchStems: input.batchStems, ...(regenerate ? { regenerate } : {}),
-    }), {
+    });
+    return await completeJson<GeneratorOutput>(task, {
       temperature: GENERATOR_TEMPERATURE, ...input.models.generator,
+      systemPrompt: system, promptCacheKey: generatorPromptCacheKey(input.type),
       usageContext: { stage, item: input.item }, beforeRequest: input.checkpoint,
       ...(input.onText ? { onText: input.onText } : {}), jsonRetry: false,
     });
@@ -115,10 +117,12 @@ async function inspectAndCheck(input: GenerateAndCheckInput, raw: GeneratorOutpu
   await input.checkpoint();
   let check: CheckerOutput;
   try {
-    check = parseCheckerOutput(await completeJson<unknown>(CHECKER_PROMPT({
+    const { system, task } = CHECKER_PROMPT_PARTS({
       loName: input.loName, secondaryLoNames: input.secondaryLoNames, type: input.type, question: generated,
       chunks: input.chunks, assignedMove: input.slot.hardnessMove, findings: inspection.findings,
-    }), { ...input.models.reviewer, usageContext: { stage: 'check', item: input.item }, beforeRequest: input.checkpoint, jsonRetry: false }));
+    });
+    check = parseCheckerOutput(await completeJson<unknown>(task, { ...input.models.reviewer, systemPrompt: system,
+      promptCacheKey: CHECKER_PROMPT_CACHE_KEY, usageContext: { stage: 'check', item: input.item }, beforeRequest: input.checkpoint, jsonRetry: false }));
   } catch (error) {
     if (error instanceof Error && error.message === 'content-run-conflict') throw error;
     check = uncheckedDecision(error);

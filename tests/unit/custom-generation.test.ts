@@ -178,6 +178,15 @@ describe('Task 10 custom generation', () => {
       generationPrompt: 'Use @lecture-3.pdf and focus on timing.',
       sourceRefs: [{ materialId: lectureId, chunk: 'Lecture-only grounding' }],
     });
+    // Fixed rules go out as a cacheable system prompt; per-question data in the task.
+    const [generatorTask, generatorOptions] = jest.mocked(completeJson).mock.calls[0]!;
+    expect(generatorOptions).toMatchObject({ promptCacheKey: 'financebot-generator-mcq-v1', systemPrompt: expect.stringContaining('Respond with ONLY this JSON shape') });
+    expect(generatorOptions!.systemPrompt).not.toContain('Lecture-only grounding');
+    expect(generatorTask).toMatch(/^TASK\n/);
+    expect(generatorTask).toContain('Lecture-only grounding');
+    const [checkerTask, checkerOptions] = jest.mocked(completeJson).mock.calls[1]!;
+    expect(checkerOptions).toMatchObject({ promptCacheKey: 'financebot-checker-v1', systemPrompt: expect.stringContaining('PART 2 — VERDICT.') });
+    expect(checkerTask).toContain('Question JSON:');
   });
 
   it('rejects an unknown @mention before embedding or generation', async () => {

@@ -14,7 +14,7 @@ jest.mock('ubc-genai-toolkit-llm', () => ({
   LLMModule: jest.fn().mockImplementation(() => ({ sendMessage, streamConversation, getAvailableModels: jest.fn() })),
 }));
 
-import { completeJson, llm, withModelCallObserver, type ModelCallEvent } from '../../server/src/components/genai/llm';
+import { completeJson, llm, promptCacheOptions, withModelCallObserver, type ModelCallEvent } from '../../server/src/components/genai/llm';
 import { modelRequestOptions } from '../../server/src/components/genai/llm/model-capabilities';
 import { ModelCallTimeoutError } from '../../server/src/components/genai/llm/request-deadline';
 
@@ -292,4 +292,21 @@ it('with jsonRetry: false throws on an unparseable reply without a corrective ca
   await expect(completeJson('prompt', { jsonRetry: false })).rejects.toThrow('llm-json-parse-failed');
   expect(sendMessage).toHaveBeenCalledTimes(1);
   expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('jsonRetry');
+});
+
+describe('prompt cache key', () => {
+  it('is sent only to the official OpenAI API', () => {
+    expect(promptCacheOptions('financebot-generator-mcq-v1', { provider: 'openai' })).toEqual({ prompt_cache_key: 'financebot-generator-mcq-v1' });
+    expect(promptCacheOptions('k', { provider: 'openai', endpoint: 'https://gateway.example/v1' })).toEqual({});
+    for (const provider of ['ollama', 'anthropic', 'ubc-llm-sandbox']) expect(promptCacheOptions('k', { provider })).toEqual({});
+    expect(promptCacheOptions(undefined, { provider: 'openai' })).toEqual({});
+    expect(promptCacheOptions('x'.repeat(100), { provider: 'openai' }).prompt_cache_key).toHaveLength(64);
+  });
+  it('never reaches a non-OpenAI provider, while the system prompt still does', async () => {
+    sendMessage.mockResolvedValue({ content: '{"ok":true}' });
+    await completeJson('task', { systemPrompt: 'fixed rules', promptCacheKey: 'financebot-checker-v1' });
+    expect(sendMessage.mock.calls[0]![1]).toMatchObject({ systemPrompt: 'fixed rules' });
+    expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('prompt_cache_key');
+    expect(sendMessage.mock.calls[0]![1]).not.toHaveProperty('promptCacheKey');
+  });
 });

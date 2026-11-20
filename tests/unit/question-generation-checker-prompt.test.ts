@@ -1,5 +1,5 @@
 import {
-  CHECKER_PROMPT, parseCheckerOutput, uncheckedDecision, REVIEW_VERDICT_POLICY,
+  CHECKER_PROMPT, CHECKER_PROMPT_PARTS, parseCheckerOutput, uncheckedDecision, REVIEW_VERDICT_POLICY,
 } from '../../server/src/services/question-generation/checker-prompt';
 
 const question = { stem: 'Beta 1.2, Rf 3%, Rm 8%. E(R)?', options: [
@@ -53,5 +53,25 @@ describe('uncheckedDecision', () => {
     expect(uncheckedDecision(new Error('timeout'))).toEqual({
       decision: 'flag', reasoning: 'Automatic check unavailable: timeout', roleAssessment: '', suggestions: [],
     });
+  });
+});
+
+describe('CHECKER_PROMPT_PARTS — cacheable prefix', () => {
+  it('gives one identical system prompt across items, objectives and findings', () => {
+    const systems = new Set([
+      base,
+      { ...base, loName: 'Value a bond', chunks: [{ text: 'Bonds pay coupons.' }], findings: ['B equals C.'], assignedMove: 'Chain.' },
+      { ...base, secondaryLoNames: ['Discounting'] },
+    ].map(p => CHECKER_PROMPT_PARTS(p as never).system));
+    expect(systems.size).toBe(1);
+    expect([...systems][0]).not.toContain('Apply CAPM');
+  });
+  it('orders the task as objective, material, findings, question', () => {
+    const { task } = CHECKER_PROMPT_PARTS({ ...base, findings: ['B equals C.'] });
+    const at = (text: string) => task.indexOf(text);
+    expect(at('Learning objective: "Apply CAPM"')).toBeGreaterThan(-1);
+    expect(at('Learning objective')).toBeLessThan(at('CAPM formula.'));
+    expect(at('CAPM formula.')).toBeLessThan(at('B equals C.'));
+    expect(at('B equals C.')).toBeLessThan(at('Question JSON:'));
   });
 });

@@ -374,6 +374,15 @@ commonly need:
 
 ## Current state
 
+- Generation prompt caching (2026-11-20, spec
+  `docs/superpowers/specs/2026-11-20-generation-prompt-caching-design.md`): the
+  generator and checker prompts are split into a fixed system prompt (depends on
+  question type only) and a per-question `TASK`; keep anything that varies per
+  call out of the system part, or provider prompt caching stops working.
+  `completeJson({ promptCacheKey })` sends `prompt_cache_key` to the official
+  OpenAI API only. Live check: after the first call, 4,645 of ~5,650 generator
+  input tokens are cached, across objectives (was 0–4%).
+
 - Question generation correctness (2026-11-12, spec
   `docs/superpowers/specs/2026-11-12-generation-correctness-design.md`): a
   parameter solver picks slot values so no two options collide (verification

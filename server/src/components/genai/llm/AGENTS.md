@@ -131,6 +131,17 @@ question generation decodes bounded stems, options, proposed answer roles and
 option explanations into unverified run previews;
 never forward raw response JSON or private reasoning into product progress UI.
 
+## Prompt caching
+
+Providers cache an identical prompt *prefix* (OpenAI: 1,024 tokens or more), so
+put fixed rules in `systemPrompt` and everything that varies per call in the
+prompt itself. `completeJson({ promptCacheKey })` adds `prompt_cache_key` only
+when the provider is `openai` with no `LLM_ENDPOINT` (`promptCacheOptions`):
+the toolkit passes unknown options through, and Ollama, Anthropic, the UBC
+Sandbox or a compatible gateway may reject the parameter. Caching still works
+without the key; the key only improves routing. `cachedInputTokens` in model
+call receipts shows whether it hits.
+
 ## Model usage observation
 
 `withModelCallObserver` records one `started`/`finished` event pair per observed
