@@ -2,9 +2,11 @@ import { attachTutorial } from '../../tutorials.js';
 import {
   ApiError, assignAdminCourseRole, listAdminUsers, listAdminAccounts, listAdminCourses,
   grantPlatformInstructor, revokePlatformInstructor, removeAdminCourseRole, setAdminUserActive,
+  grantPlatformAdmin, revokePlatformAdmin, saveCwlAssignment, cancelPlatformCwlAssignment,
   type AdminAccount, type AdminCourseOption, type AdminDirectoryUser, type CourseRole,
 } from '../../api.js';
 import { el, mount } from '../../dom.js';
+import { inviteCoursePerson } from '../../course-people-api.js';
 import { runButtonAction } from '../../action-state.js';
 import { confirmDialog } from '../../modal.js';
 import { currentQuery, type RouteParams } from '../../router.js';
@@ -15,7 +17,7 @@ const message = (error: unknown): string => error instanceof ApiError ? error.me
 const date = (value?: string): string => value ? new Date(value).toLocaleString() : 'Not recorded';
 const badge = (text: string, tone = ''): HTMLElement => el('span', { class: `ac-badge ${tone ? `ac-badge--${tone}` : ''}`, text });
 
-type DirectoryPerson = AdminDirectoryUser & { platformInstructor: boolean; pending: boolean; grantedAt?: string };
+type DirectoryPerson = AdminDirectoryUser & { platformInstructor: boolean; adminGrant?: boolean; pendingCwl?: string; pending: boolean; grantedAt?: string };
 const hasStudentIdentity = (user: AdminDirectoryUser): boolean => (user.affiliations ?? []).some(value => value.trim().toLowerCase() === 'student');
 const defaultWorkspace = (user: DirectoryPerson): string => user.pending ? 'Pending first login' : user.deactivatedAt ? 'Banned' : user.isAdmin ? 'Admin' : user.platformInstructor || user.courseRoles.some(r => r.role === 'instructor') ? 'Instructor' : user.courseRoles.some(r => r.role === 'ta') ? 'TA' : 'Student';
 const personStatus = (user: DirectoryPerson): string => user.pending ? 'Pending first login' : user.deactivatedAt ? 'Banned' : 'Active';
@@ -24,7 +26,11 @@ function mergePeople(directory: AdminDirectoryUser[], accounts: AdminAccount[], 
   const byPuid = new Map(accounts.map(account => [account.puid, account]));
   const needle = search.toLowerCase();
   return [
-    ...directory.map(user => ({ ...user, pending: false, platformInstructor: byPuid.get(user.puid)?.platformInstructor ?? false, grantedAt: byPuid.get(user.puid)?.grantedAt })),
+    ...directory.map(user => {
+      const account = byPuid.get(user.puid);
+      return { ...user, pending: false, isAdmin: account?.isAdmin ?? user.isAdmin, adminGrant: account?.adminGrant,
+        platformInstructor: account?.platformInstructor ?? false, grantedAt: account?.grantedAt };
+    }),
     ...accounts.filter(account => account.status === 'pending' && !directory.some(user => user.puid === account.puid)
       && account.puid.toLowerCase().includes(needle)).map(account => ({
       ...account, _id: '', courseRoles: [], lastLoginAt: '', pending: true,
@@ -110,7 +116,8 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
             el('div', { class: 'ac-person-copy' },
               el('button', { type: 'button', class: 'ac-cell-link', 'data-person': user.puid, text: user.displayName || user.puid, onclick: () => inspect(user) }),
               el('small', { text: user.email || 'Email not released' }),
-              el('small', { class: 'ac-person-login', title: user.puid }, 'Login ID (PUID): ', el('code', { text: user.puid }))))),
+              el('small', { class: 'ac-person-login' }, user.pendingCwl ? 'CWL username: ' : 'Login ID (PUID): ',
+                el('code', { text: user.pendingCwl || user.puid }))))),
           el('td', { class: 'ac-people-roles' }, user.isAdmin ? badge('Admin', 'info') : false, user.platformInstructor ? badge('Instructor', 'info') : false, hasStudentIdentity(user) ? el('span', { class: 'ac-badge', text: 'Student (CWL)', title: 'Student affiliation reported by CWL. Course access is shown separately.' }) : false, ...roles.map(role => badge(role)), !roles.length && !hasStudentIdentity(user) && defaultWorkspace(user) === 'Student' ? el('span', { class: 'ac-badge', text: 'Student workspace', title: 'Default Student workspace for this account. This is not a course membership or a CWL affiliation claim.' }) : false, !roles.length && !user.isAdmin && !user.platformInstructor && !hasStudentIdentity(user) && defaultWorkspace(user) !== 'Student' ? 'No roles' : false),
           el('td', { class: 'ac-people-courses', text: String(new Set(user.courseRoles.map(entry => entry.courseId)).size) }),
           el('td', {}, badge(personStatus(user), user.deactivatedAt ? 'danger' : user.pending ? 'warning' : 'success')),
@@ -155,7 +162,7 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       'data-grant-person': user.puid, 'data-grant-location': location,
       'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': menuId,
       popovertarget: menuId,
-      disabled: mutating || needsRefresh || Boolean(user.deactivatedAt) && !user.platformInstructor,
+      disabled: mutating || needsRefresh || Boolean(user.deactivatedAt) && !user.platformInstructor && !user.adminGrant,
     }, 'Grant', el('span', { 'aria-hidden': 'true', text: '⌄' }));
     const menu = el('div', { class: 'ac-grant-menu', id: menuId, popover: 'auto', role: 'menu', 'aria-label': `Grant role for ${user.displayName || user.puid}` });
     const close = (restoreFocus = false): void => {
@@ -203,9 +210,11 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       await runButtonAction(trigger, () => mutate(async () => {
         if (user.platformInstructor) {
           if (!await confirmDialog({ title: 'Revoke Instructor access?', message: user.pending
-            ? `The saved grant for ${user.puid} will no longer activate on first sign-in.`
+            ? `The saved grant for ${user.pendingCwl || user.puid} will no longer activate on sign-in.`
             : `Remove course-creation access for ${user.displayName || user.puid}? Existing course roles and Admin access remain.`, confirmLabel: 'Revoke access', tone: 'danger' })) return;
-          await revokePlatformInstructor(user.puid); notice('Instructor access revoked.');
+          if (user.pendingCwl) await cancelPlatformCwlAssignment(user.pendingCwl, 'platform-instructor');
+          else await revokePlatformInstructor(user.puid);
+          notice('Instructor access revoked.');
         } else {
           await grantPlatformInstructor(user.puid); notice('Instructor access granted.');
         }
@@ -221,7 +230,17 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       onclick: changeInstructor,
     }, el('span', { text: user.platformInstructor ? 'Revoke Instructor' : 'Instructor' }),
     el('small', { text: user.platformInstructor ? 'Remove course creation access' : 'Allow course creation' }));
-    menu.append(grant,
+    if (user.adminGrant) menu.append(el('button', {
+      class: 'ac-grant-option ac-grant-option--revoke', type: 'button', role: 'menuitem', 'data-mutation': 'true',
+      disabled: mutating || needsRefresh,
+      onclick: async () => {
+        close(true);
+        if (!await confirmDialog({ title: 'Revoke Admin access?', message: `Remove the Admin grant for ${user.displayName || user.puid}?`, confirmLabel: 'Revoke Admin', tone: 'danger' })) return;
+        await mutate(() => user.pendingCwl ? cancelPlatformCwlAssignment(user.pendingCwl, 'admin') : revokePlatformAdmin(user.puid), 'Admin grant revoked.');
+      },
+    }, 'Revoke Admin'));
+    if (!user.pendingCwl || user.platformInstructor) menu.append(grant);
+    menu.append(
       ...(['ta', 'student'] as const).map(role => el('button', {
         class: 'ac-grant-option', type: 'button', role: 'menuitem', 'data-mutation': 'true', 'aria-label': `Grant ${roleName(role)}`,
         disabled: mutating || needsRefresh || user.pending || Boolean(user.deactivatedAt),
@@ -280,20 +299,22 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
     const content = el('div', { class: 'ac-panel-body', id: 'user-detail-content', role: 'tabpanel', 'aria-labelledby': `user-detail-tab-${detailTab === 'Profile' ? '0' : '1'}` });
     if (detailTab === 'Profile') {
       content.append(el('div', { class: 'ac-people-section ac-actions' }, badge(personStatus(user), user.deactivatedAt ? 'danger' : user.pending ? 'warning' : 'success'), user.isAdmin ? badge('Admin', 'info') : ''),
-        properties([['Login ID (PUID)', user.puid], ['CWL username', user.uid || 'Not released'], ['Email', user.email || 'Not released'], ['Last sign-in', date(user.lastLoginAt)], ['Affiliations', user.affiliations.join(', ') || 'Not released']]),
-        el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Copy Login ID', onclick: async () => {
+        properties([['Login ID (PUID)', user.pendingCwl ? 'Assigned at matching CWL sign-in' : user.puid], ['CWL username', user.uid || 'Not released'], ['Email', user.email || 'Not released'], ['Last sign-in', date(user.lastLoginAt)], ['Affiliations', user.affiliations.join(', ') || 'Not released']]),
+        ...(user.pendingCwl ? [] : [el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Copy Login ID', onclick: async () => {
           try { await navigator.clipboard.writeText(user.puid); notice('Login ID copied.'); }
           catch { notice('Unable to copy. Select the Login ID above and copy it manually.'); }
         } }),
         el('p', { class: 'ac-note', text: user.pending ? 'Provisioned PUID; awaiting first CWL sign-in.' : 'Identity received from CWL (ubcEduCwlPuid). Student (CWL) describes affiliation; Course Student describes course access from manual, People, Gradebook or Canvas grants. Student workspace indicates the default app workspace when CWL has not released student affiliation; it does not grant course access.' }),
         el('h3', { class: 'ac-people-section-title', text: 'Investigation' }),
         el('a', { class: 'ac-people-link', text: 'View activity →', href: `#/admin/operations?actor=${encodeURIComponent(user.puid)}` }),
-        el('a', { class: 'ac-people-link', text: 'Created questions →', href: `#/admin/questions?actor=${encodeURIComponent(user.puid)}` }),
+        el('a', { class: 'ac-people-link', text: 'Created questions →', href: `#/admin/questions?actor=${encodeURIComponent(user.puid)}` })]),
         el('h3', { class: 'ac-people-section-title', text: 'Manage access' }),
         el('p', { class: 'ac-note', text: 'Instructor grants allow course creation. TA and Student access apply to the course you choose. Multiple roles can coexist.' }),
         accessActions(user, 'profile'),
         user.platformInstructor ? el('p', { class: 'ac-note', text: `Instructor grant: ${user.pending ? 'pending first login' : user.deactivatedAt ? 'blocked while banned' : 'active'} · Granted ${date(user.grantedAt)}` }) : '',
-        user.pending ? el('p', { class: 'ac-people-callout', text: 'This PUID has not signed in. The saved Instructor grant will activate at first matching CWL sign-in. Course roles become available after sign-in.' }) : '',
+        user.pending ? el('p', { class: 'ac-people-callout', text: user.pendingCwl
+          ? 'This assignment is waiting for a matching CWL sign-in.'
+          : 'This PUID has not signed in. Saved platform grants activate at the first matching CWL sign-in.' }) : '',
         user.deactivatedAt ? el('p', { class: 'ac-people-callout', text: 'This user is banned. All platform access is blocked until you unban them; existing roles and records are retained.' }) : '',
         user.isAdmin ? el('p', { class: 'ac-note', text: 'Admin accounts cannot be banned from this directory.' }) : '');
     } else {
@@ -357,8 +378,129 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
       if (!showLoading) throw error;
     }
   }
+  function openAdvanceGrant(): void {
+    const opener = document.activeElement;
+    const dialog = el('dialog', { class: 'app-dialog ac-people-dialog', 'aria-labelledby': 'advance-grant-title' });
+    const role = el('select', { class: 'input', 'aria-label': 'Role to grant', required: true },
+      el('option', { value: '', text: 'Choose a role' }),
+      el('optgroup', { label: 'Platform access' },
+        el('option', { value: 'admin', text: 'Admin' }),
+        el('option', { value: 'platform-instructor', text: 'Platform Instructor (can create courses)' })),
+      el('optgroup', { label: 'Access to an existing course' },
+        ...(['instructor', 'ta', 'student'] as const).map(value => el('option', { value, text: `Course ${roleName(value)}` }))));
+    const isPlatformRole = () => role.value === 'admin' || role.value === 'platform-instructor';
+    const course = el('select', { class: 'input', 'aria-label': 'Course', disabled: true });
+    const courseField = el('label', { class: 'form-field', hidden: true },
+      el('span', { class: 'form-field__label', text: 'Course' }), course);
+    const method = el('select', { class: 'input', 'aria-label': 'Identify recipient by', disabled: true },
+      el('option', { value: 'cwl', text: 'CWL username' }),
+      el('option', { value: 'puid', text: 'Login ID (PUID)' }),
+      el('option', { value: 'email', text: 'UBC email' }));
+    const methodField = el('label', { class: 'form-field', hidden: true },
+      el('span', { class: 'form-field__label', text: 'Identify recipient by' }), method);
+    const identifier = el('input', { id: 'advance-grant-identity', class: 'input', required: true, disabled: true, autocomplete: 'off', 'aria-describedby': 'advance-grant-help' });
+    const identityLabel = el('label', { class: 'form-field__label', for: identifier.id });
+    const help = el('p', { class: 'ac-note', id: 'advance-grant-help' });
+    const identityField = el('div', { class: 'form-field', hidden: true }, identityLabel, identifier, help);
+    const error = el('div', { class: 'ac-feedback ac-feedback--error', role: 'alert' });
+    const save = el('button', { class: 'btn btn--primary', type: 'submit', text: 'Save grant', disabled: true });
+    const cancel = el('button', { class: 'btn btn--ghost', type: 'button', text: 'Cancel', onclick: () => dialog.close() });
+    let saving = false;
+    let request = 0;
+
+    function updateIdentity(): void {
+      const byPuid = method.value === 'puid';
+      const byCwl = method.value === 'cwl';
+      identifier.value = '';
+      identifier.disabled = identityField.hidden = !role.value;
+      method.disabled = methodField.hidden = !role.value;
+      identityLabel.textContent = byPuid ? 'Login ID (PUID)' : byCwl ? 'CWL username' : 'UBC email';
+      identifier.maxLength = byPuid ? 128 : byCwl ? 64 : 254;
+      if (byPuid || byCwl) identifier.pattern = byPuid ? '[A-Za-z0-9._\\-]+' : '[A-Za-z0-9._\\-]{2,64}';
+      else identifier.removeAttribute('pattern');
+      help.textContent = byPuid ? 'Enter the exact UBC PUID. Access activates at the matching CWL sign-in.'
+        : byCwl ? 'The role activates when UBC sign-in returns this CWL username. The person can sign in for the first time after you save.'
+          : 'The role activates when CWL returns this UBC email. No email is sent.';
+      error.textContent = '';
+    }
+    method.addEventListener('change', updateIdentity);
+    role.addEventListener('change', async () => {
+      const revision = ++request;
+      const platform = isPlatformRole();
+      const courseRole = !!role.value && !platform;
+      mount(method, el('option', { value: 'cwl', text: 'CWL username' }),
+        el('option', { value: platform ? 'puid' : 'email', text: platform ? 'Login ID (PUID)' : 'UBC email' }));
+      updateIdentity();
+      course.disabled = courseField.hidden = !courseRole;
+      course.required = courseRole;
+      save.disabled = !platform;
+      if (!courseRole) return;
+      mount(course, el('option', { value: '', text: 'Loading courses…' }));
+      try {
+        courses ??= await listAdminCourses();
+        if (request !== revision || !dialog.open) return;
+        const available = courses.filter(item => item.lifecycle !== 'archived');
+        mount(course, el('option', { value: '', text: available.length ? 'Choose a course' : 'No courses available' }),
+          ...available.map(item => el('option', { value: item._id, text: [item.courseCode, item.name, item.section, item.term].filter(Boolean).join(' · ') })));
+        save.disabled = !available.length;
+      } catch (failure) {
+        if (request === revision && dialog.open) {
+          mount(course, el('option', { value: '', text: 'Courses unavailable' }));
+          error.textContent = `${message(failure)} Reopen this dialog to retry.`;
+        }
+      }
+    });
+    const fields = el('fieldset', { class: 'admin-account-create' },
+      el('label', { class: 'form-field' }, el('span', { class: 'form-field__label', text: 'Role' }), role),
+      courseField, methodField, identityField);
+    const form = el('form', { class: 'admin-account-create', onsubmit: async (event: Event) => {
+      event.preventDefault();
+      if (saving || save.disabled || !role.value) return;
+      saving = fields.disabled = cancel.disabled = save.disabled = true;
+      error.textContent = '';
+      try {
+        const value = identifier.value.trim();
+        const platform = isPlatformRole();
+        const admin = role.value === 'admin';
+        const byCwl = method.value === 'cwl';
+        const recipient = `${byCwl ? 'CWL' : 'Login ID'} ${value}`;
+        if (platform && !await confirmDialog({
+          title: admin ? 'Grant platform Admin?' : 'Grant Platform Instructor?',
+          message: admin ? `Grant full platform access to ${recipient}?` : `Allow ${recipient} to create courses?`,
+          confirmLabel: admin ? 'Grant Admin' : 'Grant Instructor',
+        })) return;
+        if (!dialog.open || !root.isConnected) return;
+        const result = byCwl
+          ? await saveCwlAssignment(value, platform ? { role: admin ? 'admin' : 'platform-instructor' } : { role: role.value as CourseRole, courseId: course.value })
+          : platform ? await (admin ? grantPlatformAdmin(value) : grantPlatformInstructor(value))
+          : await inviteCoursePerson(course.value, value, role.value as CourseRole, {});
+        if (!dialog.open || !root.isConnected) return;
+        dialog.close();
+        notice(result.status === 'pending'
+          ? platform ? `${admin ? 'Admin' : 'Platform Instructor'} grant saved. Access starts at the matching CWL sign-in.`
+            : 'Course invitation saved. Access starts at the matching CWL sign-in. Manage the invitation in Course Settings → People.'
+          : 'Role saved.');
+        await load();
+      } catch (failure) {
+        error.textContent = message(failure);
+      } finally {
+        saving = fields.disabled = cancel.disabled = save.disabled = false;
+      }
+    } }, fields, error, el('div', { class: 'app-dialog__actions' }, cancel, save));
+    dialog.append(el('div', { class: 'app-dialog__surface' }, el('h2', { id: 'advance-grant-title', text: 'Grant before first login' }), form));
+    dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+    const routeChanged = () => dialog.close();
+    dialog.addEventListener('close', () => {
+      window.removeEventListener('hashchange', routeChanged);
+      dialog.remove();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    }, { once: true });
+    window.addEventListener('hashchange', routeChanged);
+    root.append(dialog);
+    dialog.showModal();
+  }
   function exportDirectory(): void {
-    const rows = [['Name', 'CWL', 'PUID', 'Email', 'Status', 'Platform Instructor', 'Default workspace', 'CWL affiliations', 'Course roles'], ...visibleUsers().map(user => [user.displayName, user.uid, user.puid, user.email, personStatus(user), user.platformInstructor ? 'Granted' : 'Not granted', defaultWorkspace(user), user.affiliations.join('; '), user.courseRoles.map(entry => `${entry.courseId}: ${entry.role}`).join('; ')])];
+    const rows = [['Name', 'CWL', 'PUID', 'Email', 'Status', 'Platform Instructor', 'Default workspace', 'CWL affiliations', 'Course roles'], ...visibleUsers().map(user => [user.displayName, user.uid, user.pendingCwl ? '' : user.puid, user.email, personStatus(user), user.platformInstructor ? 'Granted' : 'Not granted', defaultWorkspace(user), user.affiliations.join('; '), user.courseRoles.map(entry => `${entry.courseId}: ${entry.role}`).join('; ')])];
     const csv = rows.map(row => row.map(value => `"${(/^[=+@\-\t\r]/.test(value) ? `'${value}` : value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = el('a', { href: url, download: 'financebot-user-directory.csv' }); link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -371,7 +513,8 @@ async function renderInner(outlet: HTMLElement): Promise<void> {
   accountFilter.addEventListener('change', () => { page = 1; if (loaded) renderTable(); });
   roleFilter.addEventListener('change', () => { page = 1; if (loaded) renderTable(); });
   root.append(el('header', { class: 'ac-header' }, el('div', {}, el('h1', { text: 'User Directory' }), el('p', { text: 'Manage Instructor, TA and Student access, or ban a user, in one place.' })),
-    el('div', { class: 'ac-actions' }, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Export', onclick: exportDirectory }), el('button', { class: 'btn btn--secondary btn--sm', type: 'button', text: 'Refresh', onclick: () => load() }))),
+    el('div', { class: 'ac-actions' }, el('button', { class: 'btn btn--primary btn--sm', type: 'button', text: 'Grant before first login', onclick: openAdvanceGrant }),
+      el('button', { class: 'btn btn--ghost btn--sm', type: 'button', text: 'Export', onclick: exportDirectory }), el('button', { class: 'btn btn--secondary btn--sm', type: 'button', text: 'Refresh', onclick: () => load() }))),
     metrics, status, el('div', { class: 'ac-workspace' }, el('section', { class: 'ac-main', 'aria-label': 'User directory' }, toolbar, tableSlot, footer), inspectorSlot));
   mount(outlet, root);
   await load();

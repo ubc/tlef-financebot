@@ -209,7 +209,7 @@ export function renderPeople(outlet: HTMLElement, params: RouteParams): void {
     const focusLabel = `${action === 'ban' ? 'Ban' : action === 'unban' ? 'Unban' : 'Cancel invite'} ${person.displayName}`;
     const label = action === 'ban' ? 'Ban from course' : action === 'unban' ? 'Unban person' : 'Cancel invitation';
     const message = action === 'ban' ? `${person.displayName} will lose all access to this course on their next request. Their learning records are retained. Re-importing the class will not restore access.`
-      : action === 'unban' ? `${person.displayName} will regain their ${ROLE_LABELS[person.role]} role, subject to the course’s publication and term dates.` : `Cancel the saved invitation for ${person.email}?`;
+      : action === 'unban' ? `${person.displayName} will regain their ${ROLE_LABELS[person.role]} role, subject to the course’s publication and term dates.` : `Cancel the saved invitation for ${person.email || person.cwl || person.displayName}?`;
     lockMutation(true);
     try {
       if (!await confirmDialog({ title: `${label}?`, message, confirmLabel: label, tone: action === 'unban' ? undefined : 'danger', className: 'people-confirmation' })) return;

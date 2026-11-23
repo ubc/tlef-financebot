@@ -9,9 +9,13 @@ jest.mock('../../server/src/services/admin.service', () => ({
   defaultPlatformSettings: jest.fn(),
   updatePlatformSettings: jest.fn(),
   grantPlatformInstructor: jest.fn(),
+  grantPlatformAdmin: jest.fn(),
   listAdminAccounts: jest.fn(),
   listAdminCourses: jest.fn(),
   revokePlatformInstructor: jest.fn(),
+  revokePlatformAdmin: jest.fn(),
+  savePlatformCwlAssignment: jest.fn(),
+  cancelPlatformCwlAssignment: jest.fn(),
 }));
 
 import { adminRouter } from '../../server/src/routes/admin.routes';
@@ -22,9 +26,12 @@ import {
   defaultPlatformSettings,
   updatePlatformSettings,
   grantPlatformInstructor,
+  grantPlatformAdmin,
   listAdminAccounts,
   listAdminCourses,
   revokePlatformInstructor,
+  revokePlatformAdmin,
+  savePlatformCwlAssignment,
 } from '../../server/src/services/admin.service';
 
 it('restricts course model settings to Admins and rejects unknown-step overrides', async () => {
@@ -68,6 +75,35 @@ function makeApp(user?: User): Express {
   app.use('/api', adminRouter);
   return app;
 }
+
+it('gates platform Admin grant routes and preserves the exact PUID', async () => {
+  const puid = 'New-Case.PUID';
+  const url = `/api/admin/platform-admins/${puid}`;
+  expect((await request(makeApp()).put(url)).status).toBe(401);
+  expect((await request(makeApp(userFixture(false))).delete(url)).status).toBe(403);
+  expect(grantPlatformAdmin).not.toHaveBeenCalled();
+  expect(revokePlatformAdmin).not.toHaveBeenCalled();
+  jest.mocked(grantPlatformAdmin).mockResolvedValue({ status: 'pending' });
+  const actor = userFixture(true);
+  const app = makeApp(actor);
+  expect((await request(app).put(url)).body).toEqual({ status: 'pending' });
+  expect((await request(app).delete(url)).status).toBe(204);
+  expect(grantPlatformAdmin).toHaveBeenCalledWith(puid, actor.puid);
+  expect(revokePlatformAdmin).toHaveBeenCalledWith(puid, actor.puid);
+});
+
+it('validates CWL assignments and rejects a course scope for a platform grant', async () => {
+  const path = '/api/admin/cwl-assignments/New.CWL';
+  const body = { role: 'platform-instructor' };
+  expect((await request(makeApp(userFixture(false))).put(path).send(body)).status).toBe(403);
+  const admin = userFixture(true);
+  const app = makeApp(admin);
+  expect((await request(app).put(path).send({ ...body, courseId: new ObjectId().toHexString() })).status).toBe(400);
+  expect(savePlatformCwlAssignment).not.toHaveBeenCalled();
+  jest.mocked(savePlatformCwlAssignment).mockResolvedValue({ status: 'pending' });
+  expect((await request(app).put(path).send(body)).body).toEqual({ status: 'pending' });
+  expect(savePlatformCwlAssignment).toHaveBeenCalledWith('New.CWL', 'platform-instructor', admin.puid);
+});
 
 describe('Admin user-account routes', () => {
   beforeEach(() => {

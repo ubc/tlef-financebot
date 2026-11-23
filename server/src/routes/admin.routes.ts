@@ -10,6 +10,7 @@ import {
 import { validate } from '../middleware/validate';
 import {
   grantPlatformInstructor,
+  grantPlatformAdmin,
   assignRole,
   capabilityMatrix,
   deactivateUser,
@@ -23,11 +24,16 @@ import {
   reactivateUser,
   removeRole,
   revokePlatformInstructor,
+  revokePlatformAdmin,
+  savePlatformCwlAssignment,
+  cancelPlatformCwlAssignment,
   updateCapabilityMatrix,
   updatePlatformSettings,
 } from '../services/admin.service';
 import { CAPABILITIES } from '../services/capabilities.service';
 import { STEP_TEMPERATURE_DEFAULTS } from '../services/step-models';
+import { CWL_USERNAME } from '../services/cwl-assignments.service';
+import { saveCourseCwlAssignment } from '../services/course-people.service';
 import type { Capability, CapabilityProfile, CapabilityRole } from '../types/domain';
 
 export const adminRouter = Router();
@@ -121,6 +127,38 @@ adminRouter.delete(
     res.json(await revokePlatformInstructor(String(req.params.puid), req.user!.puid));
   },
 );
+
+const cwlParams = z.object({ cwl: z.string().trim().regex(CWL_USERNAME, 'Enter a valid CWL username.') });
+const cwlPlatformRole = z.enum(['admin', 'platform-instructor']);
+adminRouter.put('/admin/cwl-assignments/:cwl', ensureAdmin(), validate({
+  params: cwlParams,
+  body: z.union([
+    z.object({ role: cwlPlatformRole }).strict(),
+    z.object({ role: z.enum(roles), courseId: objectId }).strict(),
+  ]),
+}), async (req, res) => {
+  const cwl = String(req.params.cwl);
+  const actor = req.user!;
+  const { role, courseId } = req.body;
+  res.json(role === 'admin' || role === 'platform-instructor'
+    ? await savePlatformCwlAssignment(cwl, role, actor.puid)
+    : await saveCourseCwlAssignment(new ObjectId(courseId), actor, cwl, role));
+});
+adminRouter.delete('/admin/cwl-assignments/:cwl/:role', ensureAdmin(), validate({
+  params: cwlParams.extend({ role: cwlPlatformRole }),
+}), async (req, res) => {
+  await cancelPlatformCwlAssignment(String(req.params.cwl), req.params.role as z.infer<typeof cwlPlatformRole>, req.user!.puid);
+  res.status(204).end();
+});
+
+adminRouter.put('/admin/platform-admins/:puid', ensureAdmin(), validate({ params: puidParams }), async (req, res) => {
+  res.json(await grantPlatformAdmin(String(req.params.puid), req.user!.puid));
+});
+
+adminRouter.delete('/admin/platform-admins/:puid', ensureAdmin(), validate({ params: puidParams }), async (req, res) => {
+  await revokePlatformAdmin(String(req.params.puid), req.user!.puid);
+  res.status(204).end();
+});
 
 adminRouter.get(
   '/admin/courses',

@@ -14,7 +14,7 @@ import type { CourseInstructorShare } from '../../types/course-sharing';
 import type { Collection, Document, ObjectId, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 import { getDb } from './index';
 import type {
-  User, PlatformInstructorGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
+  User, PlatformRoleGrant, Course, Theme, LearningObjective, Question, QuestionVersion, AttemptRecord,
   PreviewAttemptRecord, PreviewStudentSession,
   Material, MaterialChunk, MasteryProfile, ReviewBookEntry, ExamTemplate, ExamAttempt, Flag,
   Notification, AuditLog, RosterEntry, SessionSummaryRecord,
@@ -28,8 +28,10 @@ import type {
 // import these accessors instead of calling getDb().collection() with strings.
 
 export const usersCol = (): Collection<User> => getDb().collection<User>('users');
-export const platformInstructorGrantsCol = (): Collection<PlatformInstructorGrant> =>
-  getDb().collection<PlatformInstructorGrant>('platformInstructorPuidGrants');
+export const platformInstructorGrantsCol = (): Collection<PlatformRoleGrant> =>
+  getDb().collection<PlatformRoleGrant>('platformInstructorPuidGrants');
+export const platformAdminGrantsCol = (): Collection<PlatformRoleGrant> =>
+  getDb().collection<PlatformRoleGrant>('platformAdminPuidGrants');
 export const coursesCol = (): Collection<Course> => getDb().collection<Course>('courses');
 export const themesCol = (): Collection<Theme> => getDb().collection<Theme>('themes');
 export const losCol = (): Collection<LearningObjective> => getDb().collection<LearningObjective>('learningObjectives');
@@ -135,6 +137,7 @@ export const INDEX_SPECS: IndexSpec[] = [
 
   { collection: 'users', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'platformInstructorPuidGrants', keys: { puid: 1 }, options: { unique: true } },
+  { collection: 'platformAdminPuidGrants', keys: { puid: 1 }, options: { unique: true } },
   { collection: 'courses', keys: { registrationCode: 1 }, options: { unique: true } },
   {
     collection: 'courses',
@@ -234,6 +237,7 @@ INDEX_SPECS.push(
 export const coursePeopleAccessCol = (): Collection<CoursePeopleAccess> => getDb().collection<CoursePeopleAccess>('coursePeopleAccess');
 INDEX_SPECS.push(
   { collection: 'coursePeopleAccess', keys: { courseId: 1, subject: 1 }, options: { unique: true } },
+  { collection: 'coursePeopleAccess', keys: { subject: 1, status: 1 } },
   { collection: 'coursePeopleAccess', keys: { puid: 1 } },
   { collection: 'coursePeopleAccess', keys: { email: 1, status: 1 } },
 );

@@ -3,6 +3,7 @@ import { attemptsCol, auditCol, capabilitySettingsCol, courseInstructorSharesCol
 import { canvasLinks } from './canvas.service';
 import { env } from '../config/env';
 import { resolveTeachingIdentity } from './teaching-identity.service';
+import { cwlAssignmentKey } from './cwl-assignments.service';
 import { peopleRoleOpen } from './course-people-access.service';
 import type { Capability, CourseRole, User } from '../types/domain';
 import type { CoursePeopleAccess, CoursePeoplePage, CoursePerson } from '../types/course-people';
@@ -42,17 +43,17 @@ async function directory(courseId: ObjectId, actor: Actor) {
   }).toArray();
   const byPuid = new Map(users.map(u => [u.puid, u]));
   const rows = new Map<string, CoursePerson>();
-  function add(puid: string | undefined, email: string | undefined, name: string | undefined, role: CourseRole, source: string, addedAt?: Date) {
+  function add(puid: string | undefined, email: string | undefined, name: string | undefined, role: CourseRole, source: string, addedAt?: Date, pendingCwl?: string) {
     const identity = puid ? byPuid.get(puid) : undefined;
-    const id = puid ? `puid:${puid}` : `email:${email!.toLowerCase()}`;
+    const id = puid ? `puid:${puid}` : pendingCwl ? cwlAssignmentKey(pendingCwl) : `email:${email!.toLowerCase()}`;
     const previous = rows.get(id);
     if (previous) {
       if (!previous.sources.includes(source)) previous.sources.push(source);
       if (roles.indexOf(role) < roles.indexOf(previous.role)) previous.role = role;
       return previous;
     }
-    const row: CoursePerson = { id, puid: puid ?? null, cwl: identity?.uid || null, email: identity?.email || email || null,
-      displayName: identity?.displayName || name || email || puid!, role, owner: puid === course.ownerPuid,
+    const row: CoursePerson = { id, puid: puid ?? null, cwl: identity?.uid || pendingCwl || null, email: identity?.email || email || null,
+      displayName: identity?.displayName || name || email || pendingCwl || puid!, role, owner: puid === course.ownerPuid,
       protected: puid === course.ownerPuid || Boolean(identity?.isAdmin), status: identity?.deactivatedAt ? 'deactivated' : puid && identity ? 'active' : 'pending',
       sources: [source], addedAt: addedAt?.toISOString() ?? null, lastLoginAt: identity?.lastLoginAt?.toISOString() ?? null, revision: 0,
       permissions: settings?.userOverrides?.[puid ?? ''] ?? {} };
@@ -67,7 +68,8 @@ async function directory(courseId: ObjectId, actor: Actor) {
   for (const c of controls) {
     // Once bound, suppress the old pending-email representation of the same invitation.
     if (c.puid && c.email) rows.delete(`email:${c.email}`);
-    const row = add(c.puid, c.email, undefined, c.role, 'Owner override', c.createdAt);
+    const pendingCwl = !c.puid && c.subject.startsWith('cwl:') ? c.subject.slice(4) : undefined;
+    const row = add(c.puid, c.email, undefined, c.role, 'Owner override', c.createdAt, pendingCwl);
     if (!row.owner) { row.role = c.role; row.status = c.status; }
     if (c.status === 'active' && c.puid && !byPuid.has(c.puid)) row.status = 'pending';
     row.revision = c.revision;
@@ -144,6 +146,17 @@ export async function inviteCoursePerson(courseId: ObjectId, actor: Actor, ident
     permissions: role === 'ta' ? cleanPermissions(permissions) : {},
   }, 'course.people.invite');
 }
+
+export async function saveCourseCwlAssignment(courseId: ObjectId, actor: Actor, cwl: string, role: CourseRole) {
+  await peopleCourse(courseId, actor, true);
+  const subject = cwlAssignmentKey(cwl);
+  const previous = await coursePeopleAccessCol().findOne({ courseId, subject });
+  if (previous?.status === 'pending' && previous.role === role) return { id: subject, status: previous.status, revision: previous.revision };
+  if (previous && previous.status !== 'revoked') fail('This CWL already has a pending assignment. Manage it in course People.', 409);
+  return saveDecision(courseId, actor, subject, previous?.revision ?? 0, {
+    role, status: 'pending', permissions: role === 'ta' ? cleanPermissions() : {},
+  }, 'course.people.invite');
+}
 type PersonChange = { action: 'role' | 'ban' | 'unban' | 'cancel' | 'remove'; role?: CourseRole; permissions?: Partial<Record<Capability, boolean>>; reason?: string };
 export async function changeCoursePerson(courseId: ObjectId, actor: Actor, id: string, expectedRevision: number, change: PersonChange) {
   await peopleCourse(courseId, actor, true);
@@ -156,7 +169,7 @@ async function changePersonDecision(courseId: ObjectId, actor: Actor, row: Cours
   if (row.revision !== expectedRevision) fail('Access changed. Refresh People and try again.', 409);
   if (row.status === 'deactivated' && change.action !== 'remove') fail('This account is deactivated. An Admin must restore it first.', 409);
   if (change.action === 'remove' && row.status === 'revoked') fail('This person has already been removed. Refresh People.', 409);
-  if (change.action === 'cancel' && (row.puid || !['pending', 'expired'].includes(row.status))) fail('Only pending email invitations can be cancelled.', 409);
+  if (change.action === 'cancel' && (row.puid || !['pending', 'expired'].includes(row.status))) fail('Only pending invitations can be cancelled.', 409);
   if (change.action === 'ban' && !row.puid) fail('Cancel this pending invitation instead.', 409);
   if (change.action === 'unban' && row.status !== 'banned') fail('This person is not banned.', 409);
   if (change.action === 'role' && (!change.role || row.status === 'banned' || row.status === 'revoked')) fail('Unban the person before changing their role.', 409);

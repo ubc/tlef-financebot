@@ -106,7 +106,7 @@ export interface User {
   displayName: string;
   email: string;
   affiliations: string[]; // raw eduPersonAffiliation values, lower-cased
-  isAdmin: boolean; // from ADMIN_CWL_ALLOWLIST or the staging bootstrap PUID at login
+  isAdmin: boolean; // configured or granted by canonical SAML PUID
   platformInstructor?: boolean; // explicit global grant; never derived from SAML affiliation
   courseRoles: Array<{ courseId: ObjectId; role: CourseRole }>;
   onboardingAcknowledgedAt?: Date; // mandatory service-use + copyright ack (§4.1)
@@ -128,8 +128,9 @@ export interface TutorialProgress {
   updatedAt: Date;
 }
 
-/** Admin-managed global Instructor grant keyed by the canonical SAML PUID. */
-export interface PlatformInstructorGrant {
+/** Platform role grant stored per role. A reserved cwl: key is pending and
+ * changes atomically to the canonical SAML PUID when claimed at sign-in. */
+export interface PlatformRoleGrant {
   puid: string;
   grantedByPuid: string;
   createdAt: Date;

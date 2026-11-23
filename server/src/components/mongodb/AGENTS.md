@@ -95,7 +95,11 @@ UBC `puid`. A grant can exist before the matching PUID-backed `User` logs in;
 `users.service.ts` applies it on first SAML login. The accessor uses the
 isolated `platformInstructorPuidGrants` collection so older uid-keyed
 experimental documents cannot collide with the PUID unique index. Do not
-create placeholder User documents for pending grants.
+create placeholder User documents for pending grants. The platform grant
+collections also reserve `cwl:` keys for pending username assignments. A
+matching SAML sign-in atomically moves that key to the real PUID. Course
+assignments instead use a `cwl:` subject in `coursePeopleAccess` and bind
+through the course's existing unique subject index.
 
 Instructor Student Preview adds `previewAttemptsCol()` backed by
 `previewAttemptRecords` and `previewStudentSessionsCol()` backed by

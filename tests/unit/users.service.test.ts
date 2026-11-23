@@ -9,7 +9,10 @@ import {
   STAGING_BOOTSTRAP_ADMIN_PUID,
   upsertUserFromSaml,
 } from '../../server/src/services/users.service';
+import { activateCwlAssignments } from '../../server/src/services/cwl-assignments.service';
+jest.mock('../../server/src/services/cwl-assignments.service', () => ({ activateCwlAssignments: jest.fn(async () => undefined) }));
 import {
+  platformAdminGrantsCol,
   platformInstructorGrantsCol,
   usersCol,
 } from '../../server/src/components/mongodb/collections';
@@ -23,6 +26,7 @@ jest.mock('../../server/src/services/people-import.service', () => ({
 }));
 
 jest.mock('../../server/src/components/mongodb/collections', () => ({
+  platformAdminGrantsCol: jest.fn(),
   platformInstructorGrantsCol: jest.fn(),
   usersCol: jest.fn(),
 }));
@@ -41,11 +45,14 @@ jest.mock('../../server/src/services/course-sharing.service', () => ({
 const findOneAndUpdate = jest.fn();
 const findUser = jest.fn();
 const findGrant = jest.fn();
+const findAdminGrant = jest.fn();
 beforeEach(() => {
   findOneAndUpdate.mockReset();
   findUser.mockReset();
   findGrant.mockReset();
   findGrant.mockResolvedValue(null);
+  findAdminGrant.mockReset().mockResolvedValue(null);
+  jest.mocked(platformAdminGrantsCol).mockReturnValue({ findOne: findAdminGrant } as never);
   jest.mocked(usersCol).mockReturnValue({
     findOne: findUser,
     findOneAndUpdate,
@@ -66,9 +73,23 @@ const samlAttrs = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('upsertUserFromSaml (ST-E01: PUID -> identity mapping)', () => {
+  it('activates the exact PUID Admin grant on first login and reloads it on each request', async () => {
+    const puid = 'New-Case.PUID';
+    const user = { puid, isAdmin: false, courseRoles: [] };
+    findOneAndUpdate.mockResolvedValue(user);
+    findUser.mockResolvedValue(user);
+    findAdminGrant.mockResolvedValue({ puid });
+    const signedIn = await upsertUserFromSaml({ ubcEduCwlPuid: puid });
+    expect(signedIn.isAdmin).toBe(true);
+    expect(findAdminGrant).toHaveBeenCalledWith({ puid });
+    expect((await findUserByPuid(puid))?.isAdmin).toBe(true);
+    findAdminGrant.mockResolvedValue(null);
+    expect((await findUserByPuid(puid))?.isAdmin).toBe(false);
+  });
   it('upserts keyed on PUID, setting identity fields and setOnInsert defaults', async () => {
     findOneAndUpdate.mockResolvedValue({ puid: 'PUID-STUDENT-0001' });
     await upsertUserFromSaml(samlAttrs());
+    expect(activateCwlAssignments).toHaveBeenCalledWith(expect.objectContaining({ puid: 'PUID-STUDENT-0001' }), 'student1');
     const [filter, update, options] = findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ puid: 'PUID-STUDENT-0001' });
     expect(update.$set).toMatchObject({

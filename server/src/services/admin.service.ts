@@ -7,6 +7,7 @@ import {
   auditCol,
   capabilitySettingsCol,
   coursesCol,
+  platformAdminGrantsCol,
   platformInstructorGrantsCol,
   platformSettingsCol,
   usersCol,
@@ -29,6 +30,8 @@ import {
 } from './capabilities.service';
 import { COURSE_MODEL_STEPS, PIPELINE_STEPS } from '../types/domain';
 import { courseLifecycle } from './courses.service';
+import { isPlatformAdminPuid } from './users.service';
+import { cwlAssignmentKey } from './cwl-assignments.service';
 import { activeSharedInstructorPuids, projectCourseInstructorShares, revokeSharedInstructorGrants } from './course-sharing.service';
 import type {
   CapabilityRole,
@@ -38,7 +41,7 @@ import type {
   CourseModelStep,
   CourseRole,
   PipelineStep,
-  PlatformInstructorGrant,
+  PlatformRoleGrant,
   PlatformSettings,
   StepModelConfig,
   User,
@@ -52,6 +55,8 @@ export interface AdminAccount {
   email: string;
   affiliations: string[];
   isAdmin: boolean;
+  adminGrant?: boolean;
+  pendingCwl?: string;
   platformInstructor: boolean;
   lastLoginAt?: string;
   createdAt?: string;
@@ -76,7 +81,7 @@ function escapedRegex(value: string): string {
 
 function accountFromUser(
   user: WithId<User>,
-  grant?: WithId<PlatformInstructorGrant>,
+  grant?: WithId<PlatformRoleGrant>,
 ): AdminAccount {
   return {
     puid: user.puid,
@@ -98,12 +103,13 @@ function accountFromUser(
   };
 }
 
-function pendingAccount(grant: WithId<PlatformInstructorGrant>): AdminAccount {
+function pendingAccount(grant: WithId<PlatformRoleGrant>): AdminAccount {
   return {
     puid: grant.puid,
     status: 'pending',
-    uid: '',
-    displayName: grant.puid,
+    uid: grant.puid.startsWith('cwl:') ? grant.puid.slice(4) : '',
+    displayName: grant.puid.startsWith('cwl:') ? grant.puid.slice(4) : grant.puid,
+    ...(grant.puid.startsWith('cwl:') ? { pendingCwl: grant.puid.slice(4) } : {}),
     email: '',
     affiliations: [],
     isAdmin: false,
@@ -127,26 +133,97 @@ export async function listAdminAccounts(query = ''): Promise<AdminAccount[]> {
       }
     : {};
 
-  const [users, grants] = await Promise.all([
+  const [users, grants, adminGrants] = await Promise.all([
     usersCol().find(userFilter).sort({ lastLoginAt: -1 }).toArray(),
     platformInstructorGrantsCol().find({}).sort({ createdAt: -1 }).toArray(),
+    platformAdminGrantsCol().find({}).sort({ createdAt: -1 }).toArray(),
   ]);
   const grantByPuid = new Map(grants.map((grant) => [grant.puid, grant]));
+  const adminByPuid = new Map(adminGrants.map((grant) => [grant.puid, grant]));
+  const pendingByPuid = new Map(grants.map(grant => [grant.puid, pendingAccount(grant)]));
+  for (const admin of adminGrants) {
+    const account = pendingByPuid.get(admin.puid) ?? { ...pendingAccount(admin), platformInstructor: false };
+    pendingByPuid.set(admin.puid, { ...account, isAdmin: true, adminGrant: true });
+  }
   const userPuids = new Set(users.map((user) => user.puid));
   const queryRegex = normalizedQuery
     ? new RegExp(escapedRegex(normalizedQuery), 'i')
     : undefined;
 
   return [
-    ...users.map((user) => accountFromUser(user, grantByPuid.get(user.puid))),
-    ...grants
+    ...users.map((user) => {
+      const account = accountFromUser(user, grantByPuid.get(user.puid));
+      return adminByPuid.has(user.puid) ? { ...account, isAdmin: true, adminGrant: true } : account;
+    }),
+    ...[...pendingByPuid.values()]
       .filter(
         (grant) =>
           !userPuids.has(grant.puid) &&
           (!queryRegex || queryRegex.test(grant.puid)),
-      )
-      .map(pendingAccount),
+      ),
   ];
+}
+
+function requireAdminGrantManager(actorPuid: string): void {
+  if (!isPlatformAdminPuid(actorPuid)) {
+    throw Object.assign(new Error('Only a configured platform Admin can manage Admin grants.'), { status: 403 });
+  }
+}
+
+export async function savePlatformCwlAssignment(cwl: string, role: 'admin' | 'platform-instructor', actorPuid: string): Promise<{ status: 'pending' }> {
+  if (role === 'admin') requireAdminGrantManager(actorPuid);
+  const collection = role === 'admin' ? platformAdminGrantsCol() : platformInstructorGrantsCol();
+  const puid = cwlAssignmentKey(cwl);
+  const now = new Date();
+  const grant = await collection.findOneAndUpdate({ puid }, {
+    $setOnInsert: { puid, createdAt: now, updatedAt: now, grantedByPuid: actorPuid },
+  }, { upsert: true, returnDocument: 'after' });
+  if (!grant) throw new Error('platform-cwl-assignment-write-failed');
+  await auditCol().insertOne({
+    actorPuid, action: 'role.assign', targetType: `platform-${role === 'admin' ? 'admin' : 'instructor'}-grant`,
+    targetId: grant._id, detail: { cwl: puid.slice(4), accountStatus: 'pending' }, createdAt: now,
+  });
+  return { status: 'pending' };
+}
+
+export async function cancelPlatformCwlAssignment(cwl: string, role: 'admin' | 'platform-instructor', actorPuid: string): Promise<void> {
+  if (role === 'admin') requireAdminGrantManager(actorPuid);
+  const collection = role === 'admin' ? platformAdminGrantsCol() : platformInstructorGrantsCol();
+  const grant = await collection.findOneAndDelete({ puid: cwlAssignmentKey(cwl) });
+  if (!grant) throw Object.assign(new Error('This pending assignment has changed. Refresh the directory.'), { status: 409 });
+  await auditCol().insertOne({
+    actorPuid, action: 'role.revoke', targetType: `platform-${role === 'admin' ? 'admin' : 'instructor'}-grant`,
+    targetId: grant._id, detail: { cwl: grant.puid.slice(4), accountStatus: 'pending' }, createdAt: new Date(),
+  });
+}
+
+export async function grantPlatformAdmin(puid: string, actorPuid: string): Promise<{ status: AdminAccount['status'] }> {
+  requireAdminGrantManager(actorPuid);
+  if (isPlatformAdminPuid(puid)) throw Object.assign(new Error('This PUID already has Admin access in server configuration.'), { status: 409 });
+  const user = await usersCol().findOne({ puid });
+  if (user?.deactivatedAt) throw Object.assign(new Error('Unban the account before granting Admin access.'), { status: 409 });
+  const now = new Date();
+  const grant = await platformAdminGrantsCol().findOneAndUpdate({ puid }, {
+    $set: { grantedByPuid: actorPuid, updatedAt: now },
+    $setOnInsert: { puid, createdAt: now },
+  }, { upsert: true, returnDocument: 'after' });
+  if (!grant) throw new Error('platform-admin-grant-write-failed');
+  const status = user ? 'active' : 'pending';
+  await auditCol().insertOne({
+    actorPuid, action: 'role.assign', targetType: 'platform-admin-grant', targetId: grant._id,
+    detail: { puid, accountStatus: status }, createdAt: now,
+  });
+  return { status };
+}
+
+export async function revokePlatformAdmin(puid: string, actorPuid: string): Promise<void> {
+  requireAdminGrantManager(actorPuid);
+  const grant = await platformAdminGrantsCol().findOneAndDelete({ puid });
+  if (!grant) return;
+  await auditCol().insertOne({
+    actorPuid, action: 'role.revoke', targetType: 'platform-admin-grant', targetId: grant._id,
+    detail: { puid }, createdAt: new Date(),
+  });
 }
 
 export async function grantPlatformInstructor(
@@ -368,6 +445,9 @@ export async function deactivateUser(puid: string, actorPuid: string): Promise<v
   const user = await usersCol().findOne({ puid });
   if (!user) throw new Error('admin-user-not-found');
   if (user.puid === actorPuid) throw new Error('admin-cannot-deactivate-self');
+  if (isPlatformAdminPuid(puid) || await platformAdminGrantsCol().findOne({ puid })) {
+    throw Object.assign(new Error('Revoke Admin access before banning this account.'), { status: 409 });
+  }
   if (!user.deactivatedAt) {
     await usersCol().updateOne({ _id: user._id }, { $set: { deactivatedAt: new Date() } });
     await auditUserMutation(actorPuid, 'user.deactivate', user, { puid });

@@ -2,7 +2,9 @@ import { projectCoursePeopleAccess } from './course-people-access.service';
 import { projectCanvasEnrollment } from './canvas-enrollment.service';
 import { projectImportedCoursePeople } from './people-import.service';
 import { resumeClaimedRegistrations } from './registration-codes.service';
+import { activateCwlAssignments } from './cwl-assignments.service';
 import {
+  platformAdminGrantsCol,
   platformInstructorGrantsCol,
   usersCol,
 } from '../components/mongodb/collections';
@@ -50,6 +52,7 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
   if (!puid) {
     throw new Error('SAML profile is missing ubcEduCwlPuid (PUID); refusing to create a session.');
   }
+  if (puid.startsWith('cwl:')) throw new Error('SAML profile supplied a reserved PUID prefix.');
   const uid = attr(attributes, 'uid') || attr(attributes, 'cwlLoginName');
   const email = attr(attributes, 'mail');
   const displayName =
@@ -76,12 +79,19 @@ export async function upsertUserFromSaml(attributes: Record<string, unknown>): P
     },
     { upsert: true, returnDocument: 'after' },
   );
-  const user = await activatePendingTaInvites(await resumeClaimedRegistrations(result as unknown as User));
+  const persisted = result as unknown as User;
+  await activateCwlAssignments({ ...persisted, puid }, uid);
+  const user = await activatePendingTaInvites(await resumeClaimedRegistrations({
+    ...persisted,
+    isAdmin: !persisted.deactivatedAt && (isPlatformAdminPuid(puid) || Boolean(await platformAdminGrantsCol().findOne({ puid }))),
+    platformInstructor: Boolean(await platformInstructorGrantsCol().findOne({ puid })),
+  }));
   await activateCourseInstructorInvitations(user);
   return projectCoursePeopleAccess(await projectImportedCoursePeople(await projectCanvasEnrollment((await projectCourseInstructorShares([user]))[0])));
 }
 
 export async function findUserByPuid(puid: string): Promise<User | null> {
+  if (puid.startsWith('cwl:')) return null;
   const persisted = await usersCol().findOne({ puid });
   const user = persisted && !persisted.deactivatedAt ? await resumeClaimedRegistrations(persisted) : persisted;
   if (!user || user.deactivatedAt) return null;
@@ -89,6 +99,10 @@ export async function findUserByPuid(puid: string): Promise<User | null> {
   // The grant collection is the authorization source of truth. Recomputing
   // during Passport deserialization makes revoke effective on the next
   // request even if a login/revoke race left the denormalized User bit stale.
-  const grant = await platformInstructorGrantsCol().findOne({ puid });
-  return projectCoursePeopleAccess(await projectImportedCoursePeople(await projectCanvasEnrollment((await projectCourseInstructorShares([{ ...user, platformInstructor: Boolean(grant) }]))[0])));
+  const [grant, adminGrant] = await Promise.all([
+    platformInstructorGrantsCol().findOne({ puid }), platformAdminGrantsCol().findOne({ puid }),
+  ]);
+  return projectCoursePeopleAccess(await projectImportedCoursePeople(await projectCanvasEnrollment((await projectCourseInstructorShares([{
+    ...user, isAdmin: isPlatformAdminPuid(puid) || Boolean(adminGrant), platformInstructor: Boolean(grant),
+  }]))[0])));
 }

@@ -5,7 +5,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({ auditCol: 
 jest.mock('../../server/src/services/canvas.service', () => ({ canvasLinks: jest.fn(() => ({ findOne: async () => null })) }));
 jest.mock('../../server/src/services/teaching-identity.service', () => ({ resolveTeachingIdentity: jest.fn() }));
 import { auditCol, capabilitySettingsCol, courseInstructorSharesCol, coursePeopleAccessCol, coursePeopleImportsCol, coursesCol, taInvitesCol, usersCol } from '../../server/src/components/mongodb/collections';
-import { changeCoursePerson, inviteCoursePerson, listCoursePeople, removeCoursePeople } from '../../server/src/services/course-people.service';
+import { changeCoursePerson, inviteCoursePerson, listCoursePeople, removeCoursePeople, saveCourseCwlAssignment } from '../../server/src/services/course-people.service';
 import { canvasLinks } from '../../server/src/services/canvas.service';
 import { resolveTeachingIdentity } from '../../server/src/services/teaching-identity.service';
 
@@ -60,6 +60,16 @@ test('known CWL activates exact PUID without granting platform capability', asyn
   await inviteCoursePerson(id, actor, 'person', 'instructor');
   expect(write.mock.calls[0][1].$set).toMatchObject({ puid: 'PERSON', role: 'instructor', status: 'active' });
   expect(write.mock.calls[0][1].$set).not.toHaveProperty('platformInstructor');
+});
+test('a CWL course assignment without a User appears as a cancellable invitation', async () => {
+  const assigned = await saveCourseCwlAssignment(id, actor, 'New.CWL', 'ta');
+  expect(assigned).toEqual({ id: 'cwl:new.cwl', status: 'pending', revision: 1 });
+  controls = [{ ...write.mock.calls[0][1].$setOnInsert, ...write.mock.calls[0][1].$set, _id: new ObjectId(), revision: 1 }];
+  expect((await listCoursePeople(id, actor, { tab: 'invitations' })).people).toEqual([
+    expect.objectContaining({ id: 'cwl:new.cwl', puid: null, email: null, cwl: 'new.cwl', role: 'ta', status: 'pending' }),
+  ]);
+  await changeCoursePerson(id, actor, assigned.id, assigned.revision, { action: 'cancel' });
+  expect(write.mock.calls[1][1].$set).toMatchObject({ status: 'revoked' });
 });
 test('another Instructor is read-only and cannot invite or ban', async () => {
   const instructor = { ...actor, puid: 'COLLEAGUE' };

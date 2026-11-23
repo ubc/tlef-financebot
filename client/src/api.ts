@@ -125,6 +125,8 @@ export interface AdminAccount {
   email: string;
   affiliations: string[];
   isAdmin: boolean;
+  adminGrant?: boolean;
+  pendingCwl?: string;
   platformInstructor: boolean;
   lastLoginAt?: string;
   createdAt?: string;
@@ -335,6 +337,25 @@ export function grantPlatformInstructor(puid: string): Promise<AdminAccount> {
     `/api/admin/platform-instructors/${encodeURIComponent(puid.trim())}`,
     { method: 'PUT' },
   );
+}
+
+export function grantPlatformAdmin(puid: string): Promise<Pick<AdminAccount, 'status'>> {
+  return request(`/api/admin/platform-admins/${encodeURIComponent(puid.trim())}`, { method: 'PUT' });
+}
+
+type PlatformGrantRole = 'admin' | 'platform-instructor';
+export function saveCwlAssignment(cwl: string, assignment: { role: PlatformGrantRole } | { role: CourseRole; courseId: string }): Promise<{ status: 'pending' }> {
+  return request(`/api/admin/cwl-assignments/${encodeURIComponent(cwl.trim())}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(assignment),
+  });
+}
+
+export function cancelPlatformCwlAssignment(cwl: string, role: PlatformGrantRole): Promise<void> {
+  return request(`/api/admin/cwl-assignments/${encodeURIComponent(cwl)}/${role}`, { method: 'DELETE' });
+}
+
+export function revokePlatformAdmin(puid: string): Promise<void> {
+  return request(`/api/admin/platform-admins/${encodeURIComponent(puid.trim())}`, { method: 'DELETE' });
 }
 
 /** DELETE /api/admin/platform-instructors/:puid -> idempotent revocation. */

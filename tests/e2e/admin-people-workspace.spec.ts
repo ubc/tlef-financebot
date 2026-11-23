@@ -67,9 +67,38 @@ async function fixture(page: Page, name: 'users' | 'accounts', theme = 'light') 
       { _id: COURSE, name: 'Finance Foundations', courseCode: 'FIN 101', section: '001', term: '2026W1', lifecycle: 'published' },
       { _id: OTHER_COURSE, name: 'Advanced Finance', courseCode: 'FIN 201', section: '002', term: '2026W1', lifecycle: 'draft' },
     ] });
+    if (path.startsWith('/api/admin/cwl-assignments/')) {
+      const cwl = decodeURIComponent(path.split('/')[4]);
+      const puid = `cwl:${cwl.toLowerCase()}`;
+      if (method === 'DELETE') {
+        accounts.splice(accounts.findIndex(account => account.puid === puid), 1);
+        return route.fulfill({ status: 204 });
+      }
+      const { role, courseId } = route.request().postDataJSON();
+      if (!courseId) accounts.push({
+        puid, pendingCwl: cwl.toLowerCase(), uid: cwl.toLowerCase(), displayName: cwl.toLowerCase(), status: 'pending',
+        email: '', affiliations: [], isAdmin: role === 'admin', adminGrant: role === 'admin', platformInstructor: role === 'platform-instructor',
+      });
+      return route.fulfill({ json: { status: 'pending' } });
+    }
+    if (path.startsWith('/api/admin/platform-admins/')) {
+      const puid = decodeURIComponent(path.split('/').pop()!);
+      if (method === 'PUT') {
+        accounts.push({ puid, status: 'pending', uid: '', displayName: puid, email: '', affiliations: [], isAdmin: true, adminGrant: true, platformInstructor: false });
+        return route.fulfill({ json: { status: 'pending' } });
+      }
+      const index = accounts.findIndex(account => account.puid === puid && account.adminGrant);
+      if (index >= 0) accounts.splice(index, 1);
+      return route.fulfill({ status: 204 });
+    }
     if (path.startsWith('/api/admin/platform-instructors/')) {
       const puid = decodeURIComponent(path.split('/').pop()!);
-      const account = accounts.find(user => user.puid === puid)!;
+      let account = accounts.find(user => user.puid === puid);
+      if (!account && method === 'PUT') {
+        account = { puid, status: 'pending', uid: '', displayName: puid, email: '', affiliations: [], isAdmin: false, platformInstructor: true };
+        accounts.push(account);
+      }
+      if (!account) return route.fulfill({ status: 404, json: { error: 'Grant not found' } });
       account.platformInstructor = method === 'PUT';
       if (method === 'PUT') { account.grantedAt = '2026-09-20T19:00:00Z'; return route.fulfill({ json: account }); }
       delete account.grantedAt;
@@ -104,6 +133,101 @@ async function fixture(page: Page, name: 'users' | 'accounts', theme = 'light') 
   await expect(page.locator('.ac-table')).toBeVisible();
   return { users, accounts, writes };
 }
+
+test('Admin can grant and revoke Admin access for a PUID before its first login', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  await page.getByRole('button', { name: 'Grant before first login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grant before first login' });
+  await dialog.getByRole('combobox', { name: 'Role to grant' }).selectOption('admin');
+  await expect(dialog.getByRole('combobox', { name: 'Course', exact: true })).toHaveCount(0);
+  await dialog.getByRole('combobox', { name: 'Identify recipient by' }).selectOption('puid');
+  await dialog.getByLabel('Login ID (PUID)', { exact: true }).fill('New-Case.PUID');
+  await dialog.getByRole('button', { name: 'Save grant' }).click();
+  await page.getByRole('dialog', { name: 'Grant platform Admin?' }).getByRole('button', { name: 'Grant Admin' }).click();
+  const row = personRow(page, 'New-Case.PUID');
+  await expect(row).toContainText('Pending first login');
+  await expect(row.getByText('Admin', { exact: true })).toBeVisible();
+  await grantAction(page, row, 'Revoke Admin');
+  await page.getByRole('dialog', { name: 'Revoke Admin access?' }).getByRole('button', { name: 'Revoke Admin' }).click();
+  await expect(row).toHaveCount(0);
+  expect(state.writes).toEqual([
+    { path: '/api/admin/platform-admins/New-Case.PUID', method: 'PUT' },
+    { path: '/api/admin/platform-admins/New-Case.PUID', method: 'DELETE' },
+  ]);
+});
+
+test('Admin pre-grants course creation without choosing an existing course', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  await page.getByRole('button', { name: 'Grant before first login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grant before first login' });
+  await dialog.getByRole('combobox', { name: 'Role to grant' }).selectOption('platform-instructor');
+  await expect(dialog.getByRole('combobox', { name: 'Course', exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel('CWL username', { exact: true })).toBeVisible();
+  await dialog.getByRole('combobox', { name: 'Identify recipient by' }).selectOption('puid');
+  await dialog.getByLabel('Login ID (PUID)', { exact: true }).fill('New-Instructor.PUID');
+  await dialog.getByRole('button', { name: 'Save grant' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Grant Platform Instructor?' });
+  await expect(confirm).toContainText('Allow Login ID New-Instructor.PUID to create courses?');
+  await confirm.getByRole('button', { name: 'Grant Instructor' }).click();
+  await expect(personRow(page, 'New-Instructor.PUID')).toContainText('Pending first login');
+  expect(state.writes).toEqual([{ path: '/api/admin/platform-instructors/New-Instructor.PUID', method: 'PUT' }]);
+});
+
+test('Admin saves and cancels a platform assignment for an unknown CWL username', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  await page.getByRole('button', { name: 'Grant before first login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grant before first login' });
+  await dialog.getByRole('combobox', { name: 'Role to grant' }).selectOption('admin');
+  const cwl = dialog.getByLabel('CWL username', { exact: true });
+  await cwl.fill('not-signed-in');
+  await dialog.getByRole('button', { name: 'Save grant' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Grant platform Admin?' });
+  await expect(confirm).toContainText('CWL not-signed-in');
+  expect(state.writes).toEqual([]);
+  await confirm.getByRole('button', { name: 'Grant Admin' }).click();
+  const row = personRow(page, 'not-signed-in');
+  await expect(row).toContainText('Pending first login');
+  await expect(row).toContainText('CWL username: not-signed-in');
+  await grantAction(page, row, 'Revoke Admin');
+  await page.getByRole('dialog', { name: 'Revoke Admin access?' }).getByRole('button', { name: 'Revoke Admin' }).click();
+  await expect(row).toHaveCount(0);
+  expect(state.writes).toEqual([
+    { path: '/api/admin/cwl-assignments/not-signed-in', method: 'PUT' },
+    { path: '/api/admin/cwl-assignments/not-signed-in/admin', method: 'DELETE' },
+  ]);
+});
+
+test('Admin saves a course invitation before the recipient signs in', async ({ page }) => {
+  await fixture(page, 'users');
+  const payloads: unknown[] = [];
+  await page.route(`**/api/courses/${COURSE}/people`, route => {
+    payloads.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { status: 'pending', id: 'email:new@ubc.ca', revision: 1 } });
+  });
+  await page.getByRole('button', { name: 'Grant before first login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grant before first login' });
+  await dialog.getByRole('combobox', { name: 'Role to grant' }).selectOption('ta');
+  await dialog.getByRole('combobox', { name: 'Course', exact: true }).selectOption(COURSE);
+  await dialog.getByRole('combobox', { name: 'Identify recipient by' }).selectOption('email');
+  await dialog.getByLabel('UBC email', { exact: true }).fill('new@ubc.ca');
+  await dialog.getByRole('button', { name: 'Save grant' }).click();
+  await expect(page.getByText(/Course invitation saved. Access starts at the matching CWL sign-in/)).toBeVisible();
+  expect(payloads).toEqual([{ role: 'ta', identifier: 'new@ubc.ca', permissions: {} }]);
+});
+
+test('Admin queues a course role by CWL without an existing account', async ({ page }) => {
+  const state = await fixture(page, 'users');
+  const pending = page.waitForRequest(request => request.url().endsWith('/api/admin/cwl-assignments/new-student'));
+  await page.getByRole('button', { name: 'Grant before first login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grant before first login' });
+  await dialog.getByRole('combobox', { name: 'Role to grant' }).selectOption('student');
+  await dialog.getByRole('combobox', { name: 'Course', exact: true }).selectOption(COURSE);
+  await dialog.getByLabel('CWL username', { exact: true }).fill('new-student');
+  await dialog.getByRole('button', { name: 'Save grant' }).click();
+  expect((await pending).postDataJSON()).toEqual({ role: 'student', courseId: COURSE });
+  await expect(page.getByText(/Course invitation saved. Access starts at the matching CWL sign-in/)).toBeVisible();
+  expect(state.writes).toEqual([{ path: '/api/admin/cwl-assignments/new-student', method: 'PUT' }]);
+});
 
 test('unified directory preserves search, investigation links and protected Admins', async ({ page }) => {
   await fixture(page, 'users');

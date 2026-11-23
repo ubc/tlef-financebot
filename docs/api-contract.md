@@ -16,7 +16,7 @@ admin.
 ## Auth
 - `GET /api/auth/me` (public) → `{ authenticated, user?: { puid, uid, displayName, isAdmin, platformInstructor?, affiliations, courseRoles } }`
 
-## Admin — platform-Instructor accounts
+## Admin — platform role grants
 
 Every route below is platform-Admin-only. Grants use the UBC PUID as the
 canonical identifier, including when the user has not logged in yet. A pending
@@ -30,6 +30,18 @@ grant attaches to the same PUID-backed User on first SAML login.
   (idempotent; empty body)
 - `DELETE /api/admin/platform-instructors/:puid` →
   `{ puid, granted: false, revoked: boolean }` (idempotent)
+- `PUT /api/admin/platform-admins/:puid` → `{ status: 'active' | 'pending' }`
+  and `DELETE /api/admin/platform-admins/:puid` → 204. Configured platform
+  Admins can manage these grants. Admin grants use the exact SAML PUID, apply
+  at the first matching login, and are checked again during session reload.
+  The account directory reports these grants with `adminGrant: true`.
+- `PUT /api/admin/cwl-assignments/:cwl` accepts `{ role: 'admin' | 'platform-instructor' }`
+  or `{ role: 'instructor' | 'ta' | 'student', courseId }`. A pending assignment
+  can be saved before the account exists. A verified SAML sign-in with a unique,
+  exact CWL match binds it to the PUID. If the assertion omits CWL, it stays
+  pending. The directory lists pending platform assignments as `pendingCwl`;
+  `DELETE /api/admin/cwl-assignments/:cwl/:role` cancels a pending platform
+  assignment. Pending course assignments can be managed in course People.
 
 ## Enrollment (student)
 - `POST /api/enrollments { code }` → 201 `{ courseId, name, courseCode }`

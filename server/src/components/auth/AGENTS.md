@@ -69,9 +69,11 @@ Two one-time local setup steps are required (documented in the root README):
   `ensureRole(...roles)` guard (`401` signed out, `403` wrong role). See
   "Role-based authorization" below.
 - `platform-guards.ts` — explicit platform capability guards:
-  `ensureAdmin()` reads the persisted `isAdmin` bit (still sourced from
-  `ADMIN_CWL_ALLOWLIST` at login), while `ensurePlatformInstructor()` accepts
-  Admins or a persisted Admin-managed `platformInstructor` grant. These are
+  `ensureAdmin()` reads `isAdmin` from the current authentication projection.
+  Admin access comes from configured PUIDs or a database grant by exact PUID.
+  Only configured Admins can create or revoke database Admin grants.
+  `ensurePlatformInstructor()` accepts Admins or a persisted
+  Admin-managed `platformInstructor` grant. These are
   deliberately separate from both SAML affiliation roles and per-course
   `courseRoles`.
 - `index.ts` — `configureAuth()`: registers the strategy + serialize/deserialize

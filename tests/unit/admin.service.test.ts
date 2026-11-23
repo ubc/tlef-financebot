@@ -12,11 +12,16 @@ import {
   auditCol,
   coursesCol,
   platformSettingsCol,
+  platformAdminGrantsCol,
   platformInstructorGrantsCol,
   usersCol,
 } from '../../server/src/components/mongodb/collections';
 import {
   grantPlatformInstructor,
+  grantPlatformAdmin,
+  savePlatformCwlAssignment,
+  cancelPlatformCwlAssignment,
+  revokePlatformAdmin,
   deactivateUser,
   removeRole,
   updatePlatformSettings,
@@ -35,6 +40,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => ({
   capabilitySettingsCol: jest.fn(),
   coursesCol: jest.fn(),
   platformSettingsCol: jest.fn(),
+  platformAdminGrantsCol: jest.fn(),
   platformInstructorGrantsCol: jest.fn(),
   usersCol: jest.fn(),
 }));
@@ -47,6 +53,9 @@ jest.mock('../../server/src/services/course-sharing.service', () => ({
 const grantId = new ObjectId();
 const findGrantAfterUpdate = jest.fn();
 const findGrantAndDelete = jest.fn();
+const findAdminGrant = jest.fn();
+const saveAdminGrant = jest.fn();
+const deleteAdminGrant = jest.fn();
 const findGrants = jest.fn();
 const findUserAfterUpdate = jest.fn();
 const updateUser = jest.fn();
@@ -59,6 +68,13 @@ const findPlatformSettings = jest.fn();
 const replacePlatformSettings = jest.fn();
 
 beforeEach(() => {
+  findAdminGrant.mockReset().mockResolvedValue(null);
+  saveAdminGrant.mockReset();
+  deleteAdminGrant.mockReset();
+  jest.mocked(platformAdminGrantsCol).mockReturnValue({
+    findOne: findAdminGrant, findOneAndUpdate: saveAdminGrant, findOneAndDelete: deleteAdminGrant,
+    find: () => ({ sort: () => ({ toArray: async () => [] }) }),
+  } as never);
   jest.mocked(activeSharedInstructorPuids).mockReset().mockResolvedValue([]);
   jest.mocked(projectCourseInstructorShares).mockReset().mockImplementation(async users => users);
   jest.mocked(revokeSharedInstructorGrants).mockReset().mockResolvedValue(0);
@@ -97,6 +113,34 @@ beforeEach(() => {
     findOne: findPlatformSettings,
     replaceOne: replacePlatformSettings,
   } as never);
+});
+
+it('allows a configured Admin to save and revoke a pending Admin grant by exact PUID', async () => {
+  const configured = jest.spyOn(await import('../../server/src/services/users.service'), 'isPlatformAdminPuid')
+    .mockImplementation(puid => puid === 'CONFIGURED-ADMIN');
+  try {
+    const puid = 'New-Case.PUID';
+    const record = { _id: grantId, puid };
+    findUser.mockResolvedValue(null);
+    saveAdminGrant.mockResolvedValue(record);
+    deleteAdminGrant.mockResolvedValue(record);
+    await expect(grantPlatformAdmin(puid, 'DELEGATED-ADMIN')).rejects.toMatchObject({ status: 403 });
+    await expect(revokePlatformAdmin(puid, 'DELEGATED-ADMIN')).rejects.toMatchObject({ status: 403 });
+    expect(saveAdminGrant).not.toHaveBeenCalled();
+    expect(deleteAdminGrant).not.toHaveBeenCalled();
+    await expect(grantPlatformAdmin(puid, 'CONFIGURED-ADMIN')).resolves.toEqual({ status: 'pending' });
+    expect(saveAdminGrant).toHaveBeenCalledWith({ puid }, expect.anything(), expect.objectContaining({ upsert: true }));
+    await revokePlatformAdmin(puid, 'CONFIGURED-ADMIN');
+    expect(deleteAdminGrant).toHaveBeenCalledWith({ puid });
+    expect(insertAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'role.revoke', targetType: 'platform-admin-grant' }));
+    await expect(savePlatformCwlAssignment('New.CWL', 'admin', 'DELEGATED-ADMIN')).rejects.toMatchObject({ status: 403 });
+    await expect(savePlatformCwlAssignment('New.CWL', 'admin', 'CONFIGURED-ADMIN')).resolves.toEqual({ status: 'pending' });
+    expect(saveAdminGrant).toHaveBeenLastCalledWith({ puid: 'cwl:new.cwl' }, expect.anything(), expect.objectContaining({ upsert: true }));
+    await cancelPlatformCwlAssignment('New.CWL', 'admin', 'CONFIGURED-ADMIN');
+    expect(deleteAdminGrant).toHaveBeenLastCalledWith({ puid: 'cwl:new.cwl' });
+  } finally {
+    configured.mockRestore();
+  }
 });
 
 describe('Phase 3 Admin essentials', () => {
